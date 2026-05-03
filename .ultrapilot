@@ -1,0 +1,102 @@
+# OASIS WebAPI — Implementation Queue
+# Run in order. Each task must pass dotnet build + dotnet test before the next.
+
+[1] validation-mapping-infrastructure
+Goal: Add FluentValidation and AutoMapper packages, register in Program.cs, create OASISMappingProfile.
+Files: OASIS.WebAPI.csproj, Program.cs, Mapping/OASISMappingProfile.cs
+Acceptance: dotnet build passes, services resolve correctly.
+
+[2] validation-mapping-avatar-validators
+Goal: Create AvatarRegisterValidator, AvatarLoginValidator, AvatarUpdateValidator.
+Files: Validation/AvatarRegisterValidator.cs, Validation/AvatarLoginValidator.cs, Validation/AvatarUpdateValidator.cs
+Acceptance: Invalid register/login/update requests return 400 with structured errors.
+
+[3] validation-mapping-holon-validators
+Goal: Create HolonCreateValidator, HolonUpdateValidator.
+Files: Validation/HolonCreateValidator.cs, Validation/HolonUpdateValidator.cs
+Acceptance: Invalid holon requests return 400 with structured errors.
+
+[4] validation-mapping-manager-refactor
+Goal: Refactor AvatarManager.UpdateAsync and HolonManager.UpdateAsync to use AutoMapper.
+Files: Managers/AvatarManager.cs, Managers/HolonManager.cs
+Acceptance: Existing tests still pass, no regression.
+
+[5] validation-mapping-tests
+Goal: Add unit tests for validators and mapping profile.
+Files: OASIS.WebAPI.Tests/Validation/*, OASIS.WebAPI.Tests/Mapping/*
+Acceptance: New tests pass, Stryker score >= 50% for new code.
+
+[6] wallet-api-interfaces
+Goal: Create IWalletManager, WalletCreateModel, WalletUpdateModel, WalletQueryRequest, PortfolioResult.
+Files: Interfaces/Managers/IWalletManager.cs, Models/Requests/WalletCreateModel.cs, Models/Requests/WalletUpdateModel.cs, Models/Requests/WalletQueryRequest.cs, Models/Responses/PortfolioResult.cs
+Acceptance: Interfaces compile.
+
+[7] wallet-api-manager
+Goal: Implement WalletManager with CRUD, SetDefaultAsync, GetPortfolioAsync.
+Files: Managers/WalletManager.cs
+Acceptance: All methods call ProviderContext.Activate and delegate to IOASISStorageProvider.
+
+[8] wallet-api-controller
+Goal: Create WalletController with 7 endpoints (GET/POST/PUT/DELETE + set-default + portfolio).
+Files: Controllers/WalletController.cs
+Acceptance: All endpoints protected by [Authorize], ownership verified.
+
+[9] wallet-api-provider-extensions
+Goal: Add LoadAllWalletsAsync to IOASISStorageProvider and implement in EfStorageProvider + InMemoryStorageProvider.
+Files: Interfaces/IOASISStorageProvider.cs, Providers/EfStorageProvider.cs, Providers/InMemoryStorageProvider.cs
+Acceptance: Provider methods return correct results.
+
+[10] wallet-api-migrate-avatar
+Goal: Remove wallet methods from AvatarManager/AvatarController. Optionally keep backward-compat endpoints that delegate to WalletManager.
+Files: Managers/AvatarManager.cs, Controllers/AvatarController.cs, Interfaces/Managers/IAvatarManager.cs
+Acceptance: Existing wallet tests migrated or removed, no build errors.
+
+[11] wallet-api-tests
+Goal: Unit + integration tests for WalletManager and WalletController.
+Files: OASIS.WebAPI.Tests/Managers/WalletManagerTests.cs, OASIS.WebAPI.IntegrationTests/Controllers/WalletControllerIntegrationTests.cs
+Acceptance: Tests pass, Stryker score >= 50%.
+
+[12] nft-api-interfaces
+Goal: Create INftManager, NftMintRequest, NftTransferRequest, NftBurnRequest, NftQueryRequest, NftMetadata, NftResult.
+Files: Interfaces/Managers/INftManager.cs, Models/Requests/NftMintRequest.cs, Models/Requests/NftTransferRequest.cs, Models/Requests/NftBurnRequest.cs, Models/Requests/NftQueryRequest.cs, Models/Responses/NftMetadata.cs, Models/Responses/NftResult.cs
+Acceptance: Interfaces compile.
+
+[13] nft-api-manager
+Goal: Implement NftManager delegating to IHolonManager and IBlockchainOperationManager.
+Files: Managers/NftManager.cs
+Acceptance: Mint creates Holon with AssetType="NFT"; Transfer updates AvatarId; Burn sets IsActive=false.
+
+[14] nft-api-controller
+Goal: Create NftController with 6 endpoints (GET, query, mint, transfer, burn, metadata).
+Files: Controllers/NftController.cs
+Acceptance: Metadata endpoint returns ERC-721 compatible JSON.
+
+[15] nft-api-tests
+Goal: Unit + integration tests for NftManager and NftController.
+Files: OASIS.WebAPI.Tests/Managers/NftManagerTests.cs, OASIS.WebAPI.IntegrationTests/Controllers/NftControllerIntegrationTests.cs
+Acceptance: Tests pass, Stryker score >= 50%.
+
+[16] search-api-interfaces
+Goal: Create ISearchManager, SearchRequest, SearchResult, SearchHit, SearchFacet, SearchableEntityType.
+Files: Interfaces/Managers/ISearchManager.cs, Models/Requests/SearchRequest.cs, Models/Responses/SearchResult.cs, Models/Responses/SearchHit.cs, Models/Responses/SearchFacet.cs, Core/SearchableEntityType.cs
+Acceptance: Interfaces compile.
+
+[17] search-api-manager
+Goal: Implement SearchManager with in-memory filtering, pagination, facets.
+Files: Managers/SearchManager.cs
+Acceptance: Cross-entity search returns hits from multiple types.
+
+[18] search-api-controller
+Goal: Create SearchController with POST /api/search and GET /api/search/facets.
+Files: Controllers/SearchController.cs
+Acceptance: Pagination and facet counts correct.
+
+[19] search-api-tests
+Goal: Unit + integration tests for SearchManager and SearchController.
+Files: OASIS.WebAPI.Tests/Managers/SearchManagerTests.cs, OASIS.WebAPI.IntegrationTests/Controllers/SearchControllerIntegrationTests.cs
+Acceptance: Tests pass, Stryker score >= 50%.
+
+[20] final-integration-check
+Goal: Full solution build + test run + Stryker mutation score check.
+Command: dotnet build oasis-sleek.sln && dotnet test oasis-sleek.sln --no-build
+Acceptance: 0 build errors, all tests pass, Stryker >= 50%.

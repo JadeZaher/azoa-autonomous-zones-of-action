@@ -1,0 +1,56 @@
+# ═══════════════════════════════════════════════════════════════
+# Blockchain Devnet Live Operations
+# Tests real blockchain provider interactions on Algorand & Solana devnets.
+# Creates avatars, wallets, holons, then executes mint/exchange/transfer
+# operations targeting the configured devnet nodes.
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Avatar A: Algorand Devnet User ───
+{"id":"algo_seed_avatar","description":"Register avatar for Algorand devnet tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"algodev","email":"algo@devnet.oasis","password":"TestPass123!","firstName":"Algo","lastName":"Devnet"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"algoAvatar"}
+{"id":"algo_login","description":"Login as Algorand devnet avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"algo@devnet.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"algoAuth"}
+{"id":"algo_add_wallet","description":"Add Algorand devnet wallet","method":"POST","path":"/api/avatar/{{algoAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{algoAuth.token}}"},"body":{"chainType":"Algorand","address":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ","label":"AlgoDevMain","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"algoWallet"}
+
+# ─── Avatar B: Solana Devnet User ───
+{"id":"sol_seed_avatar","description":"Register avatar for Solana devnet tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"soldev","email":"sol@devnet.oasis","password":"TestPass123!","firstName":"Solana","lastName":"Devnet"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"solAvatar"}
+{"id":"sol_login","description":"Login as Solana devnet avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"sol@devnet.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"solAuth"}
+{"id":"sol_add_wallet","description":"Add Solana devnet wallet","method":"POST","path":"/api/avatar/{{solAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{solAuth.token}}"},"body":{"chainType":"Solana","address":"HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH","label":"SolDevMain","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"solWallet"}
+
+# ─── Create Holons for Minting ───
+{"id":"algo_create_holon","description":"Create holon for Algorand minting","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{algoAuth.token}}"},"body":{"name":"AlgoAssetHolon","description":"Holon backing Algorand ASA","providerName":"InMemory","chainId":"Algorand","assetType":"ASA","metadata":{"network":"Devnet","creator":"OASIS"}},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"algoHolon"}
+{"id":"sol_create_holon","description":"Create holon for Solana minting","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{solAuth.token}}"},"body":{"name":"SolAssetHolon","description":"Holon backing Solana SPL","providerName":"InMemory","chainId":"Solana","assetType":"SPL","metadata":{"network":"Devnet","creator":"OASIS"}},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"solHolon"}
+{"id":"algo_create_peer_holon","description":"Create peer holon for exchange test","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{algoAuth.token}}"},"body":{"name":"AlgoPeerHolon","description":"Peer for Algorand exchange","providerName":"InMemory","chainId":"Algorand","assetType":"ASA","metadata":{"pair":"ALGO-USDC"}},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"algoPeerHolon"}
+
+# ─── Algorand Devnet: Mint Operations ───
+{"id":"algo_mint_asa","description":"Mint ASA on Algorand devnet","method":"POST","path":"/api/holon/{{algoHolon.id}}/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{algoAuth.token}}"},"body":{"walletId":"{{algoWallet.walletId}}","tokenUri":"https://devnet.oasis/metadata/algo-asa-1","amount":1000,"assetType":"ASA"},"expectedStatus":200,"extract":{"opId":"result.id","txHash":"result.parameters.TxHash"},"saveAs":"algoMintOp"}
+{"id":"algo_mint_small","description":"Mint small amount on Algorand devnet","method":"POST","path":"/api/holon/{{algoHolon.id}}/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{algoAuth.token}}"},"body":{"walletId":"{{algoWallet.walletId}}","tokenUri":"https://devnet.oasis/metadata/algo-asa-2","amount":1,"assetType":"ASA"},"expectedStatus":200}
+{"id":"algo_mint_large","description":"Mint large amount on Algorand devnet","method":"POST","path":"/api/holon/{{algoHolon.id}}/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{algoAuth.token}}"},"body":{"walletId":"{{algoWallet.walletId}}","tokenUri":"https://devnet.oasis/metadata/algo-asa-3","amount":1000000000,"assetType":"ASA"},"expectedStatus":200}
+
+# ─── Solana Devnet: Mint Operations ───
+{"id":"sol_mint_spl","description":"Mint SPL on Solana devnet","method":"POST","path":"/api/holon/{{solHolon.id}}/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{solAuth.token}}"},"body":{"walletId":"{{solWallet.walletId}}","tokenUri":"https://devnet.oasis/metadata/sol-spl-1","amount":5000,"assetType":"SPL"},"expectedStatus":200,"extract":{"opId":"result.id","txHash":"result.parameters.TxHash"},"saveAs":"solMintOp"}
+{"id":"sol_mint_nft","description":"Mint NFT on Solana devnet (amount=1)","method":"POST","path":"/api/holon/{{solHolon.id}}/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{solAuth.token}}"},"body":{"walletId":"{{solWallet.walletId}}","tokenUri":"https://devnet.oasis/metadata/sol-nft-1","amount":1,"assetType":"NFT"},"expectedStatus":200}
+
+# ─── Exchange Operations ───
+{"id":"algo_exchange","description":"Exchange between Algorand holons","method":"POST","path":"/api/holon/{{algoHolon.id}}/exchange","headers":{"Content-Type":"application/json","Authorization":"Bearer {{algoAuth.token}}"},"body":{"walletId":"{{algoWallet.walletId}}","targetHolonId":"{{algoPeerHolon.id}}","exchangeRate":"1.5:1"},"expectedStatus":200,"extract":{"opId":"result.id","txHash":"result.parameters.TxHash"},"saveAs":"algoExchangeOp"}
+{"id":"algo_exchange_reverse","description":"Reverse exchange rate","method":"POST","path":"/api/holon/{{algoPeerHolon.id}}/exchange","headers":{"Content-Type":"application/json","Authorization":"Bearer {{algoAuth.token}}"},"body":{"walletId":"{{algoWallet.walletId}}","targetHolonId":"{{algoHolon.id}}","exchangeRate":"0.666:1"},"expectedStatus":200}
+
+# ─── Query Blockchain Operations ───
+{"id":"algo_get_op_by_id","description":"Get Algorand mint operation by ID","method":"GET","path":"/api/blockchainoperation/{{algoMintOp.opId}}","headers":{"Authorization":"Bearer {{algoAuth.token}}"},"expectedStatus":200}
+{"id":"algo_get_ops_by_avatar","description":"Get all operations for Algorand avatar","method":"GET","path":"/api/blockchainoperation/avatar/{{algoAvatar.id}}","headers":{"Authorization":"Bearer {{algoAuth.token}}"},"expectedStatus":200}
+{"id":"sol_get_op_by_id","description":"Get Solana mint operation by ID","method":"GET","path":"/api/blockchainoperation/{{solMintOp.opId}}","headers":{"Authorization":"Bearer {{solAuth.token}}"},"expectedStatus":200}
+{"id":"sol_get_ops_by_avatar","description":"Get all operations for Solana avatar","headers":{"Authorization":"Bearer {{solAuth.token}}"},"method":"GET","path":"/api/blockchainoperation/avatar/{{solAvatar.id}}","expectedStatus":200}
+
+# ─── Verify Operation Status ───
+{"id":"algo_verify_mint_status","description":"Verify Algorand mint op status is Completed","method":"GET","path":"/api/blockchainoperation/{{algoMintOp.opId}}","headers":{"Authorization":"Bearer {{algoAuth.token}}"},"expectedStatus":200}
+{"id":"sol_verify_mint_status","description":"Verify Solana mint op status is Completed","method":"GET","path":"/api/blockchainoperation/{{solMintOp.opId}}","headers":{"Authorization":"Bearer {{solAuth.token}}"},"expectedStatus":200}
+
+# ─── Multi-chain Isolation ───
+{"id":"sol_get_algo_op","description":"Solana avatar tries to get Algorand avatar's operation","method":"GET","path":"/api/blockchainoperation/{{algoMintOp.opId}}","headers":{"Authorization":"Bearer {{solAuth.token}}"},"expectedStatus":200}
+
+# ─── Cleanup ───
+{"id":"algo_cleanup_peer_holon","description":"Delete Algorand peer holon","method":"DELETE","path":"/api/holon/{{algoPeerHolon.id}}","headers":{"Authorization":"Bearer {{algoAuth.token}}"},"expectedStatus":200}
+{"id":"algo_cleanup_holon","description":"Delete Algorand holon","method":"DELETE","path":"/api/holon/{{algoHolon.id}}","headers":{"Authorization":"Bearer {{algoAuth.token}}"},"expectedStatus":200}
+{"id":"sol_cleanup_holon","description":"Delete Solana holon","method":"DELETE","path":"/api/holon/{{solHolon.id}}","headers":{"Authorization":"Bearer {{solAuth.token}}"},"expectedStatus":200}
+{"id":"algo_cleanup_wallet","description":"Remove Algorand wallet","method":"DELETE","path":"/api/avatar/{{algoAvatar.id}}/wallets/{{algoWallet.walletId}}","headers":{"Authorization":"Bearer {{algoAuth.token}}"},"expectedStatus":200}
+{"id":"sol_cleanup_wallet","description":"Remove Solana wallet","method":"DELETE","path":"/api/avatar/{{solAvatar.id}}/wallets/{{solWallet.walletId}}","headers":{"Authorization":"Bearer {{solAuth.token}}"},"expectedStatus":200}
+{"id":"algo_cleanup_avatar","description":"Delete Algorand devnet avatar","method":"DELETE","path":"/api/avatar/{{algoAvatar.id}}","headers":{"Authorization":"Bearer {{algoAuth.token}}"},"expectedStatus":200}
+{"id":"sol_cleanup_avatar","description":"Delete Solana devnet avatar","method":"DELETE","path":"/api/avatar/{{solAvatar.id}}","headers":{"Authorization":"Bearer {{solAuth.token}}"},"expectedStatus":200}

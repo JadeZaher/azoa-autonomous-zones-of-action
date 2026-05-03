@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "RLp5dpbSe5VMvkP5rJcARp8FbtDt5PtSxrSoyj4vcWM=",
+  "Source": "OASIS.WebAPI",
+  "BasePath": "_content/OASIS.WebAPI",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}

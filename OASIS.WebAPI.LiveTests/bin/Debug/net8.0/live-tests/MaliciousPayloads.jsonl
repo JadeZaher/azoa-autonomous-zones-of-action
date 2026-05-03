@@ -1,0 +1,201 @@
+# ═══════════════════════════════════════════════════════════════
+# Malicious / Fuzz Payloads — Security & resilience stress tests
+# SQL injection, XSS, oversized data, invalid types, null fields,
+# special chars, path traversal, and auth bypass attempts.
+# Each section seeds its own avatar for parallel-safe execution.
+# ═══════════════════════════════════════════════════════════════
+
+# ─── AVATAR MALICIOUS PAYLOADS ─────────────────────────────────
+{"id":"mal_avatar_seed","description":"Seed avatar for malicious tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"maltester","email":"mal@test.oasis","password":"TestPass123!","firstName":"Mal","lastName":"icious"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"malAvatar"}
+{"id":"mal_avatar_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"mal@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"malAuth"}
+
+# SQL Injection attempts
+{"id":"mal_sql_username","description":"SQLi in username field","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"'; DROP TABLE Avatars; --","email":"sqli1@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_sql_email","description":"SQLi in email field","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"sqliuser","email":"' OR '1'='1' --@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_sql_login_email","description":"SQLi in login email","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"' OR '1'='1","password":"TestPass123!"},"expectedStatus":401}
+{"id":"mal_sql_login_pass","description":"SQLi in login password","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"mal@test.oasis","password":"' OR '1'='1"},"expectedStatus":401}
+
+# XSS attempts
+{"id":"mal_xss_username","description":"XSS in username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"<script>alert('xss')</script>","email":"xss1@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_xss_firstname","description":"XSS in firstName","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"xssuser","email":"xss2@test.oasis","password":"TestPass123!","firstName":"<img src=x onerror=alert(1)>"},"expectedStatus":400}
+{"id":"mal_xss_title","description":"XSS in title field","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"xsstitle","email":"xss3@test.oasis","password":"TestPass123!","title":"javascript:alert('xss')"},"expectedStatus":400}
+
+# Oversized data
+{"id":"mal_oversized_username","description":"Extremely long username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","email":"biguser@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_oversized_email","description":"Extremely long email","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"bigemail","email":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# Special / control characters
+{"id":"mal_special_chars_username","description":"Username with special chars","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"user!@#$%^&*()_+-=[]{}|;':\",./<>?","email":"special@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_unicode_username","description":"Username with unicode/emojis","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"user👾🔥💥🚀","email":"unicode@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_null_bytes","description":"Username with null bytes","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"user\u0000admin","email":"nullbyte@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# Invalid types
+{"id":"mal_type_email_as_object","description":"Email field sent as object","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"typeuser","email":{"addr":"bad@test.oasis"},"password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_type_password_as_array","description":"Password field sent as array","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"typeuser2","email":"type2@test.oasis","password":["pass1","pass2"]},"expectedStatus":400}
+{"id":"mal_type_username_as_number","description":"Username field sent as number","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":12345,"email":"type3@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# Null fields where required
+{"id":"mal_null_username","description":"Null username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":null,"email":"nulluser@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_null_email","description":"Null email","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"nullemail","email":null,"password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_null_password","description":"Null password","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"nullpass","email":"nullpass@test.oasis","password":null},"expectedStatus":400}
+
+# Auth bypass attempts
+{"id":"mal_auth_no_bearer","description":"Auth header without Bearer prefix","method":"GET","path":"/api/avatar/{{malAvatar.avatarId}}","headers":{"Authorization":"{{malAuth.token}}"},"expectedStatus":401}
+{"id":"mal_auth_expired_format","description":"Auth with expired-looking JWT structure","method":"GET","path":"/api/avatar/{{malAvatar.avatarId}}","headers":{"Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"},"expectedStatus":401}
+{"id":"mal_auth_empty_token","description":"Auth with empty bearer token","method":"GET","path":"/api/avatar/{{malAvatar.avatarId}}","headers":{"Authorization":"Bearer "},"expectedStatus":401}
+
+# Path traversal / IDOR
+{"id":"mal_path_traversal","description":"Path traversal in avatar ID","method":"GET","path":"/api/avatar/../avatar/{{malAvatar.avatarId}}","headers":{"Authorization":"Bearer {{malAuth.token}}"},"expectedStatus":404}
+{"id":"mal_guid_zero","description":"Get avatar with zeroed GUID","method":"GET","path":"/api/avatar/00000000-0000-0000-0000-000000000000","headers":{"Authorization":"Bearer {{malAuth.token}}"},"expectedStatus":404}
+
+# Update with malicious payloads
+{"id":"mal_update_xss","description":"Update avatar with XSS payload","method":"PUT","path":"/api/avatar/{{malAvatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malAuth.token}}"},"body":{"firstName":"<svg/onload=alert(1)>"},"expectedStatus":400}
+{"id":"mal_update_sqli","description":"Update avatar with SQLi payload","method":"PUT","path":"/api/avatar/{{malAvatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malAuth.token}}"},"body":{"title":"'; DELETE FROM Avatars WHERE '1'='1"},"expectedStatus":400}
+
+# Wallet malicious payloads
+{"id":"mal_wallet_xss_address","description":"Add wallet with XSS in address","method":"POST","path":"/api/avatar/{{malAvatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malAuth.token}}"},"body":{"chainType":"Algorand","address":"<script>alert(1)</script>","label":"XSSWallet"},"expectedStatus":400}
+{"id":"mal_wallet_sqli_label","description":"Add wallet with SQLi in label","method":"POST","path":"/api/avatar/{{malAvatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malAuth.token}}"},"body":{"chainType":"Solana","address":"SOLADDR123","label":"'; DROP TABLE Wallets; --"},"expectedStatus":400}
+
+# Cleanup
+{"id":"mal_avatar_cleanup","description":"Delete malicious test avatar","method":"DELETE","path":"/api/avatar/{{malAvatar.avatarId}}","headers":{"Authorization":"Bearer {{malAuth.token}}"},"expectedStatus":200}
+
+
+# ─── HOLON MALICIOUS PAYLOADS ──────────────────────────────────
+{"id":"mal_holon_seed","description":"Seed avatar for malicious holon tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"malholon","email":"malholon@test.oasis","password":"TestPass123!","firstName":"Mal","lastName":"Holon"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"malHAvatar"}
+{"id":"mal_holon_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"malholon@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"malHAuth"}
+
+# SQL Injection in holon fields
+{"id":"mal_holon_sql_name","description":"SQLi in holon name","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"'; DROP TABLE Holons; --","description":"SQLi test","providerName":"InMemory"},"expectedStatus":400}
+{"id":"mal_holon_sql_desc","description":"SQLi in holon description","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"SQLiDesc","description":"' UNION SELECT * FROM Avatars --","providerName":"InMemory"},"expectedStatus":400}
+
+# XSS in holon fields
+{"id":"mal_holon_xss_name","description":"XSS in holon name","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"<script>alert('holon')</script>","description":"XSS test","providerName":"InMemory"},"expectedStatus":400}
+{"id":"mal_holon_xss_metadata","description":"XSS in holon metadata values","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"XSSMeta","description":"XSS in metadata","providerName":"InMemory","metadata":{"key":"<img src=x onerror=alert(1)>"}},"expectedStatus":400}
+
+# Oversized holon data
+{"id":"mal_holon_oversized_name","description":"Holon name exceeding reasonable length","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","description":"Oversized name test","providerName":"InMemory"},"expectedStatus":400}
+{"id":"mal_holon_oversized_metadata","description":"Holon with oversized metadata object","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"BigMeta","description":"Oversized metadata","providerName":"InMemory","metadata":{"k1":"v1","k2":"v2","k3":"v3","k4":"v4","k5":"v5","k6":"v6","k7":"v7","k8":"v8","k9":"v9","k10":"v10","k11":"v11","k12":"v12","k13":"v13","k14":"v14","k15":"v15","k16":"v16","k17":"v17","k18":"v18","k19":"v19","k20":"v20","k21":"v21","k22":"v22","k23":"v23","k24":"v24","k25":"v25","k26":"v26","k27":"v27","k28":"v28","k29":"v29","k30":"v30"}},"expectedStatus":400}
+
+# Invalid types
+{"id":"mal_holon_type_name_object","description":"Holon name as object","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":{"bad":"type"},"description":"Type test","providerName":"InMemory"},"expectedStatus":400}
+{"id":"mal_holon_type_peer_ids_string","description":"peerHolonIds as string instead of array","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"PeerType","description":"Bad peer type","providerName":"InMemory","peerHolonIds":"not-an-array"},"expectedStatus":400}
+{"id":"mal_holon_type_metadata_array","description":"Metadata as array instead of object","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"MetaType","description":"Bad metadata type","providerName":"InMemory","metadata":["a","b"]},"expectedStatus":400}
+
+# Null required fields
+{"id":"mal_holon_null_name","description":"Holon with null name","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":null,"description":"Null name","providerName":"InMemory"},"expectedStatus":400}
+{"id":"mal_holon_null_provider","description":"Holon with null providerName","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"NullProvider","description":"Null provider","providerName":null},"expectedStatus":400}
+
+# Interact malicious payloads
+{"id":"mal_holon_interact_sqli","description":"Interact with SQLi in metadata","method":"POST","path":"/api/holon/88888888-8888-8888-8888-888888888888/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"setMetadata":{"inject":"'; DROP TABLE Holons; --"}},"expectedStatus":404}
+{"id":"mal_holon_interact_xss","description":"Interact with XSS in metadata","method":"POST","path":"/api/holon/88888888-8888-8888-8888-888888888888/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"setMetadata":{"xss":"<body onload=alert(1)>"}},"expectedStatus":404}
+
+# Cleanup
+{"id":"mal_holon_cleanup_avatar","description":"Delete malicious holon avatar","method":"DELETE","path":"/api/avatar/{{malHAvatar.avatarId}}","headers":{"Authorization":"Bearer {{malHAuth.token}}"},"expectedStatus":200}
+
+
+# ─── STAR ODK MALICIOUS PAYLOADS ───────────────────────────────
+{"id":"mal_star_seed","description":"Seed avatar for malicious STAR tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"malstar","email":"malstar@test.oasis","password":"TestPass123!","firstName":"Mal","lastName":"Star"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"malSAvatar"}
+{"id":"mal_star_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"malstar@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"malSAuth"}
+
+# SQLi / XSS in ODK fields
+{"id":"mal_star_sql_name","description":"SQLi in STAR ODK name","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malSAuth.token}}"},"body":{"name":"'; DROP TABLE STARODKs; --","description":"SQLi","avatarId":"{{malSAvatar.avatarId}}"},"expectedStatus":400}
+{"id":"mal_star_xss_desc","description":"XSS in STAR ODK description","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malSAuth.token}}"},"body":{"name":"XSSODK","description":"<script>alert('odk')</script>","avatarId":"{{malSAvatar.avatarId}}"},"expectedStatus":400}
+{"id":"mal_star_xss_pubkey","description":"XSS in STAR ODK publicKey","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malSAuth.token}}"},"body":{"name":"XSSKey","description":"XSS key","publicKey":"<iframe src='evil.com'>","avatarId":"{{malSAvatar.avatarId}}"},"expectedStatus":400}
+
+# Invalid types
+{"id":"mal_star_type_avatarId_object","description":"avatarId as object","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malSAuth.token}}"},"body":{"name":"BadAvatarType","description":"Type test","avatarId":{"id":"bad"}},"expectedStatus":400}
+{"id":"mal_star_type_name_array","description":"name as array","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malSAuth.token}}"},"body":{"name":["a","b"],"description":"Type test"},"expectedStatus":400}
+
+# Generate with malicious config
+{"id":"mal_star_gen_xss_config","description":"Generate dApp with XSS in config values","method":"POST","path":"/api/starodk/99999999-9999-9999-9999-999999999999/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malSAuth.token}}"},"body":{"targetChain":"Algorand","boundHolonIds":[],"config":{"theme":"<script>alert(1)</script>","evil":"'; DROP TABLE STARODKs; --"}},"expectedStatus":404}
+
+# Cleanup
+{"id":"mal_star_cleanup_avatar","description":"Delete malicious STAR avatar","method":"DELETE","path":"/api/avatar/{{malSAvatar.avatarId}}","headers":{"Authorization":"Bearer {{malSAuth.token}}"},"expectedStatus":200}
+
+
+# ─── BLOCKCHAIN OPERATION MALICIOUS PAYLOADS ───────────────────
+{"id":"mal_bc_seed","description":"Seed avatar for malicious blockchain tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"malbc","email":"malbc@test.oasis","password":"TestPass123!","firstName":"Mal","lastName":"BC"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"malBAvatar"}
+{"id":"mal_bc_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"malbc@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"malBAuth"}
+
+# Path traversal / IDOR on avatar ID
+{"id":"mal_bc_by_avatar_sqli","description":"SQLi in avatarId path param for blockchain ops","method":"GET","path":"/api/blockchainoperation/avatar/' OR '1'='1","headers":{"Authorization":"Bearer {{malBAuth.token}}"},"expectedStatus":404}
+{"id":"mal_bc_get_sqli","description":"SQLi in blockchain operation ID","method":"GET","path":"/api/blockchainoperation/' UNION SELECT * FROM BlockchainOperations --","headers":{"Authorization":"Bearer {{malBAuth.token}}"},"expectedStatus":404}
+
+# NoSQL injection attempts
+{"id":"mal_nosql_username","description":"NoSQLi in username ($ne operator)","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":{"$ne":null},"email":"nosql1@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_nosql_email","description":"NoSQLi in email ($gt operator)","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"nosqluser","email":{"$gt":""},"password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_nosql_login","description":"NoSQLi in login body","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":{"$ne":null},"password":{"$ne":null}},"expectedStatus":400}
+
+# Command injection attempts
+{"id":"mal_cmd_username","description":"Command injection in username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"; cat /etc/passwd;","email":"cmd1@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_cmd_email","description":"Command injection in email","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"cmduser","email":"$(whoami)@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_cmd_backtick","description":"Backtick command injection","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"`rm -rf /`","email":"cmd2@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# LDAP injection attempts
+{"id":"mal_ldap_username","description":"LDAP injection in username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"*)(uid=*))(&(uid=*","email":"ldap1@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_ldap_email","description":"LDAP injection in email","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"ldapuser","email":"*)(&(objectClass=*\")@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# Mass assignment / extra fields
+{"id":"mal_mass_assignment","description":"Register with extra unauthorized fields","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"massassign","email":"mass@test.oasis","password":"TestPass123!","isAdmin":true,"role":"admin","id":"00000000-0000-0000-0000-000000000000","createdDate":"2100-01-01T00:00:00Z"},"expectedStatus":400}
+{"id":"mal_mass_holon","description":"Create holon with extra fields","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"MassHolon","description":"Mass assignment test","providerName":"InMemory","isDeleted":false,"internalId":"hack","ownerId":"{{malHAvatar.avatarId}}"},"expectedStatus":400}
+
+# Deeply nested JSON / JSON bomb attempts
+{"id":"mal_deep_nest","description":"Register with deeply nested body","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"deep","email":"deep@test.oasis","password":"TestPass123!","a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":{"j":"deep"}}}}}}}}}},"expectedStatus":400}
+{"id":"mal_json_bomb_meta","description":"Holon with large flat metadata","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"name":"BombMeta","description":"JSON bomb","providerName":"InMemory","metadata":{"k01":"v","k02":"v","k03":"v","k04":"v","k05":"v","k06":"v","k07":"v","k08":"v","k09":"v","k10":"v","k11":"v","k12":"v","k13":"v","k14":"v","k15":"v","k16":"v","k17":"v","k18":"v","k19":"v","k20":"v","k21":"v","k22":"v","k23":"v","k24":"v","k25":"v","k26":"v","k27":"v","k28":"v","k29":"v","k30":"v","k31":"v","k32":"v","k33":"v","k34":"v","k35":"v","k36":"v","k37":"v","k38":"v","k39":"v","k40":"v","k41":"v","k42":"v","k43":"v","k44":"v","k45":"v","k46":"v","k47":"v","k48":"v","k49":"v","k50":"v"}},"expectedStatus":400}
+
+# SSRF / URL injection in URI fields
+{"id":"mal_ssrf_tokenuri","description":"Mint with SSRF tokenUri","method":"POST","path":"/api/holon/88888888-8888-8888-8888-888888888888/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"walletId":"{{malHAuth.token}}","tokenUri":"http://169.254.169.254/latest/meta-data/","amount":1,"assetType":"NFT"},"expectedStatus":404}
+{"id":"mal_ssrf_localhost","description":"Mint with localhost tokenUri","method":"POST","path":"/api/holon/88888888-8888-8888-8888-888888888888/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"walletId":"{{malHAuth.token}}","tokenUri":"http://localhost:22/admin","amount":1,"assetType":"NFT"},"expectedStatus":404}
+{"id":"mal_ssrf_file","description":"Mint with file:// tokenUri","method":"POST","path":"/api/holon/88888888-8888-8888-8888-888888888888/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"walletId":"{{malHAuth.token}}","tokenUri":"file:///etc/passwd","amount":1,"assetType":"NFT"},"expectedStatus":404}
+
+# HTTP Header / CRLF injection attempts
+{"id":"mal_crlf_email","description":"CRLF injection in email","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"crlf","email":"crlf@test.oasis\r\nX-Injected: evil","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_header_inject","description":"Header injection via title","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"hdrinj","email":"hdr@test.oasis","password":"TestPass123!","title":"\r\nSet-Cookie: hacked=true"},"expectedStatus":400}
+
+# Format string attacks
+{"id":"mal_fmt_string_user","description":"Format string in username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"%s%s%s%s%s%s%s%s","email":"fmt@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_fmt_string_email","description":"Format string in email","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"fmtuser","email":"%n%n%n%n@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# Log injection attempts
+{"id":"mal_log_inject","description":"Newline log injection in username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":" legitUser\n[ERROR] SYSTEM BREACH DETECTED\n","email":"loginj@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# Prototype pollution attempts
+{"id":"mal_proto_pollute","description":"Prototype pollution in body","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"proto","email":"proto@test.oasis","password":"TestPass123!","__proto__":{"isAdmin":true}},"expectedStatus":400}
+{"id":"mal_proto_constructor","description":"Constructor pollution in body","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"proto2","email":"proto2@test.oasis","password":"TestPass123!","constructor":{"prototype":{"role":"admin"}}},"expectedStatus":400}
+
+# Negative / invalid numeric values
+{"id":"mal_negative_amount","description":"Mint with negative amount","method":"POST","path":"/api/holon/88888888-8888-8888-8888-888888888888/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"walletId":"00000000-0000-0000-0000-000000000000","tokenUri":"ipfs://neg","amount":-999999,"assetType":"NFT"},"expectedStatus":404}
+{"id":"mal_float_amount","description":"Mint with float amount","method":"POST","path":"/api/holon/88888888-8888-8888-8888-888888888888/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"walletId":"00000000-0000-0000-0000-000000000000","tokenUri":"ipfs://float","amount":1.5,"assetType":"NFT"},"expectedStatus":404}
+{"id":"mal_max_int","description":"Mint with max int amount","method":"POST","path":"/api/holon/88888888-8888-8888-8888-888888888888/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":{"walletId":"00000000-0000-0000-0000-000000000000","tokenUri":"ipfs://maxint","amount":2147483647,"assetType":"NFT"},"expectedStatus":404}
+
+# Unicode normalization / homograph attacks
+{"id":"mal_homograph_email","description":"Homograph email using unicode","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"homograph","email":"аdmin@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_rtl_email","description":"RTL override in email","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"rtl","email":"test@oasis\u202Ehsif\u202C.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# Zero-width joiner / invisible chars
+{"id":"mal_zwj_username","description":"Username with zero-width joiners","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"user\u200D\u200C\u200Badmin","email":"zwj@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# Path traversal in string fields
+{"id":"mal_path_wallet","description":"Path traversal in wallet address","method":"POST","path":"/api/avatar/{{malAvatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malAuth.token}}"},"body":{"chainType":"Algorand","address":"../../../etc/passwd","label":"PathWallet"},"expectedStatus":400}
+{"id":"mal_path_chaintype","description":"Path traversal in chainType","method":"POST","path":"/api/avatar/{{malAvatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malAuth.token}}"},"body":{"chainType":"../../etc/shadow","address":"ADDR123","label":"PathChain"},"expectedStatus":400}
+
+# Template injection attempts
+{"id":"mal_template_username","description":"Template injection in username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{7*7}}","email":"ssti1@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_template_email","description":"Template injection in email","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"sstiuser","email":"${7*7}@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_template_jinja","description":"Jinja-like template injection","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{% import os %}","email":"ssti2@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+
+# XML / XXE-like payloads
+{"id":"mal_xml_username","description":"XML entity in username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"<!ENTITY xxe SYSTEM \"file:///etc/passwd\">","email":"xxe1@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_xml_json_body","description":"Send XML instead of JSON","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":"<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><foo>&xxe;</foo>","expectedStatus":400}
+
+# Array where object expected
+{"id":"mal_array_body_register","description":"Send array instead of object for register","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":["username","email","password"],"expectedStatus":400}
+{"id":"mal_array_body_login","description":"Send array instead of object for login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":["email","password"],"expectedStatus":400}
+{"id":"mal_string_body_holon","description":"Send string instead of object for holon create","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malHAuth.token}}"},"body":"just-a-string","expectedStatus":400}
+
+# Boolean coercion attacks
+{"id":"mal_bool_username","description":"Boolean as username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":true,"email":"bool@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"mal_bool_password","description":"Boolean as password","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"booluser","email":"bool2@test.oasis","password":false},"expectedStatus":400}
+
+# Cleanup
+{"id":"mal_bc_cleanup_avatar","description":"Delete malicious blockchain avatar","method":"DELETE","path":"/api/avatar/{{malBAvatar.avatarId}}","headers":{"Authorization":"Bearer {{malBAuth.token}}"},"expectedStatus":200}

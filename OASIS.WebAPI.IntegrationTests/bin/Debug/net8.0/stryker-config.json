@@ -1,0 +1,22 @@
+{
+  "stryker-config": {
+    "project": "OASIS.WebAPI.csproj",
+    "test-projects": [
+      "OASIS.WebAPI.Tests/OASIS.WebAPI.Tests.csproj"
+    ],
+    "reporters": ["html", "progress", "cleartext"],
+    "mutation-level": "Standard",
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": 50
+    },
+    "mutate": [
+      "!**/Migrations/**",
+      "!**/Program.cs",
+      "!**/Models/**"
+    ],
+    "coverage-analysis": "perTest",
+    "disable-bail": false
+  }
+}

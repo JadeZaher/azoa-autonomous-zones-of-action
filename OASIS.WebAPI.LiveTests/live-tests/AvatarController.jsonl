@@ -1,0 +1,17 @@
+# ═══════════════════════════════════════════════════════════════
+# AvatarController live API payloads
+# Lines are JSON test cases executed sequentially within this suite.
+# Use {{varName}} for context substitution (values extracted from prior responses).
+# ═══════════════════════════════════════════════════════════════
+
+{"id":"register_avatar","description":"Register a new avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"livetester","email":"live@test.oasis","password":"TestPass123!","title":"Tester","firstName":"Live","lastName":"Test"},"expectedStatus":200,"extract":{"avatarId":"result.id","email":"result.email"},"saveAs":"avatar1"}
+{"id":"register_duplicate","description":"Register duplicate email should fail","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"livetester2","email":"live@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"login_avatar","description":"Login with registered credentials","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"live@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"auth1"}
+{"id":"get_avatar","description":"Get avatar by extracted ID","method":"GET","path":"/api/avatar/{{avatar1.avatarId}}","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"get_all_avatars","description":"List all avatars","method":"GET","path":"/api/avatar","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"update_avatar","description":"Update avatar first name","method":"PUT","path":"/api/avatar/{{avatar1.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{auth1.token}}"},"body":{"firstName":"UpdatedLive"},"expectedStatus":200}
+{"id":"add_wallet","description":"Add a wallet to the avatar","method":"POST","path":"/api/avatar/{{avatar1.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{auth1.token}}"},"body":{"chainType":"Algorand","address":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ","label":"LiveTestWallet","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"wallet1"}
+{"id":"get_wallets","description":"Get wallets for the avatar","method":"GET","path":"/api/avatar/{{avatar1.avatarId}}/wallets","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"remove_wallet","description":"Remove the wallet","method":"DELETE","path":"/api/avatar/{{avatar1.avatarId}}/wallets/{{wallet1.walletId}}","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"delete_avatar","description":"Delete the avatar","method":"DELETE","path":"/api/avatar/{{avatar1.avatarId}}","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"get_deleted_avatar","description":"Get deleted avatar should 404","method":"GET","path":"/api/avatar/{{avatar1.avatarId}}","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":404}

@@ -1,0 +1,22 @@
+# ═══════════════════════════════════════════════════════════════
+# BlockchainOperationController Comprehensive QA
+# Covers: query by ID, query by avatar, empty result sets, auth
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Seed Avatar with Wallet ───
+{"id":"seed_avatar","description":"Register avatar for blockchain operation tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"blockchainqa","email":"blockchain@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"bcAvatar"}
+{"id":"login_avatar","description":"Login as blockchain test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"blockchain@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"bcAuth"}
+{"id":"add_wallet","description":"Add Algorand wallet","method":"POST","path":"/api/avatar/{{bcAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bcAuth.token}}"},"body":{"chainType":"Algorand","address":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ","label":"BlockchainQA"},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"bcWallet"}
+
+# ─── Query Operations (Empty Set) ───
+{"id":"get_ops_by_avatar_empty","description":"Get operations for avatar with no operations","method":"GET","path":"/api/blockchainoperation/avatar/{{bcAvatar.id}}","headers":{"Authorization":"Bearer {{bcAuth.token}}"},"expectedStatus":200}
+{"id":"get_op_by_id_nonexistent","description":"Get non-existent operation by ID","method":"GET","path":"/api/blockchainoperation/00000000-0000-0000-0000-000000000000","headers":{"Authorization":"Bearer {{bcAuth.token}}"},"expectedStatus":404}
+
+# ─── Auth Tests ───
+{"id":"get_op_unauthorized","description":"Get operation without auth","method":"GET","path":"/api/blockchainoperation/00000000-0000-0000-0000-000000000000","headers":{},"expectedStatus":401}
+{"id":"get_ops_by_avatar_unauthorized","description":"Get operations by avatar without auth","method":"GET","path":"/api/blockchainoperation/avatar/{{bcAvatar.id}}","headers":{},"expectedStatus":401}
+{"id":"get_ops_wrong_avatar_id","description":"Get operations with malformed avatar ID in path","method":"GET","path":"/api/blockchainoperation/avatar/not-a-guid","headers":{"Authorization":"Bearer {{bcAuth.token}}"},"expectedStatus":404}
+
+# ─── Cleanup ───
+{"id":"cleanup_wallet","description":"Remove seeded wallet","method":"DELETE","path":"/api/avatar/{{bcAvatar.id}}/wallets/{{bcWallet.walletId}}","headers":{"Authorization":"Bearer {{bcAuth.token}}"},"expectedStatus":200}
+{"id":"cleanup_avatar","description":"Delete seeded avatar","method":"DELETE","path":"/api/avatar/{{bcAvatar.id}}","headers":{"Authorization":"Bearer {{bcAuth.token}}"},"expectedStatus":200}
