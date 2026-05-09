@@ -10,10 +10,12 @@ namespace OASIS.WebAPI.Managers;
 public class WalletManager : IWalletManager
 {
     private readonly ProviderContext _providerContext;
+    private readonly IBlockchainProviderFactory _chainFactory;
 
-    public WalletManager(ProviderContext providerContext)
+    public WalletManager(ProviderContext providerContext, IBlockchainProviderFactory chainFactory)
     {
         _providerContext = providerContext;
+        _chainFactory = chainFactory;
     }
 
     public async Task<OASISResult<IWallet>> GetAsync(Guid id, OASISRequest? request = null)
@@ -163,12 +165,25 @@ public class WalletManager : IWalletManager
             _ => wallet.ChainType.ToUpperInvariant()
         };
 
+        decimal balance = 0;
+        try
+        {
+            var chainProvider = _chainFactory.GetProvider(wallet.ChainType, ChainNetwork.Devnet);
+            if (chainProvider != null)
+            {
+                var balanceResult = await chainProvider.GetBalanceAsync(wallet.Address);
+                if (!balanceResult.IsError && balanceResult.Result != null)
+                    decimal.TryParse(balanceResult.Result, out balance);
+            }
+        }
+        catch { /* Fall back to 0 if blockchain unavailable */ }
+
         var portfolio = new PortfolioResult
         {
             WalletId = wallet.Id,
             ChainType = wallet.ChainType,
             Address = wallet.Address,
-            Balance = 0, // stub until live blockchain integration
+            Balance = balance,
             Symbol = symbol,
             Nfts = nfts,
             ComputedAt = DateTime.UtcNow

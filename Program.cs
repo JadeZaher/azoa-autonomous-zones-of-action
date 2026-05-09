@@ -94,6 +94,7 @@ builder.Services.AddScoped<IBlockchainOperationManager, BlockchainOperationManag
 builder.Services.AddScoped<ISTARManager, STARManager>();
 builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
+builder.Services.AddScoped<IAvatarNFTService, AvatarNFTService>();
 
 var connectionString = builder.Configuration.GetConnectionString("OASISDatabase")
     ?? throw new InvalidOperationException("Connection string 'OASISDatabase' not found.");

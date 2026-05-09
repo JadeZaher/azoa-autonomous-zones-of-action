@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("OASIS.WebAPI.LiveTests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b4871e73f1f5d92831c12d74c7a616e38e56d714")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f8f1f22bd26e082d0fd0fb7760a5e983fce877f4")]
 [assembly: System.Reflection.AssemblyProductAttribute("OASIS.WebAPI.LiveTests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("OASIS.WebAPI.LiveTests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

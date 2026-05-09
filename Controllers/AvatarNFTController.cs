@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OASIS.WebAPI.Interfaces.Managers;
 using OASIS.WebAPI.Models.Requests;
@@ -7,6 +8,7 @@ namespace OASIS.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class AvatarNFTController : ControllerBase
 {
     private readonly IAvatarNFTService _avatarNFTService;

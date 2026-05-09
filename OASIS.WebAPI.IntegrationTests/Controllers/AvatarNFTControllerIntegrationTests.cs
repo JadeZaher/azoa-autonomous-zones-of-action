@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OASIS.WebAPI.Data;
+using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Models;
 using Xunit;
 using System.Net.Http;

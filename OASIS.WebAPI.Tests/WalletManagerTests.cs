@@ -23,7 +23,8 @@ public class WalletManagerTests
 
         var config = new ConfigurationBuilder().Build();
         _providerContext = new ProviderContext(new[] { _provider.Object }, config, null);
-        _manager = new WalletManager(_providerContext);
+        var chainFactory = new Mock<IBlockchainProviderFactory>();
+        _manager = new WalletManager(_providerContext, chainFactory.Object);
     }
 
     [Fact]
