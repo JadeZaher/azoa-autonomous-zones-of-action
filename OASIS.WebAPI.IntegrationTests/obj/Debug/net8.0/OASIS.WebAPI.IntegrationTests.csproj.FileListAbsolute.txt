@@ -475,3 +475,4 @@ C:\Users\atooz\Programming\Projects\oasis-sleek\OASIS.WebAPI.IntegrationTests\bi
 C:\Users\atooz\Programming\Projects\oasis-sleek\OASIS.WebAPI.IntegrationTests\bin\Debug\net8.0\FluentValidation.dll
 C:\Users\atooz\Programming\Projects\oasis-sleek\OASIS.WebAPI.IntegrationTests\bin\Debug\net8.0\FluentValidation.AspNetCore.dll
 C:\Users\atooz\Programming\Projects\oasis-sleek\OASIS.WebAPI.IntegrationTests\bin\Debug\net8.0\FluentValidation.DependencyInjectionExtensions.dll
+C:\Users\atooz\Programming\Projects\oasis-sleek\OASIS.WebAPI.IntegrationTests\bin\Debug\net8.0\frontend\components.json

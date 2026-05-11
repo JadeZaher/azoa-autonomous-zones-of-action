@@ -109,14 +109,14 @@ export class HolonQueryBuilder {
 
   /** Execute the query and return results. */
   async execute(): Promise<Result<HolonResult[], SdkError>> {
-    // Build query string from non-undefined params
+    const snapshot = { ...this.params };
+    this.params = {};
+
     const qs = new URLSearchParams();
-    for (const [key, value] of Object.entries(this.params)) {
+    for (const [key, value] of Object.entries(snapshot)) {
       if (value !== undefined) qs.set(key, String(value));
     }
 
-    // Use the API client's internal request mechanism
-    // GET /api/holon?name=X&avatarId=Y&...
     return this.api.request<HolonResult[]>("GET", `/api/holon?${qs}`);
   }
 

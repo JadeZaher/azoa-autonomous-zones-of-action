@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OASIS.WebAPI.Models;
+using OASIS.WebAPI.Models.Quest;
 
 namespace OASIS.WebAPI.Data;
 
@@ -19,6 +20,17 @@ public class OASISDbContext : DbContext
     public DbSet<AvatarNFT> AvatarNFTs => Set<AvatarNFT>();
     public DbSet<HolonNFTBinding> HolonNFTBindings => Set<HolonNFTBinding>();
     public DbSet<WalletNFTBinding> WalletNFTBindings => Set<WalletNFTBinding>();
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+
+    // Quest entities
+    public DbSet<Quest> Quests => Set<Quest>();
+    public DbSet<QuestNode> QuestNodes => Set<QuestNode>();
+    public DbSet<QuestEdge> QuestEdges => Set<QuestEdge>();
+    public DbSet<QuestDependency> QuestDependencies => Set<QuestDependency>();
+    public DbSet<QuestNodeTemplate> QuestNodeTemplates => Set<QuestNodeTemplate>();
+    public DbSet<QuestTemplate> QuestTemplates => Set<QuestTemplate>();
+    public DbSet<QuestTemplateNode> QuestTemplateNodes => Set<QuestTemplateNode>();
+    public DbSet<QuestTemplateEdge> QuestTemplateEdges => Set<QuestTemplateEdge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +41,10 @@ public class OASISDbContext : DbContext
         var listGuidConverter = new ValueConverter<List<Guid>, string>(
             v => JsonSerializer.Serialize(v, JsonOptions),
             v => JsonSerializer.Deserialize<List<Guid>>(v, JsonOptions) ?? new List<Guid>());
+
+        var listStringConverter = new ValueConverter<List<string>, string>(
+            v => JsonSerializer.Serialize(v, JsonOptions),
+            v => JsonSerializer.Deserialize<List<string>>(v, JsonOptions) ?? new List<string>());
 
         modelBuilder.Entity<Avatar>(entity =>
         {
@@ -160,6 +176,106 @@ public class OASISDbContext : DbContext
             entity.Property(e => e.AccessLevel).HasMaxLength(64);
 
             entity.Property(e => e.AccessPermissions).HasConversion(dictConverter);
+        });
+
+        modelBuilder.Entity<ApiKey>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.KeyHash).IsUnique();
+            entity.HasIndex(e => e.AvatarId);
+            entity.HasIndex(e => e.KeyPrefix);
+            entity.Property(e => e.Name).HasMaxLength(128);
+            entity.Property(e => e.KeyHash).HasMaxLength(128);
+            entity.Property(e => e.KeyPrefix).HasMaxLength(16);
+            entity.Property(e => e.Scopes).HasMaxLength(512);
+
+            entity.HasOne<Avatar>()
+                  .WithMany()
+                  .HasForeignKey(e => e.AvatarId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Quest configurations
+        modelBuilder.Entity<Quest>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.AvatarId);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.TemplateId);
+            entity.HasIndex(e => e.DappSeriesId);
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(1000);
+            entity.Property(e => e.Metadata).HasConversion(dictConverter);
+        });
+
+        modelBuilder.Entity<QuestNode>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.QuestId);
+            entity.HasIndex(e => e.NodeType);
+            entity.HasIndex(e => e.State);
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Config).HasColumnType("text");
+            entity.Property(e => e.Output).HasColumnType("text");
+            entity.Property(e => e.Error).HasMaxLength(2000);
+        });
+
+        modelBuilder.Entity<QuestEdge>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.QuestId);
+            entity.HasIndex(e => new { e.SourceNodeId, e.TargetNodeId }).IsUnique();
+            entity.Property(e => e.Condition).HasColumnType("text");
+        });
+
+        modelBuilder.Entity<QuestDependency>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.QuestId);
+            entity.HasIndex(e => e.DependsOnQuestId);
+        });
+
+        modelBuilder.Entity<QuestNodeTemplate>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.IsPublic);
+            entity.HasIndex(e => e.NodeType);
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(1000);
+            entity.Property(e => e.DefaultConfig).HasColumnType("text");
+            entity.Property(e => e.ConfigSchema).HasColumnType("text");
+            entity.Property(e => e.InputSchema).HasColumnType("text");
+            entity.Property(e => e.OutputSchema).HasColumnType("text");
+            entity.Property(e => e.Tags).HasConversion(listStringConverter);
+        });
+
+        modelBuilder.Entity<QuestTemplate>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.IsPublic);
+            entity.HasIndex(e => e.AuthorAvatarId);
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(1000);
+            entity.Property(e => e.Parameters).HasColumnType("text");
+            entity.Property(e => e.Tags).HasConversion(listStringConverter);
+        });
+
+        modelBuilder.Entity<QuestTemplateNode>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TemplateId);
+            entity.HasIndex(e => e.NodeTemplateId);
+            entity.HasIndex(e => e.SlotId);
+            entity.Property(e => e.SlotId).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.ParamOverrides).HasColumnType("text");
+        });
+
+        modelBuilder.Entity<QuestTemplateEdge>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TemplateId);
+            entity.Property(e => e.SourceSlotId).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.TargetSlotId).HasMaxLength(200).IsRequired();
         });
 
         base.OnModelCreating(modelBuilder);

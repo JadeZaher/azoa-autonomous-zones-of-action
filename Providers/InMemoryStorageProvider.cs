@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Models;
+using OASIS.WebAPI.Models.Quest;
 using OASIS.WebAPI.Models.Requests;
 using OASIS.WebAPI.Models.Responses;
 
@@ -13,6 +14,9 @@ public class InMemoryStorageProvider : IOASISStorageProvider
     private readonly ConcurrentDictionary<Guid, IHolon> _holons = new();
     private readonly ConcurrentDictionary<Guid, IBlockchainOperation> _operations = new();
     private readonly ConcurrentDictionary<Guid, ISTARODK> _stars = new();
+    private readonly ConcurrentDictionary<Guid, Quest> _quests = new();
+    private readonly ConcurrentDictionary<Guid, QuestTemplate> _questTemplates = new();
+    private readonly ConcurrentDictionary<Guid, QuestNodeTemplate> _questNodeTemplates = new();
 
     public string ProviderName => "InMemory";
 
@@ -192,6 +196,85 @@ public class InMemoryStorageProvider : IOASISStorageProvider
         return Task.FromResult(new OASISResult<IEnumerable<ISTARODK>>
         {
             Result = _stars.Values.ToList(),
+            Message = "Success"
+        });
+    }
+
+    // Quest
+    public Task<OASISResult<Quest>> SaveQuestAsync(Quest quest, CancellationToken ct = default)
+    {
+        _quests[quest.Id] = quest;
+        return Task.FromResult(new OASISResult<Quest> { Result = quest, Message = "Saved." });
+    }
+
+    public Task<OASISResult<Quest>> LoadQuestAsync(Guid id, CancellationToken ct = default)
+    {
+        _quests.TryGetValue(id, out var quest);
+        return Task.FromResult(new OASISResult<Quest>
+        {
+            IsError = quest == null,
+            Message = quest == null ? "Quest not found." : "Success",
+            Result = quest
+        });
+    }
+
+    public Task<OASISResult<IEnumerable<Quest>>> LoadQuestsByAvatarAsync(Guid avatarId, CancellationToken ct = default)
+    {
+        var list = _quests.Values.Where(q => q.AvatarId == avatarId).ToList();
+        return Task.FromResult(new OASISResult<IEnumerable<Quest>> { Result = list, Message = "Success" });
+    }
+
+    public Task<OASISResult<bool>> DeleteQuestAsync(Guid id, CancellationToken ct = default)
+    {
+        var ok = _quests.TryRemove(id, out _);
+        return Task.FromResult(new OASISResult<bool> { Result = ok, Message = ok ? "Deleted." : "Not found." });
+    }
+
+    // Quest Template
+    public Task<OASISResult<QuestTemplate>> SaveQuestTemplateAsync(QuestTemplate template, CancellationToken ct = default)
+    {
+        _questTemplates[template.Id] = template;
+        return Task.FromResult(new OASISResult<QuestTemplate> { Result = template, Message = "Saved." });
+    }
+
+    public Task<OASISResult<QuestTemplate>> LoadQuestTemplateAsync(Guid id, CancellationToken ct = default)
+    {
+        _questTemplates.TryGetValue(id, out var template);
+        return Task.FromResult(new OASISResult<QuestTemplate>
+        {
+            IsError = template == null,
+            Message = template == null ? "Quest template not found." : "Success",
+            Result = template
+        });
+    }
+
+    public Task<OASISResult<IEnumerable<QuestTemplate>>> LoadAllQuestTemplatesAsync(CancellationToken ct = default)
+    {
+        return Task.FromResult(new OASISResult<IEnumerable<QuestTemplate>>
+        {
+            Result = _questTemplates.Values.ToList(),
+            Message = "Success"
+        });
+    }
+
+    public Task<OASISResult<bool>> DeleteQuestTemplateAsync(Guid id, CancellationToken ct = default)
+    {
+        var ok = _questTemplates.TryRemove(id, out _);
+        return Task.FromResult(new OASISResult<bool> { Result = ok, Message = ok ? "Deleted." : "Not found." });
+    }
+
+    // Quest Node Template
+    public Task<OASISResult<QuestNodeTemplate>> SaveQuestNodeTemplateAsync(QuestNodeTemplate template, CancellationToken ct = default)
+    {
+        _questNodeTemplates[template.Id] = template;
+        return Task.FromResult(new OASISResult<QuestNodeTemplate> { Result = template, Message = "Saved." });
+    }
+
+    public Task<OASISResult<IEnumerable<QuestNodeTemplate>>> LoadAllQuestNodeTemplatesAsync(CancellationToken ct = default)
+    {
+        return Task.FromResult(new OASISResult<IEnumerable<QuestNodeTemplate>>
+        {
+            Result = _questNodeTemplates.Values.ToList(),
             Message = "Success"
         });
     }

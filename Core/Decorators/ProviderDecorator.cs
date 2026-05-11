@@ -1,5 +1,6 @@
 using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Models;
+using OASIS.WebAPI.Models.Quest;
 using OASIS.WebAPI.Models.Requests;
 using OASIS.WebAPI.Models.Responses;
 
@@ -82,6 +83,18 @@ public abstract class ProviderDecorator : IOASISStorageProvider
 
     public virtual Task<OASISResult<IEnumerable<ISTARODK>>> LoadAllSTARODKsAsync(CancellationToken ct = default)
         => Inner.LoadAllSTARODKsAsync(ct);
+
+    // Quest methods (delegate to inner)
+    public virtual Task<OASISResult<Quest>> SaveQuestAsync(Quest quest, CancellationToken ct = default) => Inner.SaveQuestAsync(quest, ct);
+    public virtual Task<OASISResult<Quest>> LoadQuestAsync(Guid id, CancellationToken ct = default) => Inner.LoadQuestAsync(id, ct);
+    public virtual Task<OASISResult<IEnumerable<Quest>>> LoadQuestsByAvatarAsync(Guid avatarId, CancellationToken ct = default) => Inner.LoadQuestsByAvatarAsync(avatarId, ct);
+    public virtual Task<OASISResult<bool>> DeleteQuestAsync(Guid id, CancellationToken ct = default) => Inner.DeleteQuestAsync(id, ct);
+    public virtual Task<OASISResult<QuestTemplate>> SaveQuestTemplateAsync(QuestTemplate template, CancellationToken ct = default) => Inner.SaveQuestTemplateAsync(template, ct);
+    public virtual Task<OASISResult<QuestTemplate>> LoadQuestTemplateAsync(Guid id, CancellationToken ct = default) => Inner.LoadQuestTemplateAsync(id, ct);
+    public virtual Task<OASISResult<IEnumerable<QuestTemplate>>> LoadAllQuestTemplatesAsync(CancellationToken ct = default) => Inner.LoadAllQuestTemplatesAsync(ct);
+    public virtual Task<OASISResult<bool>> DeleteQuestTemplateAsync(Guid id, CancellationToken ct = default) => Inner.DeleteQuestTemplateAsync(id, ct);
+    public virtual Task<OASISResult<QuestNodeTemplate>> SaveQuestNodeTemplateAsync(QuestNodeTemplate template, CancellationToken ct = default) => Inner.SaveQuestNodeTemplateAsync(template, ct);
+    public virtual Task<OASISResult<IEnumerable<QuestNodeTemplate>>> LoadAllQuestNodeTemplatesAsync(CancellationToken ct = default) => Inner.LoadAllQuestNodeTemplatesAsync(ct);
 
     // NFT Extension methods (delegate to inner)
     public virtual Task<OASISResult<IAvatarNFT>> SaveAvatarNFTAsync(IAvatarNFT n, CancellationToken ct = default) => Inner.SaveAvatarNFTAsync(n, ct);

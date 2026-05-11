@@ -1,0 +1,84 @@
+# ─── OASIS Sleek — Full Stack Compose (Podman) ───
+#
+# Usage:
+#   podman-compose -f podman-compose.yml up --build
+#
+# Services:
+#   - postgres:    PostgreSQL 16 (port 5432)
+#   - oasis-api:   .NET 8 WebAPI (port 5000)
+#   - oasis-web:   Next.js frontend (port 3000)
+#
+# Access:
+#   Frontend:  http://localhost:3000
+#   API:       http://localhost:5000
+#   Swagger:   http://localhost:5000/swagger
+#
+
+services:
+  # ─── PostgreSQL Database ───
+  postgres:
+    image: postgres:16-alpine
+    container_name: oasis-postgres
+    environment:
+      POSTGRES_DB: oasis
+      POSTGRES_USER: oasis
+      POSTGRES_PASSWORD: oasis123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oasis -d oasis"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── .NET WebAPI ───
+  oasis-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oasis-api
+    ports:
+      - "5000:5000"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5000
+      ConnectionStrings__OASISDatabase: "Host=postgres;Port=5432;Database=oasis;Username=oasis;Password=oasis123"
+      Jwt__Key: "super-secret-key-for-testing-only-must-be-32-chars!"
+      Jwt__Issuer: "oasis-sleek"
+      Jwt__Audience: "oasis-sleek"
+      OASIS__DefaultProvider: "PostgreSQL"
+      # Blockchain RPC (testnet/devnet — safe for functional testing)
+      Blockchain__Chains__Algorand__DefaultNetwork: "testnet"
+      Blockchain__Chains__Algorand__Networks__testnet__NodeUrl: "https://testnet-algod.algonode.cloud"
+      Blockchain__Chains__Algorand__Networks__testnet__IndexerUrl: "https://testnet-idx.algonode.cloud"
+      Blockchain__Chains__Solana__DefaultNetwork: "devnet"
+      Blockchain__Chains__Solana__Networks__devnet__NodeUrl: "https://api.devnet.solana.com"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5000/swagger/index.html || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ─── Next.js Frontend ───
+  oasis-web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: oasis-web
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5000
+      NODE_ENV: production
+    depends_on:
+      oasis-api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

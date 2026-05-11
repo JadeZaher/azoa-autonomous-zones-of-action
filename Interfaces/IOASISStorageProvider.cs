@@ -1,3 +1,4 @@
+using OASIS.WebAPI.Models.Quest;
 using OASIS.WebAPI.Models.Requests;
 using OASIS.WebAPI.Models.Responses;
 
@@ -37,4 +38,20 @@ public interface IOASISStorageProvider : IOASISStorageProviderNFTExtensions
     Task<OASISResult<ISTARODK>> SaveSTARODKAsync(ISTARODK odk, CancellationToken ct = default);
     Task<OASISResult<bool>> DeleteSTARODKAsync(Guid id, CancellationToken ct = default);
     Task<OASISResult<IEnumerable<ISTARODK>>> LoadAllSTARODKsAsync(CancellationToken ct = default);
+
+    // Quest
+    Task<OASISResult<Quest>> SaveQuestAsync(Quest quest, CancellationToken ct = default);
+    Task<OASISResult<Quest>> LoadQuestAsync(Guid id, CancellationToken ct = default);
+    Task<OASISResult<IEnumerable<Quest>>> LoadQuestsByAvatarAsync(Guid avatarId, CancellationToken ct = default);
+    Task<OASISResult<bool>> DeleteQuestAsync(Guid id, CancellationToken ct = default);
+
+    // Quest Template
+    Task<OASISResult<QuestTemplate>> SaveQuestTemplateAsync(QuestTemplate template, CancellationToken ct = default);
+    Task<OASISResult<QuestTemplate>> LoadQuestTemplateAsync(Guid id, CancellationToken ct = default);
+    Task<OASISResult<IEnumerable<QuestTemplate>>> LoadAllQuestTemplatesAsync(CancellationToken ct = default);
+    Task<OASISResult<bool>> DeleteQuestTemplateAsync(Guid id, CancellationToken ct = default);
+
+    // Quest Node Template
+    Task<OASISResult<QuestNodeTemplate>> SaveQuestNodeTemplateAsync(QuestNodeTemplate template, CancellationToken ct = default);
+    Task<OASISResult<IEnumerable<QuestNodeTemplate>>> LoadAllQuestNodeTemplatesAsync(CancellationToken ct = default);
 }

@@ -13,59 +13,63 @@
 | [search-api](tracks/search-api/spec.md) | `[x]` | Unified cross-entity search with pagination, filtering, and faceted results |
 | [providers-and-cross-chain-bridge](tracks/providers-and-cross-chain-bridge/spec.md) | `[x]` | Algorand + Solana providers via REST/RPC, BlockchainProviderFactory, trusted + Wormhole cross-chain bridge |
 | [validation-mapping](tracks/validation-mapping/spec.md) | `[x]` | FluentValidation input pipeline + AutoMapper entity-DTO mapping layer |
-| [oasis-wallet-sdk](tracks/oasis-wallet-sdk_20260509/spec.md) | `[~]` | Cross-platform Node SDK (@oasis/wallet-sdk) — client-side tx signing, OASIS API client, DEX adapters |
-| [avatar-nft-service](tracks/avatar-nft-service/spec.md) | `[~]` | AvatarNFTService implementation, holon/wallet bindings, composite views, ownership verification |
-| [oasis-client](tracks/oasis-client/spec.md) | `[ ]` | Generic OasisClient for SDK — holon querying, avatar OAuth integration, app account systems |
+| [oasis-wallet-sdk](tracks/oasis-wallet-sdk_20260509/spec.md) | `[x]` | Cross-platform Node SDK (@oasis/wallet-sdk) — client-side tx signing, OASIS API client, DEX adapters |
+| [avatar-nft-service](tracks/avatar-nft-service/spec.md) | `[x]` | AvatarNFTService implementation, holon/wallet bindings, composite views, ownership verification |
+| [oasis-client](tracks/oasis-client/spec.md) | `[x]` | OasisClient facade — holon querying, avatar OAuth adapter, session management, portfolio aggregation |
+| [frontend-demo-harness](tracks/frontend-demo-harness/spec.md) | `[ ]` | shadcn/ui demo harness — full functional test coverage of every OASIS feature |
+| [quest-core](tracks/quest-core/spec.md) | `[x]` | Quest DAG domain models — Quest, QuestNode, QuestEdge, QuestDependency, templates, DAG validation |
+| [quest-api](tracks/quest-api/spec.md) | `[ ]` | Quest REST API — CRUD, execution orchestration, template management, node dispatch to holon/wallet/STAR managers |
+| [dapp-composition](tracks/dapp-composition/spec.md) | `[ ]` | DappSeries — compose quest chains into deployable dApp contracts via STAR generation pipeline |
 
-## Track Details
+## Completed This Session
 
-### oasis-wallet-sdk `[~]` In Progress
+### oasis-wallet-sdk `[x]` Complete
 
-**Completed:**
 - Package scaffold (tsup, vitest, ESM+CJS+DTS) — 76 tests passing
 - ChainProvider interface mirroring .NET IBlockchainProvider
-- AlgorandProvider + SolanaProvider (balance, assets, buildTransfer/Mint/Burn, sign, submit)
+- AlgorandProvider + SolanaProvider with Ed25519 signing (@noble/curves)
 - OasisWallet facade (wallet-of-wallets with provider registry)
-- OasisApiClient (typed HTTP client matching all .NET controllers)
+- OasisApiClient (typed HTTP client matching all .NET controllers — 60+ endpoints)
 - Tinyman V2 SDK adapter (dynamic import, atomic tx groups)
 - Jupiter Ultra API adapter (MEV-protected, gasless swaps)
-- Cross-platform encoding (base64/base58/base32 — no btoa/atob/Buffer)
+- Cross-platform encoding (base64/base58/base32 — pure JS, no btoa/atob/Buffer)
 - Platform detection + getRandomBytes for React Native/Lynx
-- @noble/curves Ed25519 integration (lazy-loaded, optional peer dep)
 - withRetry utility mirroring .NET ExecuteWithRetryAsync
+- API versioning support (api-version.ts with path constants and version routing)
 - 3x hot-path code reviews (Opus) — all critical findings fixed
+- Bridge DTOs rebuilt to match .NET BridgeTransactionResult exactly (21 fields)
 
-**Remaining:**
-- Real msgpack encoding for Algorand native transactions
-- Solana native transaction construction (instruction serialization)
-- Integration tests against devnet endpoints
-- React Native compatibility test suite
+### avatar-nft-service `[x]` Complete
 
-### avatar-nft-service `[~]` In Progress
+- [x] AvatarNFTService manager (17 methods: CRUD, bindings, composites, verification)
+- [x] Registered in Program.cs DI
+- [x] [Authorize] added to AvatarNFTController
+- [x] Live blockchain balances in WalletManager.GetPortfolioAsync via IBlockchainProviderFactory
+- [x] Integration test compilation fixed
 
-**Tasks:**
-- [x] Define IAvatarNFTService interface (19 methods)
-- [x] Define IOASISStorageProviderNFTExtensions (12 methods)
-- [x] Implement in EfStorageProvider
-- [ ] Implement AvatarNFTService manager class
-- [ ] Register IAvatarNFTService in Program.cs DI
-- [ ] Add [Authorize] to AvatarNFTController
-- [ ] Wire live blockchain balances into WalletManager.GetPortfolioAsync
-- [ ] Complete InMemoryStorageProvider NFT stub implementations
+### oasis-client `[x]` Complete
 
-### oasis-client `[ ]` Pending
+- [x] OasisClient facade composing OasisApiClient + OasisWallet
+- [x] SessionManager with pluggable storage (localStorage, AsyncStorage, SecureStore)
+- [x] HolonQueryBuilder with fluent .where().ownedBy().active().execute() API
+- [x] OasisAuthProvider for login/register/getProfile/getAccessToken
+- [x] PortfolioAggregator for cross-chain balance views
+- [x] Frontend integration: oasis.ts singleton, oasis-auth.tsx context, oasis-hooks.ts
+- [x] @oasis/wallet-sdk linked into frontend via local file dependency
+- [x] API_SYNC.md regression guide mapping all controllers to SDK methods
 
-**Vision:** A higher-level client built on top of OasisApiClient that provides:
-1. **Holon query builder** — fluent API for querying/filtering holons across providers
-2. **Avatar OAuth adapter** — use OASIS avatars as an identity provider for external apps
-3. **Session management** — JWT handling, auto-refresh, token storage hooks
-4. **Entity watchers** — subscribe to holon/wallet/NFT state changes
-5. **Cross-chain portfolio** — aggregate balances across all registered wallets/chains
+### frontend-demo-harness `[ ]` Pending — Long-Run Horizon
 
-**Tasks:**
-- [ ] Design OasisClient class extending OasisApiClient
-- [ ] Implement HolonQueryBuilder (fluent filter/sort/paginate)
-- [ ] Implement AvatarAuthProvider (OAuth 2.0 compatible adapter)
-- [ ] Implement SessionManager (token lifecycle, storage adapters)
-- [ ] Implement PortfolioAggregator (cross-chain balance views)
-- [ ] Add to SDK exports and tests
+**Goal:** shadcn/ui demo harness exercising every capability for functional testing.
+
+**6 phases, ~8-10 days estimated:**
+1. Foundation — shadcn/ui init, layout, auth flow
+2. Core entities — Avatar, Holon (tree explorer), Wallet (live portfolio)
+3. Blockchain ops — NFT lifecycle, DEX swap (Tinyman + Jupiter), Bridge (Wormhole)
+4. Search, STAR ODK, Settings
+5. Functional test dashboard — automated 38+ test runner with regression detection
+6. Polish — responsive, loading states, toasts, keyboard shortcuts
+
+**Test matrix:** 38+ test cases covering every .NET endpoint, SDK method, and chain operation.
+
+See [spec](tracks/frontend-demo-harness/spec.md) and [plan](tracks/frontend-demo-harness/plan.md) for full details.

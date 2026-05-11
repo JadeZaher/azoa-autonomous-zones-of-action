@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Models;
+using OASIS.WebAPI.Models.Quest;
 using OASIS.WebAPI.Models.Requests;
 using OASIS.WebAPI.Models.Responses;
 
@@ -104,4 +105,35 @@ public class HealthRecordingProviderDecorator : ProviderDecorator
 
     public override Task<OASISResult<IEnumerable<ISTARODK>>> LoadAllSTARODKsAsync(CancellationToken ct = default)
         => TrackAsync(() => Inner.LoadAllSTARODKsAsync(ct));
+
+    // Quest
+    public override Task<OASISResult<Quest>> SaveQuestAsync(Quest quest, CancellationToken ct = default)
+        => TrackAsync(() => Inner.SaveQuestAsync(quest, ct));
+
+    public override Task<OASISResult<Quest>> LoadQuestAsync(Guid id, CancellationToken ct = default)
+        => TrackAsync(() => Inner.LoadQuestAsync(id, ct));
+
+    public override Task<OASISResult<IEnumerable<Quest>>> LoadQuestsByAvatarAsync(Guid avatarId, CancellationToken ct = default)
+        => TrackAsync(() => Inner.LoadQuestsByAvatarAsync(avatarId, ct));
+
+    public override Task<OASISResult<bool>> DeleteQuestAsync(Guid id, CancellationToken ct = default)
+        => TrackAsync(() => Inner.DeleteQuestAsync(id, ct));
+
+    public override Task<OASISResult<QuestTemplate>> SaveQuestTemplateAsync(QuestTemplate template, CancellationToken ct = default)
+        => TrackAsync(() => Inner.SaveQuestTemplateAsync(template, ct));
+
+    public override Task<OASISResult<QuestTemplate>> LoadQuestTemplateAsync(Guid id, CancellationToken ct = default)
+        => TrackAsync(() => Inner.LoadQuestTemplateAsync(id, ct));
+
+    public override Task<OASISResult<IEnumerable<QuestTemplate>>> LoadAllQuestTemplatesAsync(CancellationToken ct = default)
+        => TrackAsync(() => Inner.LoadAllQuestTemplatesAsync(ct));
+
+    public override Task<OASISResult<bool>> DeleteQuestTemplateAsync(Guid id, CancellationToken ct = default)
+        => TrackAsync(() => Inner.DeleteQuestTemplateAsync(id, ct));
+
+    public override Task<OASISResult<QuestNodeTemplate>> SaveQuestNodeTemplateAsync(QuestNodeTemplate template, CancellationToken ct = default)
+        => TrackAsync(() => Inner.SaveQuestNodeTemplateAsync(template, ct));
+
+    public override Task<OASISResult<IEnumerable<QuestNodeTemplate>>> LoadAllQuestNodeTemplatesAsync(CancellationToken ct = default)
+        => TrackAsync(() => Inner.LoadAllQuestNodeTemplatesAsync(ct));
 }

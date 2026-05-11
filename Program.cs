@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -35,6 +36,13 @@ builder.Services.AddSwaggerGen(c =>
         In = ParameterLocation.Header,
         Description = "JWT Authorization header using the Bearer scheme. Example: \"Bearer {token}\""
     });
+    c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+    {
+        Name = "X-Api-Key",
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Description = "API Key authentication. Example: \"oasis_abc123...\""
+    });
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
@@ -43,16 +51,23 @@ builder.Services.AddSwaggerGen(c =>
                 Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
             },
             Array.Empty<string>()
+        },
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" }
+            },
+            Array.Empty<string>()
         }
     });
 });
 
 builder.Services.AddAuthentication(options =>
 {
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = "MultiScheme";
+    options.DefaultChallengeScheme = "MultiScheme";
 })
-.AddJwtBearer(options =>
+.AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
 {
     var key = builder.Configuration.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key is missing.");
     options.TokenValidationParameters = new TokenValidationParameters
@@ -64,6 +79,17 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key))
+    };
+})
+.AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+    ApiKeyAuthenticationHandler.SchemeName, _ => { })
+.AddPolicyScheme("MultiScheme", "JWT or API Key", options =>
+{
+    options.ForwardDefaultSelector = context =>
+    {
+        if (context.Request.Headers.ContainsKey("X-Api-Key"))
+            return ApiKeyAuthenticationHandler.SchemeName;
+        return JwtBearerDefaults.AuthenticationScheme;
     };
 });
 
@@ -95,6 +121,7 @@ builder.Services.AddScoped<ISTARManager, STARManager>();
 builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
 builder.Services.AddScoped<IAvatarNFTService, AvatarNFTService>();
+builder.Services.AddScoped<IQuestManager, QuestManager>();
 
 var connectionString = builder.Configuration.GetConnectionString("OASISDatabase")
     ?? throw new InvalidOperationException("Connection string 'OASISDatabase' not found.");
@@ -137,6 +164,11 @@ builder.Services.AddHttpClient<IWormholeAdapter, WormholeAdapter>((sp, client) =
 // ─── Cross-chain bridge (hybrid trusted + Wormhole) ───
 builder.Services.AddSingleton<ICrossChainBridgeService, CrossChainBridgeService>();
 
+// ─── Quest DAG system ───
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IQuestDagValidator, OASIS.WebAPI.Services.QuestDagValidator>();
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IQuestInstantiator, OASIS.WebAPI.Services.Quest.QuestInstantiator>();
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IQuestRepository, OASIS.WebAPI.Services.Quest.QuestRepository>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Dev", policy =>
@@ -149,10 +181,15 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+}
 
+// Auto-migrate database on startup (creates DB + applies all pending migrations)
+// Then seed demo data if the database is empty
+{
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<OASISDbContext>();
-    db.Database.EnsureCreated();
+    db.Database.Migrate();
+    await SeedData.SeedAsync(db);
 }
 
 app.UseHttpsRedirection();
@@ -160,6 +197,6 @@ app.UseCors("Dev");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-app.Run();
+await app.RunAsync();
 
 public partial class Program { }

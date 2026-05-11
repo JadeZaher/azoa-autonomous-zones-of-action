@@ -43,13 +43,14 @@ export class PortfolioAggregator {
    */
   async getAll(avatarId: string): Promise<Result<PortfolioSummary, SdkError>> {
     // Get wallets from the API
+    const qs = new URLSearchParams({ avatarId });
     const walletsResult = await this.api.request<Array<{
       id: string;
       chainType: string;
       address: string;
       label?: string;
       isDefault: boolean;
-    }>>("GET", `/api/wallet?avatarId=${avatarId}`);
+    }>>("GET", `/api/wallet?${qs}`);
 
     if (!walletsResult.ok) return walletsResult;
     const wallets = walletsResult.value;

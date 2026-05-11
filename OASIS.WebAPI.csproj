@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Quest models are included (no longer excluded) -->
     <Compile Remove="OASIS.WebAPI.Tests\**\*.cs" />
     <Compile Remove="OASIS.WebAPI.IntegrationTests\**\*.cs" />
     <Compile Remove="OASIS.WebAPI.LiveTests\**\*.cs" />

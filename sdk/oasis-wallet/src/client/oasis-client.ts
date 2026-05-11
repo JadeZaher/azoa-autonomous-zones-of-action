@@ -13,6 +13,8 @@ export interface OasisClientConfig {
   apiUrl: string;
   /** JWT token (if already authenticated) */
   token?: string;
+  /** API key for server-to-server auth (sent as X-Api-Key header) */
+  apiKey?: string;
   /** API request timeout in ms */
   timeoutMs?: number;
   /** Chain provider registrations for wallet operations */
@@ -90,6 +92,7 @@ export class OasisClient {
     this.api = new OasisApiClient({
       baseUrl: config.apiUrl,
       token: config.token,
+      apiKey: config.apiKey,
       timeoutMs: config.timeoutMs,
       onTokenRefresh: this.session.createRefreshCallback(),
     });

@@ -1,3 +1,128 @@
+## Quest Core track completed - all 20 tasks done
+*2026-05-10 06:33:08* **Tags:** #architecture #quest #dotnet
+
+## Quest Core Track - Completed
+
+### Files Created
+- `Models/Quest/QuestEnums.cs` — QuestStatus, QuestNodeType (30+ values), QuestNodeState, QuestEdgeType, QuestDependencyType
+- `Models/Quest/Quest.cs` — Quest entity with Nodes, Edges, Dependencies, Metadata (dict), CreatedDate
+- `Models/Quest/QuestNode.cs` — Node with NodeType, Config (JSON), State, Entry/Terminal flags, ExecutionOrder
+- `Models/Quest/QuestEdge.cs` — Directed edge with SourceNodeId, TargetNodeId, Condition, EdgeType
+- `Models/Quest/QuestDependency.cs` — Cross-quest dependency with DependsOnQuestId, DependsOnNodeId, DependencyType
+- `Models/Quest/QuestNodeTemplate.cs` — Reusable meta-node with DefaultConfig, ConfigSchema, InputSchema, OutputSchema
+- `Models/Quest/QuestTemplate.cs` — Reusable quest template with Nodes, Edges, Parameters schema
+- `Models/Quest/QuestTemplateNode.cs` — Template node with SlotId, NodeTemplateId, ParamOverrides
+- `Models/Quest/QuestTemplateEdge.cs` — Template edge with SourceSlotId, TargetSlotId
+- `Interfaces/IQuestRepository.cs` — Full CRUD for Quest, QuestNodeTemplate, QuestTemplate
+- `Interfaces/IQuestDagValidator.cs` — Validate() returning DagValidationResult
+- `Interfaces/IQuestInstantiator.cs` — InstantiateAsync(templateId, params, avatarId)
+- `Services/QuestDagValidator.cs` — Kahn's algorithm, cycle detection, topological sort, entry/terminal/orphan validation
+- `Services/Quest/QuestInstantiator.cs` — Template instantiation with param validation and config merging
+- `Services/Quest/QuestRepository.cs` — EF Core implementation of IQuestRepository
+- `OASIS.WebAPI.Tests/Quest/QuestDagValidatorTests.cs` — 8 tests
+- `OASIS.WebAPI.Tests/Quest/QuestInstantiatorTests.cs` — 5 tests
+
+### Modified Files
+- `OASIS.WebAPI.csproj` — Removed `<Compile Remove="Models\Quest\**\*.cs" />` exclusion
+- `Data/OASISDbContext.cs` — Added 8 DbSets + inline EF configs (dictConverter, listGuidConverter, listStringConverter)
+- `Program.cs` — Registered IQuestDagValidator, IQuestInstantiator, IQuestRepository in DI
+
+### Key Design Decisions
+- EF configs are inline in DbContext (matching existing pattern), not separate IEntityTypeConfiguration files
+- `using` aliases (`QuestEntity = OASIS.WebAPI.Models.Quest.Quest`) used in services/tests to avoid namespace-type name conflict
+- Tags stored as JSON via listStringConverter
+- DAG validator catches unmarked entry nodes as orphans (nodes with no incoming edges but IsEntry=false)
+
+### Test Results
+- 315 tests total (36 new quest tests), all passing
+- 0 build errors (16 pre-existing warnings from Solana provider)
+
+---
+## Unified Oasis Context for Auth + Wallet + Avatar
+*2026-05-10 05:58:03* **Tags:** #architecture #frontend #auth #wallet #context
+
+The frontend uses a unified `OasisProvider` + `useOasis()` hook (src/lib/oasis-context.tsx) as the single source of truth for auth, wallet, and avatar state.
+
+Key design:
+- `OasisProvider` wraps the app in app/layout.tsx
+- Auto-restores session on mount via `oasis.session.restore()`
+- Auto-fetches wallets when `avatarId` becomes available
+- `defaultWallet` = first wallet with `isDefault`, or first wallet, or null
+- All wallet mutations (add/remove/set-default) auto-refresh the list
+
+Backward compat:
+- `useOasisAuth()` in lib/oasis-auth.tsx is a shim that maps to the unified context
+- Existing 12+ files importing `useOasisAuth` work without changes
+
+New code should prefer `useOasis()` for access to wallets, defaultWallet, refreshProfile, addWallet, etc.
+
+---
+## Quest Specs Corrected for Codebase Alignment
+*2026-05-10 01:37:40* **Tags:** #architecture #quests #corrections #alignment
+
+## Quest Specs — Corrections After Codebase Review (2026-05-09)
+
+### What was wrong in the original specs:
+1. **QuestNodeType enum** had `HolonMint`, `HolonTransfer`, `HolonBurn` — these don't exist on IHolonManager. Mint/Transfer/Burn are on INftManager.
+2. **`WalletAction` and `NftAction`** were too vague — replaced with specific node types mapping to each manager method.
+3. **`DateTimeOffset`** should be `DateTime` — all existing models use `DateTime.UtcNow`.
+4. **`DataHint` edge type** doesn't make sense — the holonic graph already handles data flow. DAG is purely control flow.
+5. **`Conditional` dependency type** removed — use a `Condition` node instead.
+6. **`External` and `Custom` node types** removed — not part of the existing architecture.
+7. **STAR integration** — `ISTARManager.GenerateAsync(id, STARDappGenerationRequest)` takes an existing STAR record ID, not freeform params.
+8. **Missing holon operations** — Interact, Propagate, Compose, Clone, MoveSubtree, GetChildren, GetPeers, GetAncestors, GetDescendants were not in the dispatch table.
+
+### Corrected QuestNodeType dispatch table (34 types):
+- Holon: Create, Update, Delete, Get, Query, Interact, GetChildren, GetPeers, GetAncestors, GetDescendants, Propagate, Compose, Clone, MoveSubtree
+- NFT: Mint, Transfer, Burn, Get, Query, GetMetadata
+- Wallet: Create, Update, Delete, Get, Query, SetDefault, GetPortfolio
+- STAR: Generate, Deploy
+- Other: Search, AvatarNFTGetComposite, BlockchainExecute
+- Internal: Condition, ComposeOutputs
+
+### STAR Integration flow:
+DappCompositionManager.GenerateAsync → create STARODK → build STARDappGenerationRequest { TargetChain, BoundHolonIds, Config } → ISTARManager.GenerateAsync → store StarOdkId
+
+### All managers return OASISResult<T> — QuestManager follows this pattern.
+
+---
+## Quest DAG Abstraction - Architecture
+*2026-05-10 01:24:40* **Tags:** #architecture #quests #dag #dapp
+
+## Quests Abstraction (2026-05-09)
+
+Added 3 Conductor tracks for a Quests system layered on top of holons + STAR dapp-generator:
+
+### Design Principles
+- **Quest = DAG**: Each quest is a Directed Acyclic Graph with entry/terminal nodes
+- **DAG = Control Flow**: The DAG encodes execution ordering only; data flow lives in the holonic graph underneath
+- **Quest Series = dApp**: A chain of quests composes into a deployable dApp contract via STAR
+- **Meta-Nodes (Templates)**: QuestNodeTemplate defines reusable operations; instantiated across quests with parameters
+- **Cross-Quest Dependencies**: QuestDependency links quests (required/optional/conditional), separate from DAG edges
+
+### Tracks
+1. **quest-core** — Domain models (Quest, QuestNode, QuestEdge, QuestDependency, QuestNodeTemplate, QuestTemplate), DAG validation (acyclicity, topological sort), template instantiation
+2. **quest-api** — REST API (CRUD, execution orchestration, template management), QuestManager dispatches nodes to existing holon/wallet/NFT/STAR managers
+3. **dapp-composition** — DappSeries (ordered quest chain), DappManifest (composition artifact), compose → generate (STAR) → deploy pipeline
+
+### Key Models
+- Quest has Nodes, Edges, Dependencies — status: Draft → Active → Completed | Failed → Archived
+- QuestNodeType: HolonQuery/Create/Update/Mint/Transfer/Burn, WalletAction, NftAction, StarScaffold/Deploy, Condition, Compose, External, Custom
+- QuestEdgeType: Control (hard), DataHint (soft), Conditional (gate)
+- QuestDependencyType: Required, Optional, Conditional
+
+### Layering
+```
+dApp (Quest Series) → Contract Generation
+Quest API → REST, Manager, Execution
+Quest Core → Models, DAG, Templates
+STAR Dapp Generator → scaffold & deploy
+Holon Graph → data flow, nested links
+```
+
+See: conductor/tracks/quest-core/, conductor/tracks/quest-api/, conductor/tracks/dapp-composition/
+
+---
 ## Frontend Testing Interface Complete
 *2026-05-03 03:24:48* **Tags:** #frontend #nextjs #testing #interface #complete
 

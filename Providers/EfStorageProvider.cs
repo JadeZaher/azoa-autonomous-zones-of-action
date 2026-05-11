@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using OASIS.WebAPI.Data;
 using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Models;
+using OASIS.WebAPI.Models.Quest;
 using OASIS.WebAPI.Models.Requests;
 using OASIS.WebAPI.Models.Responses;
 
@@ -386,5 +387,166 @@ public class EfStorageProvider : IOASISStorageProvider, IOASISStorageProviderNFT
         _db.WalletNFTBindings.Remove(existing);
         await _db.SaveChangesAsync(ct);
         return new OASISResult<bool> { Result = true, Message = "Deleted." };
+    }
+
+    // Quest
+    public async Task<OASISResult<Quest>> SaveQuestAsync(Quest quest, CancellationToken ct = default)
+    {
+        var existing = await _db.Quests
+            .Include(q => q.Nodes)
+            .Include(q => q.Edges)
+            .Include(q => q.Dependencies)
+            .FirstOrDefaultAsync(q => q.Id == quest.Id, ct);
+
+        if (existing == null)
+        {
+            _db.Quests.Add(quest);
+        }
+        else
+        {
+            _db.Entry(existing).CurrentValues.SetValues(quest);
+
+            // Sync child collections
+            _db.QuestNodes.RemoveRange(existing.Nodes);
+            _db.QuestEdges.RemoveRange(existing.Edges);
+            _db.QuestDependencies.RemoveRange(existing.Dependencies);
+
+            foreach (var node in quest.Nodes) { node.QuestId = quest.Id; _db.QuestNodes.Add(node); }
+            foreach (var edge in quest.Edges) { edge.QuestId = quest.Id; _db.QuestEdges.Add(edge); }
+            foreach (var dep in quest.Dependencies) { dep.QuestId = quest.Id; _db.QuestDependencies.Add(dep); }
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return new OASISResult<Quest> { Result = quest, Message = "Saved." };
+    }
+
+    public async Task<OASISResult<Quest>> LoadQuestAsync(Guid id, CancellationToken ct = default)
+    {
+        var quest = await _db.Quests
+            .Include(q => q.Nodes)
+            .Include(q => q.Edges)
+            .Include(q => q.Dependencies)
+            .FirstOrDefaultAsync(q => q.Id == id, ct);
+
+        return new OASISResult<Quest>
+        {
+            IsError = quest == null,
+            Message = quest == null ? "Quest not found." : "Success",
+            Result = quest
+        };
+    }
+
+    public async Task<OASISResult<IEnumerable<Quest>>> LoadQuestsByAvatarAsync(Guid avatarId, CancellationToken ct = default)
+    {
+        var list = await _db.Quests
+            .Include(q => q.Nodes)
+            .Include(q => q.Edges)
+            .Include(q => q.Dependencies)
+            .Where(q => q.AvatarId == avatarId)
+            .ToListAsync(ct);
+
+        return new OASISResult<IEnumerable<Quest>> { Result = list, Message = "Success" };
+    }
+
+    public async Task<OASISResult<bool>> DeleteQuestAsync(Guid id, CancellationToken ct = default)
+    {
+        var existing = await _db.Quests
+            .Include(q => q.Nodes)
+            .Include(q => q.Edges)
+            .Include(q => q.Dependencies)
+            .FirstOrDefaultAsync(q => q.Id == id, ct);
+
+        if (existing == null)
+            return new OASISResult<bool> { IsError = true, Message = "Quest not found.", Result = false };
+
+        _db.Quests.Remove(existing);
+        await _db.SaveChangesAsync(ct);
+        return new OASISResult<bool> { Result = true, Message = "Deleted." };
+    }
+
+    // Quest Template
+    public async Task<OASISResult<QuestTemplate>> SaveQuestTemplateAsync(QuestTemplate template, CancellationToken ct = default)
+    {
+        var existing = await _db.QuestTemplates
+            .Include(t => t.Nodes)
+            .Include(t => t.Edges)
+            .FirstOrDefaultAsync(t => t.Id == template.Id, ct);
+
+        if (existing == null)
+        {
+            _db.QuestTemplates.Add(template);
+        }
+        else
+        {
+            _db.Entry(existing).CurrentValues.SetValues(template);
+            _db.QuestTemplateNodes.RemoveRange(existing.Nodes);
+            _db.QuestTemplateEdges.RemoveRange(existing.Edges);
+
+            foreach (var node in template.Nodes) { node.TemplateId = template.Id; _db.QuestTemplateNodes.Add(node); }
+            foreach (var edge in template.Edges) { edge.TemplateId = template.Id; _db.QuestTemplateEdges.Add(edge); }
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return new OASISResult<QuestTemplate> { Result = template, Message = "Saved." };
+    }
+
+    public async Task<OASISResult<QuestTemplate>> LoadQuestTemplateAsync(Guid id, CancellationToken ct = default)
+    {
+        var template = await _db.QuestTemplates
+            .Include(t => t.Nodes)
+            .Include(t => t.Edges)
+            .FirstOrDefaultAsync(t => t.Id == id, ct);
+
+        return new OASISResult<QuestTemplate>
+        {
+            IsError = template == null,
+            Message = template == null ? "Quest template not found." : "Success",
+            Result = template
+        };
+    }
+
+    public async Task<OASISResult<IEnumerable<QuestTemplate>>> LoadAllQuestTemplatesAsync(CancellationToken ct = default)
+    {
+        var list = await _db.QuestTemplates
+            .Include(t => t.Nodes)
+            .Include(t => t.Edges)
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        return new OASISResult<IEnumerable<QuestTemplate>> { Result = list, Message = "Success" };
+    }
+
+    public async Task<OASISResult<bool>> DeleteQuestTemplateAsync(Guid id, CancellationToken ct = default)
+    {
+        var existing = await _db.QuestTemplates
+            .Include(t => t.Nodes)
+            .Include(t => t.Edges)
+            .FirstOrDefaultAsync(t => t.Id == id, ct);
+
+        if (existing == null)
+            return new OASISResult<bool> { IsError = true, Message = "Quest template not found.", Result = false };
+
+        _db.QuestTemplates.Remove(existing);
+        await _db.SaveChangesAsync(ct);
+        return new OASISResult<bool> { Result = true, Message = "Deleted." };
+    }
+
+    // Quest Node Template
+    public async Task<OASISResult<QuestNodeTemplate>> SaveQuestNodeTemplateAsync(QuestNodeTemplate template, CancellationToken ct = default)
+    {
+        var existing = await _db.QuestNodeTemplates.FindAsync(new object[] { template.Id }, ct);
+        if (existing == null)
+            _db.QuestNodeTemplates.Add(template);
+        else
+            _db.Entry(existing).CurrentValues.SetValues(template);
+
+        await _db.SaveChangesAsync(ct);
+        return new OASISResult<QuestNodeTemplate> { Result = template, Message = "Saved." };
+    }
+
+    public async Task<OASISResult<IEnumerable<QuestNodeTemplate>>> LoadAllQuestNodeTemplatesAsync(CancellationToken ct = default)
+    {
+        var list = await _db.QuestNodeTemplates.AsNoTracking().ToListAsync(ct);
+        return new OASISResult<IEnumerable<QuestNodeTemplate>> { Result = list, Message = "Success" };
     }
 }
