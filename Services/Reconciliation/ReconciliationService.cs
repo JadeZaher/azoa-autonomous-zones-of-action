@@ -48,12 +48,15 @@ public sealed class ReconciliationService : IReconciliationService
         BridgeStatus.AwaitingVAA,
         BridgeStatus.VAAReady,
         BridgeStatus.Redeeming,
+        // Reversal-in-flight: still swept so a stuck reversal is flagged for
+        // MANUAL INTERVENTION (never auto-advanced/auto-reversed — see below).
+        BridgeStatus.Reversing,
     };
 
     private static readonly string[] NonTerminalOperation =
     {
-        "Pending",
-        "AwaitingSignature",
+        OperationStatus.Pending,
+        OperationStatus.AwaitingSignature,
     };
 
     public ReconciliationService(
@@ -156,30 +159,24 @@ public sealed class ReconciliationService : IReconciliationService
         // task 6): Initiated/Locked/AwaitingVAA with a LockTxHash → verify the
         // lock landed; we advance the lifecycle flag or flag for manual review,
         // but NEVER auto-reverse funds here.
-        // MEDIUM-3 guard: a Redeeming row that ALREADY reached a Completed
-        // terminal state before going Redeeming is a REVERSAL in flight
-        // (CrossChainBridgeService.ReverseBridgeAsync reuses Redeeming as the
-        // in-flight burn marker: Completed→Redeeming, terminal Refunded/Failed).
-        // It is NOT a redeem awaiting confirmation. Advancing it back to
-        // Completed would mask an in-flight refund/burn. Detect reversal
-        // provenance on a Redeeming row and flag it for manual intervention —
-        // never auto-advance, never mutate (same conservative rule as the rest
-        // of the service). WHY this signal: the reverse path is observable by
-        // (a) an IdempotencyKey stamped "bridge-reverse:*" (most reliable —
-        // unambiguously set only by the reverse path's claim), or (b) a row
-        // whose CompletedAt is already set while still Redeeming (a fresh
-        // redeem reaches Redeeming from VAAReady and has NOT set CompletedAt;
-        // only a prior Completed→Redeeming reversal carries a CompletedAt).
-        if (tx.Status == BridgeStatus.Redeeming && IsReversalInFlight(tx))
+        // MEDIUM-3 guard (now EXPLICIT provenance): a Reversing row is a
+        // reversal in flight — CrossChainBridgeService.ReverseBridgeAsync moves
+        // Completed→Reversing, then terminal Refunded/Failed. It is NOT a redeem
+        // awaiting confirmation; advancing it would mask an in-flight
+        // refund/burn. Reconciliation MUST NOT auto-advance, auto-reverse, or
+        // otherwise mutate it (same conservative rule as the rest of the
+        // service) — the operator resolves the reversal outcome. The state is
+        // now an explicit BridgeStatus, so there is no CompletedAt/IdempotencyKey
+        // inference: a Reversing row IS reversal-in-flight, by construction.
+        if (tx.Status == BridgeStatus.Reversing)
         {
             _logger.LogError(
                 "Reconciliation: MANUAL INTERVENTION REQUIRED — bridge tx {BridgeId} is " +
-                "Redeeming with REVERSAL provenance (IdempotencyKey={IdemKey}, " +
-                "CompletedAt={CompletedAt}). This is an in-flight refund/burn, NOT a " +
-                "redeem awaiting confirmation. Reconciliation will NOT advance it to " +
-                "Completed (that would mask the reversal) and will NOT mutate it — " +
-                "operator must resolve the reversal outcome.",
-                tx.Id, tx.IdempotencyKey, tx.CompletedAt);
+                "in the explicit Reversing state (reversal-in-flight: IdempotencyKey={IdemKey}). " +
+                "This is an in-flight refund/burn, NOT a redeem awaiting confirmation. " +
+                "Reconciliation will NOT advance it (that would mask the reversal) and " +
+                "will NOT mutate it — operator must resolve the reversal outcome.",
+                tx.Id, tx.IdempotencyKey);
             return ReconciliationReport.Empty with { StuckFlagged = 1 };
         }
 
@@ -314,32 +311,13 @@ public sealed class ReconciliationService : IReconciliationService
             => (tx.RedemptionTxHash ?? tx.MintTxHash, tx.TargetChain,
                BridgeStatus.Completed, "redeem"),
 
+        // Terminal (Completed/Failed/Refunded) or Reversing. Reversing is
+        // intercepted by the explicit early return in ReconcileOneBridgeAsync
+        // and never reaches here; this default is the defensive backstop —
+        // null txHash ⇒ flag-only via MaybeFlagStuckBridge, never a mutation
+        // or a mis-mapped advance.
         _ => (null, tx.TargetChain, tx.Status, "unknown"),
     };
-
-    /// <summary>
-    /// True when a <see cref="BridgeStatus.Redeeming"/> row is actually a
-    /// reversal in flight (MEDIUM-3), not a redeem awaiting confirmation.
-    ///
-    /// <para>Signal precedence (most reliable first):</para>
-    /// <list type="number">
-    /// <item><c>IdempotencyKey</c> begins with <c>"bridge-reverse"</c> — set
-    /// only by <c>ReverseBridgeAsync</c>'s claim; unambiguous.</item>
-    /// <item><c>CompletedAt != null</c> on a Redeeming row — a forward redeem
-    /// reaches Redeeming from VAAReady and only sets CompletedAt at the
-    /// terminal Completed write; a Completed→Redeeming reversal carries the
-    /// CompletedAt stamped by the earlier successful bridge.</item>
-    /// </list>
-    /// </summary>
-    private static bool IsReversalInFlight(BridgeTransactionResult tx)
-    {
-        if (tx.IdempotencyKey?.StartsWith("bridge-reverse", StringComparison.Ordinal) == true)
-            return true;
-
-        // A redeem in flight has not yet stamped CompletedAt; only a prior
-        // Completed bridge now being reversed carries one while Redeeming.
-        return tx.CompletedAt is not null;
-    }
 
     private ReconciliationReport MaybeFlagStuckBridge(
         BridgeTransactionResult tx, double ageSeconds, bool hardStuck, string reason)
@@ -457,7 +435,7 @@ public sealed class ReconciliationService : IReconciliationService
                 int affected = await _db.BlockchainOperations
                     .Where(o => o.Id == op.Id && o.Status == expected)
                     .ExecuteUpdateAsync(s => s
-                        .SetProperty(o => o.Status, "Completed")
+                        .SetProperty(o => o.Status, OperationStatus.Completed)
                         .SetProperty(o => o.CompletedDate, DateTime.UtcNow),
                         ct);
 
@@ -487,7 +465,7 @@ public sealed class ReconciliationService : IReconciliationService
                 int affected = await _db.BlockchainOperations
                     .Where(o => o.Id == op.Id && o.Status == expected)
                     .ExecuteUpdateAsync(s => s
-                        .SetProperty(o => o.Status, "Failed")
+                        .SetProperty(o => o.Status, OperationStatus.Failed)
                         .SetProperty(o => o.CompletedDate, DateTime.UtcNow),
                         ct);
 

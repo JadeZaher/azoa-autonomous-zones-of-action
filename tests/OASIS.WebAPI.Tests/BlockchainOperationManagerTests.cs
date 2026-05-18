@@ -61,7 +61,7 @@ public class BlockchainOperationManagerTests
         var result = await _manager.ExecuteAsync(operation);
 
         result.IsError.Should().BeFalse();
-        operation.Status.Should().Be("Minted");
+        operation.Status.Should().Be(OperationStatus.Minted);
         operation.Parameters.Should().ContainKey("TxHash");
         _algoProvider.Verify(p => p.MintAsync("ipfs://test", 1, "NFT", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -85,7 +85,7 @@ public class BlockchainOperationManagerTests
         var result = await _manager.ExecuteAsync(operation);
 
         result.IsError.Should().BeFalse();
-        operation.Status.Should().Be("Failed");
+        operation.Status.Should().Be(OperationStatus.Failed);
         operation.Parameters.Should().ContainKey("Error");
     }
 
@@ -107,14 +107,14 @@ public class BlockchainOperationManagerTests
     [Fact]
     public async Task GetAsync_ShouldReturnOperation()
     {
-        var operation = new BlockchainOperation { Id = Guid.NewGuid(), Status = "Pending" };
+        var operation = new BlockchainOperation { Id = Guid.NewGuid(), Status = OperationStatus.Pending };
         _provider.Setup(p => p.LoadBlockchainOperationAsync(operation.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new OASISResult<IBlockchainOperation> { Result = operation });
 
         var result = await _manager.GetAsync(operation.Id);
 
         result.Result.Should().NotBeNull();
-        result.Result!.Status.Should().Be("Pending");
+        result.Result!.Status.Should().Be(OperationStatus.Pending);
     }
 
     [Fact]
@@ -179,7 +179,7 @@ public class BlockchainOperationManagerTests
         mintCalls.Should().Be(1, "the duplicate request must not re-execute the irreversible chain effect");
 
         // The duplicate replays the ORIGINAL outcome incl. the TxHash.
-        first.Status.Should().Be("Minted");
+        first.Status.Should().Be(OperationStatus.Minted);
         first.Parameters["TxHash"].Should().Be("algo_tx_DUP");
         second.Parameters.Should().ContainKey("TxHash");
         second.Parameters["TxHash"].Should().Be("algo_tx_DUP");
@@ -300,8 +300,8 @@ public class BlockchainOperationManagerTests
 
         // Both executed — no false dedupe of a distinct op.
         mintCalls.Should().Be(2, "ops differing in a value-bearing param must derive distinct keys and both execute");
-        opA.Status.Should().Be("Minted");
-        opB.Status.Should().Be("Minted");
+        opA.Status.Should().Be(OperationStatus.Minted);
+        opB.Status.Should().Be(OperationStatus.Minted);
 
         // Distinct keys ⇒ two records.
         _idempotency.RecordCount.Should().Be(2);
@@ -329,7 +329,7 @@ public class BlockchainOperationManagerTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("AwaitingSignature");
+        op.Status.Should().Be(OperationStatus.AwaitingSignature);
 
         // The idempotency record stays NON-terminal (InProgress) — never
         // Completed/Failed — because nothing irreversible was broadcast.

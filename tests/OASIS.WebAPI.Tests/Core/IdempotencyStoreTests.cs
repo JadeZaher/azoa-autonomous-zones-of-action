@@ -415,21 +415,9 @@ public class IdempotencyStoreTests : IDisposable
         {
         }
 
-        // Reapply the SQLite-compatible remap (xmin / BridgeTransactionResult)
-        // exactly as SqliteTestDbContext does, so EnsureCreated-equivalent
-        // model validation matches the shared DB schema.
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
-            modelBuilder.Entity<OASIS.WebAPI.Models.Responses.BridgeTransactionResult>(e =>
-            {
-                e.Property(b => b.Version)
-                 .HasColumnName("Version")
-                 .HasColumnType("INTEGER")
-                 .ValueGeneratedNever()
-                 .IsConcurrencyToken(false);
-            });
-        }
+        // No model override needed: the vestigial xmin/Version concurrency
+        // token was removed (api-safety-hardening §4 item 1) and the model now
+        // maps cleanly on SQLite as-is — identical to SqliteTestDbContext.
 
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {

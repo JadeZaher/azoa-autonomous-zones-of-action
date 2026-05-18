@@ -97,16 +97,4 @@ public class SagaStepRecord
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-    /// <summary>
-    /// Optimistic-concurrency token. Mapped to PostgreSQL's system column
-    /// <c>xmin</c> (row version) via Npgsql — identical idiom to
-    /// <c>BridgeTransactionResult.Version</c> (see <c>OASISDbContext</c>).
-    /// Database-generated/read-only; every committed UPDATE bumps it. The
-    /// claim uses the conditional <c>ExecuteUpdateAsync … WHERE Status==Pending</c>
-    /// + assert-one-row primitive rather than the optimistic exception, but the
-    /// token is retained for the same engine-portable concurrency discipline as
-    /// the rest of the codebase.
-    /// </summary>
-    public uint Version { get; set; }
 }

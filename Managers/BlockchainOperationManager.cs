@@ -91,19 +91,19 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 case "Composite":
                     break;
                 default:
-                    operation.Status = "Unknown";
+                    operation.Status = OperationStatus.Unknown;
                     break;
             }
         }
         catch (Exception ex)
         {
-            operation.Status = "Failed";
+            operation.Status = OperationStatus.Failed;
             operation.Parameters["Error"] = ex.Message;
         }
 
-        if (operation.Status == "Pending")
+        if (operation.Status == OperationStatus.Pending)
         {
-            operation.Status = "Completed";
+            operation.Status = OperationStatus.Completed;
             operation.CompletedDate = DateTime.UtcNow;
         }
 
@@ -204,7 +204,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         {
             case IdempotencyState.Completed:
                 // Replay the cached terminal state (incl. TxHash).
-                operation.Status = "Completed";
+                operation.Status = OperationStatus.Completed;
                 operation.CompletedDate = record.UpdatedAt;
                 if (!string.IsNullOrEmpty(record.ResultPayload))
                     operation.Parameters["TxHash"] = record.ResultPayload!;
@@ -216,7 +216,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 };
 
             case IdempotencyState.Failed:
-                operation.Status = "Failed";
+                operation.Status = OperationStatus.Failed;
                 if (!string.IsNullOrEmpty(record.Error))
                     operation.Parameters["Error"] = record.Error!;
                 return new OASISResult<IBlockchainOperation>
@@ -231,7 +231,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 // The original is still executing (or stopped mid-flight). Do
                 // NOT re-broadcast. Surface a non-terminal "duplicate/pending"
                 // status so the caller can poll/reconcile rather than re-send.
-                operation.Status = "Pending";
+                operation.Status = OperationStatus.Pending;
                 return new OASISResult<IBlockchainOperation>
                 {
                     IsError = false,
@@ -255,7 +255,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     private async Task SettleIdempotencyAsync(
         string idempotencyKey, IBlockchainOperation operation, OASISResult<IBlockchainOperation> saved)
     {
-        if (saved.IsError || operation.Status == "Failed")
+        if (saved.IsError || operation.Status == OperationStatus.Failed)
         {
             var error = saved.IsError
                 ? saved.Message
@@ -264,7 +264,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
             return;
         }
 
-        if (operation.Status == "AwaitingSignature")
+        if (operation.Status == OperationStatus.AwaitingSignature)
         {
             // Not broadcast server-side — intentionally NOT completed. Leave
             // the claim InProgress; duplicates replay the awaiting-signature
@@ -273,7 +273,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
             return;
         }
 
-        if (operation.Status is "Unknown" or "Pending")
+        if (operation.Status is OperationStatus.Unknown or OperationStatus.Pending)
         {
             // Nothing irreversible happened (unknown op type / no-op). Record
             // a benign failure so the key is terminal and a retry with the
@@ -318,7 +318,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
         var result = await chainProvider.MintAsync(
             mint.TokenUri ?? string.Empty, mint.Amount, mint.AssetType ?? string.Empty, walletAddress);
-        ApplyChainResult(operation, result, "Minted");
+        ApplyChainResult(operation, result, OperationStatus.Minted);
     }
 
     private async Task ExecuteBurnAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
@@ -327,7 +327,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         var amount = int.Parse(operation.Parameters.GetValueOrDefault("Amount", "0"));
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
         var result = await chainProvider.BurnAsync(tokenId, amount, walletAddress);
-        ApplyChainResult(operation, result, "Burned");
+        ApplyChainResult(operation, result, OperationStatus.Burned);
     }
 
     private async Task ExecuteExchangeAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
@@ -337,7 +337,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         var sourceTokenId = operation.Parameters.GetValueOrDefault("SourceTokenId", exchange.SourceHolonId?.ToString() ?? string.Empty);
         var targetTokenId = operation.Parameters.GetValueOrDefault("TargetTokenId", exchange.TargetHolonId?.ToString() ?? string.Empty);
         var result = await chainProvider.ExchangeAsync(sourceTokenId, targetTokenId, exchange.ExchangeRate ?? string.Empty, walletAddress);
-        ApplyChainResult(operation, result, "Exchanged");
+        ApplyChainResult(operation, result, OperationStatus.Exchanged);
     }
 
     private async Task ExecuteSwapAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
@@ -348,7 +348,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         var minAmountOut = decimal.Parse(operation.Parameters.GetValueOrDefault("MinAmountOut", "0"));
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
         var result = await chainProvider.SwapAsync(tokenIn, tokenOut, amountIn, minAmountOut, walletAddress);
-        ApplyChainResult(operation, result, "Swapped");
+        ApplyChainResult(operation, result, OperationStatus.Swapped);
     }
 
     private async Task ExecuteTransferAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
@@ -357,7 +357,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
         var sourceTokenId = operation.Parameters.GetValueOrDefault("SourceTokenId", transfer.SourceHolonId?.ToString() ?? string.Empty);
         var result = await chainProvider.TransferAsync(sourceTokenId, walletAddress, transfer.RecipientAddress ?? string.Empty, 1);
-        ApplyChainResult(operation, result, "Transferred");
+        ApplyChainResult(operation, result, OperationStatus.Transferred);
     }
 
     private async Task ExecuteDeployContractAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
@@ -368,7 +368,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
             ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(s)
             : null;
         var result = await chainProvider.DeployContractAsync(contractCode, walletAddress, args);
-        ApplyChainResult(operation, result, "Deployed");
+        ApplyChainResult(operation, result, OperationStatus.Deployed);
     }
 
     private async Task ExecuteCallContractAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
@@ -379,14 +379,14 @@ public class BlockchainOperationManager : IBlockchainOperationManager
             operation.Parameters.GetValueOrDefault("Args", "{}")) ?? new();
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
         var result = await chainProvider.CallContractAsync(contractAddress, method, args, walletAddress);
-        ApplyChainResult(operation, result, "Called");
+        ApplyChainResult(operation, result, OperationStatus.Called);
     }
 
     private static void ApplyChainResult<T>(IBlockchainOperation operation, OASISResult<T> chainResult, string successStatus)
     {
         if (chainResult.IsError)
         {
-            operation.Status = "Failed";
+            operation.Status = OperationStatus.Failed;
             operation.Parameters["Error"] = chainResult.Message;
             return;
         }
@@ -398,7 +398,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
 
         if (requiresSignature)
         {
-            operation.Status = "AwaitingSignature";
+            operation.Status = OperationStatus.AwaitingSignature;
             operation.Parameters["OperationId"] = chainResult.Result?.ToString() ?? string.Empty;
             operation.Parameters["Instruction"] = message;
         }

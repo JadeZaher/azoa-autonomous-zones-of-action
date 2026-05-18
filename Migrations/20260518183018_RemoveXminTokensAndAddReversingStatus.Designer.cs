@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OASIS.WebAPI.Data;
@@ -11,9 +12,11 @@ using OASIS.WebAPI.Data;
 namespace OASIS.WebAPI.Migrations
 {
     [DbContext(typeof(OASISDbContext))]
-    partial class OASISDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260518183018_RemoveXminTokensAndAddReversingStatus")]
+    partial class RemoveXminTokensAndAddReversingStatus
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

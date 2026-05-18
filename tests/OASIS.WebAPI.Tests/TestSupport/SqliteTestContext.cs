@@ -1,50 +1,21 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using OASIS.WebAPI.Data;
-using OASIS.WebAPI.Models.Responses;
-using OASIS.WebAPI.Models.Sagas;
 
 namespace OASIS.WebAPI.Tests.TestSupport;
 
 /// <summary>
-/// <see cref="OASISDbContext"/> usable on SQLite: it calls
-/// <c>base.OnModelCreating</c> FIRST (every key + every UNIQUE/filtered index
-/// inherited unchanged — those are exactly what the safety tests exercise) then
-/// remaps only the <c>xmin</c>-mapped concurrency tokens
-/// (<see cref="BridgeTransactionResult.Version"/> and
-/// <see cref="SagaStepRecord.Version"/>). xmin has no SQLite equivalent
-/// (PostgreSQL system column / xid type) so each becomes a plain
-/// non-store-generated, non-concurrency INTEGER. Nothing else is altered — the
-/// saga conditional-claim/lease semantics under test rely on the
-/// <c>ExecuteUpdateAsync … WHERE Status==…</c> predicate, NOT this token, so
-/// the remap does not weaken the proof (identical to the bridge row).
+/// <see cref="OASISDbContext"/> usable on SQLite. The model maps cleanly on
+/// SQLite as-is — every key + every UNIQUE/filtered index (exactly what the
+/// safety tests exercise) and the conditional <c>ExecuteUpdateAsync … WHERE
+/// Status==…</c> transition primitive are engine-portable. No per-engine
+/// remapping is required (the former <c>xmin</c> optimistic-concurrency token
+/// was removed — all flows use the conditional UPDATE + assert-one-row
+/// primitive, not a row-version token).
 /// </summary>
 public sealed class SqliteTestDbContext : OASISDbContext
 {
     public SqliteTestDbContext(DbContextOptions<OASISDbContext> options) : base(options) { }
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-
-        modelBuilder.Entity<BridgeTransactionResult>(e =>
-        {
-            e.Property(b => b.Version)
-             .HasColumnName("Version")
-             .HasColumnType("INTEGER")
-             .ValueGeneratedNever()
-             .IsConcurrencyToken(false);
-        });
-
-        modelBuilder.Entity<SagaStepRecord>(e =>
-        {
-            e.Property(s => s.Version)
-             .HasColumnName("Version")
-             .HasColumnType("INTEGER")
-             .ValueGeneratedNever()
-             .IsConcurrencyToken(false);
-        });
-    }
 }
 
 /// <summary>

@@ -227,7 +227,7 @@ public class BlockchainOperationBuilder
     private Guid? _avatarId;
     private Guid? _walletId;
     private string _operationType = "Mint";
-    private string _status = "Pending";
+    private string _status = OperationStatus.Pending;
     private Dictionary<string, string> _parameters = new();
 
     public BlockchainOperationBuilder WithId(Guid id) { _id = id; return this; }

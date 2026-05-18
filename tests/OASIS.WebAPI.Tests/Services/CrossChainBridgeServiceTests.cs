@@ -401,6 +401,75 @@ public class CrossChainBridgeServiceTests
         return mock.Object;
     }
 
+    // ─── Item 4: explicit reversal provenance (Completed→Reversing→terminal) ───
+
+    /// <summary>
+    /// ReverseBridgeAsync moves a Completed bridge through the EXPLICIT
+    /// <see cref="BridgeStatus.Reversing"/> in-flight marker (NOT Redeeming).
+    /// A successful on-chain burn drives Reversing→Refunded. Proof the new
+    /// state is used end-to-end: the success transition's predicate is
+    /// <c>WHERE Status==Reversing</c> — if the in-flight marker were still
+    /// Redeeming it would affect 0 rows and the bridge could never reach
+    /// Refunded. The redeem path's Redeeming usage is untouched (covered by
+    /// the full-lifecycle + concurrency tests above).
+    /// </summary>
+    [Fact]
+    public async Task ReverseBridge_Success_UsesExplicitReversingState_ThenRefunded()
+    {
+        using var harness = new SqliteBridgeHarness();
+
+        harness.ProviderMock.Setup(p => p.BurnWrappedAsync(
+            It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OASISResult<string> { IsError = false, Result = "burn_tx_ok" });
+
+        var bridgeId = harness.SeedCompletedBridge(targetTokenId: "wrapped_token_1");
+
+        var (svc, _) = harness.CreateService();
+        var result = await svc.ReverseBridgeAsync(bridgeId, "source_refund_addr");
+
+        result.IsError.Should().BeFalse();
+        var row = harness.GetBridge(bridgeId);
+        row.Status.Should().Be(BridgeStatus.Refunded,
+            "Completed→Reversing→Refunded — only reachable if the in-flight " +
+            "marker is the explicit Reversing state (success predicate is " +
+            "WHERE Status==Reversing)");
+        row.RedemptionTxHash.Should().Be("burn_tx_ok");
+        row.Status.Should().NotBe(BridgeStatus.Redeeming,
+            "reversal must NOT reuse the forward-redeem Redeeming state");
+    }
+
+    /// <summary>
+    /// A failed on-chain burn drives Reversing→Failed with an explicit
+    /// MANUAL-INTERVENTION message. Same proof: the failure transition's
+    /// predicate is <c>WHERE Status==Reversing</c>; reaching Failed confirms
+    /// the in-flight marker was the explicit Reversing state.
+    /// </summary>
+    [Fact]
+    public async Task ReverseBridge_BurnFails_ReversingToFailed_ManualIntervention()
+    {
+        using var harness = new SqliteBridgeHarness();
+
+        harness.ProviderMock.Setup(p => p.BurnWrappedAsync(
+            It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OASISResult<string> { IsError = true, Message = "chain rejected burn" });
+
+        var bridgeId = harness.SeedCompletedBridge(targetTokenId: "wrapped_token_2");
+
+        var (svc, _) = harness.CreateService();
+        var result = await svc.ReverseBridgeAsync(bridgeId, "source_refund_addr");
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("MANUAL INTERVENTION REQUIRED");
+
+        var row = harness.GetBridge(bridgeId);
+        row.Status.Should().Be(BridgeStatus.Failed,
+            "Completed→Reversing→Failed — reachable only via the explicit " +
+            "Reversing in-flight state (failure predicate is WHERE Status==Reversing)");
+        row.ErrorMessage.Should().Contain("MANUAL INTERVENTION REQUIRED");
+    }
+
     // ─── Pre-launch bridge safety: financial-correctness invariants under
     //     concurrency and retry. Backed by the real SQLite harness + real
     //     IdempotencyStore so the safety comes from the DB UNIQUE constraints
@@ -870,6 +939,31 @@ public class CrossChainBridgeServiceTests
                 WormholeEmitterAddress = emitterAddress,
                 WormholeSequence = sequence,
                 CreatedAt = DateTime.UtcNow
+            });
+            db.SaveChanges();
+            return id;
+        }
+
+        public string SeedCompletedBridge(string targetTokenId)
+        {
+            var id = $"bridge_{Guid.NewGuid():N}";
+            using var db = _db.NewContext();
+            db.BridgeTransactions.Add(new BridgeTransactionResult
+            {
+                Id = id,
+                AvatarId = Guid.NewGuid(),
+                SourceChain = "Solana",
+                TargetChain = "Algorand",
+                SourceTokenId = "token1",
+                TargetTokenId = targetTokenId,
+                SourceAddress = "src",
+                TargetAddress = "recipient",
+                Amount = 1,
+                Mode = BridgeMode.Trusted,
+                Status = BridgeStatus.Completed,
+                MintTxHash = "prior_mint_tx",
+                CreatedAt = DateTime.UtcNow.AddMinutes(-30),
+                CompletedAt = DateTime.UtcNow.AddMinutes(-25)
             });
             db.SaveChanges();
             return id;

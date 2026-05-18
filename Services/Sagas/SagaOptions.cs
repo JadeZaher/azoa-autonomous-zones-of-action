@@ -18,11 +18,16 @@ public sealed class SagaOptions
     public const string SectionName = "Sagas";
 
     /// <summary>
-    /// Whether the background processor is enabled. The scoped
-    /// <see cref="ISagaProcessor"/> can still be invoked directly (tests / an
-    /// ops endpoint) when this is false. Default <c>true</c>.
+    /// Whether the background processor is enabled. <b>Default
+    /// <c>false</c>:</b> the durable-saga module is a Phase-1 skeleton with
+    /// ZERO bridge (or any) consumer pre-launch, so a consumerless hosted loop
+    /// must not run in the production financial graph. It stays OFF until
+    /// durable-saga Phase 2 ships a real consumer (see
+    /// <c>docs/adr/ADR-0001-sagas-disabled-prelaunch.md</c> and GO-TO-PROD §4).
+    /// The scoped <see cref="ISagaProcessor"/> can still be invoked directly
+    /// (tests / an ops endpoint) when this is false.
     /// </summary>
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; } = false;
 
     /// <summary>
     /// Seconds between processor ticks. Default 5. Clamped to a 1s floor by the

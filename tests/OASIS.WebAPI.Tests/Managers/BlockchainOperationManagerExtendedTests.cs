@@ -66,7 +66,7 @@ public class BlockchainOperationManagerExtendedTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("Burned");
+        op.Status.Should().Be(OperationStatus.Burned);
         _algoProvider.Verify(p => p.BurnAsync("123", 5, "addr", It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -92,7 +92,7 @@ public class BlockchainOperationManagerExtendedTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("Swapped");
+        op.Status.Should().Be(OperationStatus.Swapped);
         _algoProvider.Verify(p => p.SwapAsync("A", "B", 10.5m, 9.5m, "addr", It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -112,7 +112,7 @@ public class BlockchainOperationManagerExtendedTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("Transferred");
+        op.Status.Should().Be(OperationStatus.Transferred);
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public class BlockchainOperationManagerExtendedTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("Deployed");
+        op.Status.Should().Be(OperationStatus.Deployed);
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public class BlockchainOperationManagerExtendedTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("Called");
+        op.Status.Should().Be(OperationStatus.Called);
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public class BlockchainOperationManagerExtendedTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("Unknown");
+        op.Status.Should().Be(OperationStatus.Unknown);
     }
 
     [Fact]
@@ -184,7 +184,7 @@ public class BlockchainOperationManagerExtendedTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("Completed");
+        op.Status.Should().Be(OperationStatus.Completed);
     }
 
     [Fact]
@@ -204,7 +204,7 @@ public class BlockchainOperationManagerExtendedTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("Failed");
+        op.Status.Should().Be(OperationStatus.Failed);
         op.Parameters.Should().ContainKey("Error");
     }
 
@@ -236,7 +236,7 @@ public class BlockchainOperationManagerExtendedTests
         var result = await _manager.ExecuteAsync(op);
 
         result.IsError.Should().BeFalse();
-        op.Status.Should().Be("Failed");
+        op.Status.Should().Be(OperationStatus.Failed);
         op.Parameters["Error"].Should().Be("boom");
     }
 

@@ -229,15 +229,6 @@ public class OASISDbContext : DbContext
             entity.HasIndex(e => new { e.WormholeEmitterChainId, e.WormholeEmitterAddress, e.WormholeSequence })
                   .IsUnique()
                   .HasFilter("\"WormholeEmitterChainId\" IS NOT NULL AND \"WormholeEmitterAddress\" IS NOT NULL AND \"WormholeSequence\" IS NOT NULL");
-
-            // Optimistic-concurrency token mapped to PostgreSQL system column
-            // xmin (Npgsql idiom). Database-generated, read-only, bumped on
-            // every committed UPDATE; enables atomic conditional transitions.
-            entity.Property(e => e.Version)
-                  .HasColumnName("xmin")
-                  .HasColumnType("xid")
-                  .ValueGeneratedOnAddOrUpdate()
-                  .IsConcurrencyToken();
         });
 
         modelBuilder.Entity<IdempotencyRecord>(entity =>
@@ -284,16 +275,6 @@ public class OASISDbContext : DbContext
             // Status==Pending AND NextRunAt<=now.
             entity.HasIndex(e => new { e.Status, e.NextRunAt });
             entity.HasIndex(e => e.DeadLettered);
-
-            // Optimistic-concurrency token mapped to PostgreSQL system column
-            // xmin (Npgsql idiom) — identical to BridgeTransactionResult.Version.
-            // The SQLite test context remaps this to a plain INTEGER (see
-            // SqliteTestDbContext), exactly as it already does for the bridge row.
-            entity.Property(e => e.Version)
-                  .HasColumnName("xmin")
-                  .HasColumnType("xid")
-                  .ValueGeneratedOnAddOrUpdate()
-                  .IsConcurrencyToken();
         });
 
         // Quest configurations

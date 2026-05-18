@@ -86,7 +86,7 @@ public class NftManager : INftManager
             AvatarId = avatarId,
             WalletId = request.WalletId,
             OperationType = "Mint",
-            Status = "Pending",
+            Status = OperationStatus.Pending,
             Parameters = new Dictionary<string, string>
             {
                 ["holonId"] = holon.Id.ToString(),
@@ -129,7 +129,7 @@ public class NftManager : INftManager
             AvatarId = avatarId,
             WalletId = request.WalletId,
             OperationType = "Transfer",
-            Status = "Pending",
+            Status = OperationStatus.Pending,
             Parameters = new Dictionary<string, string>
             {
                 ["holonId"] = nftId.ToString(),
@@ -173,7 +173,7 @@ public class NftManager : INftManager
             AvatarId = avatarId,
             WalletId = walletId,
             OperationType = "Burn",
-            Status = "Pending",
+            Status = OperationStatus.Pending,
             Parameters = new Dictionary<string, string>
             {
                 ["holonId"] = nftId.ToString()

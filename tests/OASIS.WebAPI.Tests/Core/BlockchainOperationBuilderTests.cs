@@ -115,14 +115,14 @@ public class BlockchainOperationBuilderTests
         var op = (BlockchainOperation)new BlockchainOperationBuilder()
             .ForAvatar(avatarId)
             .UsingWallet(walletId)
-            .WithStatus("Pending")
+            .WithStatus(OperationStatus.Pending)
             .WithParameter("ChainType", "Algorand")
             .Mint("ipfs://token", 1, "NFT")
             .Build();
 
         op.AvatarId.Should().Be(avatarId);
         op.WalletId.Should().Be(walletId);
-        op.Status.Should().Be("Pending");
+        op.Status.Should().Be(OperationStatus.Pending);
         op.Parameters["ChainType"].Should().Be("Algorand");
         op.OperationType.Should().Be("Mint");
     }

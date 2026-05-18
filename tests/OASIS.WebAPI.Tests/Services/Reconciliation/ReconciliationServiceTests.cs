@@ -237,7 +237,7 @@ public class ReconciliationServiceTests
         // (a) Pending op WITH a confirmed on-chain tx.
         var confirmedOp = harness.SeedOperation(o =>
         {
-            o.Status = "Pending";
+            o.Status = OperationStatus.Pending;
             o.OperationType = "Mint";
             o.CreatedDate = DateTime.UtcNow.AddMinutes(-30);
             o.Parameters = new Dictionary<string, string>
@@ -254,7 +254,7 @@ public class ReconciliationServiceTests
         // (b) AwaitingSignature op with NO TxHash, hard-stuck → flag, no mutate.
         var noHashOp = harness.SeedOperation(o =>
         {
-            o.Status = "AwaitingSignature";
+            o.Status = OperationStatus.AwaitingSignature;
             o.OperationType = "Transfer";
             o.CreatedDate = DateTime.UtcNow.AddSeconds(-5000); // > 900 hard-stuck
             o.Parameters = new Dictionary<string, string>(); // nothing observable
@@ -270,11 +270,11 @@ public class ReconciliationServiceTests
         report.Errors.Should().Be(0);
 
         var done = harness.GetOperation(confirmedOp);
-        done.Status.Should().Be("Completed");
+        done.Status.Should().Be(OperationStatus.Completed);
         done.CompletedDate.Should().NotBeNull();
 
         var stillStuck = harness.GetOperation(noHashOp);
-        stillStuck.Status.Should().Be("AwaitingSignature",
+        stillStuck.Status.Should().Be(OperationStatus.AwaitingSignature,
             "no observable tx ⇒ NEVER mutate; only flag for manual intervention");
         stillStuck.CompletedDate.Should().BeNull();
 
@@ -282,7 +282,7 @@ public class ReconciliationServiceTests
         second.Scanned.Should().Be(1);
         second.Advanced.Should().Be(0);
         second.StuckFlagged.Should().Be(1);
-        harness.GetOperation(confirmedOp).Status.Should().Be("Completed");
+        harness.GetOperation(confirmedOp).Status.Should().Be(OperationStatus.Completed);
 
         harness.AssertNoOnChainMutation();
     }
@@ -413,7 +413,7 @@ public class ReconciliationServiceTests
         // (a) op WITH an explicit resolvable key in Parameters.
         var keyedOp = harness.SeedOperation(o =>
         {
-            o.Status = "Pending";
+            o.Status = OperationStatus.Pending;
             o.OperationType = "Mint";
             o.CreatedDate = DateTime.UtcNow.AddMinutes(-30);
             o.Parameters = new Dictionary<string, string>
@@ -432,7 +432,7 @@ public class ReconciliationServiceTests
         // unrelated seeded record stays InProgress, op still advances.
         var unkeyedOp = harness.SeedOperation(o =>
         {
-            o.Status = "Pending";
+            o.Status = OperationStatus.Pending;
             o.OperationType = "Transfer";
             o.CreatedDate = DateTime.UtcNow.AddMinutes(-30);
             o.Parameters = new Dictionary<string, string>
@@ -448,8 +448,8 @@ public class ReconciliationServiceTests
         report.Advanced.Should().Be(2, "both confirmed ops advance to Completed");
         report.Errors.Should().Be(0);
 
-        harness.GetOperation(keyedOp).Status.Should().Be("Completed");
-        harness.GetOperation(unkeyedOp).Status.Should().Be("Completed");
+        harness.GetOperation(keyedOp).Status.Should().Be(OperationStatus.Completed);
+        harness.GetOperation(unkeyedOp).Status.Should().Be(OperationStatus.Completed);
 
         harness.GetIdempotency(idemKey)!.State.Should().Be(IdempotencyState.Completed,
             "the resolvable-key op settles its orphaned InProgress record");
@@ -503,31 +503,31 @@ public class ReconciliationServiceTests
         harness.AssertNoOnChainMutation();
     }
 
-    // ─── MEDIUM-3: reverse-in-flight Redeeming row not advanced ───
+    // ─── MEDIUM-3: explicit Reversing state — reversal-in-flight not advanced ───
 
     /// <summary>
-    /// MEDIUM-3: ReverseBridgeAsync reuses Redeeming as the in-flight burn
-    /// marker (Completed→Redeeming). Such a row carries reversal provenance —
-    /// a bridge-reverse idempotency key and/or a CompletedAt already set.
-    /// Reconciliation must NOT treat it as a redeem awaiting confirmation and
-    /// must NOT advance it back to Completed (which would mask the in-flight
-    /// refund). It is flagged for manual intervention and left untouched.
+    /// MEDIUM-3 (explicit provenance): ReverseBridgeAsync now moves a bridge
+    /// Completed→<see cref="BridgeStatus.Reversing"/> (an EXPLICIT state, not
+    /// Redeeming) before the on-chain burn. Reconciliation must recognize a
+    /// Reversing row as a reversal-in-flight by its state alone — NOT infer it
+    /// from a CompletedAt timestamp or a "bridge-reverse" idempotency-key
+    /// sniff — and must NOT advance it (advancing would mask the in-flight
+    /// refund) nor mutate it: flag for MANUAL INTERVENTION and leave untouched.
     /// </summary>
     [Fact]
-    public async Task ReverseInFlightRedeeming_NotAdvancedToCompleted_FlaggedForManualIntervention()
+    public async Task ReversingState_NotAdvanced_FlaggedForManualIntervention()
     {
         using var harness = new SqliteReconHarness();
 
-        // Reverse-in-flight: was Completed, ReverseBridgeAsync moved it to
-        // Redeeming. CompletedAt is set (from the prior successful bridge) and
-        // the idempotency key has the bridge-reverse provenance prefix.
+        // Reverse-in-flight: ReverseBridgeAsync moved it Completed→Reversing.
+        // No CompletedAt / idempotency-key inference is needed — the explicit
+        // Reversing state IS the provenance.
         var reversingId = harness.SeedBridge(b =>
         {
-            b.Status = BridgeStatus.Redeeming;
+            b.Status = BridgeStatus.Reversing;
             b.TargetChain = "Algorand";
             b.RedemptionTxHash = "would_confirm_if_probed";
             b.IdempotencyKey = "bridge-reverse:br_x:sourceRecipient";
-            b.CompletedAt = DateTime.UtcNow.AddMinutes(-20); // prior Completed stamp
             b.CreatedAt = DateTime.UtcNow.AddMinutes(-30);
         });
         // If the guard failed and this were probed, it would WRONGLY confirm.
@@ -539,21 +539,70 @@ public class ReconciliationServiceTests
         var svc = harness.CreateService();
         var report = await svc.ReconcileBridgeAsync(CancellationToken.None);
 
-        report.Scanned.Should().Be(1);
+        report.Scanned.Should().Be(1,
+            "a Reversing row is still swept (NonTerminalBridge includes Reversing)");
         report.Advanced.Should().Be(0,
-            "a reverse-in-flight Redeeming row must NEVER be advanced to Completed");
+            "a Reversing row must NEVER be advanced to Completed");
         report.Failed.Should().Be(0);
         report.StuckFlagged.Should().Be(1,
             "reversal-in-flight is flagged for MANUAL INTERVENTION, not mutated");
 
         var row = harness.GetBridge(reversingId);
-        row.Status.Should().Be(BridgeStatus.Redeeming,
-            "the in-flight reversal status is left untouched (masking it would lose the refund)");
+        row.Status.Should().Be(BridgeStatus.Reversing,
+            "the explicit Reversing state is left untouched (masking it would lose the refund)");
 
-        // It must not even be probed — the guard short-circuits before the
-        // chain probe.
+        // It must not even be probed — the explicit-state guard short-circuits
+        // before the chain probe.
         harness.ProviderMock.Verify(p => p.GetTransactionStatusAsync(
             It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.AssertNoOnChainMutation();
+    }
+
+    /// <summary>
+    /// The provenance fix's whole point: a FORWARD redeem in Redeeming is
+    /// NEVER mistaken for a reversal anymore. The old heuristic flagged any
+    /// Redeeming row whose CompletedAt was set (or whose IdempotencyKey looked
+    /// reverse-ish) as reversal-in-flight — a fresh redeem that legitimately
+    /// carried a CompletedAt (or a redeem keyed off a string containing
+    /// "reverse") would be wrongly frozen. With explicit state, a Redeeming row
+    /// is unambiguously a forward redeem: a chain-confirmed redeem advances
+    /// Redeeming→Completed exactly as before, regardless of CompletedAt /
+    /// IdempotencyKey content.
+    /// </summary>
+    [Fact]
+    public async Task ForwardRedeeming_WithCompletedAtAndReverseishKey_StillAdvances_NotFrozen()
+    {
+        using var harness = new SqliteReconHarness();
+
+        // A genuine forward redeem in Redeeming that ALSO has CompletedAt set
+        // and an idempotency key containing "reverse" — the exact inputs the
+        // old CompletedAt/key heuristic would have FALSELY frozen as a reversal.
+        var redeemId = harness.SeedBridge(b =>
+        {
+            b.Status = BridgeStatus.Redeeming;
+            b.TargetChain = "Algorand";
+            b.RedemptionTxHash = "redeem_confirmed_fwd";
+            b.IdempotencyKey = "bridge-reverse-lookalike:not-a-reversal";
+            b.CompletedAt = DateTime.UtcNow.AddMinutes(-10); // old heuristic trap
+            b.CreatedAt = DateTime.UtcNow.AddMinutes(-30);
+        });
+        harness.SetupTxStatus("redeem_confirmed_fwd", new Dictionary<string, object>
+        {
+            ["confirmed"] = true
+        });
+
+        var svc = harness.CreateService();
+        var report = await svc.ReconcileBridgeAsync(CancellationToken.None);
+
+        report.Scanned.Should().Be(1);
+        report.Advanced.Should().Be(1,
+            "a forward Redeeming redeem is unambiguous now — explicit state, " +
+            "no CompletedAt/key inference can freeze it");
+        report.StuckFlagged.Should().Be(0,
+            "a forward redeem must NOT be flagged as reversal-in-flight");
+
+        harness.GetBridge(redeemId).Status.Should().Be(BridgeStatus.Completed);
+
         harness.AssertNoOnChainMutation();
     }
 
@@ -701,7 +750,7 @@ public class ReconciliationServiceTests
                 AvatarId = Guid.NewGuid(),
                 WalletId = Guid.NewGuid(),
                 OperationType = "Mint",
-                Status = "Pending",
+                Status = OperationStatus.Pending,
                 CreatedDate = DateTime.UtcNow.AddMinutes(-30),
                 Parameters = new Dictionary<string, string>(),
             };

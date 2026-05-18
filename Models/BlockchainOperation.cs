@@ -8,7 +8,7 @@ public class BlockchainOperation : IBlockchainOperation, IMintOperation, IExchan
     public Guid? AvatarId { get; set; }
     public Guid? WalletId { get; set; }
     public string OperationType { get; set; } = string.Empty;
-    public string Status { get; set; } = "Pending";
+    public string Status { get; set; } = OperationStatus.Pending;
     public Dictionary<string, string> Parameters { get; set; } = new();
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedDate { get; set; }

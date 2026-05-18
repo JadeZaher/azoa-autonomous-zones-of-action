@@ -562,10 +562,12 @@ curl -X POST https://your-api.com/api/bridge/<bridge_id>/reverse \
 
 **Expected behavior:**
 1. Bridge must be in `Completed` status.
-2. Service atomically transitions `Completed → Redeeming` (in-flight marker).
+2. Service atomically transitions `Completed → Reversing` (the EXPLICIT reversal-in-flight state — distinct from the forward redeem's `Redeeming`, so reversal provenance is unambiguous and never inferred from a `CompletedAt` timestamp or idempotency-key sniff).
 3. Calls `TargetProvider.BurnWrappedAsync` to burn the wrapped token on the target chain, which releases the original on the source chain.
-4. On success: `Redeeming → Refunded` (terminal).
-5. On failure: `Redeeming → Failed` + `ErrorMessage = "MANUAL INTERVENTION REQUIRED: ..."`.
+4. On success: `Reversing → Refunded` (terminal).
+5. On failure: `Reversing → Failed` + `ErrorMessage = "MANUAL INTERVENTION REQUIRED: ..."`.
+
+> Reconciliation sweeps `Reversing` rows (it is in `NonTerminalBridge`) but, by the explicit-state guard, NEVER advances or mutates one — a `Reversing` row is logged `MANUAL INTERVENTION REQUIRED` and left for the operator, because auto-advancing it would mask the in-flight refund/burn.
 
 **If reversal fails (bridge in `Failed` state, `ErrorMessage` indicates manual intervention):**
 

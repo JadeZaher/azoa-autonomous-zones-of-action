@@ -82,17 +82,6 @@ public class BridgeTransactionResult
     /// </summary>
     [MaxLength(200)]
     public string? IdempotencyKey { get; set; }
-
-    /// <summary>
-    /// Optimistic-concurrency token. Mapped to PostgreSQL's system column
-    /// <c>xmin</c> (row version) via Npgsql — see <c>OASISDbContext</c>. It is
-    /// read-only/database-generated; every committed UPDATE bumps it. Wave 2
-    /// uses this for atomic conditional state transitions: a stale read causes
-    /// <c>SaveChangesAsync</c> to throw <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>,
-    /// OR use <c>ExecuteUpdateAsync</c> with a <c>WHERE Status == expected</c>
-    /// predicate and assert exactly one row was affected.
-    /// </summary>
-    public uint Version { get; set; }
 }
 
 public enum BridgeStatus
@@ -107,5 +96,11 @@ public enum BridgeStatus
     // (Failed/Refunded terminal). No code ever assigned BridgeStatus.Minted.
     Completed,
     Failed,
-    Refunded
+    Refunded,
+    // Explicit reversal-in-flight marker. ReverseBridgeAsync moves a Completed
+    // bridge here before the on-chain burn, then to Refunded (success) or
+    // Failed (manual intervention). Distinct from Redeeming (forward redeem)
+    // so reversal provenance is explicit, not inferred from a CompletedAt
+    // timestamp. Appended (int-stored) so existing terminal values are stable.
+    Reversing
 }

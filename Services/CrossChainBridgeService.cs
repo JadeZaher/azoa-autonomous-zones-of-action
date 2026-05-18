@@ -455,13 +455,15 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             }
         }
 
-        // Atomic Completed → Redeeming guard: only the winner of this transition
-        // performs the on-chain burn. (Redeeming is reused as the in-flight
-        // marker; terminal state below is Refunded or Failed.)
+        // Atomic Completed → Reversing guard: only the winner of this transition
+        // performs the on-chain burn. Reversing is an EXPLICIT reversal-in-flight
+        // state (distinct from the forward redeem's Redeeming) so reversal
+        // provenance is unambiguous — never inferred from a CompletedAt stamp.
+        // Terminal state below is Refunded (success) or Failed (manual).
         int affected = await _db.BridgeTransactions
             .Where(b => b.Id == tx.Id && b.Status == BridgeStatus.Completed)
             .ExecuteUpdateAsync(s => s
-                .SetProperty(b => b.Status, BridgeStatus.Redeeming)
+                .SetProperty(b => b.Status, BridgeStatus.Reversing)
                 .SetProperty(b => b.IdempotencyKey, idempotencyKey), ct);
 
         if (affected != 1)
@@ -498,7 +500,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         if (burnResult is { IsError: false })
         {
             await _db.BridgeTransactions
-                .Where(b => b.Id == tx.Id && b.Status == BridgeStatus.Redeeming)
+                .Where(b => b.Id == tx.Id && b.Status == BridgeStatus.Reversing)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(b => b.Status, BridgeStatus.Refunded)
                     .SetProperty(b => b.RedemptionTxHash, burnResult.Result)
@@ -520,7 +522,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             $"({detail}). Manually burn wrapped {tx.TargetTokenId} on {tx.TargetChain} and release " +
             $"{tx.SourceTokenId} to {sourceRecipientAddress} on {tx.SourceChain}.";
         await _db.BridgeTransactions
-            .Where(b => b.Id == tx.Id && b.Status == BridgeStatus.Redeeming)
+            .Where(b => b.Id == tx.Id && b.Status == BridgeStatus.Reversing)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(b => b.Status, BridgeStatus.Failed)
                 .SetProperty(b => b.ErrorMessage, manualMsg), ct);
