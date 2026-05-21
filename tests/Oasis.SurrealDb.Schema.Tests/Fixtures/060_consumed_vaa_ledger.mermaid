@@ -1,0 +1,28 @@
+erDiagram
+    %% @surreal.schemafull
+    %% @surreal.aggregate "ConsumedVaaRecord (Models/ConsumedVaaRecord.cs)"
+    %% @surreal.guardrail "G6 SCHEMAFULL, G2 replay-protection unique index on digest"
+    %% @surreal.note "Append-only ledger of Wormhole VAAs redeemed on the target chain. Insert-wins -- duplicate digest fails UNIQUE -> replay rejected."
+    consumed_vaa_ledger {
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string id
+        %% @surreal.fieldgroup "Digest is the replay-protection key (keccak256 of VAA body, hex)"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string digest
+        %% @surreal.fieldgroup "Wormhole emitter chain ID"
+        %% @surreal.assert "$value != NONE"
+        int emitter_chain_id
+        %% @surreal.fieldgroup "Wormhole emitter address (hex, 32-byte Wormhole format)"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string emitter_address
+        %% @surreal.fieldgroup "Wormhole sequence number"
+        %% @surreal.assert "$value != NONE"
+        int sequence
+        %% @surreal.fieldgroup "Bridge transaction this VAA was consumed for (audit linkage)"
+        option<string> bridge_transaction_id
+        %% @surreal.fieldgroup "Timestamp of consumption (immutable after insert)"
+        datetime consumed_at
+        %% @surreal.index unique fields=[digest] name=consumed_vaa_digest
+        %% @surreal.index unique fields=[emitter_chain_id,sequence] name=consumed_vaa_emitter_sequence
+        %% @surreal.index fields=[bridge_transaction_id] name=consumed_vaa_bridge_tx
+    }

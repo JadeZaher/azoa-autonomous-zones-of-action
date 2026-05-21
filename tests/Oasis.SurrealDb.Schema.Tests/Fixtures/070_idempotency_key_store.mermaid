@@ -1,0 +1,31 @@
+erDiagram
+    %% @surreal.schemafull
+    %% @surreal.aggregate "IdempotencyRecord (Models/Idempotency/IdempotencyRecord.cs)"
+    %% @surreal.guardrail "G6 SCHEMAFULL, G2 unique key constraint (insert-wins claim)"
+    %% @surreal.note "Exactly-once execution of irreversible ops. First InProgress insert wins; concurrent inserts fail UNIQUE and read back the existing row."
+    idempotency_key_store {
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string id
+        %% @surreal.fieldgroup "Idempotency key (caller-supplied or content hash); primary dedup key"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string key
+        %% @surreal.fieldgroup "Logical operation type (e.g. bridge_redeem, faucet_dispense)"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string operation_type
+        %% @surreal.fieldgroup "Lifecycle state"
+        %% @surreal.assert "$value INSIDE [\"InProgress\", \"Completed\", \"Failed\"]"
+        %% @surreal.default "\"InProgress\""
+        string state
+        %% @surreal.fieldgroup "Serialized result of completed operation (replayed verbatim to duplicates)"
+        option<string> result_payload
+        %% @surreal.fieldgroup "Failure reason when state == Failed"
+        option<string> error
+        %% @surreal.fieldgroup "Timestamps"
+        datetime created_at
+        datetime updated_at
+        %% @surreal.fieldgroup "TTL expiry timestamp -- sweep job purges old InProgress rows"
+        option<datetime> ttl_expires_at
+        %% @surreal.index unique fields=[key] name=idempotency_key_unique
+        %% @surreal.index fields=[ttl_expires_at] name=idempotency_ttl_expires_at
+        %% @surreal.index fields=[operation_type] name=idempotency_operation_type
+    }

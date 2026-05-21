@@ -1,0 +1,55 @@
+erDiagram
+    %% @surreal.schemafull
+    %% @surreal.aggregate "BridgeTransactionResult (Models/Responses/BridgeTransactionResult.cs)"
+    %% @surreal.guardrail "G6 SCHEMAFULL, G2 idempotency unique index"
+    %% @surreal.note "State machine: Initiated->Locked->AwaitingVAA->VAAReady->Redeeming->Completed; terminal Failed, Refunded, Reversing."
+    bridge_tx {
+        %% @surreal.fieldgroup "Core identity"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string id
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string avatar_id
+        %% @surreal.fieldgroup "Route"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string source_chain
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string target_chain
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string source_token_id
+        option<string> target_token_id
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string source_address
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string target_address
+        %% @surreal.fieldgroup "Amount (string for arbitrary precision)"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string amount
+        %% @surreal.fieldgroup "State machine"
+        %% @surreal.assert "$value INSIDE [\"Initiated\", \"Locked\", \"AwaitingVAA\", \"VAAReady\", \"Redeeming\", \"Completed\", \"Failed\", \"Refunded\", \"Reversing\"]"
+        string status
+        %% @surreal.fieldgroup "Mode"
+        %% @surreal.assert "$value INSIDE [\"Trusted\", \"Wormhole\"]"
+        %% @surreal.default "\"Trusted\""
+        string mode
+        %% @surreal.fieldgroup "Transaction hashes (nullable)"
+        option<string> lock_tx_hash
+        option<string> mint_tx_hash
+        option<string> proof_data
+        option<string> error_message
+        %% @surreal.fieldgroup "Timestamps"
+        datetime created_at
+        option<datetime> completed_at
+        %% @surreal.fieldgroup "Wormhole-specific (populated when mode == Wormhole)"
+        option<int> wormhole_emitter_chain_id
+        option<string> wormhole_emitter_address
+        option<int> wormhole_sequence
+        option<string> vaa_bytes
+        option<int> vaa_signature_count
+        option<string> redemption_tx_hash
+        %% @surreal.fieldgroup "Exactly-once / atomic-transition safety (G2)"
+        option<string> idempotency_key
+        %% @surreal.index unique fields=[idempotency_key] name=bridge_tx_idempotency_key
+        %% @surreal.index unique fields=[source_chain,lock_tx_hash,target_chain] name=bridge_tx_lock_route
+        %% @surreal.index fields=[avatar_id] name=bridge_tx_avatar_id
+        %% @surreal.index fields=[status] name=bridge_tx_status
+    }

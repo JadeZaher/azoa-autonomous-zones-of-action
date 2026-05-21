@@ -1,0 +1,39 @@
+erDiagram
+    %% @surreal.schemafull
+    %% @surreal.aggregate "BlockchainOperation (Models/BlockchainOperation.cs)"
+    %% @surreal.guardrail "G6 SCHEMAFULL, G2 idempotency unique index"
+    %% @surreal.note "Status values from OperationStatus constants; Parameters is Dictionary<string,string> stored as object."
+    operation_log {
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string id
+        option<string> avatar_id
+        option<string> wallet_id
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string operation_type
+        %% @surreal.fieldgroup "Status (OperationStatus closed set)"
+        %% @surreal.assert "$value INSIDE [\"Pending\", \"Unknown\", \"Failed\", \"Completed\", \"AwaitingSignature\", \"Minted\", \"Burned\", \"Exchanged\", \"Swapped\", \"Transferred\", \"Deployed\", \"Called\"]"
+        %% @surreal.default "\"Pending\""
+        string status
+        %% @surreal.fieldgroup "Opaque parameters bag (Dictionary<string,string>)"
+        option<object> parameters
+        %% @surreal.fieldgroup "IMintOperation fields"
+        option<string> token_uri
+        option<int> amount
+        option<string> asset_type
+        %% @surreal.fieldgroup "IExchangeOperation fields"
+        option<string> source_holon_id
+        option<string> target_holon_id
+        option<string> exchange_rate
+        %% @surreal.fieldgroup "ITransferOperation fields"
+        option<string> recipient_address
+        %% @surreal.fieldgroup "G2 idempotency"
+        option<string> idempotency_key
+        %% @surreal.fieldgroup "Error detail (populated on failure)"
+        option<string> error
+        %% @surreal.fieldgroup "Timestamps"
+        datetime created_date
+        option<datetime> completed_date
+        %% @surreal.index unique fields=[idempotency_key] name=operation_log_idempotency_key
+        %% @surreal.index fields=[avatar_id,created_date] name=operation_log_avatar_created
+        %% @surreal.index fields=[status] name=operation_log_status
+    }
