@@ -1,36 +1,29 @@
 using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Responses;
 
 namespace OASIS.WebAPI.Services.Quest;
 
 /// <summary>
-/// Builds the success / failure <see cref="OASISResult{QuestNode}"/> for a
-/// quest node handler. Reproduces the former <c>QuestManager</c> success block
-/// (~:623-625) and <c>QuestManager.Fail</c> (~:633-638) verbatim so handler
-/// dispatch stays behaviour-identical — one place, not 34.
+/// Builds the success / failure <see cref="QuestNodeHandlerResult"/> for a
+/// quest node handler. After the <c>quest-temporal-fork-model</c> track,
+/// handlers no longer mutate <see cref="QuestNode"/> — runtime state lives on
+/// <see cref="QuestNodeExecution"/>, written by the manager from the values
+/// returned here.
 /// </summary>
 public static class QuestNodeResults
 {
     /// <summary>
-    /// Marks <paramref name="node"/> succeeded with <paramref name="outputJson"/>
-    /// and returns the success result. <paramref name="message"/> defaults to the
-    /// original "Node executed successfully." text.
+    /// Success result carrying serialized <paramref name="outputJson"/>. The
+    /// manager will write this to <see cref="QuestNodeExecution.Output"/>
+    /// and transition the row to <see cref="QuestNodeState.Succeeded"/>.
     /// </summary>
-    public static OASISResult<QuestNode> Ok(QuestNode node, string? message, string? outputJson)
-    {
-        node.State = QuestNodeState.Succeeded;
-        node.Output = outputJson;
-        return new OASISResult<QuestNode> { Result = node, Message = message ?? "Node executed successfully." };
-    }
+    public static QuestNodeHandlerResult Ok(string? outputJson, string? message = null)
+        => QuestNodeHandlerResult.Ok(outputJson, message);
 
     /// <summary>
-    /// Marks <paramref name="node"/> failed with <paramref name="message"/> and
-    /// returns the error result (verbatim from the former <c>QuestManager.Fail</c>).
+    /// Failure result carrying <paramref name="message"/>. The manager will
+    /// write this to <see cref="QuestNodeExecution.Error"/> and transition
+    /// the row to <see cref="QuestNodeState.Failed"/>.
     /// </summary>
-    public static OASISResult<QuestNode> Fail(QuestNode node, string message)
-    {
-        node.State = QuestNodeState.Failed;
-        node.Error = message;
-        return new OASISResult<QuestNode> { IsError = true, Result = node, Message = message };
-    }
+    public static QuestNodeHandlerResult Fail(string message)
+        => QuestNodeHandlerResult.Fail(message);
 }

@@ -77,17 +77,38 @@ public class QuestController : ControllerBase
     // ─── Execution ───
 
     [HttpPost("{id:guid}/execute")]
-    public async Task<ActionResult<OASISResult<Quest>>> Execute(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<OASISResult<QuestRun>>> Execute(Guid id, [FromQuery] OASISRequest? request)
     {
+        // Returns the produced QuestRun (one execution attempt). Runtime state
+        // — per-node State/Output/Error — lives on the per-(run, node)
+        // QuestNodeExecution rows (queryable separately via the run id).
         var result = await _questManager.ExecuteAsync(id, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
 
     [HttpPost("{id:guid}/nodes/{nodeId:guid}/execute")]
-    public async Task<ActionResult<OASISResult<QuestNode>>> ExecuteNode(Guid id, Guid nodeId, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<OASISResult<QuestNodeExecution>>> ExecuteNode(Guid id, Guid nodeId, [FromQuery] OASISRequest? request)
     {
+        // Single-node execution produces an ad-hoc one-node QuestRun and
+        // returns the QuestNodeExecution row for the result.
         var result = await _questManager.ExecuteNodeAsync(id, nodeId, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    [HttpPost("runs/{runId:guid}/fork")]
+    public async Task<ActionResult<OASISResult<QuestRun>>> Fork(Guid runId, [FromBody] QuestForkRequest body, [FromQuery] OASISRequest? request)
+    {
+        var result = await _questManager.ForkAsync(runId, body.AtNodeId, body.Reason, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    [HttpPost("runs/{runId:guid}/mark-failed")]
+    public async Task<ActionResult<OASISResult<QuestRun>>> MarkRunFailed(Guid runId, [FromBody] QuestMarkFailedRequest body, [FromQuery] OASISRequest? request)
+    {
+        var result = await _questManager.MarkRunFailedAsync(runId, body.Reason, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }

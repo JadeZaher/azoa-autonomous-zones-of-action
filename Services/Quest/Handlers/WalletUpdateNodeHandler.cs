@@ -15,12 +15,12 @@ public sealed class WalletUpdateNodeHandler : IQuestNodeHandler
 
     public QuestNodeType NodeType => QuestNodeType.WalletUpdate;
 
-    public async Task<OASISResult<QuestNode>> HandleAsync(Models.Quest.Quest quest, QuestNode node, CancellationToken ct = default)
+    public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<WalletUpdateNodeConfig>(node.Config, QuestNodeJson.Options)!;
+        var cfg = JsonSerializer.Deserialize<WalletUpdateNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
         var r = await _walletManager.UpdateAsync(cfg.WalletId, cfg.Model);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
-        if (r.IsError) return QuestNodeResults.Fail(node, r.Message);
-        return QuestNodeResults.Ok(node, null, outputJson);
+        if (r.IsError) return QuestNodeResults.Fail(r.Message);
+        return QuestNodeResults.Ok(outputJson);
     }
 }

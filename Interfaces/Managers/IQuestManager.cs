@@ -16,9 +16,21 @@ public interface IQuestManager
     // DAG validation
     Task<OASISResult<bool>> ValidateDAGAsync(Guid questId, OASISRequest? request = null);
 
-    // Execution
-    Task<OASISResult<Quest>> ExecuteAsync(Guid questId, OASISRequest? request = null);
-    Task<OASISResult<QuestNode>> ExecuteNodeAsync(Guid questId, Guid nodeId, OASISRequest? request = null);
+    // Execution — produces a QuestRun (one execution attempt). Per the
+    // quest-temporal-fork-model track, runtime state lives on QuestRun +
+    // QuestNodeExecution, never on the Quest definition.
+    Task<OASISResult<QuestRun>> ExecuteAsync(Guid questId, OASISRequest? request = null);
+    Task<OASISResult<QuestNodeExecution>> ExecuteNodeAsync(Guid questId, Guid nodeId, OASISRequest? request = null);
+
+    // Fork — creates a child run branched from `runId` at `atNodeId`. Parent
+    // must be Running. See ADR §2.3 for state-machine semantics.
+    Task<OASISResult<QuestRun>> ForkAsync(Guid runId, Guid atNodeId, string reason, OASISRequest? request = null);
+
+    // Supervisor-driven fail path — distinct from the internal-error path
+    // by carrying a `FailReason` audit field on the QuestRun. The
+    // internal-error path leaves FailReason = null and writes the error
+    // onto the failed QuestNodeExecution instead.
+    Task<OASISResult<QuestRun>> MarkRunFailedAsync(Guid runId, string reason, OASISRequest? request = null);
 
     // Templates
     Task<OASISResult<QuestTemplate>> CreateTemplateAsync(QuestTemplateCreateModel model, Guid avatarId, OASISRequest? request = null);

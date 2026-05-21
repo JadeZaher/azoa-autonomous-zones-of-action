@@ -14,7 +14,33 @@ public class QuestUpdateModel
 {
     public string? Name { get; set; }
     public string? Description { get; set; }
+
+    /// <summary>
+    /// Retained for API back-compat. After the quest-temporal-fork-model
+    /// track, runtime status lives on <see cref="QuestRun.Status"/>; setting
+    /// this field has no effect on the immutable Quest definition. Validator
+    /// still enforces enum validity for clients still sending it.
+    /// </summary>
     public QuestStatus? Status { get; set; }
+}
+
+/// <summary>
+/// Request body for <c>POST /api/quest/runs/{runId}/fork</c>. See ADR §2.3.
+/// </summary>
+public class QuestForkRequest
+{
+    public Guid AtNodeId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Request body for <c>POST /api/quest/runs/{runId}/mark-failed</c>. The
+/// supervisor-driven fail path; the audit field
+/// <see cref="QuestRun.FailReason"/> distinguishes from internal-error fails.
+/// </summary>
+public class QuestMarkFailedRequest
+{
+    public string Reason { get; set; } = string.Empty;
 }
 
 public class QuestNodeCreateModel

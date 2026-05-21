@@ -102,9 +102,10 @@ public class QuestInstantiatorTests
         var avatarId = Guid.NewGuid();
         var quest = await _instantiator.InstantiateAsync(templateId, "{}", avatarId);
 
+        // Status moved to QuestRun (see quest-temporal-fork-model ADR §2.2);
+        // instantiation produces the definition only.
         Assert.NotNull(quest);
         Assert.Equal("Simple Quest", quest.Name);
-        Assert.Equal(QuestStatus.Draft, quest.Status);
         Assert.Equal(avatarId, quest.AvatarId);
         Assert.Equal(templateId, quest.TemplateId);
         Assert.Equal(2, quest.Nodes.Count);

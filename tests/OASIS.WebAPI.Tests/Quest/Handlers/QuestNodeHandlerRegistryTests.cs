@@ -5,8 +5,8 @@ using OASIS.WebAPI.Interfaces.QuestExecution;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Managers;
 using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Requests;
 using OASIS.WebAPI.Models.Responses;
+using OASIS.WebAPI.Providers.Stores;
 using OASIS.WebAPI.Services.Quest;
 using Xunit;
 using QuestEntity = OASIS.WebAPI.Models.Quest.Quest;
@@ -55,11 +55,12 @@ public class QuestNodeHandlerRegistryTests
     }
 
     [Fact]
-    public async Task QuestManager_UnknownNodeType_RegistryMiss_ReturnsFail()
+    public async Task QuestManager_UnknownNodeType_RegistryMiss_FailsExecutionRow()
     {
         // Registry with no handler for the node's type => TryGet false =>
-        // QuestManager.ExecuteNodeInternalAsync returns Fail (preserves the
-        // former default-case "Unsupported node type" behaviour).
+        // QuestManager records a Failed QuestNodeExecution with the
+        // "Unsupported node type" error message (preserves the former
+        // default-case Fail behaviour, now keyed by (runId, nodeId)).
         var emptyRegistry = new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>());
 
         var node = new QuestNode
@@ -68,8 +69,7 @@ public class QuestNodeHandlerRegistryTests
             Name = "n",
             NodeType = QuestNodeType.BlockchainExecute,
             IsEntry = true,
-            IsTerminal = true,
-            State = QuestNodeState.Pending
+            IsTerminal = true
         };
         var questId = Guid.NewGuid();
         var quest = new QuestEntity
@@ -86,12 +86,20 @@ public class QuestNodeHandlerRegistryTests
              .ReturnsAsync((QuestEntity q, CancellationToken _) => new OASISResult<QuestEntity> { Result = q });
 
         var validator = new Mock<IQuestDagValidator>();
-        var manager = new QuestManager(store.Object, validator.Object, emptyRegistry);
+        var execStore = new InMemoryQuestNodeExecutionStore();
+        var manager = new QuestManager(
+            store.Object,
+            new InMemoryQuestRunStore(),
+            execStore,
+            validator.Object,
+            emptyRegistry);
 
         var result = await manager.ExecuteNodeAsync(questId, node.Id);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Be($"Unsupported node type: {QuestNodeType.BlockchainExecute}");
-        node.State.Should().Be(QuestNodeState.Failed);
+        result.Result.Should().NotBeNull();
+        result.Result!.State.Should().Be(QuestNodeState.Failed);
+        result.Result.Error.Should().Be($"Unsupported node type: {QuestNodeType.BlockchainExecute}");
     }
 }

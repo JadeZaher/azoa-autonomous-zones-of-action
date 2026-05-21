@@ -130,7 +130,7 @@ public static class SeedData
             Name = "Demo Quest: Create & Query Holon",
             Description = "A simple 2-step quest that creates a holon then queries it",
             AvatarId = avatarId,
-            Status = QuestStatus.Draft,
+            // Status moved to QuestRun (see quest-temporal-fork-model ADR §2.2).
             Nodes = new List<QuestNode>
             {
                 new()

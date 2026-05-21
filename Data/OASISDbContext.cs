@@ -277,12 +277,13 @@ public class OASISDbContext : DbContext
             entity.HasIndex(e => e.DeadLettered);
         });
 
-        // Quest configurations
+        // Quest configurations. Runtime fields (Status/CompletedDate on Quest;
+        // State/Output/Error on QuestNode) moved to QuestRun + QuestNodeExecution
+        // by the quest-temporal-fork-model track (see ADR §2.2).
         modelBuilder.Entity<Quest>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.AvatarId);
-            entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.TemplateId);
             entity.HasIndex(e => e.DappSeriesId);
             entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
@@ -295,11 +296,8 @@ public class OASISDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.QuestId);
             entity.HasIndex(e => e.NodeType);
-            entity.HasIndex(e => e.State);
             entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
             entity.Property(e => e.Config).HasColumnType("text");
-            entity.Property(e => e.Output).HasColumnType("text");
-            entity.Property(e => e.Error).HasMaxLength(2000);
         });
 
         modelBuilder.Entity<QuestEdge>(entity =>

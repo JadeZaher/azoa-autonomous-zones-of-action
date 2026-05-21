@@ -15,12 +15,12 @@ public sealed class WalletSetDefaultNodeHandler : IQuestNodeHandler
 
     public QuestNodeType NodeType => QuestNodeType.WalletSetDefault;
 
-    public async Task<OASISResult<QuestNode>> HandleAsync(Models.Quest.Quest quest, QuestNode node, CancellationToken ct = default)
+    public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<WalletSetDefaultNodeConfig>(node.Config, QuestNodeJson.Options)!;
-        var r = await _walletManager.SetDefaultAsync(quest.AvatarId, cfg.WalletId);
+        var cfg = JsonSerializer.Deserialize<WalletSetDefaultNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
+        var r = await _walletManager.SetDefaultAsync(context.Quest.AvatarId, cfg.WalletId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
-        if (r.IsError) return QuestNodeResults.Fail(node, r.Message);
-        return QuestNodeResults.Ok(node, null, outputJson);
+        if (r.IsError) return QuestNodeResults.Fail(r.Message);
+        return QuestNodeResults.Ok(outputJson);
     }
 }

@@ -9,8 +9,6 @@ using QuestNodeTemplate = OASIS.WebAPI.Models.Quest.QuestNodeTemplate;
 using QuestTemplate = OASIS.WebAPI.Models.Quest.QuestTemplate;
 using QuestTemplateNode = OASIS.WebAPI.Models.Quest.QuestTemplateNode;
 using QuestTemplateEdge = OASIS.WebAPI.Models.Quest.QuestTemplateEdge;
-using QuestNodeState = OASIS.WebAPI.Models.Quest.QuestNodeState;
-using QuestStatus = OASIS.WebAPI.Models.Quest.QuestStatus;
 using QuestNodeType = OASIS.WebAPI.Models.Quest.QuestNodeType;
 using QuestEdgeType = OASIS.WebAPI.Models.Quest.QuestEdgeType;
 
@@ -52,14 +50,13 @@ public class QuestInstantiator : IQuestInstantiator
         var parameters = paramsDoc.RootElement.EnumerateObject()
             .ToDictionary(p => p.Name, p => p.ToString());
 
-        // Create new Quest
+        // Create new Quest. Status moved to QuestRun (see quest-temporal-fork-model ADR §2.2).
         var quest = new QuestEntity
         {
             Id = Guid.NewGuid(),
             Name = template.Name,
             Description = template.Description,
             AvatarId = avatarId,
-            Status = QuestStatus.Draft,
             TemplateId = templateId,
             CreatedDate = DateTime.UtcNow
         };
@@ -80,6 +77,7 @@ public class QuestInstantiator : IQuestInstantiator
             // Merge default config with param overrides
             var config = MergeConfigs(nodeTemplate.DefaultConfig, templateNode.ParamOverrides, parameters);
 
+            // Per-node State moved to QuestNodeExecution (see quest-temporal-fork-model ADR §2.2).
             var node = new QuestNode
             {
                 Id = Guid.NewGuid(),
@@ -88,7 +86,6 @@ public class QuestInstantiator : IQuestInstantiator
                 NodeType = nodeTemplate.NodeType,
                 Name = nodeTemplate.Name,
                 Config = config,
-                State = QuestNodeState.Pending,
                 IsEntry = templateNode.IsEntry,
                 IsTerminal = templateNode.IsTerminal,
                 ExecutionOrder = 0

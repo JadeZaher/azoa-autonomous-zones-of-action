@@ -9,18 +9,33 @@ using OASIS.WebAPI.Services.Quest;
 
 namespace OASIS.WebAPI.Managers;
 
+/// <summary>
+/// Orchestrates quest execution against the per-run / per-(run,node) runtime
+/// surface introduced by the <c>quest-temporal-fork-model</c> track. Holds a
+/// <see cref="IQuestStore"/> (definitions, immutable in-flight),
+/// <see cref="IQuestRunStore"/> (one row per execution attempt),
+/// <see cref="IQuestNodeExecutionStore"/> (per-(run, node) state/output/error),
+/// and <see cref="IQuestNodeHandlerRegistry"/> (the per-<see cref="QuestNodeType"/>
+/// dispatch table).
+/// </summary>
 public class QuestManager : IQuestManager
 {
     private readonly IQuestStore _questStore;
+    private readonly IQuestRunStore _runStore;
+    private readonly IQuestNodeExecutionStore _executionStore;
     private readonly IQuestDagValidator _dagValidator;
     private readonly IQuestNodeHandlerRegistry _registry;
 
     public QuestManager(
         IQuestStore questStore,
+        IQuestRunStore runStore,
+        IQuestNodeExecutionStore executionStore,
         IQuestDagValidator dagValidator,
         IQuestNodeHandlerRegistry registry)
     {
         _questStore = questStore;
+        _runStore = runStore;
+        _executionStore = executionStore;
         _dagValidator = dagValidator;
         _registry = registry;
     }
@@ -37,7 +52,6 @@ public class QuestManager : IQuestManager
             Name = model.Name,
             Description = model.Description,
             AvatarId = avatarId,
-            Status = QuestStatus.Draft,
             CreatedDate = DateTime.UtcNow
         };
 
@@ -54,8 +68,7 @@ public class QuestManager : IQuestManager
                 Config = nodeModel.Config,
                 IsEntry = nodeModel.IsEntry,
                 IsTerminal = nodeModel.IsTerminal,
-                NodeTemplateId = nodeModel.NodeTemplateId,
-                State = QuestNodeState.Pending
+                NodeTemplateId = nodeModel.NodeTemplateId
             };
             quest.Nodes.Add(node);
             nodeIds.Add(node.Id);
@@ -103,12 +116,9 @@ public class QuestManager : IQuestManager
         var quest = existing.Result;
         if (model.Name != null) quest.Name = model.Name;
         if (model.Description != null) quest.Description = model.Description;
-        if (model.Status.HasValue)
-        {
-            quest.Status = model.Status.Value;
-            if (model.Status.Value == QuestStatus.Completed)
-                quest.CompletedDate = DateTime.UtcNow;
-        }
+        // model.Status is intentionally ignored — runtime status moved to
+        // QuestRun.Status (see ADR §2.2). The field on QuestUpdateModel is
+        // retained for API back-compat but has no effect on the definition.
 
         return await _questStore.UpsertQuestAsync(quest);
     }
@@ -153,127 +163,379 @@ public class QuestManager : IQuestManager
     // EXECUTION
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<Quest>> ExecuteAsync(Guid questId, OASISRequest? request = null)
+    public async Task<OASISResult<QuestRun>> ExecuteAsync(Guid questId, OASISRequest? request = null)
     {
-        // Validate DAG first
+        // Validate DAG first (also assigns ExecutionOrder onto definition nodes).
         var validationResult = await ValidateDAGAsync(questId, request);
         if (validationResult.IsError)
-            return new OASISResult<Quest> { IsError = true, Message = validationResult.Message };
+            return new OASISResult<QuestRun> { IsError = true, Message = validationResult.Message };
 
         var questResult = await _questStore.GetQuestAsync(questId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<Quest> { IsError = true, Message = questResult.Message };
+            return new OASISResult<QuestRun> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
-        quest.Status = QuestStatus.Active;
 
-        // Execute nodes in topological order
+        // Create the QuestRun upfront — Pending → Running on first node claim.
+        var run = new QuestRun
+        {
+            Id = Guid.NewGuid(),
+            QuestId = quest.Id,
+            AvatarId = quest.AvatarId,
+            Status = QuestRunStatus.Pending,
+            StartedAt = DateTime.UtcNow
+        };
+        var createRun = await _runStore.CreateAsync(run);
+        if (createRun.IsError || createRun.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = createRun.Message };
+
+        // Pre-create one QuestNodeExecution(Pending) per quest node.
+        foreach (var node in quest.Nodes)
+        {
+            var exec = new QuestNodeExecution
+            {
+                Id = Guid.NewGuid(),
+                RunId = run.Id,
+                NodeId = node.Id,
+                State = QuestNodeState.Pending,
+                StartedAt = DateTime.UtcNow
+            };
+            var createExec = await _executionStore.CreateAsync(exec);
+            if (createExec.IsError)
+                return new OASISResult<QuestRun> { IsError = true, Message = createExec.Message };
+        }
+
+        // Status: Pending → Running (first claim).
+        run.Status = QuestRunStatus.Running;
+        await _runStore.UpdateAsync(run);
+
+        // Track per-node executions in-memory for ComposeOutputs upstream lookup.
+        var executionsByNode = new Dictionary<Guid, QuestNodeExecution>();
+
+        // Execute nodes in topological order.
         var sortedNodes = quest.Nodes.OrderBy(n => n.ExecutionOrder).ToList();
 
         foreach (var node in sortedNodes)
         {
-            // Check conditional edges — skip node if any incoming conditional edge evaluates to false
+            // Conditional / failed-predecessor skipping — uses upstream executions
+            // (not the obsolete in-place QuestNode.State).
             var incomingEdges = quest.Edges.Where(e => e.TargetNodeId == node.Id).ToList();
             var shouldSkip = false;
 
             foreach (var edge in incomingEdges)
             {
+                executionsByNode.TryGetValue(edge.SourceNodeId, out var sourceExec);
+                var sourceState = sourceExec?.State;
+
                 if (edge.EdgeType == QuestEdgeType.Conditional && !string.IsNullOrEmpty(edge.Condition))
                 {
-                    var sourceNode = quest.Nodes.FirstOrDefault(n => n.Id == edge.SourceNodeId);
-                    if (sourceNode?.State == QuestNodeState.Failed || sourceNode?.State == QuestNodeState.Skipped)
+                    if (sourceState == QuestNodeState.Failed || sourceState == QuestNodeState.Skipped)
                     {
                         shouldSkip = true;
                         break;
                     }
                 }
 
-                // If source node failed on a control edge, skip this node
-                if (edge.EdgeType == QuestEdgeType.Control)
+                if (edge.EdgeType == QuestEdgeType.Control && sourceState == QuestNodeState.Failed)
                 {
-                    var sourceNode = quest.Nodes.FirstOrDefault(n => n.Id == edge.SourceNodeId);
-                    if (sourceNode?.State == QuestNodeState.Failed)
-                    {
-                        shouldSkip = true;
-                        break;
-                    }
+                    shouldSkip = true;
+                    break;
                 }
             }
+
+            var execution = (await _executionStore.GetByRunAndNodeAsync(run.Id, node.Id)).Result!;
 
             if (shouldSkip)
             {
-                node.State = QuestNodeState.Skipped;
+                execution.State = QuestNodeState.Skipped;
+                execution.EndedAt = DateTime.UtcNow;
+                await _executionStore.UpdateAsync(execution);
+                executionsByNode[node.Id] = execution;
                 continue;
             }
 
-            try
+            // Claim the row (Pending → Running). G2 conditional-update guard.
+            var claim = await _executionStore.TryClaimPendingAsync(run.Id, node.Id);
+            if (claim.IsError || claim.Result == null)
             {
-                var nodeResult = await ExecuteNodeInternalAsync(quest, node);
-                if (nodeResult.IsError)
+                // Either missing or already-claimed (lost race). Treat as fail.
+                execution.State = QuestNodeState.Failed;
+                execution.Error = claim.Message ?? "Failed to claim node for execution.";
+                execution.EndedAt = DateTime.UtcNow;
+                await _executionStore.UpdateAsync(execution);
+                executionsByNode[node.Id] = execution;
+                break;
+            }
+            execution = claim.Result!;
+
+            // Build upstream-output map for ComposeOutputs (predecessors only).
+            var upstream = new Dictionary<Guid, QuestNodeExecution>();
+            foreach (var edge in incomingEdges)
+            {
+                if (executionsByNode.TryGetValue(edge.SourceNodeId, out var pe))
+                    upstream[edge.SourceNodeId] = pe;
+            }
+
+            QuestNodeHandlerResult result;
+            if (!_registry.TryGet(node.NodeType, out var handler))
+            {
+                result = QuestNodeResults.Fail($"Unsupported node type: {node.NodeType}");
+            }
+            else
+            {
+                try
                 {
-                    node.State = QuestNodeState.Failed;
-                    node.Error = nodeResult.Message;
+                    var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstream);
+                    result = await handler.HandleAsync(ctx);
                 }
-                else
+                catch (Exception ex)
                 {
-                    node.State = QuestNodeState.Succeeded;
-                    node.Output = nodeResult.Result?.Output;
+                    result = QuestNodeResults.Fail(ex.Message);
                 }
             }
-            catch (Exception ex)
+
+            if (result.IsError)
             {
-                node.State = QuestNodeState.Failed;
-                node.Error = ex.Message;
+                execution.State = QuestNodeState.Failed;
+                execution.Error = result.Message;
             }
+            else
+            {
+                execution.State = QuestNodeState.Succeeded;
+                execution.Output = result.Output;
+            }
+            execution.EndedAt = DateTime.UtcNow;
+            await _executionStore.UpdateAsync(execution);
+            executionsByNode[node.Id] = execution;
         }
 
-        // Determine overall quest status
-        if (quest.Nodes.Any(n => n.State == QuestNodeState.Failed))
-            quest.Status = QuestStatus.Failed;
-        else
-        {
-            quest.Status = QuestStatus.Completed;
-            quest.CompletedDate = DateTime.UtcNow;
-        }
+        // Determine overall run status from the per-node executions.
+        var allExecs = (await _executionStore.GetByRunIdAsync(run.Id)).Result ?? Enumerable.Empty<QuestNodeExecution>();
+        run.Status = allExecs.Any(e => e.State == QuestNodeState.Failed)
+            ? QuestRunStatus.Failed
+            : QuestRunStatus.Succeeded;
+        run.EndedAt = DateTime.UtcNow;
+        var updated = await _runStore.UpdateAsync(run);
 
-        await _questStore.UpsertQuestAsync(quest);
-        return new OASISResult<Quest> { Result = quest, Message = $"Quest execution {quest.Status}." };
+        return new OASISResult<QuestRun> { Result = updated.Result, Message = $"Quest run {run.Status}." };
     }
 
-    public async Task<OASISResult<QuestNode>> ExecuteNodeAsync(Guid questId, Guid nodeId, OASISRequest? request = null)
+    public async Task<OASISResult<QuestNodeExecution>> ExecuteNodeAsync(Guid questId, Guid nodeId, OASISRequest? request = null)
     {
         var questResult = await _questStore.GetQuestAsync(questId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestNode> { IsError = true, Message = questResult.Message };
+            return new OASISResult<QuestNodeExecution> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
         var node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null)
-            return new OASISResult<QuestNode> { IsError = true, Message = "Node not found." };
+            return new OASISResult<QuestNodeExecution> { IsError = true, Message = "Node not found." };
 
-        var result = await ExecuteNodeInternalAsync(quest, node);
+        // Single-node execution creates an ad-hoc QuestRun that lives just long
+        // enough to record this one node's outcome. This preserves the
+        // historic ExecuteNodeAsync entry point (used by the QuestController)
+        // while keeping the new (runId, nodeId) invariant: no state ever lands
+        // on the QuestNode itself.
+        var run = new QuestRun
+        {
+            Id = Guid.NewGuid(),
+            QuestId = quest.Id,
+            AvatarId = quest.AvatarId,
+            Status = QuestRunStatus.Running,
+            StartedAt = DateTime.UtcNow
+        };
+        await _runStore.CreateAsync(run);
 
-        await _questStore.UpsertQuestAsync(quest);
-        return result;
+        var execution = new QuestNodeExecution
+        {
+            Id = Guid.NewGuid(),
+            RunId = run.Id,
+            NodeId = node.Id,
+            State = QuestNodeState.Running,
+            StartedAt = DateTime.UtcNow
+        };
+        await _executionStore.CreateAsync(execution);
+
+        QuestNodeHandlerResult result;
+        if (!_registry.TryGet(node.NodeType, out var handler))
+        {
+            result = QuestNodeResults.Fail($"Unsupported node type: {node.NodeType}");
+        }
+        else
+        {
+            try
+            {
+                var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest);
+                result = await handler.HandleAsync(ctx);
+            }
+            catch (Exception ex)
+            {
+                result = QuestNodeResults.Fail(ex.Message);
+            }
+        }
+
+        if (result.IsError)
+        {
+            execution.State = QuestNodeState.Failed;
+            execution.Error = result.Message;
+        }
+        else
+        {
+            execution.State = QuestNodeState.Succeeded;
+            execution.Output = result.Output;
+        }
+        execution.EndedAt = DateTime.UtcNow;
+        await _executionStore.UpdateAsync(execution);
+
+        run.Status = result.IsError ? QuestRunStatus.Failed : QuestRunStatus.Succeeded;
+        run.EndedAt = DateTime.UtcNow;
+        await _runStore.UpdateAsync(run);
+
+        return result.IsError
+            ? new OASISResult<QuestNodeExecution> { IsError = true, Result = execution, Message = result.Message ?? string.Empty }
+            : new OASISResult<QuestNodeExecution> { Result = execution, Message = "Node executed successfully." };
     }
 
-    private async Task<OASISResult<QuestNode>> ExecuteNodeInternalAsync(Quest quest, QuestNode node, CancellationToken ct = default)
+    // ═══════════════════════════════════════════════════════════════════
+    // FORK
+    // ═══════════════════════════════════════════════════════════════════
+
+    public async Task<OASISResult<QuestRun>> ForkAsync(Guid runId, Guid atNodeId, string reason, OASISRequest? request = null)
     {
-        node.State = QuestNodeState.Running;
+        var parentResult = await _runStore.GetByIdAsync(runId);
+        if (parentResult.IsError || parentResult.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = parentResult.Message };
 
-        if (!_registry.TryGet(node.NodeType, out var handler))
-            return QuestNodeResults.Fail(node, $"Unsupported node type: {node.NodeType}");
+        var parent = parentResult.Result;
 
-        // One thin try/catch wrapper — mirrors the former QuestManager
-        // catch (~:627-630), in one place instead of per node type.
-        try
+        // State-machine guard: only Running runs are forkable. Succeeded runs
+        // are re-runnable (new root) but not forkable; Failed/Forked/Cancelled
+        // are terminal. See ADR §2.3.
+        if (parent.Status != QuestRunStatus.Running)
         {
-            return await handler.HandleAsync(quest, node, ct);
+            return new OASISResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Cannot fork run {runId}: status is {parent.Status} (only Running runs are forkable)."
+            };
         }
-        catch (Exception ex)
+
+        var questResult = await _questStore.GetQuestAsync(parent.QuestId);
+        if (questResult.IsError || questResult.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = questResult.Message };
+
+        var quest = questResult.Result;
+        var forkPointNode = quest.Nodes.FirstOrDefault(n => n.Id == atNodeId);
+        if (forkPointNode == null)
         {
-            return QuestNodeResults.Fail(node, ex.Message);
+            return new OASISResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Cannot fork at node {atNodeId}: not present in quest {parent.QuestId} definition."
+            };
         }
+        var forkPoint = forkPointNode.ExecutionOrder;
+
+        // Create the child run with lineage fields populated.
+        var child = new QuestRun
+        {
+            Id = Guid.NewGuid(),
+            QuestId = parent.QuestId,
+            AvatarId = parent.AvatarId,
+            Status = QuestRunStatus.Pending,
+            StartedAt = DateTime.UtcNow,
+            ParentRunId = parent.Id,
+            ForkedAtNodeId = atNodeId,
+            ForkReason = reason
+        };
+        var createChild = await _runStore.CreateAsync(child);
+        if (createChild.IsError || createChild.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = createChild.Message };
+
+        // Copy-by-reference: for nodes with ExecutionOrder < forkPoint, the
+        // parent's execution row is shared with the child. The InMemory
+        // implementation does this by creating a new (childRunId, nodeId)
+        // row that mirrors the parent's execution state (same Id, same
+        // Output/Error/State). The SurrealDB write-through (surrealdb-migration
+        // tasks 9–10) materializes this as a `RELATE quest_run -> executes ->
+        // quest_node_execution` edge — no duplication. See SURREAL-SCHEMA-HINTS §6.2.
+        var parentExecs = (await _executionStore.GetByRunIdAsync(parent.Id)).Result
+            ?? Enumerable.Empty<QuestNodeExecution>();
+        foreach (var parentExec in parentExecs)
+        {
+            var parentNode = quest.Nodes.FirstOrDefault(n => n.Id == parentExec.NodeId);
+            if (parentNode == null) continue;
+            if (parentNode.ExecutionOrder >= forkPoint) continue;
+
+            // Mirror the parent's completed execution onto the child run.
+            var mirror = new QuestNodeExecution
+            {
+                Id = Guid.NewGuid(),
+                RunId = child.Id,
+                NodeId = parentExec.NodeId,
+                State = parentExec.State,
+                Output = parentExec.Output,
+                Error = parentExec.Error,
+                StartedAt = parentExec.StartedAt,
+                EndedAt = parentExec.EndedAt
+            };
+            await _executionStore.CreateAsync(mirror);
+        }
+
+        // Cancel parent's in-flight (Pending / Running) node executions.
+        foreach (var pe in parentExecs)
+        {
+            if (pe.State != QuestNodeState.Pending && pe.State != QuestNodeState.Running) continue;
+            pe.State = QuestNodeState.Cancelled;
+            pe.EndedAt = DateTime.UtcNow;
+            await _executionStore.UpdateAsync(pe);
+        }
+
+        // Transition parent Running → Forked (terminal).
+        parent.Status = QuestRunStatus.Forked;
+        parent.EndedAt = DateTime.UtcNow;
+        await _runStore.UpdateAsync(parent);
+
+        return new OASISResult<QuestRun> { Result = child, Message = "Fork created." };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SUPERVISOR-DRIVEN FAIL
+    // ═══════════════════════════════════════════════════════════════════
+
+    public async Task<OASISResult<QuestRun>> MarkRunFailedAsync(Guid runId, string reason, OASISRequest? request = null)
+    {
+        var runResult = await _runStore.GetByIdAsync(runId);
+        if (runResult.IsError || runResult.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message };
+
+        var run = runResult.Result;
+        if (run.Status != QuestRunStatus.Running)
+        {
+            return new OASISResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Cannot mark run {runId} failed: status is {run.Status} (only Running runs accept supervisor fail)."
+            };
+        }
+
+        // Cancel any in-flight node executions (same shape as fork).
+        var execs = (await _executionStore.GetByRunIdAsync(run.Id)).Result
+            ?? Enumerable.Empty<QuestNodeExecution>();
+        foreach (var exec in execs)
+        {
+            if (exec.State != QuestNodeState.Pending && exec.State != QuestNodeState.Running) continue;
+            exec.State = QuestNodeState.Cancelled;
+            exec.EndedAt = DateTime.UtcNow;
+            await _executionStore.UpdateAsync(exec);
+        }
+
+        run.Status = QuestRunStatus.Failed;
+        run.FailReason = reason;
+        run.EndedAt = DateTime.UtcNow;
+        var updated = await _runStore.UpdateAsync(run);
+
+        return new OASISResult<QuestRun> { Result = updated.Result, Message = $"Run marked failed: {reason}" };
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -365,7 +627,6 @@ public class QuestManager : IQuestManager
             Description = template.Description,
             AvatarId = avatarId,
             TemplateId = templateId,
-            Status = QuestStatus.Draft,
             CreatedDate = DateTime.UtcNow
         };
 
@@ -404,8 +665,7 @@ public class QuestManager : IQuestManager
                 Name = nodeTemplate?.Name ?? templateNode.SlotId,
                 Config = config,
                 IsEntry = templateNode.IsEntry,
-                IsTerminal = templateNode.IsTerminal,
-                State = QuestNodeState.Pending
+                IsTerminal = templateNode.IsTerminal
             });
         }
 

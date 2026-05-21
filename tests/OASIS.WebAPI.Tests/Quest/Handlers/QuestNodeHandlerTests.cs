@@ -15,18 +15,24 @@ using QuestEntity = OASIS.WebAPI.Models.Quest.Quest;
 namespace OASIS.WebAPI.Tests.Quest.Handlers;
 
 /// <summary>
-/// Per-handler dispatch tests: assert each handler deserializes its config,
-/// invokes the correct manager method with the expected args, and maps the
-/// result to node State/Output (success) or State/Error (failure) — the
-/// behaviour relocated verbatim from QuestManager.ExecuteNodeInternalAsync.
+/// Per-handler dispatch tests. After the quest-temporal-fork-model track,
+/// handlers take a <see cref="QuestNodeExecutionContext"/> (runId+nodeId-aware)
+/// and return a <see cref="QuestNodeHandlerResult"/>; the manager translates
+/// the result into a <see cref="QuestNodeExecution"/> row. Handlers no longer
+/// mutate <see cref="QuestNode"/> — these tests assert against the returned
+/// result, not against in-place mutation.
 /// </summary>
 public class QuestNodeHandlerTests
 {
-    private static QuestEntity QuestWithAvatar(Guid avatarId) =>
-        new() { Id = Guid.NewGuid(), AvatarId = avatarId };
+    private static QuestEntity QuestWithAvatarAndNode(Guid avatarId, QuestNode node) =>
+        new() { Id = Guid.NewGuid(), AvatarId = avatarId, Nodes = { node } };
 
     private static QuestNode NodeWith(QuestNodeType type, string config) =>
         new() { Id = Guid.NewGuid(), NodeType = type, Config = config };
+
+    /// <summary>Build a context whose Quest contains <paramref name="node"/>.</summary>
+    private static QuestNodeExecutionContext CtxFor(QuestNode node, Guid avatarId) =>
+        new(Guid.NewGuid(), node.Id, QuestWithAvatarAndNode(avatarId, node));
 
     // ─── Holon group (IHolonManager) ───
 
@@ -43,11 +49,10 @@ public class QuestNodeHandlerTests
         handler.NodeType.Should().Be(QuestNodeType.HolonCreate);
 
         var node = NodeWith(QuestNodeType.HolonCreate, JsonSerializer.Serialize(new HolonCreateModel { Name = "H" }));
-        var result = await handler.HandleAsync(QuestWithAvatar(avatarId), node);
+        var result = await handler.HandleAsync(CtxFor(node, avatarId));
 
         result.IsError.Should().BeFalse();
-        node.State.Should().Be(QuestNodeState.Succeeded);
-        node.Output.Should().NotBeNull();
+        result.Output.Should().NotBeNull();
         mgr.Verify(m => m.CreateAsync(It.IsAny<HolonCreateModel>(), avatarId, It.IsAny<OASISRequest?>()), Times.Once);
     }
 
@@ -60,12 +65,10 @@ public class QuestNodeHandlerTests
 
         var handler = new HolonCreateNodeHandler(mgr.Object);
         var node = NodeWith(QuestNodeType.HolonCreate, JsonSerializer.Serialize(new HolonCreateModel { Name = "H" }));
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Be("boom");
-        node.State.Should().Be(QuestNodeState.Failed);
-        node.Error.Should().Be("boom");
     }
 
     [Fact]
@@ -78,10 +81,9 @@ public class QuestNodeHandlerTests
 
         var handler = new HolonDeleteNodeHandler(mgr.Object);
         var node = NodeWith(QuestNodeType.HolonDelete, JsonSerializer.Serialize(new IdConfig { Id = id }));
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        node.State.Should().Be(QuestNodeState.Succeeded);
         mgr.Verify(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()), Times.Once);
     }
 
@@ -96,7 +98,7 @@ public class QuestNodeHandlerTests
         var handler = new HolonUpdateNodeHandler(mgr.Object);
         var cfg = new HolonUpdateNodeConfig { HolonId = holonId, Model = new HolonUpdateModel { Name = "N" } };
         var node = NodeWith(QuestNodeType.HolonUpdate, JsonSerializer.Serialize(cfg));
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
         mgr.Verify(m => m.UpdateAsync(holonId, It.IsAny<HolonUpdateModel>(), It.IsAny<OASISRequest?>()), Times.Once);
@@ -116,10 +118,9 @@ public class QuestNodeHandlerTests
         handler.NodeType.Should().Be(QuestNodeType.NftMint);
 
         var node = NodeWith(QuestNodeType.NftMint, JsonSerializer.Serialize(new NftMintRequest()));
-        var result = await handler.HandleAsync(QuestWithAvatar(avatarId), node);
+        var result = await handler.HandleAsync(CtxFor(node, avatarId));
 
         result.IsError.Should().BeFalse();
-        node.State.Should().Be(QuestNodeState.Succeeded);
         mgr.Verify(m => m.MintAsync(It.IsAny<NftMintRequest>(), avatarId, It.IsAny<OASISRequest?>()), Times.Once);
     }
 
@@ -136,7 +137,7 @@ public class QuestNodeHandlerTests
         var handler = new NftBurnNodeHandler(mgr.Object);
         var cfg = new NftBurnNodeConfig { NftId = nftId, WalletId = walletId };
         var node = NodeWith(QuestNodeType.NftBurn, JsonSerializer.Serialize(cfg));
-        var result = await handler.HandleAsync(QuestWithAvatar(avatarId), node);
+        var result = await handler.HandleAsync(CtxFor(node, avatarId));
 
         result.IsError.Should().BeFalse();
         mgr.Verify(m => m.BurnAsync(nftId, walletId, avatarId, It.IsAny<OASISRequest?>()), Times.Once);
@@ -158,7 +159,7 @@ public class QuestNodeHandlerTests
 
         var node = NodeWith(QuestNodeType.WalletSetDefault,
             JsonSerializer.Serialize(new WalletSetDefaultNodeConfig { WalletId = walletId }));
-        var result = await handler.HandleAsync(QuestWithAvatar(avatarId), node);
+        var result = await handler.HandleAsync(CtxFor(node, avatarId));
 
         result.IsError.Should().BeFalse();
         mgr.Verify(m => m.SetDefaultAsync(avatarId, walletId, It.IsAny<OASISRequest?>()), Times.Once);
@@ -173,11 +174,10 @@ public class QuestNodeHandlerTests
 
         var handler = new WalletGetNodeHandler(mgr.Object);
         var node = NodeWith(QuestNodeType.WalletGet, JsonSerializer.Serialize(new IdConfig { Id = Guid.NewGuid() }));
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeTrue();
-        node.State.Should().Be(QuestNodeState.Failed);
-        node.Error.Should().Be("nope");
+        result.Message.Should().Be("nope");
     }
 
     // ─── STAR group (ISTARManager) ───
@@ -194,7 +194,7 @@ public class QuestNodeHandlerTests
         handler.NodeType.Should().Be(QuestNodeType.StarDeploy);
 
         var node = NodeWith(QuestNodeType.StarDeploy, JsonSerializer.Serialize(new IdConfig { Id = id }));
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
         mgr.Verify(m => m.DeployAsync(id, It.IsAny<OASISRequest?>()), Times.Once);
@@ -211,7 +211,7 @@ public class QuestNodeHandlerTests
         var handler = new StarGenerateNodeHandler(mgr.Object);
         var cfg = new StarGenerateNodeConfig { StarId = starId, Request = new STARDappGenerationRequest() };
         var node = NodeWith(QuestNodeType.StarGenerate, JsonSerializer.Serialize(cfg));
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
         mgr.Verify(m => m.GenerateAsync(starId, It.IsAny<STARDappGenerationRequest>(), It.IsAny<OASISRequest?>()), Times.Once);
@@ -230,10 +230,9 @@ public class QuestNodeHandlerTests
         handler.NodeType.Should().Be(QuestNodeType.Search);
 
         var node = NodeWith(QuestNodeType.Search, JsonSerializer.Serialize(new SearchRequest()));
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        node.State.Should().Be(QuestNodeState.Succeeded);
         mgr.Verify(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<OASISRequest?>()), Times.Once);
     }
 
@@ -251,7 +250,7 @@ public class QuestNodeHandlerTests
         handler.NodeType.Should().Be(QuestNodeType.AvatarNFTGetComposite);
 
         var node = NodeWith(QuestNodeType.AvatarNFTGetComposite, JsonSerializer.Serialize(new IdConfig { Id = id }));
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
         svc.Verify(s => s.GetAvatarNFTCompositeAsync(id, It.IsAny<OASISRequest?>()), Times.Once);
@@ -271,7 +270,7 @@ public class QuestNodeHandlerTests
         handler.NodeType.Should().Be(QuestNodeType.BlockchainExecute);
 
         var node = NodeWith(QuestNodeType.BlockchainExecute, JsonSerializer.Serialize(new IdConfig { Id = id }));
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
         mgr.Verify(m => m.GetAsync(id, It.IsAny<OASISRequest?>()), Times.Once);
@@ -286,11 +285,10 @@ public class QuestNodeHandlerTests
         handler.NodeType.Should().Be(QuestNodeType.Condition);
 
         var node = NodeWith(QuestNodeType.Condition, "{\"branch\":true}");
-        var result = await handler.HandleAsync(QuestWithAvatar(Guid.NewGuid()), node);
+        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        node.State.Should().Be(QuestNodeState.Succeeded);
-        node.Output.Should().Be("{\"branch\":true}");
+        result.Output.Should().Be("{\"branch\":true}");
     }
 
     [Fact]
@@ -299,23 +297,36 @@ public class QuestNodeHandlerTests
         var handler = new ComposeOutputsNodeHandler();
         handler.NodeType.Should().Be(QuestNodeType.ComposeOutputs);
 
-        var upstream = new QuestNode { Id = Guid.NewGuid(), Name = "up", Output = "\"value\"" };
+        // Upstream and target nodes live on the definition; per-run outputs
+        // live on QuestNodeExecution and are passed via context.UpstreamExecutions.
+        var upstreamNode = new QuestNode { Id = Guid.NewGuid(), Name = "up" };
         var node = new QuestNode { Id = Guid.NewGuid(), NodeType = QuestNodeType.ComposeOutputs, Config = "{}" };
         var quest = new QuestEntity
         {
             Id = Guid.NewGuid(),
-            Nodes = new List<QuestNode> { upstream, node },
+            Nodes = new List<QuestNode> { upstreamNode, node },
             Edges = new List<QuestEdge>
             {
-                new() { Id = Guid.NewGuid(), SourceNodeId = upstream.Id, TargetNodeId = node.Id }
+                new() { Id = Guid.NewGuid(), SourceNodeId = upstreamNode.Id, TargetNodeId = node.Id }
             }
         };
 
-        var result = await handler.HandleAsync(quest, node);
+        var runId = Guid.NewGuid();
+        var upstreamExec = new QuestNodeExecution
+        {
+            Id = Guid.NewGuid(),
+            RunId = runId,
+            NodeId = upstreamNode.Id,
+            State = QuestNodeState.Succeeded,
+            Output = "\"value\""
+        };
+        var ctx = new QuestNodeExecutionContext(runId, node.Id, quest,
+            new Dictionary<Guid, QuestNodeExecution> { [upstreamNode.Id] = upstreamExec });
+
+        var result = await handler.HandleAsync(ctx);
 
         result.IsError.Should().BeFalse();
-        node.State.Should().Be(QuestNodeState.Succeeded);
-        var composed = JsonSerializer.Deserialize<Dictionary<string, string>>(node.Output!, QuestNodeJson.Options)!;
+        var composed = JsonSerializer.Deserialize<Dictionary<string, string>>(result.Output!, QuestNodeJson.Options)!;
         composed.Should().ContainKey("up");
         composed["up"].Should().Be("\"value\"");
     }

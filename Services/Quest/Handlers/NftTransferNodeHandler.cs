@@ -15,12 +15,12 @@ public sealed class NftTransferNodeHandler : IQuestNodeHandler
 
     public QuestNodeType NodeType => QuestNodeType.NftTransfer;
 
-    public async Task<OASISResult<QuestNode>> HandleAsync(Models.Quest.Quest quest, QuestNode node, CancellationToken ct = default)
+    public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<NftTransferNodeConfig>(node.Config, QuestNodeJson.Options)!;
-        var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, quest.AvatarId);
+        var cfg = JsonSerializer.Deserialize<NftTransferNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
+        var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.Quest.AvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
-        if (r.IsError) return QuestNodeResults.Fail(node, r.Message);
-        return QuestNodeResults.Ok(node, null, outputJson);
+        if (r.IsError) return QuestNodeResults.Fail(r.Message);
+        return QuestNodeResults.Ok(outputJson);
     }
 }

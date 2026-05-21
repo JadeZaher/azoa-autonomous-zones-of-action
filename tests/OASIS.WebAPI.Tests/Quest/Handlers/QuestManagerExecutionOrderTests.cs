@@ -1,12 +1,15 @@
 using FluentAssertions;
 using Moq;
+using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Interfaces.QuestExecution;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Managers;
 using OASIS.WebAPI.Models.Quest;
 using OASIS.WebAPI.Models.Responses;
+using OASIS.WebAPI.Providers.Stores;
 using OASIS.WebAPI.Services;
 using OASIS.WebAPI.Services.Quest;
+using OASIS.WebAPI.Services.Quest.Handlers;
 using Xunit;
 using QuestEntity = OASIS.WebAPI.Models.Quest.Quest;
 
@@ -53,9 +56,13 @@ public class QuestManagerExecutionOrderTests
         store.Setup(s => s.UpsertQuestAsync(It.IsAny<QuestEntity>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync((QuestEntity q, CancellationToken _) => { persisted = q; return new OASISResult<QuestEntity> { Result = q }; });
 
-        // Real validator — the single ExecutionOrder authority.
+        // Real validator — the single ExecutionOrder authority. The InMemory
+        // run + execution stores are required by the manager's constructor
+        // but are unused for the pure-validation path under test.
         var manager = new QuestManager(
             store.Object,
+            new InMemoryQuestRunStore(),
+            new InMemoryQuestNodeExecutionStore(),
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()));
 
@@ -74,5 +81,55 @@ public class QuestManagerExecutionOrderTests
         persisted.Should().NotBeNull();
         persisted!.Nodes.Select(n => n.ExecutionOrder).Distinct().Should().HaveCount(3);
         store.Verify(s => s.UpsertQuestAsync(It.IsAny<QuestEntity>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WritesPerRunPerNodeExecution_NotQuestNode()
+    {
+        // After quest-temporal-fork-model, ExecuteAsync produces a QuestRun
+        // and per-(run, node) QuestNodeExecution rows. The QuestNode definition
+        // is never mutated — this is the central invariant of the rewrite.
+        var nodeId = Guid.NewGuid();
+        var questId = Guid.NewGuid();
+
+        var quest = new QuestEntity
+        {
+            Id = questId,
+            Name = "Single",
+            AvatarId = Guid.NewGuid(),
+            Nodes = new List<QuestNode>
+            {
+                new() { Id = nodeId, Name = "Only", IsEntry = true, IsTerminal = true, NodeType = QuestNodeType.Condition, Config = "{}" }
+            },
+            Edges = new List<QuestEdge>()
+        };
+
+        var store = new Mock<IQuestStore>();
+        store.Setup(s => s.GetQuestAsync(questId, It.IsAny<CancellationToken>()))
+             .ReturnsAsync(new OASISResult<QuestEntity> { Result = quest });
+        store.Setup(s => s.UpsertQuestAsync(It.IsAny<QuestEntity>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync((QuestEntity q, CancellationToken _) => new OASISResult<QuestEntity> { Result = q });
+
+        var runStore = new InMemoryQuestRunStore();
+        var execStore = new InMemoryQuestNodeExecutionStore();
+        var manager = new QuestManager(
+            store.Object,
+            runStore,
+            execStore,
+            new QuestDagValidator(),
+            new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { new ConditionNodeHandler() }));
+
+        var result = await manager.ExecuteAsync(questId);
+
+        result.IsError.Should().BeFalse();
+        result.Result.Should().NotBeNull();
+        result.Result!.Status.Should().Be(QuestRunStatus.Succeeded);
+
+        // Per-(run, node) execution row exists and is Succeeded.
+        var exec = (await execStore.GetByRunAndNodeAsync(result.Result.Id, nodeId)).Result;
+        exec.Should().NotBeNull();
+        exec!.State.Should().Be(QuestNodeState.Succeeded);
+        exec.RunId.Should().Be(result.Result.Id);
+        exec.NodeId.Should().Be(nodeId);
     }
 }

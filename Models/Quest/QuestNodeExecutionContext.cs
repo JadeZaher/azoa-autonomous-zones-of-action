@@ -1,0 +1,84 @@
+namespace OASIS.WebAPI.Models.Quest;
+
+/// <summary>
+/// Per-invocation context handed to an <c>IQuestNodeHandler</c>. Replaces the
+/// previous <c>(Quest, QuestNode)</c> pair so handlers can no longer mutate the
+/// quest <i>definition</i> — runtime state is now owned by <see cref="QuestRun"/>
+/// and <see cref="QuestNodeExecution"/> keyed by <see cref="RunId"/>+<see cref="NodeId"/>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The context carries:
+/// </para>
+/// <list type="bullet">
+///   <item><see cref="RunId"/> — owning <see cref="QuestRun"/>.</item>
+///   <item><see cref="NodeId"/> — definition node id being executed.</item>
+///   <item><see cref="Quest"/> — the immutable quest definition (read-only access; handlers MUST NOT mutate).</item>
+///   <item><see cref="Node"/> — convenience accessor to the matching <see cref="QuestNode"/> inside <see cref="Quest"/>.</item>
+///   <item><see cref="UpstreamExecutions"/> — already-completed executions of upstream nodes, keyed by source node id. Used by <c>ComposeOutputs</c> to gather predecessor outputs without touching the definition graph.</item>
+/// </list>
+/// <para>
+/// Pre-populating <see cref="UpstreamExecutions"/> in the manager keeps handlers
+/// store-free: handlers do not depend on <c>IQuestNodeExecutionStore</c>, which
+/// preserves the per-aggregate seam established by the
+/// <c>architecture-decoupling</c> track.
+/// </para>
+/// </remarks>
+public sealed class QuestNodeExecutionContext
+{
+    public QuestNodeExecutionContext(
+        Guid runId,
+        Guid nodeId,
+        Quest quest,
+        IReadOnlyDictionary<Guid, QuestNodeExecution>? upstreamExecutions = null)
+    {
+        RunId = runId;
+        NodeId = nodeId;
+        Quest = quest ?? throw new ArgumentNullException(nameof(quest));
+        UpstreamExecutions = upstreamExecutions ?? new Dictionary<Guid, QuestNodeExecution>();
+        Node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId)
+            ?? throw new ArgumentException(
+                $"Node {nodeId} not found in quest {quest.Id}.", nameof(nodeId));
+    }
+
+    /// <summary>Owning run id.</summary>
+    public Guid RunId { get; }
+
+    /// <summary>Definition node id being executed.</summary>
+    public Guid NodeId { get; }
+
+    /// <summary>Quest definition. Handlers MUST treat as read-only.</summary>
+    public Quest Quest { get; }
+
+    /// <summary>The definition node matching <see cref="NodeId"/>.</summary>
+    public QuestNode Node { get; }
+
+    /// <summary>
+    /// Upstream node executions already produced by this run, keyed by source
+    /// node id. Empty when no upstream nodes have completed (e.g. entry nodes).
+    /// </summary>
+    public IReadOnlyDictionary<Guid, QuestNodeExecution> UpstreamExecutions { get; }
+}
+
+/// <summary>
+/// Outcome of <c>IQuestNodeHandler.HandleAsync</c>. Decouples handler return
+/// shape from the in-place <see cref="QuestNode"/> mutation that the previous
+/// <c>OASISResult&lt;QuestNode&gt;</c> contract implied. The manager translates
+/// this into a <see cref="QuestNodeExecution"/> state transition.
+/// </summary>
+public sealed class QuestNodeHandlerResult
+{
+    public bool IsError { get; init; }
+
+    /// <summary>Free-form message. On failure this becomes <see cref="QuestNodeExecution.Error"/>.</summary>
+    public string? Message { get; init; }
+
+    /// <summary>Serialized output (JSON). On success this becomes <see cref="QuestNodeExecution.Output"/>.</summary>
+    public string? Output { get; init; }
+
+    public static QuestNodeHandlerResult Ok(string? output, string? message = null) =>
+        new() { IsError = false, Output = output, Message = message };
+
+    public static QuestNodeHandlerResult Fail(string message) =>
+        new() { IsError = true, Message = message };
+}
