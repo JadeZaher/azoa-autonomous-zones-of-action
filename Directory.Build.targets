@@ -10,14 +10,21 @@
          - packages/Oasis.SurrealDb.*/** (Phase 1 of surrealdb-client-package)
          - tests/Oasis.SurrealDb.*Tests/** (Phase 1 of surrealdb-client-package)
          - tests/** (already removed inside OASIS.WebAPI.csproj)
-         - analyzers/** (already removed inside OASIS.WebAPI.csproj)
+         - analyzers/** (legacy analyzer source tree — relocated into
+           packages/Oasis.SurrealDb.Analyzer/ by Phase 5; the exclusion
+           remains as a safety net so the build does not accidentally
+           pick up any stale on-disk artifacts left behind by tooling)
+         - Core/SurrealDb/** (legacy SurrealExecutor + ISurrealExecutor +
+           SurrealQuery + SurrealIdentifier — relocated into the
+           packages/Oasis.SurrealDb.Client/Query/ tree by Phase 3 + 6.
+           Exclusion ensures stale .cs files are not compiled into the
+           WebAPI assembly even if sandbox-restricted tooling leaves them
+           on disk after the Phase 6 deletion.)
 
        Without removing packages/** here, CS0579 duplicate-attribute errors
        fire when each package's auto-generated AssemblyInfo collides with
-       OASIS.WebAPI's own. The existing per-project Remove for tests/** and
-       analyzers/** runs in the .csproj; we move the new exclusions here so
-       Phase 1 does not need to edit OASIS.WebAPI.csproj (A5 owns that file
-       and only touches it in Phase 6).
+       OASIS.WebAPI's own. We collect every surreal-related exclusion here
+       so the per-project csproj stays minimal.
 
        The condition is anchored on the project file name so the exclusion
        only fires for the root WebAPI project; packages and their tests
@@ -28,5 +35,18 @@
     <Content Remove="packages/**" />
     <None Remove="packages/**" />
     <EmbeddedResource Remove="packages/**" />
+
+    <!-- Legacy paths replaced by the homebake Oasis.SurrealDb.* package suite
+         in Phase 6. The Remove items here are a defence-in-depth safety net
+         alongside the physical deletion of the directories. -->
+    <Compile Remove="analyzers/**/*.cs" />
+    <Content Remove="analyzers/**" />
+    <None Remove="analyzers/**" />
+    <EmbeddedResource Remove="analyzers/**" />
+
+    <Compile Remove="Core/SurrealDb/**/*.cs" />
+    <Content Remove="Core/SurrealDb/**" />
+    <None Remove="Core/SurrealDb/**" />
+    <EmbeddedResource Remove="Core/SurrealDb/**" />
   </ItemGroup>
 </Project>

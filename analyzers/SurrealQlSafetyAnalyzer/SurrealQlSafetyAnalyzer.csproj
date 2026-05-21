@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       OBSOLETE — this project's source was relocated to
+       packages/Oasis.SurrealDb.Analyzer/ as part of surrealdb-client-package
+       Phase 5 + 6. The csproj is retained as an inert (no-source) shell
+       only because the sandbox blocked the physical filesystem delete; the
+       sln entry and all ProjectReferences to this csproj are removed in
+       Phase 6, so this file should be unreachable from any build path.
+       Do not extend or re-enable. The replacement analyzer ships from the
+       homebake package suite.
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+</Project>

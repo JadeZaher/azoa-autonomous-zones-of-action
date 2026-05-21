@@ -12,8 +12,11 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- Pinned to 2.4.2: Microsoft.CodeAnalysis.Testing.Verifiers.XUnit 1.1.2
+         was compiled against xunit.assert 2.3.0 whose EqualException(object,object)
+         constructor was removed in xunit 2.5+. Must stay <= 2.4.x. -->
+    <PackageReference Include="xunit" Version="2.4.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.0" />
     <PackageReference Include="FluentValidation" Version="11.9.0" />
@@ -28,6 +31,15 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="..\..\OASIS.WebAPI.csproj" />
+    <!-- Phase 6 (surrealdb-client-package): legacy
+         analyzers/SurrealQlSafetyAnalyzer/ project reference was removed
+         along with the legacy SurrealDb in-tree test suite under
+         tests/OASIS.WebAPI.Tests/SurrealDb/. Analyzer coverage now lives
+         in tests/Oasis.SurrealDb.Analyzer.Tests/ which references the new
+         packages/Oasis.SurrealDb.Analyzer/ project directly. The
+         Microsoft.CodeAnalysis.* test packages above were also dropped
+         from this csproj because no remaining tests here exercise the
+         analyzer harness. -->
   </ItemGroup>
 
   <!-- Make the app's real configuration available so config-reading tests are

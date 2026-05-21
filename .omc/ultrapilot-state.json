@@ -1,0 +1,60 @@
+{
+  "active": false,
+  "mode": "ultrapilot",
+  "phase": "wave-1-complete-awaiting-next-track-launch",
+  "tracks": {
+    "surrealdb-migration": {
+      "status": "wave-1-complete-wave-2-blocked",
+      "wave_1_result": "APPROVE-WITH-CHANGES",
+      "wave_1_evidence": {
+        "build": "0 errors, 0 warnings (17 baseline)",
+        "unit_tests": "618/618 passing",
+        "passoff": "scripts/passoff-surrealdb-wave1.ps1 exit 0 (10/10 sections green)"
+      },
+      "wave_2_blockers": "see conductor/tracks/surrealdb-migration/plan.md (B1, B2, B3 retained; B4/B5/B6/B7/B8 dissolved into surrealdb-client-package; A9 dropped)"
+    },
+    "surrealdb-client-package": {
+      "status": "sub-wave-1.5a-complete-1.5b-pending-deferred",
+      "tier": "1.5",
+      "sub_waves": ["1.5a HTTP+builder+Mermaid+integration (~wk1-2, unblocks wave-2 adapters)", "1.5b WebSocket+LIVE+saga adoption (~wk3+)"],
+      "blocks": ["surrealdb-migration wave-2 adapter tasks 5, 6, 7, 8, 8a, 8b"],
+      "spec": "conductor/tracks/surrealdb-client-package/spec.md",
+      "plan": "conductor/tracks/surrealdb-client-package/plan.md",
+      "wave_1.5a_evidence": {
+        "build": "0 errors, 17 warnings (= baseline; SurrealDb.Net removed, homebake packages wired, Core/SurrealDb/Query + analyzers/SurrealQlSafetyAnalyzer + check-sdk-pin.ps1 + SurrealDbSdkPinTests + duplicate in-tree SurrealDb tests all removed)",
+        "unit_tests": "751 passing across 4 suites (OASIS.WebAPI.Tests 540, Oasis.SurrealDb.Client.Tests 147, Oasis.SurrealDb.Schema.Tests 49 incl 7 new in-repo .mermaid<->.surql sync tests, Oasis.SurrealDb.Analyzer.Tests 15); 0 failed",
+        "passoff": "scripts/passoff-surrealdb-wave1.ps1 exit 0 (10/10 sections green; sections 2/3 updated to assert OasisSurrealDbVersion in Directory.Build.props matches every homebake package csproj <Version>; section 7 updated to assert packages/Oasis.SurrealDb.Analyzer wiring; section 4 adds package-suite test invocation)",
+        "schemas": "7 wave-1 .mermaid sources under Persistence/SurrealDb/Schemas/source/ regenerate byte-identical .surql at the canonical Persistence/SurrealDb/Schemas/ path; B2 fix applied (bridge_tx_wormhole_vaa UNIQUE on the (emitter_chain, emitter_address, sequence) triple + consumed_vaa_emitter_address_sequence mirrors it); B3 review documented inline per UNIQUE INDEX on option<...> fields"
+      },
+      "tag": "surrealdb-client-package-1.5a-complete"
+    },
+    "quest-temporal-fork-model": {
+      "status": "pending-launch",
+      "tier": "1",
+      "deliverable": "SURREAL-SCHEMA-HINTS.md hand-off doc for surrealdb-migration quest schema",
+      "blocks": ["surrealdb-migration tasks 3 quest portion, 9, 10"],
+      "spec": "conductor/tracks/quest-temporal-fork-model/spec.md"
+    }
+  },
+  "previous_completion": {
+    "track": "api-safety-hardening",
+    "result": "APPROVE",
+    "unit_tests": "537/537 -> 618/618 after wave-1"
+  },
+  "research_artifacts": ".omc/research/surrealdb-migration-wave1/persona-*.md (8 personas + code-review evidence base for the architectural decisions captured in surrealdb-client-package spec)",
+  "decisions_locked_2026_05_21": [
+    "Postgres fully deprecated (no fallback ramp; A9 dropped)",
+    "Homebake Oasis.SurrealDb.* package suite replaces SurrealDb.Net SDK + archived migration tool + embedded analyzer",
+    "Mermaid ER chosen as schema source-of-truth (DBML rejected since Postgres exit-ramp argument no longer applies)",
+    "Public NuGet publish deferred 3-6 months past sub-wave 1.5b sign-off",
+    "LIVE-query saga trigger ships ALONGSIDE polling (Trigger=Both default), not as replacement"
+  ],
+  "forbidden_paths_all_workers": [
+    "Models/Quest/**",
+    "Services/QuestDagValidator.cs",
+    "Managers/QuestManager.cs",
+    "Services/Quest/QuestInstantiator.cs",
+    "any quest_run/quest_node_execution/quest_node/quest_edge/quest_template/quest_dependency schema design"
+  ],
+  "next_action": "User to choose launch order between surrealdb-client-package and quest-temporal-fork-model (they are independent and can run in parallel; surrealdb-client-package sub-wave 1.5a unblocks the wider surrealdb-migration wave-2 work)"
+}

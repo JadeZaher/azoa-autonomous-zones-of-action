@@ -3,19 +3,6 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <!-- ═══════════════════════════════════════════════════════════════
-         CS0618 — scoped suppression for the quest-temporal-fork-model
-         transition window. Quest.Status, Quest.CompletedDate,
-         QuestNode.State|Output|Error are marked [Obsolete] because runtime
-         state has moved to QuestRun + QuestNodeExecution (see
-         conductor/tracks/quest-temporal-fork-model/ADR.md §2.2).
-         QuestManager.cs (B2's territory, plan.md tasks 10–13) still reads
-         these fields during its rewrite window; once B2 lands the
-         (runId, nodeId)-keyed execution path and physically deletes the
-         obsolete fields, this NoWarn entry MUST also be removed in the
-         same commit. Do not piggy-back unrelated CS0618 suppressions here.
-         ═══════════════════════════════════════════════════════════════ -->
-    <NoWarn>$(NoWarn);CS0618</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <!-- Quest models are included (no longer excluded) -->
@@ -27,51 +14,6 @@
     <Content Remove="StrykerOutput\**\*" />
     <None Remove="StrykerOutput\**\*" />
   </ItemGroup>
-  <!-- Exclude the analyzer project source tree from the WebAPI compile glob.
-       The analyzer is wired as an OutputItemType=Analyzer reference below;
-       its .cs sources must NOT be compiled into the WebAPI assembly directly
-       (they depend on Roslyn packages not referenced here, and their obj/
-       assembly-info files would produce CS0579 duplicate-attribute errors). -->
-  <ItemGroup>
-    <Compile Remove="analyzers/**/*.cs" />
-    <Content Remove="analyzers/**" />
-    <None Remove="analyzers/**" />
-    <EmbeddedResource Remove="analyzers/**" />
-  </ItemGroup>
-  <!-- ═══════════════════════════════════════════════════════════════
-       G4 — SurrealDB SDK pin (exact version, intentionally not floating).
-       surrealdb.net is pre-1.0 / rapidly evolving; the architecture-decoupling
-       seam isolates the blast radius. Pin is enforced at build time via the
-       VerifySurrealSdkPin target below. To upgrade: change both this Version
-       and the literal in scripts/surrealdb/check-sdk-pin.ps1 together.
-       Package ID on NuGet: SurrealDb.Net. The spec cited ~0.10.2 — that is
-       correct. NuGet shows 12 versions with 0.10.2 as the nearest/highest.
-       This is the pinned exact version per G4 (no auto-upgrade).
-       ═══════════════════════════════════════════════════════════════ -->
-  <PropertyGroup>
-    <SurrealDbNetPinnedVersion>0.10.2</SurrealDbNetPinnedVersion>
-  </PropertyGroup>
-  <ItemGroup>
-    <!-- Exact pin — MSBuild version range [0.10.2] means "exactly 0.10.2, no auto-upgrade".
-         NOTE: the Version literal MUST match SurrealDbNetPinnedVersion above and the
-         constant in tests/OASIS.WebAPI.Tests/Core/SurrealDbSdkPinTests.cs. -->
-    <PackageReference Include="SurrealDb.Net" Version="[0.10.2]" />
-  </ItemGroup>
-
-  <!-- G4 drift check: fails the build with a clear message if the resolved
-       SurrealDb.Net package version in project.assets.json does not match
-       the pin literal. Runs before every Build so CI and developer machines
-       stay in sync. The exact-version bracket [0.10.2] already prevents NuGet
-       from resolving any other version, but this target makes the failure
-       explicit with an actionable message rather than a cryptic restore error. -->
-  <Target Name="VerifySurrealSdkPin" BeforeTargets="Build">
-    <Exec
-      Command="powershell -NonInteractive -NoProfile -File &quot;$(MSBuildThisFileDirectory)scripts\surrealdb\check-sdk-pin.ps1&quot; -PinnedVersion $(SurrealDbNetPinnedVersion) -AssetsFile &quot;$(ProjectAssetsFile)&quot;"
-      ConsoleToMSBuild="true"
-      ContinueOnError="false"
-      EchoOff="false" />
-  </Target>
-
   <ItemGroup>
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
@@ -103,17 +45,29 @@
   </ItemGroup>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       G3 — SurrealQL injection-safety analyzer (SRDB0001).
-       Wired as an analyzer-only reference: OutputItemType=Analyzer ensures
-       the assembly is loaded as a Roslyn analyzer by the compiler, NOT as a
-       compile-time library reference (ReferenceOutputAssembly=false).
-       Any call site that constructs a SurrealQL query via string interpolation
-       or concatenation will fail the build with SRDB0001 as a compiler Error.
-       The safe layer (Core/SurrealDb/Query/**) is allowlisted inside the analyzer.
+       Homebake SurrealDB package suite (replaces SurrealDb.Net + the embedded
+       Roslyn analyzer + the SDK-pin guard).
+
+       - Oasis.SurrealDb.Client  → normal compile-time reference (HTTP transport,
+                                   query builder, transactions, JSON converters).
+       - Oasis.SurrealDb.Analyzer → analyzer-only reference (SRDB0001 fires as
+                                    a compiler Error on any string-interpolated /
+                                    concatenated SurrealQL outside the safe layer).
+                                    OutputItemType="Analyzer" + ReferenceOutputAssembly="false"
+                                    loads the assembly into Roslyn but NOT as a
+                                    compile-time library.
+
+       Version is governed by <OasisSurrealDbVersion> in Directory.Build.props
+       (single source of truth; the wave-1 passoff gate asserts that the
+       project ref points at a package whose csproj <Version> matches that
+       property). This replaces the old G4 SurrealDb.Net SDK pin — we own
+       the package, so a "drift" is a local edit, not a NuGet auto-upgrade.
        ═══════════════════════════════════════════════════════════════ -->
   <ItemGroup>
     <ProjectReference
-      Include="analyzers\SurrealQlSafetyAnalyzer\SurrealQlSafetyAnalyzer.csproj"
+      Include="packages\Oasis.SurrealDb.Client\Oasis.SurrealDb.Client.csproj" />
+    <ProjectReference
+      Include="packages\Oasis.SurrealDb.Analyzer\Oasis.SurrealDb.Analyzer.csproj"
       OutputItemType="Analyzer"
       ReferenceOutputAssembly="false" />
   </ItemGroup>

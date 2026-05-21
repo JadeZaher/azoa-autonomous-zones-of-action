@@ -11,6 +11,7 @@ using Microsoft.OpenApi.Models;
 using System.Reflection;
 using OASIS.WebAPI.Core;
 using OASIS.WebAPI.Core.Blockchain;
+using OASIS.WebAPI.Extensions;
 using OASIS.WebAPI.Core.Blockchain.Wormhole;
 using OASIS.WebAPI.Data;
 using OASIS.WebAPI.Interfaces;
@@ -261,6 +262,17 @@ builder.Services.AddScoped<IBridgeStore, EfBridgeStore>();
 builder.Services.AddSingleton<IQuestRunStore, InMemoryQuestRunStore>();
 builder.Services.AddSingleton<IQuestNodeExecutionStore, InMemoryQuestNodeExecutionStore>();
 // </quest-temporal-fork-model>
+
+// <surrealdb-client-package>
+// Homebake SurrealDB client (Phase 6, sub-wave 1.5a). Replaces direct
+// registration of SurrealDb.Net's ISurrealDbClient. Binds
+// SurrealConnectionOptions from the "SurrealDb" configuration section by
+// default (override the section name via the optional argument). The actual
+// SurrealDB-backed *Store adapters land in surrealdb-migration wave-2 tasks
+// 5-8; until then this registration just makes the client available for
+// any code that wants to use it (integration tests, future adapters).
+builder.Services.AddOasisSurrealDb(builder.Configuration);
+// </surrealdb-client-package>
 
 // SwapManager's quote cache is now an injected, bounded IMemoryCache (was a
 // process-static dictionary). SizeLimit is required because every cache write
