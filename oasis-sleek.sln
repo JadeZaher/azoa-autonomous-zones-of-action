@@ -27,6 +27,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Oasis.SurrealDb.Client.IntegrationTests", "tests\Oasis.SurrealDb.Client.IntegrationTests\Oasis.SurrealDb.Client.IntegrationTests.csproj", "{136D12CD-3A89-41F2-A192-7F907EF42B0F}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "packages", "packages", "{809F86A1-1C4C-B159-0CD4-DF9D33D876CE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Oasis.SurrealDb.SourceGen", "packages\Oasis.SurrealDb.SourceGen\Oasis.SurrealDb.SourceGen.csproj", "{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Oasis.SurrealDb.SourceGen.Tests", "tests\Oasis.SurrealDb.SourceGen.Tests\Oasis.SurrealDb.SourceGen.Tests.csproj", "{A28C217D-2AD4-458F-88FA-E22DFD17D968}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -169,12 +175,38 @@ Global
 		{136D12CD-3A89-41F2-A192-7F907EF42B0F}.Release|x64.Build.0 = Release|Any CPU
 		{136D12CD-3A89-41F2-A192-7F907EF42B0F}.Release|x86.ActiveCfg = Release|Any CPU
 		{136D12CD-3A89-41F2-A192-7F907EF42B0F}.Release|x86.Build.0 = Release|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Debug|x64.Build.0 = Debug|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Debug|x86.Build.0 = Debug|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Release|x64.ActiveCfg = Release|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Release|x64.Build.0 = Release|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Release|x86.ActiveCfg = Release|Any CPU
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE}.Release|x86.Build.0 = Release|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Debug|x64.Build.0 = Debug|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Debug|x86.Build.0 = Debug|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Release|x64.ActiveCfg = Release|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Release|x64.Build.0 = Release|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Release|x86.ActiveCfg = Release|Any CPU
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{136D12CD-3A89-41F2-A192-7F907EF42B0F} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{BE409BC0-3BC9-47F0-A21D-A444E437F2DE} = {809F86A1-1C4C-B159-0CD4-DF9D33D876CE}
+		{A28C217D-2AD4-458F-88FA-E22DFD17D968} = {809F86A1-1C4C-B159-0CD4-DF9D33D876CE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {812A4155-F797-423F-875A-58F7F3285CDF}

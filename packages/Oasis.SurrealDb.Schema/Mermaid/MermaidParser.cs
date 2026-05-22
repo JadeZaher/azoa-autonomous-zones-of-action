@@ -66,6 +66,21 @@ namespace Oasis.SurrealDb.Schema.Mermaid
             "default",     // attribute-level DEFAULT <value> (literal token after =)
             "section",     // entity-level subsection comment (e.g. "Indexes")
             "fieldgroup",  // attribute-level inline comment above this field
+            // C# source-generator directives ([[surrealdb-schema-source-gen]]).
+            // Compound `csharp.<sub>` directives are normalised by the parser
+            // into the directive name `csharp` with `<sub>` collapsed into the
+            // first argument. This keeps the KnownDirectives gate strict while
+            // letting source-gen consumers continue to author `%% @surreal.csharp.property name=Foo`.
+            "csharp",
+        };
+
+        // Sub-arg names that the compound-directive handler should keep as
+        // explicit key=value pairs rather than promoting as positional values.
+        // Used by `@surreal.csharp.property name=Foo` so the `name` key isn't
+        // accidentally re-bound to the sub-directive value.
+        private static readonly HashSet<string> KnownDirectiveSubArgNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "name", "fields", "unique",
         };
 
         /// <summary>Parse from a file on disk.</summary>
@@ -569,6 +584,36 @@ namespace Oasis.SurrealDb.Schema.Mermaid
                     throw new MermaidParseException(File, markerLine, markerCol,
                         "expected directive name after '@surreal.'.");
                 }
+
+                // Compound `@surreal.<directive>.<sub>` form: a single dot
+                // immediately follows the directive name. Consume the sub-
+                // identifier so it can be forwarded as a structured argument.
+                // Strict gate: the sub-name must satisfy the same identifier
+                // grammar as the directive; deeper nesting (more dots) is not
+                // currently allowed and falls through to a normal parse error.
+                string? subDirective = null;
+                if (!IsEnd && Source[Position] == '.')
+                {
+                    Advance();
+                    var subSb = new StringBuilder();
+                    while (!IsEnd)
+                    {
+                        char c = Source[Position];
+                        if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                        {
+                            subSb.Append(c);
+                            Advance();
+                        }
+                        else break;
+                    }
+                    subDirective = subSb.ToString();
+                    if (subDirective.Length == 0)
+                    {
+                        throw new MermaidParseException(File, markerLine, markerCol,
+                            $"expected sub-directive name after '@surreal.{directive}.'.");
+                    }
+                }
+
                 if (!KnownDirectives.Contains(directive))
                 {
                     throw new MermaidParseException(File, markerLine, markerCol,
@@ -583,6 +628,45 @@ namespace Oasis.SurrealDb.Schema.Mermaid
                 if (!IsEnd) Advance(); // consume newline
 
                 var args = ParseAnnotationArgs(raw);
+
+                // Inject the sub-directive as a structured argument so
+                // downstream consumers (the source generator) can dispatch on
+                // a single dictionary lookup instead of re-parsing the
+                // directive string.
+                //
+                // Convention:
+                //   `@surreal.csharp.skip`                  -> args["skip"] = ""
+                //   `@surreal.csharp.property name=Foo`     -> args["property"] = "", args["name"] = "Foo"
+                //   `@surreal.csharp.namespace OASIS.X`     -> args["namespace"] = "OASIS.X" (positional bare-token consumed as the sub-directive's value when no `=` form was supplied).
+                if (subDirective != null)
+                {
+                    var augmented = new Dictionary<string, string>(StringComparer.Ordinal);
+                    foreach (var kv in args) augmented[kv.Key] = kv.Value;
+                    // Promote a bare positional token (the first arg with an
+                    // empty value and a non-key name) to be the sub-directive's
+                    // value. This lets `@surreal.csharp.namespace OASIS.X` map
+                    // to args["namespace"] = "OASIS.X" without forcing the
+                    // verbose `namespace=OASIS.X` form.
+                    string? positionalToken = null;
+                    foreach (var kv in args)
+                    {
+                        if (kv.Value.Length == 0 && kv.Key.Length > 0 && !KnownDirectiveSubArgNames.Contains(kv.Key))
+                        {
+                            positionalToken = kv.Key;
+                            break;
+                        }
+                    }
+                    if (positionalToken != null && !augmented.ContainsKey(subDirective))
+                    {
+                        augmented[subDirective] = positionalToken;
+                        augmented.Remove(positionalToken);
+                    }
+                    else if (!augmented.ContainsKey(subDirective))
+                    {
+                        augmented[subDirective] = string.Empty;
+                    }
+                    args = augmented;
+                }
 
                 annotation = new MermaidAnnotation(directive, raw, args, markerLine, markerCol);
                 return true;
