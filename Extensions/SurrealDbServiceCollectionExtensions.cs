@@ -74,6 +74,13 @@ public static class SurrealDbServiceCollectionExtensions
             return new HttpSurrealConnection(http, optionsAccessor.Value);
         });
 
+        // HIGH#4 — ship the executor implementation the XML docs already
+        // advertised. DefaultSurrealExecutor is stateless apart from its
+        // ISurrealConnection reference, so the lifetime is bound to the
+        // connection's (Scoped). Resolves through the same DI surface
+        // safe-layer query types depend on.
+        services.AddScoped<ISurrealExecutor, DefaultSurrealExecutor>();
+
         return services;
     }
 }

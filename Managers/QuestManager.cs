@@ -249,7 +249,17 @@ public class QuestManager : IQuestManager
             {
                 execution.State = QuestNodeState.Skipped;
                 execution.EndedAt = DateTime.UtcNow;
-                await _executionStore.UpdateAsync(execution);
+                // HIGH#7 G2 guard: only mark Skipped if the row is still
+                // Pending. If a concurrent ForkAsync flipped it to Cancelled
+                // we must not silently overwrite — the store returns an
+                // error result and we simply re-read the latest state for
+                // downstream ComposeOutputs lookup.
+                var skipUpdate = await _executionStore.UpdateAsync(
+                    execution, expectedState: QuestNodeState.Pending);
+                if (skipUpdate.IsError)
+                {
+                    execution = (await _executionStore.GetByRunAndNodeAsync(run.Id, node.Id)).Result ?? execution;
+                }
                 executionsByNode[node.Id] = execution;
                 continue;
             }
@@ -262,6 +272,8 @@ public class QuestManager : IQuestManager
                 execution.State = QuestNodeState.Failed;
                 execution.Error = claim.Message ?? "Failed to claim node for execution.";
                 execution.EndedAt = DateTime.UtcNow;
+                // Best-effort unconditional update — the claim already
+                // observed a drift, so a second guard would be redundant.
                 await _executionStore.UpdateAsync(execution);
                 executionsByNode[node.Id] = execution;
                 break;
@@ -305,7 +317,18 @@ public class QuestManager : IQuestManager
                 execution.Output = result.Output;
             }
             execution.EndedAt = DateTime.UtcNow;
-            await _executionStore.UpdateAsync(execution);
+            // HIGH#7 — only commit the terminal state when the row is still
+            // Running. A concurrent fork (or supervisor-fail) may have
+            // flipped the row to Cancelled between our claim and our
+            // completion; in that case the guard rejects the overwrite and
+            // we accept the fork's decision rather than resurrecting the
+            // execution into Succeeded/Failed.
+            var terminalUpdate = await _executionStore.UpdateAsync(
+                execution, expectedState: QuestNodeState.Running);
+            if (terminalUpdate.IsError)
+            {
+                execution = (await _executionStore.GetByRunAndNodeAsync(run.Id, node.Id)).Result ?? execution;
+            }
             executionsByNode[node.Id] = execution;
         }
 
@@ -385,7 +408,10 @@ public class QuestManager : IQuestManager
             execution.Output = result.Output;
         }
         execution.EndedAt = DateTime.UtcNow;
-        await _executionStore.UpdateAsync(execution);
+        // HIGH#7 — same G2 guard as the in-loop terminal update at line ~308.
+        // The ad-hoc single-node run created the execution in Running state,
+        // so we only commit Succeeded/Failed when the row is still Running.
+        await _executionStore.UpdateAsync(execution, expectedState: QuestNodeState.Running);
 
         run.Status = result.IsError ? QuestRunStatus.Failed : QuestRunStatus.Succeeded;
         run.EndedAt = DateTime.UtcNow;
@@ -483,12 +509,19 @@ public class QuestManager : IQuestManager
         }
 
         // Cancel parent's in-flight (Pending / Running) node executions.
+        // HIGH#7 — the state-machine guard prevents a late-arriving terminal
+        // transition (e.g. a node that succeeded between our GetByRunId snap
+        // and the cancel write) from being silently overwritten by Cancelled.
+        // We pass the freshly-observed state as the guard; if the store
+        // returns an error, the row already moved past the in-flight window
+        // and we accept its terminal state (no resurrection).
         foreach (var pe in parentExecs)
         {
             if (pe.State != QuestNodeState.Pending && pe.State != QuestNodeState.Running) continue;
+            var observedState = pe.State;
             pe.State = QuestNodeState.Cancelled;
             pe.EndedAt = DateTime.UtcNow;
-            await _executionStore.UpdateAsync(pe);
+            await _executionStore.UpdateAsync(pe, expectedState: observedState);
         }
 
         // Transition parent Running → Forked (terminal).
@@ -520,14 +553,16 @@ public class QuestManager : IQuestManager
         }
 
         // Cancel any in-flight node executions (same shape as fork).
+        // HIGH#7 — same state-machine guard as ForkAsync (line ~509).
         var execs = (await _executionStore.GetByRunIdAsync(run.Id)).Result
             ?? Enumerable.Empty<QuestNodeExecution>();
         foreach (var exec in execs)
         {
             if (exec.State != QuestNodeState.Pending && exec.State != QuestNodeState.Running) continue;
+            var observedState = exec.State;
             exec.State = QuestNodeState.Cancelled;
             exec.EndedAt = DateTime.UtcNow;
-            await _executionStore.UpdateAsync(exec);
+            await _executionStore.UpdateAsync(exec, expectedState: observedState);
         }
 
         run.Status = QuestRunStatus.Failed;

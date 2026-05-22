@@ -112,7 +112,17 @@ public sealed class HttpSurrealConnection : ISurrealConnection
         // cannot be reused once sent). The connection-pool layer above us
         // also rate-limits concurrent in-flight requests; retries here are
         // the per-call resilience layer.
+        //
+        // HIGH#2 exactly-once guarantee: non-idempotent statements
+        // (CREATE / UPDATE / DELETE / RELATE / COMMIT TRANSACTION / ...)
+        // must NEVER be silently retried — the original send may have
+        // succeeded on the server even when the client side observed a
+        // transport fault, and retrying would cause double-write in the
+        // bridge value path. Only the first attempt fires for those; the
+        // exception bubbles to the caller. See
+        // <c>bridge-unsafe-pre-launch</c> + <c>data-engine-decision</c>.
         var totalAttempts = Math.Max(1, _options.MaxRetries);
+        var allowRetries  = IsIdempotentSql(sql);
         Exception? lastError = null;
         for (int attempt = 0; attempt < totalAttempts; attempt++)
         {
@@ -130,12 +140,12 @@ public sealed class HttpSurrealConnection : ISurrealConnection
 
                 return SurrealResponse.FromJson(body);
             }
-            catch (HttpRequestException ex) when (attempt + 1 < totalAttempts)
+            catch (HttpRequestException ex) when (allowRetries && attempt + 1 < totalAttempts)
             {
                 lastError = ex;
                 await DelayWithJitterAsync(attempt, ct).ConfigureAwait(false);
             }
-            catch (TaskCanceledException ex) when (!ct.IsCancellationRequested && attempt + 1 < totalAttempts)
+            catch (TaskCanceledException ex) when (allowRetries && !ct.IsCancellationRequested && attempt + 1 < totalAttempts)
             {
                 lastError = ex;
                 await DelayWithJitterAsync(attempt, ct).ConfigureAwait(false);
@@ -143,6 +153,90 @@ public sealed class HttpSurrealConnection : ISurrealConnection
         }
         // Unreachable in practice — the final attempt either returns or throws.
         throw new SurrealProtocolException("SurrealDB /sql request failed after retries.", lastError!);
+    }
+
+    /// <summary>
+    /// True iff the statement is safe to retry on transport failure — i.e. the
+    /// server cannot produce a different observable outcome from a duplicate
+    /// send. Conservatively allowlist-only: any statement we don't explicitly
+    /// recognise as idempotent is treated as a write and never retried.
+    /// </summary>
+    /// <remarks>
+    /// Allowed prefixes (case-insensitive, after stripping line/block comments
+    /// and leading whitespace):
+    /// <list type="bullet">
+    ///   <item><c>SELECT</c> — pure read.</item>
+    ///   <item><c>INFO</c> — schema introspection.</item>
+    ///   <item><c>LIVE</c> — subscription set-up; subscription id is server-issued and the second attempt simply re-subscribes.</item>
+    ///   <item><c>KILL</c> — idempotent: killing an already-killed subscription is a no-op.</item>
+    ///   <item><c>BEGIN TRANSACTION</c> — opens a fresh server-side txn; observable state is per-connection.</item>
+    /// </list>
+    /// Everything else — including <c>CREATE</c>, <c>UPDATE</c>,
+    /// <c>UPSERT</c>, <c>DELETE</c>, <c>INSERT</c>, <c>RELATE</c>,
+    /// <c>MERGE</c>, <c>DEFINE</c>, <c>REMOVE</c>, <c>USE</c>,
+    /// <c>COMMIT TRANSACTION</c>, <c>CANCEL TRANSACTION</c>, and any
+    /// multi-statement body whose first non-comment token isn't on the list —
+    /// is treated as non-idempotent.
+    /// </remarks>
+    public static bool IsIdempotentSql(string sql)
+    {
+        if (string.IsNullOrEmpty(sql)) return false;
+
+        var trimmed = StripLeadingCommentsAndWhitespace(sql);
+        if (trimmed.Length == 0) return false;
+
+        // Match the FIRST token. We need a multi-word check for "BEGIN TRANSACTION"
+        // — accept "BEGIN" too because SurrealDB's grammar allows the shorthand.
+        return StartsWithToken(trimmed, "SELECT")
+            || StartsWithToken(trimmed, "INFO")
+            || StartsWithToken(trimmed, "LIVE")
+            || StartsWithToken(trimmed, "KILL")
+            || StartsWithToken(trimmed, "BEGIN");
+    }
+
+    private static string StripLeadingCommentsAndWhitespace(string s)
+    {
+        int i = 0;
+        while (i < s.Length)
+        {
+            char c = s[i];
+            if (char.IsWhiteSpace(c)) { i++; continue; }
+
+            // Line comment: -- ... \n  or  // ... \n
+            if (c == '-' && i + 1 < s.Length && s[i + 1] == '-')
+            {
+                while (i < s.Length && s[i] != '\n') i++;
+                continue;
+            }
+            if (c == '/' && i + 1 < s.Length && s[i + 1] == '/')
+            {
+                while (i < s.Length && s[i] != '\n') i++;
+                continue;
+            }
+            // Block comment: /* ... */
+            if (c == '/' && i + 1 < s.Length && s[i + 1] == '*')
+            {
+                i += 2;
+                while (i + 1 < s.Length && !(s[i] == '*' && s[i + 1] == '/')) i++;
+                if (i + 1 < s.Length) i += 2; // consume closing */
+                continue;
+            }
+            break;
+        }
+        return i >= s.Length ? string.Empty : s.Substring(i);
+    }
+
+    private static bool StartsWithToken(string s, string token)
+    {
+        if (s.Length < token.Length) return false;
+        // Case-insensitive ordinal compare on the leading characters.
+        if (string.Compare(s, 0, token, 0, token.Length, StringComparison.OrdinalIgnoreCase) != 0)
+            return false;
+        // The next char must be a non-identifier char (whitespace, semicolon,
+        // EOF) — otherwise "SELECTOR" would match "SELECT".
+        if (s.Length == token.Length) return true;
+        char next = s[token.Length];
+        return !char.IsLetterOrDigit(next) && next != '_';
     }
 
     /// <inheritdoc/>

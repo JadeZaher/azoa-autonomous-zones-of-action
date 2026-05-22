@@ -402,4 +402,73 @@ public sealed class SurrealQlSafetyAnalyzerTests
 
         await RunWithSurrealQueryAsync(source);
     }
+
+    // ─── HIGH#5 — semantic resolution of SurrealQuery.Of via the symbol model ───
+    //
+    // The legacy `IsSurrealQueryType` did `memberAccess.Expression.ToString() == "SurrealQuery"`
+    // which silently missed fully-qualified and aliased call shapes — a clean
+    // bypass for anyone willing to type a few extra characters. Fix #5 plumbs
+    // the SemanticModel through so the analyzer resolves the receiver to its
+    // IMethodSymbol and checks the containing type's full display string.
+
+    [Fact]
+    public async Task Fail_fully_qualified_SurrealQuery_Of_with_concat_initializer()
+    {
+        // Note: NO `using Oasis.SurrealDb.Client.Query;` — the call is fully-
+        // qualified. The pre-fix analyzer compared the receiver token literally
+        // ("global::Oasis.SurrealDb.Client.Query.SurrealQuery" != "SurrealQuery")
+        // and let this slip through.
+        const string source = """
+            class TestClass
+            {
+                void Test(string userInput)
+                {
+                    var sql = "SELECT * FROM wallet WHERE id = " + userInput;
+                    var q = global::Oasis.SurrealDb.Client.Query.SurrealQuery.Of({|SRDB0001:sql|});
+                }
+            }
+            """;
+
+        await RunWithSurrealQueryAsync(source);
+    }
+
+    [Fact]
+    public async Task Fail_aliased_SurrealQuery_Of_with_interpolated_initializer()
+    {
+        // `using SQ = ...` aliasing — same bypass shape as fully-qualified,
+        // different syntactic surface.
+        const string source = """
+            using SQ = Oasis.SurrealDb.Client.Query.SurrealQuery;
+
+            class TestClass
+            {
+                void Test(string userInput)
+                {
+                    var q = SQ.Of({|SRDB0001:$"SELECT * FROM wallet WHERE id = {userInput}"|});
+                }
+            }
+            """;
+
+        await RunWithSurrealQueryAsync(source);
+    }
+
+    [Fact]
+    public async Task Pass_fully_qualified_SurrealQuery_Of_with_literal_is_not_flagged()
+    {
+        // Negative case for the semantic-resolution path: a literal SurrealQL
+        // string is safe regardless of whether the call is short, qualified,
+        // or aliased.
+        const string source = """
+            class TestClass
+            {
+                void Test()
+                {
+                    var q = global::Oasis.SurrealDb.Client.Query.SurrealQuery
+                                    .Of("SELECT * FROM wallet WHERE id = $id");
+                }
+            }
+            """;
+
+        await RunWithSurrealQueryAsync(source);
+    }
 }

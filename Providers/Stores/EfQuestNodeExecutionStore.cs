@@ -18,7 +18,10 @@ public sealed class EfQuestNodeExecutionStore : IQuestNodeExecutionStore
     public Task<OASISResult<QuestNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default)
         => throw new NotImplementedException("EfQuestNodeExecutionStore is a stub; use InMemoryQuestNodeExecutionStore until surrealdb-migration ships the SurrealDB adapter.");
 
-    public Task<OASISResult<QuestNodeExecution>> UpdateAsync(QuestNodeExecution execution, CancellationToken ct = default)
+    public Task<OASISResult<QuestNodeExecution>> UpdateAsync(
+        QuestNodeExecution execution,
+        QuestNodeState? expectedState = null,
+        CancellationToken ct = default)
         => throw new NotImplementedException("EfQuestNodeExecutionStore is a stub; use InMemoryQuestNodeExecutionStore until surrealdb-migration ships the SurrealDB adapter.");
 
     public Task<OASISResult<IEnumerable<QuestNodeExecution>>> GetByRunIdAsync(Guid runId, CancellationToken ct = default)

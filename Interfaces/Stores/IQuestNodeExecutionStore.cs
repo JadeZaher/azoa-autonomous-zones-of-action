@@ -22,8 +22,30 @@ public interface IQuestNodeExecutionStore
     /// <summary>Loads an execution by its own id.</summary>
     Task<OASISResult<QuestNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>Updates an existing execution (state transition, output/error capture, ended_at).</summary>
-    Task<OASISResult<QuestNodeExecution>> UpdateAsync(QuestNodeExecution execution, CancellationToken ct = default);
+    /// <summary>
+    /// Updates an existing execution (state transition, output/error capture, ended_at).
+    ///
+    /// <para>
+    /// When <paramref name="expectedState"/> is non-null the update only
+    /// succeeds if the currently-stored execution's
+    /// <see cref="QuestNodeExecution.State"/> equals the supplied value —
+    /// otherwise an error <see cref="OASISResult{T}"/> is returned describing
+    /// the drift. This is the G2 state-machine guard used by
+    /// <c>QuestManager</c>'s execute and fork-cancel paths to prevent a
+    /// late-arriving in-flight transition from overwriting a concurrent
+    /// fork's <see cref="QuestNodeState.Cancelled"/> stamp (and vice-versa).
+    /// Closes HIGH#7.
+    /// </para>
+    /// <para>
+    /// When <paramref name="expectedState"/> is <c>null</c> the update is
+    /// unconditional, preserving the historic behaviour for callers that
+    /// genuinely don't care about the prior state.
+    /// </para>
+    /// </summary>
+    Task<OASISResult<QuestNodeExecution>> UpdateAsync(
+        QuestNodeExecution execution,
+        QuestNodeState? expectedState = null,
+        CancellationToken ct = default);
 
     /// <summary>All executions for a single run, ordered by <see cref="QuestNodeExecution.StartedAt"/>.</summary>
     Task<OASISResult<IEnumerable<QuestNodeExecution>>> GetByRunIdAsync(Guid runId, CancellationToken ct = default);

@@ -187,6 +187,50 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
             a.Should().Be(b);
             a.Should().HaveLength(64).And.MatchRegex("^[0-9a-f]+$");
         }
+
+        [Fact]
+        public void BootstrapSchemaMigrationDdl_is_a_compile_time_literal()
+        {
+            // HIGH#6: the bootstrap DDL must not vary at runtime — it is a
+            // compile-time const so SRDB0001's "no interpolation" rule
+            // applies trivially. Two reads at different points in the run
+            // must be identical (and identical to BuildTrackingTableDdl()'s
+            // return value to preserve the backwards-compatible getter).
+            var a = MigrationRunner.BootstrapSchemaMigrationDdl;
+            var b = MigrationRunner.BootstrapSchemaMigrationDdl;
+            a.Should().Be(b);
+            a.Should().Contain("DEFINE TABLE schema_migration SCHEMAFULL");
+            a.Should().Contain("DEFINE INDEX schema_migration_file_name");
+            MigrationRunner.BuildTrackingTableDdl().Should().Be(a,
+                "BuildTrackingTableDdl() must remain a backwards-compatible alias for the const");
+        }
+
+        [Fact]
+        public async Task RecordAppliedAsync_escapes_appliedBy_with_embedded_quotes_and_backslashes()
+        {
+            // HIGH#6 safety claim: operator-supplied applied_by must be JSON-escaped
+            // before being embedded in the SurrealQL UPDATE statement. A value
+            // containing both a quote and a backslash must round-trip through
+            // the SQL body as a valid JSON-escaped substring.
+            var conn = new RecordingConnection();
+            var nasty = "ci-runner\" OR 1=1 --\\";
+            var runner = new MigrationRunner(conn, appliedBy: nasty);
+            var files = new[] { new MigrationFile("/x/010_wallet.surql", "DEFINE TABLE wallet SCHEMAFULL;") };
+
+            await runner.ApplyAsync(files);
+
+            var update = conn.SentSql.Single(s => s.StartsWith("UPDATE schema_migration:"));
+            // The literal quote and backslash from the operator string must NOT
+            // appear unescaped — they must be \\ and \" inside the SurrealQL
+            // string literal.
+            update.Should().Contain("\\\"", "embedded quote must be JSON-escaped");
+            update.Should().Contain("\\\\", "embedded backslash must be JSON-escaped");
+            // The exploit payload (`OR 1=1`) is inside a quoted JSON string so
+            // even though the text appears in the SQL body, it cannot terminate
+            // the string literal early.
+            update.Should().NotContain("\"" + nasty + "\"",
+                "raw unescaped operator string must NOT appear in the SQL body");
+        }
     }
 
     /// <summary>

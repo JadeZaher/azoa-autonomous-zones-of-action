@@ -45,8 +45,19 @@ public sealed class SurrealConnectionOptions
     /// <summary>Per-request HTTP timeout. Default 30s.</summary>
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
-    /// <summary>Maximum retries on transport failure. Default 5.</summary>
-    public int MaxRetries { get; set; } = 5;
+    /// <summary>
+    /// Maximum number of attempts (NOT retries — the first attempt counts) on
+    /// transport failure. Default 2 = at most one retry. Lowered from 5 in
+    /// HIGH#2 because:
+    ///   * Non-idempotent statements (COMMIT / CREATE / UPDATE / DELETE) are
+    ///     never retried regardless of this number — see
+    ///     <c>HttpSurrealConnection.IsIdempotentSql</c>.
+    ///   * For idempotent statements, hammering a struggling server with
+    ///     exponentially-backed-off retries beyond ~2 attempts produces more
+    ///     harm than help; the connection-pool layer above already serialises
+    ///     concurrent requests.
+    /// </summary>
+    public int MaxRetries { get; set; } = 2;
 
     /// <summary>Base backoff before applying jitter + exponential factor. Default 100ms.</summary>
     public TimeSpan BaseRetryDelay { get; set; } = TimeSpan.FromMilliseconds(100);

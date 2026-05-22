@@ -47,4 +47,21 @@ public class QuestNodeExecution
 
     /// <summary>Wall-clock time at which the row reached a terminal state. Null while non-terminal.</summary>
     public DateTime? EndedAt { get; set; }
+
+    /// <summary>
+    /// Field-by-field copy. Used by the in-memory store to hand defensive
+    /// clones to readers so accidental caller-side mutation of a returned
+    /// execution can't leak back into the store's internal map (HIGH#7).
+    /// </summary>
+    public QuestNodeExecution Clone() => new()
+    {
+        Id        = Id,
+        RunId     = RunId,
+        NodeId    = NodeId,
+        State     = State,
+        Output    = Output,
+        Error     = Error,
+        StartedAt = StartedAt,
+        EndedAt   = EndedAt,
+    };
 }

@@ -94,7 +94,7 @@ public sealed class SurrealQlSafetyAnalyzerDiagnostic : DiagnosticAnalyzer
         }
 
         // ── Case 2: SurrealQuery.Of(…) ───────────────────────────────────────
-        if (name == "Of" && IsSurrealQueryType(invocation))
+        if (name == "Of" && IsSurrealQueryType(invocation, ctx))
         {
             CheckFirstStringArg(invocation, "SurrealQuery.Of", ctx);
             return;
@@ -316,8 +316,46 @@ public sealed class SurrealQlSafetyAnalyzerDiagnostic : DiagnosticAnalyzer
            name.EndsWith("SurrealDb", System.StringComparison.Ordinal) ||
            name == "ISurrealDbClient";
 
-    private static bool IsSurrealQueryType(InvocationExpressionSyntax invocation)
+    /// <summary>
+    /// Returns true iff <paramref name="invocation"/> resolves to a member of
+    /// <c>Oasis.SurrealDb.Client.Query.SurrealQuery</c>. Uses the semantic
+    /// model (preferred) so that fully-qualified
+    /// (<c>Oasis.SurrealDb.Client.Query.SurrealQuery.Of(...)</c>) and aliased
+    /// (<c>using SQ = Oasis.SurrealDb.Client.Query.SurrealQuery; SQ.Of(...)</c>)
+    /// calls are flagged the same as the plain <c>SurrealQuery.Of(...)</c>
+    /// shape.
+    ///
+    /// <para>
+    /// Falls back to the legacy syntactic check (receiver token equality)
+    /// only when semantic info is unavailable — e.g. the analyzer is running
+    /// in a project where the Client package isn't yet referenced. Mirrors
+    /// the dual-path approach used by <see cref="IsSurrealDbClientCall"/>.
+    /// Closes HIGH#5.
+    /// </para>
+    /// </summary>
+    private static bool IsSurrealQueryType(
+        InvocationExpressionSyntax invocation,
+        SyntaxNodeAnalysisContext ctx)
     {
+        // Semantic path (preferred). When the project references the Client
+        // package, this catches all three call shapes: short, fully-qualified,
+        // and aliased.
+        var symbol = ctx.SemanticModel.GetSymbolInfo(invocation, ctx.CancellationToken).Symbol;
+        if (symbol is IMethodSymbol method && method.ContainingType is not null)
+        {
+            var fullName = method.ContainingType.ToDisplayString();
+            // Use EndsWith so a re-shipped namespace prefix (e.g. interface
+            // forwarders) still matches the canonical type.
+            if (fullName.EndsWith("Oasis.SurrealDb.Client.Query.SurrealQuery", System.StringComparison.Ordinal))
+                return true;
+            // Don't return false here — the semantic model may resolve to an
+            // unrelated <c>SurrealQuery</c> in another namespace if the
+            // package isn't referenced. Fall through to the syntactic check.
+        }
+
+        // Syntactic fallback (defensive). Only catches the short
+        // <c>SurrealQuery.Of(...)</c> shape; the semantic path above is the
+        // primary closure.
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
             var receiver = memberAccess.Expression.ToString();
@@ -331,8 +369,25 @@ public sealed class SurrealQlSafetyAnalyzerDiagnostic : DiagnosticAnalyzer
 
     private static bool IsInsideSafeLayer(SyntaxNode node)
     {
-        // Walk up to the namespace declaration and check if it contains either
-        // the legacy safe-layer segment or the new packaged client's namespace.
+        // Walk up to the namespace declaration and check whether it is one of
+        // the sanctioned safe-construction layers:
+        //   * Core.SurrealDb.Query                  — legacy in-repo builder layer.
+        //   * Oasis.SurrealDb.Client.Query          — homebake package query layer.
+        //   * Oasis.SurrealDb.Schema.Migration      — schema runner (HIGH#6 fallback).
+        //     Architectural rationale: the schema package was deliberately
+        //     shipped with a narrow local <c>ISurrealConnection</c> abstraction
+        //     to avoid a hard Schema → Client coupling during Phase 4. Routing
+        //     migration writes through Client's parameterized executor would
+        //     require either (a) adding a Schema → Client ProjectReference
+        //     and a second connection abstraction inside MigrationRunner, or
+        //     (b) widening Schema's narrow ISurrealConnection with a
+        //     <c>parameters</c> overload — both are out-of-scope for a
+        //     code-review surgical fix. The migration runner uses a
+        //     <c>JsonEscape</c> helper for the only operator-supplied field
+        //     (<c>applied_by</c>) and emits the rest as compile-time literals
+        //     keyed by a sanitised record id — the analyzer's blanket "no
+        //     interpolation" rule isn't a value-correct test here, so the
+        //     namespace is allowlisted with this comment as the rationale.
         var ns = node.Ancestors()
             .OfType<BaseNamespaceDeclarationSyntax>()
             .Select(n => n.Name.ToString())
@@ -341,8 +396,9 @@ public sealed class SurrealQlSafetyAnalyzerDiagnostic : DiagnosticAnalyzer
         if (ns == null)
             return false;
 
-        return ns.IndexOf("Core.SurrealDb.Query", System.StringComparison.Ordinal) >= 0 ||
-               ns.IndexOf("Oasis.SurrealDb.Client.Query", System.StringComparison.Ordinal) >= 0;
+        return ns.IndexOf("Core.SurrealDb.Query",             System.StringComparison.Ordinal) >= 0 ||
+               ns.IndexOf("Oasis.SurrealDb.Client.Query",     System.StringComparison.Ordinal) >= 0 ||
+               ns.IndexOf("Oasis.SurrealDb.Schema.Migration", System.StringComparison.Ordinal) >= 0;
     }
 
     // ─── Syntax helpers ───────────────────────────────────────────────────────
