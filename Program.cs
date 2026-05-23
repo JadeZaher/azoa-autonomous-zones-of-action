@@ -254,12 +254,18 @@ builder.Services.AddScoped<IBlockchainOperationStore,
     OASIS.WebAPI.Providers.Stores.Surreal.SurrealBlockchainOperationStore>();
 builder.Services.AddScoped<ISTARStore,
     OASIS.WebAPI.Providers.Stores.Surreal.SurrealStarStore>();
-// IQuestStore stays on the in-memory adapter during the
-// [[quest-temporal-fork-model]] transition window; the SurrealDB-backed
-// runtime store lands with that track (surrealdb-migration plan.md tasks
-// 9-11). Definition-side template reads are already on
-// SurrealQuestTemplateStore via IQuestTemplateStore (CLOSEOUT Stream C2).
-builder.Services.AddSingleton<IQuestStore, InMemoryQuestStore>();
+// surrealdb-migration wave-2 round-3 close (residual task 9): IQuestStore
+// flips to the SurrealDB-backed adapter now that the definition-side
+// schema files (150_quest / 160_quest_node / 170_quest_edge) and the
+// existing quest_template / quest_node_template tables (130 / 140) are
+// all in place — quests now survive restart. The InMemoryQuestStore
+// class file remains on disk as a one-line revert path; only the DI
+// binding is flipped here. Definition-side template reads continue to
+// be served by SurrealQuestTemplateStore via the separate
+// IQuestTemplateStore interface (CLOSEOUT Stream C2) — both shapes
+// share the underlying quest_template row format.
+builder.Services.AddScoped<IQuestStore,
+    OASIS.WebAPI.Providers.Stores.Surreal.SurrealQuestStore>();
 builder.Services.AddScoped<INftStore,
     OASIS.WebAPI.Providers.Stores.Surreal.SurrealNftStore>();
 builder.Services.AddScoped<IBridgeStore,
@@ -277,14 +283,19 @@ builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Stores.IQuestTemplateStore,
     OASIS.WebAPI.Providers.Stores.Surreal.SurrealQuestTemplateStore>();
 
 // <quest-temporal-fork-model>
-// Per-attempt runtime stores for QuestRun + QuestNodeExecution. InMemory is
-// the default during the transition window; the SurrealDB-backed adapter
-// arrives with surrealdb-migration tasks 9–10 (see SURREAL-SCHEMA-HINTS.md).
-// Singleton is appropriate for InMemory (process-lifetime state); EF stubs
-// the EF stubs that previously sat behind these interfaces were deleted in
-// CLOSEOUT Stream D.
-builder.Services.AddSingleton<IQuestRunStore, InMemoryQuestRunStore>();
-builder.Services.AddSingleton<IQuestNodeExecutionStore, InMemoryQuestNodeExecutionStore>();
+// Per-attempt runtime stores for QuestRun + QuestNodeExecution. As of
+// surrealdb-migration wave-2 round-3 close (residual task 9) both flip to
+// the SurrealDB-backed adapters — quests + per-(run, node) execution rows
+// now survive restart. The schemas they bind to are
+// 190_quest_run.surql + 200_quest_node_execution.surql, with the
+// 230_quest_graph_edges.surql RELATION tables (forked_from + executes)
+// providing the cheap-graph-traversal lane for lineage walks. The
+// InMemory* class files remain on disk so a future revert is a one-line
+// DI swap.
+builder.Services.AddScoped<IQuestRunStore,
+    OASIS.WebAPI.Providers.Stores.Surreal.SurrealQuestRunStore>();
+builder.Services.AddScoped<IQuestNodeExecutionStore,
+    OASIS.WebAPI.Providers.Stores.Surreal.SurrealQuestNodeExecutionStore>();
 // </quest-temporal-fork-model>
 
 // <surrealdb-client-package>
@@ -349,6 +360,19 @@ builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
 builder.Services.AddScoped<IAvatarNFTService, AvatarNFTService>();
 builder.Services.AddScoped<IQuestManager, QuestManager>();
+
+// <dapp-composition>
+// IDappSeriesStore + IDappCompositionManager are the dapp-composition track's
+// surfaces. The store operates on source-gen'd DappSeries + DappSeriesQuest
+// POCOs (OASIS.WebAPI.Generated.SurrealDb) -- no hand-written entity types
+// for this aggregate. InMemory is the default until surrealdb-migration
+// wave-2 lands the Surreal-backed adapter; the Singleton lifetime matches
+// the existing InMemory store pattern (process-lifetime state).
+builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Stores.IDappSeriesStore,
+    OASIS.WebAPI.Providers.Stores.InMemoryDappSeriesStore>();
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IDappCompositionManager,
+    OASIS.WebAPI.Managers.DappCompositionManager>();
+// </dapp-composition>
 
 // ─── Blockchain providers & factory ───
 builder.Services.AddSingleton<IBlockchainProvider, AlgorandProvider>();

@@ -1,0 +1,35 @@
+erDiagram
+    %% @surreal.schemafull
+    %% @surreal.aggregate "QuestNodeExecution (Models/Quest/QuestNodeExecution.cs)"
+    %% @surreal.guardrail "G6 SCHEMAFULL; G2 exactly-once claim primitive (api-safety-hardening). One row per (run, node)."
+    %% @surreal.note "Per-(run, node) execution row. Replaces the in-place mutation of QuestNode.State/Output/Error which prevented re-runs from preserving prior attempt's outputs."
+    %% @surreal.note "On a fork, the same execution row can be referenced by both parent and child run via the `executes` RELATE edge for nodes whose execution_order < forkPoint (copy-by-reference, no duplication). Scalar run_id is the originating run; cross-run reference happens through the RELATE edge defined separately in surrealdb-migration §6.2."
+    %% @surreal.note "The G2 claim primitive (TryClaimPendingAsync) is a conditional UPDATE that only succeeds when current state == 'Pending'. Empty-result case = lost race (already claimed by another worker). The (run_id, node_id) UNIQUE index is what makes the claim atomically safe."
+    %% @surreal.note "output stores the JSON-serialized OASISResult<T> from the handler call. error carries the failure message when state = Failed. Both are null in non-terminal states."
+    quest_node_execution {
+        %% @surreal.fieldgroup "Execution row identity (record id is the Guid('N') of QuestNodeExecution.Id)"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string id
+        %% @surreal.fieldgroup "Owning run (originating run; cross-run references via `executes` RELATE edge)"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string run_id
+        %% @surreal.fieldgroup "Quest definition node this execution corresponds to"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string node_id
+        %% @surreal.fieldgroup "QuestNodeState enum name"
+        %% @surreal.assert "$value INSIDE [\"Pending\", \"Running\", \"Succeeded\", \"Failed\", \"Skipped\", \"Cancelled\"]"
+        %% @surreal.default "\"Pending\""
+        string state
+        %% @surreal.fieldgroup "Serialized OASISResult<T> from the handler call (null until Succeeded)"
+        option<string> output
+        %% @surreal.fieldgroup "Failure message when state is Failed"
+        option<string> error
+        %% @surreal.fieldgroup "Wall-clock time at which the row entered Running"
+        datetime started_at
+        %% @surreal.fieldgroup "Wall-clock time at which the row reached a terminal state (null while non-terminal)"
+        option<datetime> ended_at
+        %% @surreal.index fields=[run_id, node_id] name=quest_node_execution_run_node unique=true
+        %% @surreal.index fields=[run_id] name=quest_node_execution_by_run
+        %% @surreal.index fields=[node_id] name=quest_node_execution_by_node
+        %% @surreal.index fields=[state] name=quest_node_execution_by_state
+    }

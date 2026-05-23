@@ -1,0 +1,35 @@
+erDiagram
+    %% @surreal.schemafull
+    %% @surreal.aggregate "QuestNode (Models/Quest/QuestNode.cs)"
+    %% @surreal.guardrail "G6 SCHEMAFULL; definition-side step inside a quest DAG. Per-(run,node) runtime state lives on quest_node_execution."
+    %% @surreal.note "Each row is one step inside a quest DAG. config is a JSON-serialized request model (e.g. HolonCreateModel, NftMintRequest) that the matching IQuestNodeHandler deserializes at execution time. node_type asserts INSIDE the full QuestNodeType enum so a schema-drift typo is rejected at INSERT time rather than at the dispatch layer."
+    %% @surreal.note "is_entry/is_terminal are derived from the edge graph (an entry node has no incoming control edges) and cached on the row for fast quest-start lookup. execution_order is the topological position computed by QuestDagValidator on activation; the (quest_id, execution_order) composite index is used by the executor to walk nodes in dependency order."
+    %% @surreal.note "state/output/error were intentionally removed when quest-temporal-fork-model split per-run state into quest_node_execution -- see SURREAL-SCHEMA-HINTS.md §2 'Removed from quest_node'."
+    quest_node {
+        %% @surreal.fieldgroup "Core identity (record id is the Guid('N') of QuestNode.Id)"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string id
+        %% @surreal.fieldgroup "Owning quest"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string quest_id
+        %% @surreal.fieldgroup "Reusable node template this node was instantiated from (null for hand-authored)"
+        option<string> node_template_id
+        %% @surreal.fieldgroup "QuestNodeType enum name (e.g. HolonCreate, NftMint)"
+        %% @surreal.assert "$value INSIDE [\"HolonCreate\", \"HolonUpdate\", \"HolonDelete\", \"HolonGet\", \"HolonQuery\", \"HolonInteract\", \"HolonGetChildren\", \"HolonGetPeers\", \"HolonGetAncestors\", \"HolonGetDescendants\", \"HolonPropagate\", \"HolonCompose\", \"HolonClone\", \"HolonMoveSubtree\", \"NftMint\", \"NftTransfer\", \"NftBurn\", \"NftGet\", \"NftQuery\", \"NftGetMetadata\", \"WalletCreate\", \"WalletUpdate\", \"WalletDelete\", \"WalletGet\", \"WalletQuery\", \"WalletSetDefault\", \"WalletGetPortfolio\", \"StarGenerate\", \"StarDeploy\", \"Search\", \"AvatarNFTGetComposite\", \"BlockchainExecute\", \"Condition\", \"ComposeOutputs\"]"
+        string node_type
+        %% @surreal.fieldgroup "Caller-supplied label"
+        string name
+        %% @surreal.fieldgroup "Node-specific JSON config -- deserialized to the matching request model at execution time"
+        %% @surreal.default "\"{}\""
+        string config
+        %% @surreal.fieldgroup "Entry point (no incoming control edges) -- cached from DAG analysis"
+        %% @surreal.default "false"
+        bool is_entry
+        %% @surreal.fieldgroup "Terminal node (no outgoing control edges) -- cached from DAG analysis"
+        %% @surreal.default "false"
+        bool is_terminal
+        %% @surreal.fieldgroup "Topological position (0-based; computed during DAG validation)"
+        int execution_order
+        %% @surreal.index fields=[quest_id] name=quest_node_by_quest
+        %% @surreal.index fields=[quest_id, execution_order] name=quest_node_by_order
+    }

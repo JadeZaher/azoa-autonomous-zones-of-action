@@ -1,0 +1,25 @@
+erDiagram
+    %% @surreal.schemafull
+    %% @surreal.aggregate "DappSeriesQuest (dapp-composition track -- new entity, no hand-written model)"
+    %% @surreal.guardrail "G6 SCHEMAFULL; greenfield entity introduced by the dapp-composition track. Carries the ordering and cross-quest data flow within a DappSeries."
+    %% @surreal.note "An ordered quest entry inside a DappSeries. Composite key concept: (dapp_series_id, quest_id) is logically unique but stored as a real row to allow soft-update of order and input_mappings without delete+reinsert."
+    %% @surreal.note "order is 1-indexed and dense: ReorderQuestAsync resequences sibling rows transactionally. input_mappings is a JSON array describing how outputs from prior quests' terminal nodes flow into this quest's entry nodes (see DappSeries spec §InputMapping for the shape: sourceQuestId/sourceNodeId/targetQuestId/targetNodeId/fieldMap)."
+    dapp_series_quest {
+        %% @surreal.fieldgroup "Core identity (record id is the Guid('N') of DappSeriesQuest.Id)"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string id
+        %% @surreal.fieldgroup "Parent series"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string dapp_series_id
+        %% @surreal.fieldgroup "Referenced quest"
+        %% @surreal.assert "$value != NONE AND $value != \"\""
+        string quest_id
+        %% @surreal.fieldgroup "1-indexed execution order within the series"
+        %% @surreal.assert "$value > 0"
+        int order
+        %% @surreal.fieldgroup "JSON array of InputMapping entries (null when no cross-quest flow needed)"
+        option<string> input_mappings
+        %% @surreal.index fields=[dapp_series_id] name=dapp_series_quest_by_series
+        %% @surreal.index fields=[dapp_series_id, order] name=dapp_series_quest_by_order
+        %% @surreal.index fields=[quest_id] name=dapp_series_quest_by_quest
+    }
