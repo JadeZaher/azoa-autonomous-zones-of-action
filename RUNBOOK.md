@@ -97,23 +97,49 @@ entities cut over in **Phase E** (see §6) after the mermaid layout
 true visual data model. The user observation: mermaid's value is the
 relationship arrows, not the per-table annotations.
 
-### 4.1 Target shape — per-aggregate slice files
+**Approach: slice files are GENERATED, not hand-authored.** The 24
+`.mermaid` sources remain the single source of truth. Two new pieces
+of authoring metadata land inside each source:
 
-| Slice file | Entities | Relationships in slice |
-|---|---|---|
-| `aggregates/quest.mermaid` | quest, quest_node, quest_edge, quest_dependency, quest_run, quest_node_execution | quest ‖--o{ quest_node, quest ‖--o{ quest_edge, quest ‖--o{ quest_dependency, quest_run ‖--o{ quest_node_execution, quest_run o\|--o\| quest_run (parent), quest_node ‖--o{ quest_node_execution (executes) |
-| `aggregates/quest_templates.mermaid` | quest_template, quest_node_template | quest_template o{--‖ quest_node_template (refs) |
-| `aggregates/dapp_composition.mermaid` | dapp_series, dapp_series_quest | dapp_series ‖--o{ dapp_series_quest, dapp_series_quest }o--‖ quest (cross-slice) |
-| `aggregates/bridge.mermaid` | bridge_tx, saga_steps, consumed_vaa_ledger, idempotency_key_store, operation_log | bridge_tx ‖--o{ saga_steps |
-| `aggregates/wallet_nft.mermaid` | wallet, nft_ownership, swap_state | wallet ‖--o{ nft_ownership (owns) |
-| `aggregates/identity.mermaid` | avatar, api_key, holon, star | avatar ‖--o{ api_key, avatar ‖--o{ holon |
+1. `%% @surreal.slice "<slice-name>"` on the entity header — declares
+   which aggregate slice the entity belongs to.
+2. Real Mermaid relationship lines (`a ||--o{ b : "label"`) — the
+   `.surql` emitter already ignores `Relationships`, so adding them
+   has no runtime effect; they exist purely for the visual layer.
 
-### 4.2 Build step — auto-generated master
+A new `oasis-surreal aggregates` subcommand reads `source/*.mermaid`,
+groups entities by `@surreal.slice`, emits one
+`docs/aggregates/<slice>.mermaid` per group plus a concatenated
+`docs/domain.generated.mermaid` master diagram checked into git so
+GitHub renders it inline on the repo landing page.
 
-A new build step (Powershell or .NET tool) concatenates all
-`aggregates/*.mermaid` into `docs/domain.generated.mermaid`. The master
-is checked into git so GitHub renders it inline on the repo landing
-page. Authors edit slices; readers consume the master.
+### 4.1 Target slice membership
+
+| Slice | Entities |
+|---|---|
+| `quest` | quest, quest_node, quest_edge, quest_dependency, quest_run, quest_node_execution |
+| `quest_templates` | quest_template, quest_node_template |
+| `dapp_composition` | dapp_series, dapp_series_quest |
+| `bridge` | bridge_tx, saga_steps, consumed_vaa_ledger, idempotency_key_store, operation_log |
+| `wallet_nft` | wallet, nft_ownership, swap_state |
+| `identity` | avatar, api_key, holon, star_odk |
+
+Cross-slice references (e.g. `dapp_series_quest.quest_id` → `quest`)
+are declared on the FK-owning side per §7.1; the master diagram shows
+them in full while the slice diagrams show them with a clear
+"(cross-slice)" label.
+
+### 4.2 Parser + utility changes
+
+- `packages/Oasis.SurrealDb.Schema/Mermaid/MermaidParser.cs` —
+  register `slice` in `KnownDirectives` (line ~47). Strict-namespacing
+  contract preserved.
+- `packages/Oasis.SurrealDb.Schema/Cli/` — new `AggregateEmitter`
+  alongside `SurqlEmitter`. Reads a directory of source files, groups
+  entities by `@surreal.slice` annotation value, emits one slice file
+  per group + the concat master.
+- `packages/Oasis.SurrealDb.Schema/Program.cs` — new `aggregates`
+  subcommand: `oasis-surreal aggregates --source <dir> --out <dir>`.
 
 ### 4.3 Generator changes (Phase C — substantial)
 
@@ -126,28 +152,28 @@ needs three updates:
    multiple `erDiagram` table blocks per file. POCO emission stays
    1:1 with table blocks (one `.g.cs` per table); the change is just
    in the parser.
-2. **Relationship parsing** — recognize mermaid relationship lines
-   (`||--o{`, `||--||`, `o|--o|`, `}o--||`) and store them in the
-   schema model.
+2. **Relationship parsing** — Phase B already adds the relationship
+   lines to source files; Phase C wires them into the schema model
+   for FK emission.
 3. **FK emission to `.surql`** — emit `ASSERT type::is::record($value,
    <target_table>)` clauses on FK fields, and `DEFINE TABLE
    <edge_name> SCHEMAFULL TYPE RELATION FROM <a> TO <b>` blocks for
    native graph edges. Aligns with surrealdb-migration F6 follow-up
    (FK columns as `record<table>` not bare `string`).
 
-**Sequencing:** Phase B (author slice files as docs only, no
-generator changes) lands first to validate the visual model. Phase C
-(generator updates) lands in its own focused slice once Phase B is
-validated.
+**Sequencing:** Phase B (slice annotations + aggregate emitter) lands
+first to validate the visual model. Phase C (generator updates +
+multi-table-per-file collapse) lands once Phase B is validated.
 
 ### 4.4 Migration of existing 24 files
 
-Phase B authors new `aggregates/*.mermaid` files in a directory the
-generator does **not** read (avoid duplicate POCO emission). Existing
-`Persistence/SurrealDb/Schemas/source/*.mermaid` keeps emitting POCOs.
-Phase C migrates the generator to consume `aggregates/` and deletes
-the 24 single-table files. POCOs remain identical — only the schema
-authoring layout changes.
+Phase B leaves the existing
+`Persistence/SurrealDb/Schemas/source/*.mermaid` files in place — it
+only **adds** `@surreal.slice` annotations + relationship lines. Phase
+C may collapse the 24 files into multi-table aggregates if the
+parser change makes that ergonomic; the slice annotations remain
+valid across either layout because they are entity-level, not
+file-level.
 
 ---
 
@@ -156,10 +182,12 @@ authoring layout changes.
 ```
         ┌─────────────────────────────────────────────┐
         │   Phase B (HERE) — Mermaid aggregate slices  │
-        │   6 aggregates/*.mermaid + concat script      │
-        │   docs/domain.generated.mermaid checked in    │
-        │   Generator unchanged                         │
-        │   ~1-2h                                       │
+        │   @surreal.slice + relation lines on 24       │
+        │   source files. `oasis-surreal aggregates`    │
+        │   emits 6 docs/aggregates/*.mermaid + master  │
+        │   docs/domain.generated.mermaid. Generator    │
+        │   POCO/.surql output unchanged.               │
+        │   ~2-3h                                       │
         └────────────────────┬───────────────────────┘
                              │ (1) visual model validated
                              ▼
@@ -226,7 +254,7 @@ authoring layout changes.
 | Phase | Work | Effort | Status |
 |---|---|---|---|
 | A. Runbook + tracks consolidation | RUNBOOK.md, tracks.md prune | 1-2h | ✓ Shipped 2026-05-23 (`8f1eee1`) |
-| **B. Mermaid aggregate slices (visualization-only)** | Author 6 `aggregates/*.mermaid` files + concat script for `docs/domain.generated.mermaid`. Generator unchanged. | 1-2h | **ACTIVE** |
+| **B. Mermaid aggregate slices (visualization-only)** | Annotate 24 source `.mermaid` files with `@surreal.slice` + Mermaid relationship lines. Add `oasis-surreal aggregates` subcommand that emits 6 `docs/aggregates/*.mermaid` + `docs/domain.generated.mermaid`. Generator POCO/.surql output unchanged. | 2-3h | **ACTIVE** |
 | C. Generator: multi-table parsing + FK emission | Roslyn parser update for multi-table files + relationship recognition + `.surql` FK ASSERT + RELATION emission. Migrate generator to read from `aggregates/`. Delete the 24 single-table files. | 4-6h | After B |
 | D. Wave-2 commit + integration | Commit the 3 SurrealQuest stores + tests + `230_quest_graph_edges.*`. | 1h | ✓ Shipped 2026-05-27 (`24a7403`) |
 | E. Quest aggregate cutover to generated POCOs | Partial-class extensions + delete hand-written + rewire wave-2 stores + 34 handlers + QuestManager + tests. Aliases vanish. | 7-9h | After C |
