@@ -28,6 +28,9 @@ DEFINE FIELD metadata ON TABLE holon TYPE option<object>;
 -- PeerHolonIds (list of holon-id strings)
 DEFINE FIELD peer_holon_ids ON TABLE holon TYPE option<array<string>>;
 
+-- Embedding vector for HNSW semantic search (384-dimensional, MiniLM-style)
+DEFINE FIELD embedding ON TABLE holon TYPE option<array<float, 384>>;
+
 DEFINE FIELD created_date ON TABLE holon TYPE datetime;
 DEFINE FIELD modified_date ON TABLE holon TYPE option<datetime>;
 DEFINE FIELD is_active ON TABLE holon TYPE bool

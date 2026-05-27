@@ -23,6 +23,10 @@ erDiagram
         option<string> dapp_series_id
         %% @surreal.fieldgroup "Free-form caller-supplied metadata (string->string map)"
         object metadata
+        %% @surreal.fieldgroup "Embedding vector for HNSW semantic search (384-dimensional, MiniLM-style)"
+        %% @surreal.note "Populated by the MCP vector_search pipeline; absent until first embed call. HNSW index defined in 240_hnsw_indexes.surql."
+        %% @surreal.csharp.skip
+        option<array<float>> embedding
         %% @surreal.fieldgroup "Definition birthdate -- STAYS on the definition, not a runtime artifact"
         datetime created_date
         %% @surreal.index fields=[avatar_id] name=quest_by_avatar

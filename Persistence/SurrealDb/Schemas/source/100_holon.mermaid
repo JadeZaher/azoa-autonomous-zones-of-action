@@ -19,6 +19,10 @@ erDiagram
         option<object> metadata
         %% @surreal.fieldgroup "PeerHolonIds (list of holon-id strings)"
         option<array<string>> peer_holon_ids
+        %% @surreal.fieldgroup "Embedding vector for HNSW semantic search (384-dimensional, MiniLM-style)"
+        %% @surreal.note "Populated by the MCP vector_search pipeline; absent until first embed call. HNSW index defined in 240_hnsw_indexes.surql."
+        %% @surreal.csharp.skip
+        option<array<float>> embedding
         datetime created_date
         option<datetime> modified_date
         %% @surreal.default "true"

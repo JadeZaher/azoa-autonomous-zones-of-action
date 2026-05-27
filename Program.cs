@@ -27,6 +27,7 @@ using OASIS.WebAPI.Providers.Blockchain.Solana;
 using OASIS.WebAPI.Providers.Stores;
 using OASIS.WebAPI.Services;
 using OASIS.WebAPI.Services.Quest;
+using OASIS.WebAPI.Mcp;
 using OASIS.WebAPI.Services.Quest.Handlers;
 using OASIS.WebAPI.Services.Wormhole;
 
@@ -453,6 +454,12 @@ builder.Services.AddSingleton<OASIS.WebAPI.Sagas.ISagaTrigger,
     OASIS.WebAPI.Sagas.PollingSagaTrigger>();
 builder.Services.AddHostedService<OASIS.WebAPI.Sagas.SagaProcessorHostedService>();
 
+// ─── MCP surface (mcp-surface track Phase 1) ───
+// Registers McpToolRegistry (singleton) + the SDK's Streamable HTTP transport
+// at /mcp. Tool implementations (W2-W5) register themselves as IMcpTool via DI;
+// McpToolRegistry's ctor enumerates them at first resolution.
+builder.Services.AddMcpSurface();
+
 // ─── Quest DAG system ───
 builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IQuestDagValidator, OASIS.WebAPI.Services.QuestDagValidator>();
 builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IQuestInstantiator, OASIS.WebAPI.Services.Quest.QuestInstantiator>();
@@ -572,6 +579,14 @@ app.UseRateLimiter();
 // W5 request correlation: after UseRouting, before MapControllers — attaches
 // the W3C TraceId/SpanId as a structured log scope for every request.
 app.UseOasisRequestCorrelation();
+// MCP surface (mcp-surface track): /mcp endpoint protected by the existing
+// JWT+ApiKey multi-scheme via RequireAuthorization() inside MapMcp().
+// UseMcpAuth (Phase 2 W4) extracts the AvatarId claim into ctx.Items so the
+// MCP dispatcher can lift it into ToolCallContext for per-tool avatar scoping.
+// Placed after UseAuthentication/UseAuthorization so the auth pipeline runs
+// before MCP request dispatch.
+app.UseMcpAuth();
+app.MapMcp();
 // ISwapManager + IDexAdapter registrations are above (DEX adapters block)
 app.MapControllers();
 app.MapOasisHealth();
