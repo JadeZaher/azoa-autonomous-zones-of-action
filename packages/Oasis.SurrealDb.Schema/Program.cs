@@ -8,6 +8,7 @@
 //   oasis-surreal migrate dry-run   Plan only; zero writes
 //   oasis-surreal generate <file>   Mermaid source -> .surql sibling
 //   oasis-surreal validate <file>   Parse + report errors; exit non-zero on fail
+//   oasis-surreal aggregates        Emit per-slice + master Mermaid diagrams from source/*.mermaid
 //
 // Connection config sources (resolution order, first wins per field):
 //   1. --connection / --user / --pass / --namespace / --database flags
@@ -48,6 +49,8 @@ namespace Oasis.SurrealDb.Schema
                         return RunGenerate(cli);
                     case "validate":
                         return RunValidate(cli);
+                    case "aggregates":
+                        return RunAggregates(cli);
                     default:
                         Console.Error.WriteLine($"unknown command: '{cli.Command}'");
                         PrintHelp();
@@ -164,6 +167,34 @@ namespace Oasis.SurrealDb.Schema
             return 0;
         }
 
+        // ── aggregates ─────────────────────────────────────────────────────
+        private static int RunAggregates(CliArgs cli)
+        {
+            var source = cli.Flag("source") ?? "Persistence/SurrealDb/Schemas/source";
+            var output = cli.Flag("out") ?? "docs";
+            if (!Directory.Exists(source))
+            {
+                Console.Error.WriteLine($"source directory not found: {source}");
+                return 1;
+            }
+            var result = AggregateEmitter.EmitToDirectory(source, output);
+            Console.WriteLine($"wrote {result.SliceFiles.Count} slice file(s) to {Path.Combine(output, "aggregates")}");
+            foreach (var slice in result.SliceNames)
+            {
+                Console.WriteLine($"  - {slice}.mermaid");
+            }
+            Console.WriteLine($"wrote master diagram to {Path.Combine(output, "domain.generated.mermaid")}");
+            if (result.UnassignedEntities.Count > 0)
+            {
+                Console.Error.WriteLine($"warning: {result.UnassignedEntities.Count} entit(y/ies) without @surreal.slice annotation -- bucketed as '_unassigned':");
+                foreach (var name in result.UnassignedEntities)
+                {
+                    Console.Error.WriteLine($"  - {name}");
+                }
+            }
+            return 0;
+        }
+
         // ── validate ───────────────────────────────────────────────────────
         private static int RunValidate(CliArgs cli)
         {
@@ -216,6 +247,11 @@ namespace Oasis.SurrealDb.Schema
             Console.WriteLine("  oasis-surreal migrate dry-run   Plan only; zero writes");
             Console.WriteLine("  oasis-surreal generate <file>   Mermaid source -> .surql sibling");
             Console.WriteLine("  oasis-surreal validate <file>   Parse + report errors");
+            Console.WriteLine("  oasis-surreal aggregates        Emit per-slice + master Mermaid diagrams");
+            Console.WriteLine();
+            Console.WriteLine("Aggregates flags:");
+            Console.WriteLine("  --source <dir>   Source directory (default: Persistence/SurrealDb/Schemas/source)");
+            Console.WriteLine("  --out <dir>      Output root (default: docs; emits docs/aggregates/*.mermaid + docs/domain.generated.mermaid)");
             Console.WriteLine();
             Console.WriteLine("Connection flags / env vars (env in parens):");
             Console.WriteLine("  --connection  (OASIS_SURREAL_URL)   http(s)://host:port");

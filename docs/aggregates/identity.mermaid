@@ -1,0 +1,70 @@
+%% Slice: identity
+%% GENERATED FILE -- do not edit. Source: Persistence/SurrealDb/Schemas/source/*.mermaid
+%% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- aggregates
+erDiagram
+    avatar {
+        string id
+        string username
+        string email
+        string password_hash
+        option_string title
+        option_string first_name
+        option_string last_name
+        datetime created_date
+        option_datetime last_beamed_in_date
+        bool is_active
+        bool is_verified
+        int karma
+        int level
+    }
+    holon {
+        string id
+        string name
+        string description
+        option_string parent_holon_id
+        option_string avatar_id
+        string provider_name
+        option_string chain_id
+        option_string asset_type
+        option_string token_id
+        option_object metadata
+        option_array_string peer_holon_ids
+        option_array_float embedding
+        datetime created_date
+        option_datetime modified_date
+        bool is_active
+    }
+    star_odk {
+        string id
+        string name
+        string description
+        option_string public_key
+        option_string private_key_hash
+        option_string avatar_id
+        option_array_string bound_holon_ids
+        option_string target_chain
+        option_string generated_code
+        option_string deployment_config
+        datetime created_date
+        option_datetime modified_date
+        bool is_active
+    }
+    api_key {
+        string id
+        string avatar_id
+        string name
+        string key_hash
+        string key_prefix
+        datetime created_date
+        option_datetime expires_at
+        option_datetime last_used_at
+        option_datetime revoked_at
+        bool is_active
+        option_string scopes
+    }
+
+    avatar ||--o{ holon : "owns"
+    holon o|--o{ holon : "parent / sub (polyhierarchy)"
+    avatar ||--o{ star_odk : "authored by"
+    star_odk }o--o{ holon : "bound to (bound_holon_ids)"
+    avatar ||--o{ api_key : "issues"

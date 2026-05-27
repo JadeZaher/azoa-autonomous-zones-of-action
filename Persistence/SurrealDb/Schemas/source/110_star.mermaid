@@ -3,6 +3,7 @@ erDiagram
     %% @surreal.aggregate "STARODK (Models/STARODK.cs)"
     %% @surreal.guardrail "G6 SCHEMAFULL"
     %% @surreal.note "Generated code + deployment config can be large strings; SurrealDB has no per-field size limit but operators should monitor row size."
+    %% @surreal.slice "identity"
     star_odk {
         %% @surreal.assert "$value != NONE AND $value != \"\""
         string id
@@ -25,3 +26,6 @@ erDiagram
         %% @surreal.index fields=[target_chain] name=star_target_chain
         %% @surreal.index fields=[is_active] name=star_is_active
     }
+
+    avatar   ||--o{ star_odk : "authored by"
+    star_odk }o--o{ holon    : "bound to (bound_holon_ids)"

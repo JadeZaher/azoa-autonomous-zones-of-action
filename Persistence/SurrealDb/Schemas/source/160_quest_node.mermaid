@@ -5,6 +5,7 @@ erDiagram
     %% @surreal.note "Each row is one step inside a quest DAG. config is a JSON-serialized request model (e.g. HolonCreateModel, NftMintRequest) that the matching IQuestNodeHandler deserializes at execution time. node_type asserts INSIDE the full QuestNodeType enum so a schema-drift typo is rejected at INSERT time rather than at the dispatch layer."
     %% @surreal.note "is_entry/is_terminal are derived from the edge graph (an entry node has no incoming control edges) and cached on the row for fast quest-start lookup. execution_order is the topological position computed by QuestDagValidator on activation; the (quest_id, execution_order) composite index is used by the executor to walk nodes in dependency order."
     %% @surreal.note "state/output/error were intentionally removed when quest-temporal-fork-model split per-run state into quest_node_execution -- see SURREAL-SCHEMA-HINTS.md §2 'Removed from quest_node'."
+    %% @surreal.slice "quest"
     quest_node {
         %% @surreal.fieldgroup "Core identity (record id is the Guid('N') of QuestNode.Id)"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -33,3 +34,6 @@ erDiagram
         %% @surreal.index fields=[quest_id] name=quest_node_by_quest
         %% @surreal.index fields=[quest_id, execution_order] name=quest_node_by_order
     }
+
+    quest               ||--o{ quest_node : "has nodes"
+    quest_node_template o|--o{ quest_node : "instantiated from (cross-slice: quest_templates)"

@@ -4,6 +4,7 @@ erDiagram
     %% @surreal.guardrail "G6 SCHEMAFULL, G2 idempotency unique index"
     %% @surreal.note "Status uses OperationStatus constants; minimal durable state for replay + idempotency."
     %% @surreal.note "B3 review: swap_state_idempotency_key UNIQUE on option<string>. Same NULL-collision caveat as bridge_tx: the swap-execute flow MUST supply an idempotency_key (api-safety-hardening §4 validator); NULL rows are diagnostic-only and the claim path never inserts NULL."
+    %% @surreal.slice "wallet_nft"
     swap_state {
         %% @surreal.assert "$value != NONE AND $value != \"\""
         string id
@@ -42,3 +43,5 @@ erDiagram
         %% @surreal.index fields=[avatar_id] name=swap_state_avatar_id
         %% @surreal.index fields=[status] name=swap_state_status
     }
+
+    avatar ||--o{ swap_state : "initiated by (cross-slice: identity)"

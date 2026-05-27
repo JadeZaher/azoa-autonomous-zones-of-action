@@ -5,6 +5,7 @@ erDiagram
     %% @surreal.note "Replaces the in-place mutation of Quest.Status that prevented re-runs from preserving prior attempt state -- see quest-temporal-fork-model ADR §1. Re-running a Succeeded quest creates a NEW root run (parent_run_id = null); forking a Running run creates a CHILD run with parent_run_id set."
     %% @surreal.note "Lineage forms a TREE via parent_run_id, not a DAG. The forked_from RELATE edge (defined separately in surrealdb-migration §6.1) mirrors parent_run_id for native graph-traversal queries. Both must be kept in sync at write time."
     %% @surreal.note "State machine invariants are enforced in QuestManager, not in the DB: Pending->Running (first claim), Running->{Succeeded|Failed|Forked|Cancelled} (terminal). fail_reason carries the supervisor-driven audit string; internal-error failures leave fail_reason null and write the error on the failed quest_node_execution row instead."
+    %% @surreal.slice "quest"
     quest_run {
         %% @surreal.fieldgroup "Run identity (record id is the Guid('N') of QuestRun.Id) -- unique across all runs of all quests"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -36,3 +37,7 @@ erDiagram
         %% @surreal.index fields=[status] name=quest_run_by_status
         %% @surreal.index fields=[parent_run_id] name=quest_run_by_parent
     }
+
+    quest     ||--o{ quest_run : "executed by"
+    avatar    ||--o{ quest_run : "initiated by (cross-slice: identity)"
+    quest_run o|--o| quest_run : "parent / fork lineage"

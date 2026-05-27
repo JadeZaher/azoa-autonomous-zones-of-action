@@ -4,6 +4,7 @@ erDiagram
     %% @surreal.guardrail "G6 SCHEMAFULL"
     %% @surreal.note "is_current distinguishes live ownership from historical transfer rows. Adapter enforces the (chain, contract, token_id, is_current=true) singleton invariant."
     %% @surreal.note "B3 review: nft_chain_contract_token_current is intentionally NOT UNIQUE because is_current=false rows accumulate as transfer history; uniqueness of the (chain, contract, token_id, is_current=true) tuple is enforced by the adapter setting is_current=false on the prior row before inserting the new one (SurrealDB does not support partial UNIQUE INDEXes)."
+    %% @surreal.slice "wallet_nft"
     nft_ownership {
         %% @surreal.assert "$value != NONE AND $value != \"\""
         string id
@@ -44,3 +45,5 @@ erDiagram
         %% @surreal.index fields=[avatar_id] name=nft_avatar_id
         %% @surreal.index fields=[chain_type,contract_address] name=nft_chain_contract
     }
+
+    avatar ||--o{ nft_ownership : "owns (cross-slice: identity)"

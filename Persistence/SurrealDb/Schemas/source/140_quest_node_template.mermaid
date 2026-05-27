@@ -4,6 +4,7 @@ erDiagram
     %% @surreal.guardrail "G6 SCHEMAFULL; read-only catalog of reusable node definitions"
     %% @surreal.note "Reusable node definition shared across QuestTemplates. A QuestTemplate's embedded node slot (template_node) references a QuestNodeTemplate by id and supplies ParamOverrides; QuestInstantiator merges DefaultConfig + ParamOverrides + caller parameters into the runtime Quest's QuestNode.Config."
     %% @surreal.note "node_type is the QuestNodeType enum serialised as its C# name (e.g. \"HolonCreate\", \"WalletGet\"). Asserted INSIDE the full enum value set so a schema-drift typo is rejected at INSERT time rather than at the dispatch layer."
+    %% @surreal.slice "quest_templates"
     quest_node_template {
         %% @surreal.fieldgroup "Core identity (record id is the Guid('N') of QuestNodeTemplate.Id)"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -36,3 +37,5 @@ erDiagram
         %% @surreal.index fields=[author_avatar_id] name=quest_node_template_by_author
         %% @surreal.index fields=[node_type] name=quest_node_template_by_type
     }
+
+    avatar ||--o{ quest_node_template : "authored by (cross-slice: identity)"

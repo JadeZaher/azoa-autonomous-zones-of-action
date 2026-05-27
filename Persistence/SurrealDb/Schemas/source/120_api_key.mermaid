@@ -5,6 +5,7 @@ erDiagram
     %% @surreal.note "Authentication ledger. The handler hashes the inbound X-Api-Key header (SHA-256) and looks up key_hash via the unique index. The raw key never reaches storage. key_prefix is the first 16 chars of the raw key for caller display only."
     %% @surreal.note "B3 nullable-collision review: api_key_unique_hash UNIQUE on key_hash is NOT NULL (ASSERT != NONE AND != \"\"), so SurrealDB's NULL-equals-NULL collision semantics are not in play -- correct dedup by construction."
     %% @surreal.note "Soft-delete via revoked_at + is_active. Handlers MUST check both is_active AND revoked_at IS NONE AND (expires_at IS NONE OR expires_at > now) before granting authentication. last_used_at is updated fire-and-forget from the handler -- TouchLastUsedAsync must never throw."
+    %% @surreal.slice "identity"
     api_key {
         %% @surreal.fieldgroup "Core identity (record id is the Guid('N') of ApiKey.Id)"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -35,3 +36,5 @@ erDiagram
         %% @surreal.index fields=[key_hash] name=api_key_unique_hash unique=true
         %% @surreal.index fields=[avatar_id] name=api_key_by_avatar
     }
+
+    avatar ||--o{ api_key : "issues"

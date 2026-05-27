@@ -4,6 +4,7 @@ erDiagram
     %% @surreal.guardrail "G6 SCHEMAFULL, G2 idempotency unique index"
     %% @surreal.note "Status values from OperationStatus constants; Parameters is Dictionary<string,string> stored as object."
     %% @surreal.note "B3 review: operation_log_idempotency_key UNIQUE on option<string>. NULL rows do NOT collide -- adapter MUST supply a non-NULL key on the claim path; api-safety-hardening §4 validator enforces this end-to-end."
+    %% @surreal.slice "bridge"
     operation_log {
         %% @surreal.assert "$value != NONE AND $value != \"\""
         string id
@@ -38,3 +39,5 @@ erDiagram
         %% @surreal.index fields=[avatar_id,created_date] name=operation_log_avatar_created
         %% @surreal.index fields=[status] name=operation_log_status
     }
+
+    avatar ||--o{ operation_log : "performed by (cross-slice: identity)"

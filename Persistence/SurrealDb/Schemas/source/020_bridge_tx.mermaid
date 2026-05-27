@@ -7,6 +7,7 @@ erDiagram
     %% @surreal.note "B3 review: bridge_tx_idempotency_key UNIQUE on option<string> -- NULL rows do NOT collide. The bridge claim flow MUST supply an idempotency_key (validator enforced in api-safety-hardening §4); rows without a key are legacy/diagnostic only and the adapter never inserts NULL via the claim path."
     %% @surreal.note "B3 review: bridge_tx_lock_route UNIQUE on (source_chain, lock_tx_hash, target_chain) where lock_tx_hash is option<string>. Pre-lock rows legitimately have NULL lock_tx_hash; SurrealDB will not collide NULLs so multiple Initiated rows can coexist. Replay-dedup applies only once lock_tx_hash is set (post-lock state)."
     %% @surreal.note "MEDIUM #M4 fix: wormhole_emitter_address is asserted to be the canonical Wormhole 32-byte hex form -- 64 lowercase hex chars, no 0x prefix. Wormhole spec stores emitter addresses padded to 32 bytes regardless of source chain (EVM 20-byte addresses are left-zero-padded). Storing some rows in raw 20-byte form and others in 32-byte form would silently bypass the bridge_tx_wormhole_vaa UNIQUE dedup key for cross-emitter replay. Application code must canonicalize on insert; this ASSERT is the last line of defence."
+    %% @surreal.slice "bridge"
     bridge_tx {
         %% @surreal.fieldgroup "Core identity"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -59,3 +60,5 @@ erDiagram
         %% @surreal.index fields=[avatar_id] name=bridge_tx_avatar_id
         %% @surreal.index fields=[status] name=bridge_tx_status
     }
+
+    avatar ||--o{ bridge_tx : "initiated by (cross-slice: identity)"

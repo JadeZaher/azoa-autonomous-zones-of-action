@@ -5,6 +5,7 @@ erDiagram
     %% @surreal.note "Shape-only definition: name, owner, template ancestry, dapp-series binding, free-form metadata. status/completed_date were intentionally removed when quest-temporal-fork-model split runtime from definition -- see SURREAL-SCHEMA-HINTS.md §1 'Removed from quest'."
     %% @surreal.note "nodes/edges/dependencies live in their own tables (quest_node, quest_edge, quest_dependency) keyed by quest_id -- they are queried independently of the parent and mutated through Add/Remove endpoints. Embedding them would force the controller-side node/edge CRUD endpoints to read-modify-write the entire quest row."
     %% @surreal.note "metadata is a free-form string->string map for caller-supplied tags (e.g. UI color, sort hint). Persisted as a SurrealDB object to keep arbitrary keys queryable."
+    %% @surreal.slice "quest"
     quest {
         %% @surreal.fieldgroup "Core identity (record id is the Guid('N') of Quest.Id)"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -33,3 +34,6 @@ erDiagram
         %% @surreal.index fields=[template_id] name=quest_by_template
         %% @surreal.index fields=[dapp_series_id] name=quest_by_dapp_series
     }
+
+    avatar         ||--o{ quest : "owned by (cross-slice: identity)"
+    quest_template o|--o{ quest : "instantiated into (cross-slice: quest_templates)"

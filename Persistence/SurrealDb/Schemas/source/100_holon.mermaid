@@ -3,6 +3,7 @@ erDiagram
     %% @surreal.aggregate "Holon (Models/Holon.cs)"
     %% @surreal.guardrail "G6 SCHEMAFULL"
     %% @surreal.note "ParentHolon / SubHolons are navigation properties from EF -- not persisted. Polyhierarchy graph remodel lives in surrealdb-migration task 10."
+    %% @surreal.slice "identity"
     holon {
         string id
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -32,3 +33,6 @@ erDiagram
         %% @surreal.index fields=[provider_name,chain_id] name=holon_provider_chain
         %% @surreal.index fields=[asset_type] name=holon_asset_type
     }
+
+    avatar ||--o{ holon : "owns"
+    holon  o|--o{ holon : "parent / sub (polyhierarchy)"

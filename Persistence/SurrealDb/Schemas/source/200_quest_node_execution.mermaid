@@ -6,6 +6,7 @@ erDiagram
     %% @surreal.note "On a fork, the same execution row can be referenced by both parent and child run via the `executes` RELATE edge for nodes whose execution_order < forkPoint (copy-by-reference, no duplication). Scalar run_id is the originating run; cross-run reference happens through the RELATE edge defined separately in surrealdb-migration §6.2."
     %% @surreal.note "The G2 claim primitive (TryClaimPendingAsync) is a conditional UPDATE that only succeeds when current state == 'Pending'. Empty-result case = lost race (already claimed by another worker). The (run_id, node_id) UNIQUE index is what makes the claim atomically safe."
     %% @surreal.note "output stores the JSON-serialized OASISResult<T> from the handler call. error carries the failure message when state = Failed. Both are null in non-terminal states."
+    %% @surreal.slice "quest"
     quest_node_execution {
         %% @surreal.fieldgroup "Execution row identity (record id is the Guid('N') of QuestNodeExecution.Id)"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -33,3 +34,6 @@ erDiagram
         %% @surreal.index fields=[node_id] name=quest_node_execution_by_node
         %% @surreal.index fields=[state] name=quest_node_execution_by_state
     }
+
+    quest_run  ||--o{ quest_node_execution : "owns executions"
+    quest_node ||--o{ quest_node_execution : "executes"

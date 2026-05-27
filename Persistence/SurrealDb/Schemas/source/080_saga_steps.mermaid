@@ -7,6 +7,7 @@ erDiagram
     %% @surreal.note "Crash-safe re-entry: an InProgress row whose claimed_at is older than the lease/visibility timeout is reclaimed atomically (UPDATE ... SET status='Pending', claimed_at=NONE WHERE status='InProgress' AND claimed_at < lease_cutoff). Handlers key irreversible effects on step_idempotency_key (via IIdempotencyStore) so a resumed step is an idempotent replay, never a double-run."
     %% @surreal.note "Generic by construction: no bridge/domain types appear here. saga_name/step_name are free strings and payload is opaque JSON. The bridge becomes one consumer with zero schema change."
     %% @surreal.note "step_idempotency_key is NON-unique here -- dedup of irreversible effects happens in handlers via IIdempotencyStore, NOT via a unique constraint (the outbox legitimately holds many rows per correlation: forward steps + a compensation step + retries)."
+    %% @surreal.slice "bridge"
     saga_steps {
         %% @surreal.fieldgroup "Core identity"
         %% @surreal.assert "$value != NONE AND $value != \"\""

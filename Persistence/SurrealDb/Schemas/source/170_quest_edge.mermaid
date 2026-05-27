@@ -4,6 +4,7 @@ erDiagram
     %% @surreal.guardrail "G6 SCHEMAFULL; definition-side directed control-flow edge between two quest_node rows in the same quest."
     %% @surreal.note "Scalar edge table is the conservative shape; the surrealdb-migration track may promote this to a native `RELATE source_node -> control_flow -> target_node` edge for cheaper traversal. Both shapes preserve intra-iteration DAG semantics; the scalar form keeps QuestDagValidator queries unchanged."
     %% @surreal.note "condition is populated only when edge_type = Conditional; the ConditionNodeHandler evaluates the expression against the upstream node's serialized output to gate edge activation."
+    %% @surreal.slice "quest"
     quest_edge {
         %% @surreal.fieldgroup "Core identity (record id is the Guid('N') of QuestEdge.Id)"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -27,3 +28,7 @@ erDiagram
         %% @surreal.index fields=[source_node_id] name=quest_edge_by_source
         %% @surreal.index fields=[target_node_id] name=quest_edge_by_target
     }
+
+    quest      ||--o{ quest_edge : "has edges"
+    quest_node ||--o{ quest_edge : "source of"
+    quest_node ||--o{ quest_edge : "target of"

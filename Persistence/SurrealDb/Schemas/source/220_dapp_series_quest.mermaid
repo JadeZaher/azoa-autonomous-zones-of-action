@@ -4,6 +4,7 @@ erDiagram
     %% @surreal.guardrail "G6 SCHEMAFULL; greenfield entity introduced by the dapp-composition track. Carries the ordering and cross-quest data flow within a DappSeries."
     %% @surreal.note "An ordered quest entry inside a DappSeries. Composite key concept: (dapp_series_id, quest_id) is logically unique but stored as a real row to allow soft-update of order and input_mappings without delete+reinsert."
     %% @surreal.note "order is 1-indexed and dense: ReorderQuestAsync resequences sibling rows transactionally. input_mappings is a JSON array describing how outputs from prior quests' terminal nodes flow into this quest's entry nodes (see DappSeries spec §InputMapping for the shape: sourceQuestId/sourceNodeId/targetQuestId/targetNodeId/fieldMap)."
+    %% @surreal.slice "dapp_composition"
     dapp_series_quest {
         %% @surreal.fieldgroup "Core identity (record id is the Guid('N') of DappSeriesQuest.Id)"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -23,3 +24,10 @@ erDiagram
         %% @surreal.index fields=[dapp_series_id, order] name=dapp_series_quest_by_order
         %% @surreal.index fields=[quest_id] name=dapp_series_quest_by_quest
     }
+
+    dapp_series       ||--o{ dapp_series_quest : "owns entries"
+    dapp_series_quest }o--|| quest             : "references quest (cross-slice: quest)"
+
+    %% Inverse on the quest side (also referenced via quest.dapp_series_id, declared
+    %% in 150_quest.mermaid). Repeating here makes the dapp_composition slice render
+    %% the link without depending on the quest slice's relationships.

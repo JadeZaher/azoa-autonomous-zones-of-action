@@ -1,0 +1,85 @@
+%% Slice: quest
+%% GENERATED FILE -- do not edit. Source: Persistence/SurrealDb/Schemas/source/*.mermaid
+%% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- aggregates
+erDiagram
+    quest {
+        string id
+        string name
+        option_string description
+        string avatar_id
+        option_string template_id
+        option_string dapp_series_id
+        object metadata
+        option_array_float embedding
+        datetime created_date
+    }
+    quest_node {
+        string id
+        string quest_id
+        option_string node_template_id
+        string node_type
+        string name
+        string config
+        bool is_entry
+        bool is_terminal
+        int execution_order
+    }
+    quest_edge {
+        string id
+        string quest_id
+        string source_node_id
+        string target_node_id
+        option_string condition
+        string edge_type
+    }
+    quest_dependency {
+        string id
+        string quest_id
+        string depends_on_quest_id
+        option_string depends_on_node_id
+        string dependency_type
+    }
+    quest_run {
+        string id
+        string quest_id
+        string avatar_id
+        string status
+        datetime started_at
+        option_datetime ended_at
+        option_string parent_run_id
+        option_string forked_at_node_id
+        option_string fork_reason
+        option_string fail_reason
+    }
+    quest_node_execution {
+        string id
+        string run_id
+        string node_id
+        string state
+        option_string output
+        option_string error
+        datetime started_at
+        option_datetime ended_at
+    }
+    forked_from {
+        string in
+        string out
+    }
+    executes {
+        string in
+        string out
+    }
+
+    quest ||--o{ quest_node : "has nodes"
+    quest ||--o{ quest_edge : "has edges"
+    quest_node ||--o{ quest_edge : "source of"
+    quest_node ||--o{ quest_edge : "target of"
+    quest ||--o{ quest_dependency : "declares deps"
+    quest_dependency }o--|| quest : "depends on quest"
+    quest_dependency }o--o| quest_node : "or specific node output"
+    quest ||--o{ quest_run : "executed by"
+    quest_run o|--o| quest_run : "parent / fork lineage"
+    quest_run ||--o{ quest_node_execution : "owns executions"
+    quest_node ||--o{ quest_node_execution : "executes"
+    quest_run }o--|| quest_run : "forked_from (RELATE)"
+    quest_run }o--o{ quest_node_execution : "executes (RELATE, many-to-many across forks)"

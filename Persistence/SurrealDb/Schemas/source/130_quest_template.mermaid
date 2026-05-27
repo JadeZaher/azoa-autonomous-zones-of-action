@@ -5,6 +5,7 @@ erDiagram
     %% @surreal.note "Definition-side quest catalog. A QuestTemplate is a reusable DAG blueprint instantiated by QuestInstantiator (Services/Quest/QuestInstantiator.cs) into a runtime Quest with concrete parameters. The runtime quest_run + quest_node_execution tables live in [[quest-temporal-fork-model]] (see SURREAL-SCHEMA-HINTS.md); this table is the parameterised definition the instantiator reads."
     %% @surreal.note "Nodes + edges embed as FLEXIBLE array<object> fields on the parent template row. They are NEVER queried independently of the template -- the instantiator reads the whole template in one record-id SELECT, walks the embedded slots, then resolves each NodeTemplateId via quest_node_template (table 140). Embedding keeps the read O(1) per template; separating into child tables would force a join that has no other consumer."
     %% @surreal.note "parameters is a JSON-Schema-encoded string declaring required parameters for instantiation (e.g. {\"required\":[\"holonId\"]}). version + tags + is_public are surfaced by the future template-marketplace UI."
+    %% @surreal.slice "quest_templates"
     quest_template {
         %% @surreal.fieldgroup "Core identity (record id is the Guid('N') of QuestTemplate.Id)"
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -33,3 +34,6 @@ erDiagram
         array<string> tags
         %% @surreal.index fields=[author_avatar_id] name=quest_template_by_author
     }
+
+    avatar         ||--o{ quest_template      : "authored by (cross-slice: identity)"
+    quest_template ||--o{ quest_node_template : "slots reference"

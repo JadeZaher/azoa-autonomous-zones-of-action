@@ -5,13 +5,18 @@ erDiagram
     %% @surreal.note "forked_from is many-to-one (quest_run -> quest_run). Mirrors the scalar parent_run_id on quest_run; both must be kept in sync at write time. Enables `->forked_from->...` multi-hop ancestor walks without scalar joins. See SURREAL-SCHEMA-HINTS.md §6.1."
     %% @surreal.note "executes is many-to-many (quest_run -> quest_node_execution). When a node execution is first created for a run, RELATE run->executes->exec is created alongside the CREATE. When a fork happens, for every quest_node_execution where node_id.execution_order < forkPoint, an additional RELATE child_run->executes->exec is added. The exec row is NOT duplicated -- the relationship is many-to-many. See SURREAL-SCHEMA-HINTS.md §6.2."
     %% @surreal.note "These two RELATION tables intentionally carry no extra fields (the scalars on quest_run / quest_node_execution carry the per-edge metadata)."
+    %% @surreal.slice "quest"
     forked_from {
         %% @surreal.fieldgroup "RELATION quest_run -> quest_run (lineage). No extra fields."
         string in
         string out
     }
+    %% @surreal.slice "quest"
     executes {
         %% @surreal.fieldgroup "RELATION quest_run -> quest_node_execution (per-(run, node) ownership; many-to-many across forks)."
         string in
         string out
     }
+
+    quest_run            }o--|| quest_run            : "forked_from (RELATE)"
+    quest_run            }o--o{ quest_node_execution : "executes (RELATE, many-to-many across forks)"

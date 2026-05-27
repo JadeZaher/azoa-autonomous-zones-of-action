@@ -66,6 +66,8 @@ namespace Oasis.SurrealDb.Schema.Mermaid
             "default",     // attribute-level DEFAULT <value> (literal token after =)
             "section",     // entity-level subsection comment (e.g. "Indexes")
             "fieldgroup",  // attribute-level inline comment above this field
+            "slice",       // entity-level visual aggregate membership (Phase B; consumed by oasis-surreal aggregates)
+            "relation",    // entity-level cross-slice relationship override (Phase B; rare — most relations are real Mermaid arrows)
             // C# source-generator directives ([[surrealdb-schema-source-gen]]).
             // Compound `csharp.<sub>` directives are normalised by the parser
             // into the directive name `csharp` with `<sub>` collapsed into the

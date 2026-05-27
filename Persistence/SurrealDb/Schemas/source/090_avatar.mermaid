@@ -3,6 +3,7 @@ erDiagram
     %% @surreal.aggregate "Avatar (Models/Avatar.cs)"
     %% @surreal.guardrail "G6 SCHEMAFULL"
     %% @surreal.note "Wallets navigation list is NOT persisted here — owned by IWalletStore via wallet.avatar_id FK."
+    %% @surreal.slice "identity"
     avatar {
         string id
         %% @surreal.assert "$value != NONE AND $value != \"\""

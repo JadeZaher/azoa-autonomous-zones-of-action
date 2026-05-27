@@ -6,6 +6,7 @@ erDiagram
     %% @surreal.note "B2 fix: consumed_vaa_emitter_address_sequence UNIQUE on (emitter_chain_id, emitter_address, sequence) is the canonical Wormhole VAA dedup tuple. This MIRRORS bridge_tx.bridge_tx_wormhole_vaa so the same VAA cannot be redeemed twice via either path. Wave-1 had only (emitter_chain_id, sequence) which collapses the dedup key across distinct emitters on the same chain -- a bug for chains hosting multiple Wormhole-compatible emitters."
     %% @surreal.note "B3 review: all UNIQUE INDEX fields here are NOT NULL (digest, emitter_chain_id, emitter_address, sequence all ASSERT != NONE), so SurrealDB NULL-collision semantics are not in play."
     %% @surreal.note "MEDIUM #M4 fix: emitter_address is asserted to be the canonical Wormhole 32-byte hex form -- 64 lowercase hex chars, no 0x prefix. Wormhole pads EVM 20-byte addresses to 32 bytes; storing some rows raw and others padded would silently bypass the consumed_vaa_emitter_address_sequence UNIQUE dedup key. Application code must canonicalize on insert; this ASSERT is the last line of defence."
+    %% @surreal.slice "bridge"
     consumed_vaa_ledger {
         %% @surreal.assert "$value != NONE AND $value != \"\""
         string id
@@ -29,3 +30,5 @@ erDiagram
         %% @surreal.index unique fields=[emitter_chain_id,emitter_address,sequence] name=consumed_vaa_emitter_address_sequence
         %% @surreal.index fields=[bridge_transaction_id] name=consumed_vaa_bridge_tx
     }
+
+    bridge_tx o|--o{ consumed_vaa_ledger : "redeemed via VAA"

@@ -4,6 +4,7 @@ erDiagram
     %% @surreal.guardrail "G6 SCHEMAFULL"
     %% @surreal.note "No balance field -- chain is source of truth (data-engine-decision)."
     %% @surreal.note "B3 review: wallet_avatar_chain_address UNIQUE is on (avatar_id, chain_type, address) -- all three NOT NULL; SurrealDB NULL-collision concern does not apply."
+    %% @surreal.slice "wallet_nft"
     wallet {
         string id
         %% @surreal.assert "$value != NONE AND $value != \"\""
@@ -24,3 +25,5 @@ erDiagram
         %% @surreal.index unique fields=[avatar_id,chain_type,address] name=wallet_avatar_chain_address
         %% @surreal.index fields=[avatar_id,chain_type] name=wallet_avatar_chain
     }
+
+    avatar ||--o{ wallet : "owns (cross-slice: identity)"
