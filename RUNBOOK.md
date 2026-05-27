@@ -1,8 +1,8 @@
 # OASIS Sleek — Runbook
 
-**Last updated:** 2026-05-27
-**Branch:** `api-safety-hardening` (5 commits ahead of upstream)
-**Last commit:** `295d67c feat(mcp-surface): Tier-3 read-only MCP surface`
+**Last updated:** 2026-05-27 (Phase B shipped + surrealql-toolkit umbrella ADR authored)
+**Branch:** `api-safety-hardening` (7 commits ahead of upstream)
+**Last commit:** `137992c feat(mermaid-aggregates): Phase B — generated slice + master diagrams`
 **Suite:** 540/540 unit green; 0 errors, 19 warnings (baseline).
 
 This document is the day-to-day reference for the active work. For
@@ -14,8 +14,18 @@ For the SurrealDB entity convention see
 
 ## 1. Status snapshot
 
-### Recently shipped (last 5 commits)
+### Recently shipped (last 7 commits)
 
+- **`137992c`** — RUNBOOK §4 Phase B shipped. Aggregate slice emitter +
+  24 source `.mermaid` files annotated with `@surreal.slice` +
+  Mermaid relationship lines. 6 slice diagrams at
+  [`docs/aggregates/`](docs/aggregates/) + master at
+  [`docs/domain.generated.mermaid`](docs/domain.generated.mermaid).
+  `.surql` byte-output unchanged (verified). New CLI subcommand
+  `oasis-surreal aggregates` + wrapper `scripts/regen-aggregates.ps1`.
+- **`9bcfd32`** + **`b66a09f`** — RUNBOOK §4 refined to make slice
+  files a generated artifact (not hand-authored); §5 sequencing +
+  §6 phase table updated.
 - **`295d67c`** — `mcp-surface` track closed. Read-only MCP server at
   `/mcp` (ModelContextProtocol.AspNetCore 1.3.0) behind JWT+ApiKey
   multi-scheme. 5 tools (quest reachability, holon traversal, NFT graph,
@@ -39,11 +49,18 @@ Clean — only `conductor/.conductor_session_log` modified
 
 ### Active phase
 
-**Phase B — Mermaid aggregate slices (visualization-only).** See §4 for
-the target shape and §6 for the phase plan. No generator changes;
-authors `aggregates/*.mermaid` slice files + a concat script that
-produces `docs/domain.generated.mermaid` checked into git for GitHub
-inline rendering.
+**Phase C — Generator multi-table parsing + FK emission.** Phase B
+shipped 2026-05-27 (`137992c`); the aggregate slice emitter is in
+place + 24 source files annotated with `@surreal.slice`. Phase C
+extends the Roslyn generator with three changes (multi-table per file,
+relationship recognition wired into the schema model, FK emission as
+`record<target_table>` to `.surql`). See §4.3 + §6.
+
+Strategic context: Phase C unlocks Wave 1 of the
+[`surrealql-toolkit`](conductor/tracks/surrealql-toolkit/spec.md)
+umbrella program — the FK emission change is what
+[`data-backfill-migrations`](conductor/tracks/data-backfill-migrations/spec.md)'s
+F6 rewrite consumes.
 
 ### Pending decisions
 
@@ -254,8 +271,8 @@ file-level.
 | Phase | Work | Effort | Status |
 |---|---|---|---|
 | A. Runbook + tracks consolidation | RUNBOOK.md, tracks.md prune | 1-2h | ✓ Shipped 2026-05-23 (`8f1eee1`) |
-| **B. Mermaid aggregate slices (visualization-only)** | Annotate 24 source `.mermaid` files with `@surreal.slice` + Mermaid relationship lines. Add `oasis-surreal aggregates` subcommand that emits 6 `docs/aggregates/*.mermaid` + `docs/domain.generated.mermaid`. Generator POCO/.surql output unchanged. | 2-3h | **ACTIVE** |
-| C. Generator: multi-table parsing + FK emission | Roslyn parser update for multi-table files + relationship recognition + `.surql` FK ASSERT + RELATION emission. Migrate generator to read from `aggregates/`. Delete the 24 single-table files. | 4-6h | After B |
+| B. Mermaid aggregate slices (visualization-only) | Annotate 24 source `.mermaid` files with `@surreal.slice` + Mermaid relationship lines. Add `oasis-surreal aggregates` subcommand that emits 6 `docs/aggregates/*.mermaid` + `docs/domain.generated.mermaid`. Generator POCO/.surql output unchanged. | 2-3h | ✓ Shipped 2026-05-27 (`137992c`) |
+| C. Generator: multi-table parsing + FK emission | Roslyn parser update for multi-table files + relationship recognition + `.surql` FK ASSERT + RELATION emission. Migrate generator to read from `aggregates/`. Delete the 24 single-table files. | 4-6h | **NEXT** |
 | D. Wave-2 commit + integration | Commit the 3 SurrealQuest stores + tests + `230_quest_graph_edges.*`. | 1h | ✓ Shipped 2026-05-27 (`24a7403`) |
 | E. Quest aggregate cutover to generated POCOs | Partial-class extensions + delete hand-written + rewire wave-2 stores + 34 handlers + QuestManager + tests. Aliases vanish. | 7-9h | After C |
 | F. quest-api endpoint gaps | 18 missing endpoints + 12 missing manager methods on the post-cutover surface | 2-3h | After E |
@@ -263,6 +280,7 @@ file-level.
 | H. Frontend demo harness `frontend-demo-harness` track | shadcn/ui demo harness, 6 phases | 8-10 days | Independent; can start any time |
 | I. `durable-saga-orchestration` Tier 1 | Reusable durable-saga + transactional-outbox module | TBD | After surrealdb-migration (done) |
 | J. `mcp-surface` Tier 3 | MCP server over SurrealDB graph | — | ✓ Shipped 2026-05-25 (`295d67c`) |
+| K. `surrealql-toolkit` strategic program | Umbrella ADR — "Prisma for SurrealQL with first-class graph semantics." Names 5 constituent tracks (data-backfill-migrations, surrealql-drift-detection, surrealql-studio, surrealql-db-pull, surrealql-toolkit-packaging). Wave 0 foundation already shipped via surrealdb-client-package + surrealdb-schema-source-gen + Phase B. | strategic | After Phase C unlocks Wave 1 |
 
 ---
 
