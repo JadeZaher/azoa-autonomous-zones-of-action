@@ -14,18 +14,31 @@ For the SurrealDB entity convention see
 
 ## 1. Status snapshot
 
-### Recently shipped (last 7 commits)
+### Recently shipped (last 10 commits)
 
+- **`HEAD`** (pending) — Phase C design pivoted to C#-first. Design
+  doc rewritten + RUNBOOK §1/§6 updated to reflect the new direction.
+  No code; prototype slice (`wallet_nft`) is the next session's
+  starting point.
+- **`2326714`** — Initial design doc landed proposing the Mermaid-
+  portfolio model (multi-diagram authoring). Superseded same-day by
+  the C#-first pivot above; commit preserved in history for the
+  pivot reasoning.
+- **`d4b546d`** — `surrealql-toolkit` umbrella ADR + 5 constituent
+  pending tracks. **Stale as of evening 2026-05-27** — the
+  public-toolkit framing is no longer in scope. Clean-up decision
+  deferred to next session.
 - **`137992c`** — RUNBOOK §4 Phase B shipped. Aggregate slice emitter +
   24 source `.mermaid` files annotated with `@surreal.slice` +
   Mermaid relationship lines. 6 slice diagrams at
   [`docs/aggregates/`](docs/aggregates/) + master at
   [`docs/domain.generated.mermaid`](docs/domain.generated.mermaid).
-  `.surql` byte-output unchanged (verified). New CLI subcommand
-  `oasis-surreal aggregates` + wrapper `scripts/regen-aggregates.ps1`.
+  `.surql` byte-output unchanged (verified). **Likely retired**
+  under C#-first; survives in tree until the prototype slice settles
+  whether the Mermaid view is still worth generating.
 - **`9bcfd32`** + **`b66a09f`** — RUNBOOK §4 refined to make slice
   files a generated artifact (not hand-authored); §5 sequencing +
-  §6 phase table updated.
+  §6 phase table updated. Both also superseded by the C#-first pivot.
 - **`295d67c`** — `mcp-surface` track closed. Read-only MCP server at
   `/mcp` (ModelContextProtocol.AspNetCore 1.3.0) behind JWT+ApiKey
   multi-scheme. 5 tools (quest reachability, holon traversal, NFT graph,
@@ -49,26 +62,33 @@ Clean — only `conductor/.conductor_session_log` modified
 
 ### Active phase
 
-**Phase C — rethought.** Original scope (Roslyn parser → multi-table
-per file + FK emission) was the right idea but the wrong frame. After
-the surrealql-toolkit ADR landed + user steer on Prisma-style
-authoring, Phase C is being redesigned as the foundation for the
-**Mermaid portfolio model** — see
-[DESIGN-mermaid-portfolio.md](conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md).
+**Phase C — redesigned again, now C#-first.** Two design iterations
+landed in this session before settling. The Mermaid-portfolio
+direction (multi-diagram authoring across `schema/*.mermaid`) was the
+right *response* to the original Phase C scope but solved the wrong
+layer. The user steer that resolved it: ".NET-first, OASIS-internal,
+no public-toolkit framing, source of truth = decorated C# POCOs."
 
-Short version: schema source = **portfolio of Mermaid diagrams**
-(`erDiagram` + `flowchart` + `requirementDiagram`), authored across
-one or many `schema/*.mermaid` files. Each diagram type drives its own
-generator output: erDiagram → POCO/.surql, flowchart → enum +
-transition validators, requirementDiagram → traceability runbook.
+Short version: schema source = **decorated C# POCOs in this repo**.
+Attributes declare shape (FK, indexes, ASSERT inputs, state-machine
+binding); partial classes carry validation + domain helpers. The
+existing Roslyn source-gen is **inverted** — instead of `.mermaid` →
+POCO, it scans the C# attribute surface and emits `.surql` + a single
+DBML manifest (`docs/schema.dbml`) + state-machine code + a guardrail
+traceability runbook. See
+[DESIGN-mermaid-portfolio.md](conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md)
+(filename retained for git history; contents now describe the
+C#-first model).
 
-Phase C ships in 6 sub-slices (C-1 parser dispatch through C-6
-aggregate-subcommand retirement) per the design doc. Total revised
-effort: ~13-17h (was 4-6h). The expansion is worth it for the
-strategic alignment with the toolkit ADR.
+The pivot is OASIS-internal in scope. The `surrealql-toolkit`
+umbrella + 4 sibling tracks (drift, db-pull, studio, packaging) are
+stale-but-in-tree pending a clean-up decision next session; the
+`data-backfill-migrations` track stays valid (F6 still has to happen).
 
-**This session is design-only.** No more code today. Next session
-begins with C-1.
+**This session is design-only.** No code, no file moves. Next
+session begins with the prototype slice (`wallet_nft`, 3 entities)
+to prove byte-equivalent `.surql` output before mechanically
+migrating the rest.
 
 ### Pending decisions
 
@@ -280,7 +300,7 @@ file-level.
 |---|---|---|---|
 | A. Runbook + tracks consolidation | RUNBOOK.md, tracks.md prune | 1-2h | ✓ Shipped 2026-05-23 (`8f1eee1`) |
 | B. Mermaid aggregate slices (visualization-only) | Annotate 24 source `.mermaid` files with `@surreal.slice` + Mermaid relationship lines. Add `oasis-surreal aggregates` subcommand that emits 6 `docs/aggregates/*.mermaid` + `docs/domain.generated.mermaid`. Generator POCO/.surql output unchanged. | 2-3h | ✓ Shipped 2026-05-27 (`137992c`) |
-| C. Mermaid portfolio model (rethought) | Replace single-erDiagram source model with a portfolio (`erDiagram` + `flowchart` + `requirementDiagram`). 6 sub-slices C-1…C-6 per [DESIGN-mermaid-portfolio.md](conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md). Multi-file via `schema/*.mermaid`, with `main.mermaid` carrying datasource + generator config. State-machine codegen eliminates the C# switch/SurrealDB ASSERT/prose-note three-way drift. | 13-17h | **NEXT (C-1 parser dispatch first)** |
+| C. C#-first schema authoring (redesigned again) | Invert the Roslyn source-gen: schema source = decorated C# POCOs (attributes for shape, partial classes for validation). Generator emits `.surql` + `docs/schema.dbml` + state-machine code + guardrail runbook. Mermaid sources retire once byte-equivalent `.surql` is proven on the prototype slice. See [DESIGN-mermaid-portfolio.md](conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md) (filename kept for git history; contents now describe the C#-first model). | TBD — sized after prototype slice | **NEXT (prototype `wallet_nft` slice first)** |
 | D. Wave-2 commit + integration | Commit the 3 SurrealQuest stores + tests + `230_quest_graph_edges.*`. | 1h | ✓ Shipped 2026-05-27 (`24a7403`) |
 | E. Quest aggregate cutover to generated POCOs | Partial-class extensions + delete hand-written + rewire wave-2 stores + 34 handlers + QuestManager + tests. Aliases vanish. | 7-9h | After C |
 | F. quest-api endpoint gaps | 18 missing endpoints + 12 missing manager methods on the post-cutover surface | 2-3h | After E |
