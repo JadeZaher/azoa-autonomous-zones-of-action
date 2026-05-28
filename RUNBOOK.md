@@ -49,18 +49,26 @@ Clean — only `conductor/.conductor_session_log` modified
 
 ### Active phase
 
-**Phase C — Generator multi-table parsing + FK emission.** Phase B
-shipped 2026-05-27 (`137992c`); the aggregate slice emitter is in
-place + 24 source files annotated with `@surreal.slice`. Phase C
-extends the Roslyn generator with three changes (multi-table per file,
-relationship recognition wired into the schema model, FK emission as
-`record<target_table>` to `.surql`). See §4.3 + §6.
+**Phase C — rethought.** Original scope (Roslyn parser → multi-table
+per file + FK emission) was the right idea but the wrong frame. After
+the surrealql-toolkit ADR landed + user steer on Prisma-style
+authoring, Phase C is being redesigned as the foundation for the
+**Mermaid portfolio model** — see
+[DESIGN-mermaid-portfolio.md](conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md).
 
-Strategic context: Phase C unlocks Wave 1 of the
-[`surrealql-toolkit`](conductor/tracks/surrealql-toolkit/spec.md)
-umbrella program — the FK emission change is what
-[`data-backfill-migrations`](conductor/tracks/data-backfill-migrations/spec.md)'s
-F6 rewrite consumes.
+Short version: schema source = **portfolio of Mermaid diagrams**
+(`erDiagram` + `flowchart` + `requirementDiagram`), authored across
+one or many `schema/*.mermaid` files. Each diagram type drives its own
+generator output: erDiagram → POCO/.surql, flowchart → enum +
+transition validators, requirementDiagram → traceability runbook.
+
+Phase C ships in 6 sub-slices (C-1 parser dispatch through C-6
+aggregate-subcommand retirement) per the design doc. Total revised
+effort: ~13-17h (was 4-6h). The expansion is worth it for the
+strategic alignment with the toolkit ADR.
+
+**This session is design-only.** No more code today. Next session
+begins with C-1.
 
 ### Pending decisions
 
@@ -272,7 +280,7 @@ file-level.
 |---|---|---|---|
 | A. Runbook + tracks consolidation | RUNBOOK.md, tracks.md prune | 1-2h | ✓ Shipped 2026-05-23 (`8f1eee1`) |
 | B. Mermaid aggregate slices (visualization-only) | Annotate 24 source `.mermaid` files with `@surreal.slice` + Mermaid relationship lines. Add `oasis-surreal aggregates` subcommand that emits 6 `docs/aggregates/*.mermaid` + `docs/domain.generated.mermaid`. Generator POCO/.surql output unchanged. | 2-3h | ✓ Shipped 2026-05-27 (`137992c`) |
-| C. Generator: multi-table parsing + FK emission | Roslyn parser update for multi-table files + relationship recognition + `.surql` FK ASSERT + RELATION emission. Migrate generator to read from `aggregates/`. Delete the 24 single-table files. | 4-6h | **NEXT** |
+| C. Mermaid portfolio model (rethought) | Replace single-erDiagram source model with a portfolio (`erDiagram` + `flowchart` + `requirementDiagram`). 6 sub-slices C-1…C-6 per [DESIGN-mermaid-portfolio.md](conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md). Multi-file via `schema/*.mermaid`, with `main.mermaid` carrying datasource + generator config. State-machine codegen eliminates the C# switch/SurrealDB ASSERT/prose-note three-way drift. | 13-17h | **NEXT (C-1 parser dispatch first)** |
 | D. Wave-2 commit + integration | Commit the 3 SurrealQuest stores + tests + `230_quest_graph_edges.*`. | 1h | ✓ Shipped 2026-05-27 (`24a7403`) |
 | E. Quest aggregate cutover to generated POCOs | Partial-class extensions + delete hand-written + rewire wave-2 stores + 34 handlers + QuestManager + tests. Aliases vanish. | 7-9h | After C |
 | F. quest-api endpoint gaps | 18 missing endpoints + 12 missing manager methods on the post-cutover surface | 2-3h | After E |

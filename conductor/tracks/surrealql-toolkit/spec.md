@@ -23,6 +23,14 @@ a credible side-product even if OASIS is the only consumer for now.
 ## Vision
 **"Prisma for SurrealQL with first-class graph semantics."**
 
+**Authoring surface — see [DESIGN-mermaid-portfolio.md](DESIGN-mermaid-portfolio.md)
+(authored 2026-05-27).** Schema is authored as a *portfolio of
+Mermaid diagrams*: `erDiagram` for entity shape + FK, `flowchart`
+for state machines (driving enum + transition-validator codegen),
+`requirementDiagram` for guardrails (driving traceability runbook
+codegen). Multiple diagrams per file; one main + many domain files
+per the Prisma multi-file convention.
+
 A developer using SurrealDB should be able to:
 1. **Author** a schema as a single source of truth (Mermaid, with
    graph-native edge/RELATE syntax)
