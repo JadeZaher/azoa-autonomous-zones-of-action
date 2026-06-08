@@ -11,7 +11,7 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// Pattern: mirrors <see cref="SurrealNftStore"/> / <see cref="SurrealSagaStore"/>
 ///   — Guid("N") lowercase-hex record ids and inline POCO until the
 ///   source-generator catches up to table 120. Replace the inline POCO with the
-///   generated type when <c>OASIS.WebAPI.Generated.SurrealDb.ApiKey</c> arrives.
+///   generated type when <c>OASIS.WebAPI.Persistence.SurrealDb.Models.ApiKey</c> arrives.
 ///
 /// Lookups:
 ///   - <see cref="GetByHashAsync"/> uses the UNIQUE <c>api_key_unique_hash</c>
@@ -71,7 +71,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     {
         var surrealId = ToSurrealId(id);
         var q = SurrealQuery
-            .Of("SELECT * FROM type::thing($_t, $_id)")
+            .Of("SELECT * FROM type::record($_t, $_id)")
             .WithParam("_t", Table)
             .WithParam("_id", surrealId);
 
@@ -95,7 +95,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         var poco = FromDomain(apiKey);
 
         var q = SurrealQuery
-            .Of("CREATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
             .WithParam("_t", Table)
             .WithParam("_id", poco.Id)
             .WithParam("_body", poco);
@@ -122,7 +122,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         var revokedUtc = DateTime.SpecifyKind(revokedAt, DateTimeKind.Utc);
 
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET is_active = false, revoked_at = $_revoked WHERE avatar_id = $_avatar RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET is_active = false, revoked_at = $_revoked WHERE avatar_id = $_avatar RETURN AFTER")
             .WithParam("_t", Table)
             .WithParam("_id", surrealId)
             .WithParam("_avatar", avatarHex)
@@ -139,7 +139,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         var avatarHex = ToSurrealId(avatarId);
 
         var q = SurrealQuery
-            .Of("DELETE type::thing($_t, $_id) WHERE avatar_id = $_avatar RETURN BEFORE")
+            .Of("DELETE type::record($_t, $_id) WHERE avatar_id = $_avatar RETURN BEFORE")
             .WithParam("_t", Table)
             .WithParam("_id", surrealId)
             .WithParam("_avatar", avatarHex);
@@ -163,7 +163,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
             var lastUtc = DateTime.SpecifyKind(lastUsedAt, DateTimeKind.Utc);
 
             var q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) SET last_used_at = $_now")
+                .Of("UPDATE type::record($_t, $_id) SET last_used_at = $_now")
                 .WithParam("_t", Table)
                 .WithParam("_id", surrealId)
                 .WithParam("_now", lastUtc);

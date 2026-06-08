@@ -365,7 +365,7 @@ builder.Services.AddScoped<IQuestManager, QuestManager>();
 // <dapp-composition>
 // IDappSeriesStore + IDappCompositionManager are the dapp-composition track's
 // surfaces. The store operates on source-gen'd DappSeries + DappSeriesQuest
-// POCOs (OASIS.WebAPI.Generated.SurrealDb) -- no hand-written entity types
+// POCOs (OASIS.WebAPI.Persistence.SurrealDb.Models) -- no hand-written entity types
 // for this aggregate. InMemory is the default until surrealdb-migration
 // wave-2 lands the Surreal-backed adapter; the Singleton lifetime matches
 // the existing InMemory store pattern (process-lifetime state).
@@ -553,8 +553,11 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
         Oasis.SurrealDb.Client.Query.ISurrealExecutor>();
     try
     {
+        // RETURN 1; is the idiomatic SurrealQL no-op probe -- SELECT
+        // requires FROM in 1.5+ and was being rejected with a parse
+        // error here, masking the real "server reachable" intent.
         await executor.ExecuteAsync(
-            Oasis.SurrealDb.Client.Query.SurrealQuery.Of("SELECT 1 AS ok"));
+            Oasis.SurrealDb.Client.Query.SurrealQuery.Of("RETURN 1"));
     }
     catch (Exception ex)
     {

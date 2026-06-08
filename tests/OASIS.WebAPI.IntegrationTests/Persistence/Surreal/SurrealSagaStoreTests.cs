@@ -26,14 +26,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 {
     // ── Connection config ──────────────────────────────────────────────────────
 
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     // ── Per-instance state ─────────────────────────────────────────────────────
 
@@ -46,7 +39,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _surrealAvailable = await ProbeSurrealAsync();Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        _surrealAvailable = await ProbeSurrealAsync();Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         // Bootstrap namespace + schema BEFORE binding the per-test connection so
         // the DEFINE NAMESPACE statement does not require an existing namespace.
@@ -54,21 +47,21 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = _testNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         _connection = new HttpSurrealConnection(http, options);
         var executor = new DefaultSurrealExecutor(_connection);
         _store = new SurrealSagaStore(executor);
     }
 
     public async Task DisposeAsync()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
         try
         {
             await DropNamespaceAsync();
@@ -92,7 +85,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Enqueue_Then_Get_RoundTrips()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
@@ -129,7 +122,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task GetDueStepIds_ReturnsDuePendingRows_InOrder_BoundedByBatch()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var now = DateTime.UtcNow;
 
@@ -171,7 +164,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task GetDueStepIds_ReclaimsStaleLeases()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "StaleStep", UniqueCorrelation(), UniqueIdempotency(),
@@ -202,7 +195,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task TryClaimDueStep_FirstCaller_Wins()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "Claimable", UniqueCorrelation(), UniqueIdempotency(),
@@ -225,7 +218,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task TryClaimDueStep_SecondConcurrentCaller_Loses()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "Contested", UniqueCorrelation(), UniqueIdempotency(),
@@ -251,7 +244,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task CompleteStep_FromInProgress_Succeeds_And_IsNoOpAfterwards()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "Completable", UniqueCorrelation(), UniqueIdempotency(),
@@ -283,7 +276,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task ScheduleRetry_FromInProgress_BumpsAttempt_AndPushesNextRunAt()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "Retryable", UniqueCorrelation(), UniqueIdempotency(),
@@ -313,7 +306,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task CompensateStep_FromInProgress_TransitionsAndEnqueuesCompensation()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
@@ -358,7 +351,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task DeadLetterStep_FromInProgress_TransitionsAndSetsFlag()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "DoomedStep", UniqueCorrelation(), UniqueIdempotency(),
@@ -389,7 +382,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     {
         var executor = new DefaultSurrealExecutor(_connection);
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET next_run_at = $_next, updated_at = $_now")
+            .Of("UPDATE type::record($_t, $_id) SET next_run_at = $_next, updated_at = $_now")
             .WithParam("_t", "saga_steps")
             .WithParam("_id", id.ToString("N").ToLowerInvariant())
             .WithParam("_next", DateTime.SpecifyKind(futureUtc, DateTimeKind.Utc))
@@ -406,7 +399,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     {
         var executor = new DefaultSurrealExecutor(_connection);
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET status = 'InProgress', claimed_at = $_claimed, updated_at = $_now")
+            .Of("UPDATE type::record($_t, $_id) SET status = 'InProgress', claimed_at = $_claimed, updated_at = $_now")
             .WithParam("_t", "saga_steps")
             .WithParam("_id", id.ToString("N").ToLowerInvariant())
             .WithParam("_claimed", DateTime.SpecifyKind(claimedAtUtc, DateTimeKind.Utc))
@@ -425,7 +418,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         try
         {
             using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            var r = await probe.GetAsync($"{SurrealBaseUrl}/health");
+            var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -438,9 +431,9 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     private async Task BootstrapSchemaAsync()
     {
-        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
@@ -485,9 +478,9 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
     private async Task DropNamespaceAsync()
     {
-        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);

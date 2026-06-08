@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-05-18
 - **Deciders:** Engineering (api-safety-hardening §4 pre-launch cleanup)
-- **Related:** `GO-TO-PROD.md` §4 item 3 + hard gate #7; `conductor/tracks/durable-saga-orchestration/spec.md`
+- **Related:** `conductor/tracks/api-safety-hardening/docs/GO-TO-PROD.md` §4 item 3 + hard gate #7; `conductor/tracks/durable-saga-orchestration/spec.md`
 
 > First ADR in this repository. Architecture decisions had previously been
 > recorded as prose "Decision record" sections inside
@@ -89,5 +89,5 @@ Phase 2 (`durable-saga-orchestration` track) owns adoption. To turn it on:
 2. Set `Sagas:Enabled = true` in the target environment's appsettings/secret
    config (and flip the `SagaOptions.Enabled` default only once a consumer is
    the normal case).
-3. Re-run `scripts/passoff.ps1`; update GO-TO-PROD gate #7 and the
-   RESIDUAL-RISK-RUNBOOK monitoring for `SagaSteps` dead-letter.
+3. Re-run the full safety suite (`tests/run-tests.ps1`); update GO-TO-PROD
+   gate #7 and the RESIDUAL-RISK-RUNBOOK monitoring for `SagaSteps` dead-letter.

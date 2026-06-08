@@ -11,7 +11,7 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// attempt of a <see cref="Quest"/>. Pattern mirrors
 /// <see cref="SurrealSagaStore"/> — Guid('N') lowercase-hex record ids,
 /// inline POCO (replace with generated POCO when source-gen catches up —
-/// <c>OASIS.WebAPI.Generated.SurrealDb.QuestRun</c> already exists), every
+/// <c>OASIS.WebAPI.Persistence.SurrealDb.Models.QuestRun</c> already exists), every
 /// value parameter-bound (G3 / SRDB0001).
 ///
 /// <para>
@@ -30,7 +30,7 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// <see cref="QuestRun.ParentRunId"/> chain client-side rather than dispatching
 /// a native <c>-&gt;forked_from-&gt;</c> graph query. Chosen because the
 /// scalar walk is simpler in <see cref="SurrealQuery"/> (each hop is a
-/// straightforward <c>SELECT * FROM type::thing(...)</c>; the typed builder
+/// straightforward <c>SELECT * FROM type::record(...)</c>; the typed builder
 /// does not yet have a fluent graph-traversal helper), and the
 /// <c>parent_run_id</c> scalar is the authoritative pointer anyway. Returns
 /// the chain in <b>child-to-root</b> order with a structural visited-set
@@ -68,7 +68,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
             {
                 // Root run path — single CREATE.
                 var q = SurrealQuery
-                    .Of("CREATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                    .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                     .WithParam("_t",    RunTable)
                     .WithParam("_id",   childSurrId)
                     .WithParam("_body", poco);
@@ -85,7 +85,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
             var parentSurrId = ToSurrealId(run.ParentRunId.Value);
 
             var atomic = SurrealQuery
-                .Of("BEGIN; CREATE type::thing($_t, $_cid) CONTENT $_body RETURN AFTER; RELATE type::thing($_t, $_cid)->forked_from->type::thing($_t, $_pid); COMMIT")
+                .Of("BEGIN; CREATE type::record($_t, $_cid) CONTENT $_body RETURN AFTER; RELATE type::record($_t, $_cid)->forked_from->type::record($_t, $_pid); COMMIT")
                 .WithParam("_t",    RunTable)
                 .WithParam("_cid",  childSurrId)
                 .WithParam("_pid",  parentSurrId)
@@ -109,7 +109,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         try
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM type::thing($_t, $_id)")
+                .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  RunTable)
                 .WithParam("_id", ToSurrealId(id));
 
@@ -141,7 +141,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
             // the in-memory store does (rather than silently CREATE on
             // UPDATE-of-missing-id, which is the SurrealDB default).
             var existsQ = SurrealQuery
-                .Of("SELECT id FROM type::thing($_t, $_id)")
+                .Of("SELECT id FROM type::record($_t, $_id)")
                 .WithParam("_t",  RunTable)
                 .WithParam("_id", surrealId);
 
@@ -151,7 +151,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
             var poco = FromDomain(run);
             var q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    RunTable)
                 .WithParam("_id",   surrealId)
                 .WithParam("_body", poco);
@@ -239,7 +239,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
             while (visited.Add(cursor))
             {
                 var q = SurrealQuery
-                    .Of("SELECT * FROM type::thing($_t, $_id)")
+                    .Of("SELECT * FROM type::record($_t, $_id)")
                     .WithParam("_t",  RunTable)
                     .WithParam("_id", ToSurrealId(cursor));
 

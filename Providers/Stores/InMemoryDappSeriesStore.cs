@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using OASIS.WebAPI.Generated.SurrealDb;
+using OASIS.WebAPI.Persistence.SurrealDb.Models;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Models.Responses;
 

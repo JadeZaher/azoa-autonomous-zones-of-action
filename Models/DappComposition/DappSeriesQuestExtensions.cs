@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Generated.SurrealDb;
+namespace OASIS.WebAPI.Persistence.SurrealDb.Models;
 
 /// <summary>
 /// Partial-class accessors for the source-gen'd <see cref="DappSeriesQuest"/>

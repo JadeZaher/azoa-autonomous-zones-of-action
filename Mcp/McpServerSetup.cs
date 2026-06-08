@@ -15,13 +15,15 @@ public static class McpServerSetup
 {
     public static IServiceCollection AddMcpSurface(this IServiceCollection services)
     {
-        services.AddSingleton<McpToolRegistry>();
+        // McpToolRegistry used to be Singleton, but it consumes
+        // IEnumerable<IMcpTool> whose implementations are Scoped. ASP.NET
+        // Core's BuildServiceProvider with ValidateOnBuild (the Development-
+        // mode default) rejects that captive dependency. Scoped here keeps
+        // both ends compatible -- the registry is just a Dictionary<string,
+        // IMcpTool> over a handful of entries, cheap to rebuild per request.
+        services.AddScoped<McpToolRegistry>();
 
         // ── Tool registrations (mcp-surface track) ────────────────────────────
-        // Each tool is scoped: per-request lifetime so it can hold transient
-        // state during ExecuteAsync. McpToolRegistry's singleton ctor receives
-        // IEnumerable<IMcpTool> via root-scope resolution at startup; per-call
-        // dispatch resolves the tool from the request scope.
         services.AddScoped<IMcpTool, QuestReachabilityTool>();
         services.AddScoped<IMcpTool, HolonTraverseTool>();
         services.AddScoped<IMcpTool, NftOwnershipGraphTool>();

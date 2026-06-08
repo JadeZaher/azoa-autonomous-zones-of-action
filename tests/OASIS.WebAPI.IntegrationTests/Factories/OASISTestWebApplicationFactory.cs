@@ -15,8 +15,8 @@ namespace OASIS.WebAPI.IntegrationTests.Factories;
 ///   - NO db.Database.Migrate() (that was a relational-only boot path, removed here).
 ///   - Authentication is replaced by the test-only TestAuthHandler so tests
 ///     can exercise auth-gated endpoints without real JWT tokens.
-///   - The SurrealDB connection is read from the environment or defaults to
-///     the local test container on port 8442 (started by start-test-container.ps1).
+///   - The SurrealDB connection defaults to
+///     the developer's local SurrealDB instance on 127.0.0.1:8000 (see appsettings.Development.json).
 ///   - Per-test namespace isolation is owned by IntegrationTestBase — the
 ///     factory itself is shared across the test class collection (IClassFixture).
 ///
@@ -44,13 +44,9 @@ public class OASISTestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Jwt:Audience"] = "test",
 
                 // SurrealDB connection for the test host (wave 2: adapter wiring).
-                // Override with OASIS_SURREAL_TEST_URL environment variable in CI.
-                ["SurrealDb:Endpoint"] = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL")
-                                         ?? "http://localhost:8442",
-                ["SurrealDb:Username"] = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER")
-                                         ?? "root",
-                ["SurrealDb:Password"] = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS")
-                                         ?? "oasis-surreal-root",
+                ["SurrealDb:Endpoint"] = SurrealTestDefaults.Endpoint,
+                ["SurrealDb:Username"] = SurrealTestDefaults.User,
+                ["SurrealDb:Password"] = SurrealTestDefaults.Password,
 
                 // Keep the OASIS provider key so Program.cs provider-selection code
                 // (if any) doesn't throw on missing config.

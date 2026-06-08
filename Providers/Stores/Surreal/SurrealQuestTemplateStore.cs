@@ -37,7 +37,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
         var surrealId = ToSurrealId(templateId);
 
         var q = SurrealQuery
-            .Of("SELECT * FROM type::thing($_t, $_id)")
+            .Of("SELECT * FROM type::record($_t, $_id)")
             .WithParam("_t", TemplateTable)
             .WithParam("_id", surrealId);
 
@@ -50,7 +50,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
         var surrealId = ToSurrealId(nodeTemplateId);
 
         var q = SurrealQuery
-            .Of("SELECT * FROM type::thing($_t, $_id)")
+            .Of("SELECT * FROM type::record($_t, $_id)")
             .WithParam("_t", NodeTemplateTable)
             .WithParam("_id", surrealId);
 

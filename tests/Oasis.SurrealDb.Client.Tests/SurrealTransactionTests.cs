@@ -35,10 +35,11 @@ public class SurrealTransactionTests
             txn.IsCommitted.Should().BeTrue();
         }
 
+        // Bodies are now the /rpc envelope -- assert via Contain instead of Be.
         handler.Requests.Should().HaveCount(3);
-        handler.Requests[0].Body.Should().Be("BEGIN TRANSACTION;");
-        handler.Requests[1].Body.Should().StartWith("UPDATE wallet:abc");
-        handler.Requests[2].Body.Should().Be("COMMIT TRANSACTION;");
+        handler.Requests[0].Body.Should().Contain("BEGIN TRANSACTION;");
+        handler.Requests[1].Body.Should().Contain("UPDATE wallet:abc");
+        handler.Requests[2].Body.Should().Contain("COMMIT TRANSACTION;");
     }
 
     [Fact]
@@ -57,8 +58,8 @@ public class SurrealTransactionTests
         }
 
         handler.Requests.Should().HaveCount(2);
-        handler.Requests[0].Body.Should().Be("BEGIN TRANSACTION;");
-        handler.Requests[1].Body.Should().Be("CANCEL TRANSACTION;");
+        handler.Requests[0].Body.Should().Contain("BEGIN TRANSACTION;");
+        handler.Requests[1].Body.Should().Contain("CANCEL TRANSACTION;");
     }
 
     [Fact]

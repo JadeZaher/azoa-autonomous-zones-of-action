@@ -39,17 +39,6 @@ namespace OASIS.WebAPI.IntegrationTests.Gates;
 [Trait("Category", "Gate")]
 public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
 {
-    // ── Connection config (mirrored from SurrealSagaStoreTests) ───────────────
-
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
-
     private readonly JsonSerializerOptions _jsonOpts = new(JsonSerializerDefaults.Web);
 
     public G2_IdempotencyTocTouTest(OASISTestWebApplicationFactory factory)
@@ -369,11 +358,11 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
     {
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442",
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = ns,
             Database  = "test",
-            User      = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root",
-            Password  = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root",
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password,
         };
 
         var http       = new HttpClient();
@@ -391,13 +380,10 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
     {
         using var ddlClient = new HttpClient
         {
-            BaseAddress = new Uri(
-                Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442")
+            BaseAddress = new Uri(SurrealTestDefaults.Endpoint)
         };
-        var user = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-        var pass = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{user}:{pass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         ddlClient.DefaultRequestHeaders.Add("NS", testNamespace);

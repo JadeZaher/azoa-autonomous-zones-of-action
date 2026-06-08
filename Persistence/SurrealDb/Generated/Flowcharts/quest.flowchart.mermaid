@@ -1,0 +1,44 @@
+graph LR
+    %% Slice: quest
+    %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
+    %% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- flowcharts
+
+    %% Nodes in this slice
+    executes["executes: Node"]:::nodeClass
+    forked_from["forked_from: Node"]:::nodeClass
+    quest["quest: Node"]:::nodeClass
+    quest_dependency["quest_dependency: Node"]:::nodeClass
+    quest_edge["quest_edge: Node"]:::nodeClass
+    quest_node["quest_node: Node"]:::nodeClass
+    quest_node_execution["quest_node_execution: Node"]:::nodeClass
+    quest_run["quest_run: Node"]:::nodeClass
+
+    %% Cross-slice targets (rendered as ghost nodes)
+    avatar["avatar: Node (external)"]:::externalNode
+    dapp_series["dapp_series: Node (external)"]:::externalNode
+    quest_node_template["quest_node_template: Node (external)"]:::externalNode
+    quest_template["quest_template: Node (external)"]:::externalNode
+
+    %% Edges (outbound from this slice)
+    quest -- "avatar_id [N:1]" --> avatar
+    quest -- "dapp_series_id [N:0..1]" --> dapp_series
+    quest -- "template_id [N:0..1]" --> quest_template
+    quest_dependency -- "depends_on_quest_id [N:1]" --> quest
+    quest_dependency -- "quest_id [N:1]" --> quest
+    quest_dependency -- "depends_on_node_id [N:0..1]" --> quest_node
+    quest_edge -- "quest_id [N:1]" --> quest
+    quest_edge -- "source_node_id [N:1]" --> quest_node
+    quest_edge -- "target_node_id [N:1]" --> quest_node
+    quest_node -- "quest_id [N:1]" --> quest
+    quest_node -- "node_template_id [N:0..1]" --> quest_node_template
+    quest_node_execution -- "node_id [N:1]" --> quest_node
+    quest_node_execution -- "run_id [N:1]" --> quest_run
+    quest_run -- "avatar_id [N:1]" --> avatar
+    quest_run -- "quest_id [N:1]" --> quest
+    quest_run -- "forked_at_node_id [N:0..1]" --> quest_node
+    quest_run -- "executes [N:M]" --> quest_node_execution
+    quest_run -- "forked_from [N:M]" --> quest_run
+    quest_run -- "parent_run_id [N:0..1]" --> quest_run
+
+    classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
+    classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;

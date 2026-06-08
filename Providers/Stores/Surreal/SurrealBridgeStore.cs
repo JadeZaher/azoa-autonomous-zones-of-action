@@ -2,7 +2,7 @@ using System.Text.Json;
 using Oasis.SurrealDb.Client;
 using Oasis.SurrealDb.Client.Query;
 using OASIS.WebAPI.Core.Blockchain.Wormhole;
-using OASIS.WebAPI.Generated.SurrealDb;
+using OASIS.WebAPI.Persistence.SurrealDb.Models;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Models;
 using OASIS.WebAPI.Models.Bridge;
@@ -63,7 +63,7 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// and <see cref="SaveVaaFetchResultAsync"/> need to atomically write several
 /// columns in a single conditional UPDATE, so we drop down to a raw
 /// <see cref="SurrealQuery.Of(string)"/> body of shape
-/// <c>UPDATE type::thing(...) WHERE ... SET ..., ..., ... RETURN AFTER</c>
+/// <c>UPDATE type::record(...) WHERE ... SET ..., ..., ... RETURN AFTER</c>
 /// with full parameter binding (G3 — no interpolation of user-controlled
 /// values). The affected-row count is read from the per-statement response via
 /// <see cref="SurrealStatementResultExtensions.AffectedCount"/>; a non-matching
@@ -98,9 +98,9 @@ public sealed class SurrealBridgeStore : IBridgeStore
     {
         if (string.IsNullOrWhiteSpace(id)) return false;
 
-        // SELECT id FROM bridge_tx WHERE id = type::thing($_t, $_id)
+        // SELECT id FROM bridge_tx WHERE id = type::record($_t, $_id)
         var q = SurrealQuery
-            .Of("SELECT id FROM type::thing($_t, $_id)")
+            .Of("SELECT id FROM type::record($_t, $_id)")
             .WithParam("_t",  BridgeTable)
             .WithParam("_id", id);
 
@@ -129,7 +129,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
             throw new ArgumentException("Bridge id must not be empty.", nameof(id));
 
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET error_message = $_err RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET error_message = $_err RETURN AFTER")
             .WithParam("_t",   BridgeTable)
             .WithParam("_id",  id)
             .WithParam("_err", errorMessage);
@@ -144,7 +144,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
             throw new ArgumentException("Bridge id must not be empty.", nameof(id));
 
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) WHERE status != $_completed SET status = $_completed, completed_at = $_now RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) WHERE status != $_completed SET status = $_completed, completed_at = $_now RETURN AFTER")
             .WithParam("_t",         BridgeTable)
             .WithParam("_id",        id)
             .WithParam("_completed", BridgeStatus.Completed.ToString())
@@ -254,7 +254,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         // We surface the error via EnsureAllOk so the caller sees a
         // SurrealStatementException instead of a silent no-op.
         var q = SurrealQuery
-            .Of("CREATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
             .WithParam("_t",    BridgeTable)
             .WithParam("_id",   tx.Id)
             .WithParam("_body", poco);
@@ -277,7 +277,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         // multi-statement swallow risk) and return false on any failure, true
         // only when the statement is OK and the row was actually written.
         var q = SurrealQuery
-            .Of("CREATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
             .WithParam("_t",    VaaTable)
             .WithParam("_id",   record.Digest)
             .WithParam("_body", poco);
@@ -322,7 +322,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         // SaveVaaFetchResultAsync contract — no expected-status constraint).
         // The caller already owns the state-machine policy.
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET vaa_bytes = $_vaa, vaa_signature_count = $_sigs, proof_data = $_proof, status = $_status RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET vaa_bytes = $_vaa, vaa_signature_count = $_sigs, proof_data = $_proof, status = $_status RETURN AFTER")
             .WithParam("_t",      BridgeTable)
             .WithParam("_id",     id)
             .WithParam("_vaa",    vaaBytes)
@@ -347,7 +347,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         // Compose the SET clause dynamically from non-null mutation fields.
         // Field names come ONLY from this method (allowlisted), parameter VALUES
         // are bound — never interpolated. The shape is:
-        //   UPDATE type::thing($_t, $_id)
+        //   UPDATE type::record($_t, $_id)
         //     WHERE status = $_expected
         //     SET status = $_next, <field> = $_<field>, ...
         //     RETURN AFTER
@@ -481,7 +481,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
     }
 
     /// <summary>
-    /// Composes a conditional <c>UPDATE type::thing(...) WHERE status = ... SET ... RETURN AFTER</c>
+    /// Composes a conditional <c>UPDATE type::record(...) WHERE status = ... SET ... RETURN AFTER</c>
     /// statement body from a pre-validated list of <c>field = $_param</c>
     /// fragments. The fragments themselves are author-controlled (never user
     /// input) — every value reference is a parameter token bound elsewhere.
@@ -498,7 +498,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
     private static string BuildConditionalUpdateSql(IReadOnlyList<string> setParts)
     {
         var sb = new System.Text.StringBuilder();
-        sb.Append("UPDATE type::thing($_t, $_id) WHERE status = $_expected SET ");
+        sb.Append("UPDATE type::record($_t, $_id) WHERE status = $_expected SET ");
         for (int i = 0; i < setParts.Count; i++)
         {
             if (i > 0) sb.Append(", ");

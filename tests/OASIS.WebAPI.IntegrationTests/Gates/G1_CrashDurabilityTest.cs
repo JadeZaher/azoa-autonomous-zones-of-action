@@ -20,9 +20,9 @@
 // runtime evidence, not just a documentation checkbox.
 //
 // G1_DurabilityAckGate_FailsClosed_IfSyncEventual is a static config assertion
-// that reads docker-compose.surrealdb.yml and asserts the URI contains
-// `sync=every`. This runs without a live container, so a deploy with the wrong
-// URI fails CI before the first container ever starts.
+// that reads podman-compose.yml and asserts the URI contains `sync=every`.
+// This runs without a live container, so a deploy with the wrong URI fails CI
+// before the first container ever starts.
 //
 // Both tests are guarded by [Trait("Category","Chaos")] so they are excluded
 // from the default CI filter (--filter "Category!=Chaos") and opt-in only.
@@ -65,14 +65,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     // and G1-saga-00..19.
     private static readonly Guid SeedBase = new("a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5");
 
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     // ── Constructor (IClassFixture<OASISTestWebApplicationFactory>) ───────────
 
@@ -179,10 +172,10 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     // ── Test 2: Static config assertion — FailsClosed without container ───────
 
     /// <summary>
-    /// Reads <c>docker-compose.surrealdb.yml</c> from the repo root and asserts
-    /// that the SurrealKV URI contains <c>sync=every</c>. This is a static
-    /// configuration proof — it runs without a live container and will catch a
-    /// durability regression even before any container starts.
+    /// Reads <c>podman-compose.yml</c> from the repo root and asserts that the
+    /// SurrealKV URI contains <c>sync=every</c>. This is a static configuration
+    /// proof — it runs without a live container and will catch a durability
+    /// regression even before any container starts.
     ///
     /// If a developer accidentally changes the URI to <c>sync=flush</c>,
     /// <c>sync=none</c>, or removes the parameter entirely, this test fails
@@ -196,10 +189,10 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
         // It is a static file assertion and must pass on every developer machine.
 
         var repoRoot  = FindLocalRepoRoot();
-        var composeFile = Path.Combine(repoRoot, "docker-compose.surrealdb.yml");
+        var composeFile = Path.Combine(repoRoot, "podman-compose.yml");
 
         File.Exists(composeFile).Should().BeTrue(
-            $"docker-compose.surrealdb.yml must exist at repo root ({composeFile}). " +
+            $"podman-compose.yml must exist at repo root ({composeFile}). " +
             "If the file was moved, update the G1 config gate path.");
 
         var content = File.ReadAllText(composeFile);
@@ -209,7 +202,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
         // parameter is what SurrealDB 1.x actually honours per the spec notes
         // in the compose file header comment.
         content.Should().Contain("sync=every",
-            "docker-compose.surrealdb.yml must pass surrealkv://...?sync=every to the SurrealDB " +
+            "podman-compose.yml must pass surrealkv://...?sync=every to the SurrealDB " +
             "container. Removing or changing this URI parameter disables fsync-before-ack and " +
             "violates guardrail G1 (crash durability). This test fails closed so a regression " +
             "is caught before deployment, not after a SIGKILL data loss incident in production.");
@@ -225,11 +218,11 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     {
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = TestNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass,
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password,
         };
         var http       = new HttpClient();
         var connection = new HttpSurrealConnection(http, options);
@@ -344,7 +337,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     }
 
     /// <summary>
-    /// Polls <c>{SurrealBaseUrl}/health</c> every 250 ms until 200 OK is
+    /// Polls <c>{SurrealTestDefaults.Endpoint}/health</c> every 250 ms until 200 OK is
     /// returned or <paramref name="timeout"/> elapses. Throws a clear timeout
     /// exception so CI logs show "container did not come back" rather than
     /// a cryptic connection-refused error on the first store query.
@@ -357,7 +350,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
             try
             {
                 using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-                var r = await probe.GetAsync($"{SurrealBaseUrl}/health");
+                var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
                 if (r.IsSuccessStatusCode) return;
             }
             catch
@@ -369,7 +362,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
         }
 
         throw new TimeoutException(
-            $"SurrealDB container at {SurrealBaseUrl} did not return HTTP 200 on /health " +
+            $"SurrealDB container at {SurrealTestDefaults.Endpoint} did not return HTTP 200 on /health " +
             $"within {timeout.TotalSeconds:F0} seconds after restart. " +
             "Check podman logs with: podman logs oasis-surrealdb-test");
     }
@@ -379,7 +372,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     /// finds the repo root (identified by the presence of
     /// <c>OASIS.WebAPI.csproj</c>). This replicates the private
     /// <c>FindRepoRoot</c> logic in <see cref="IntegrationTestBase"/> locally
-    /// so the G1 config-gate test can locate <c>docker-compose.surrealdb.yml</c>
+    /// so the G1 config-gate test can locate <c>podman-compose.yml</c>
     /// without breaking base-class encapsulation.
     /// </summary>
     private static string FindLocalRepoRoot()

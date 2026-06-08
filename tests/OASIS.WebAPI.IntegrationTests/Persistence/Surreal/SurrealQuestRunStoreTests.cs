@@ -163,7 +163,7 @@ public class SurrealQuestRunStoreTests : IntegrationTestBase
         // RELATE child -> forked_from -> parent in the same SurrealDB
         // transaction". COUNT the in == child / out == parent rows.
         var edgeQ = SurrealQuery
-            .Of("SELECT count() AS c FROM forked_from WHERE in = type::thing('quest_run', $_cid) AND out = type::thing('quest_run', $_pid) GROUP ALL")
+            .Of("SELECT count() AS c FROM forked_from WHERE in = type::record('quest_run', $_cid) AND out = type::record('quest_run', $_pid) GROUP ALL")
             .WithParam("_cid", child.Id.ToString("N").ToLowerInvariant())
             .WithParam("_pid", parent.Id.ToString("N").ToLowerInvariant());
 
@@ -230,11 +230,11 @@ public class SurrealQuestRunStoreTests : IntegrationTestBase
     {
         var options = new SurrealConnectionOptions
         {
-            Endpoint   = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442",
+            Endpoint   = SurrealTestDefaults.Endpoint,
             Namespace  = TestNamespace,
             Database   = "test",
-            User       = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root",
-            Password   = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root",
+            User       = SurrealTestDefaults.User,
+            Password   = SurrealTestDefaults.Password,
         };
         var http = new HttpClient();
         var connection = new HttpSurrealConnection(http, options);

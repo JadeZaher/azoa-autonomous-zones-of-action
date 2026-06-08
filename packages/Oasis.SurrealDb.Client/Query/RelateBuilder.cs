@@ -10,8 +10,8 @@ namespace Oasis.SurrealDb.Client.Query
     /// The caller chains <see cref="WithContent"/> to attach the edge payload
     /// and produce the final <see cref="SurrealQuery"/>.
     ///
-    /// The emitted statement uses <c>type::thing($_from_t, $_from_id) -> edge
-    /// -> type::thing($_to_t, $_to_id) CONTENT $_content;</c> so neither the
+    /// The emitted statement uses <c>type::record($_from_t, $_from_id) -> edge
+    /// -> type::record($_to_t, $_to_id) CONTENT $_content;</c> so neither the
     /// record IDs nor the content payload are interpolated.
     ///
     /// NOTE: A1's Phase 2 ships <c>SurrealJsonOptions.Default</c> which the
@@ -49,9 +49,11 @@ namespace Oasis.SurrealDb.Client.Query
         {
             if (content is null) throw new ArgumentNullException(nameof(content));
 
+            // SurrealDB v2.x rename: `type::thing(...)` is deprecated and the
+            // parser rejects it; the canonical name is `type::record(...)`.
             var sql =
-                "RELATE type::thing($_from_t, $_from_id) -> " + _edge +
-                " -> type::thing($_to_t, $_to_id) CONTENT $_content";
+                "RELATE type::record($_from_t, $_from_id) -> " + _edge +
+                " -> type::record($_to_t, $_to_id) CONTENT $_content";
 
             var paramBag = new Dictionary<string, object?>(StringComparer.Ordinal)
             {

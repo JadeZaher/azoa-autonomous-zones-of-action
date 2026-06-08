@@ -6,7 +6,7 @@ using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Models;
 using OASIS.WebAPI.Models.Responses;
-using GeneratedNft = OASIS.WebAPI.Generated.SurrealDb.NftOwnership;
+using GeneratedNft = OASIS.WebAPI.Persistence.SurrealDb.Models.NftOwnership;
 
 namespace OASIS.WebAPI.Providers.Stores.Surreal;
 
@@ -50,9 +50,9 @@ public sealed class SurrealNftStore : INftStore
             var poco   = ToNftPoco(avatarNFT);
             var surrId = poco.Id;
 
-            // UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER
+            // UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER
             var q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    GeneratedNft.SchemaNameConst)
                 .WithParam("_id",   surrId)
                 .WithParam("_body", poco);
@@ -181,7 +181,7 @@ public sealed class SurrealNftStore : INftStore
             var surrId = poco.Id;
 
             var q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    HolonBindingTable)
                 .WithParam("_id",   surrId)
                 .WithParam("_body", poco);
@@ -280,7 +280,7 @@ public sealed class SurrealNftStore : INftStore
             var surrId = poco.Id;
 
             var q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    WalletBindingTable)
                 .WithParam("_id",   surrId)
                 .WithParam("_body", poco);

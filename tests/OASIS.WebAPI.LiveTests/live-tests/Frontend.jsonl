@@ -1,0 +1,20 @@
+# ═══════════════════════════════════════════════════════════════
+# Frontend (Next.js) smoke tests.
+# Hits absolute URLs at http://localhost:3000 so the suite is independent
+# of the harness's BaseUrl (which is API-side). Asserts that each key
+# route is reachable and returns HTML or the expected redirect — the
+# goal is "the frontend is up and serving the routes we depend on",
+# not deep DOM assertions.
+# Add deeper Playwright-style flow tests in a separate suite if/when
+# the team wires Playwright into CI.
+# ═══════════════════════════════════════════════════════════════
+
+{"id":"fe_root","description":"Frontend root page loads (renders or redirects to a sign-in route)","method":"GET","path":"http://localhost:3000/","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
+{"id":"fe_login_page","description":"Login page reachable","method":"GET","path":"http://localhost:3000/login","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
+{"id":"fe_register_page","description":"Register page reachable","method":"GET","path":"http://localhost:3000/register","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
+{"id":"fe_overview","description":"Overview page reachable (Next.js may redirect to /login when unauth)","method":"GET","path":"http://localhost:3000/overview","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
+{"id":"fe_avatars","description":"Avatars page reachable","method":"GET","path":"http://localhost:3000/avatars","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
+{"id":"fe_wallets","description":"Wallets page reachable","method":"GET","path":"http://localhost:3000/wallets","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
+{"id":"fe_holons","description":"Holons page reachable","method":"GET","path":"http://localhost:3000/holons","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
+{"id":"fe_api_keys","description":"API keys management page reachable","method":"GET","path":"http://localhost:3000/api-keys","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
+{"id":"fe_404","description":"Unknown route returns Next.js 404","method":"GET","path":"http://localhost:3000/__does-not-exist__","headers":{"Accept":"text/html"},"expectedStatus":404}

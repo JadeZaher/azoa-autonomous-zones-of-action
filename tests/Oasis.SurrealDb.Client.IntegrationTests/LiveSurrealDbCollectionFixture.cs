@@ -1,34 +1,30 @@
 using System;
-using System.Diagnostics;
-using System.IO;
 using System.Net.Http;
-using System.Threading.Tasks;
 
 namespace Oasis.SurrealDb.Client.IntegrationTests;
 
 /// <summary>
-/// xUnit collection fixture that spins (and tears down) the
-/// <c>surrealdb/surrealdb:v1.5.4</c> test container via
-/// <c>scripts/surrealdb/start-test-container.ps1</c>. If no compose runtime is
-/// available — i.e. podman/docker not installed in the sandbox — the fixture
-/// flips <see cref="SurrealAvailable"/> to <c>false</c> and every test in the
-/// collection gracefully early-returns (still counted as passing) — matching
-/// section 9 of <c>scripts/passoff-surrealdb-wave1.ps1</c>.
+/// xUnit collection fixture for live-SurrealDB integration tests.
 ///
-/// HIGH#3 — proves the homebake wire shape against a real SurrealDB server
-/// when the container is available, and doesn't poison the pass-off gate
-/// when it isn't.
+/// Tests run against the developer's local SurrealDB instance — same endpoint
+/// and credentials as <c>appsettings.Development.json</c>'s <c>SurrealDb</c>
+/// section. No container scripts are invoked; start your local instance before
+/// running this collection.
+///
+/// If the local instance is unreachable, <see cref="SurrealAvailable"/> is
+/// <c>false</c> and every test in the collection early-returns (counted as
+/// passing), matching the pass-off gate contract.
 /// </summary>
 public sealed class LiveSurrealDbCollectionFixture : IDisposable
 {
     /// <summary>SurrealDB HTTP endpoint for tests in this collection.</summary>
-    public string Endpoint { get; } = "http://localhost:8442";
+    public string Endpoint { get; } = "http://127.0.0.1:8000";
 
-    /// <summary>Root user for the test container (matches docker-compose.surrealdb.yml).</summary>
+    /// <summary>Root user for the local SurrealDB instance.</summary>
     public string User { get; } = "root";
 
-    /// <summary>Root password for the test container.</summary>
-    public string Password { get; } = "oasis-surreal-root";
+    /// <summary>Root password for the local SurrealDB instance.</summary>
+    public string Password { get; } = "root";
 
     /// <summary>Default namespace for the fixture's live tests.</summary>
     public string Namespace { get; } = "oasis";
@@ -37,8 +33,8 @@ public sealed class LiveSurrealDbCollectionFixture : IDisposable
     public string Database { get; } = "client_integration";
 
     /// <summary>
-    /// True iff <c>start-test-container.ps1</c> succeeded and <c>/health</c>
-    /// is reachable. Tests gracefully early-return when this is false rather
+    /// True iff the local SurrealDB instance is reachable and <c>/health</c>
+    /// returns 200. Tests gracefully early-return when this is false rather
     /// than failing — mirrors the pass-off gate's section 9 contract.
     /// </summary>
     public bool SurrealAvailable { get; }
@@ -48,86 +44,15 @@ public sealed class LiveSurrealDbCollectionFixture : IDisposable
 
     public LiveSurrealDbCollectionFixture()
     {
-        try
-        {
-            var repoRoot = FindRepoRoot();
-            if (repoRoot is null)
-            {
-                SkipReason       = "repo root not found from working directory";
-                SurrealAvailable = false;
-                return;
-            }
-
-            var script = Path.Combine(repoRoot, "scripts", "surrealdb", "start-test-container.ps1");
-            if (!File.Exists(script))
-            {
-                SkipReason       = $"start-test-container.ps1 not found at {script}";
-                SurrealAvailable = false;
-                return;
-            }
-
-            var exitCode = RunPowerShell(script);
-            if (exitCode != 0)
-            {
-                SkipReason       = $"start-test-container.ps1 exited {exitCode} (no podman/docker?)";
-                SurrealAvailable = false;
-                return;
-            }
-
-            SurrealAvailable = ProbeHealth(Endpoint);
-            if (!SurrealAvailable) SkipReason = $"/health probe failed at {Endpoint}";
-        }
-        catch (Exception ex)
-        {
-            SkipReason       = $"fixture init threw: {ex.Message}";
-            SurrealAvailable = false;
-        }
+        SurrealAvailable = ProbeHealth(Endpoint);
+        if (!SurrealAvailable)
+            SkipReason = $"local SurrealDB at {Endpoint} unreachable — start your local instance and retry.";
     }
 
     public void Dispose()
     {
-        // Best-effort teardown — the container is intentionally persistent
-        // across runs (see start-test-container.ps1 docstring), so we DO NOT
-        // remove it here. The repo's stop-test-container.ps1 is the manual
-        // teardown entry point.
-    }
-
-    private static string? FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "oasis-sleek.sln"))) return dir.FullName;
-            dir = dir.Parent;
-        }
-        return null;
-    }
-
-    private static int RunPowerShell(string scriptPath)
-    {
-        // Prefer pwsh (PowerShell 7+); fall back to Windows PowerShell.
-        foreach (var exe in new[] { "pwsh", "powershell" })
-        {
-            try
-            {
-                var psi = new ProcessStartInfo(exe, $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\"")
-                {
-                    UseShellExecute        = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError  = true,
-                    CreateNoWindow         = true,
-                };
-                using var proc = Process.Start(psi);
-                if (proc is null) continue;
-                proc.WaitForExit(120_000); // 2-min cap; start-test-container.ps1 has its own 60s deadline
-                return proc.ExitCode;
-            }
-            catch (System.ComponentModel.Win32Exception)
-            {
-                // Executable not found — try the next.
-            }
-        }
-        return -1;
+        // Nothing to tear down — tests run against the developer's local instance
+        // which persists across runs independently of this fixture.
     }
 
     private static bool ProbeHealth(string baseUrl)

@@ -19,14 +19,7 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
 {
     // ── Connection config ─────────────────────────────────────────────────────
 
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     // ── Per-instance state ────────────────────────────────────────────────────
 
@@ -47,14 +40,14 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
 
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = _testNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         _connection = new HttpSurrealConnection(http, options);
         _executor   = new DefaultSurrealExecutor(_connection);
 
@@ -192,7 +185,7 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
         try
         {
             using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            var r = await probe.GetAsync($"{SurrealBaseUrl}/health");
+            var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -200,9 +193,9 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
 
     private async Task BootstrapSchemaAsync()
     {
-        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
@@ -281,9 +274,9 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
 
     private async Task DropNamespaceAsync()
     {
-        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);

@@ -1,6 +1,6 @@
 # OASIS Sleek — Runbook
 
-**Last updated:** 2026-05-27 (Phase B shipped + surrealql-toolkit umbrella ADR authored)
+**Last updated:** 2026-06-05 PM2 (dev-up full-stack composition + 2 pre-existing dev-mode boot bugs fixed)
 **Branch:** `api-safety-hardening` (7 commits ahead of upstream)
 **Last commit:** `137992c feat(mermaid-aggregates): Phase B — generated slice + master diagrams`
 **Suite:** 540/540 unit green; 0 errors, 19 warnings (baseline).
@@ -16,10 +16,95 @@ For the SurrealDB entity convention see
 
 ### Recently shipped (last 10 commits)
 
-- **`HEAD`** (pending) — Phase C design pivoted to C#-first. Design
-  doc rewritten + RUNBOOK §1/§6 updated to reflect the new direction.
-  No code; prototype slice (`wallet_nft`) is the next session's
-  starting point.
+- **`HEAD`** (pending — 2026-06-05 PM2) — **Dev-up full-stack
+  composition.** Three new artifacts so a contributor can clone-and-run:
+  - [`docker-compose.dev.yml`](docker-compose.dev.yml) — SurrealDB +
+    WebAPI + Frontend with healthcheck-gated dependency order. WebAPI
+    container's [`docker-entrypoint.sh`](docker-entrypoint.sh) waits for
+    SurrealDB to be reachable then runs `oasis-surreal up` (apply
+    every committed schema + every Migrations/ file) before launching
+    the host. Schema CLI is now shipped in the same image alongside
+    `OASIS.WebAPI.dll`.
+  - [`dev-up.sh`](dev-up.sh) + [`dev-up.ps1`](dev-up.ps1) — root-level
+    orchestrators that auto-detect docker compose v2, docker-compose v1,
+    podman-compose, or `podman compose` and bring the stack up. `--logs`
+    tails combined output; `--rebuild` rebuilds images; `--clean` wipes
+    the surrealdb_data volume.
+  - [`dev-down.sh`](dev-down.sh) + [`dev-down.ps1`](dev-down.ps1) —
+    teardown helpers with `--wipe` / `-Wipe` to drop the volume.
+
+  Companion: [`appsettings.Development.json`](appsettings.Development.json)
+  gets a full `SurrealDb` block (`Endpoint`, `Namespace`, `Database`,
+  `User`, `Password`) targeting `http://127.0.0.1:8000` for host-direct
+  dev runs that talk to a locally-running SurrealDB instance.
+
+  **Two pre-existing bugs surfaced + fixed during the verification**:
+  - `McpToolRegistry` was Singleton consuming Scoped `IMcpTool`
+    implementations — invalid captive dependency that crashed
+    `BuildServiceProvider` whenever
+    `ASPNETCORE_ENVIRONMENT=Development`. Now Scoped (the registry is
+    a 5-entry Dictionary so per-request rebuild is free).
+  - The boot-time SurrealDB reachability probe used `SELECT 1 AS ok`
+    which is invalid SurrealQL (SELECT requires FROM in 1.5+).
+    Switched to `RETURN 1` — the SurrealDB-idiomatic no-op.
+
+  End-to-end verified: host-run WebAPI boots against the local
+  SurrealDB at `127.0.0.1:8000`, `/health` returns 200 with
+  `storage-db: Healthy`, swagger.json serves at /swagger/v1/swagger.json.
+- **`HEAD-1`** (2026-06-05 PM) — **Migration `up` CLI + live
+  integration test.** New `oasis-surreal up` subcommand applies
+  `Generated/Schemas/` then `Migrations/` (lexical order in each, both
+  funnel through the `schema_migration` ledger). The runner now
+  bootstraps the configured namespace + database on first apply
+  (`DEFINE NAMESPACE IF NOT EXISTS` + `DEFINE DATABASE IF NOT EXISTS`)
+  so a fresh SurrealDB server needs no out-of-band setup. New
+  `MigrationRunnerLiveTests` integration test (in
+  `Oasis.SurrealDb.Schema.Tests`, tagged `Category=Live`) applies all
+  26 schemas to a live SurrealDB at `localhost:8000` then re-runs to
+  prove idempotency. The live test caught **5 real SurrealDB syntax
+  errors in the emitter** that the byte-equivalence tests missed:
+  - regex operator `=~` is not valid SurrealQL — switched to
+    `string::matches($value, "...")`
+  - `FLEXIBLE` modifier goes AFTER `TYPE` not before
+  - `FLEXIBLE` requires `object` or `array<object>` (bare `array` fails)
+  - bootstrap `schema_migration` DDL needed `IF NOT EXISTS`
+  - SurrealDB 2.x rejects `UPDATE x:y` on a missing record — switched
+    to `UPSERT x:y` which auto-creates
+  All five fixes shipped in this session. End-to-end CLI verified
+  against the local instance: 26 schemas APPLIED on first run, 26 SKIP
+  on second run (clean idempotent no-op). New
+  [`Migrations/README.md`](Persistence/SurrealDb/Migrations/README.md)
+  documents the data-migration naming convention + authoring rules.
+- **`HEAD-1`** (2026-06-05 AM) — **Schema graph + closed-set enums.**
+  Every FK column on the 17 POCOs now carries `[References(typeof(Target))]`
+  (~30 fields touched). The `.surql` emit flips from `string` to
+  `record<target>` (or `option<record<target>>`). The RELATE-edge POCOs
+  (`ForkedFrom`, `Executes`) emit as native
+  `DEFINE TABLE x TYPE RELATION FROM y TO z`. Closed-set enums emit a
+  `DEFINE PARAM IF NOT EXISTS $<table>_<column>` block at the top of the
+  file, with `ASSERT $value INSIDE $<table>_<column>` on the field.
+  Per-slice flowcharts now render outbound edges (cross-slice targets
+  appear as dashed-blue ghost nodes); the master flowchart adds a full
+  enum legend listing every closed set with its C# enum type name.
+  **Known follow-up**: store adapters under `Providers/Stores/Surreal/`
+  still write the bare-hex wire format and need to switch to the
+  `"table:hex"` prefixed form before integration tests against a live
+  SurrealDB will pass. Unit suite: 567/567 green.
+- **`HEAD-1`** (2026-06-03) — **C#-first SurrealDB authoring lands
+  end-to-end.** 24 attributed POCOs in `Persistence/SurrealDb/Models/`
+  replace the entire Mermaid → POCO source-gen path. New
+  `OasisSurrealDbOptions` (Connection + Generation sections) consolidates
+  connection + generator-output configuration. Schema/flowchart/DBML
+  artifacts emit to `Persistence/SurrealDb/Generated/`. `MermaidParser`,
+  `MermaidSchemaModel`, `MermaidParseException`, `AggregateEmitter`, the
+  entire `Oasis.SurrealDb.SourceGen` package, and the 24 `.mermaid`
+  source files are deleted. Byte-equivalence test
+  (`AttributePocoByteEquivalenceTests`) discovers every
+  `[SurrealTable]`-decorated POCO at runtime and asserts byte-identical
+  `.surql` emit. See §3 (rewritten) for the new convention; CONVENTION.md
+  + ANNOTATIONS.md likewise rewritten.
+- **`HEAD-1`** (2026-05-27) — Phase C design pivoted to C#-first
+  (this is the commit `HEAD` above implements).
 - **`2326714`** — Initial design doc landed proposing the Mermaid-
   portfolio model (multi-diagram authoring). Superseded same-day by
   the C#-first pivot above; commit preserved in history for the
@@ -28,14 +113,13 @@ For the SurrealDB entity convention see
   pending tracks. **Stale as of evening 2026-05-27** — the
   public-toolkit framing is no longer in scope. Clean-up decision
   deferred to next session.
-- **`137992c`** — RUNBOOK §4 Phase B shipped. Aggregate slice emitter +
-  24 source `.mermaid` files annotated with `@surreal.slice` +
-  Mermaid relationship lines. 6 slice diagrams at
-  [`docs/aggregates/`](docs/aggregates/) + master at
-  [`docs/domain.generated.mermaid`](docs/domain.generated.mermaid).
-  `.surql` byte-output unchanged (verified). **Likely retired**
-  under C#-first; survives in tree until the prototype slice settles
-  whether the Mermaid view is still worth generating.
+- **`137992c`** — RUNBOOK §4 Phase B shipped (since retired on
+  2026-06-03). Aggregate slice emitter + 24 source `.mermaid` files +
+  6 slice diagrams under `docs/aggregates/` + master at
+  `docs/domain.generated.mermaid`. Replaced by the C#-first flowchart
+  emitter; outputs now land at
+  [`Persistence/SurrealDb/Generated/Flowcharts/`](Persistence/SurrealDb/Generated/Flowcharts/)
+  in the `graph LR` shape.
 - **`9bcfd32`** + **`b66a09f`** — RUNBOOK §4 refined to make slice
   files a generated artifact (not hand-authored); §5 sequencing +
   §6 phase table updated. Both also superseded by the C#-first pivot.
@@ -109,7 +193,7 @@ migrating the rest.
 
 | Convention | Source | Applies to |
 |---|---|---|
-| SurrealDB entity = source-gen'd POCO + partial extensions | [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md) | All new SurrealDB-backed aggregates |
+| SurrealDB entity = hand-authored attributed POCO + partial extensions | [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md) | All SurrealDB-backed aggregates (24 POCOs as of 2026-06-03) |
 | No EF Core migrations on new work | [memory/greenfield-prelaunch-no-compat](.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/greenfield-prelaunch-no-compat.md) | Pre-launch, no customers/data |
 | Integration tests on testcontainer Postgres / SurrealDB | [memory/integration-tests-persistent-postgres](.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/integration-tests-persistent-postgres.md) | All `OASIS.WebAPI.IntegrationTests` |
 | Bridge tier-0 hardening invariants | [api-safety-hardening RESIDUAL-RISK-RUNBOOK §4](conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md) | Bridge value flow |
@@ -117,22 +201,50 @@ migrating the rest.
 
 ---
 
-## 3. SurrealDB convention recap
+## 3. SurrealDB convention recap (C#-first, post-2026-06-03)
 
-Full doc: [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md). One-paragraph version:
+Full doc: [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md).
+Attribute reference: [packages/Oasis.SurrealDb.Client/Schema/ANNOTATIONS.md](packages/Oasis.SurrealDb.Client/Schema/ANNOTATIONS.md).
 
-`.mermaid` schemas are the source of truth. The Roslyn source generator
-at [packages/Oasis.SurrealDb.SourceGen/](packages/Oasis.SurrealDb.SourceGen)
-emits partial POCOs into `OASIS.WebAPI.Generated.SurrealDb.<Entity>`.
-Ergonomic helpers (`Guid` ⇄ `string("N")`, `IDictionary` ⇄ `JsonElement`,
-domain predicates, factories) live as sibling partial-class files in
-the **same namespace** — pattern documented in CONVENTION.md §3.1.
-DTOs and in-memory transients stay in `OASIS.WebAPI.Models.*`. The
-4 hand-written legacy entities (`Wallet`, `BlockchainOperation`,
-`ConsumedVaaRecord`, `IdempotencyRecord`) cut over inside
-`surrealdb-migration` wave-2; the 8 hand-written Quest aggregate
-entities cut over in **Phase E** (see §6) after the mermaid layout
-(Phase B) + generator updates (Phase C) settle.
+**Source of truth:** decorated C# POCOs in
+[Persistence/SurrealDb/Models/](Persistence/SurrealDb/Models/), namespace
+`OASIS.WebAPI.Persistence.SurrealDb.Models`. Each POCO is a `partial class`
+implementing `Oasis.SurrealDb.Client.ISurrealRecord`, carrying
+`[SurrealTable]` + per-field `[Column]` / `[Assert]` / `[Inside]` /
+`[Default]` / `[Index]` attributes plus `[JsonPropertyName]` for the
+wire shape.
+
+**Generated artifacts** live in
+[Persistence/SurrealDb/Generated/](Persistence/SurrealDb/Generated/):
+- `Schemas/<table>.surql` — DDL emitted from the attribute scan
+- `Flowcharts/<slice>.flowchart.mermaid` + `Flowcharts/domain.flowchart.mermaid` — `graph LR` visualization
+- `Dbml/schema.dbml` — DBML diff manifest (opt-in via `OasisSurrealDbOptions.Generation.EmitDbml`)
+
+**Configuration:** [`OasisSurrealDbOptions`](packages/Oasis.SurrealDb.Client/Schema/OasisSurrealDbOptions.cs)
+binds to `SurrealDb` in `appsettings.json` with `Connection` + `Generation`
+subsections. Env overrides (`OASIS_SURREAL_*`) preserved for CLI invocations.
+
+**Adapter / extension code** lives in sibling partial-class files in
+the same namespace — `Persistence/SurrealDb/Models/<Name>.Extensions.cs`
+(domain predicates, Guid conversions) or
+`Persistence/SurrealDb/Models/<Name>.Validation.cs` (FluentValidation
+`OnValidating` hooks). DTOs + in-memory transients stay in
+`OASIS.WebAPI.Models.*`.
+
+**Acceptance gate:** [`AttributePocoByteEquivalenceTests`](tests/OASIS.WebAPI.Tests/Persistence/SurrealDb/AttributePocoByteEquivalenceTests.cs)
+discovers every `[SurrealTable]`-decorated type at runtime, emits its
+`.surql` via the attribute scanner, and asserts byte-identical match
+against `Persistence/SurrealDb/Generated/Schemas/<table>.surql`.
+Adding a new POCO automatically extends coverage; missing or drifted
+golden file fails CI.
+
+**Retired:** the Mermaid pipeline (`MermaidParser`, `MermaidSchemaModel`,
+`MermaidParseException`, `AggregateEmitter`, the entire
+`Oasis.SurrealDb.SourceGen` package, the 24 `.mermaid` source files,
+and the `OASIS_WebAPI.Generated.SurrealDb` namespace) was deleted in
+the 2026-06-03 cleanup. The `.surql` files under the legacy
+`Persistence/SurrealDb/Schemas/` directory were superseded by the
+`Generated/Schemas/` files.
 
 ---
 
@@ -340,7 +452,7 @@ file-level.
 | "What's the right C# pattern for a new SurrealDB entity?" | [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md) |
 | "How do I add a new field to an existing entity?" | The relevant `.mermaid` in [Persistence/SurrealDb/Schemas/source/](Persistence/SurrealDb/Schemas/source/) + rebuild |
 | "Where is the source generator?" | [packages/Oasis.SurrealDb.SourceGen/](packages/Oasis.SurrealDb.SourceGen) |
-| "What does the API surface look like?" | [PROVIDERS.md](PROVIDERS.md) + [API_SYNC.md](API_SYNC.md) |
+| "What does the API surface look like?" | [conductor/tracks/blockchain-devnet-providers/docs/PROVIDERS.md](conductor/tracks/blockchain-devnet-providers/docs/PROVIDERS.md) |
 | "What invariants does the bridge enforce?" | [conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md](conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md) |
 | "What's the quest temporal model?" | [conductor/tracks/quest-temporal-fork-model/ADR.md](conductor/tracks/quest-temporal-fork-model/) |
 | "How are quest tables intended to live in SurrealDB?" | [conductor/tracks/quest-temporal-fork-model/SURREAL-SCHEMA-HINTS.md](conductor/tracks/quest-temporal-fork-model/SURREAL-SCHEMA-HINTS.md) |

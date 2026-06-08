@@ -101,14 +101,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
 
     // ── Connection config (mirrors IntegrationTestBase private statics) ─────────
 
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -174,9 +167,9 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             "-OutputPath", $"\"{backupFile}\"",
             "-Namespace", TestNamespace,
             "-Database", "test",
-            "-Endpoint", SurrealBaseUrl,
-            "-User", SurrealUser,
-            "-Pass", SurrealPass);
+            "-Endpoint", SurrealTestDefaults.Endpoint,
+            "-User", SurrealTestDefaults.User,
+            "-Pass", SurrealTestDefaults.Password);
 
         var (backupExit, backupStdOut, backupStdErr) = RunPwsh(backupArgs);
 
@@ -207,9 +200,9 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             "-InputPath", $"\"{backupFile}\"",
             "-Namespace", TestNamespace,
             "-Database", "test",
-            "-Endpoint", SurrealBaseUrl,
-            "-User", SurrealUser,
-            "-Pass", SurrealPass,
+            "-Endpoint", SurrealTestDefaults.Endpoint,
+            "-User", SurrealTestDefaults.User,
+            "-Pass", SurrealTestDefaults.Password,
             "-Force");
 
         var (restoreExit, restoreStdOut, restoreStdErr) = RunPwsh(restoreArgs);
@@ -263,7 +256,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "wallet",
@@ -297,7 +290,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "bridge_tx",
@@ -335,7 +328,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "nft_ownership",
@@ -375,7 +368,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "operation_log",
@@ -400,7 +393,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "consumed_vaa_ledger",
@@ -428,7 +421,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "idempotency_key_store",
@@ -457,7 +450,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "saga_steps",
@@ -494,7 +487,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "avatar",
@@ -527,7 +520,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "holon",
@@ -562,7 +555,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "star_odk",
@@ -596,7 +589,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "api_key",
@@ -627,7 +620,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "quest_template",
@@ -657,7 +650,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::thing($t, $id) CONTENT $body RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
                     t = "quest_node_template",
@@ -794,9 +787,9 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         if (!await SkipIfSurrealDbUnavailableAsync()) return result;
 
         var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
 
-        using var http = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         http.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         http.DefaultRequestHeaders.Add("NS", TestNamespace);
@@ -839,13 +832,13 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         if (!Directory.Exists(schemaDir)) return;
 
         var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
 
         foreach (var file in Directory.GetFiles(schemaDir, "*.surql").OrderBy(f => f))
         {
             var ddl = await File.ReadAllTextAsync(file);
 
-            using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+            using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
             ddlClient.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
             ddlClient.DefaultRequestHeaders.Add("NS", TestNamespace);

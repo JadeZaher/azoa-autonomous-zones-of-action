@@ -12,14 +12,25 @@ using Oasis.SurrealDb.Client.Transaction;
 namespace Oasis.SurrealDb.Client.Connection;
 
 /// <summary>
-/// HTTP transport for SurrealDB's <c>POST /sql</c> endpoint, per
-/// <see href="https://surrealdb.com/docs/surrealdb/integration/http">the
-/// integration docs</see>. This is the stable, JSON-in / JSON-out path and
-/// is the default transport across wave-1 of the package.
+/// HTTP transport for SurrealDB's <c>POST /rpc</c> endpoint, per
+/// <see href="https://surrealdb.com/docs/surrealdb/integration/rpc">the
+/// integration docs</see>. Uses the <c>query</c> RPC method which accepts
+/// a SurrealQL string plus a structured <c>vars</c> object — unlike the
+/// legacy <c>/sql</c> endpoint, this preserves object/array variable
+/// values (the <c>/sql</c> endpoint's query-string vars stringify
+/// objects, which breaks <c>CONTENT $body</c> patterns on SurrealDB v2+).
+/// <para>
+/// 2026-06-07: pivoted from <c>/sql?$var=&lt;json&gt;</c> to
+/// <c>/rpc</c>+JSON-body vars. Reason: SurrealDB v3 refuses object-typed
+/// vars in <c>CONTENT</c> clauses when supplied via the query-string
+/// shape ("Cannot use '{...}' in a CONTENT clause"). The <c>/rpc</c>
+/// path round-trips them as objects exactly as the SurrealQL execution
+/// engine expects.
+/// </para>
 /// <para>
 /// WebSocket transport is deferred to sub-wave 1.5b — only LIVE queries
 /// require it; everything else (CRUD, multi-statement, transactions) works
-/// fine over HTTP.
+/// fine over HTTP <c>/rpc</c>.
 /// </para>
 /// </summary>
 public sealed class HttpSurrealConnection : ISurrealConnection
@@ -135,10 +146,10 @@ public sealed class HttpSurrealConnection : ISurrealConnection
                 if (!resp.IsSuccessStatusCode)
                 {
                     throw new SurrealProtocolException(
-                        $"SurrealDB /sql HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {Truncate(body)}");
+                        $"SurrealDB /rpc HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {Truncate(body)}");
                 }
 
-                return SurrealResponse.FromJson(body);
+                return ParseRpcResponse(body);
             }
             catch (HttpRequestException ex) when (allowRetries && attempt + 1 < totalAttempts)
             {
@@ -247,10 +258,13 @@ public sealed class HttpSurrealConnection : ISurrealConnection
 
     private HttpRequestMessage BuildRequest(string sql, object? parameters)
     {
-        var req = new HttpRequestMessage(HttpMethod.Post, "sql");
+        var req = new HttpRequestMessage(HttpMethod.Post, "rpc");
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        req.Headers.TryAddWithoutValidation("NS", _ns);
-        req.Headers.TryAddWithoutValidation("DB", _db);
+        // SurrealDB v3 requires the "Surreal-NS" / "Surreal-DB" header names
+        // on the /rpc endpoint; the legacy NS/DB headers are silently
+        // ignored and the server returns NamespaceEmpty.
+        req.Headers.TryAddWithoutValidation("Surreal-NS", _ns);
+        req.Headers.TryAddWithoutValidation("Surreal-DB", _db);
 
         if (!string.IsNullOrEmpty(_options.User))
         {
@@ -259,33 +273,68 @@ public sealed class HttpSurrealConnection : ISurrealConnection
             req.Headers.Authorization = new AuthenticationHeaderValue("Basic", b64);
         }
 
-        // SurrealDB's HTTP /sql endpoint historically accepts the raw query
-        // as text/plain. Parameters are bound via query-string ?<var>=<json>
-        // pairs. This avoids the parameterized-POST shape that 0.x rev'd
-        // through a few different schemas.
-        if (parameters is not null)
+        // RPC envelope: {"id":"<correlation>","method":"query","params":[sql, vars?]}
+        // The params array is positional: [0]=SurrealQL text, [1]=vars object
+        // (omitted when no parameters were supplied). The vars object is
+        // serialized through SurrealJsonOptions.Default so the standard
+        // converters (RecordId / DateTime / TimeSpan / Decimal / enum-as-
+        // string / SchemaName stripper) apply.
+        using var ms = new System.IO.MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(ms))
         {
-            var paramJson = JsonSerializer.Serialize(parameters, SurrealJsonOptions.Default);
-            using var doc = JsonDocument.Parse(paramJson);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            writer.WriteStartObject();
+            writer.WriteString("id", Guid.NewGuid().ToString("N"));
+            writer.WriteString("method", "query");
+            writer.WritePropertyName("params");
+            writer.WriteStartArray();
+            writer.WriteStringValue(sql);
+            if (parameters is not null)
             {
-                var qs = new StringBuilder();
-                foreach (var prop in doc.RootElement.EnumerateObject())
-                {
-                    if (qs.Length > 0) qs.Append('&');
-                    qs.Append(Uri.EscapeDataString(prop.Name));
-                    qs.Append('=');
-                    qs.Append(Uri.EscapeDataString(prop.Value.GetRawText()));
-                }
-                req.RequestUri = new Uri("sql?" + qs.ToString(), UriKind.Relative);
+                JsonSerializer.Serialize(writer, parameters, SurrealJsonOptions.Default);
             }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
         }
 
-        // LOW #L1: the body is raw SurrealQL, not JSON. Surreal v1.5.4 accepts
-        // text/plain on /sql (verified by the LiveHttpRoundTripTests live
-        // round-trip in the IntegrationTests project).
-        req.Content = new StringContent(sql, Encoding.UTF8, "text/plain");
+        req.Content = new ByteArrayContent(ms.ToArray());
+        req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         return req;
+    }
+
+    /// <summary>
+    /// Parse a SurrealDB <c>/rpc</c> envelope (<c>{"id":"...","result":[...]}</c>
+    /// or <c>{"id":"...","error":{"code":N,"message":"..."}}</c>) into the same
+    /// <see cref="SurrealResponse"/> shape as the legacy <c>/sql</c> path,
+    /// preserving downstream consumer expectations.
+    /// </summary>
+    private static SurrealResponse ParseRpcResponse(string body)
+    {
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new SurrealProtocolException(
+                $"Expected SurrealDB /rpc response to be a JSON object; got {root.ValueKind}: {Truncate(body)}");
+        }
+
+        if (root.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.Object)
+        {
+            var code    = err.TryGetProperty("code",    out var c) ? c.ToString() : "?";
+            var message = err.TryGetProperty("message", out var m) ? m.GetString() ?? string.Empty : string.Empty;
+            throw new SurrealProtocolException(
+                $"SurrealDB /rpc returned error code {code}: {message}");
+        }
+
+        if (!root.TryGetProperty("result", out var result))
+        {
+            throw new SurrealProtocolException(
+                $"SurrealDB /rpc response missing 'result' field: {Truncate(body)}");
+        }
+
+        // The 'result' value carries the same statement-array shape the legacy
+        // /sql endpoint returned -- delegate to SurrealResponse.FromJson on its
+        // raw JSON text so all downstream parsing stays in one place.
+        return SurrealResponse.FromJson(result.GetRawText());
     }
 
     private async Task DelayWithJitterAsync(int attempt, CancellationToken ct)

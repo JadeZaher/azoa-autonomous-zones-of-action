@@ -1,0 +1,27 @@
+graph LR
+    %% Slice: bridge
+    %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
+    %% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- flowcharts
+
+    %% Nodes in this slice
+    bridge_tx["bridge_tx: Node"]:::nodeClass
+    consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
+    idempotency_key_store["idempotency_key_store: Node"]:::nodeClass
+    operation_log["operation_log: Node"]:::nodeClass
+    saga_steps["saga_steps: Node"]:::nodeClass
+
+    %% Cross-slice targets (rendered as ghost nodes)
+    avatar["avatar: Node (external)"]:::externalNode
+    holon["holon: Node (external)"]:::externalNode
+    wallet["wallet: Node (external)"]:::externalNode
+
+    %% Edges (outbound from this slice)
+    bridge_tx -- "avatar_id [N:1]" --> avatar
+    consumed_vaa_ledger -- "bridge_transaction_id [N:0..1]" --> bridge_tx
+    operation_log -- "avatar_id [N:0..1]" --> avatar
+    operation_log -- "source_holon_id [N:0..1]" --> holon
+    operation_log -- "target_holon_id [N:0..1]" --> holon
+    operation_log -- "wallet_id [N:0..1]" --> wallet
+
+    classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
+    classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;

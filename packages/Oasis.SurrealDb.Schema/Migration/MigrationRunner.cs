@@ -50,16 +50,48 @@ namespace Oasis.SurrealDb.Schema.Migration
 
         private readonly ISurrealConnection _connection;
         private readonly string _appliedBy;
+        private readonly string? _ensureNamespace;
+        private readonly string? _ensureDatabase;
 
         /// <param name="connection">SurrealDB connection (narrow abstraction).</param>
         /// <param name="appliedBy">
         /// Free-form identity recorded into each <c>schema_migration</c> row.
         /// Defaults to <c>"oasis-surreal/cli"</c>.
         /// </param>
-        public MigrationRunner(ISurrealConnection connection, string? appliedBy = null)
+        /// <param name="ensureNamespace">
+        /// When supplied, the runner issues
+        /// <c>DEFINE NAMESPACE IF NOT EXISTS &lt;name&gt;</c> as the very first
+        /// step of every Apply/Status/Plan call so the connection's scope
+        /// header lands on a namespace that exists. Lets the CLI / DI host
+        /// pass the configured namespace name from
+        /// <c>OasisSurrealDbOptions.Connection.Namespace</c> and have the
+        /// runner create it on first run rather than requiring an out-of-band
+        /// bootstrap step.
+        /// </param>
+        /// <param name="ensureDatabase">
+        /// Companion to <paramref name="ensureNamespace"/>. When BOTH are
+        /// supplied, the runner additionally issues
+        /// <c>USE NS &lt;ns&gt;; DEFINE DATABASE IF NOT EXISTS &lt;db&gt;</c>
+        /// so the namespace's database is bootstrapped too. A database alone
+        /// (no namespace) is rejected because SurrealDB requires the NS scope
+        /// to exist before a DB can be defined inside it.
+        /// </param>
+        public MigrationRunner(
+            ISurrealConnection connection,
+            string? appliedBy = null,
+            string? ensureNamespace = null,
+            string? ensureDatabase = null)
         {
             _connection = connection ?? throw new ArgumentNullException(nameof(connection));
             _appliedBy = string.IsNullOrWhiteSpace(appliedBy) ? "oasis-surreal/cli" : appliedBy!;
+            _ensureNamespace = string.IsNullOrWhiteSpace(ensureNamespace) ? null : ensureNamespace;
+            _ensureDatabase = string.IsNullOrWhiteSpace(ensureDatabase) ? null : ensureDatabase;
+            if (_ensureDatabase != null && _ensureNamespace == null)
+            {
+                throw new ArgumentException(
+                    "ensureDatabase requires ensureNamespace -- SurrealDB cannot DEFINE DATABASE without a parent NS scope.",
+                    nameof(ensureDatabase));
+            }
         }
 
         /// <summary>
@@ -186,16 +218,20 @@ namespace Oasis.SurrealDb.Schema.Migration
         /// for the analyzer (or a future security-review iteration) to take
         /// issue with.
         /// </summary>
+        // IF NOT EXISTS on every DEFINE so the bootstrap is safe to re-run.
+        // The runner calls this on EVERY ApplyAsync invocation (it's the
+        // first thing PlanAsync does), so a non-idempotent bootstrap would
+        // fail every run after the first.
         public const string BootstrapSchemaMigrationDdl =
-            "DEFINE TABLE schema_migration SCHEMAFULL;\n" +
-            "DEFINE FIELD file_name  ON TABLE schema_migration TYPE string\n" +
+            "DEFINE TABLE IF NOT EXISTS schema_migration SCHEMAFULL;\n" +
+            "DEFINE FIELD IF NOT EXISTS file_name  ON TABLE schema_migration TYPE string\n" +
             "    ASSERT $value != NONE AND $value != \"\";\n" +
-            "DEFINE FIELD checksum   ON TABLE schema_migration TYPE string\n" +
+            "DEFINE FIELD IF NOT EXISTS checksum   ON TABLE schema_migration TYPE string\n" +
             "    ASSERT $value != NONE AND $value != \"\";\n" +
-            "DEFINE FIELD applied_at ON TABLE schema_migration TYPE datetime;\n" +
-            "DEFINE FIELD applied_by ON TABLE schema_migration TYPE string\n" +
+            "DEFINE FIELD IF NOT EXISTS applied_at ON TABLE schema_migration TYPE datetime;\n" +
+            "DEFINE FIELD IF NOT EXISTS applied_by ON TABLE schema_migration TYPE string\n" +
             "    ASSERT $value != NONE AND $value != \"\";\n" +
-            "DEFINE INDEX schema_migration_file_name\n" +
+            "DEFINE INDEX IF NOT EXISTS schema_migration_file_name\n" +
             "    ON TABLE schema_migration\n" +
             "    FIELDS file_name\n" +
             "    UNIQUE;\n";
@@ -210,6 +246,28 @@ namespace Oasis.SurrealDb.Schema.Migration
 
         private async Task EnsureTrackingTableAsync(CancellationToken ct)
         {
+            // Ensure namespace + database first when the runner was
+            // configured to manage them. The bootstrap DDL is idempotent on
+            // SurrealDB 1.5+ (DEFINE * IF NOT EXISTS), so this is safe to
+            // re-run on every Apply.
+            if (_ensureNamespace != null)
+            {
+                var sb = new StringBuilder();
+                sb.Append("DEFINE NAMESPACE IF NOT EXISTS ").Append(Sanitize(_ensureNamespace)).Append(";\n");
+                if (_ensureDatabase != null)
+                {
+                    sb.Append("USE NS ").Append(Sanitize(_ensureNamespace)).Append(";\n");
+                    sb.Append("DEFINE DATABASE IF NOT EXISTS ").Append(Sanitize(_ensureDatabase)).Append(";\n");
+                }
+                var nsResult = await _connection.ExecuteAsync(sb.ToString(), ct).ConfigureAwait(false);
+                if (!nsResult.IsOk)
+                {
+                    throw new MigrationApplyException(
+                        _ensureNamespace,
+                        nsResult.Detail ?? "could not ensure namespace/database");
+                }
+            }
+
             var ddl = BuildTrackingTableDdl();
             var result = await _connection.ExecuteAsync(ddl, ct).ConfigureAwait(false);
             if (!result.IsOk)
@@ -301,7 +359,10 @@ namespace Oasis.SurrealDb.Schema.Migration
             var id = Sanitize(file.FileName);
             var nowIso = DateTime.UtcNow.ToString("O");
             var sb = new StringBuilder();
-            sb.Append("UPDATE ").Append(TrackingTable).Append(':').Append(id);
+            // UPSERT (not UPDATE) -- SurrealDB 2.x semantics require UPSERT
+            // to create-or-replace a specific record id. UPDATE on a missing
+            // record returns OK with an empty result and no row is created.
+            sb.Append("UPSERT ").Append(TrackingTable).Append(':').Append(id);
             sb.Append(" CONTENT { ");
             sb.Append("file_name: \"").Append(JsonEscape(file.FileName)).Append("\", ");
             sb.Append("checksum: \"").Append(file.Checksum).Append("\", ");

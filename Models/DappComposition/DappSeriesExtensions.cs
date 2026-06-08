@@ -1,7 +1,7 @@
 using System.Text.Json;
 using OASIS.WebAPI.Core.Json;
 
-namespace OASIS.WebAPI.Generated.SurrealDb;
+namespace OASIS.WebAPI.Persistence.SurrealDb.Models;
 
 /// <summary>
 /// Partial-class accessors for the source-gen'd <see cref="DappSeries"/>
@@ -13,7 +13,7 @@ namespace OASIS.WebAPI.Generated.SurrealDb;
 /// Pattern documented in <c>Persistence/SurrealDb/CONVENTION.md §3.1</c>.
 /// Lives under <c>Models/DappComposition/</c> for organizational locality
 /// with the rest of the dapp-composition surface; the namespace
-/// (<c>OASIS.WebAPI.Generated.SurrealDb</c>) is what matters for the
+/// (<c>OASIS.WebAPI.Persistence.SurrealDb.Models</c>) is what matters for the
 /// partial-class compiler match.
 /// </remarks>
 public partial class DappSeries

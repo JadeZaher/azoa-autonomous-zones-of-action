@@ -39,16 +39,7 @@ public abstract class IntegrationTestBase : IClassFixture<OASISTestWebApplicatio
     /// Format: test_{guid_no_hyphens}  (SurrealDB identifiers can't contain hyphens).
     protected readonly string TestNamespace;
 
-    /// SurrealDB HTTP base URL (read from OASIS_SURREAL_TEST_URL or defaults to port 8442).
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL")
-        ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     /// Lazy HTTP client pointing directly at the SurrealDB container for test
     /// setup/teardown that cannot go through the app layer.
@@ -60,9 +51,9 @@ public abstract class IntegrationTestBase : IClassFixture<OASISTestWebApplicatio
         {
             if (_surrealDirectClient is not null) return _surrealDirectClient;
 
-            _surrealDirectClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+            _surrealDirectClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
             var credentials = Convert.ToBase64String(
-                System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+                System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
             _surrealDirectClient.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
             _surrealDirectClient.DefaultRequestHeaders.Add("NS", TestNamespace);
@@ -142,7 +133,7 @@ public abstract class IntegrationTestBase : IClassFixture<OASISTestWebApplicatio
     private async Task ApplySchemasIfPresentAsync()
     {
         // Invoke Worker C's schema runner if it exists.
-        // Gracefully skips if scripts/surrealdb/apply-schemas.ps1 hasn't produced files yet.
+        // Gracefully skips when Persistence/SurrealDb/Schemas/ is empty (e.g. early-bootstrap test runs).
         var repoRoot = FindRepoRoot();
         if (repoRoot is null) return;
 
@@ -194,9 +185,9 @@ public abstract class IntegrationTestBase : IClassFixture<OASISTestWebApplicatio
         foreach (var header in SurrealClient.DefaultRequestHeaders)
             request.Headers.TryAddWithoutValidation(header.Key, header.Value);
 
-        using var tempClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var tempClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         tempClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         tempClient.DefaultRequestHeaders.Add("NS", TestNamespace);
@@ -215,7 +206,7 @@ public abstract class IntegrationTestBase : IClassFixture<OASISTestWebApplicatio
         {
             using var probe = new HttpClient();
             probe.Timeout = TimeSpan.FromSeconds(2);
-            var r = await probe.GetAsync($"{SurrealBaseUrl}/health");
+            var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
         catch { return false; }

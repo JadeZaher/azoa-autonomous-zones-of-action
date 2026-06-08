@@ -49,7 +49,7 @@ asserting exit 0 = api-safety regression intact; (2) warnings ≤17 / zero-new;
 (3) zero god-interface refs; (4) live `/health` 200 (static-wiring fallback if
 podman/DB unavailable). GREEN on the final state.
 
-## Documented residual debt (tracked, not blocking — see GO-TO-PROD.md / RESIDUAL-RISK-RUNBOOK.md)
+## Documented residual debt (tracked, not blocking — see ../api-safety-hardening/docs/GO-TO-PROD.md / ../api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md)
 - **M2**: store-level persistence test coverage (deleted `EfStorageProviderTests`/`InMemoryStorageProviderTests` not replaced; bodies are proven verbatim lifts) → `surrealdb-migration` / integration suite.
 - **L1**: `ProviderHealthMonitorHealthCheck` vestigial (graceful "no data" Healthy) until a score producer exists → `surrealdb-migration`.
 - **L2**: inline `db.Database.Migrate()` (task 16) — greenfield interim.

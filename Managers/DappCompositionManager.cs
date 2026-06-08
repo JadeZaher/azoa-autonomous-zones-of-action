@@ -1,6 +1,6 @@
 using System.Text.Json;
 using OASIS.WebAPI.Core.Json;
-using OASIS.WebAPI.Generated.SurrealDb;
+using OASIS.WebAPI.Persistence.SurrealDb.Models;
 using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Interfaces.Managers;
 using OASIS.WebAPI.Interfaces.Stores;

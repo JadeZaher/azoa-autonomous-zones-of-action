@@ -3,11 +3,6 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <!-- Emit generated source to obj/Debug/net8.0/generated/... so pass-off
-         section 12 + drift checks can grep the materialized .g.cs files
-         directly without re-running the Roslyn host. -->
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)$(Configuration)\$(TargetFramework)\generated</CompilerGeneratedFilesOutputPath>
   </PropertyGroup>
   <ItemGroup>
     <!-- Quest models are included (no longer excluded) -->
@@ -51,89 +46,36 @@
   </ItemGroup>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       Homebake SurrealDB package suite (replaces SurrealDb.Net + the embedded
-       Roslyn analyzer + the SDK-pin guard).
+       Homebake SurrealDB package suite (post-2026-06-03 C#-first):
 
-       - Oasis.SurrealDb.Client  → normal compile-time reference (HTTP transport,
-                                   query builder, transactions, JSON converters).
-       - Oasis.SurrealDb.Analyzer → analyzer-only reference (SRDB0001 fires as
-                                    a compiler Error on any string-interpolated /
-                                    concatenated SurrealQL outside the safe layer).
-                                    OutputItemType="Analyzer" + ReferenceOutputAssembly="false"
-                                    loads the assembly into Roslyn but NOT as a
-                                    compile-time library.
+       - Oasis.SurrealDb.Client   → runtime: HTTP transport, query builder,
+                                    transactions, JSON converters. Also hosts
+                                    the [SurrealTable]/[Column]/etc. attribute
+                                    surface that POCOs in Persistence/SurrealDb/
+                                    Models/ decorate themselves with.
+       - Oasis.SurrealDb.Schema   → CLI tool + AttributeSchemaScanner +
+                                    SurqlEmitter + MermaidFlowchartEmitter.
+                                    Normal compile-time ref (no analyzer
+                                    contortions; the previous setup loaded it
+                                    as an analyzer to satisfy the deleted
+                                    source-gen).
+       - Oasis.SurrealDb.Analyzer → analyzer-only reference (SRDB0001 catches
+                                    string-interpolated SurrealQL outside the
+                                    safe layer).
 
-       Version is governed by <OasisSurrealDbVersion> in Directory.Build.props
-       (single source of truth; the wave-1 passoff gate asserts that the
-       project ref points at a package whose csproj <Version> matches that
-       property). This replaces the old G4 SurrealDb.Net SDK pin — we own
-       the package, so a "drift" is a local edit, not a NuGet auto-upgrade.
+       The previous Oasis.SurrealDb.SourceGen + AdditionalFiles wiring +
+       OasisSurrealDbModelsNamespace property were removed when the Mermaid
+       pipeline was retired; the C#-first surface is now the only authoring
+       path.
        ═══════════════════════════════════════════════════════════════ -->
   <ItemGroup>
     <ProjectReference
       Include="packages\Oasis.SurrealDb.Client\Oasis.SurrealDb.Client.csproj" />
     <ProjectReference
+      Include="packages\Oasis.SurrealDb.Schema\Oasis.SurrealDb.Schema.csproj" />
+    <ProjectReference
       Include="packages\Oasis.SurrealDb.Analyzer\Oasis.SurrealDb.Analyzer.csproj"
       OutputItemType="Analyzer"
       ReferenceOutputAssembly="false" />
-    <!-- ═══════════════════════════════════════════════════════════════
-         Source generator (surrealdb-schema-source-gen track). Loads as a
-         Roslyn analyzer asset; the AdditionalFiles entry below feeds it
-         the .mermaid schema sources. The generator emits one
-         OASIS.WebAPI.Generated.SurrealDb.<Entity> partial class per
-         entity per .mermaid file into obj/Debug/.../generated/
-         Oasis.SurrealDb.SourceGen/.../<Entity>.g.cs at compile time.
-
-         The Schema package DLL must ALSO load into the Roslyn host (the
-         generator depends on its Mermaid parser at compile time). With
-         ProjectReference + OutputItemType=Analyzer, MSBuild forwards the
-         generator DLL but NOT its transitive runtime dependencies, so
-         the Schema DLL is added directly as an analyzer asset below.
-         Without this, the Roslyn host raises CS8785
-         "FileNotFoundException: Could not load file or assembly
-         Oasis.SurrealDb.Schema" and the generator silently emits no
-         .g.cs files.
-         ═══════════════════════════════════════════════════════════════ -->
-    <ProjectReference
-      Include="packages\Oasis.SurrealDb.SourceGen\Oasis.SurrealDb.SourceGen.csproj"
-      OutputItemType="Analyzer"
-      ReferenceOutputAssembly="false" />
   </ItemGroup>
-
-  <!-- Pull the Schema DLL into the analyzer-load path alongside the
-       generator. Build-order is preserved by a SCHEMA-first ProjectReference
-       (added immediately below) so the .dll exists before the OASIS.WebAPI
-       build step needs it as an analyzer asset. -->
-  <ItemGroup>
-    <ProjectReference
-      Include="packages\Oasis.SurrealDb.Schema\Oasis.SurrealDb.Schema.csproj"
-      ReferenceOutputAssembly="false"
-      PrivateAssets="all" />
-  </ItemGroup>
-  <Target Name="AddSurrealDbSchemaAnalyzer"
-          BeforeTargets="CoreCompile"
-          DependsOnTargets="ResolveProjectReferences">
-    <PropertyGroup>
-      <_OasisSurrealDbSchemaAssemblyPath>$(MSBuildThisFileDirectory)packages\Oasis.SurrealDb.Schema\bin\$(Configuration)\netstandard2.0\Oasis.SurrealDb.Schema.dll</_OasisSurrealDbSchemaAssemblyPath>
-    </PropertyGroup>
-    <ItemGroup Condition="Exists('$(_OasisSurrealDbSchemaAssemblyPath)')">
-      <Analyzer Include="$(_OasisSurrealDbSchemaAssemblyPath)" />
-    </ItemGroup>
-  </Target>
-
-  <!-- Mermaid ER schema sources visible to the source generator. The
-       generator filters by .mermaid extension on AdditionalTextsProvider. -->
-  <ItemGroup>
-    <AdditionalFiles Include="Persistence\SurrealDb\Schemas\source\*.mermaid" />
-  </ItemGroup>
-
-  <!-- Target namespace into which the source generator emits the per-entity
-       POCO classes. Picked up by the generator via AnalyzerConfigOptions.
-       Must match the consumer's `using` directives. -->
-  <ItemGroup>
-    <CompilerVisibleProperty Include="OasisSurrealDbModelsNamespace" />
-  </ItemGroup>
-  <PropertyGroup>
-    <OasisSurrealDbModelsNamespace>OASIS.WebAPI.Generated.SurrealDb</OasisSurrealDbModelsNamespace>
-  </PropertyGroup>
 </Project>

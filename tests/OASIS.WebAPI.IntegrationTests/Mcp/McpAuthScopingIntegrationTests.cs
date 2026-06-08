@@ -94,15 +94,9 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
                     ["Jwt:Key"]      = "super-secret-test-key-that-is-long-enough!",
                     ["Jwt:Issuer"]   = "test",
                     ["Jwt:Audience"] = "test",
-                    ["SurrealDb:Endpoint"] =
-                        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL")
-                        ?? "http://localhost:8442",
-                    ["SurrealDb:Username"] =
-                        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER")
-                        ?? "root",
-                    ["SurrealDb:Password"] =
-                        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS")
-                        ?? "oasis-surreal-root",
+                    ["SurrealDb:Endpoint"] = SurrealTestDefaults.Endpoint,
+                    ["SurrealDb:Username"] = SurrealTestDefaults.User,
+                    ["SurrealDb:Password"] = SurrealTestDefaults.Password,
                     ["OASIS:DefaultProvider"] = "SurrealDb",
                 });
             });

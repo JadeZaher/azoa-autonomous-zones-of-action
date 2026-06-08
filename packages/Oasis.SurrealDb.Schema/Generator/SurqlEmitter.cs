@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 // Oasis.SurrealDb.Schema -- Deterministic .surql generator (Phase 4 task 21).
 //
-// MermaidSchemaModel  ->  SurqlEmitter.Emit  ->  string
+// SchemaModel  ->  SurqlEmitter.Emit  ->  string
 //
 // Determinism contract: same model input always produces the same byte
 // sequence on output. No clock reads, no environment lookups, no
@@ -36,13 +36,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Oasis.SurrealDb.Schema.Mermaid;
+using Oasis.SurrealDb.Schema.Model;
 
 namespace Oasis.SurrealDb.Schema.Generator
 {
     /// <summary>
     /// Emits Surreal-QL DDL (`.surql`) from a parsed
-    /// <see cref="MermaidSchemaModel"/>. Pure function — no I/O, no clocks.
+    /// <see cref="SchemaModel"/>. Pure function — no I/O, no clocks.
     /// </summary>
     public static class SurqlEmitter
     {
@@ -61,10 +61,41 @@ namespace Oasis.SurrealDb.Schema.Generator
         }
 
         /// <summary>
+        /// Emit-time toggles. Currently a single knob: <see cref="Idempotent"/>
+        /// inserts <c>IF NOT EXISTS</c> on every <c>DEFINE TABLE/FIELD/INDEX</c>
+        /// so the .surql can be applied repeatedly to keep the deployed DB in
+        /// sync with the schema (CREATE-or-leave-alone semantics rather than
+        /// CREATE-and-fail-if-present).
+        /// </summary>
+        public readonly struct EmitOptions
+        {
+            /// <summary>
+            /// When true, emit <c>DEFINE TABLE/FIELD/INDEX IF NOT EXISTS</c>.
+            /// Default <c>true</c> -- the canonical sync-friendly form. Set
+            /// to <c>false</c> for first-deploy strictness (every DEFINE
+            /// must hit a fresh namespace).
+            /// </summary>
+            public bool Idempotent { get; }
+
+            public EmitOptions(bool idempotent) { Idempotent = idempotent; }
+
+            /// <summary>Default emit shape (idempotent).</summary>
+            public static EmitOptions Default => new EmitOptions(idempotent: true);
+
+            /// <summary>Strict shape -- DEFINE without IF NOT EXISTS.</summary>
+            public static EmitOptions Strict => new EmitOptions(idempotent: false);
+        }
+
+        /// <summary>
         /// Emit the model as a Surreal-QL string. Always uses Unix-style
         /// newlines and a single trailing newline for byte-stable output.
         /// </summary>
-        public static string Emit(MermaidSchemaModel model)
+        public static string Emit(SchemaModel model) => Emit(model, EmitOptions.Default);
+
+        /// <summary>
+        /// Emit the model as a Surreal-QL string with explicit emit options.
+        /// </summary>
+        public static string Emit(SchemaModel model, EmitOptions options)
         {
             if (model == null) throw new ArgumentNullException(nameof(model));
             var sb = new StringBuilder();
@@ -72,7 +103,7 @@ namespace Oasis.SurrealDb.Schema.Generator
             for (int i = 0; i < model.Entities.Count; i++)
             {
                 if (i > 0) sb.Append('\n');
-                EmitEntity(sb, model.Entities[i]);
+                EmitEntity(sb, model.Entities[i], options);
             }
 
             // Always exactly one trailing newline.
@@ -80,13 +111,31 @@ namespace Oasis.SurrealDb.Schema.Generator
             return sb.ToString();
         }
 
-        private static void EmitEntity(StringBuilder sb, MermaidEntity entity)
+        private static void EmitEntity(StringBuilder sb, SchemaEntity entity, EmitOptions options)
         {
             EmitEntityHeader(sb, entity);
 
-            // DEFINE TABLE
+            // Closed-set enum decls: emit one DEFINE PARAM $<param> VALUE [...]
+            // block per [Inside]-marked field BEFORE the DEFINE TABLE so the
+            // ASSERT clauses below can reference them. Also surface them as
+            // doc comments grouped under the originating C# enum type name.
+            EmitEnumBlocks(sb, entity, options);
+
+            // DEFINE TABLE -- two shapes depending on whether the entity is
+            // a RELATE edge table:
+            //   DEFINE TABLE [IF NOT EXISTS] <name> TYPE RELATION FROM <a> TO <b> [SCHEMAFULL];
+            //   DEFINE TABLE [IF NOT EXISTS] <name> [SCHEMAFULL];
             bool isSchemafull = HasDirective(entity.Annotations, "schemafull");
-            sb.Append("DEFINE TABLE ").Append(entity.Name);
+            var relation = FindAnnotation(entity.Annotations, "relation");
+            sb.Append("DEFINE TABLE ");
+            if (options.Idempotent) sb.Append("IF NOT EXISTS ");
+            sb.Append(entity.Name);
+            if (relation != null)
+            {
+                relation.Arguments.TryGetValue("from", out var fromTbl);
+                relation.Arguments.TryGetValue("to", out var toTbl);
+                sb.Append(" TYPE RELATION FROM ").Append(fromTbl).Append(" TO ").Append(toTbl);
+            }
             if (isSchemafull) sb.Append(" SCHEMAFULL");
             sb.Append(";\n\n");
 
@@ -105,7 +154,7 @@ namespace Oasis.SurrealDb.Schema.Generator
                     lastFieldGroup = group;
                 }
 
-                EmitField(sb, entity.Name, attr);
+                EmitField(sb, entity.Name, attr, options);
             }
 
             // Indexes
@@ -118,15 +167,87 @@ namespace Oasis.SurrealDb.Schema.Generator
                 for (int i = 0; i < entity.Indexes.Count; i++)
                 {
                     if (i > 0) sb.Append('\n');
-                    EmitIndex(sb, entity.Name, entity.Indexes[i]);
+                    EmitIndex(sb, entity.Name, entity.Indexes[i], options);
                 }
             }
         }
 
+        /// <summary>
+        /// Emit <c>DEFINE PARAM $&lt;name&gt; VALUE [...]</c> blocks for every
+        /// closed-set enum field on this entity. Grouped under a "-- Enums:"
+        /// header that also renders the originating C# enum type name (if
+        /// any) so operators can match the DDL back to the POCO surface.
+        /// </summary>
+        private static void EmitEnumBlocks(StringBuilder sb, SchemaEntity entity, EmitOptions options)
+        {
+            var enums = new List<(string Param, string CsEnum, string ValuesEncoded)>();
+            foreach (var attr in entity.Attributes)
+            {
+                foreach (var ann in attr.Annotations)
+                {
+                    if (ann.Directive != "enum") continue;
+                    ann.Arguments.TryGetValue("param", out var paramName);
+                    ann.Arguments.TryGetValue("name", out var enumName);
+                    ann.Arguments.TryGetValue("values", out var values);
+                    if (string.IsNullOrEmpty(paramName) || string.IsNullOrEmpty(values)) continue;
+                    enums.Add((paramName!, enumName ?? string.Empty, values!));
+                }
+            }
+            if (enums.Count == 0) return;
+
+            sb.Append("-- ── Enums ─────────────────────────────────────────────────\n");
+            sb.Append('\n');
+            foreach (var (param, csEnum, valuesEncoded) in enums)
+            {
+                if (!string.IsNullOrEmpty(csEnum))
+                {
+                    sb.Append("-- ").Append(csEnum).Append('\n');
+                }
+                sb.Append("DEFINE PARAM ");
+                if (options.Idempotent) sb.Append("IF NOT EXISTS ");
+                sb.Append('$').Append(param).Append(" VALUE [");
+                var first = true;
+                foreach (var v in DecodeValues(valuesEncoded))
+                {
+                    if (!first) sb.Append(", ");
+                    first = false;
+                    sb.Append('"').Append(EscapeSurqlString(v)).Append('"');
+                }
+                sb.Append("];\n");
+            }
+            sb.Append('\n');
+        }
+
+        private static IEnumerable<string> DecodeValues(string encoded)
+        {
+            // Reverse of AttributeSchemaScanner.EncodeEnumValue: split on
+            // unescaped commas, then un-escape each segment.
+            var sb = new StringBuilder();
+            for (int i = 0; i < encoded.Length; i++)
+            {
+                char c = encoded[i];
+                if (c == '\\' && i + 1 < encoded.Length)
+                {
+                    sb.Append(encoded[i + 1]);
+                    i++;
+                }
+                else if (c == ',')
+                {
+                    yield return sb.ToString();
+                    sb.Clear();
+                }
+                else sb.Append(c);
+            }
+            if (sb.Length > 0) yield return sb.ToString();
+        }
+
+        private static string EscapeSurqlString(string s)
+            => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
         private static string DefaultIndexSection()
             => "── Indexes ──────────────────────────────────────────────────";
 
-        private static void EmitEntityHeader(StringBuilder sb, MermaidEntity entity)
+        private static void EmitEntityHeader(StringBuilder sb, SchemaEntity entity)
         {
             sb.Append("-- ============================================================\n");
             sb.Append("-- Table: ").Append(entity.Name).Append('\n');
@@ -154,12 +275,21 @@ namespace Oasis.SurrealDb.Schema.Generator
             sb.Append('\n');
         }
 
-        private static void EmitField(StringBuilder sb, string table, MermaidAttribute attr)
+        private static void EmitField(StringBuilder sb, string table, SchemaAttribute attr, EmitOptions options)
         {
-            // Type: preserved verbatim from .mermaid (so `option<string>` flows through).
-            sb.Append("DEFINE FIELD ").Append(attr.Name)
-              .Append(" ON TABLE ").Append(table)
-              .Append(" TYPE ").Append(attr.Type);
+            // DEFINE FIELD [IF NOT EXISTS] <name> ON TABLE <table> TYPE <token> [FLEXIBLE]
+            // Type preserved verbatim (so `option<string>` flows through).
+            // FLEXIBLE modifier (driven by @surreal.flexible annotation) sits
+            // AFTER the TYPE keyword + token per SurrealDB DDL grammar
+            // (verified against a live SurrealDB 1.5+ instance -- earlier
+            // versions tolerated FLEXIBLE-before-TYPE; current parsers do not).
+            bool flexible = HasDirective(attr.Annotations, "flexible");
+            sb.Append("DEFINE FIELD ");
+            if (options.Idempotent) sb.Append("IF NOT EXISTS ");
+            sb.Append(attr.Name)
+              .Append(" ON TABLE ").Append(table);
+            sb.Append(" TYPE ").Append(attr.Type);
+            if (flexible) sb.Append(" FLEXIBLE");
 
             // ASSERT clause (from @surreal.assert "<expr>").
             var assertExpr = FirstArg(attr.Annotations, "assert");
@@ -178,9 +308,15 @@ namespace Oasis.SurrealDb.Schema.Generator
             sb.Append(";\n");
         }
 
-        private static void EmitIndex(StringBuilder sb, string table, MermaidIndex idx)
+        private static void EmitIndex(StringBuilder sb, string table, SchemaIndex idx, EmitOptions options)
         {
-            sb.Append("DEFINE INDEX ").Append(idx.Name).Append('\n');
+            // DEFINE INDEX [IF NOT EXISTS] <name>
+            //     ON TABLE <table>
+            //     FIELDS <f1>, <f2>
+            //     [UNIQUE];
+            sb.Append("DEFINE INDEX ");
+            if (options.Idempotent) sb.Append("IF NOT EXISTS ");
+            sb.Append(idx.Name).Append('\n');
             sb.Append("    ON TABLE ").Append(table).Append('\n');
             sb.Append("    FIELDS ").Append(string.Join(", ", idx.Fields));
             if (idx.IsUnique) sb.Append('\n').Append("    UNIQUE");
@@ -188,7 +324,13 @@ namespace Oasis.SurrealDb.Schema.Generator
         }
 
         // ── helpers ───────────────────────────────────────────────────────
-        private static bool HasDirective(IReadOnlyList<MermaidAnnotation> anns, string directive)
+        private static SchemaAnnotation? FindAnnotation(IReadOnlyList<SchemaAnnotation> anns, string directive)
+        {
+            foreach (var a in anns) if (a.Directive == directive) return a;
+            return null;
+        }
+
+        private static bool HasDirective(IReadOnlyList<SchemaAnnotation> anns, string directive)
         {
             foreach (var a in anns) if (a.Directive == directive) return true;
             return false;
@@ -200,7 +342,7 @@ namespace Oasis.SurrealDb.Schema.Generator
         /// Bare-token directives (e.g. <c>@surreal.aggregate Wallet</c>) return the
         /// raw arguments string; quoted directives return the unescaped value.
         /// </summary>
-        private static string? FirstArg(IReadOnlyList<MermaidAnnotation> anns, string directive)
+        private static string? FirstArg(IReadOnlyList<SchemaAnnotation> anns, string directive)
         {
             foreach (var a in anns)
             {
@@ -209,7 +351,7 @@ namespace Oasis.SurrealDb.Schema.Generator
             return null;
         }
 
-        private static IEnumerable<string> AllArgs(IReadOnlyList<MermaidAnnotation> anns, string directive)
+        private static IEnumerable<string> AllArgs(IReadOnlyList<SchemaAnnotation> anns, string directive)
         {
             foreach (var a in anns)
             {
@@ -221,7 +363,7 @@ namespace Oasis.SurrealDb.Schema.Generator
             }
         }
 
-        private static string? ExtractPrimaryValue(MermaidAnnotation a)
+        private static string? ExtractPrimaryValue(SchemaAnnotation a)
         {
             // If the arguments dict has a single key with an empty value, that
             // key is the positional bare-token value (e.g. `@surreal.schemafull`).

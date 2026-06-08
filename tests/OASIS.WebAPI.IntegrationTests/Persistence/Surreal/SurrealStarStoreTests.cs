@@ -28,14 +28,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 {
     // ── Connection config ─────────────────────────────────────────────────────
 
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     // ── Per-instance state ────────────────────────────────────────────────────
 
@@ -53,14 +46,14 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = _testNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         _connection = new HttpSurrealConnection(http, options);
         var executor = new DefaultSurrealExecutor(_connection);
         _store = new SurrealStarStore(executor);
@@ -82,7 +75,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Upsert_ThenGetById_RoundTrips()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var holonId1 = Guid.NewGuid();
         var holonId2 = Guid.NewGuid();
@@ -136,7 +129,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetById_NotFound_ReturnsError()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var result = await _store.GetByIdAsync(Guid.NewGuid());
 
@@ -149,7 +142,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Upsert_UpdatePath_OverwritesExistingRecord()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var id = Guid.NewGuid();
 
@@ -192,7 +185,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Delete_RemovesRecord()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var odk = new STARODK
         {
@@ -220,7 +213,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Delete_NotFound_ReturnsError()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var result = await _store.DeleteAsync(Guid.NewGuid());
 
@@ -233,7 +226,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetAll_ReturnsAllInsertedStars()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var odk1 = new STARODK
         {
@@ -273,7 +266,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Upsert_PreservesBoundHolonIdsAndNullableFields()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         // Record with empty list and all nullables null.
         var odkNulls = new STARODK
@@ -347,7 +340,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         try
         {
             using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            var r = await probe.GetAsync($"{SurrealBaseUrl}/health");
+            var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -355,9 +348,9 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 
     private async Task BootstrapSchemaAsync()
     {
-        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
@@ -390,9 +383,9 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 
     private async Task DropNamespaceAsync()
     {
-        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);

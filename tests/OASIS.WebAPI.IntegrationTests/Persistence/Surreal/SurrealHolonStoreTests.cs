@@ -32,14 +32,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
 {
     // ── Connection config ─────────────────────────────────────────────────────
 
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     // ── Per-instance state ────────────────────────────────────────────────────
 
@@ -57,14 +50,14 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
 
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = _testNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         _connection = new HttpSurrealConnection(http, options);
         var executor = new DefaultSurrealExecutor(_connection);
         _store = new SurrealHolonStore(executor);
@@ -86,7 +79,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Upsert_ThenGetById_RoundTrips()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var peerId1 = Guid.NewGuid();
         var peerId2 = Guid.NewGuid();
@@ -147,7 +140,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetById_NotFound_ReturnsError()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var result = await _store.GetByIdAsync(Guid.NewGuid());
 
@@ -160,7 +153,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Upsert_UpdatePath_OverwritesExistingRecord()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var id       = Guid.NewGuid();
         var avatarId = Guid.NewGuid();
@@ -207,7 +200,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Delete_RemovesRecord()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var holon = new Holon
         {
@@ -235,7 +228,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Delete_NotFound_ReturnsError()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var result = await _store.DeleteAsync(Guid.NewGuid());
 
@@ -248,7 +241,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task QueryAsync_NoFilters_ReturnsAll()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var h1 = new Holon
         {
@@ -281,7 +274,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task QueryAsync_ByAvatarId_FiltersCorrectly()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var targetAvatar = Guid.NewGuid();
         var otherAvatar  = Guid.NewGuid();
@@ -319,7 +312,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task QueryAsync_ByProviderName_FiltersCorrectly()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var providerName = $"Prov_{Guid.NewGuid():N}";
 
@@ -355,7 +348,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task QueryAsync_ByParentHolonId_FiltersCorrectly()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var parentId = Guid.NewGuid();
 
@@ -391,7 +384,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task QueryAsync_MultipleFilters_AreAndCombined()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var avatarId     = Guid.NewGuid();
         var providerName = $"ProvAnd_{Guid.NewGuid():N}";
@@ -446,7 +439,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
         try
         {
             using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            var r = await probe.GetAsync($"{SurrealBaseUrl}/health");
+            var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -454,9 +447,9 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
 
     private async Task BootstrapSchemaAsync()
     {
-        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
@@ -490,9 +483,9 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
 
     private async Task DropNamespaceAsync()
     {
-        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);

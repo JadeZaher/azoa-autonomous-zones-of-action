@@ -35,6 +35,14 @@
     <PackageReference Include="System.Text.Json" Version="8.0.5" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
   </ItemGroup>
 
+  <!-- The C#-first attribute scanner (Generator/AttributeSchemaScanner.cs)
+       reflects over POCOs decorated with attributes declared in
+       Oasis.SurrealDb.Client. Pulled in as a normal project reference so
+       both netstandard2.0 and net8.0 builds can resolve the attribute types. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Oasis.SurrealDb.Client\Oasis.SurrealDb.Client.csproj" />
+  </ItemGroup>
+
   <PropertyGroup>
     <PackageId>Oasis.SurrealDb.Schema</PackageId>
     <Version>0.1.0</Version>

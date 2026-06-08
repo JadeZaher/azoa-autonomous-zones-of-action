@@ -23,8 +23,8 @@ public sealed class SurrealQueryRelateTests
                             .WithContent(new { weight = 5, created_at = "2026-05-21" });
 
         q.Sql.Should().Be(
-            "RELATE type::thing($_from_t, $_from_id) -> follows -> " +
-            "type::thing($_to_t, $_to_id) CONTENT $_content");
+            "RELATE type::record($_from_t, $_from_id) -> follows -> " +
+            "type::record($_to_t, $_to_id) CONTENT $_content");
 
         q.Params.Should().ContainKey("_from_t").WhoseValue.Should().Be("avatar");
         q.Params.Should().ContainKey("_from_id").WhoseValue.Should().Be("alice");

@@ -6,6 +6,15 @@
 // (netstandard2.0 cannot host `static abstract` members on interfaces).
 // `RecordId<T>` and `SurrealQuery<T>` rely on this marker + a runtime
 // SchemaName lookup to bind their type parameter to a concrete table name.
+//
+// 2026-06: a config-level SchemaNameRegistry (see SurrealSchemaRegistry)
+// now lets POCOs that carry `[SurrealTable]` skip implementing this
+// property entirely -- the registry reflects the attribute on first
+// access and caches the lookup. The instance property survives for back-
+// compat with hand-authored adapter POCOs that don't carry the attribute
+// (e.g. the inline shapes in Providers/Stores/Surreal/*.cs). At serialize
+// time the SurrealJsonOptions modifier strips this property regardless of
+// source, so the table name is never accidentally sent over the wire.
 
 namespace Oasis.SurrealDb.Client
 {
@@ -29,7 +38,12 @@ namespace Oasis.SurrealDb.Client
     {
         /// <summary>
         /// The SurrealDB table this record type maps to (e.g. <c>"wallet"</c>).
-        /// Generated implementations return a string constant.
+        /// Implementations typically return a string constant. POCOs that
+        /// also carry the <c>[SurrealTable]</c> attribute can return the
+        /// same value (or skip this property entirely if the registry is
+        /// the only consumer -- the
+        /// <c>SurrealSchemaRegistry.For&lt;T&gt;()</c> lookup reflects the
+        /// attribute when the property is absent).
         /// </summary>
         string SchemaName { get; }
     }

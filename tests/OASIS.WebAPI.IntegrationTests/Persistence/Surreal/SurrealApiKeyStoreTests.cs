@@ -17,14 +17,7 @@ namespace OASIS.WebAPI.IntegrationTests.Persistence.Surreal;
 /// </summary>
 public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
 {
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     private readonly string _testNamespace = $"test{Guid.NewGuid():N}";
     private SurrealApiKeyStore _store = null!;
@@ -38,14 +31,14 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
 
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = _testNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass,
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password,
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         _connection = new HttpSurrealConnection(http, options);
         var executor = new DefaultSurrealExecutor(_connection);
         _store = new SurrealApiKeyStore(executor);
@@ -63,7 +56,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Create_PersistsApiKey_RetrievableByHash()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var key = NewApiKey(keyHash: $"hash-{Guid.NewGuid():N}");
 
@@ -80,7 +73,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetByHash_UnknownHash_ReturnsNull()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var hit = await _store.GetByHashAsync($"missing-{Guid.NewGuid():N}", CancellationToken.None);
         hit.Should().BeNull();
@@ -89,7 +82,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Create_DuplicateHash_ThrowsOnUniqueViolation()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var sharedHash = $"dup-{Guid.NewGuid():N}";
         await _store.CreateAsync(NewApiKey(keyHash: sharedHash), CancellationToken.None);
@@ -104,7 +97,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task ListByAvatar_ReturnsOwnedKeysOnly_NewestFirst()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
         var other = Guid.NewGuid();
@@ -128,7 +121,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetByIdForAvatar_WrongAvatar_ReturnsNull()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
         var intruder = Guid.NewGuid();
@@ -146,7 +139,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Revoke_SetsRevokedAtAndIsActiveFalse_ReturnsTrue()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
         var key = NewApiKey(avatarId: owner);
@@ -166,7 +159,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Revoke_WrongAvatar_ReturnsFalse_RowUnchanged()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
         var intruder = Guid.NewGuid();
@@ -185,7 +178,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Delete_HardRemovesRow_ReturnsTrue()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
         var key = NewApiKey(avatarId: owner);
@@ -201,7 +194,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task TouchLastUsedAsync_NeverThrows_EvenForMissingRow()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         // Contract: must not throw under any failure mode. Verify with a row
         // that does not exist — the UPDATE matches zero rows but the call must
@@ -215,7 +208,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task TouchLastUsedAsync_UpdatesTimestamp_OnExistingRow()
     {
-        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealBaseUrl}");
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
         var key = NewApiKey(avatarId: owner);
@@ -252,7 +245,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
         try
         {
             using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            var r = await probe.GetAsync($"{SurrealBaseUrl}/health");
+            var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -264,9 +257,9 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     /// </summary>
     private async Task BootstrapSchemaAsync()
     {
-        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
@@ -299,9 +292,9 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
 
     private async Task DropNamespaceAsync()
     {
-        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);

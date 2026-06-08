@@ -3,7 +3,7 @@ using System.Text;
 using Oasis.SurrealDb.Client.Query;
 using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Models.Idempotency;
-using GeneratedPoco = OASIS.WebAPI.Generated.SurrealDb.IdempotencyKeyStore;
+using GeneratedPoco = OASIS.WebAPI.Persistence.SurrealDb.Models.IdempotencyKeyStore;
 
 namespace OASIS.WebAPI.Core.Idempotency;
 
@@ -83,7 +83,7 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
         // response[0].IsOk == false rather than thrown — this is the C5 fix.
         var content = BuildContentDict(recordId, key, operationType, now);
         var insertQ = SurrealQuery
-            .Of("CREATE type::thing($_t, $_id) CONTENT $_content RETURN AFTER")
+            .Of("CREATE type::record($_t, $_id) CONTENT $_content RETURN AFTER")
             .WithParam("_t",       Table)
             .WithParam("_id",      recordId)
             .WithParam("_content", content);
@@ -153,7 +153,7 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
         // for multi-field state transitions. All values are bound as $params —
         // no interpolation.
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) WHERE state = $_expected SET state = $_next, result_payload = $_payload, updated_at = $_now RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) WHERE state = $_expected SET state = $_next, result_payload = $_payload, updated_at = $_now RETURN AFTER")
             .WithParam("_t",        Table)
             .WithParam("_id",       recordId)
             .WithParam("_expected", "InProgress")
@@ -190,7 +190,7 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
         var recordId = DeterministicId(key);
 
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) WHERE state = $_expected SET state = $_next, error = $_error, updated_at = $_now RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) WHERE state = $_expected SET state = $_next, error = $_error, updated_at = $_now RETURN AFTER")
             .WithParam("_t",        Table)
             .WithParam("_id",       recordId)
             .WithParam("_expected", "InProgress")
@@ -245,7 +245,7 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
     private async Task<GeneratedPoco?> FetchByRecordIdAsync(string recordId, CancellationToken ct)
     {
         var q = SurrealQuery
-            .Of("SELECT * FROM type::thing($_t, $_id)")
+            .Of("SELECT * FROM type::record($_t, $_id)")
             .WithParam("_t",  Table)
             .WithParam("_id", recordId);
 

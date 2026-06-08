@@ -163,7 +163,7 @@ public sealed class SurrealHolonStore : IHolonStore
             var surrId = poco.Id;
 
             var q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    HolonPoco.HolonTable)
                 .WithParam("_id",   surrId)
                 .WithParam("_body", poco);

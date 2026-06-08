@@ -36,12 +36,7 @@ namespace OASIS.WebAPI.IntegrationTests.Mcp;
 [Trait("Category", "Mcp")]
 public sealed class McpVectorSearchTest : IntegrationTestBase
 {
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     public McpVectorSearchTest(OASISTestWebApplicationFactory factory) : base(factory) { }
 
@@ -283,13 +278,13 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
     {
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = TestNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password
         };
-        var http       = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        var http       = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var connection = new HttpSurrealConnection(http, options);
         return new DefaultSurrealExecutor(connection);
     }

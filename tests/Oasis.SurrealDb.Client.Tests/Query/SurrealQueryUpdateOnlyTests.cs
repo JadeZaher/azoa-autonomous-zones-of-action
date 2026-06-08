@@ -25,7 +25,7 @@ public sealed class SurrealQueryUpdateOnlyTests
                             .Set("status", "complete");
 
         q.Sql.Should().Be(
-            "UPDATE type::thing($_t, $_id) " +
+            "UPDATE type::record($_t, $_id) " +
             "WHERE status = $_w_status SET status = $_s_status " +
             "RETURN AFTER");
 

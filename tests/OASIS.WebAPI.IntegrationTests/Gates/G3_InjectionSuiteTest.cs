@@ -57,7 +57,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
         // b) SurrealQL parameter injection
         "$id; DELETE wallet;",
         // c) SurrealQL function injection
-        "type::thing(\"wallet\", \"; DROP NAMESPACE test;--\")",
+        "type::record(\"wallet\", \"; DROP NAMESPACE test;--\")",
         // d) Unicode fullwidth apostrophe (U+FF07)
         "＇ OR 1=1",
         // e) NUL byte
@@ -67,14 +67,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
     ];
 
     // SurrealDB direct-connection config (mirrors SurrealWalletStoreTests pattern)
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     public G3_InjectionSuiteTest(OASISTestWebApplicationFactory factory)
         : base(factory)
@@ -344,9 +337,9 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
     {
         try
         {
-            using var countClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+            using var countClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
             var credentials = Convert.ToBase64String(
-                System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+                System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
             countClient.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
             countClient.DefaultRequestHeaders.Add("NS", TestNamespace);
@@ -396,13 +389,13 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
     {
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = TestNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password
         };
-        var http       = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        var http       = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var connection = new HttpSurrealConnection(http, options);
         var executor   = new DefaultSurrealExecutor(connection);
         return new SurrealWalletStore(executor);

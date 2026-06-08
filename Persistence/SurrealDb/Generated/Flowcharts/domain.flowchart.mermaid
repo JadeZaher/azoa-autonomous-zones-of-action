@@ -1,0 +1,110 @@
+graph LR
+    %% OASIS Sleek -- domain data model (master flowchart)
+    %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
+    %% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- flowcharts
+    %% 
+    %% Slices in this diagram:
+    %%   bridge: bridge_tx, consumed_vaa_ledger, idempotency_key_store, operation_log, saga_steps
+    %%   dapp_composition: dapp_series, dapp_series_quest
+    %%   identity: api_key, avatar, holon, star_odk
+    %%   quest: executes, forked_from, quest, quest_dependency, quest_edge, quest_node, quest_node_execution, quest_run
+    %%   quest_templates: quest_node_template, quest_template
+    %%   wallet_nft: nft_ownership, swap_state, wallet
+    %% 
+    %% Enums:
+    %%   bridge_tx.mode: Trusted, Wormhole  (BridgeTx.ModeKind)
+    %%   bridge_tx.status: Initiated, Locked, AwaitingVAA, VAAReady, Redeeming, Completed, Failed, Refunded, Reversing  (BridgeTx.StatusKind)
+    %%   dapp_series.status: Draft, Building, Ready, Deployed, Archived  (DappSeries.StatusKind)
+    %%   idempotency_key_store.state: InProgress, Completed, Failed  (IdempotencyKeyStore.StateKind)
+    %%   operation_log.status: Pending, Unknown, Failed, Completed, AwaitingSignature, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (OperationLog.StatusKind)
+    %%   quest_dependency.dependency_type: Required, Optional  (QuestDependency.QuestDependencyTypeKind)
+    %%   quest_edge.edge_type: Control, Conditional  (QuestEdge.QuestEdgeTypeKind)
+    %%   quest_node.node_type: HolonCreate, HolonUpdate, HolonDelete, HolonGet, HolonQuery, HolonInteract, HolonGetChildren, HolonGetPeers, HolonGetAncestors, HolonGetDescendants, HolonPropagate, HolonCompose, HolonClone, HolonMoveSubtree, NftMint, NftTransfer, NftBurn, NftGet, NftQuery, NftGetMetadata, WalletCreate, WalletUpdate, WalletDelete, WalletGet, WalletQuery, WalletSetDefault, WalletGetPortfolio, StarGenerate, StarDeploy, Search, AvatarNFTGetComposite, BlockchainExecute, Condition, ComposeOutputs  (QuestNode.QuestNodeTypeKind)
+    %%   quest_node_execution.state: Pending, Running, Succeeded, Failed, Skipped, Cancelled  (QuestNodeExecution.QuestNodeState)
+    %%   quest_node_template.node_type: HolonCreate, HolonUpdate, HolonDelete, HolonGet, HolonQuery, HolonInteract, HolonGetChildren, HolonGetPeers, HolonGetAncestors, HolonGetDescendants, HolonPropagate, HolonCompose, HolonClone, HolonMoveSubtree, NftMint, NftTransfer, NftBurn, NftGet, NftQuery, NftGetMetadata, WalletCreate, WalletUpdate, WalletDelete, WalletGet, WalletQuery, WalletSetDefault, WalletGetPortfolio, StarGenerate, StarDeploy, Search, AvatarNFTGetComposite, BlockchainExecute, Condition, ComposeOutputs  (QuestNodeTemplate.NodeTypeKind)
+    %%   quest_run.status: Pending, Running, Succeeded, Failed, Forked, Cancelled  (QuestRun.QuestRunStatusKind)
+    %%   saga_steps.status: Pending, InProgress, Completed, Compensating, DeadLettered  (SagaSteps.StepStatus)
+    %%   swap_state.status: Pending, Unknown, Failed, Completed, AwaitingSignature, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (SwapState.StatusKind)
+    %%   wallet.wallet_type: External, Platform  (Wallet.WalletTypeKind)
+
+    subgraph slice_bridge ["bridge"]
+        bridge_tx["bridge_tx: Node"]:::nodeClass
+        consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
+        idempotency_key_store["idempotency_key_store: Node"]:::nodeClass
+        operation_log["operation_log: Node"]:::nodeClass
+        saga_steps["saga_steps: Node"]:::nodeClass
+    end
+
+    subgraph slice_dapp_composition ["dapp_composition"]
+        dapp_series["dapp_series: Node"]:::nodeClass
+        dapp_series_quest["dapp_series_quest: Node"]:::nodeClass
+    end
+
+    subgraph slice_identity ["identity"]
+        api_key["api_key: Node"]:::nodeClass
+        avatar["avatar: Node"]:::nodeClass
+        holon["holon: Node"]:::nodeClass
+        star_odk["star_odk: Node"]:::nodeClass
+    end
+
+    subgraph slice_quest ["quest"]
+        executes["executes: Node"]:::nodeClass
+        forked_from["forked_from: Node"]:::nodeClass
+        quest["quest: Node"]:::nodeClass
+        quest_dependency["quest_dependency: Node"]:::nodeClass
+        quest_edge["quest_edge: Node"]:::nodeClass
+        quest_node["quest_node: Node"]:::nodeClass
+        quest_node_execution["quest_node_execution: Node"]:::nodeClass
+        quest_run["quest_run: Node"]:::nodeClass
+    end
+
+    subgraph slice_quest_templates ["quest_templates"]
+        quest_node_template["quest_node_template: Node"]:::nodeClass
+        quest_template["quest_template: Node"]:::nodeClass
+    end
+
+    subgraph slice_wallet_nft ["wallet_nft"]
+        nft_ownership["nft_ownership: Node"]:::nodeClass
+        swap_state["swap_state: Node"]:::nodeClass
+        wallet["wallet: Node"]:::nodeClass
+    end
+
+    %% Edges (slice-local + cross-slice)
+    api_key -- "avatar_id [N:1]" --> avatar
+    bridge_tx -- "avatar_id [N:1]" --> avatar
+    consumed_vaa_ledger -- "bridge_transaction_id [N:0..1]" --> bridge_tx
+    dapp_series -- "avatar_id [N:1]" --> avatar
+    dapp_series -- "star_odk_id [N:0..1]" --> star_odk
+    dapp_series_quest -- "dapp_series_id [N:1]" --> dapp_series
+    dapp_series_quest -- "quest_id [N:1]" --> quest
+    holon -- "avatar_id [N:0..1]" --> avatar
+    holon -- "parent_holon_id [N:0..1]" --> holon
+    nft_ownership -- "avatar_id [N:1]" --> avatar
+    operation_log -- "avatar_id [N:0..1]" --> avatar
+    operation_log -- "source_holon_id [N:0..1]" --> holon
+    operation_log -- "target_holon_id [N:0..1]" --> holon
+    operation_log -- "wallet_id [N:0..1]" --> wallet
+    quest -- "avatar_id [N:1]" --> avatar
+    quest -- "dapp_series_id [N:0..1]" --> dapp_series
+    quest -- "template_id [N:0..1]" --> quest_template
+    quest_dependency -- "depends_on_quest_id [N:1]" --> quest
+    quest_dependency -- "quest_id [N:1]" --> quest
+    quest_dependency -- "depends_on_node_id [N:0..1]" --> quest_node
+    quest_edge -- "quest_id [N:1]" --> quest
+    quest_edge -- "source_node_id [N:1]" --> quest_node
+    quest_edge -- "target_node_id [N:1]" --> quest_node
+    quest_node -- "quest_id [N:1]" --> quest
+    quest_node -- "node_template_id [N:0..1]" --> quest_node_template
+    quest_node_execution -- "node_id [N:1]" --> quest_node
+    quest_node_execution -- "run_id [N:1]" --> quest_run
+    quest_run -- "avatar_id [N:1]" --> avatar
+    quest_run -- "quest_id [N:1]" --> quest
+    quest_run -- "forked_at_node_id [N:0..1]" --> quest_node
+    quest_run -- "executes [N:M]" --> quest_node_execution
+    quest_run -- "forked_from [N:M]" --> quest_run
+    quest_run -- "parent_run_id [N:0..1]" --> quest_run
+    star_odk -- "avatar_id [N:0..1]" --> avatar
+    swap_state -- "avatar_id [N:1]" --> avatar
+    wallet -- "avatar_id [N:1]" --> avatar
+
+    classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;

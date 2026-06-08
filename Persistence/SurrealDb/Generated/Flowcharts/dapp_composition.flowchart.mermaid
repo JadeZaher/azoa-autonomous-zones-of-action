@@ -1,0 +1,22 @@
+graph LR
+    %% Slice: dapp_composition
+    %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
+    %% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- flowcharts
+
+    %% Nodes in this slice
+    dapp_series["dapp_series: Node"]:::nodeClass
+    dapp_series_quest["dapp_series_quest: Node"]:::nodeClass
+
+    %% Cross-slice targets (rendered as ghost nodes)
+    avatar["avatar: Node (external)"]:::externalNode
+    quest["quest: Node (external)"]:::externalNode
+    star_odk["star_odk: Node (external)"]:::externalNode
+
+    %% Edges (outbound from this slice)
+    dapp_series -- "avatar_id [N:1]" --> avatar
+    dapp_series -- "star_odk_id [N:0..1]" --> star_odk
+    dapp_series_quest -- "dapp_series_id [N:1]" --> dapp_series
+    dapp_series_quest -- "quest_id [N:1]" --> quest
+
+    classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
+    classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;

@@ -40,14 +40,14 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
 
             // First call: schema_migration table DDL.
             conn.SentSql.Should().NotBeEmpty();
-            conn.SentSql[0].Should().Contain("DEFINE TABLE schema_migration SCHEMAFULL");
+            conn.SentSql[0].Should().Contain("DEFINE TABLE IF NOT EXISTS schema_migration SCHEMAFULL");
             conn.SentSql[0].Should().Contain("file_name");
             conn.SentSql[0].Should().Contain("checksum");
 
             // Then: each file's content was sent + a recording UPDATE.
             conn.SentSql.Should().Contain(s => s == "DEFINE TABLE wallet SCHEMAFULL;");
             conn.SentSql.Should().Contain(s => s == "DEFINE TABLE bridge_tx SCHEMAFULL;");
-            conn.SentSql.Where(s => s.StartsWith("UPDATE schema_migration:")).Should().HaveCount(2);
+            conn.SentSql.Where(s => s.StartsWith("UPSERT schema_migration:")).Should().HaveCount(2);
         }
 
         [Fact]
@@ -62,7 +62,7 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
             // Capture the count of DDL writes (file content + recording UPDATE).
             int writesAfterFirstApply = conn.SentSql.Count(s =>
                 s.Contains("DEFINE TABLE wallet")
-                || s.StartsWith("UPDATE schema_migration:"));
+                || s.StartsWith("UPSERT schema_migration:"));
 
             // Simulate that the server now has the record. RecordingConnection
             // exposes its applied rows to itself via its in-memory store.
@@ -74,7 +74,7 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
 
             plan2.Single().Action.Should().Be(MigrationAction.Skip);
             conn.SentSql.Should().NotContain(s => s.Contains("DEFINE TABLE wallet"));
-            conn.SentSql.Should().NotContain(s => s.StartsWith("UPDATE schema_migration:"));
+            conn.SentSql.Should().NotContain(s => s.StartsWith("UPSERT schema_migration:"));
         }
 
         [Fact]
@@ -117,7 +117,7 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
             plan.Should().ContainSingle().Which.Action.Should().Be(MigrationAction.ChecksumMismatch);
             // The DDL was sent and the row was overwritten.
             conn.SentSql.Should().Contain(s => s.Contains("DEFINE TABLE wallet"));
-            conn.SentSql.Should().Contain(s => s.StartsWith("UPDATE schema_migration:")
+            conn.SentSql.Should().Contain(s => s.StartsWith("UPSERT schema_migration:")
                 && s.Contains(files[0].Checksum));
         }
 
@@ -140,7 +140,7 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
 
             conn.SentSql.Should().NotContain(s => s == "DEFINE TABLE wallet SCHEMAFULL;");
             conn.SentSql.Should().NotContain(s => s == "DEFINE TABLE bridge_tx SCHEMAFULL;");
-            conn.SentSql.Should().NotContain(s => s.StartsWith("UPDATE schema_migration:"));
+            conn.SentSql.Should().NotContain(s => s.StartsWith("UPSERT schema_migration:"));
         }
 
         [Fact]
@@ -199,8 +199,8 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
             var a = MigrationRunner.BootstrapSchemaMigrationDdl;
             var b = MigrationRunner.BootstrapSchemaMigrationDdl;
             a.Should().Be(b);
-            a.Should().Contain("DEFINE TABLE schema_migration SCHEMAFULL");
-            a.Should().Contain("DEFINE INDEX schema_migration_file_name");
+            a.Should().Contain("DEFINE TABLE IF NOT EXISTS schema_migration SCHEMAFULL");
+            a.Should().Contain("DEFINE INDEX IF NOT EXISTS schema_migration_file_name");
             MigrationRunner.BuildTrackingTableDdl().Should().Be(a,
                 "BuildTrackingTableDdl() must remain a backwards-compatible alias for the const");
         }
@@ -219,7 +219,7 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
 
             await runner.ApplyAsync(files);
 
-            var update = conn.SentSql.Single(s => s.StartsWith("UPDATE schema_migration:"));
+            var update = conn.SentSql.Single(s => s.StartsWith("UPSERT schema_migration:"));
             // The literal quote and backslash from the operator string must NOT
             // appear unescaped — they must be \\ and \" inside the SurrealQL
             // string literal.
@@ -260,8 +260,8 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
                 return Task.FromResult(SurrealExecutionResult.Ok(body));
             }
 
-            // UPDATE schema_migration:... CONTENT { file_name: "<name>", checksum: "<hash>", ... }
-            if (surql.StartsWith("UPDATE schema_migration:", StringComparison.OrdinalIgnoreCase))
+            // UPSERT schema_migration:... CONTENT { file_name: "<name>", checksum: "<hash>", ... }
+            if (surql.StartsWith("UPSERT schema_migration:", StringComparison.OrdinalIgnoreCase))
             {
                 var (file, checksum) = ExtractFileAndChecksum(surql);
                 if (file != null && checksum != null) _applied[file] = checksum;

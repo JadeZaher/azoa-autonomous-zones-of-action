@@ -1,4 +1,4 @@
-using OASIS.WebAPI.Generated.SurrealDb;
+using OASIS.WebAPI.Persistence.SurrealDb.Models;
 using OASIS.WebAPI.Models.Responses;
 
 namespace OASIS.WebAPI.Interfaces.Stores;
@@ -6,7 +6,7 @@ namespace OASIS.WebAPI.Interfaces.Stores;
 /// <summary>
 /// Persistence boundary for the <c>dapp-composition</c> aggregate. Operates
 /// on the source-gen'd <see cref="DappSeries"/> + <see cref="DappSeriesQuest"/>
-/// POCOs from <c>OASIS.WebAPI.Generated.SurrealDb</c> -- there are no
+/// POCOs from <c>OASIS.WebAPI.Persistence.SurrealDb.Models</c> -- there are no
 /// hand-written models for this aggregate, per the user directive to
 /// generate POCOs from the surreal package for greenfield entities.
 /// </summary>

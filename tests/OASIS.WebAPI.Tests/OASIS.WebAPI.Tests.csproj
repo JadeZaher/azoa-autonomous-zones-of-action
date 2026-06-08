@@ -29,6 +29,11 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="..\..\OASIS.WebAPI.csproj" />
+    <!-- Schema package is needed at compile time by
+         AttributePocoByteEquivalenceTests (uses AttributeSchemaScanner +
+         SurqlEmitter). OASIS.WebAPI loads it as an analyzer asset only;
+         the test project needs the real DLL on its compile path. -->
+    <ProjectReference Include="..\..\packages\Oasis.SurrealDb.Schema\Oasis.SurrealDb.Schema.csproj" />
     <!-- Phase 6 (surrealdb-client-package): legacy
          analyzers/SurrealQlSafetyAnalyzer/ project reference was removed
          along with the legacy SurrealDb in-tree test suite under

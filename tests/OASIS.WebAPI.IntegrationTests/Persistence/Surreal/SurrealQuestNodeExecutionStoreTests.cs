@@ -218,11 +218,11 @@ public class SurrealQuestNodeExecutionStoreTests : IntegrationTestBase
     {
         var options = new SurrealConnectionOptions
         {
-            Endpoint   = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442",
+            Endpoint   = SurrealTestDefaults.Endpoint,
             Namespace  = TestNamespace,
             Database   = "test",
-            User       = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root",
-            Password   = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root",
+            User       = SurrealTestDefaults.User,
+            Password   = SurrealTestDefaults.Password,
         };
         var http = new HttpClient();
         var connection = new HttpSurrealConnection(http, options);

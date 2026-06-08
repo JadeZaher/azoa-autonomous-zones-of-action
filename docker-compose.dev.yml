@@ -1,0 +1,149 @@
+# ─── OASIS Sleek — full-stack dev composition ───
+#
+# Brings up the entire stack so a new contributor can clone + run:
+#
+#   ./dev-up.sh        # or dev-up.ps1 on Windows
+#
+# Services:
+#   - surrealdb       SurrealKV-backed v1.5.4 instance (port 8000)
+#   - oasis-api       .NET 8 WebAPI (port 5000) -- runs `oasis-surreal up`
+#                     against `surrealdb` on first boot to apply schemas,
+#                     then starts the WebAPI host.
+#   - oasis-frontend  Next.js dev frontend (port 3000) wired to oasis-api
+#
+# Networking:
+#   All three services share the default compose network; the API + frontend
+#   reach SurrealDB via the `surrealdb` service name (not `localhost`).
+#   The host's localhost:8000 / 5000 / 3000 forward into the containers so
+#   you can hit the API directly from a tool like httpie or curl on the host.
+#
+# Persistence:
+#   `surrealdb_data` named volume preserves data across container restarts.
+#   Wipe it via `docker compose -f docker-compose.dev.yml down -v` when you
+#   want a clean DB.
+#
+# Compose runtimes supported: docker compose v2, docker-compose v1, podman-compose.
+# The companion ./dev-up.sh / ./dev-up.ps1 scripts auto-detect.
+#
+# G1 durability note: surrealkv `?sync=every` flushes every commit to disk
+# before ack -- matches the dev-engine-decision memory contract.
+
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v1.5.4
+    container_name: oasis-dev-surrealdb
+    restart: unless-stopped
+    command:
+      - start
+      - --log
+      - info
+      - --user
+      - root
+      - --pass
+      - root
+      - --bind
+      - 0.0.0.0:8000
+      - surrealkv:///data/db?sync=every
+    environment:
+      SURREAL_SYNC_DATA: "true"
+    ports:
+      # SURREALDB_HOST_PORT lets a contributor pick a different host-side
+      # port when something else is already bound to 8000 (e.g. their own
+      # existing SurrealDB container). Defaults to 8000 to keep the
+      # zero-config path working.
+      - "${SURREALDB_HOST_PORT:-8000}:8000"
+    volumes:
+      - surrealdb_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - oasis-dev
+
+  oasis-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oasis-dev-api
+    restart: unless-stopped
+    # When the bundled `surrealdb` service is part of the up set, wait for
+    # it to be healthy. When dev-up.{sh,ps1} detects an external SurrealDB
+    # on the host and brings up only `oasis-api oasis-frontend`, this
+    # depends_on entry is ignored (compose only enforces dependencies for
+    # services it actually starts).
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    environment:
+      # Connection URL is parameterised so the dev-up scripts can flip it
+      # to `host.containers.internal` / `host.docker.internal` when an
+      # external SurrealDB is detected on the host. Default points at the
+      # bundled `surrealdb` service (compose-network DNS entry).
+      #
+      # The interpolation source variable is OASIS_SURREAL_URL (NOT
+      # `SurrealDb__Endpoint`) because podman-compose's ${VAR:-default}
+      # parser drops env-var names that contain double underscores --
+      # so both .NET config keys (`SurrealDb__Endpoint`) AND the CLI's
+      # `OASIS_SURREAL_URL` get the SAME value via OASIS_SURREAL_URL,
+      # which is single-underscore-safe.
+      SurrealDb__Endpoint: "${OASIS_SURREAL_URL:-http://surrealdb:8000}"
+      SurrealDb__Namespace: "oasis"
+      SurrealDb__Database: "oasis"
+      SurrealDb__User: "root"
+      SurrealDb__Password: "root"
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:5000"
+      # Mirror env-var aliases used by the oasis-surreal CLI so the on-boot
+      # migration pre-step (entrypoint wrapper, see below) reaches the right
+      # instance with no flags.
+      OASIS_SURREAL_URL: "${OASIS_SURREAL_URL:-http://surrealdb:8000}"
+      OASIS_SURREAL_NS: "oasis"
+      OASIS_SURREAL_DB: "oasis"
+      OASIS_SURREAL_USER: "root"
+      OASIS_SURREAL_PASS: "root"
+    ports:
+      - "5000:5000"
+    networks:
+      - oasis-dev
+    healthcheck:
+      # OASIS exposes the ASP.NET health probe at /health (registered via
+      # MapOasisHealth in Observability/HealthCheckExtensions.cs). Frontend
+      # depends on this so it doesn't boot before the API is serving.
+      test: ["CMD-SHELL", "curl -sf http://localhost:5000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  oasis-frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: oasis-dev-frontend
+    restart: unless-stopped
+    depends_on:
+      oasis-api:
+        condition: service_healthy
+    environment:
+      # The Next.js client makes its API calls to the host-exposed port
+      # (`http://localhost:5000`) when running in the user's browser. The
+      # frontend container itself doesn't talk to the API directly except
+      # for SSR; we keep both pointing at the same host-mapped port for
+      # consistency.
+      NEXT_PUBLIC_API_URL: "http://localhost:5000"
+      NODE_ENV: "production"
+    ports:
+      - "3000:3000"
+    networks:
+      - oasis-dev
+
+volumes:
+  surrealdb_data:
+    driver: local
+
+networks:
+  oasis-dev:
+    driver: bridge

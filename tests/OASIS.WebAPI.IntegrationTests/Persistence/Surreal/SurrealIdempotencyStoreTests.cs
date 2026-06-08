@@ -23,14 +23,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
 {
     // ── Connection config ──────────────────────────────────────────────────────
 
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     // ── Per-instance state ─────────────────────────────────────────────────────
 
@@ -48,14 +41,14 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
 
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = _testNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         _connection = new HttpSurrealConnection(http, options);
         var executor = new DefaultSurrealExecutor(_connection);
         _store = new SurrealIdempotencyStore(executor);
@@ -88,7 +81,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task TryClaim_FirstTime_Wins()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var key = UniqueKey();
 
@@ -106,7 +99,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task TryClaim_SecondTime_SameKey_Loses()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var key = UniqueKey();
 
@@ -129,7 +122,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task TryClaim_Concurrent_ExactlyOneWins()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         const int concurrency = 6;
         var key = UniqueKey();
@@ -154,7 +147,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Complete_FromInProgress_SetsCompletedWithPayload()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var key     = UniqueKey();
         var payload = """{"txId":"abc123","amount":"1.5"}""";
@@ -179,7 +172,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Complete_FromFailed_IsNoOp()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var key = UniqueKey();
 
@@ -204,7 +197,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Fail_FromInProgress_SetsFailedWithError()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var key   = UniqueKey();
         var error = "on-chain submission rejected: insufficient fee";
@@ -225,7 +218,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Get_UnknownKey_ReturnsNull()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var result = await _store.GetAsync("nonexistent-key-" + Guid.NewGuid(), CancellationToken.None);
 
@@ -238,7 +231,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Complete_ThenGet_PayloadRoundtripsVerbatim()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var key = UniqueKey();
         // Payload with unicode and escaped characters to verify verbatim storage.
@@ -278,7 +271,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task Fail_FromCompleted_IsNoOp()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var key = UniqueKey();
 
@@ -304,7 +297,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
         try
         {
             using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            var r = await probe.GetAsync($"{SurrealBaseUrl}/health");
+            var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -318,9 +311,9 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     /// </summary>
     private async Task BootstrapSchemaAsync()
     {
-        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
@@ -352,9 +345,9 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
 
     private async Task DropNamespaceAsync()
     {
-        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);

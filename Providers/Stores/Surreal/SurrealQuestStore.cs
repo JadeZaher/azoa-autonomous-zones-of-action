@@ -19,7 +19,7 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// <b>Pattern</b> mirrors <see cref="SurrealApiKeyStore"/> /
 /// <see cref="SurrealQuestTemplateStore"/>: Guid('N') lowercase-hex record ids,
 /// inline POCOs (replace with generated POCO when source-gen catches up — see
-/// <c>OASIS.WebAPI.Generated.SurrealDb.Quest</c>), parameter-bound SurrealQL
+/// <c>OASIS.WebAPI.Persistence.SurrealDb.Models.Quest</c>), parameter-bound SurrealQL
 /// only (G3 / SRDB0001 — no string interpolation of values).
 /// </para>
 ///
@@ -76,7 +76,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var surrealId = ToSurrealId(id);
 
             var headQ = SurrealQuery
-                .Of("SELECT * FROM type::thing($_t, $_id)")
+                .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t", QuestTable)
                 .WithParam("_id", surrealId);
 
@@ -158,7 +158,7 @@ public sealed class SurrealQuestStore : IQuestStore
             deleteResp.EnsureAllOk();
 
             var headQ = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    QuestTable)
                 .WithParam("_id",   surrealId)
                 .WithParam("_body", poco);
@@ -177,7 +177,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
                 var nodePoco = FromDomain(node);
                 var nodeQ = SurrealQuery
-                    .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                    .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                     .WithParam("_t",    QuestNodeTable)
                     .WithParam("_id",   nodePoco.Id)
                     .WithParam("_body", nodePoco);
@@ -194,7 +194,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
                 var edgePoco = FromDomain(edge);
                 var edgeQ = SurrealQuery
-                    .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                    .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                     .WithParam("_t",    QuestEdgeTable)
                     .WithParam("_id",   edgePoco.Id)
                     .WithParam("_body", edgePoco);
@@ -225,7 +225,7 @@ public sealed class SurrealQuestStore : IQuestStore
             // emit "affected count" on DELETE in a way we can rely on across
             // versions, so we check the head row absence after the call.
             var q = SurrealQuery
-                .Of("DELETE type::thing($_t, $_id); DELETE quest_node WHERE quest_id = $_id; DELETE quest_edge WHERE quest_id = $_id")
+                .Of("DELETE type::record($_t, $_id); DELETE quest_node WHERE quest_id = $_id; DELETE quest_edge WHERE quest_id = $_id")
                 .WithParam("_t",  QuestTable)
                 .WithParam("_id", surrealId);
 
@@ -234,7 +234,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
             // Verify the head row is gone (returns empty set on missing row).
             var verify = SurrealQuery
-                .Of("SELECT id FROM type::thing($_t, $_id)")
+                .Of("SELECT id FROM type::record($_t, $_id)")
                 .WithParam("_t",  QuestTable)
                 .WithParam("_id", surrealId);
 
@@ -261,7 +261,7 @@ public sealed class SurrealQuestStore : IQuestStore
         try
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM type::thing($_t, $_id)")
+                .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  QuestTemplateTable)
                 .WithParam("_id", ToSurrealId(id));
 
@@ -304,7 +304,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var poco = FromDomain(template);
 
             var q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    QuestTemplateTable)
                 .WithParam("_id",   poco.Id)
                 .WithParam("_body", poco);
@@ -326,7 +326,7 @@ public sealed class SurrealQuestStore : IQuestStore
         {
             var surrealId = ToSurrealId(id);
             var del = SurrealQuery
-                .Of("DELETE type::thing($_t, $_id)")
+                .Of("DELETE type::record($_t, $_id)")
                 .WithParam("_t",  QuestTemplateTable)
                 .WithParam("_id", surrealId);
 
@@ -335,7 +335,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
             // Verify the head row is gone.
             var verify = SurrealQuery
-                .Of("SELECT id FROM type::thing($_t, $_id)")
+                .Of("SELECT id FROM type::record($_t, $_id)")
                 .WithParam("_t",  QuestTemplateTable)
                 .WithParam("_id", surrealId);
 
@@ -369,7 +369,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var poco = FromDomain(template);
 
             var q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    QuestNodeTemplateTable)
                 .WithParam("_id",   poco.Id)
                 .WithParam("_body", poco);

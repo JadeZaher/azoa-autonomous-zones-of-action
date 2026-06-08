@@ -11,7 +11,7 @@ namespace Oasis.SurrealDb.Client.Query
     /// <see cref="Set(string, object)"/> to produce the final
     /// <see cref="SurrealQuery"/>.
     ///
-    /// The emitted statement uses <c>type::thing($_t, $_id)</c> so the record
+    /// The emitted statement uses <c>type::record($_t, $_id)</c> so the record
     /// reference is itself parameterized — neither the table name nor the id
     /// is interpolated into the SQL body.
     ///
@@ -20,7 +20,7 @@ namespace Oasis.SurrealDb.Client.Query
     /// after execution, invoke
     /// <see cref="SurrealStatementResultExtensions.EnsureSingleAffected{T}"/>
     /// on the returned result. The builder cannot enforce this server-side (Surreal
-    /// has no <c>UPDATE … LIMIT 1</c>), but the <c>type::thing(table, id)</c>
+    /// has no <c>UPDATE … LIMIT 1</c>), but the <c>type::record(table, id)</c>
     /// addressing combined with the explicit WHERE makes a multi-affected
     /// outcome a bug in the schema, not the query.
     /// </para>
@@ -54,7 +54,7 @@ namespace Oasis.SurrealDb.Client.Query
         /// Finalizes the builder and returns the immutable
         /// <see cref="SurrealQuery"/>.  The emitted SQL is:
         /// <code>
-        /// UPDATE type::thing($_t, $_id)
+        /// UPDATE type::record($_t, $_id)
         ///   WHERE {whereField} = $_w_{whereField}
         ///   SET {setField} = $_s_{setField}
         ///   RETURN AFTER;
@@ -72,8 +72,15 @@ namespace Oasis.SurrealDb.Client.Query
 
             // Note: emitted body has NO trailing semicolon — SurrealQuery.Of
             // would reject it. Combine() adds terminators when composing.
+            //
+            // 2026-06: SurrealDB v2.x deprecated `type::thing(table, id)` in
+            // favour of `type::record(table, id)`. The runtime is the
+            // user-managed `surreal-oasis` 2.x container; the parser rejects
+            // type::thing with a "did you maybe mean `type::record`" hint.
+            // Same change applied across RelateBuilder + every store-level
+            // raw SurrealQL helper.
             var sql =
-                "UPDATE type::thing($_t, $_id) " +
+                "UPDATE type::record($_t, $_id) " +
                 "WHERE " + _whereField + " = $_w_" + _whereField + " " +
                 "SET " + field + " = $_s_" + field + " " +
                 "RETURN AFTER";

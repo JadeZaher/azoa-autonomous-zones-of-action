@@ -329,7 +329,7 @@ public class SurrealBridgeStoreTests : IntegrationTestBase
         var surrealOpId = opId.ToString("N").ToLowerInvariant();
 
         var seed = SurrealQuery
-            .Of("CREATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
             .WithParam("_t", "operation_log")
             .WithParam("_id", surrealOpId)
             .WithParam("_body", new
@@ -438,7 +438,7 @@ public class SurrealBridgeStoreTests : IntegrationTestBase
         var id = Guid.NewGuid();
         var surrealId = id.ToString("N").ToLowerInvariant();
         var q = SurrealQuery
-            .Of("CREATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
             .WithParam("_t", "operation_log")
             .WithParam("_id", surrealId)
             .WithParam("_body", new
@@ -466,14 +466,11 @@ public class SurrealBridgeStoreTests : IntegrationTestBase
         // inside the isolated test slice rather than the shared "oasis" NS.
         var options = new SurrealConnectionOptions
         {
-            Endpoint   = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL")
-                         ?? "http://localhost:8442",
+            Endpoint   = SurrealTestDefaults.Endpoint,
             Namespace  = TestNamespace,
             Database   = "test",
-            User       = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER")
-                         ?? "root",
-            Password   = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS")
-                         ?? "oasis-surreal-root",
+            User       = SurrealTestDefaults.User,
+            Password   = SurrealTestDefaults.Password,
         };
 
         var http = new HttpClient();

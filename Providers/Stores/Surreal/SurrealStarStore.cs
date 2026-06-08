@@ -77,11 +77,11 @@ public sealed class SurrealStarStore : ISTARStore
             var poco   = ToPoco(odk);
             var surrId = poco.Id;
 
-            // UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER
+            // UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER
             // SurrealDB upsert: creates the record if it does not exist; replaces
             // it if it does. Same pattern as SurrealWalletStore.
             var q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    StarRecord.StarTable)
                 .WithParam("_id",   surrId)
                 .WithParam("_body", poco);

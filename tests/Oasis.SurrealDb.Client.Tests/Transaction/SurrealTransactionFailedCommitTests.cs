@@ -46,11 +46,12 @@ public class SurrealTransactionFailedCommitTests
 
         await txn.DisposeAsync();
 
+        // Bodies are now /rpc envelopes -- assert via Contain on the inner SurrealQL.
         handler.Requests.Should().HaveCount(4);
-        handler.Requests[0].Body.Should().Be("BEGIN TRANSACTION;");
-        handler.Requests[1].Body.Should().StartWith("UPDATE wallet:abc");
-        handler.Requests[2].Body.Should().Be("COMMIT TRANSACTION;");
-        handler.Requests[3].Body.Should().Be("CANCEL TRANSACTION;",
+        handler.Requests[0].Body.Should().Contain("BEGIN TRANSACTION;");
+        handler.Requests[1].Body.Should().Contain("UPDATE wallet:abc");
+        handler.Requests[2].Body.Should().Contain("COMMIT TRANSACTION;");
+        handler.Requests[3].Body.Should().Contain("CANCEL TRANSACTION;",
             "dispose-after-failed-commit must issue CANCEL to release the server-side txn");
     }
 }

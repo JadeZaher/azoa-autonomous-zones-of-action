@@ -19,8 +19,8 @@
 #nullable enable
 
 using System;
-using System.Collections.Concurrent;
 using Oasis.SurrealDb.Client.Json;
+using Oasis.SurrealDb.Client.Schema;
 
 namespace Oasis.SurrealDb.Client
 {
@@ -101,17 +101,13 @@ namespace Oasis.SurrealDb.Client
 
         /// <summary>
         /// Lookup the SurrealDB schema name for the supplied generated POCO
-        /// type. The first call instantiates <typeparamref name="TRecord"/>
-        /// and stores its <see cref="ISurrealRecord.SchemaName"/>; subsequent
-        /// calls return the cached value. Thread-safe via
-        /// <see cref="ConcurrentDictionary{TKey,TValue}"/>.
+        /// type. Delegates to <see cref="SurrealSchemaRegistry.For{T}"/>
+        /// (which prefers <c>[SurrealTable]</c>, falls back to the
+        /// <c>ISurrealRecord.SchemaName</c> instance property). Cached
+        /// inside the registry; the per-T cache that used to live here is
+        /// retired so the registry is the single source of truth.
         /// </summary>
         public static string SchemaNameOf<TRecord>() where TRecord : ISurrealRecord, new()
-        {
-            return SchemaNameCache.GetOrAdd(typeof(TRecord), static _ => new TRecord().SchemaName);
-        }
-
-        private static readonly ConcurrentDictionary<Type, string> SchemaNameCache =
-            new ConcurrentDictionary<Type, string>();
+            => SurrealSchemaRegistry.For<TRecord>();
     }
 }

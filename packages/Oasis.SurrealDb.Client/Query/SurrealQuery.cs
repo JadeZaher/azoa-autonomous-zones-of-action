@@ -339,7 +339,7 @@ namespace Oasis.SurrealDb.Client.Query
         //
         // The conditional-state-transition primitive. The shape is:
         //
-        //   UPDATE type::thing($_t, $_id) WHERE $field = $value SET $field = $value RETURN AFTER;
+        //   UPDATE type::record($_t, $_id) WHERE $field = $value SET $field = $value RETURN AFTER;
         //
         // Internally we route through a tiny builder type (UpdateOnlyBuilder)
         // that holds the in-progress state until the user calls .Set(...) to
@@ -357,7 +357,7 @@ namespace Oasis.SurrealDb.Client.Query
         ///
         /// Emits, after <c>.Set(...)</c>:
         /// <code>
-        /// UPDATE type::thing($_t, $_id)
+        /// UPDATE type::record($_t, $_id)
         ///   WHERE status = $_w_status SET status = $_s_status
         ///   RETURN AFTER;
         /// </code>

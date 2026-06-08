@@ -38,7 +38,7 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// <para>
 /// Pattern mirrors <see cref="SurrealSagaStore"/> — Guid('N') lowercase-hex
 /// record ids, inline POCO (replace with generated POCO when source-gen
-/// catches up — <c>OASIS.WebAPI.Generated.SurrealDb.QuestNodeExecution</c>
+/// catches up — <c>OASIS.WebAPI.Persistence.SurrealDb.Models.QuestNodeExecution</c>
 /// already exists), every value parameter-bound (G3 / SRDB0001).
 /// </para>
 /// </summary>
@@ -78,7 +78,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
             // SurrealStatementException (or non-OK status) surfaces as an
             // OASISResult error to the caller.
             var q = SurrealQuery
-                .Of("CREATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    ExecTable)
                 .WithParam("_id",   poco.Id)
                 .WithParam("_body", poco);
@@ -115,7 +115,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
         try
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM type::thing($_t, $_id)")
+                .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  ExecTable)
                 .WithParam("_id", ToSurrealId(id));
 
@@ -151,7 +151,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
             // gives us a precise error message ("not found" vs "guard
             // rejected").
             var headQ = SurrealQuery
-                .Of("SELECT * FROM type::thing($_t, $_id)")
+                .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  ExecTable)
                 .WithParam("_id", surrealId);
 
@@ -181,7 +181,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
             // for an explicit conditional UPDATE with the same SET clause
             // listing each column individually.
             var updateQ = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    ExecTable)
                 .WithParam("_id",   surrealId)
                 .WithParam("_body", poco);

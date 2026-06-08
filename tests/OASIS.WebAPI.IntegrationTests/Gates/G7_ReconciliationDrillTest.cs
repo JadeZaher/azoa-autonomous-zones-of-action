@@ -169,20 +169,16 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
     /// Build a SurrealDB executor bound to this test instance's isolated namespace.
     private ISurrealExecutor BuildExecutor()
     {
-        var endpoint = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL")
-                       ?? "http://localhost:8442";
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = endpoint,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = TestNamespace,
             Database  = "test",
-            User      = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER")
-                        ?? "root",
-            Password  = Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS")
-                        ?? "oasis-surreal-root",
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password,
         };
 
-        var http       = new HttpClient { BaseAddress = new Uri(endpoint) };
+        var http       = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var connection = new HttpSurrealConnection(http, options);
         return new DefaultSurrealExecutor(connection);
     }

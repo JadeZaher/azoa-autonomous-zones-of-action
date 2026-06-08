@@ -1,4 +1,4 @@
-using OASIS.WebAPI.Generated.SurrealDb;
+using OASIS.WebAPI.Persistence.SurrealDb.Models;
 using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Models.Requests;
 using OASIS.WebAPI.Models.Responses;

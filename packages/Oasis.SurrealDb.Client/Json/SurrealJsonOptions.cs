@@ -1,5 +1,7 @@
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Oasis.SurrealDb.Client.Json;
 
@@ -59,6 +61,124 @@ public static class SurrealJsonOptions
         opts.Converters.Add(new SurrealTimeSpanJsonConverter());
         opts.Converters.Add(new SurrealDecimalJsonConverter());
 
+        // 2026-06-07: SCHEMAFULL tables in SurrealDB v2.x reject any
+        // CONTENT property that is not declared on the schema. The
+        // ISurrealRecord interface's SchemaName instance property would
+        // otherwise serialize as "schemaName": "avatar" and trip the
+        // server-side "Found field 'schemaName', but no such field exists
+        // for table 'X'" parse-time error.
+        //
+        // Strip the property at the serializer level so every ISurrealRecord
+        // implementor (hand-authored POCO, inline adapter POCO, future
+        // source-gen output) gets the same wire shape without each
+        // implementor needing to remember [JsonIgnore] on the property.
+        // Read paths are unaffected -- the property is computed locally and
+        // never sent or received over the wire.
+        opts.TypeInfoResolver = new DefaultJsonTypeInfoResolver
+        {
+            Modifiers =
+            {
+                StripSchemaNameFromSurrealRecords,
+                StripTablePrefixFromIdProperty,
+            },
+        };
+
         return opts;
+    }
+
+    private static void StripSchemaNameFromSurrealRecords(JsonTypeInfo typeInfo)
+    {
+        if (!typeof(ISurrealRecord).IsAssignableFrom(typeInfo.Type)) return;
+        // The interface property is "SchemaName"; serialization with the
+        // default camelCase policy emits it as "schemaName". Match both
+        // so the modifier is robust to per-POCO naming overrides.
+        for (var i = typeInfo.Properties.Count - 1; i >= 0; i--)
+        {
+            var p = typeInfo.Properties[i];
+            if (string.Equals(p.Name, "schemaName", System.StringComparison.OrdinalIgnoreCase)
+                || string.Equals(p.Name, "SchemaName", System.StringComparison.OrdinalIgnoreCase))
+            {
+                typeInfo.Properties.RemoveAt(i);
+            }
+        }
+    }
+
+    /// <summary>
+    /// SurrealDB's <c>/rpc</c> + <c>/sql</c> responses always serialize the
+    /// record id as <c>&lt;table&gt;:&lt;id&gt;</c> regardless of how the
+    /// schema declares the <c>id</c> field's <c>TYPE</c>. POCOs that hold
+    /// the id as a bare <c>string</c> (the 30+ adapter shapes in
+    /// Providers/Stores/Surreal/*.cs) would otherwise need a per-store
+    /// <c>StripIdPrefix</c> helper to peel off the table prefix before
+    /// <c>Guid.ParseExact</c> on the way out. Centralize the strip here so
+    /// every implementor gets the bare-hex form for free.
+    /// <para>
+    /// Scope is intentionally narrow: the <c>id</c> property of any
+    /// <see cref="ISurrealRecord"/> that's typed as <c>string</c>. Other
+    /// string fields (FK <c>*_id</c> columns) are NOT touched — those
+    /// usually want explicit handling in the store anyway, and a broader
+    /// auto-strip risks false positives on unrelated text payloads.
+    /// </para>
+    /// </summary>
+    private static void StripTablePrefixFromIdProperty(JsonTypeInfo typeInfo)
+    {
+        if (!typeof(ISurrealRecord).IsAssignableFrom(typeInfo.Type)) return;
+        foreach (var p in typeInfo.Properties)
+        {
+            if (p.PropertyType != typeof(string)) continue;
+            if (!string.Equals(p.Name, "id", System.StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(p.Name, "Id", System.StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            p.CustomConverter = SurrealIdStringConverter.Instance;
+        }
+    }
+}
+
+/// <summary>
+/// JSON converter for the <c>id</c> property of an <see cref="ISurrealRecord"/>
+/// POCO that holds it as a bare <see cref="string"/>. Strips the
+/// <c>&lt;table&gt;:</c> prefix on read (so <c>FromPoco</c> + <c>Guid.ParseExact</c>
+/// see the bare hex) and writes the value through unchanged (the wave-1
+/// stores already write the bare hex form on insert).
+/// </summary>
+internal sealed class SurrealIdStringConverter : System.Text.Json.Serialization.JsonConverter<string>
+{
+    public static readonly SurrealIdStringConverter Instance = new();
+
+    public override string? Read(
+        ref System.Text.Json.Utf8JsonReader reader,
+        System.Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType == System.Text.Json.JsonTokenType.Null) return null;
+        if (reader.TokenType != System.Text.Json.JsonTokenType.String)
+        {
+            // Tolerate non-string tokens by deferring to the default reader
+            // path; SurrealDB occasionally emits numeric ids for numeric-keyed
+            // tables, and re-throwing here would mask the real failure.
+            return reader.GetString();
+        }
+        var raw = reader.GetString();
+        if (string.IsNullOrEmpty(raw)) return raw;
+        var colon = raw!.IndexOf(':');
+        if (colon < 0 || colon >= raw.Length - 1) return raw;
+        // Strip the table prefix. SurrealDB wraps non-simple ids in `⟨ ⟩`
+        // (U+27E8 / U+27E9 mathematical angle brackets) when the id contains
+        // characters outside [a-zA-Z0-9_]; peel those off too.
+        return raw.Substring(colon + 1).Trim('⟨', '⟩');
+    }
+
+    public override void Write(
+        System.Text.Json.Utf8JsonWriter writer,
+        string value,
+        JsonSerializerOptions options)
+    {
+        // Wave-1 stores always write the bare-hex form on insert (the table
+        // prefix is supplied by `type::record($_t, $_id)` in the SQL),
+        // so the value passes through unchanged.
+        if (value is null) writer.WriteNullValue();
+        else writer.WriteStringValue(value);
     }
 }

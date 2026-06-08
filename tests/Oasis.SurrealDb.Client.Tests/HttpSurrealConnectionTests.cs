@@ -6,12 +6,15 @@ using Oasis.SurrealDb.Client.Connection;
 namespace Oasis.SurrealDb.Client.Tests;
 
 /// <summary>
-/// Transport-shape tests for HTTP /sql. The handler is faked — we assert the
-/// outgoing request shape (NS/DB headers, basic-auth, body) and parse a
-/// scripted response. No live SurrealDB instance required.
+/// Transport-shape tests for HTTP /rpc. The handler is faked — we assert the
+/// outgoing request shape (NS/DB headers, basic-auth, RPC envelope body) and
+/// parse a scripted /rpc response. No live SurrealDB instance required.
 /// </summary>
 public class HttpSurrealConnectionTests
 {
+    private const string RpcOkEmpty =
+        """{"id":"x","result":[ { "status": "OK", "time": "1µs", "result": [] } ]}""";
+
     private static SurrealConnectionOptions DefaultOptions() => new()
     {
         Endpoint       = "http://localhost:8442",
@@ -27,7 +30,7 @@ public class HttpSurrealConnectionTests
     public async Task ExecuteRawAsync_SendsNsDbHeadersAndBasicAuth()
     {
         var handler = new FakeHttpHandler();
-        handler.EnqueueOk("""[ { "status": "OK", "time": "1µs", "result": [] } ]""");
+        handler.EnqueueOk(RpcOkEmpty);
 
         await using var conn = new HttpSurrealConnection(handler, DefaultOptions());
         var resp = await conn.ExecuteRawAsync("INFO FOR DB;");
@@ -38,18 +41,19 @@ public class HttpSurrealConnectionTests
         handler.Requests.Should().HaveCount(1);
         var req = handler.Requests[0];
         req.Method.Should().Be("POST");
-        req.Uri.Should().EndWith("/sql");
+        req.Uri.Should().EndWith("/rpc");
         req.NsHeader.Should().Be("oasis");
         req.DbHeader.Should().Be("test");
         req.HasAuth.Should().BeTrue("basic auth header must be present when User is set");
-        req.Body.Should().Be("INFO FOR DB;");
+        req.Body.Should().Contain("\"method\":\"query\"");
+        req.Body.Should().Contain("INFO FOR DB;");
     }
 
     [Fact]
     public async Task UseAsync_SwitchesNsDbForSubsequentRequests()
     {
         var handler = new FakeHttpHandler();
-        handler.EnqueueOk("""[ { "status": "OK", "time": "1µs", "result": [] } ]""");
+        handler.EnqueueOk(RpcOkEmpty);
 
         await using var conn = new HttpSurrealConnection(handler, DefaultOptions());
         await conn.UseAsync("oasis", "prod");

@@ -1,0 +1,20 @@
+graph LR
+    %% Slice: wallet_nft
+    %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
+    %% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- flowcharts
+
+    %% Nodes in this slice
+    nft_ownership["nft_ownership: Node"]:::nodeClass
+    swap_state["swap_state: Node"]:::nodeClass
+    wallet["wallet: Node"]:::nodeClass
+
+    %% Cross-slice targets (rendered as ghost nodes)
+    avatar["avatar: Node (external)"]:::externalNode
+
+    %% Edges (outbound from this slice)
+    nft_ownership -- "avatar_id [N:1]" --> avatar
+    swap_state -- "avatar_id [N:1]" --> avatar
+    wallet -- "avatar_id [N:1]" --> avatar
+
+    classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
+    classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;

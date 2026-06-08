@@ -23,7 +23,8 @@ public sealed class SagaOptions
     /// ZERO bridge (or any) consumer pre-launch, so a consumerless hosted loop
     /// must not run in the production financial graph. It stays OFF until
     /// durable-saga Phase 2 ships a real consumer (see
-    /// <c>docs/adr/ADR-0001-sagas-disabled-prelaunch.md</c> and GO-TO-PROD §4).
+    /// <c>docs/adr/ADR-0001-sagas-disabled-prelaunch.md</c> and
+    /// <c>conductor/tracks/api-safety-hardening/docs/GO-TO-PROD.md</c> §4).
     /// The scoped <see cref="ISagaProcessor"/> can still be invoked directly
     /// (tests / an ops endpoint) when this is false.
     /// </summary>

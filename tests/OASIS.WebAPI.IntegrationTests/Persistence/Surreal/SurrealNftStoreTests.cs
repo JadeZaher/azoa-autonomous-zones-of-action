@@ -25,14 +25,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
 {
     // ── Connection config ─────────────────────────────────────────────────────
 
-    private static readonly string SurrealBaseUrl =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_URL") ?? "http://localhost:8442";
-
-    private static readonly string SurrealUser =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_USER") ?? "root";
-
-    private static readonly string SurrealPass =
-        Environment.GetEnvironmentVariable("OASIS_SURREAL_TEST_PASS") ?? "oasis-surreal-root";
+    // Connection config sourced from SurrealTestDefaults (points at local instance).
 
     // ── Per-instance state ────────────────────────────────────────────────────
 
@@ -50,14 +43,14 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
 
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealBaseUrl,
+            Endpoint  = SurrealTestDefaults.Endpoint,
             Namespace = _testNamespace,
             Database  = "test",
-            User      = SurrealUser,
-            Password  = SurrealPass
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         _connection = new HttpSurrealConnection(http, options);
         var executor = new DefaultSurrealExecutor(_connection);
         _store = new SurrealNftStore(executor);
@@ -79,7 +72,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task UpsertAvatarNFT_ThenGetById_RoundTrips()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var nft = MakeNft(Guid.NewGuid(), "Ethereum",
                           "0x1234567890abcdef1234567890abcdef12345678",
@@ -107,7 +100,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetAvatarNFTByTokenId_CompositeKey_ReturnsCorrectNft()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var contract = $"0x{Guid.NewGuid():N}";
         var nft      = MakeNft(Guid.NewGuid(), "Ethereum", contract, "999");
@@ -126,7 +119,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetAvatarNFTByTokenId_NotFound_ReturnsError()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var result = await _store.GetAvatarNFTByTokenIdAsync(
             "Algorand", "NONEXISTENT_CONTRACT", "0");
@@ -140,7 +133,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetAvatarNFTsByAvatar_FiltersCorrectly()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var targetAvatar = Guid.NewGuid();
         var otherAvatar  = Guid.NewGuid();
@@ -166,7 +159,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task DeleteAvatarNFT_RemovesRecord()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var nft = MakeNft(Guid.NewGuid(), "Ethereum",
                           $"0x{Guid.NewGuid():N}", "77");
@@ -188,7 +181,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task UpsertAvatarNFT_UpdatePath_OverwritesExistingRecord()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var avatarId = Guid.NewGuid();
         var contract = $"0x{Guid.NewGuid():N}";
@@ -227,7 +220,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task UpsertHolonNFTBinding_ThenGetById_RoundTrips()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var nftId   = Guid.NewGuid();
         var holonId = Guid.NewGuid();
@@ -260,7 +253,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetHolonNFTBindingsByAvatarNFT_FiltersCorrectly()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var targetNftId = Guid.NewGuid();
         var otherNftId  = Guid.NewGuid();
@@ -298,7 +291,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task DeleteHolonNFTBinding_RemovesRecord()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var binding = new HolonNFTBinding
         {
@@ -323,7 +316,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task UpsertWalletNFTBinding_ThenGetById_RoundTrips()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var walletId = Guid.NewGuid();
         var nftId    = Guid.NewGuid();
@@ -358,7 +351,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task GetWalletNFTBindingsByAvatarNFT_FiltersCorrectly()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var targetNftId = Guid.NewGuid();
         var otherNftId  = Guid.NewGuid();
@@ -396,7 +389,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     [SkippableFact]
     public async Task DeleteWalletNFTBinding_RemovesRecord()
     {
-        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealBaseUrl);
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var binding = new WalletNFTBinding
         {
@@ -422,7 +415,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         try
         {
             using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            var r = await probe.GetAsync($"{SurrealBaseUrl}/health");
+            var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -451,9 +444,9 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
 
     private async Task BootstrapSchemaAsync()
     {
-        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
@@ -496,9 +489,9 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
 
     private async Task DropNamespaceAsync()
     {
-        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealBaseUrl) };
+        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealUser}:{SurrealPass}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);
