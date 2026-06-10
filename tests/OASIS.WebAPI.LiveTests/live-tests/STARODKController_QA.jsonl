@@ -2,10 +2,11 @@
 # STARODKController Comprehensive QA
 # Covers: create, get, getall, generate, deploy, delete, auth
 # ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"starodkcontroller_qa"}}
 
 # ─── Seed Avatar ───
-{"id":"seed_avatar","description":"Register avatar for STAR ODK tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"starqa","email":"star@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"starAvatar"}
-{"id":"login_avatar","description":"Login as STAR test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"star@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"starAuth"}
+{"id":"seed_avatar","description":"Register avatar for STAR ODK tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_starqa","email":"{{suitePrefix}}_star@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"starAvatar"}
+{"id":"login_avatar","description":"Login as STAR test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_star@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"starAuth"}
 
 # ─── Create ODKs ───
 {"id":"create_odk_basic","description":"Create basic STAR ODK","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{starAuth.token}}"},"body":{"name":"BasicODK","description":"Basic ODK for QA","publicKey":"0xTESTPUBKEY123","avatarId":"{{starAvatar.id}}"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"odkBasic"}

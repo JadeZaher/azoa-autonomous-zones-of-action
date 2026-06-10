@@ -80,14 +80,26 @@ namespace Oasis.SurrealDb.Client.Query
             return await DispatchAsync(query, ct).ConfigureAwait(false);
         }
 
-        private Task<SurrealResponse> DispatchAsync(SurrealQuery query, CancellationToken ct)
+        private async Task<SurrealResponse> DispatchAsync(SurrealQuery query, CancellationToken ct)
         {
             query.Validate(strict: true);
-            // SurrealQuery.Params is IReadOnlyDictionary<string, object?>; the
-            // HTTP transport accepts anything object-shaped, so we hand it
-            // straight through. Parameter binding happens server-side via the
-            // ?$name=<json> query-string the connection builds.
-            return _connection.ExecuteRawAsync(query.Build(), query.Params, ct);
+            // Cache the built SQL text so the same string can be stamped on the
+            // exception without rebuilding (and semantics of ExecuteRawAsync are unchanged).
+            var sqlText = query.Build();
+            try
+            {
+                // SurrealQuery.Params is IReadOnlyDictionary<string, object?>; the
+                // HTTP transport accepts anything object-shaped, so we hand it
+                // straight through. Parameter binding happens server-side via the
+                // ?$name=<json> query-string the connection builds.
+                return await _connection.ExecuteRawAsync(sqlText, query.Params, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                ex.Data["SurrealStatement"] = sqlText;
+                ex.Data["SurrealParams"]    = query.Params;
+                throw;
+            }
         }
     }
 }

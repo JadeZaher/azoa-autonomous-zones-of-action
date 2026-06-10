@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Oasis.SurrealDb.Client;
 using Oasis.SurrealDb.Client.Query;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Models.Quest;
@@ -464,7 +465,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static Quest ToDomain(QuestPoco p) => new()
     {
-        Id           = FromSurrealId(p.Id),
+        Id           = FromSurrealIdDirect(p.Id),
         AvatarId     = string.IsNullOrEmpty(p.AvatarId) ? Guid.Empty : FromSurrealId(p.AvatarId),
         Name         = p.Name ?? string.Empty,
         Description  = p.Description,
@@ -494,7 +495,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestNode ToDomain(QuestNodePoco p) => new()
     {
-        Id              = FromSurrealId(p.Id),
+        Id              = FromSurrealIdDirect(p.Id),
         QuestId         = string.IsNullOrEmpty(p.QuestId) ? Guid.Empty : FromSurrealId(p.QuestId),
         NodeTemplateId  = string.IsNullOrEmpty(p.NodeTemplateId) ? null : FromSurrealId(p.NodeTemplateId),
         NodeType        = ParseNodeType(p.NodeType),
@@ -519,7 +520,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestEdge ToDomain(QuestEdgePoco p) => new()
     {
-        Id            = FromSurrealId(p.Id),
+        Id            = FromSurrealIdDirect(p.Id),
         QuestId       = string.IsNullOrEmpty(p.QuestId)       ? Guid.Empty : FromSurrealId(p.QuestId),
         SourceNodeId  = string.IsNullOrEmpty(p.SourceNodeId)  ? Guid.Empty : FromSurrealId(p.SourceNodeId),
         TargetNodeId  = string.IsNullOrEmpty(p.TargetNodeId)  ? Guid.Empty : FromSurrealId(p.TargetNodeId),
@@ -547,7 +548,7 @@ public sealed class SurrealQuestStore : IQuestStore
     {
         var template = new QuestTemplate
         {
-            Id             = FromSurrealId(p.Id),
+            Id             = FromSurrealIdDirect(p.Id),
             Name           = p.Name ?? string.Empty,
             Description    = p.Description,
             AuthorAvatarId = string.IsNullOrEmpty(p.AuthorAvatarId) ? Guid.Empty : FromSurrealId(p.AuthorAvatarId),
@@ -577,7 +578,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestTemplateNode ToDomainTemplateNode(QuestTemplateNodePoco n, Guid templateId) => new()
     {
-        Id              = string.IsNullOrEmpty(n.Id) ? Guid.NewGuid() : FromSurrealId(n.Id),
+        Id              = string.IsNullOrEmpty(n.Id) ? Guid.NewGuid() : FromSurrealIdDirect(n.Id),
         TemplateId      = templateId,
         SlotId          = n.SlotId ?? string.Empty,
         NodeTemplateId  = string.IsNullOrEmpty(n.NodeTemplateId) ? Guid.Empty : FromSurrealId(n.NodeTemplateId),
@@ -596,7 +597,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestTemplateEdge ToDomainTemplateEdge(QuestTemplateEdgePoco e, Guid templateId) => new()
     {
-        Id            = string.IsNullOrEmpty(e.Id) ? Guid.NewGuid() : FromSurrealId(e.Id),
+        Id            = string.IsNullOrEmpty(e.Id) ? Guid.NewGuid() : FromSurrealIdDirect(e.Id),
         TemplateId    = templateId,
         SourceSlotId  = e.SourceSlotId ?? string.Empty,
         TargetSlotId  = e.TargetSlotId ?? string.Empty,
@@ -623,7 +624,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestNodeTemplate ToDomain(QuestNodeTemplatePoco p) => new()
     {
-        Id              = FromSurrealId(p.Id),
+        Id              = FromSurrealIdDirect(p.Id),
         Name            = p.Name ?? string.Empty,
         NodeType        = ParseNodeType(p.NodeType),
         Description     = p.Description,
@@ -646,6 +647,9 @@ public sealed class SurrealQuestStore : IQuestStore
         var stripped = StripIdPrefix(id);
         return Guid.TryParseExact(stripped, "N", out var g) ? g : Guid.Empty;
     }
+
+    private static Guid FromSurrealIdDirect(string id)
+        => Guid.ParseExact(id, "N");
 
     private static string StripIdPrefix(string raw)
     {
@@ -716,8 +720,10 @@ public sealed class SurrealQuestStore : IQuestStore
 
     // ── POCOs (private — replace with generated POCO when source-gen catches up) ──
 
-    private sealed class QuestPoco
+    private sealed class QuestPoco : ISurrealRecord
     {
+        public string SchemaName => QuestTable;
+
         [JsonPropertyName("id")]              public string Id { get; set; } = string.Empty;
         [JsonPropertyName("avatar_id")]       public string AvatarId { get; set; } = string.Empty;
         [JsonPropertyName("name")]            public string? Name { get; set; }
@@ -728,8 +734,10 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("created_date")]    public DateTimeOffset CreatedDate { get; set; }
     }
 
-    private sealed class QuestNodePoco
+    private sealed class QuestNodePoco : ISurrealRecord
     {
+        public string SchemaName => QuestNodeTable;
+
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
         [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
         [JsonPropertyName("node_template_id")]  public string? NodeTemplateId { get; set; }
@@ -741,8 +749,10 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("execution_order")]   public int ExecutionOrder { get; set; }
     }
 
-    private sealed class QuestEdgePoco
+    private sealed class QuestEdgePoco : ISurrealRecord
     {
+        public string SchemaName => QuestEdgeTable;
+
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
         [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
         [JsonPropertyName("source_node_id")]    public string SourceNodeId { get; set; } = string.Empty;
@@ -751,8 +761,10 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("edge_type")]         public string? EdgeType { get; set; }
     }
 
-    private sealed class QuestTemplatePoco
+    private sealed class QuestTemplatePoco : ISurrealRecord
     {
+        public string SchemaName => QuestTemplateTable;
+
         [JsonPropertyName("id")]               public string Id { get; set; } = string.Empty;
         [JsonPropertyName("name")]             public string? Name { get; set; }
         [JsonPropertyName("description")]      public string? Description { get; set; }
@@ -765,8 +777,10 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("tags")]             public List<string>? Tags { get; set; }
     }
 
-    private sealed class QuestTemplateNodePoco
+    private sealed class QuestTemplateNodePoco : ISurrealRecord
     {
+        public string SchemaName => QuestNodeTemplateTable;
+
         [JsonPropertyName("id")]               public string Id { get; set; } = string.Empty;
         [JsonPropertyName("slot_id")]          public string? SlotId { get; set; }
         [JsonPropertyName("node_template_id")] public string NodeTemplateId { get; set; } = string.Empty;
@@ -775,16 +789,20 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("is_terminal")]      public bool IsTerminal { get; set; }
     }
 
-    private sealed class QuestTemplateEdgePoco
+    private sealed class QuestTemplateEdgePoco : ISurrealRecord
     {
+        public string SchemaName => QuestTemplateTable;
+
         [JsonPropertyName("id")]               public string Id { get; set; } = string.Empty;
         [JsonPropertyName("source_slot_id")]   public string? SourceSlotId { get; set; }
         [JsonPropertyName("target_slot_id")]   public string? TargetSlotId { get; set; }
         [JsonPropertyName("edge_type")]        public string? EdgeType { get; set; }
     }
 
-    private sealed class QuestNodeTemplatePoco
+    private sealed class QuestNodeTemplatePoco : ISurrealRecord
     {
+        public string SchemaName => QuestNodeTemplateTable;
+
         [JsonPropertyName("id")]               public string Id { get; set; } = string.Empty;
         [JsonPropertyName("name")]             public string? Name { get; set; }
         [JsonPropertyName("node_type")]        public string? NodeType { get; set; }
@@ -799,8 +817,10 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("tags")]             public List<string>? Tags { get; set; }
     }
 
-    private sealed class QuestIdProjection
+    private sealed class QuestIdProjection : ISurrealRecord
     {
+        public string SchemaName => QuestTable;
+
         [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
     }
 }

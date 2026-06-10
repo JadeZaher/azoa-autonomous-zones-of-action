@@ -2,10 +2,11 @@
 # STARODKController Malicious / Stress Tests
 # Attack payloads against ODK endpoints
 # ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"starodkcontroller_malicious"}}
 
 # ─── Seed Avatar ───
-{"id":"seed_avatar","description":"Register avatar for STAR malicious tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"starmal","email":"starmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"starMalAvatar"}
-{"id":"login_avatar","description":"Login as STAR test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"starmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"starMalAuth"}
+{"id":"seed_avatar","description":"Register avatar for STAR malicious tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_starmal","email":"{{suitePrefix}}_starmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"starMalAvatar"}
+{"id":"login_avatar","description":"Login as STAR test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_starmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"starMalAuth"}
 {"id":"seed_odk","description":"Create seed ODK for attack tests","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{starMalAuth.token}}"},"body":{"name":"TargetODK","description":"Target for attacks","publicKey":"0xTARGET","avatarId":"{{starMalAvatar.id}}"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"targetODK"}
 
 # ─── SQL Injection ───
@@ -57,8 +58,8 @@
 
 # ─── Unicode / Special Characters ───
 {"id":"unicode_odk_name","description":"Unicode in ODK name","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{starMalAuth.token}}"},"body":{"name":"ODK_测试_テスト_🚀","description":"Unicode test","publicKey":"0xTEST","avatarId":"{{starMalAvatar.id}}"},"expectedStatusRange":"2xx"}
-{"id":"rtl_odk_name","description":"RTL override in ODK name","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{starMalAuth.token}}"},"body":{"name":"admin\u202Etest\u202C","description":"RTL test","publicKey":"0xTEST","avatarId":"{{starMalAvatar.id}}"},"expectedStatusRange":"2xx"}
-{"id":"zwc_odk_name","description":"Zero-width characters in ODK name","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{starMalAuth.token}}"},"body":{"name":"test\u200B\u200C\u200D\u2060\uFEFFodk","description":"ZWC test","publicKey":"0xTEST","avatarId":"{{starMalAvatar.id}}"},"expectedStatusRange":"2xx"}
+{"id":"rtl_odk_name","description":"RTL override in ODK name","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{starMalAuth.token}}"},"body":{"name":"admin‮test‬","description":"RTL test","publicKey":"0xTEST","avatarId":"{{starMalAvatar.id}}"},"expectedStatusRange":"2xx"}
+{"id":"zwc_odk_name","description":"Zero-width characters in ODK name","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{starMalAuth.token}}"},"body":{"name":"test​‌‍⁠﻿odk","description":"ZWC test","publicKey":"0xTEST","avatarId":"{{starMalAvatar.id}}"},"expectedStatusRange":"2xx"}
 
 # ─── Cleanup ───
 {"id":"cleanup_target_odk","description":"Delete target ODK","method":"DELETE","path":"/api/starodk/{{targetODK.id}}","headers":{"Authorization":"Bearer {{starMalAuth.token}}"},"expectedStatus":200}

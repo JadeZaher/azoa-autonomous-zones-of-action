@@ -21,12 +21,13 @@
     <RootNamespace>Oasis.SurrealDb.Schema</RootNamespace>
   </PropertyGroup>
 
-  <!-- Exclude the CLI entry point + HTTP adapter from the netstandard2.0 build:
-       Task<int> Main and HttpClient APIs are not first-class on netstandard2.0,
-       and the library consumers of this package never need them. -->
+  <!-- Exclude the CLI entry point, HTTP adapter, and reset command from the
+       netstandard2.0 build: Task<int> Main and HttpClient APIs are not
+       first-class on netstandard2.0, and library consumers never need them. -->
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
     <Compile Remove="Program.cs" />
     <Compile Remove="Cli\HttpConnectionAdapter.cs" />
+    <Compile Remove="Cli\ResetCommand.cs" />
   </ItemGroup>
 
   <!-- System.Text.Json is in-box on net8.0; explicit on netstandard2.0. Versions

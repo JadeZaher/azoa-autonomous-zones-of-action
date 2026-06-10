@@ -2,9 +2,9 @@
 # BlockchainOperationController live API payloads
 # This suite seeds an avatar and a blockchain operation, then queries by ID and avatar.
 # ═══════════════════════════════════════════════════════════════
-
-{"id":"seed_avatar","description":"Register avatar for blockchain operation tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"blockchaintest","email":"blockchain@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"bavatar"}
-{"id":"login_seed","description":"Login as blockchain test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"blockchain@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"bauth"}
+{"_suiteVars":{"suitePrefix":"blockchainoperationcontroller"}}
+{"id":"seed_avatar","description":"Register avatar for blockchain operation tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_blockchaintest","email":"{{suitePrefix}}_blockchain@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"bavatar"}
+{"id":"login_seed","description":"Login as blockchain test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_blockchain@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"bauth"}
 {"id":"seed_wallet","description":"Add a wallet for the avatar","method":"POST","path":"/api/avatar/{{bavatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bauth.token}}"},"body":{"chainType":"Algorand","address":"TESTADDR12345678901234567890123456789012345678901234567890","label":"LiveTest"},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"bwallet"}
 {"id":"get_operations_by_avatar","description":"Get operations by avatar (may be empty)","method":"GET","path":"/api/blockchainoperation/avatar/{{bavatar.avatarId}}","headers":{"Authorization":"Bearer {{bauth.token}}"},"expectedStatus":200}
 {"id":"cleanup_wallet","description":"Remove the seeded wallet","method":"DELETE","path":"/api/avatar/{{bavatar.avatarId}}/wallets/{{bwallet.walletId}}","headers":{"Authorization":"Bearer {{bauth.token}}"},"expectedStatus":200}

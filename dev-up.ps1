@@ -206,6 +206,24 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "[dev-up] Stack started. Service status:"
 Invoke-Compose @('-f', $ComposeFile, 'ps')
 
+# ── SurrealDB namespace reset ─────────────────────────────────────────────────
+#
+# Wipe + re-apply all schema migrations so the dev DB is always in sync with
+# the current schema files. Skip via OASIS_SKIP_RESET=1 when you want to
+# preserve existing data (e.g. iterating on UI without re-seeding).
+
+if ($env:OASIS_SKIP_RESET -ne "1") {
+    Write-Host ""
+    Write-Host "[dev-up] resetting SurrealDB namespace..."
+    dotnet run --project packages/Oasis.SurrealDb.Schema --framework net8.0 -- reset
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "SurrealDB reset failed (exit $LASTEXITCODE). Set OASIS_SKIP_RESET=1 to skip."
+        exit 1
+    }
+} else {
+    Write-Host "[dev-up] OASIS_SKIP_RESET=1 set -- skipping reset"
+}
+
 Write-Host ""
 Write-Host "[dev-up] Endpoints:"
 Write-Host "  WebAPI:    http://localhost:5000  (health: /health)"

@@ -2,9 +2,9 @@
 # STARODKController live API payloads
 # End-to-end STAR ODK lifecycle: create, get all, get by id, generate, deploy, delete.
 # ═══════════════════════════════════════════════════════════════
-
-{"id":"seed_avatar","description":"Register avatar for STAR ODK tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"startest","email":"star@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"savatar"}
-{"id":"login_seed","description":"Login as STAR test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"star@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"sauth"}
+{"_suiteVars":{"suitePrefix":"starodkcontroller"}}
+{"id":"seed_avatar","description":"Register avatar for STAR ODK tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_startest","email":"{{suitePrefix}}_star@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"savatar"}
+{"id":"login_seed","description":"Login as STAR test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_star@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"sauth"}
 {"id":"create_odk","description":"Create a STAR ODK","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{sauth.token}}"},"body":{"name":"LiveODK","description":"Test ODK from live harness","publicKey":"0xTESTPUBLICKEY123","avatarId":"{{savatar.avatarId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"odk1"}
 {"id":"get_odk","description":"Get the created ODK","method":"GET","path":"/api/starodk/{{odk1.odkId}}","headers":{"Authorization":"Bearer {{sauth.token}}"},"expectedStatus":200}
 {"id":"get_all_odks","description":"List all ODKs","method":"GET","path":"/api/starodk","headers":{"Authorization":"Bearer {{sauth.token}}"},"expectedStatus":200}

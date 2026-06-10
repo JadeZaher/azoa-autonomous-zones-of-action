@@ -33,6 +33,9 @@ using OASIS.WebAPI.Services.Wormhole;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// W1-A1: Dev-only JSONL exception logger (binds Diagnostics:JsonlExceptionLogger config).
+builder.AddJsonlExceptionLogging();
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -139,6 +142,12 @@ var rlGlobalQueue = rlSection.GetValue<int?>("Global:QueueLimit") ?? 0;
 var rlFinancialPermit = rlSection.GetValue<int?>("Financial:PermitLimit") ?? 10;
 var rlFinancialWindowSeconds = rlSection.GetValue<int?>("Financial:WindowSeconds") ?? 60;
 var rlFinancialQueue = rlSection.GetValue<int?>("Financial:QueueLimit") ?? 0;
+
+var rlDevMultiplier = builder.Environment.IsDevelopment()
+    ? Math.Max(1, rlSection.GetValue<int?>("DevMultiplier") ?? 1)
+    : 1;
+rlGlobalPermit    *= rlDevMultiplier;
+rlFinancialPermit *= rlDevMultiplier;
 
 // Stable partition key for the *current* request: API key, else avatar/user,
 // else IP. Prefixed so the three identity spaces never collide.
@@ -574,6 +583,10 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseCors("Dev");
+// W1-A1: Observer middleware — captures 401/429/5xx and unhandled exceptions into JSONL logs.
+// Placed after UseRouting (so TraceIdentifier is stable) and before UseAuthentication so
+// that downstream 401 and 429 status codes are also captured.
+app.UseMiddleware<OASIS.WebAPI.Core.Diagnostics.JsonlExceptionMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 // Rate limiter AFTER auth so the partition key can fall back to the

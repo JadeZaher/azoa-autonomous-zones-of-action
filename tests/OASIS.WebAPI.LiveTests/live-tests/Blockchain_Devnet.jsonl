@@ -4,15 +4,16 @@
 # Creates avatars, wallets, holons, then executes mint/exchange/transfer
 # operations targeting the configured devnet nodes.
 # ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"blockchain_devnet"}}
 
 # ─── Avatar A: Algorand Devnet User ───
-{"id":"algo_seed_avatar","description":"Register avatar for Algorand devnet tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"algodev","email":"algo@devnet.oasis","password":"TestPass123!","firstName":"Algo","lastName":"Devnet"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"algoAvatar"}
-{"id":"algo_login","description":"Login as Algorand devnet avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"algo@devnet.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"algoAuth"}
+{"id":"algo_seed_avatar","description":"Register avatar for Algorand devnet tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_algodev","email":"{{suitePrefix}}_algo@devnet.oasis","password":"TestPass123!","firstName":"Algo","lastName":"Devnet"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"algoAvatar"}
+{"id":"algo_login","description":"Login as Algorand devnet avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_algo@devnet.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"algoAuth"}
 {"id":"algo_add_wallet","description":"Add Algorand devnet wallet","method":"POST","path":"/api/avatar/{{algoAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{algoAuth.token}}"},"body":{"chainType":"Algorand","address":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ","label":"AlgoDevMain","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"algoWallet"}
 
 # ─── Avatar B: Solana Devnet User ───
-{"id":"sol_seed_avatar","description":"Register avatar for Solana devnet tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"soldev","email":"sol@devnet.oasis","password":"TestPass123!","firstName":"Solana","lastName":"Devnet"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"solAvatar"}
-{"id":"sol_login","description":"Login as Solana devnet avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"sol@devnet.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"solAuth"}
+{"id":"sol_seed_avatar","description":"Register avatar for Solana devnet tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_soldev","email":"{{suitePrefix}}_sol@devnet.oasis","password":"TestPass123!","firstName":"Solana","lastName":"Devnet"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"solAvatar"}
+{"id":"sol_login","description":"Login as Solana devnet avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_sol@devnet.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"solAuth"}
 {"id":"sol_add_wallet","description":"Add Solana devnet wallet","method":"POST","path":"/api/avatar/{{solAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{solAuth.token}}"},"body":{"chainType":"Solana","address":"HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH","label":"SolDevMain","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"solWallet"}
 
 # ─── Create Holons for Minting ───

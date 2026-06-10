@@ -2,10 +2,11 @@
 # BlockchainOperationController Comprehensive QA
 # Covers: query by ID, query by avatar, empty result sets, auth
 # ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"blockchainoperationcontroller_qa"}}
 
 # ─── Seed Avatar with Wallet ───
-{"id":"seed_avatar","description":"Register avatar for blockchain operation tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"blockchainqa","email":"blockchain@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"bcAvatar"}
-{"id":"login_avatar","description":"Login as blockchain test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"blockchain@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"bcAuth"}
+{"id":"seed_avatar","description":"Register avatar for blockchain operation tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_blockchainqa","email":"{{suitePrefix}}_blockchain@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"bcAvatar"}
+{"id":"login_avatar","description":"Login as blockchain test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_blockchain@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"bcAuth"}
 {"id":"add_wallet","description":"Add Algorand wallet","method":"POST","path":"/api/avatar/{{bcAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bcAuth.token}}"},"body":{"chainType":"Algorand","address":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ","label":"BlockchainQA"},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"bcWallet"}
 
 # ─── Query Operations (Empty Set) ───

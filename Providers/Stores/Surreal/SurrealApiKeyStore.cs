@@ -101,18 +101,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
             .WithParam("_body", poco);
 
         var response = await _executor.ExecuteAsync(q, ct);
-
-        if (!response[0].IsOk)
-        {
-            var detail = response[0].Detail ?? string.Empty;
-            // Surface UNIQUE-on-key_hash collision explicitly so callers can
-            // tell "duplicate key hash" apart from generic DB failure. A real
-            // SHA-256 collision is cryptographically improbable; in practice
-            // this fires when an upstream bug re-uses the same raw key.
-            throw new InvalidOperationException(
-                $"SurrealApiKeyStore.CreateAsync failed for key id {apiKey.Id}: " +
-                $"SurrealDB returned ERR: {detail}");
-        }
+        response.EnsureAllOk();
     }
 
     public async Task<bool> RevokeAsync(Guid id, Guid avatarId, DateTime revokedAt, CancellationToken ct)
@@ -129,7 +118,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
             .WithParam("_revoked", revokedUtc);
 
         var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0 || !response[0].IsOk) return false;
+        response.EnsureAllOk();
         return response[0].AffectedCount() == 1;
     }
 
@@ -145,7 +134,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
             .WithParam("_avatar", avatarHex);
 
         var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0 || !response[0].IsOk) return false;
+        response.EnsureAllOk();
         return response[0].AffectedCount() == 1;
     }
 
@@ -181,22 +170,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static Guid FromSurrealId(string id)
-    {
-        var stripped = StripIdPrefix(id);
-        return Guid.ParseExact(stripped, "N");
-    }
-
-    /// <summary>
-    /// Strips a leading "api_key:" prefix if SurrealDB returned the id in
-    /// thing-form rather than as the bare suffix. Defensive — both shapes
-    /// appear in practice depending on the serializer codepath.
-    /// </summary>
-    private static string StripIdPrefix(string raw)
-    {
-        if (string.IsNullOrEmpty(raw)) return raw;
-        var colon = raw.IndexOf(':');
-        return colon >= 0 && colon < raw.Length - 1 ? raw[(colon + 1)..] : raw;
-    }
+        => Guid.ParseExact(id, "N");
 
     private static ApiKeyPoco FromDomain(ApiKey k) => new()
     {
@@ -242,8 +216,10 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     /// table 120. When it does, delete this type and substitute the generated
     /// one — no contract change.
     /// </summary>
-    private sealed class ApiKeyPoco
+    private sealed class ApiKeyPoco : Oasis.SurrealDb.Client.ISurrealRecord
     {
+        public string SchemaName => Table;
+
         [JsonPropertyName("id")]            public string Id          { get; set; } = string.Empty;
         [JsonPropertyName("avatar_id")]     public string AvatarId    { get; set; } = string.Empty;
         [JsonPropertyName("name")]          public string? Name       { get; set; }

@@ -3,9 +3,9 @@
 # Requires: avatar token seeded before holon operations.
 # This suite registers a temp avatar, creates holons, queries, updates, interacts, and cleans up.
 # ═══════════════════════════════════════════════════════════════
-
-{"id":"seed_avatar","description":"Register a temporary avatar for holon tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"holontest","email":"holon@test.oasis","password":"TestPass123!","firstName":"Holon","lastName":"Tester"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"havatar"}
-{"id":"login_seed","description":"Login as temp avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"holon@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"hauth"}
+{"_suiteVars":{"suitePrefix":"holoncontroller"}}
+{"id":"seed_avatar","description":"Register a temporary avatar for holon tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_holontest","email":"{{suitePrefix}}_holon@test.oasis","password":"TestPass123!","firstName":"Holon","lastName":"Tester"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"havatar"}
+{"id":"login_seed","description":"Login as temp avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_holon@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"hauth"}
 {"id":"create_holon","description":"Create a new holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{hauth.token}}"},"body":{"name":"LiveHolon","description":"Created by live test harness","providerName":"InMemory","metadata":{"key1":"value1"},"peerHolonIds":[]},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"holon1"}
 {"id":"get_holon","description":"Get the created holon","method":"GET","path":"/api/holon/{{holon1.holonId}}","headers":{"Authorization":"Bearer {{hauth.token}}"},"expectedStatus":200}
 {"id":"query_holons","description":"Query holons with filter","method":"GET","path":"/api/holon?name=LiveHolon","headers":{"Authorization":"Bearer {{hauth.token}}"},"expectedStatus":200}

@@ -2,10 +2,11 @@
 # HolonController Malicious / Stress Tests
 # Attack payloads against holon endpoints with auth
 # ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"holoncontroller_malicious"}}
 
 # ─── Seed Target Avatar ───
-{"id":"seed_target","description":"Register avatar for malicious holon tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"holonmal","email":"holonmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"malAvatar"}
-{"id":"login_target","description":"Login target avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"holonmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"malAuth"}
+{"id":"seed_target","description":"Register avatar for malicious holon tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_holonmal","email":"{{suitePrefix}}_holonmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"malAvatar"}
+{"id":"login_target","description":"Login target avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_holonmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"malAuth"}
 {"id":"seed_holon","description":"Create seed holon for attack tests","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{malAuth.token}}"},"body":{"name":"TargetHolon","description":"Target for attacks","providerName":"InMemory"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"targetHolon"}
 
 # ─── SQL Injection in Holon Fields ───

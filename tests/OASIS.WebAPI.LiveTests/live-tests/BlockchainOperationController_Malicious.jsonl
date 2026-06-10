@@ -2,10 +2,11 @@
 # BlockchainOperationController Malicious Tests
 # Attack payloads against operation query endpoints
 # ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"blockchainoperationcontroller_malicious"}}
 
 # ─── Seed Avatar ───
-{"id":"seed_avatar","description":"Register avatar for blockchain malicious tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"bcmal","email":"bcmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"bcMalAvatar"}
-{"id":"login_avatar","description":"Login as blockchain test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"bcmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"bcMalAuth"}
+{"id":"seed_avatar","description":"Register avatar for blockchain malicious tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_bcmal","email":"{{suitePrefix}}_bcmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"bcMalAvatar"}
+{"id":"login_avatar","description":"Login as blockchain test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_bcmal@mal.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"bcMalAuth"}
 
 # ─── Path / ID Attacks ───
 {"id":"get_op_sqli_guid","description":"SQLi attempt in operation GUID","method":"GET","path":"/api/blockchainoperation/' OR '1'='1","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":404}

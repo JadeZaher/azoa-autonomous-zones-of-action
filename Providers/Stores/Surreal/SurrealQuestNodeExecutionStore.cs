@@ -354,10 +354,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
     private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static Guid FromSurrealId(string id)
-    {
-        var stripped = StripIdPrefix(id);
-        return Guid.TryParseExact(stripped, "N", out var g) ? g : Guid.Empty;
-    }
+        => Guid.TryParseExact(id, "N", out var g) ? g : Guid.Empty;
 
     private static string StripIdPrefix(string raw)
     {
@@ -397,8 +394,10 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
     // ── POCO (private — replace with generated POCO when source-gen catches up) ──
 
-    private sealed class QuestNodeExecutionPoco
+    private sealed class QuestNodeExecutionPoco : Oasis.SurrealDb.Client.ISurrealRecord
     {
+        public string SchemaName => ExecTable;
+
         [JsonPropertyName("id")]         public string Id { get; set; } = string.Empty;
         [JsonPropertyName("run_id")]     public string RunId { get; set; } = string.Empty;
         [JsonPropertyName("node_id")]    public string NodeId { get; set; } = string.Empty;

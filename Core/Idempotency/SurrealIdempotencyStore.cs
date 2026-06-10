@@ -89,6 +89,7 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
             .WithParam("_content", content);
 
         var response = await _executor.ExecuteAsync(insertQ, ct);
+        response.EnsureAllOk();
 
         if (response[0].IsOk)
         {
@@ -162,6 +163,7 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
             .WithParam("_now",      DateTimeOffset.UtcNow);
 
         var response = await _executor.ExecuteAsync(q, ct);
+        response.EnsureAllOk();
 
         if (!response[0].IsOk)
         {
@@ -199,6 +201,7 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
             .WithParam("_now",      DateTimeOffset.UtcNow);
 
         var response = await _executor.ExecuteAsync(q, ct);
+        response.EnsureAllOk();
 
         if (!response[0].IsOk)
         {
@@ -250,6 +253,8 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
             .WithParam("_id", recordId);
 
         var response = await _executor.ExecuteAsync(q, ct);
+        response.EnsureAllOk();
+
         if (!response[0].IsOk)
             return null;
 

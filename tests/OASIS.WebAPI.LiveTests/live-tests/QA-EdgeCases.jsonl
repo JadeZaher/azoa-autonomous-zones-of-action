@@ -3,10 +3,11 @@
 # Covers all controllers with valid JWT auth chains.
 # Each section seeds its own avatar for parallel-safe execution.
 # ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"qa-edgecases"}}
 
 # ─── AVATAR EDGE CASES ─────────────────────────────────────────
-{"id":"qa_avatar_seed","description":"Seed avatar for QA avatar tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"qaavatar","email":"qaavatar@test.oasis","password":"TestPass123!","title":"QA","firstName":"Edge","lastName":"Case"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaAvatar"}
-{"id":"qa_avatar_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"qaavatar@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaAuth"}
+{"id":"qa_avatar_seed","description":"Seed avatar for QA avatar tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qaavatar","email":"{{suitePrefix}}_qaavatar@test.oasis","password":"TestPass123!","title":"QA","firstName":"Edge","lastName":"Case"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaAvatar"}
+{"id":"qa_avatar_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qaavatar@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaAuth"}
 
 # Boundary: minimum password length
 {"id":"qa_register_short_password","description":"Register with short password should fail","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"shortpass","email":"shortpass@test.oasis","password":"12"},"expectedStatus":400}
@@ -23,7 +24,7 @@
 {"id":"qa_login_empty","description":"Login with empty body should fail","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{},"expectedStatus":400}
 
 # Boundary: wrong password
-{"id":"qa_login_wrong_pass","description":"Login with wrong password should 401","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"qaavatar@test.oasis","password":"WrongPass123!"},"expectedStatus":401}
+{"id":"qa_login_wrong_pass","description":"Login with wrong password should 401","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qaavatar@test.oasis","password":"WrongPass123!"},"expectedStatus":401}
 
 # Boundary: non-existent email
 {"id":"qa_login_missing_email","description":"Login with non-existent email should 401","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"doesnotexist@test.oasis","password":"TestPass123!"},"expectedStatus":401}
@@ -51,8 +52,8 @@
 {"id":"qa_wallet_remove_valid","description":"Remove valid wallet","method":"DELETE","path":"/api/avatar/{{qaAvatar.avatarId}}/wallets/{{qaWallet.walletId}}","headers":{"Authorization":"Bearer {{qaAuth.token}}"},"expectedStatus":200}
 
 # ─── HOLON EDGE CASES ──────────────────────────────────────────
-{"id":"qa_holon_seed","description":"Seed avatar for QA holon tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"qaholon","email":"qaholon@test.oasis","password":"TestPass123!","firstName":"Holon","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaHAvatar"}
-{"id":"qa_holon_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"qaholon@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaHAuth"}
+{"id":"qa_holon_seed","description":"Seed avatar for QA holon tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qaholon","email":"{{suitePrefix}}_qaholon@test.oasis","password":"TestPass123!","firstName":"Holon","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaHAvatar"}
+{"id":"qa_holon_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qaholon@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaHAuth"}
 
 # Boundary: create holon with empty name
 {"id":"qa_holon_empty_name","description":"Create holon with empty name should fail","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaHAuth.token}}"},"body":{"name":"","description":"No name","providerName":"InMemory"},"expectedStatus":400}
@@ -99,8 +100,8 @@
 
 
 # ─── STAR ODK EDGE CASES ───────────────────────────────────────
-{"id":"qa_star_seed","description":"Seed avatar for QA STAR tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"qastar","email":"qastar@test.oasis","password":"TestPass123!","firstName":"Star","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaSAvatar"}
-{"id":"qa_star_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"qastar@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaSAuth"}
+{"id":"qa_star_seed","description":"Seed avatar for QA STAR tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qastar","email":"{{suitePrefix}}_qastar@test.oasis","password":"TestPass123!","firstName":"Star","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaSAvatar"}
+{"id":"qa_star_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qastar@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaSAuth"}
 
 # Boundary: create ODK with empty name
 {"id":"qa_star_empty_name","description":"Create STAR ODK with empty name should fail","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaSAuth.token}}"},"body":{"name":"","description":"No name","avatarId":"{{qaSAvatar.avatarId}}"},"expectedStatus":400}
@@ -129,8 +130,8 @@
 
 
 # ─── BLOCKCHAIN OPERATION EDGE CASES ───────────────────────────
-{"id":"qa_bc_seed","description":"Seed avatar for QA blockchain tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"qabc","email":"qabc@test.oasis","password":"TestPass123!","firstName":"BC","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaBAvatar"}
-{"id":"qa_bc_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"qabc@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaBAuth"}
+{"id":"qa_bc_seed","description":"Seed avatar for QA blockchain tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qabc","email":"{{suitePrefix}}_qabc@test.oasis","password":"TestPass123!","firstName":"BC","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaBAvatar"}
+{"id":"qa_bc_login","description":"Login seeded avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qabc@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaBAuth"}
 
 # Boundary: get operation with random GUID
 {"id":"qa_bc_get_random","description":"Get blockchain op with random GUID should 404","method":"GET","path":"/api/blockchainoperation/66666666-6666-6666-6666-666666666666","headers":{"Authorization":"Bearer {{qaBAuth.token}}"},"expectedStatus":404}
@@ -142,10 +143,10 @@
 {"id":"qa_bc_by_avatar_empty","description":"Get operations for valid avatar with no ops","method":"GET","path":"/api/blockchainoperation/avatar/{{qaBAvatar.avatarId}}","headers":{"Authorization":"Bearer {{qaBAuth.token}}"},"expectedStatus":200}
 
 # Boundary: duplicate username registration
-{"id":"qa_register_dup_username","description":"Register with duplicate username should fail","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"qaavatar","email":"dupusername@test.oasis","password":"TestPass123!"},"expectedStatus":400}
+{"id":"qa_register_dup_username","description":"Register with duplicate username should fail","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qaavatar","email":"dupusername@test.oasis","password":"TestPass123!"},"expectedStatus":400}
 
 # Boundary: email case sensitivity in login
-{"id":"qa_login_email_case","description":"Login with uppercase email should still work","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"QAAVATAR@TEST.OASIS","password":"TestPass123!"},"expectedStatus":401}
+{"id":"qa_login_email_case","description":"Login with uppercase email should still work","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"QA-EDGECASES_QAAVATAR@TEST.OASIS","password":"TestPass123!"},"expectedStatus":401}
 
 # Boundary: update IsActive toggle
 {"id":"qa_update_isactive_false","description":"Update avatar IsActive to false","method":"PUT","path":"/api/avatar/{{qaAvatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaAuth.token}}"},"body":{"isActive":false},"expectedStatus":200}
@@ -167,8 +168,8 @@
 
 
 # ─── EXTENDED HOLON EDGE CASES ─────────────────────────────────
-{"id":"qa_holon2_seed","description":"Seed avatar for extended holon QA","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"qaholon2","email":"qaholon2@test.oasis","password":"TestPass123!","firstName":"Holon2","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaH2Avatar"}
-{"id":"qa_holon2_login","description":"Login extended holon avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"qaholon2@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaH2Auth"}
+{"id":"qa_holon2_seed","description":"Seed avatar for extended holon QA","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qaholon2","email":"{{suitePrefix}}_qaholon2@test.oasis","password":"TestPass123!","firstName":"Holon2","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaH2Avatar"}
+{"id":"qa_holon2_login","description":"Login extended holon avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qaholon2@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaH2Auth"}
 
 # Boundary: create holon with IsActive false then toggle
 {"id":"qa_holon_create_inactive","description":"Create inactive holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaH2Auth.token}}"},"body":{"name":"InactiveHolon","description":"Starts inactive","providerName":"InMemory","isActive":false},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"qaHolonInactive"}
@@ -203,8 +204,8 @@
 
 
 # ─── EXTENDED STAR ODK EDGE CASES ──────────────────────────────
-{"id":"qa_star2_seed","description":"Seed avatar for extended STAR QA","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"qastar2","email":"qastar2@test.oasis","password":"TestPass123!","firstName":"Star2","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaS2Avatar"}
-{"id":"qa_star2_login","description":"Login extended STAR avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"qastar2@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaS2Auth"}
+{"id":"qa_star2_seed","description":"Seed avatar for extended STAR QA","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qastar2","email":"{{suitePrefix}}_qastar2@test.oasis","password":"TestPass123!","firstName":"Star2","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaS2Avatar"}
+{"id":"qa_star2_login","description":"Login extended STAR avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qastar2@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaS2Auth"}
 
 # Boundary: CreateOrUpdate update path (same name should update)
 {"id":"qa_star_create_update","description":"Create STAR ODK then update via same name","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaS2Auth.token}}"},"body":{"name":"UpdateableODK","description":"First version","avatarId":"{{qaS2Avatar.avatarId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"qaOdkUpdate"}
@@ -222,8 +223,8 @@
 
 
 # ─── EXTENDED BLOCKCHAIN OPERATION EDGE CASES ──────────────────
-{"id":"qa_bc2_seed","description":"Seed avatar for extended blockchain QA","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"qabc2","email":"qabc2@test.oasis","password":"TestPass123!","firstName":"BC2","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaB2Avatar"}
-{"id":"qa_bc2_login","description":"Login extended blockchain avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"qabc2@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaB2Auth"}
+{"id":"qa_bc2_seed","description":"Seed avatar for extended blockchain QA","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qabc2","email":"{{suitePrefix}}_qabc2@test.oasis","password":"TestPass123!","firstName":"BC2","lastName":"QA"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"qaB2Avatar"}
+{"id":"qa_bc2_login","description":"Login extended blockchain avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qabc2@test.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaB2Auth"}
 {"id":"qa_bc2_add_wallet","description":"Add wallet for minting edge case","method":"POST","path":"/api/avatar/{{qaB2Avatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaB2Auth.token}}"},"body":{"chainType":"Algorand","address":"BCE2EADDR1234567890123456789012345678","label":"BCEdge"},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"qaB2Wallet"}
 {"id":"qa_bc2_create_holon","description":"Create holon for mint edge case","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaB2Auth.token}}"},"body":{"name":"BCEdgeHolon","description":"For blockchain edge","providerName":"InMemory","assetType":"Token"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"qaB2Holon"}
 

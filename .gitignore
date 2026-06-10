@@ -212,3 +212,6 @@ out/
 .temp/
 # Mutation testing artifacts (Stryker.NET)
 StrykerOutput/
+
+# Dev-only JSONL exception logs (W1-A1)
+logs/exceptions/

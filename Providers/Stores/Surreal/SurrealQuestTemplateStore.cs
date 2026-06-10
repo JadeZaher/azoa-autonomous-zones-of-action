@@ -63,6 +63,9 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
     private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static Guid FromSurrealId(string id)
+        => Guid.ParseExact(id, "N");
+
+    private static Guid FromSurrealIdStripped(string id)
     {
         var stripped = StripIdPrefix(id);
         return Guid.ParseExact(stripped, "N");
@@ -84,7 +87,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
             Description    = p.Description,
             AuthorAvatarId = string.IsNullOrEmpty(p.AuthorAvatarId)
                              ? Guid.Empty
-                             : FromSurrealId(p.AuthorAvatarId),
+                             : FromSurrealIdStripped(p.AuthorAvatarId),
             Parameters     = string.IsNullOrEmpty(p.Parameters) ? "{}" : p.Parameters,
             Version        = string.IsNullOrEmpty(p.Version) ? "1.0.0" : p.Version,
             IsPublic       = p.IsPublic,
@@ -104,7 +107,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
                     SlotId         = nodePoco.SlotId ?? string.Empty,
                     NodeTemplateId = string.IsNullOrEmpty(nodePoco.NodeTemplateId)
                                      ? Guid.Empty
-                                     : FromSurrealId(nodePoco.NodeTemplateId),
+                                     : FromSurrealIdStripped(nodePoco.NodeTemplateId),
                     ParamOverrides = string.IsNullOrEmpty(nodePoco.ParamOverrides)
                                      ? "{}"
                                      : nodePoco.ParamOverrides,
@@ -147,7 +150,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
         Version        = string.IsNullOrEmpty(p.Version) ? "1.0.0" : p.Version,
         AuthorAvatarId = string.IsNullOrEmpty(p.AuthorAvatarId)
                          ? Guid.Empty
-                         : FromSurrealId(p.AuthorAvatarId),
+                         : FromSurrealIdStripped(p.AuthorAvatarId),
         IsPublic       = p.IsPublic,
         Tags           = p.Tags?.ToList() ?? new List<string>(),
     };

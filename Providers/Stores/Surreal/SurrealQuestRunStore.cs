@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Oasis.SurrealDb.Client;
 using Oasis.SurrealDb.Client.Query;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Models.Quest;
@@ -290,13 +291,13 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
     private static QuestRun ToDomain(QuestRunPoco p) => new()
     {
         Id              = FromSurrealId(p.Id),
-        QuestId         = string.IsNullOrEmpty(p.QuestId)  ? Guid.Empty : FromSurrealId(p.QuestId),
-        AvatarId        = string.IsNullOrEmpty(p.AvatarId) ? Guid.Empty : FromSurrealId(p.AvatarId),
+        QuestId         = string.IsNullOrEmpty(p.QuestId)  ? Guid.Empty : FromSurrealIdFk(p.QuestId),
+        AvatarId        = string.IsNullOrEmpty(p.AvatarId) ? Guid.Empty : FromSurrealIdFk(p.AvatarId),
         Status          = ParseStatus(p.Status),
         StartedAt       = p.StartedAt.UtcDateTime,
         EndedAt         = p.EndedAt?.UtcDateTime,
-        ParentRunId     = string.IsNullOrEmpty(p.ParentRunId)    ? null : FromSurrealId(p.ParentRunId),
-        ForkedAtNodeId  = string.IsNullOrEmpty(p.ForkedAtNodeId) ? null : FromSurrealId(p.ForkedAtNodeId),
+        ParentRunId     = string.IsNullOrEmpty(p.ParentRunId)    ? null : FromSurrealIdFk(p.ParentRunId),
+        ForkedAtNodeId  = string.IsNullOrEmpty(p.ForkedAtNodeId) ? null : FromSurrealIdFk(p.ForkedAtNodeId),
         ForkReason      = p.ForkReason,
         FailReason      = p.FailReason,
     };
@@ -306,6 +307,9 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
     private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static Guid FromSurrealId(string id)
+        => Guid.ParseExact(id, "N");
+
+    private static Guid FromSurrealIdFk(string id)
     {
         var stripped = StripIdPrefix(id);
         return Guid.TryParseExact(stripped, "N", out var g) ? g : Guid.Empty;
@@ -352,8 +356,10 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
     // ── POCO (private — replace with generated POCO when source-gen catches up) ──
 
-    private sealed class QuestRunPoco
+    private sealed class QuestRunPoco : Oasis.SurrealDb.Client.ISurrealRecord
     {
+        public string SchemaName => RunTable;
+
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
         [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
         [JsonPropertyName("avatar_id")]         public string AvatarId { get; set; } = string.Empty;

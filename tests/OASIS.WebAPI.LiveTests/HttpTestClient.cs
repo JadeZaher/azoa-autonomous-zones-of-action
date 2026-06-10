@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using OASIS.WebAPI.LiveTests.Models;
 
 namespace OASIS.WebAPI.LiveTests;
@@ -58,11 +59,31 @@ public class HttpTestClient
                 }
             }
 
+            string? resolvedBodyJson = null;
             if (testCase.Body.HasValue)
             {
                 var bodyJson = JsonSerializer.Serialize(testCase.Body.Value, _jsonOptions);
-                bodyJson = Substitute(bodyJson, context);
-                request.Content = JsonContent.Create(JsonSerializer.Deserialize<JsonElement>(bodyJson), options: _jsonOptions);
+                resolvedBodyJson = Substitute(bodyJson, context);
+                request.Content = JsonContent.Create(JsonSerializer.Deserialize<JsonElement>(resolvedBodyJson), options: _jsonOptions);
+            }
+
+            // Detect any remaining {{...}} tokens that were not resolved by the substitution context.
+            // An unresolved token indicates an upstream extract miss — mark Inconclusive and skip the network call.
+            var authHeader = request.Headers.TryGetValues("Authorization", out var authVals)
+                ? string.Join(" ", authVals)
+                : null;
+            var unresolved = FindUnsubstitutedToken(resolvedPath)
+                          ?? (authHeader != null ? FindUnsubstitutedToken(authHeader) : null)
+                          ?? (resolvedBodyJson != null ? FindUnsubstitutedToken(resolvedBodyJson) : null);
+
+            if (unresolved != null)
+            {
+                result.Status = TestStatus.Inconclusive;
+                result.Error = $"Unsubstituted token after suite context merge: {unresolved}";
+                Console.Error.WriteLine($"[INCONCLUSIVE] {suiteName}/{testCase.Id}: unsubstituted {{...}} → likely upstream extract miss");
+                sw.Stop();
+                result.DurationMs = sw.ElapsedMilliseconds;
+                return result;
             }
 
             var response = await _httpClient.SendAsync(request);
@@ -110,7 +131,7 @@ public class HttpTestClient
         {
             sw.Stop();
             result.DurationMs = sw.ElapsedMilliseconds;
-            result.Passed = false;
+            result.Status = TestStatus.Failed;
             result.Error = $"Exception: {ex.GetType().Name}: {ex.Message}";
         }
 
@@ -127,6 +148,16 @@ public class HttpTestClient
             result = result.Replace($"{{{{{key}}}}}", value, StringComparison.Ordinal);
         }
         return result;
+    }
+
+    private static readonly Regex UnsubstitutedTokenRegex = new(@"\{\{[^}]+\}\}", RegexOptions.Compiled);
+
+    /// <summary>Returns the first unresolved <c>{{...}}</c> token found in <paramref name="text"/>, or null.</summary>
+    private static string? FindUnsubstitutedToken(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        var match = UnsubstitutedTokenRegex.Match(text);
+        return match.Success ? match.Value : null;
     }
 
     private static string? ExtractJsonPath(JsonElement element, string path)

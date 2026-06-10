@@ -145,11 +145,14 @@ public sealed class HttpSurrealConnection : ISurrealConnection
 
                 if (!resp.IsSuccessStatusCode)
                 {
-                    throw new SurrealProtocolException(
+                    var ex = new SurrealProtocolException(
                         $"SurrealDB /rpc HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {Truncate(body)}");
+                    ex.Data["SurrealStatement"] = sql;
+                    ex.Data["SurrealParams"]    = parameters;
+                    throw ex;
                 }
 
-                return ParseRpcResponse(body);
+                return ParseRpcResponse(body, sql);
             }
             catch (HttpRequestException ex) when (allowRetries && attempt + 1 < totalAttempts)
             {
@@ -163,7 +166,10 @@ public sealed class HttpSurrealConnection : ISurrealConnection
             }
         }
         // Unreachable in practice — the final attempt either returns or throws.
-        throw new SurrealProtocolException("SurrealDB /sql request failed after retries.", lastError!);
+        var retriesEx = new SurrealProtocolException("SurrealDB /sql request failed after retries.", lastError!);
+        retriesEx.Data["SurrealStatement"] = sql;
+        retriesEx.Data["SurrealParams"]    = parameters;
+        throw retriesEx;
     }
 
     /// <summary>
@@ -307,28 +313,34 @@ public sealed class HttpSurrealConnection : ISurrealConnection
     /// <see cref="SurrealResponse"/> shape as the legacy <c>/sql</c> path,
     /// preserving downstream consumer expectations.
     /// </summary>
-    private static SurrealResponse ParseRpcResponse(string body)
+    private static SurrealResponse ParseRpcResponse(string body, string sql)
     {
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object)
         {
-            throw new SurrealProtocolException(
+            var ex = new SurrealProtocolException(
                 $"Expected SurrealDB /rpc response to be a JSON object; got {root.ValueKind}: {Truncate(body)}");
+            ex.Data["SurrealStatement"] = sql;
+            throw ex;
         }
 
         if (root.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.Object)
         {
             var code    = err.TryGetProperty("code",    out var c) ? c.ToString() : "?";
             var message = err.TryGetProperty("message", out var m) ? m.GetString() ?? string.Empty : string.Empty;
-            throw new SurrealProtocolException(
+            var ex = new SurrealProtocolException(
                 $"SurrealDB /rpc returned error code {code}: {message}");
+            ex.Data["SurrealStatement"] = sql;
+            throw ex;
         }
 
         if (!root.TryGetProperty("result", out var result))
         {
-            throw new SurrealProtocolException(
+            var ex = new SurrealProtocolException(
                 $"SurrealDB /rpc response missing 'result' field: {Truncate(body)}");
+            ex.Data["SurrealStatement"] = sql;
+            throw ex;
         }
 
         // The 'result' value carries the same statement-array shape the legacy

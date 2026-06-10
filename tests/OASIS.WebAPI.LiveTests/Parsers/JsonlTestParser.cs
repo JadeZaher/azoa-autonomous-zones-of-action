@@ -38,10 +38,18 @@ public static class JsonlTestParser
             Cases = new List<TestCase>()
         };
 
+        var parseOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            AllowTrailingCommas = true
+        };
+
         await using var fs = File.OpenRead(filePath);
         using var reader = new StreamReader(fs);
 
         var lineNumber = 0;
+        var firstContentLineSeen = false;
+
         while (await reader.ReadLineAsync() is { } line)
         {
             lineNumber++;
@@ -49,13 +57,38 @@ public static class JsonlTestParser
             if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
                 continue;
 
+            // First non-comment, non-empty line: check for optional _suiteVars sentinel.
+            // A suiteVars block has a "_suiteVars" property and no "id" property.
+            if (!firstContentLineSeen)
+            {
+                firstContentLineSeen = true;
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
+                    if (root.ValueKind == JsonValueKind.Object
+                        && root.TryGetProperty("_suiteVars", out var varsElement)
+                        && !root.TryGetProperty("id", out _)
+                        && varsElement.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var prop in varsElement.EnumerateObject())
+                        {
+                            if (prop.Value.ValueKind == JsonValueKind.String)
+                                suite.SuiteVars[prop.Name] = prop.Value.GetString()!;
+                        }
+                        // Consumed as config — do not add to Cases.
+                        continue;
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Not valid JSON or not an object — fall through to normal case parsing.
+                }
+            }
+
             try
             {
-                var testCase = JsonSerializer.Deserialize<TestCase>(line, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true,
-                    AllowTrailingCommas = true
-                });
+                var testCase = JsonSerializer.Deserialize<TestCase>(line, parseOptions);
 
                 if (testCase != null)
                 {

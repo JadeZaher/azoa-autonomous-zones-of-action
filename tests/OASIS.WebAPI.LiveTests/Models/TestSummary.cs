@@ -13,6 +13,7 @@ public class TestSummary
     public int Passed { get; set; }
     public int Failed { get; set; }
     public int Skipped { get; set; }
+    public int Inconclusive { get; set; }
     public long TotalDurationMs { get; set; }
     public List<TestSuiteResult> SuiteResults { get; set; } = new();
 }
@@ -24,6 +25,7 @@ public class TestSuiteResult
     public int Passed { get; set; }
     public int Failed { get; set; }
     public int Skipped { get; set; }
+    public int Inconclusive { get; set; }
     public long DurationMs { get; set; }
     public List<TestResult> Results { get; set; } = new();
 }

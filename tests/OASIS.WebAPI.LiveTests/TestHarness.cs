@@ -57,6 +57,7 @@ public class TestHarness
         summary.Passed = summary.SuiteResults.Sum(r => r.Passed);
         summary.Failed = summary.SuiteResults.Sum(r => r.Failed);
         summary.Skipped = summary.SuiteResults.Sum(r => r.Skipped);
+        summary.Inconclusive = summary.SuiteResults.Sum(r => r.Inconclusive);
         summary.TotalDurationMs = summary.SuiteResults.Sum(r => r.DurationMs);
         summary.CompletedAt = DateTime.UtcNow;
 
@@ -67,7 +68,7 @@ public class TestHarness
 
         await File.WriteAllTextAsync(_config.ResultsPath, reporter.Render(summary), ct);
         Console.WriteLine($"\n📝 Results written to: {_config.ResultsPath}");
-        Console.WriteLine($"✅ Passed: {summary.Passed}  ❌ Failed: {summary.Failed}  ⏭️ Skipped: {summary.Skipped}");
+        Console.WriteLine($"✅ Passed: {summary.Passed}  ❌ Failed: {summary.Failed}  ⏭️ Skipped: {summary.Skipped}  ⚠️ Inconclusive: {summary.Inconclusive}");
 
         return summary;
     }
@@ -79,7 +80,7 @@ public class TestHarness
         {
             var sw = Stopwatch.StartNew();
             var client = new HttpTestClient(_httpClient, _config.IncludeResponseBodies, _config.TruncateResponseBodyAt);
-            var context = new Dictionary<string, string>();
+            var context = new Dictionary<string, string>(suite.SuiteVars);
             var results = new List<TestResult>();
 
             Console.WriteLine($"[{suite.Name}] Starting {suite.Cases.Count} case(s)...");
@@ -96,7 +97,7 @@ public class TestHarness
                         Suite = suite.Name,
                         TestId = testCase.Id,
                         Description = testCase.Description,
-                        Passed = true,
+                        Status = TestStatus.Skipped,
                         Error = "SKIPPED"
                     });
                     Console.WriteLine($"  ⏭️  {testCase.Id}: SKIPPED");
@@ -113,7 +114,13 @@ public class TestHarness
 
                 results.Add(result);
 
-                var icon = result.Passed ? "✅" : "❌";
+                var icon = result.Status switch
+                {
+                    TestStatus.Passed => "✅",
+                    TestStatus.Inconclusive => "⚠️",
+                    TestStatus.Skipped => "⏭️",
+                    _ => "❌"
+                };
                 Console.WriteLine($"  {icon} {testCase.Id}: {result.StatusCode} in {result.DurationMs}ms{(result.Error != null ? $" | {result.Error}" : "")}");
             }
 
@@ -123,9 +130,10 @@ public class TestHarness
             {
                 SuiteName = suite.Name,
                 Total = results.Count,
-                Passed = results.Count(r => r.Passed && r.Error != "SKIPPED"),
-                Failed = results.Count(r => !r.Passed && r.Error != "SKIPPED"),
-                Skipped = results.Count(r => r.Error == "SKIPPED"),
+                Passed = results.Count(r => r.Status == TestStatus.Passed),
+                Failed = results.Count(r => r.Status == TestStatus.Failed),
+                Skipped = results.Count(r => r.Status == TestStatus.Skipped),
+                Inconclusive = results.Count(r => r.Status == TestStatus.Inconclusive),
                 DurationMs = sw.ElapsedMilliseconds,
                 Results = results
             };

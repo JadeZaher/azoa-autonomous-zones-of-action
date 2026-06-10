@@ -7,14 +7,15 @@
 # - Avatar isolation (one avatar cannot access another's holons)
 # - Query variations
 # ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"holoncontroller_qa"}}
 
 # ─── Seed Avatar A ───
-{"id":"seed_avatar_a","description":"Register avatar A for holon ownership tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"holonowner_a","email":"holona@qa.oasis","password":"TestPass123!","firstName":"Owner","lastName":"Alpha"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"avatarA"}
-{"id":"login_avatar_a","description":"Login avatar A","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"holona@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"authA"}
+{"id":"seed_avatar_a","description":"Register avatar A for holon ownership tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_holonowner_a","email":"{{suitePrefix}}_holona@qa.oasis","password":"TestPass123!","firstName":"Owner","lastName":"Alpha"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"avatarA"}
+{"id":"login_avatar_a","description":"Login avatar A","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_holona@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"authA"}
 
 # ─── Seed Avatar B (for isolation tests) ───
-{"id":"seed_avatar_b","description":"Register avatar B for isolation tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"holonowner_b","email":"holonb@qa.oasis","password":"TestPass123!","firstName":"Owner","lastName":"Beta"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"avatarB"}
-{"id":"login_avatar_b","description":"Login avatar B","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"holonb@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"authB"}
+{"id":"seed_avatar_b","description":"Register avatar B for isolation tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_holonowner_b","email":"{{suitePrefix}}_holonb@qa.oasis","password":"TestPass123!","firstName":"Owner","lastName":"Beta"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"avatarB"}
+{"id":"login_avatar_b","description":"Login avatar B","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_holonb@qa.oasis","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"authB"}
 
 # ─── Create Holons for Avatar A ───
 {"id":"create_root_holon","description":"Create root holon for avatar A","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{authA.token}}"},"body":{"name":"RootHolon","description":"Root holon created by QA suite","providerName":"InMemory","metadata":{"env":"qa","suite":"holon_qa"}},"expectedStatus":200,"extract":{"id":"result.id","avatarId":"result.avatarId"},"saveAs":"rootHolon"}

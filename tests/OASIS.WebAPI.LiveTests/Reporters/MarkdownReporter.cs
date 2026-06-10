@@ -39,6 +39,7 @@ public class MarkdownReporter
         sb.AppendLine($"| Cases  | {summary.TotalCases} |");
         sb.AppendLine($"| ✅ Passed | {summary.Passed} |");
         sb.AppendLine($"| ❌ Failed | {summary.Failed} |");
+        sb.AppendLine($"| ⚠️ Inconclusive | {summary.Inconclusive} |");
         sb.AppendLine($"| ⏭️ Skipped | {summary.Skipped} |");
         sb.AppendLine();
 
@@ -47,7 +48,7 @@ public class MarkdownReporter
         {
             sb.AppendLine($"## 🗂️ {suite.SuiteName}");
             sb.AppendLine();
-            sb.AppendLine($"- **Total:** {suite.Total} | **Passed:** {suite.Passed} | **Failed:** {suite.Failed} | **Skipped:** {suite.Skipped}");
+            sb.AppendLine($"- **Total:** {suite.Total} | **Passed:** {suite.Passed} | **Failed:** {suite.Failed} | **Inconclusive:** {suite.Inconclusive} | **Skipped:** {suite.Skipped}");
             sb.AppendLine($"- **Duration:** {suite.DurationMs}ms");
             sb.AppendLine();
 
@@ -60,7 +61,7 @@ public class MarkdownReporter
         // Failure rollup for quick LLM scanning
         var failures = summary.SuiteResults
             .SelectMany(s => s.Results)
-            .Where(r => !r.Passed && r.Error != "SKIPPED")
+            .Where(r => r.Status == TestStatus.Failed)
             .ToList();
 
         if (failures.Count > 0)
@@ -74,14 +75,35 @@ public class MarkdownReporter
             sb.AppendLine();
         }
 
+        // Inconclusive rollup (unresolved context tokens — upstream extract misses)
+        var inconclusives = summary.SuiteResults
+            .SelectMany(s => s.Results)
+            .Where(r => r.Status == TestStatus.Inconclusive)
+            .ToList();
+
+        if (inconclusives.Count > 0)
+        {
+            sb.AppendLine("## ⚠️ Inconclusive Rollup");
+            sb.AppendLine();
+            foreach (var i in inconclusives)
+            {
+                sb.AppendLine($"- `{i.Suite}/{i.TestId}` — {i.Method} {i.Path} — **{i.Error}**");
+            }
+            sb.AppendLine();
+        }
+
         return sb.ToString();
     }
 
     private void RenderTestResult(StringBuilder sb, TestResult result)
     {
-        var statusEmoji = result.Error == "SKIPPED"
-            ? "⏭️"
-            : result.Passed ? "✅" : "❌";
+        var statusEmoji = result.Status switch
+        {
+            TestStatus.Skipped => "⏭️",
+            TestStatus.Passed => "✅",
+            TestStatus.Inconclusive => "⚠️",
+            _ => "❌"
+        };
 
         sb.AppendLine($"### {statusEmoji} {result.TestId}");
         sb.AppendLine();

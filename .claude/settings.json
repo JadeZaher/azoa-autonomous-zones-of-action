@@ -12,7 +12,11 @@
       "Bash(Get-ChildItem tests/OASIS.WebAPI.LiveTests -File)",
       "Bash(Select-Object -ExpandProperty Name)",
       "Bash(powershell -NoProfile -Command \"Get-ChildItem 'c:/Users/atooz/Programming/Projects/oasis-sleek/.omc/autopilot/' -ErrorAction SilentlyContinue | Select-Object Name\")",
-      "Bash(powershell -NoProfile -Command \"Get-Content 'c:/Users/atooz/Programming/Projects/oasis-sleek/tests/OASIS.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl' | Measure-Object -Line\")"
+      "Bash(powershell -NoProfile -Command \"Get-Content 'c:/Users/atooz/Programming/Projects/oasis-sleek/tests/OASIS.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl' | Measure-Object -Line\")",
+      "Bash(dotnet format *)",
+      "Bash(grep -c '^{' \"/mnt/c/Users/atooz/Programming/Projects/oasis-sleek/tests/OASIS.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl\" 2>/dev/null || wc -l < \"/mnt/c/Users/atooz/Programming/Projects/oasis-sleek/tests/OASIS.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl\")",
+      "Read(//mnt/c/Users/atooz/Programming/Projects/oasis-sleek/tests/OASIS.WebAPI.LiveTests/live-tests/**)",
+      "Bash(curl -sS -m 3 http://localhost:5000/health)"
     ]
   }
 }

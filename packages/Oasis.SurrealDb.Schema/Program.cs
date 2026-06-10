@@ -48,6 +48,8 @@ namespace Oasis.SurrealDb.Schema
                 {
                     case "up":
                         return await RunUpAsync(cli).ConfigureAwait(false);
+                    case "reset":
+                        return await ResetCommand.RunAsync(cli).ConfigureAwait(false);
                     case "migrate":
                         return await RunMigrateAsync(cli).ConfigureAwait(false);
                     case "generate-from-assembly":
@@ -435,6 +437,8 @@ namespace Oasis.SurrealDb.Schema
             Console.WriteLine();
             Console.WriteLine("  oasis-surreal up                 Apply Generated/Schemas/ then Migrations/");
             Console.WriteLine("                                   (canonical 'bring DB in sync' entry point)");
+            Console.WriteLine("  oasis-surreal reset              Wipe namespace + re-apply all migrations");
+            Console.WriteLine("                                   (dev only; destructive -- use OASIS_SKIP_RESET=1 to skip)");
             Console.WriteLine("  oasis-surreal migrate up         Same as up, but only one directory (--dir)");
             Console.WriteLine("  oasis-surreal migrate down       (stub) Refuses; manual rollback only");
             Console.WriteLine("  oasis-surreal migrate status     Read schema_migration table");
@@ -458,11 +462,11 @@ namespace Oasis.SurrealDb.Schema
             Console.WriteLine("  --namespace   (OASIS_SURREAL_NS)");
             Console.WriteLine("  --database    (OASIS_SURREAL_DB)");
             Console.WriteLine();
-            Console.WriteLine("Up flags:");
+            Console.WriteLine("Up / reset flags:");
             Console.WriteLine("  --schemas-dir <p>    Generated schemas dir (default: Persistence/SurrealDb/Generated/Schemas)");
             Console.WriteLine("  --migrations-dir <p> Hand-authored migrations dir (default: Persistence/SurrealDb/Migrations)");
-            Console.WriteLine("  --dry-run            Plan without writing");
-            Console.WriteLine("  --force              Overwrite recorded checksum on mismatch");
+            Console.WriteLine("  --dry-run            Plan without writing (up only)");
+            Console.WriteLine("  --force              Overwrite recorded checksum on mismatch (up only)");
             Console.WriteLine("  --applied-by <s>     Identity recorded in schema_migration.applied_by");
             Console.WriteLine();
             Console.WriteLine("Migrate flags:");

@@ -2,6 +2,14 @@ using System.Text.Json;
 
 namespace OASIS.WebAPI.LiveTests.Models;
 
+public enum TestStatus
+{
+    Passed,
+    Failed,
+    Inconclusive,
+    Skipped
+}
+
 /// <summary>
 /// Result of executing a single test case against the live API.
 /// </summary>
@@ -12,7 +20,16 @@ public class TestResult
     public string Description { get; set; } = string.Empty;
     public string Method { get; set; } = string.Empty;
     public string Path { get; set; } = string.Empty;
-    public bool Passed { get; set; }
+
+    public TestStatus Status { get; set; } = TestStatus.Failed;
+
+    /// <summary>Backward-compatible alias; derived from Status.</summary>
+    public bool Passed
+    {
+        get => Status == TestStatus.Passed;
+        set => Status = value ? TestStatus.Passed : (Status == TestStatus.Inconclusive || Status == TestStatus.Skipped ? Status : TestStatus.Failed);
+    }
+
     public int StatusCode { get; set; }
     public long DurationMs { get; set; }
     public string? Error { get; set; }
