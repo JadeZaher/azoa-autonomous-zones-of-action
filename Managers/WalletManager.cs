@@ -36,20 +36,25 @@ public class WalletManager : IWalletManager
         _blockchainConfig = new BlockchainConfigurationManager(config);
     }
 
-    public async Task<OASISResult<IWallet>> GetAsync(Guid id, OASISRequest? request = null)
+    public async Task<OASISResult<IWallet>> GetAsync(Guid id, Guid avatarId, OASISRequest? request = null)
     {
-        return await _walletStore.GetByIdAsync(id, default);
+        var result = await _walletStore.GetByIdAsync(id, default);
+        if (result.IsError || result.Result == null) return result;
+
+        if (result.Result.AvatarId != avatarId)
+            return new OASISResult<IWallet> { IsError = true, Message = "Wallet not found." };
+
+        return result;
     }
 
-    public async Task<OASISResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, OASISRequest? request = null)
+    public async Task<OASISResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, Guid avatarId, OASISRequest? request = null)
     {
         var all = await _walletStore.GetAllAsync(default);
         if (all.IsError || all.Result == null) return all;
 
-        var filtered = all.Result.AsEnumerable();
+        // Force the filter to the authenticated avatar — never trust query.AvatarId.
+        var filtered = all.Result.Where(w => w.AvatarId == avatarId);
 
-        if (query.AvatarId.HasValue)
-            filtered = filtered.Where(w => w.AvatarId == query.AvatarId.Value);
         if (!string.IsNullOrEmpty(query.ChainType))
             filtered = filtered.Where(w => w.ChainType.Equals(query.ChainType, StringComparison.OrdinalIgnoreCase));
         if (query.IsDefault.HasValue)
@@ -88,10 +93,13 @@ public class WalletManager : IWalletManager
         return await _walletStore.UpsertAsync(wallet, default);
     }
 
-    public async Task<OASISResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, OASISRequest? request = null)
+    public async Task<OASISResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, Guid avatarId, OASISRequest? request = null)
     {
         var existing = await _walletStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
+
+        if (existing.Result.AvatarId != avatarId)
+            return new OASISResult<IWallet> { IsError = true, Message = "Wallet not found." };
 
         var wallet = (Wallet)existing.Result;
         if (model.Label != null) wallet.Label = model.Label;
@@ -109,8 +117,15 @@ public class WalletManager : IWalletManager
         return await _walletStore.UpsertAsync(wallet, default);
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, OASISRequest? request = null)
+    public async Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null)
     {
+        var existing = await _walletStore.GetByIdAsync(id, default);
+        if (existing.IsError || existing.Result == null)
+            return new OASISResult<bool> { IsError = true, Message = "Wallet not found." };
+
+        if (existing.Result.AvatarId != avatarId)
+            return new OASISResult<bool> { IsError = true, Message = "Wallet not found." };
+
         return await _walletStore.DeleteAsync(id, default);
     }
 
@@ -134,13 +149,16 @@ public class WalletManager : IWalletManager
         return new OASISResult<bool> { Result = true, Message = "Default wallet set." };
     }
 
-    public async Task<OASISResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, OASISRequest? request = null)
+    public async Task<OASISResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, Guid avatarId, OASISRequest? request = null)
     {
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result == null)
             return new OASISResult<PortfolioResult> { IsError = true, Message = "Wallet not found." };
 
         var wallet = walletResult.Result;
+
+        if (wallet.AvatarId != avatarId)
+            return new OASISResult<PortfolioResult> { IsError = true, Message = "Wallet not found." };
 
         // Stub: linked NFT Holons for this avatar
         var allHolons = await _holonStore.QueryAsync(null, default);
@@ -166,7 +184,8 @@ public class WalletManager : IWalletManager
         decimal balance = 0;
         try
         {
-            var chainProvider = _chainFactory.GetProvider(wallet.ChainType, ChainNetwork.Devnet);
+            var network = _blockchainConfig.GetDefaultNetwork(wallet.ChainType);
+            var chainProvider = _chainFactory.GetProvider(wallet.ChainType, network);
             if (chainProvider != null)
             {
                 var balanceResult = await chainProvider.GetBalanceAsync(wallet.Address);
@@ -174,7 +193,11 @@ public class WalletManager : IWalletManager
                     decimal.TryParse(balanceResult.Result, out balance);
             }
         }
-        catch { /* Fall back to 0 if blockchain unavailable */ }
+        catch (Exception ex)
+        {
+            // Fall back to 0 if blockchain unavailable.
+            System.Diagnostics.Debug.WriteLine($"Portfolio balance lookup failed for wallet {wallet.Id}: {ex.Message}");
+        }
 
         var portfolio = new PortfolioResult
         {

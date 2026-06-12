@@ -22,7 +22,10 @@ public class BlockchainOperationController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<OASISResult<IBlockchainOperation>>> Get(Guid id, [FromQuery] OASISRequest? request)
     {
-        var result = await _manager.GetAsync(id, request);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _manager.GetAsync(id, avatarId.Value, request);
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
@@ -30,7 +33,19 @@ public class BlockchainOperationController : ControllerBase
     [HttpGet("avatar/{avatarId:guid}")]
     public async Task<ActionResult<OASISResult<IEnumerable<IBlockchainOperation>>>> GetByAvatar(Guid avatarId, [FromQuery] OASISRequest? request)
     {
+        var callerId = GetAvatarIdFromClaims();
+        if (callerId == null) return Unauthorized();
+        if (avatarId != callerId.Value)
+            return StatusCode(StatusCodes.Status403Forbidden);
+
         var result = await _manager.GetByAvatarAsync(avatarId, request);
         return Ok(result);
+    }
+
+    private Guid? GetAvatarIdFromClaims()
+    {
+        var sub = User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                 ?? User?.FindFirst("sub")?.Value;
+        return Guid.TryParse(sub, out var id) ? id : null;
     }
 }

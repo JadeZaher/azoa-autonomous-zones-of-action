@@ -94,7 +94,7 @@ public class QuestNodeHandlerRegistryTests
             validator.Object,
             emptyRegistry);
 
-        var result = await manager.ExecuteNodeAsync(questId, node.Id);
+        var result = await manager.ExecuteNodeAsync(questId, node.Id, quest.AvatarId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Be($"Unsupported node type: {QuestNodeType.BlockchainExecute}");

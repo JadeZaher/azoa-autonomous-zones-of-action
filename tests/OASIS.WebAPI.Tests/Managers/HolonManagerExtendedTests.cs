@@ -101,6 +101,8 @@ public class HolonManagerExtendedTests
     [Fact]
     public async Task DeleteAsync_ReturnsProviderResult()
     {
+        _store.Setup(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new OASISResult<IHolon> { Result = new Holon { Id = Guid.NewGuid() } });
         _store.Setup(p => p.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new OASISResult<bool> { Result = true });
 

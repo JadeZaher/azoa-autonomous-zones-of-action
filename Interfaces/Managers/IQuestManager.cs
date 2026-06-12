@@ -8,10 +8,10 @@ public interface IQuestManager
 {
     // Quest CRUD
     Task<OASISResult<Quest>> CreateAsync(QuestCreateModel model, Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<Quest>> GetAsync(Guid id, OASISRequest? request = null);
+    Task<OASISResult<Quest>> GetAsync(Guid id, Guid avatarId, OASISRequest? request = null);
     Task<OASISResult<IEnumerable<Quest>>> GetByAvatarAsync(Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<Quest>> UpdateAsync(Guid id, QuestUpdateModel model, OASISRequest? request = null);
-    Task<OASISResult<bool>> DeleteAsync(Guid id, OASISRequest? request = null);
+    Task<OASISResult<Quest>> UpdateAsync(Guid id, QuestUpdateModel model, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null);
 
     // DAG validation
     Task<OASISResult<bool>> ValidateDAGAsync(Guid questId, OASISRequest? request = null);
@@ -19,18 +19,18 @@ public interface IQuestManager
     // Execution — produces a QuestRun (one execution attempt). Per the
     // quest-temporal-fork-model track, runtime state lives on QuestRun +
     // QuestNodeExecution, never on the Quest definition.
-    Task<OASISResult<QuestRun>> ExecuteAsync(Guid questId, OASISRequest? request = null);
-    Task<OASISResult<QuestNodeExecution>> ExecuteNodeAsync(Guid questId, Guid nodeId, OASISRequest? request = null);
+    Task<OASISResult<QuestRun>> ExecuteAsync(Guid questId, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<QuestNodeExecution>> ExecuteNodeAsync(Guid questId, Guid nodeId, Guid avatarId, OASISRequest? request = null);
 
     // Fork — creates a child run branched from `runId` at `atNodeId`. Parent
     // must be Running. See ADR §2.3 for state-machine semantics.
-    Task<OASISResult<QuestRun>> ForkAsync(Guid runId, Guid atNodeId, string reason, OASISRequest? request = null);
+    Task<OASISResult<QuestRun>> ForkAsync(Guid runId, Guid atNodeId, string reason, Guid avatarId, OASISRequest? request = null);
 
     // Supervisor-driven fail path — distinct from the internal-error path
     // by carrying a `FailReason` audit field on the QuestRun. The
     // internal-error path leaves FailReason = null and writes the error
     // onto the failed QuestNodeExecution instead.
-    Task<OASISResult<QuestRun>> MarkRunFailedAsync(Guid runId, string reason, OASISRequest? request = null);
+    Task<OASISResult<QuestRun>> MarkRunFailedAsync(Guid runId, string reason, Guid avatarId, OASISRequest? request = null);
 
     // Templates
     Task<OASISResult<QuestTemplate>> CreateTemplateAsync(QuestTemplateCreateModel model, Guid avatarId, OASISRequest? request = null);
@@ -47,33 +47,33 @@ public interface IQuestManager
     // to the next ExecuteAsync (or explicit ValidateDAGAsync call). DeleteNodeAsync
     // rejects when the node has any edges referencing it — callers must clear
     // edges first.
-    Task<OASISResult<IEnumerable<QuestNode>>> ListNodesAsync(Guid questId, OASISRequest? request = null);
-    Task<OASISResult<QuestNode>> AddNodeAsync(Guid questId, QuestNodeCreateModel model, OASISRequest? request = null);
-    Task<OASISResult<QuestNode>> UpdateNodeAsync(Guid questId, Guid nodeId, QuestNodeUpdateModel model, OASISRequest? request = null);
-    Task<OASISResult<bool>> DeleteNodeAsync(Guid questId, Guid nodeId, OASISRequest? request = null);
+    Task<OASISResult<IEnumerable<QuestNode>>> ListNodesAsync(Guid questId, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<QuestNode>> AddNodeAsync(Guid questId, QuestNodeCreateModel model, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<QuestNode>> UpdateNodeAsync(Guid questId, Guid nodeId, QuestNodeUpdateModel model, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<bool>> DeleteNodeAsync(Guid questId, Guid nodeId, Guid avatarId, OASISRequest? request = null);
 
     // ── Quest Edges sub-resource ──
     // AddEdgeAsync runs the DAG validator after mutation and rejects if a
     // cycle would be introduced. GetTopologicalOrderAsync returns node Ids
     // ordered by QuestNode.ExecutionOrder (validator-assigned).
-    Task<OASISResult<QuestEdge>> AddEdgeAsync(Guid questId, QuestEdgeAddModel model, OASISRequest? request = null);
-    Task<OASISResult<bool>> RemoveEdgeAsync(Guid questId, Guid edgeId, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<Guid>>> GetTopologicalOrderAsync(Guid questId, OASISRequest? request = null);
+    Task<OASISResult<QuestEdge>> AddEdgeAsync(Guid questId, QuestEdgeAddModel model, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<bool>> RemoveEdgeAsync(Guid questId, Guid edgeId, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<IEnumerable<Guid>>> GetTopologicalOrderAsync(Guid questId, Guid avatarId, OASISRequest? request = null);
 
     // ── Quest Dependencies sub-resource ──
     // A dependency is satisfied when the referenced quest has at least one
     // QuestRun in Succeeded status. CheckDependenciesAsync surfaces the
     // unsatisfied dependency ids without blocking execution.
-    Task<OASISResult<QuestDependency>> AddDependencyAsync(Guid questId, QuestDependencyCreateModel model, OASISRequest? request = null);
-    Task<OASISResult<bool>> RemoveDependencyAsync(Guid questId, Guid depId, OASISRequest? request = null);
-    Task<OASISResult<DependencyCheckResult>> CheckDependenciesAsync(Guid questId, OASISRequest? request = null);
+    Task<OASISResult<QuestDependency>> AddDependencyAsync(Guid questId, QuestDependencyCreateModel model, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<bool>> RemoveDependencyAsync(Guid questId, Guid depId, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<DependencyCheckResult>> CheckDependenciesAsync(Guid questId, Guid avatarId, OASISRequest? request = null);
 
     // ── QuestRun read surface ──
     // Per ADR §2.2, all runtime state lives on QuestRun + QuestNodeExecution.
     // These methods expose the existing runtime to API consumers without
     // re-implementing it on the Quest definition.
-    Task<OASISResult<QuestRun>> GetRunAsync(Guid runId, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<QuestRun>>> ListRunsByQuestAsync(Guid questId, OASISRequest? request = null);
-    Task<OASISResult<QuestExecutionState>> GetExecutionStateAsync(Guid runId, OASISRequest? request = null);
-    Task<OASISResult<QuestRun>> MarkRunCompletedAsync(Guid runId, OASISRequest? request = null);
+    Task<OASISResult<QuestRun>> GetRunAsync(Guid runId, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<IEnumerable<QuestRun>>> ListRunsByQuestAsync(Guid questId, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<QuestExecutionState>> GetExecutionStateAsync(Guid runId, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<QuestRun>> MarkRunCompletedAsync(Guid runId, Guid avatarId, OASISRequest? request = null);
 }

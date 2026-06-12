@@ -74,15 +74,26 @@ public class STARManager : ISTARManager
     private static OASISResult<ISTARODK> Fail(string message) =>
         new() { IsError = true, Message = message };
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, OASISRequest? request = null)
+    public async Task<OASISResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, OASISRequest? request = null)
     {
+        if (avatarId.HasValue)
+        {
+            var loaded = await _starStore.GetByIdAsync(id, default);
+            if (loaded.IsError || loaded.Result == null)
+                return new OASISResult<bool> { IsError = true, Message = "STAR ODK not found." };
+            if (!IsOwnedBy(loaded.Result, avatarId.Value))
+                return new OASISResult<bool> { IsError = true, Message = "STAR ODK is owned by a different avatar." };
+        }
+
         return await _starStore.DeleteAsync(id, default);
     }
 
-    public async Task<OASISResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, OASISRequest? providerRequest = null)
+    public async Task<OASISResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, Guid? avatarId = null, OASISRequest? providerRequest = null)
     {
         var existing = await _starStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
+        if (avatarId.HasValue && !IsOwnedBy(existing.Result, avatarId.Value))
+            return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different avatar.");
 
         var odk = (STARODK)existing.Result;
         odk.TargetChain = request.TargetChain;
@@ -93,10 +104,12 @@ public class STARManager : ISTARManager
         return await _starStore.UpsertAsync(odk, default);
     }
 
-    public async Task<OASISResult<ISTARODK>> DeployAsync(Guid id, OASISRequest? providerRequest = null)
+    public async Task<OASISResult<ISTARODK>> DeployAsync(Guid id, Guid? avatarId = null, OASISRequest? providerRequest = null)
     {
         var existing = await _starStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
+        if (avatarId.HasValue && !IsOwnedBy(existing.Result, avatarId.Value))
+            return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different avatar.");
 
         var odk = (STARODK)existing.Result;
         if (string.IsNullOrEmpty(odk.GeneratedCode))

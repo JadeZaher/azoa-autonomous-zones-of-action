@@ -38,7 +38,11 @@ public interface ISTARManager
         Guid? routeId = null,
         OASISRequest? request = null);
 
-    Task<OASISResult<bool>> DeleteAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, OASISRequest? providerRequest = null);
-    Task<OASISResult<ISTARODK>> DeployAsync(Guid id, OASISRequest? providerRequest = null);
+    // avatarId scopes ownership: a non-null value enforces the IsOwnedBy guard
+    // (closes the IDOR for the HTTP routes). A null avatarId is the trusted
+    // internal path (quest node handlers) which has no avatar context and runs
+    // unscoped — never pass null from a controller.
+    Task<OASISResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, OASISRequest? request = null);
+    Task<OASISResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, Guid? avatarId = null, OASISRequest? providerRequest = null);
+    Task<OASISResult<ISTARODK>> DeployAsync(Guid id, Guid? avatarId = null, OASISRequest? providerRequest = null);
 }

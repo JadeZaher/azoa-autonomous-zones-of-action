@@ -37,7 +37,7 @@ public class WalletControllerTests
     public async Task Get_Existing_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _walletManager.Setup(m => m.GetAsync(id, It.IsAny<OASISRequest?>()))
+        _walletManager.Setup(m => m.GetAsync(id, It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                       .ReturnsAsync(new OASISResult<IWallet> { Result = new Wallet() });
 
         var result = await _controller.Get(id, null);
@@ -49,7 +49,7 @@ public class WalletControllerTests
     public async Task Get_NonExisting_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _walletManager.Setup(m => m.GetAsync(id, It.IsAny<OASISRequest?>()))
+        _walletManager.Setup(m => m.GetAsync(id, It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                       .ReturnsAsync(new OASISResult<IWallet> { IsError = true, Result = null });
 
         var result = await _controller.Get(id, null);
@@ -60,7 +60,7 @@ public class WalletControllerTests
     [Fact]
     public async Task Query_ReturnsOk()
     {
-        _walletManager.Setup(m => m.QueryAsync(It.IsAny<WalletQueryRequest>(), It.IsAny<OASISRequest?>()))
+        _walletManager.Setup(m => m.QueryAsync(It.IsAny<WalletQueryRequest>(), It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                       .ReturnsAsync(new OASISResult<IEnumerable<IWallet>> { Result = Array.Empty<IWallet>() });
 
         var result = await _controller.Query(new WalletQueryRequest(), null);
@@ -110,7 +110,7 @@ public class WalletControllerTests
     public async Task Update_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _walletManager.Setup(m => m.UpdateAsync(id, It.IsAny<WalletUpdateModel>(), It.IsAny<OASISRequest?>()))
+        _walletManager.Setup(m => m.UpdateAsync(id, It.IsAny<WalletUpdateModel>(), It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                       .ReturnsAsync(new OASISResult<IWallet> { Result = new Wallet() });
 
         var result = await _controller.Update(id, new WalletUpdateModel(), null);
@@ -122,7 +122,7 @@ public class WalletControllerTests
     public async Task Update_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _walletManager.Setup(m => m.UpdateAsync(id, It.IsAny<WalletUpdateModel>(), It.IsAny<OASISRequest?>()))
+        _walletManager.Setup(m => m.UpdateAsync(id, It.IsAny<WalletUpdateModel>(), It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                       .ReturnsAsync(new OASISResult<IWallet> { IsError = true });
 
         var result = await _controller.Update(id, new WalletUpdateModel(), null);
@@ -134,7 +134,7 @@ public class WalletControllerTests
     public async Task Delete_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _walletManager.Setup(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()))
+        _walletManager.Setup(m => m.DeleteAsync(id, It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                       .ReturnsAsync(new OASISResult<bool> { Result = true });
 
         var result = await _controller.Delete(id, null);
@@ -146,7 +146,7 @@ public class WalletControllerTests
     public async Task Delete_Failure_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _walletManager.Setup(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()))
+        _walletManager.Setup(m => m.DeleteAsync(id, It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                       .ReturnsAsync(new OASISResult<bool> { IsError = true, Result = false });
 
         var result = await _controller.Delete(id, null);
@@ -184,7 +184,7 @@ public class WalletControllerTests
     public async Task GetPortfolio_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _walletManager.Setup(m => m.GetPortfolioAsync(id, It.IsAny<OASISRequest?>()))
+        _walletManager.Setup(m => m.GetPortfolioAsync(id, It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                       .ReturnsAsync(new OASISResult<PortfolioResult> { Result = new PortfolioResult() });
 
         var result = await _controller.GetPortfolio(id, null);
@@ -196,7 +196,7 @@ public class WalletControllerTests
     public async Task GetPortfolio_NotFound_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _walletManager.Setup(m => m.GetPortfolioAsync(id, It.IsAny<OASISRequest?>()))
+        _walletManager.Setup(m => m.GetPortfolioAsync(id, It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                       .ReturnsAsync(new OASISResult<PortfolioResult> { IsError = true });
 
         var result = await _controller.GetPortfolio(id, null);

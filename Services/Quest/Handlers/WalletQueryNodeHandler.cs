@@ -19,7 +19,7 @@ public sealed class WalletQueryNodeHandler : IQuestNodeHandler
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
         var query = JsonSerializer.Deserialize<WalletQueryRequest>(context.Node.Config, QuestNodeJson.Options)!;
-        var r = await _walletManager.QueryAsync(query);
+        var r = await _walletManager.QueryAsync(query, context.Quest.AvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

@@ -76,7 +76,7 @@ public class QuestNodeHandlerTests
     {
         var id = Guid.NewGuid();
         var mgr = new Mock<IHolonManager>();
-        mgr.Setup(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()))
+        mgr.Setup(m => m.DeleteAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
            .ReturnsAsync(new OASISResult<bool> { Result = true });
 
         var handler = new HolonDeleteNodeHandler(mgr.Object);
@@ -84,7 +84,7 @@ public class QuestNodeHandlerTests
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()), Times.Once);
+        mgr.Verify(m => m.DeleteAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()), Times.Once);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public class QuestNodeHandlerTests
     {
         var holonId = Guid.NewGuid();
         var mgr = new Mock<IHolonManager>();
-        mgr.Setup(m => m.UpdateAsync(holonId, It.IsAny<HolonUpdateModel>(), It.IsAny<OASISRequest?>()))
+        mgr.Setup(m => m.UpdateAsync(holonId, It.IsAny<HolonUpdateModel>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
            .ReturnsAsync(new OASISResult<IHolon> { Result = new Holon { Id = holonId } });
 
         var handler = new HolonUpdateNodeHandler(mgr.Object);
@@ -101,7 +101,7 @@ public class QuestNodeHandlerTests
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.UpdateAsync(holonId, It.IsAny<HolonUpdateModel>(), It.IsAny<OASISRequest?>()), Times.Once);
+        mgr.Verify(m => m.UpdateAsync(holonId, It.IsAny<HolonUpdateModel>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()), Times.Once);
     }
 
     // ─── NFT group (INftManager) ───
@@ -169,7 +169,7 @@ public class QuestNodeHandlerTests
     public async Task WalletGetNodeHandler_ManagerError_MapsToFailed()
     {
         var mgr = new Mock<IWalletManager>();
-        mgr.Setup(m => m.GetAsync(It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
+        mgr.Setup(m => m.GetAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
            .ReturnsAsync(new OASISResult<IWallet> { IsError = true, Message = "nope" });
 
         var handler = new WalletGetNodeHandler(mgr.Object);
@@ -187,7 +187,7 @@ public class QuestNodeHandlerTests
     {
         var id = Guid.NewGuid();
         var mgr = new Mock<ISTARManager>();
-        mgr.Setup(m => m.DeployAsync(id, It.IsAny<OASISRequest?>()))
+        mgr.Setup(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
            .ReturnsAsync(new OASISResult<ISTARODK> { Result = new STARODK() });
 
         var handler = new StarDeployNodeHandler(mgr.Object);
@@ -197,7 +197,7 @@ public class QuestNodeHandlerTests
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.DeployAsync(id, It.IsAny<OASISRequest?>()), Times.Once);
+        mgr.Verify(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()), Times.Once);
     }
 
     [Fact]
@@ -205,7 +205,7 @@ public class QuestNodeHandlerTests
     {
         var starId = Guid.NewGuid();
         var mgr = new Mock<ISTARManager>();
-        mgr.Setup(m => m.GenerateAsync(starId, It.IsAny<STARDappGenerationRequest>(), It.IsAny<OASISRequest?>()))
+        mgr.Setup(m => m.GenerateAsync(starId, It.IsAny<STARDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
            .ReturnsAsync(new OASISResult<ISTARODK> { Result = new STARODK() });
 
         var handler = new StarGenerateNodeHandler(mgr.Object);
@@ -214,7 +214,7 @@ public class QuestNodeHandlerTests
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.GenerateAsync(starId, It.IsAny<STARDappGenerationRequest>(), It.IsAny<OASISRequest?>()), Times.Once);
+        mgr.Verify(m => m.GenerateAsync(starId, It.IsAny<STARDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()), Times.Once);
     }
 
     // ─── Search (ISearchManager) ───
@@ -263,7 +263,7 @@ public class QuestNodeHandlerTests
     {
         var id = Guid.NewGuid();
         var mgr = new Mock<IBlockchainOperationManager>();
-        mgr.Setup(m => m.GetAsync(id, It.IsAny<OASISRequest?>()))
+        mgr.Setup(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
            .ReturnsAsync(new OASISResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
         var handler = new BlockchainExecuteNodeHandler(mgr.Object);
@@ -273,7 +273,7 @@ public class QuestNodeHandlerTests
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.GetAsync(id, It.IsAny<OASISRequest?>()), Times.Once);
+        mgr.Verify(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()), Times.Once);
     }
 
     // ─── Control-flow (no manager dependency) ───

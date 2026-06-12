@@ -119,7 +119,7 @@ public class QuestManagerExecutionOrderTests
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { new ConditionNodeHandler() }));
 
-        var result = await manager.ExecuteAsync(questId);
+        var result = await manager.ExecuteAsync(questId, quest.AvatarId);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().NotBeNull();

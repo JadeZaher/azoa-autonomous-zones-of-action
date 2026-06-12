@@ -87,7 +87,7 @@ public class QuestManagerSubResourceTests
     {
         var (manager, _, _, _, quest) = BuildPersistedLinearQuest(nodeCount: 3);
 
-        var result = await manager.ListNodesAsync(quest.Id);
+        var result = await manager.ListNodesAsync(quest.Id, quest.AvatarId);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().HaveCount(3);
@@ -106,7 +106,7 @@ public class QuestManagerSubResourceTests
             Config = "{}",
             IsEntry = false,
             IsTerminal = false
-        });
+        }, quest.AvatarId);
 
         added.IsError.Should().BeFalse();
         added.Result.Should().NotBeNull();
@@ -129,7 +129,7 @@ public class QuestManagerSubResourceTests
         var updated = await manager.UpdateNodeAsync(quest.Id, nodeId, new QuestNodeUpdateModel
         {
             Name = "RenamedEntry"
-        });
+        }, quest.AvatarId);
 
         updated.IsError.Should().BeFalse();
         var reloaded = (await questStore.GetQuestAsync(quest.Id)).Result!;
@@ -147,7 +147,7 @@ public class QuestManagerSubResourceTests
         // Middle node has both incoming and outgoing edges.
         var middleId = quest.Nodes[1].Id;
 
-        var result = await manager.DeleteNodeAsync(quest.Id, middleId);
+        var result = await manager.DeleteNodeAsync(quest.Id, middleId, quest.AvatarId);
 
         result.IsError.Should().BeTrue();
         result.Result.Should().BeFalse();
@@ -169,11 +169,11 @@ public class QuestManagerSubResourceTests
                      .Where(e => e.SourceNodeId == middleId || e.TargetNodeId == middleId)
                      .ToList())
         {
-            var removeResult = await manager.RemoveEdgeAsync(quest.Id, edge.Id);
+            var removeResult = await manager.RemoveEdgeAsync(quest.Id, edge.Id, quest.AvatarId);
             removeResult.IsError.Should().BeFalse();
         }
 
-        var delete = await manager.DeleteNodeAsync(quest.Id, middleId);
+        var delete = await manager.DeleteNodeAsync(quest.Id, middleId, quest.AvatarId);
 
         delete.IsError.Should().BeFalse();
         delete.Result.Should().BeTrue();
@@ -214,13 +214,13 @@ public class QuestManagerSubResourceTests
         var first = await manager.AddEdgeAsync(quest.Id, new QuestEdgeAddModel
         {
             SourceNodeId = nodeA.Id, TargetNodeId = nodeB.Id, EdgeType = QuestEdgeType.Control
-        });
+        }, quest.AvatarId);
         first.IsError.Should().BeFalse();
 
         var second = await manager.AddEdgeAsync(quest.Id, new QuestEdgeAddModel
         {
             SourceNodeId = nodeB.Id, TargetNodeId = nodeC.Id, EdgeType = QuestEdgeType.Control
-        });
+        }, quest.AvatarId);
         second.IsError.Should().BeFalse();
 
         var reloaded = (await questStore.GetQuestAsync(quest.Id)).Result!;
@@ -238,7 +238,7 @@ public class QuestManagerSubResourceTests
             SourceNodeId = quest.Nodes[2].Id,
             TargetNodeId = quest.Nodes[0].Id,
             EdgeType = QuestEdgeType.Control
-        });
+        }, quest.AvatarId);
 
         cycle.IsError.Should().BeTrue();
         cycle.Message.Should().Contain("DAG");
@@ -253,7 +253,7 @@ public class QuestManagerSubResourceTests
     {
         var (manager, _, _, _, quest) = BuildPersistedLinearQuest(nodeCount: 3);
 
-        var order = await manager.GetTopologicalOrderAsync(quest.Id);
+        var order = await manager.GetTopologicalOrderAsync(quest.Id, quest.AvatarId);
 
         order.IsError.Should().BeFalse();
         var ids = order.Result!.ToList();
@@ -276,13 +276,13 @@ public class QuestManagerSubResourceTests
         {
             DependsOnQuestId = otherQuestId,
             DependencyType = QuestDependencyType.Required
-        });
+        }, quest.AvatarId);
         added.IsError.Should().BeFalse();
 
         var reloadedWithDep = (await questStore.GetQuestAsync(quest.Id)).Result!;
         reloadedWithDep.Dependencies.Should().HaveCount(1);
 
-        var removed = await manager.RemoveDependencyAsync(quest.Id, added.Result!.Id);
+        var removed = await manager.RemoveDependencyAsync(quest.Id, added.Result!.Id, quest.AvatarId);
         removed.IsError.Should().BeFalse();
         removed.Result.Should().BeTrue();
 
@@ -298,7 +298,7 @@ public class QuestManagerSubResourceTests
         var result = await manager.AddDependencyAsync(quest.Id, new QuestDependencyCreateModel
         {
             DependsOnQuestId = quest.Id
-        });
+        }, quest.AvatarId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("itself");
@@ -317,11 +317,11 @@ public class QuestManagerSubResourceTests
         var satisfiedDep = await manager.AddDependencyAsync(quest.Id, new QuestDependencyCreateModel
         {
             DependsOnQuestId = satisfiedQuestId
-        });
+        }, quest.AvatarId);
         var unsatisfiedDep = await manager.AddDependencyAsync(quest.Id, new QuestDependencyCreateModel
         {
             DependsOnQuestId = unsatisfiedQuestId
-        });
+        }, quest.AvatarId);
 
         // Seed a Succeeded run for the satisfiedQuest.
         await runStore.CreateAsync(new QuestRun
@@ -345,7 +345,7 @@ public class QuestManagerSubResourceTests
             StartedAt = DateTime.UtcNow
         });
 
-        var check = await manager.CheckDependenciesAsync(quest.Id);
+        var check = await manager.CheckDependenciesAsync(quest.Id, quest.AvatarId);
 
         check.IsError.Should().BeFalse();
         check.Result!.AllSatisfied.Should().BeFalse();
@@ -372,11 +372,11 @@ public class QuestManagerSubResourceTests
         };
         await runStore.CreateAsync(run);
 
-        var getRun = await manager.GetRunAsync(run.Id);
+        var getRun = await manager.GetRunAsync(run.Id, quest.AvatarId);
         getRun.IsError.Should().BeFalse();
         getRun.Result!.Id.Should().Be(run.Id);
 
-        var list = await manager.ListRunsByQuestAsync(quest.Id);
+        var list = await manager.ListRunsByQuestAsync(quest.Id, quest.AvatarId);
         list.IsError.Should().BeFalse();
         list.Result!.Should().ContainSingle().Which.Id.Should().Be(run.Id);
     }
@@ -414,7 +414,7 @@ public class QuestManagerSubResourceTests
             State = QuestNodeState.Running, StartedAt = DateTime.UtcNow
         });
 
-        var state = await manager.GetExecutionStateAsync(run.Id);
+        var state = await manager.GetExecutionStateAsync(run.Id, quest.AvatarId);
 
         state.IsError.Should().BeFalse();
         state.Result!.RunId.Should().Be(run.Id);
@@ -453,7 +453,7 @@ public class QuestManagerSubResourceTests
             State = QuestNodeState.Pending, StartedAt = DateTime.UtcNow
         });
 
-        var result = await manager.MarkRunCompletedAsync(run.Id);
+        var result = await manager.MarkRunCompletedAsync(run.Id, quest.AvatarId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("in flight");
@@ -488,7 +488,7 @@ public class QuestManagerSubResourceTests
             State = QuestNodeState.Succeeded, StartedAt = DateTime.UtcNow, EndedAt = DateTime.UtcNow
         });
 
-        var result = await manager.MarkRunCompletedAsync(run.Id);
+        var result = await manager.MarkRunCompletedAsync(run.Id, quest.AvatarId);
 
         result.IsError.Should().BeFalse();
         result.Result!.Status.Should().Be(QuestRunStatus.Succeeded);
@@ -522,7 +522,7 @@ public class QuestManagerSubResourceTests
             Error = "boom"
         });
 
-        var result = await manager.MarkRunCompletedAsync(run.Id);
+        var result = await manager.MarkRunCompletedAsync(run.Id, quest.AvatarId);
 
         result.IsError.Should().BeFalse();
         result.Result!.Status.Should().Be(QuestRunStatus.Failed,
@@ -545,7 +545,7 @@ public class QuestManagerSubResourceTests
         };
         await runStore.CreateAsync(run);
 
-        var result = await manager.MarkRunCompletedAsync(run.Id);
+        var result = await manager.MarkRunCompletedAsync(run.Id, quest.AvatarId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Running");

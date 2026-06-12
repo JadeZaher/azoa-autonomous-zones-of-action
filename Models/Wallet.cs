@@ -13,7 +13,9 @@ public class Wallet : IWallet
     public string? Label { get; set; }
     public bool IsDefault { get; set; }
     public WalletType WalletType { get; set; } = WalletType.External;
+    [System.Text.Json.Serialization.JsonIgnore]
     public string? EncryptedPrivateKey { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
     public string? EncryptedSeedPhrase { get; set; }
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 }

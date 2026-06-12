@@ -10,6 +10,6 @@ public interface IAvatarManager
     Task<OASISResult<string>> LoginAsync(AvatarLoginModel model, OASISRequest? request = null);
     Task<OASISResult<IAvatar>> GetAsync(Guid id, OASISRequest? request = null);
     Task<OASISResult<IEnumerable<IAvatar>>> GetAllAsync(OASISRequest? request = null);
-    Task<OASISResult<IAvatar>> UpdateAsync(Guid id, AvatarUpdateModel model, OASISRequest? request = null);
-    Task<OASISResult<bool>> DeleteAsync(Guid id, OASISRequest? request = null);
+    Task<OASISResult<IAvatar>> UpdateAsync(Guid id, AvatarUpdateModel model, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null);
 }

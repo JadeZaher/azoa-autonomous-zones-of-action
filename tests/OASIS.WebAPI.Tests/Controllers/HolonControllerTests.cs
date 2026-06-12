@@ -99,7 +99,7 @@ public class HolonControllerTests
     public async Task Update_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _holonManager.Setup(m => m.UpdateAsync(id, It.IsAny<HolonUpdateModel>(), It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.UpdateAsync(id, It.IsAny<HolonUpdateModel>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<IHolon> { Result = new Holon() });
 
         var result = await _controller.Update(id, new HolonUpdateModel(), null);
@@ -111,7 +111,7 @@ public class HolonControllerTests
     public async Task Update_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _holonManager.Setup(m => m.UpdateAsync(id, It.IsAny<HolonUpdateModel>(), It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.UpdateAsync(id, It.IsAny<HolonUpdateModel>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<IHolon> { IsError = true });
 
         var result = await _controller.Update(id, new HolonUpdateModel(), null);
@@ -123,7 +123,7 @@ public class HolonControllerTests
     public async Task Delete_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _holonManager.Setup(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.DeleteAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<bool> { Result = true });
 
         var result = await _controller.Delete(id, null);
@@ -135,7 +135,7 @@ public class HolonControllerTests
     public async Task Delete_Failure_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _holonManager.Setup(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.DeleteAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<bool> { IsError = true, Result = false });
 
         var result = await _controller.Delete(id, null);
@@ -147,7 +147,7 @@ public class HolonControllerTests
     public async Task Interact_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _holonManager.Setup(m => m.InteractAsync(id, It.IsAny<HolonInteractionRequest>(), It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.InteractAsync(id, It.IsAny<HolonInteractionRequest>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<IHolon> { Result = new Holon() });
 
         var result = await _controller.Interact(id, new HolonInteractionRequest(), null);
@@ -159,7 +159,7 @@ public class HolonControllerTests
     public async Task Interact_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _holonManager.Setup(m => m.InteractAsync(id, It.IsAny<HolonInteractionRequest>(), It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.InteractAsync(id, It.IsAny<HolonInteractionRequest>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<IHolon> { IsError = true });
 
         var result = await _controller.Interact(id, new HolonInteractionRequest(), null);
@@ -295,7 +295,7 @@ public class HolonControllerTests
     [Fact]
     public async Task Propagate_Success_ReturnsOk()
     {
-        _holonManager.Setup(m => m.PropagateAsync(It.IsAny<Guid>(), It.IsAny<HolonPropagateRequest>(), It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.PropagateAsync(It.IsAny<Guid>(), It.IsAny<HolonPropagateRequest>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<int> { Result = 3 });
 
         var result = await _controller.Propagate(Guid.NewGuid(), new HolonPropagateRequest(), null);
@@ -306,7 +306,7 @@ public class HolonControllerTests
     [Fact]
     public async Task Propagate_Error_ReturnsBadRequest()
     {
-        _holonManager.Setup(m => m.PropagateAsync(It.IsAny<Guid>(), It.IsAny<HolonPropagateRequest>(), It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.PropagateAsync(It.IsAny<Guid>(), It.IsAny<HolonPropagateRequest>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<int> { IsError = true });
 
         var result = await _controller.Propagate(Guid.NewGuid(), new HolonPropagateRequest(), null);
@@ -375,7 +375,7 @@ public class HolonControllerTests
     [Fact]
     public async Task MoveSubtree_Success_ReturnsOk()
     {
-        _holonManager.Setup(m => m.MoveSubtreeAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.MoveSubtreeAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<bool> { Result = true });
 
         var result = await _controller.MoveSubtree(Guid.NewGuid(), new MoveSubtreeRequest { NewParentId = Guid.NewGuid() }, null);
@@ -386,7 +386,7 @@ public class HolonControllerTests
     [Fact]
     public async Task MoveSubtree_Error_ReturnsBadRequest()
     {
-        _holonManager.Setup(m => m.MoveSubtreeAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
+        _holonManager.Setup(m => m.MoveSubtreeAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                      .ReturnsAsync(new OASISResult<bool> { IsError = true });
 
         var result = await _controller.MoveSubtree(Guid.NewGuid(), new MoveSubtreeRequest { NewParentId = Guid.NewGuid() }, null);

@@ -18,7 +18,7 @@ public sealed class WalletDeleteNodeHandler : IQuestNodeHandler
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
         var cfg = JsonSerializer.Deserialize<IdConfig>(context.Node.Config, QuestNodeJson.Options)!;
-        var r = await _walletManager.DeleteAsync(cfg.Id);
+        var r = await _walletManager.DeleteAsync(cfg.Id, context.Quest.AvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

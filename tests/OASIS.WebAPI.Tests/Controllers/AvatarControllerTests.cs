@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using OASIS.WebAPI.Controllers;
@@ -12,6 +14,8 @@ namespace OASIS.WebAPI.Tests.Controllers;
 
 public class AvatarControllerTests
 {
+    private static readonly Guid AuthenticatedAvatarId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
     private readonly Mock<IAvatarManager> _manager;
     private readonly AvatarController _controller;
 
@@ -19,6 +23,17 @@ public class AvatarControllerTests
     {
         _manager = new Mock<IAvatarManager>();
         _controller = new AvatarController(_manager.Object);
+        // Inject a ClaimsPrincipal so GetAvatarIdFromClaims() resolves.
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+                {
+                    new Claim(ClaimTypes.NameIdentifier, AuthenticatedAvatarId.ToString())
+                }, "TestScheme"))
+            }
+        };
     }
 
     [Fact]
@@ -108,7 +123,7 @@ public class AvatarControllerTests
     public async Task Update_WithError_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.UpdateAsync(id, It.IsAny<AvatarUpdateModel>(), It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.UpdateAsync(id, It.IsAny<AvatarUpdateModel>(), It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<IAvatar> { IsError = true });
 
         var result = await _controller.Update(id, new AvatarUpdateModel(), null);
@@ -120,7 +135,7 @@ public class AvatarControllerTests
     public async Task Update_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.UpdateAsync(id, It.IsAny<AvatarUpdateModel>(), It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.UpdateAsync(id, It.IsAny<AvatarUpdateModel>(), It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<IAvatar> { Result = new Avatar() });
 
         var result = await _controller.Update(id, new AvatarUpdateModel(), null);
@@ -132,7 +147,7 @@ public class AvatarControllerTests
     public async Task Delete_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.DeleteAsync(id, It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<bool> { Result = true });
 
         var result = await _controller.Delete(id, null);
@@ -144,7 +159,7 @@ public class AvatarControllerTests
     public async Task Delete_Failure_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.DeleteAsync(id, It.IsAny<Guid>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<bool> { IsError = true, Result = false });
 
         var result = await _controller.Delete(id, null);

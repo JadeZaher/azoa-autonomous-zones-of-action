@@ -25,7 +25,11 @@ public class WalletController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<OASISResult<IWallet>>> Get(Guid id, [FromQuery] OASISRequest? request)
     {
-        var result = await _walletManager.GetAsync(id, request);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new OASISResult<IWallet> { IsError = true, Message = "Invalid token." });
+
+        var result = await _walletManager.GetAsync(id, avatarId.Value, request);
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
@@ -33,7 +37,11 @@ public class WalletController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<OASISResult<IEnumerable<IWallet>>>> Query([FromQuery] WalletQueryRequest query, [FromQuery] OASISRequest? request)
     {
-        var result = await _walletManager.QueryAsync(query, request);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new OASISResult<IEnumerable<IWallet>> { IsError = true, Message = "Invalid token." });
+
+        var result = await _walletManager.QueryAsync(query, avatarId.Value, request);
         return Ok(result);
     }
 
@@ -52,7 +60,11 @@ public class WalletController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<OASISResult<IWallet>>> Update(Guid id, [FromBody] WalletUpdateModel model, [FromQuery] OASISRequest? request)
     {
-        var result = await _walletManager.UpdateAsync(id, model, request);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new OASISResult<IWallet> { IsError = true, Message = "Invalid token." });
+
+        var result = await _walletManager.UpdateAsync(id, model, avatarId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -60,7 +72,11 @@ public class WalletController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult<OASISResponse>> Delete(Guid id, [FromQuery] OASISRequest? request)
     {
-        var result = await _walletManager.DeleteAsync(id, request);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new OASISResult<bool> { IsError = true, Message = "Invalid token." });
+
+        var result = await _walletManager.DeleteAsync(id, avatarId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
         return Ok(new OASISResponse { Message = "Wallet deleted." });
     }
@@ -80,7 +96,11 @@ public class WalletController : ControllerBase
     [HttpGet("{id:guid}/portfolio")]
     public async Task<ActionResult<OASISResult<PortfolioResult>>> GetPortfolio(Guid id, [FromQuery] OASISRequest? request)
     {
-        var result = await _walletManager.GetPortfolioAsync(id, request);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new OASISResult<PortfolioResult> { IsError = true, Message = "Invalid token." });
+
+        var result = await _walletManager.GetPortfolioAsync(id, avatarId.Value, request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }
@@ -173,7 +193,7 @@ public class WalletController : ControllerBase
         if (avatarId == null)
             return Unauthorized(new OASISResult<object> { IsError = true, Message = "Invalid token." });
 
-        var allResult = await _walletManager.QueryAsync(new WalletQueryRequest { AvatarId = avatarId }, request);
+        var allResult = await _walletManager.QueryAsync(new WalletQueryRequest { AvatarId = avatarId }, avatarId.Value, request);
         if (allResult.IsError || allResult.Result == null)
             return Ok(new OASISResult<object> { Result = new { external = new List<IWallet>(), platform = new List<IWallet>() } });
 

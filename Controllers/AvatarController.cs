@@ -58,7 +58,10 @@ public class AvatarController : ControllerBase
     [Authorize]
     public async Task<ActionResult<OASISResult<IAvatar>>> Update(Guid id, [FromBody] AvatarUpdateModel model, [FromQuery] OASISRequest? request)
     {
-        var result = await _manager.UpdateAsync(id, model, request);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _manager.UpdateAsync(id, model, avatarId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -67,8 +70,18 @@ public class AvatarController : ControllerBase
     [Authorize]
     public async Task<ActionResult<OASISResponse>> Delete(Guid id, [FromQuery] OASISRequest? request)
     {
-        var result = await _manager.DeleteAsync(id, request);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _manager.DeleteAsync(id, avatarId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
         return Ok(new OASISResponse { Message = "Avatar deleted." });
+    }
+
+    private Guid? GetAvatarIdFromClaims()
+    {
+        var sub = User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                 ?? User?.FindFirst("sub")?.Value;
+        return Guid.TryParse(sub, out var id) ? id : null;
     }
 }

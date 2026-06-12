@@ -96,7 +96,7 @@ public class WalletManagerTests
         _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IWallet w, CancellationToken _) => new OASISResult<IWallet> { Result = w });
 
-        var result = await _manager.UpdateAsync(wallet.Id, new WalletUpdateModel { Label = "New" });
+        var result = await _manager.UpdateAsync(wallet.Id, new WalletUpdateModel { Label = "New" }, wallet.AvatarId);
 
         result.IsError.Should().BeFalse();
         result.Result!.Label.Should().Be("New");
@@ -150,7 +150,7 @@ public class WalletManagerTests
         _holonStore.Setup(p => p.QueryAsync(null, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new OASISResult<IEnumerable<IHolon>> { Result = new[] { nft } });
 
-        var result = await _manager.GetPortfolioAsync(wallet.Id);
+        var result = await _manager.GetPortfolioAsync(wallet.Id, avatarId);
 
         result.IsError.Should().BeFalse();
         result.Result!.WalletId.Should().Be(wallet.Id);
@@ -168,7 +168,7 @@ public class WalletManagerTests
         _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new OASISResult<IEnumerable<IWallet>> { Result = new[] { w1, w2 } });
 
-        var result = await _manager.QueryAsync(new WalletQueryRequest { AvatarId = w1.AvatarId, IsDefault = true });
+        var result = await _manager.QueryAsync(new WalletQueryRequest { AvatarId = w1.AvatarId, IsDefault = true }, w1.AvatarId);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().ContainSingle(w => w.Id == w1.Id);

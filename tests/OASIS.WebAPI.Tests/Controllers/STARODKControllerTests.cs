@@ -110,7 +110,7 @@ public class STARODKControllerTests
     public async Task Delete_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.DeleteAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<bool> { Result = true });
 
         var result = await _controller.Delete(id, null);
@@ -122,7 +122,7 @@ public class STARODKControllerTests
     public async Task Delete_Failure_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeleteAsync(id, It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.DeleteAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<bool> { IsError = true, Result = false });
 
         var result = await _controller.Delete(id, null);
@@ -134,7 +134,7 @@ public class STARODKControllerTests
     public async Task Generate_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<STARDappGenerationRequest>(), It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<STARDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<ISTARODK> { Result = new STARODK() });
 
         var result = await _controller.Generate(id, new STARDappGenerationRequest(), null);
@@ -146,7 +146,7 @@ public class STARODKControllerTests
     public async Task Generate_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<STARDappGenerationRequest>(), It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<STARDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<ISTARODK> { IsError = true });
 
         var result = await _controller.Generate(id, new STARDappGenerationRequest(), null);
@@ -158,7 +158,7 @@ public class STARODKControllerTests
     public async Task Deploy_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeployAsync(id, It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<ISTARODK> { Result = new STARODK() });
 
         var result = await _controller.Deploy(id, null);
@@ -170,7 +170,7 @@ public class STARODKControllerTests
     public async Task Deploy_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeployAsync(id, It.IsAny<OASISRequest?>()))
+        _manager.Setup(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<OASISRequest?>()))
                 .ReturnsAsync(new OASISResult<ISTARODK> { IsError = true });
 
         var result = await _controller.Deploy(id, null);

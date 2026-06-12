@@ -49,10 +49,11 @@ public class AvatarManagerExtendedTests
     [Fact]
     public async Task UpdateAsync_WithMissingAvatar_ShouldReturnError()
     {
+        var id = Guid.NewGuid();
         _store.Setup(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new OASISResult<IAvatar> { IsError = true, Message = "Not found" });
 
-        var result = await _manager.UpdateAsync(Guid.NewGuid(), new AvatarUpdateModel { FirstName = "X" });
+        var result = await _manager.UpdateAsync(id, new AvatarUpdateModel { FirstName = "X" }, id);
 
         result.IsError.Should().BeTrue();
     }
@@ -74,7 +75,7 @@ public class AvatarManagerExtendedTests
         _store.Setup(p => p.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IAvatar a, CancellationToken _) => new OASISResult<IAvatar> { Result = a });
 
-        var result = await _manager.UpdateAsync(avatar.Id, new AvatarUpdateModel { FirstName = "New" });
+        var result = await _manager.UpdateAsync(avatar.Id, new AvatarUpdateModel { FirstName = "New" }, avatar.Id);
 
         result.IsError.Should().BeFalse();
         result.Result!.FirstName.Should().Be("New");
@@ -86,10 +87,11 @@ public class AvatarManagerExtendedTests
     [Fact]
     public async Task DeleteAsync_ShouldReturnProviderResult()
     {
+        var id = Guid.NewGuid();
         _store.Setup(p => p.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new OASISResult<bool> { Result = true });
 
-        var result = await _manager.DeleteAsync(Guid.NewGuid());
+        var result = await _manager.DeleteAsync(id, id);
 
         result.Result.Should().BeTrue();
     }

@@ -5,13 +5,13 @@ namespace OASIS.WebAPI.Interfaces.Managers;
 
 public interface IWalletManager
 {
-    Task<OASISResult<IWallet>> GetAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, OASISRequest? request = null);
+    Task<OASISResult<IWallet>> GetAsync(Guid id, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, Guid avatarId, OASISRequest? request = null);
     Task<OASISResult<IWallet>> CreateAsync(WalletCreateModel model, Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, OASISRequest? request = null);
-    Task<OASISResult<bool>> DeleteAsync(Guid id, OASISRequest? request = null);
+    Task<OASISResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, Guid avatarId, OASISRequest? request = null);
+    Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null);
     Task<OASISResult<bool>> SetDefaultAsync(Guid avatarId, Guid walletId, OASISRequest? request = null);
-    Task<OASISResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, OASISRequest? request = null);
+    Task<OASISResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, Guid avatarId, OASISRequest? request = null);
 
     /// <summary>
     /// Generate a new wallet on the platform for a chain (creates keypair, stores encrypted).

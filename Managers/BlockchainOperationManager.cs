@@ -294,9 +294,13 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         return await ExecuteAsync(operation, request);
     }
 
-    public async Task<OASISResult<IBlockchainOperation>> GetAsync(Guid id, OASISRequest? request = null)
+    public async Task<OASISResult<IBlockchainOperation>> GetAsync(Guid id, Guid? avatarId = null, OASISRequest? request = null)
     {
-        return await _blockchainOperationStore.GetByIdAsync(id, default);
+        var result = await _blockchainOperationStore.GetByIdAsync(id, default);
+        if (result.IsError || result.Result == null) return result;
+        if (avatarId.HasValue && result.Result.AvatarId != avatarId.Value)
+            return new OASISResult<IBlockchainOperation> { IsError = true, Message = "Operation is owned by a different avatar." };
+        return result;
     }
 
     public async Task<OASISResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(Guid avatarId, OASISRequest? request = null)

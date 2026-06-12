@@ -62,7 +62,10 @@ public class STARODKController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult<OASISResponse>> Delete(Guid id, [FromQuery] OASISRequest? request)
     {
-        var result = await _manager.DeleteAsync(id, request);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _manager.DeleteAsync(id, avatarId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
         return Ok(new OASISResponse { Message = "STAR ODK deleted." });
     }
@@ -70,17 +73,21 @@ public class STARODKController : ControllerBase
     [HttpPost("{id:guid}/generate")]
     public async Task<ActionResult<OASISResult<ISTARODK>>> Generate(Guid id, [FromBody] STARDappGenerationRequest request, [FromQuery] OASISRequest? providerRequest)
     {
-        var result = await _manager.GenerateAsync(id, request, providerRequest);
-        if (result.IsError) return BadRequest(result);
-        return Ok(result);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _manager.GenerateAsync(id, request, avatarId.Value, providerRequest);
+        return TranslateUpsertResult(result);
     }
 
     [HttpPost("{id:guid}/deploy")]
     public async Task<ActionResult<OASISResult<ISTARODK>>> Deploy(Guid id, [FromQuery] OASISRequest? providerRequest)
     {
-        var result = await _manager.DeployAsync(id, providerRequest);
-        if (result.IsError) return BadRequest(result);
-        return Ok(result);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _manager.DeployAsync(id, avatarId.Value, providerRequest);
+        return TranslateUpsertResult(result);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

@@ -40,6 +40,34 @@ public class QuestManager : IQuestManager
         _registry = registry;
     }
 
+    /// <summary>
+    /// Loads a quest and rejects when it is owned by a different avatar. Returns
+    /// the loaded quest on success, or an error result to surface verbatim.
+    /// </summary>
+    private async Task<OASISResult<Quest>> LoadOwnedQuestAsync(Guid questId, Guid avatarId)
+    {
+        var questResult = await _questStore.GetQuestAsync(questId);
+        if (questResult.IsError || questResult.Result == null)
+            return new OASISResult<Quest> { IsError = true, Message = questResult.Message ?? "Quest not found." };
+        if (questResult.Result.AvatarId != avatarId)
+            return new OASISResult<Quest> { IsError = true, Message = "Quest is owned by a different avatar." };
+        return questResult;
+    }
+
+    /// <summary>
+    /// Loads a run and rejects when it is owned by a different avatar. Returns
+    /// the loaded run on success, or an error result to surface verbatim.
+    /// </summary>
+    private async Task<OASISResult<QuestRun>> LoadOwnedRunAsync(Guid runId, Guid avatarId)
+    {
+        var runResult = await _runStore.GetByIdAsync(runId);
+        if (runResult.IsError || runResult.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message ?? "Quest run not found." };
+        if (runResult.Result.AvatarId != avatarId)
+            return new OASISResult<QuestRun> { IsError = true, Message = "Quest run is owned by a different avatar." };
+        return runResult;
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // QUEST CRUD
     // ═══════════════════════════════════════════════════════════════════
@@ -98,9 +126,9 @@ public class QuestManager : IQuestManager
         return await _questStore.UpsertQuestAsync(quest);
     }
 
-    public async Task<OASISResult<Quest>> GetAsync(Guid id, OASISRequest? request = null)
+    public async Task<OASISResult<Quest>> GetAsync(Guid id, Guid avatarId, OASISRequest? request = null)
     {
-        return await _questStore.GetQuestAsync(id);
+        return await LoadOwnedQuestAsync(id, avatarId);
     }
 
     public async Task<OASISResult<IEnumerable<Quest>>> GetByAvatarAsync(Guid avatarId, OASISRequest? request = null)
@@ -108,9 +136,9 @@ public class QuestManager : IQuestManager
         return await _questStore.GetQuestsByAvatarAsync(avatarId);
     }
 
-    public async Task<OASISResult<Quest>> UpdateAsync(Guid id, QuestUpdateModel model, OASISRequest? request = null)
+    public async Task<OASISResult<Quest>> UpdateAsync(Guid id, QuestUpdateModel model, Guid avatarId, OASISRequest? request = null)
     {
-        var existing = await _questStore.GetQuestAsync(id);
+        var existing = await LoadOwnedQuestAsync(id, avatarId);
         if (existing.IsError || existing.Result == null) return existing;
 
         var quest = existing.Result;
@@ -123,8 +151,12 @@ public class QuestManager : IQuestManager
         return await _questStore.UpsertQuestAsync(quest);
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, OASISRequest? request = null)
+    public async Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null)
     {
+        var owned = await LoadOwnedQuestAsync(id, avatarId);
+        if (owned.IsError || owned.Result == null)
+            return new OASISResult<bool> { IsError = true, Message = owned.Message };
+
         return await _questStore.DeleteQuestAsync(id);
     }
 
@@ -163,8 +195,12 @@ public class QuestManager : IQuestManager
     // EXECUTION
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestRun>> ExecuteAsync(Guid questId, OASISRequest? request = null)
+    public async Task<OASISResult<QuestRun>> ExecuteAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
     {
+        var owned = await LoadOwnedQuestAsync(questId, avatarId);
+        if (owned.IsError || owned.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = owned.Message };
+
         // Validate DAG first (also assigns ExecutionOrder onto definition nodes).
         var validationResult = await ValidateDAGAsync(questId, request);
         if (validationResult.IsError)
@@ -343,9 +379,9 @@ public class QuestManager : IQuestManager
         return new OASISResult<QuestRun> { Result = updated.Result, Message = $"Quest run {run.Status}." };
     }
 
-    public async Task<OASISResult<QuestNodeExecution>> ExecuteNodeAsync(Guid questId, Guid nodeId, OASISRequest? request = null)
+    public async Task<OASISResult<QuestNodeExecution>> ExecuteNodeAsync(Guid questId, Guid nodeId, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<QuestNodeExecution> { IsError = true, Message = questResult.Message };
 
@@ -426,9 +462,9 @@ public class QuestManager : IQuestManager
     // FORK
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestRun>> ForkAsync(Guid runId, Guid atNodeId, string reason, OASISRequest? request = null)
+    public async Task<OASISResult<QuestRun>> ForkAsync(Guid runId, Guid atNodeId, string reason, Guid avatarId, OASISRequest? request = null)
     {
-        var parentResult = await _runStore.GetByIdAsync(runId);
+        var parentResult = await LoadOwnedRunAsync(runId, avatarId);
         if (parentResult.IsError || parentResult.Result == null)
             return new OASISResult<QuestRun> { IsError = true, Message = parentResult.Message };
 
@@ -536,9 +572,9 @@ public class QuestManager : IQuestManager
     // SUPERVISOR-DRIVEN FAIL
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestRun>> MarkRunFailedAsync(Guid runId, string reason, OASISRequest? request = null)
+    public async Task<OASISResult<QuestRun>> MarkRunFailedAsync(Guid runId, string reason, Guid avatarId, OASISRequest? request = null)
     {
-        var runResult = await _runStore.GetByIdAsync(runId);
+        var runResult = await LoadOwnedRunAsync(runId, avatarId);
         if (runResult.IsError || runResult.Result == null)
             return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message };
 
@@ -757,9 +793,9 @@ public class QuestManager : IQuestManager
     // QUEST NODES SUB-RESOURCE (post-hoc edits on a persisted Quest)
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<IEnumerable<QuestNode>>> ListNodesAsync(Guid questId, OASISRequest? request = null)
+    public async Task<OASISResult<IEnumerable<QuestNode>>> ListNodesAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<IEnumerable<QuestNode>> { IsError = true, Message = questResult.Message };
 
@@ -770,9 +806,9 @@ public class QuestManager : IQuestManager
         };
     }
 
-    public async Task<OASISResult<QuestNode>> AddNodeAsync(Guid questId, QuestNodeCreateModel model, OASISRequest? request = null)
+    public async Task<OASISResult<QuestNode>> AddNodeAsync(Guid questId, QuestNodeCreateModel model, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<QuestNode> { IsError = true, Message = questResult.Message };
 
@@ -798,9 +834,9 @@ public class QuestManager : IQuestManager
         return new OASISResult<QuestNode> { Result = node, Message = "Node added." };
     }
 
-    public async Task<OASISResult<QuestNode>> UpdateNodeAsync(Guid questId, Guid nodeId, QuestNodeUpdateModel model, OASISRequest? request = null)
+    public async Task<OASISResult<QuestNode>> UpdateNodeAsync(Guid questId, Guid nodeId, QuestNodeUpdateModel model, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<QuestNode> { IsError = true, Message = questResult.Message };
 
@@ -822,9 +858,9 @@ public class QuestManager : IQuestManager
         return new OASISResult<QuestNode> { Result = node, Message = "Node updated." };
     }
 
-    public async Task<OASISResult<bool>> DeleteNodeAsync(Guid questId, Guid nodeId, OASISRequest? request = null)
+    public async Task<OASISResult<bool>> DeleteNodeAsync(Guid questId, Guid nodeId, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<bool> { IsError = true, Message = questResult.Message };
 
@@ -862,9 +898,9 @@ public class QuestManager : IQuestManager
     // QUEST EDGES SUB-RESOURCE
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestEdge>> AddEdgeAsync(Guid questId, QuestEdgeAddModel model, OASISRequest? request = null)
+    public async Task<OASISResult<QuestEdge>> AddEdgeAsync(Guid questId, QuestEdgeAddModel model, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<QuestEdge> { IsError = true, Message = questResult.Message };
 
@@ -919,9 +955,9 @@ public class QuestManager : IQuestManager
         return new OASISResult<QuestEdge> { Result = edge, Message = "Edge added." };
     }
 
-    public async Task<OASISResult<bool>> RemoveEdgeAsync(Guid questId, Guid edgeId, OASISRequest? request = null)
+    public async Task<OASISResult<bool>> RemoveEdgeAsync(Guid questId, Guid edgeId, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<bool> { IsError = true, Message = questResult.Message };
 
@@ -938,9 +974,9 @@ public class QuestManager : IQuestManager
         return new OASISResult<bool> { Result = true, Message = "Edge removed." };
     }
 
-    public async Task<OASISResult<IEnumerable<Guid>>> GetTopologicalOrderAsync(Guid questId, OASISRequest? request = null)
+    public async Task<OASISResult<IEnumerable<Guid>>> GetTopologicalOrderAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<IEnumerable<Guid>> { IsError = true, Message = questResult.Message };
 
@@ -973,9 +1009,9 @@ public class QuestManager : IQuestManager
     // QUEST DEPENDENCIES SUB-RESOURCE
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestDependency>> AddDependencyAsync(Guid questId, QuestDependencyCreateModel model, OASISRequest? request = null)
+    public async Task<OASISResult<QuestDependency>> AddDependencyAsync(Guid questId, QuestDependencyCreateModel model, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<QuestDependency> { IsError = true, Message = questResult.Message };
 
@@ -1003,9 +1039,9 @@ public class QuestManager : IQuestManager
         return new OASISResult<QuestDependency> { Result = dependency, Message = "Dependency added." };
     }
 
-    public async Task<OASISResult<bool>> RemoveDependencyAsync(Guid questId, Guid depId, OASISRequest? request = null)
+    public async Task<OASISResult<bool>> RemoveDependencyAsync(Guid questId, Guid depId, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<bool> { IsError = true, Message = questResult.Message };
 
@@ -1022,9 +1058,9 @@ public class QuestManager : IQuestManager
         return new OASISResult<bool> { Result = true, Message = "Dependency removed." };
     }
 
-    public async Task<OASISResult<DependencyCheckResult>> CheckDependenciesAsync(Guid questId, OASISRequest? request = null)
+    public async Task<OASISResult<DependencyCheckResult>> CheckDependenciesAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
     {
-        var questResult = await _questStore.GetQuestAsync(questId);
+        var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new OASISResult<DependencyCheckResult> { IsError = true, Message = questResult.Message };
 
@@ -1055,19 +1091,23 @@ public class QuestManager : IQuestManager
     // QUESTRUN READ SURFACE
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestRun>> GetRunAsync(Guid runId, OASISRequest? request = null)
+    public async Task<OASISResult<QuestRun>> GetRunAsync(Guid runId, Guid avatarId, OASISRequest? request = null)
     {
-        return await _runStore.GetByIdAsync(runId);
+        return await LoadOwnedRunAsync(runId, avatarId);
     }
 
-    public async Task<OASISResult<IEnumerable<QuestRun>>> ListRunsByQuestAsync(Guid questId, OASISRequest? request = null)
+    public async Task<OASISResult<IEnumerable<QuestRun>>> ListRunsByQuestAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
     {
+        var owned = await LoadOwnedQuestAsync(questId, avatarId);
+        if (owned.IsError || owned.Result == null)
+            return new OASISResult<IEnumerable<QuestRun>> { IsError = true, Message = owned.Message };
+
         return await _runStore.GetByQuestIdAsync(questId);
     }
 
-    public async Task<OASISResult<QuestExecutionState>> GetExecutionStateAsync(Guid runId, OASISRequest? request = null)
+    public async Task<OASISResult<QuestExecutionState>> GetExecutionStateAsync(Guid runId, Guid avatarId, OASISRequest? request = null)
     {
-        var runResult = await _runStore.GetByIdAsync(runId);
+        var runResult = await LoadOwnedRunAsync(runId, avatarId);
         if (runResult.IsError || runResult.Result == null)
             return new OASISResult<QuestExecutionState> { IsError = true, Message = runResult.Message };
 
@@ -1095,9 +1135,9 @@ public class QuestManager : IQuestManager
         return new OASISResult<QuestExecutionState> { Result = state, Message = "Success" };
     }
 
-    public async Task<OASISResult<QuestRun>> MarkRunCompletedAsync(Guid runId, OASISRequest? request = null)
+    public async Task<OASISResult<QuestRun>> MarkRunCompletedAsync(Guid runId, Guid avatarId, OASISRequest? request = null)
     {
-        var runResult = await _runStore.GetByIdAsync(runId);
+        var runResult = await LoadOwnedRunAsync(runId, avatarId);
         if (runResult.IsError || runResult.Result == null)
             return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message };
 

@@ -53,21 +53,30 @@ public class AvatarNFTController : ControllerBase
     [HttpPost("{id}/transfer")]
     public async Task<IActionResult> TransferAvatarNFT(Guid id, [FromBody] TransferRequest model)
     {
-        var result = await _avatarNFTService.TransferAvatarNFTAsync(id, model.RecipientAddress);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _avatarNFTService.TransferAvatarNFTAsync(id, model.RecipientAddress, avatarId.Value);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> BurnAvatarNFT(Guid id)
     {
-        var result = await _avatarNFTService.BurnAvatarNFTAsync(id);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _avatarNFTService.BurnAvatarNFTAsync(id, avatarId.Value);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
     [HttpPost("{avatarNFTId}/holons/{holonId}/bind")]
     public async Task<IActionResult> BindHolonToAvatarNFT(Guid avatarNFTId, Guid holonId, [FromBody] HolonNFTBindingModel model)
     {
-        var result = await _avatarNFTService.BindHolonToAvatarNFTAsync(holonId, avatarNFTId, model);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _avatarNFTService.BindHolonToAvatarNFTAsync(holonId, avatarNFTId, model, avatarId.Value);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
@@ -81,21 +90,30 @@ public class AvatarNFTController : ControllerBase
     [HttpPut("holons/{bindingId}")]
     public async Task<IActionResult> UpdateHolonBinding(Guid bindingId, [FromBody] HolonNFTBindingUpdateModel model)
     {
-        var result = await _avatarNFTService.UpdateHolonBindingAsync(bindingId, model);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _avatarNFTService.UpdateHolonBindingAsync(bindingId, model, avatarId.Value);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
     [HttpDelete("holons/{bindingId}")]
     public async Task<IActionResult> RemoveHolonBinding(Guid bindingId)
     {
-        var result = await _avatarNFTService.RemoveHolonBindingAsync(bindingId);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _avatarNFTService.RemoveHolonBindingAsync(bindingId, avatarId.Value);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
     [HttpPost("{avatarNFTId}/wallets/{walletId}/bind")]
     public async Task<IActionResult> BindWalletToAvatarNFT(Guid avatarNFTId, Guid walletId, [FromBody] WalletNFTBindingModel model)
     {
-        var result = await _avatarNFTService.BindWalletToAvatarNFTAsync(walletId, avatarNFTId, model);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _avatarNFTService.BindWalletToAvatarNFTAsync(walletId, avatarNFTId, model, avatarId.Value);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
@@ -109,14 +127,20 @@ public class AvatarNFTController : ControllerBase
     [HttpPut("wallets/{bindingId}")]
     public async Task<IActionResult> UpdateWalletBinding(Guid bindingId, [FromBody] WalletNFTBindingUpdateModel model)
     {
-        var result = await _avatarNFTService.UpdateWalletBindingAsync(bindingId, model);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _avatarNFTService.UpdateWalletBindingAsync(bindingId, model, avatarId.Value);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
     [HttpDelete("wallets/{bindingId}")]
     public async Task<IActionResult> RemoveWalletBinding(Guid bindingId)
     {
-        var result = await _avatarNFTService.RemoveWalletBindingAsync(bindingId);
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _avatarNFTService.RemoveWalletBindingAsync(bindingId, avatarId.Value);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
@@ -166,6 +190,17 @@ public class AvatarNFTController : ControllerBase
             model.RequiredAccess
         );
         return result.IsError ? BadRequest(result) : Ok(result);
+    }
+
+    private Guid? GetAvatarIdFromClaims()
+    {
+        // This controller authenticates the avatar via the "AvatarId" claim
+        // (see MintAvatarNFT / VerifyAvatarNFTOwnership) with the standard
+        // NameIdentifier/sub subject as a fallback.
+        var raw = HttpContext.User.FindFirst("AvatarId")?.Value
+                 ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                 ?? User.FindFirst("sub")?.Value;
+        return Guid.TryParse(raw, out var id) ? id : null;
     }
 }
 

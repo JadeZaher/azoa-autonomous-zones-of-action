@@ -69,8 +69,13 @@ public class AvatarManager : IAvatarManager
         return await _avatarStore.GetAllAsync(default);
     }
 
-    public async Task<OASISResult<IAvatar>> UpdateAsync(Guid id, AvatarUpdateModel model, OASISRequest? request = null)
+    public async Task<OASISResult<IAvatar>> UpdateAsync(Guid id, AvatarUpdateModel model, Guid avatarId, OASISRequest? request = null)
     {
+        // IDOR guard: an avatar may only edit its own record — the route id
+        // must match the authenticated avatar identity.
+        if (id != avatarId)
+            return new OASISResult<IAvatar> { IsError = true, Message = "You may only update your own avatar." };
+
         var existing = await _avatarStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
 
@@ -85,8 +90,12 @@ public class AvatarManager : IAvatarManager
         return await _avatarStore.UpsertAsync(avatar, default);
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, OASISRequest? request = null)
+    public async Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null)
     {
+        // IDOR guard: an avatar may only delete its own record.
+        if (id != avatarId)
+            return new OASISResult<bool> { IsError = true, Message = "You may only delete your own avatar." };
+
         return await _avatarStore.DeleteAsync(id, default);
     }
 

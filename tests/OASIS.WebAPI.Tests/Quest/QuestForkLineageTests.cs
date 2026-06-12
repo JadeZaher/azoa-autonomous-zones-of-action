@@ -120,7 +120,7 @@ public class QuestForkLineageTests
         var (manager, runs, _, quest) = BuildLinearQuest(nodeCount: 2);
 
         // First execution succeeds.
-        var first = await manager.ExecuteAsync(quest.Id);
+        var first = await manager.ExecuteAsync(quest.Id, quest.AvatarId);
         first.IsError.Should().BeFalse();
         first.Result!.Status.Should().Be(QuestRunStatus.Succeeded);
         first.Result.ParentRunId.Should().BeNull("first run is a root");
@@ -128,7 +128,7 @@ public class QuestForkLineageTests
         // Second execution of the same Quest produces a brand-new run,
         // also a root (ParentRunId == null) — this is the "re-run vs fork"
         // distinction from ADR §2.3.
-        var second = await manager.ExecuteAsync(quest.Id);
+        var second = await manager.ExecuteAsync(quest.Id, quest.AvatarId);
         second.IsError.Should().BeFalse();
         second.Result!.Status.Should().Be(QuestRunStatus.Succeeded);
         second.Result.ParentRunId.Should().BeNull("re-runs of Succeeded quests are new roots, not forks");
@@ -197,7 +197,7 @@ public class QuestForkLineageTests
         });
 
         // Fork at node[1] — pre-history is just node[0].
-        var fork = await manager.ForkAsync(parent.Id, nodes[1].Id, "trying-alternative-strategy");
+        var fork = await manager.ForkAsync(parent.Id, nodes[1].Id, "trying-alternative-strategy", quest.AvatarId);
         fork.IsError.Should().BeFalse();
         var child = fork.Result!;
 
@@ -237,12 +237,12 @@ public class QuestForkLineageTests
         var (manager, _, _, quest) = BuildLinearQuest(nodeCount: 1);
 
         // Execute to completion (Status: Succeeded).
-        var run = await manager.ExecuteAsync(quest.Id);
+        var run = await manager.ExecuteAsync(quest.Id, quest.AvatarId);
         run.Result!.Status.Should().Be(QuestRunStatus.Succeeded);
 
         // Attempt fork on a Succeeded run — guard fires (ADR §2.3: only
         // Running runs are forkable; Succeeded runs are re-runnable instead).
-        var fork = await manager.ForkAsync(run.Result.Id, quest.Nodes[0].Id, "trying anyway");
+        var fork = await manager.ForkAsync(run.Result.Id, quest.Nodes[0].Id, "trying anyway", quest.AvatarId);
         fork.IsError.Should().BeTrue();
         fork.Message.Should().Contain("Succeeded").And.Contain("Running");
     }
@@ -269,7 +269,7 @@ public class QuestForkLineageTests
         await runs.CreateAsync(parent);
 
         var stranger = Guid.NewGuid(); // not in quest.Nodes
-        var fork = await manager.ForkAsync(parent.Id, stranger, "wrong node");
+        var fork = await manager.ForkAsync(parent.Id, stranger, "wrong node", quest.AvatarId);
 
         fork.IsError.Should().BeTrue();
         fork.Message.Should().Contain(stranger.ToString());
@@ -347,7 +347,7 @@ public class QuestForkLineageTests
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()));
 
-        var internalFail = await manager.ExecuteAsync(quest.Id);
+        var internalFail = await manager.ExecuteAsync(quest.Id, quest.AvatarId);
         internalFail.Result!.Status.Should().Be(QuestRunStatus.Failed);
         internalFail.Result.FailReason.Should().BeNull(
             "internal-error failures leave FailReason null — the error is on the QuestNodeExecution");
@@ -367,7 +367,7 @@ public class QuestForkLineageTests
         };
         await runsStore.CreateAsync(supRun);
 
-        var supResult = await manager.MarkRunFailedAsync(supRun.Id, "supervisor decided");
+        var supResult = await manager.MarkRunFailedAsync(supRun.Id, "supervisor decided", quest.AvatarId);
         supResult.IsError.Should().BeFalse();
         supResult.Result!.Status.Should().Be(QuestRunStatus.Failed);
         supResult.Result.FailReason.Should().Be("supervisor decided");
