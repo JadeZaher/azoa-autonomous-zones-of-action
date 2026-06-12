@@ -48,9 +48,25 @@ public class TinymanDexAdapter : IDexAdapter
             var (reserveIn, reserveOut) = await FetchTinymanPoolReservesAsync(algodUrl, asset1Id, asset2Id);
 
             if (reserveIn == 0 || reserveOut == 0)
-                return Error<DexQuote>(
-                    $"No Tinyman pool found for {asset1Id}/{asset2Id}. " +
-                    $"Ensure both assets exist on Algorand testnet and a Tinyman V2 pool is created.");
+            {
+                return Ok(new DexQuote
+                {
+                    Quote = new SwapQuoteResponse
+                    {
+                        Chain = "algorand",
+                        TokenIn = req.TokenIn,
+                        TokenOut = req.TokenOut,
+                        AmountIn = req.AmountIn,
+                        ExpectedAmountOut = "0",
+                        PriceImpact = 0,
+                        Fee = "0",
+                        Unavailable = true,
+                        UnavailableReason = "no_pool",
+                        Message = $"No Tinyman V2 pool for {asset1Id}/{asset2Id} on the configured Algorand network."
+                    },
+                    CachePayload = string.Empty
+                }, $"No Tinyman V2 pool for {asset1Id}/{asset2Id} (env condition; not a server fault).");
+            }
 
             // AMM Constant Product: x * y = k
             var feeMultiplier = 10000UL - (uint)feeBps;

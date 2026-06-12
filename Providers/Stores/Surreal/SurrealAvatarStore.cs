@@ -33,12 +33,17 @@ public sealed class SurrealAvatarStore : IAvatarStore
     {
         try
         {
-            var q = SurrealQuery.SelectById(AvatarTable, ToSurrealId(id));
+            var q = SurrealQuery
+                .Of("SELECT * FROM type::record($_t, $_id)")
+                .WithParam("_t",  AvatarTable)
+                .WithParam("_id", ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<SurrealAvatar>(q, ct);
             return new OASISResult<IAvatar>
             {
                 IsError = row == null,
-                Message = row == null ? "Avatar not found." : "Success",
+                Message = row == null
+                    ? $"Avatar not found (id: {id}). The avatar may have been deleted; if your session token references it, sign out and re-authenticate."
+                    : "Success",
                 Result  = row == null ? null : FromPoco(row)
             };
         }
@@ -104,12 +109,18 @@ public sealed class SurrealAvatarStore : IAvatarStore
         try
         {
             // Check existence first (matches the prior EF read-before-update contract).
-            var checkQ = SurrealQuery.SelectById(AvatarTable, ToSurrealId(id));
+            var checkQ = SurrealQuery
+                .Of("SELECT * FROM type::record($_t, $_id)")
+                .WithParam("_t",  AvatarTable)
+                .WithParam("_id", ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<SurrealAvatar>(checkQ, ct);
             if (existing == null)
                 return new OASISResult<bool> { IsError = true, Message = "Avatar not found.", Result = false };
 
-            var q = SurrealQuery.DeleteById(AvatarTable, ToSurrealId(id));
+            var q = SurrealQuery
+                .Of("DELETE type::record($_t, $_id)")
+                .WithParam("_t",  AvatarTable)
+                .WithParam("_id", ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new OASISResult<bool> { Result = true, Message = "Deleted." };

@@ -35,6 +35,8 @@ namespace Oasis.SurrealDb.Schema.Cli
         private readonly HttpClient _http;
         private readonly Uri _endpoint;
         private readonly bool _ownsHttp;
+        private readonly string? _ns;
+        private readonly string? _db;
 
         /// <summary>
         /// Build an adapter from a URL + credentials + namespace/database.
@@ -49,23 +51,36 @@ namespace Oasis.SurrealDb.Schema.Cli
             var b = url.TrimEnd('/') + "/sql";
             _endpoint = new Uri(b, UriKind.Absolute);
 
-            // Basic auth.
             var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes((user ?? string.Empty) + ":" + (pass ?? string.Empty)));
             _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", basic);
 
-            if (!string.IsNullOrWhiteSpace(ns)) _http.DefaultRequestHeaders.Add("Surreal-NS", ns);
-            if (!string.IsNullOrWhiteSpace(db)) _http.DefaultRequestHeaders.Add("Surreal-DB", db);
+            // NS/DB attached per-call (not as defaults) so the namespace
+            // bootstrap can skip them.
+            _ns = string.IsNullOrWhiteSpace(ns) ? null : ns;
+            _db = string.IsNullOrWhiteSpace(db) ? null : db;
+
             _http.DefaultRequestHeaders.Accept.Clear();
             _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         }
 
-        /// <inheritdoc/>
-        public async Task<SurrealExecutionResult> ExecuteAsync(string surql, CancellationToken ct = default)
+        public Task<SurrealExecutionResult> ExecuteAsync(string surql, CancellationToken ct = default)
+            => ExecuteCoreAsync(surql, scoped: true, ct);
+
+        public Task<SurrealExecutionResult> ExecuteUnscopedAsync(string surql, CancellationToken ct = default)
+            => ExecuteCoreAsync(surql, scoped: false, ct);
+
+        private async Task<SurrealExecutionResult> ExecuteCoreAsync(string surql, bool scoped, CancellationToken ct)
         {
             using var req = new HttpRequestMessage(HttpMethod.Post, _endpoint)
             {
                 Content = new StringContent(surql ?? string.Empty, Encoding.UTF8, "application/json"),
             };
+
+            if (scoped)
+            {
+                if (_ns != null) req.Headers.Add("Surreal-NS", _ns);
+                if (_db != null) req.Headers.Add("Surreal-DB", _db);
+            }
 
             // SurrealDB's /sql expects raw SurQL with `application/json` accept;
             // text/plain on the request side is preferred but the server is
@@ -89,11 +104,10 @@ namespace Oasis.SurrealDb.Schema.Cli
                 {
                     return SurrealExecutionResult.Error($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}: {body}", body);
                 }
-                // Best-effort surface of statement-level error: if the response
-                // contains `"status":"ERR"` we treat the call as failed.
                 if (body != null && body.IndexOf("\"status\":\"ERR\"", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    return SurrealExecutionResult.Error("server reported statement error", body);
+                    var snippet = body.Length > 2048 ? body.Substring(0, 2048) + "…(truncated)" : body;
+                    return SurrealExecutionResult.Error("server reported statement error: " + snippet, body);
                 }
                 return SurrealExecutionResult.Ok(body);
             }

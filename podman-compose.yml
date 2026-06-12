@@ -22,9 +22,8 @@
 
 services:
   # ─── SurrealDB (sole storage backend) ───
-  # Mirrors docker-compose.surrealdb.yml — same image, same G1 durability
-  # parameters (sync=every on the storage URI). Port 8442 matches the standalone
-  # dev container so dev tooling + scripts work either way.
+  # G1 durability: RocksDB WAL syncs per commit. (1.5.4 image lacks surrealkv;
+  # 2.x ships it enabled.) Port 8442 matches the standalone dev container.
   surrealdb:
     image: surrealdb/surrealdb:v1.5.4
     container_name: oasis-surrealdb
@@ -39,7 +38,7 @@ services:
       - oasis-surreal-root
       - --bind
       - 0.0.0.0:8442
-      - surrealkv://data/oasis.db?sync=every
+      - rocksdb:///data/oasis.db
     environment:
       # G1 — durability: flush to disk before acknowledging each write commit.
       SURREAL_SYNC_DATA: "true"
@@ -49,7 +48,7 @@ services:
     volumes:
       - surrealdb_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8442/health || exit 1"]
+      test: ["CMD", "/surreal", "isready", "--conn", "http://localhost:8442"]
       interval: 5s
       timeout: 5s
       retries: 12

@@ -34,6 +34,9 @@ namespace Oasis.SurrealDb.Schema.Migration
         /// statement-level errors are reported via <see cref="SurrealExecutionResult.Status"/>.
         /// </summary>
         Task<SurrealExecutionResult> ExecuteAsync(string surql, CancellationToken ct = default);
+
+        /// <summary>Send SurQL without Surreal-NS/-DB scope headers (for namespace bootstrap).</summary>
+        Task<SurrealExecutionResult> ExecuteUnscopedAsync(string surql, CancellationToken ct = default);
     }
 
     /// <summary>

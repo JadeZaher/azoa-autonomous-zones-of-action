@@ -553,9 +553,12 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
         throw new InvalidOperationException(
             "SurrealDB G1 durability acknowledgement is missing. Confirm that " +
             "docker-compose.surrealdb.yml (or your deploy manifest) passes " +
-            "`surrealkv://data/oasis.db?sync=every` to `surreal start`, then set " +
-            "SurrealDb:G1DurabilityAcknowledged=true in configuration to acknowledge " +
-            "the review. Every commit must fsync before ack (G1).");
+            "`rocksdb:///data/oasis.db` to `surreal start` (RocksDB syncs its " +
+            "WAL on every commit by default — equivalent to the original " +
+            "`surrealkv://...?sync=every` we used before the prebuilt 1.5.4 " +
+            "image was confirmed to ship WITHOUT the surrealkv feature flag), " +
+            "then set SurrealDb:G1DurabilityAcknowledged=true in configuration " +
+            "to acknowledge the review. Every commit must fsync before ack (G1).");
 
     using var scope = app.Services.CreateScope();
     var executor = scope.ServiceProvider.GetRequiredService<

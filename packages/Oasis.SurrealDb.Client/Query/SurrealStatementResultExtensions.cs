@@ -68,7 +68,7 @@ namespace Oasis.SurrealDb.Client.Query
             if (!statement.IsOk)
                 throw new InvalidOperationException(
                     "Cannot read affected row from a statement that failed: " +
-                    (statement.Detail ?? "(no detail)"));
+                    (SurrealResponse.ExtractErrorText(statement) ?? "(no detail)"));
 
             IReadOnlyList<T> values = statement.GetValues<T>(options);
             if (values.Count == 0)

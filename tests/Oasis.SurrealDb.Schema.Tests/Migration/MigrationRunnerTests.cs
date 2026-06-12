@@ -246,6 +246,11 @@ namespace Oasis.SurrealDb.Schema.Tests.Migration
         public void MarkApplied(string fileName, string checksum) => _applied[fileName] = checksum;
         public void ClearLog() => SentSql.Clear();
 
+        // The mock doesn't care about scope vs unscoped -- the recording fake
+        // forwards both to the same handler so test assertions remain stable.
+        public Task<SurrealExecutionResult> ExecuteUnscopedAsync(string surql, CancellationToken ct = default)
+            => ExecuteAsync(surql, ct);
+
         public Task<SurrealExecutionResult> ExecuteAsync(string surql, CancellationToken ct = default)
         {
             SentSql.Add(surql);

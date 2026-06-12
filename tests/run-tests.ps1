@@ -3,80 +3,89 @@
     Runs the OASIS.WebAPI .NET test suites.
 
 .DESCRIPTION
-    Single entry point for every automated test in the repo. By default it runs
-    the xUnit unit + integration suites via `dotnet test`. Optional switches add
-    the live HTTP harness and Stryker mutation testing.
+    Single entry point for the xUnit unit + integration suites. Integration
+    tests need SurrealDB on localhost:8000 -- this script brings up the
+    `surrealdb` service from docker-compose.dev.yml if it's not already up,
+    then runs `dotnet test`. Use -NoDb to skip the bring-up when you know
+    SurrealDB is already running (e.g. dev-up handled it).
 
 .PARAMETER Configuration
     Build configuration. Default: Debug.
 
 .PARAMETER Live
-    Also run the live HTTP harness (OASIS.WebAPI.LiveTests). Requires a running
-    API; pass -LiveUrl to target a specific host.
+    Also run the live HTTP harness (OASIS.WebAPI.LiveTests).
 
 .PARAMETER LiveUrl
     Base URL for the live harness. Default: https://localhost:5001.
 
 .PARAMETER Mutation
-    Run Stryker.NET mutation testing instead of the normal suites. Output is
-    written to tests/StrykerOutput (kept out of git).
+    Run Stryker.NET mutation testing instead of the normal suites.
+
+.PARAMETER NoDb
+    Skip the SurrealDB bring-up step. Assumes you already have it running.
 
 .EXAMPLE
     ./tests/run-tests.ps1
     ./tests/run-tests.ps1 -Configuration Release
     ./tests/run-tests.ps1 -Live -LiveUrl https://localhost:5001
     ./tests/run-tests.ps1 -Mutation
+    ./tests/run-tests.ps1 -NoDb
 #>
 [CmdletBinding()]
 param(
     [string]$Configuration = "Debug",
     [switch]$Live,
     [string]$LiveUrl = "https://localhost:5001",
-    [switch]$Mutation
+    [switch]$Mutation,
+    [switch]$NoDb
 )
 
 $ErrorActionPreference = "Stop"
 
-# Repo root = parent of this tests/ directory, regardless of CWD.
 $TestsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $TestsDir
+$ComposeFile = Join-Path $RepoRoot "docker-compose.dev.yml"
 
-# Integration tests run against a PERSISTENT local Postgres (data survives
-# between runs). Bring the container up if needed, but never recreate a
-# running/existing one (that would wipe persisted data). Mirrors the
-# image/ports/credentials in docker-compose.yml + appsettings.json (5441).
-function Initialize-IntegrationPostgres {
-    $runtime = if (Get-Command podman -ErrorAction SilentlyContinue) { "podman" }
-               elseif (Get-Command docker -ErrorAction SilentlyContinue) { "docker" }
-               else { $null }
-    if (-not $runtime) {
-        Write-Host "==> No podman/docker; skipping Postgres bring-up (integration tests will fail without a DB on localhost:5441)." -ForegroundColor Yellow
+function Find-Compose {
+    try { $null = docker compose version 2>&1; if ($LASTEXITCODE -eq 0) { return @{ Exe='docker'; Pre=@('compose') } } } catch { }
+    if (Get-Command docker-compose -ErrorAction SilentlyContinue) { return @{ Exe='docker-compose'; Pre=@() } }
+    if (Get-Command podman-compose -ErrorAction SilentlyContinue) { return @{ Exe='podman-compose'; Pre=@() } }
+    try { $null = podman compose version 2>&1; if ($LASTEXITCODE -eq 0) { return @{ Exe='podman'; Pre=@('compose') } } } catch { }
+    return $null
+}
+
+function Initialize-IntegrationSurrealDb {
+    try {
+        $null = Invoke-WebRequest -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+        Write-Host "==> SurrealDB already reachable on localhost:8000." -ForegroundColor DarkGray
+        return
+    } catch { }
+
+    $compose = Find-Compose
+    if (-not $compose) {
+        Write-Host "==> No compose runtime; skipping bring-up. Integration tests need SurrealDB on :8000." -ForegroundColor Yellow
+        return
+    }
+    if (-not (Test-Path $ComposeFile)) {
+        Write-Host "==> $ComposeFile not found; skipping bring-up." -ForegroundColor Yellow
         return
     }
 
-    $name = "oasis-postgres"
-    $state = (& $runtime ps -a --filter "name=$name" --format "{{.State}}" 2>$null | Select-Object -First 1)
-    if ($state -eq "running") {
-        Write-Host "==> Postgres '$name' already running (persistent data kept)." -ForegroundColor DarkGray
-    }
-    elseif ($state) {
-        Write-Host "==> Starting existing Postgres '$name' (persistent data kept)..." -ForegroundColor Cyan
-        & $runtime start $name | Out-Null
-    }
-    else {
-        Write-Host "==> Creating Postgres '$name' ($runtime, 5441->5432)..." -ForegroundColor Cyan
-        & $runtime run -d --name $name `
-            -e POSTGRES_DB=oasis -e POSTGRES_USER=oasis -e POSTGRES_PASSWORD=oasis123 `
-            -p 5441:5432 postgres:16-alpine | Out-Null
-    }
+    Write-Host "==> Bringing up surrealdb from docker-compose.dev.yml..." -ForegroundColor Cyan
+    & $compose.Exe @($compose.Pre + @('-f', $ComposeFile, 'up', '-d', 'surrealdb'))
+    if ($LASTEXITCODE -ne 0) { throw "compose up surrealdb failed (exit $LASTEXITCODE)." }
 
     $deadline = (Get-Date).AddSeconds(40)
-    do {
-        Start-Sleep -Milliseconds 800
-        $ready = (& $runtime exec $name pg_isready -U oasis -d oasis 2>&1) -match "accepting connections"
-    } while (-not $ready -and (Get-Date) -lt $deadline)
-    if (-not $ready) { throw "Postgres '$name' did not become ready on localhost:5441 within 40s." }
-    Write-Host "==> Postgres ready on localhost:5441 (db 'oasis')." -ForegroundColor Green
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $null = Invoke-WebRequest -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+            Write-Host "==> SurrealDB ready on localhost:8000." -ForegroundColor Green
+            return
+        } catch {
+            Start-Sleep -Milliseconds 800
+        }
+    }
+    throw "SurrealDB did not become ready on localhost:8000 within 40s."
 }
 
 Push-Location $RepoRoot
@@ -87,7 +96,7 @@ try {
         exit $LASTEXITCODE
     }
 
-    Initialize-IntegrationPostgres
+    if (-not $NoDb) { Initialize-IntegrationSurrealDb }
 
     $testProjects = @(
         "tests/OASIS.WebAPI.Tests/OASIS.WebAPI.Tests.csproj",

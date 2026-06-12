@@ -1,48 +1,73 @@
 # AGENTS.md — oasis-sleek repeated-ops context
 
 .NET 8 WebAPI (`OASIS.WebAPI.csproj` at root) + Next.js frontend + `@oasis/wallet-sdk`.
-This file is the operational cheat-sheet for build / test / local stack. Keep it
-accurate; it is read on every session.
+**Sole datastore is SurrealDB** (Postgres + EF Core were removed in
+`surrealdb-migration`; no more `oasis-postgres`, no more `start.ps1`).
+This file is the operational cheat-sheet for build / test / local stack.
+Keep it accurate; it is read on every session.
 
 ## Container runtime
 
 This machine has **podman** (no docker). All commands below use `podman`;
-substitute `docker` if present. DB container name: `oasis-postgres`,
-image `postgres:16-alpine`.
+substitute `docker` if present. The compose stack defines three
+containers: `oasis-dev-surrealdb`, `oasis-dev-api`, `oasis-dev-frontend`.
+The bundled SurrealDB image is `surrealdb/surrealdb:v1.5.4`.
 
-## Local stack — `start.ps1`
+## Local stack — `dev-up.ps1` / `dev-up.sh`
 
-Full stack = PostgreSQL + .NET API (`:5000`) + Next.js frontend (`:3000`).
+Full stack = SurrealDB (`:8000`) + .NET API (`:5000`) + Next.js
+frontend (`:3000`), brought up via `docker-compose.dev.yml`.
 
 ```powershell
-.\start.ps1 -Mode up      # spin everything up (creates oasis-postgres, builds+runs API, runs frontend)
-.\start.ps1 -Mode down    # stop API/frontend, stop & REMOVE the DB container, clean logs
+.\dev-up.ps1                 # rebuild images + SDK dist, keep volume, apply pending schema
+.\dev-up.ps1 -NoBuild        # fast restart, reuse cached images
+.\dev-up.ps1 -ResetDb        # DESTRUCTIVE: wipe SurrealDB volume before bringing up
+.\dev-up.ps1 -Reset          # keep volume but wipe + reapply schema
+.\dev-up.ps1 -Logs           # tail combined logs after startup
+.\dev-down.ps1               # stop containers, keep volume
+.\dev-down.ps1 -Wipe         # stop + drop SurrealDB volume (alias: -ResetDb)
 ```
 
-- DB host port resolves to **5441** by default (avoids the machine's native
-  PostgreSQL on 5432); `start.ps1` rewrites `appsettings.json` `Port=` to match.
-- `-Mode down` **removes** the container (data lost). To keep data, stop without
-  removing: `podman stop oasis-postgres` then `podman start oasis-postgres`.
+Bash equivalents (`./dev-up.sh`, `./dev-down.sh`) use the same flag
+names with `--kebab-case` (e.g. `--reset-db`, `--no-build`).
 
-## Database
+- Volume preservation is the **default**. `-ResetDb` is the explicit
+  opt-in for a clean slate.
+- Rebuild is on by default — `-NoBuild` skips.
+- Old `-Rebuild` / `-Clean` / `-Preserve` flags are kept as no-op /
+  alias forms so older muscle memory doesn't error.
+- `dev-up` also rebuilds `sdk/oasis-wallet/dist` on the host so a
+  host-mode frontend (rare) sees the same SDK the container does.
 
-- `docker-compose.yml` defines only Postgres 16 (`oasis`/`oasis`/`oasis123`).
-- Connection (config-driven): `appsettings.json` →
-  `ConnectionStrings:OASISDatabase` = `Host=localhost;Port=5441;Database=oasis;Username=oasis;Password=oasis123`.
-- Bring up just the DB (idempotent, **persistent** data):
-  ```powershell
-  podman start oasis-postgres 2>$null; if (-not $?) {
-    podman run -d --name oasis-postgres -e POSTGRES_DB=oasis -e POSTGRES_USER=oasis `
-      -e POSTGRES_PASSWORD=oasis123 -p 5441:5432 postgres:16-alpine }
-  ```
-- psql into it: `podman exec -it oasis-postgres psql -U oasis -d oasis`
-- Schema is created by the API on boot: `Program.cs` runs
-  `db.Database.Migrate()` (EF migrations in `Migrations/`). First boot against
-  an empty `oasis` DB builds everything; thereafter it is a no-op and **data
-  persists between runs**.
-- A separate **native PostgreSQL 16** also runs on `localhost:5432`
-  (superuser `postgres`). It is unrelated to `oasis-postgres`; do not confuse
-  the two (5432 native vs 5441 container).
+## Database — SurrealDB
+
+- Storage URI: `rocksdb:///data/db` (G1 durability — RocksDB syncs its
+  WAL per commit). The original `surrealkv:///data/db?sync=every`
+  config crashed because `surrealdb/surrealdb:v1.5.4` ships **without**
+  the `surrealkv` feature flag. `surrealkv` default-on starts in 2.x;
+  major upgrade tracked separately at
+  [`surrealdb-major-upgrade`](conductor/tracks/surrealdb-major-upgrade/spec.md).
+- Connection: `SurrealDb:Endpoint=http://surrealdb:8000` (from-API),
+  or `http://localhost:8000` (from host). Namespace `oasis`, database
+  `oasis`, user `root`, password `root` — single-underscore env-var
+  aliases `OASIS_SURREAL_NS` / `_DB` / `_USER` / `_PASS` get the same
+  values via the compose file.
+- Schema lives in [Persistence/SurrealDb/Generated/Schemas/](Persistence/SurrealDb/Generated/Schemas/)
+  (26 `.surql` files, emitted from decorated POCOs by
+  [packages/Oasis.SurrealDb.Schema](packages/Oasis.SurrealDb.Schema/)).
+- Schema sync is **idempotent** — `oasis-surreal up` runs from the API
+  container's entrypoint on every boot AND from the host as the last
+  dev-up step. The `schema_migration` ledger skips already-applied
+  files. `-Reset` / `--reset` wipes the namespace and re-applies.
+- Healthcheck uses `/surreal isready --conn http://localhost:8000`
+  (the image is distroless — no curl/wget/nc available inside).
+- Host port 8000 collision: if a different SurrealDB is already
+  running on `127.0.0.1:8000`, dev-up auto-detects it, skips the
+  bundled service, and points the API at the host via
+  `host.containers.internal:8000` (podman) / `host.docker.internal`
+  (docker).
+- `podman exec -it oasis-dev-surrealdb /surreal sql --conn http://localhost:8000 --user root --pass root --ns oasis --db oasis`
+  to drop into a REPL.
 
 ## Build
 
@@ -51,60 +76,65 @@ dotnet build OASIS.WebAPI.csproj -c Debug          # production API only (fast g
 dotnet build oasis-sleek.sln    -c Debug           # whole solution (incl. test projects)
 ```
 
-- Green = **0 errors**. There are **17 pre-existing baseline warnings**
-  (SolanaProvider nullability, SearchManager, a CS1998) — not regressions; do
-  not chase them. Adding NEW warnings is a regression.
-- Do **not** run the frontend typecheck — it is known pre-existing noise. The
-  gates are `dotnet build` + SDK `tsc` only.
-- EF migration: `dotnet ef migrations add <Name> --project OASIS.WebAPI.csproj`.
-  If `dotnet ef` fails locking `bin\Debug\net8.0\OASIS.WebAPI.dll`, a stale dev
-  server holds it — `Get-Process dotnet,OASIS.WebAPI | Stop-Process -Force`
-  first, then rebuild fresh.
+- Green = **0 errors**. There are ~18 pre-existing baseline warnings
+  (SolanaProvider nullability, SearchManager, a CS1998) — not
+  regressions; do not chase them. Adding NEW warnings is a regression.
+- Do **not** run the frontend typecheck — it is known pre-existing
+  noise. The gates are `dotnet build` + SDK `tsc` only. See memory:
+  [`no-frontend-typecheck`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/no-frontend-typecheck.md).
+- No `dotnet ef` migrations on new work — EF was removed in
+  surrealdb-migration. Schema changes are now decorated-POCO edits +
+  re-emitting `Persistence/SurrealDb/Generated/Schemas/*.surql` via
+  [Oasis.SurrealDb.Schema](packages/Oasis.SurrealDb.Schema/).
 
-## Test — `tests/run-tests.ps1` (single entry point)
-
-```powershell
-.\tests\run-tests.ps1                               # unit + integration (Debug)
-.\tests\run-tests.ps1 -Configuration Release
-.\tests\run-tests.ps1 -Live -LiveUrl https://localhost:5001   # + live HTTP harness
-.\tests\run-tests.ps1 -Mutation                     # Stryker.NET -> tests/StrykerOutput
-```
-
-`run-tests.ps1` **auto-spins the persistent `oasis-postgres` container**
-(idempotent: starts if stopped, creates if missing, leaves a running one alone
-so data persists) before the suites.
-
-Targeted runs:
+## Test
 
 ```powershell
-# Unit suite (authoritative gate): 493 tests, ~10s, no external deps
+# Unit suite (fast gate, no external deps): ~500 tests, ~10s
 dotnet test tests/OASIS.WebAPI.Tests/OASIS.WebAPI.Tests.csproj -c Debug
 
 # One class / filter
 dotnet test tests/OASIS.WebAPI.Tests/OASIS.WebAPI.Tests.csproj -c Debug `
   --filter "FullyQualifiedName~CrossChainBridgeServiceTests"
+
+# Integration tests (need SurrealDB up)
+dotnet test tests/OASIS.WebAPI.IntegrationTests/OASIS.WebAPI.IntegrationTests.csproj -c Debug
+
+# Schema package
+dotnet test tests/Oasis.SurrealDb.Schema.Tests/Oasis.SurrealDb.Schema.Tests.csproj -c Debug
 ```
 
-- Unit project uses EF-InMemory for fast tests **and** `Microsoft.EntityFrameworkCore.Sqlite`
-  for tests that need real UNIQUE constraints / `ExecuteUpdateAsync` rowcounts
-  (idempotency, bridge concurrency, reconciliation). Shared test infra lives in
-  `tests/OASIS.WebAPI.Tests/TestSupport/` (`SqliteTestContext`,
-  `FakeIdempotencyStore`) — reuse it, don't re-roll per-file copies.
-- **Integration tests (`OASIS.WebAPI.IntegrationTests`) are a known DEFERRED
-  follow-up.** They were built for disposable per-factory EF-InMemory DBs; the
-  factory now points at the persistent Postgres, but the harness still does
-  destructive teardown + parallel collections that race a shared DB. Treat the
-  **unit suite (493/493, includes all safety tests) as the authoritative gate.**
-  Follow-up scope: disable xUnit parallelization, remove destructive
-  `EnsureDeleted` teardown, migrate the persistent DB once, per-test data
-  isolation. See `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md`.
+- Integration tests use the persistent SurrealDB instance the
+  `dev-up` stack already brings up. Bring it up first, then run.
+- Unit suite is the authoritative regression gate; integration suites
+  are higher-fidelity but slower.
+- Open follow-up: per-test SurrealDB namespace isolation is not yet
+  propagated to the WebAPI executor — three STARODK IDOR integration
+  tests are written but pending harness fix. Track:
+  `integration-test-namespace-isolation` (not yet a formal
+  conductor track).
 
 ## Conventions for agents
 
-- Config-driven over hardcoded; tests load real `appsettings.json`.
-- SDK and .NET providers stay mirrored; new chains via the plugin interfaces
-  (`ChainProvider` / `IBlockchainProvider`, `DexAdapter`).
-- Self-documenting code; extract test helpers over verbose narrative comments.
-- Bridge moves real value — never weaken an exactly-once / replay assertion to
-  make a test pass; fix the cause. Pre-launch safety surface + ops runbook:
-  `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md`.
+- **Config-driven over hardcoded.** Tests load real
+  `appsettings.json`. See memory: [`config-driven-calls`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/config-driven-calls.md).
+- **SurrealDB sole storage engine, chain = source of truth for balances.**
+  See memory: [`data-engine-decision`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/data-engine-decision.md).
+- **Greenfield, pre-launch.** No customers, no production data. Prefer
+  clean re-architecture over compat/migration shims. Memory:
+  [`greenfield-prelaunch-no-compat`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/greenfield-prelaunch-no-compat.md).
+- **SurrealDB record lookups** use `SELECT * FROM type::record($_t, $_id)`,
+  NOT `WHERE id = $id` (Thing vs string equality fails silently in
+  1.5.x). See [SurrealApiKeyStore](Providers/Stores/Surreal/SurrealApiKeyStore.cs)
+  for the canonical pattern.
+- **SDK and .NET providers stay mirrored;** new chains via the plugin
+  interfaces (`ChainProvider` / `IBlockchainProvider`, `DexAdapter`).
+  See [PROVIDERS.md](PROVIDERS.md).
+- **Self-documenting code over verbose comments.** Test helpers over
+  narrative.
+- **Bridge moves real value** — never weaken an exactly-once / replay
+  assertion to make a test pass; fix the cause. Pre-launch safety
+  surface + ops runbook: `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md`.
+- **DEX env-conditions are 200 OK with `Unavailable: true`** — no-pool
+  on Tinyman, upstream unreachable on Jupiter. Frontend tests
+  render these as expected, not as red failures.

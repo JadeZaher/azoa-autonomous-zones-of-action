@@ -60,9 +60,12 @@ public class SwapManager : ISwapManager
             var dexQuote = quoteResult.Result;
             var quote = dexQuote.Quote;
 
-            // SwapManager owns the QuoteId + cache lifecycle (uniform across chains).
-            quote.QuoteId = Guid.NewGuid().ToString("N");
-            CacheQuote(quote.QuoteId, request.Chain, dexQuote.CachePayload);
+            // Unavailable quotes have no payload to cache or replay.
+            if (!quote.Unavailable)
+            {
+                quote.QuoteId = Guid.NewGuid().ToString("N");
+                CacheQuote(quote.QuoteId, request.Chain, dexQuote.CachePayload);
+            }
 
             return new OASISResult<SwapQuoteResponse>
             {

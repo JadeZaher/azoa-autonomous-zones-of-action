@@ -259,8 +259,10 @@ namespace Oasis.SurrealDb.Schema.Migration
                     sb.Append("USE NS ").Append(Sanitize(_ensureNamespace)).Append(";\n");
                     sb.Append("DEFINE DATABASE IF NOT EXISTS ").Append(Sanitize(_ensureDatabase)).Append(";\n");
                 }
-                var nsResult = await _connection.ExecuteAsync(sb.ToString(), ct).ConfigureAwait(false);
-                if (!nsResult.IsOk)
+                // Unscoped: scope headers are resolved before the statement,
+                // so a fresh database with no namespace yet rejects them.
+                var nsResult = await _connection.ExecuteUnscopedAsync(sb.ToString(), ct).ConfigureAwait(false);
+                if (!nsResult.IsOk && !IsOnlyAlreadyExistsError(nsResult.Detail))
                 {
                     throw new MigrationApplyException(
                         _ensureNamespace,
@@ -374,6 +376,19 @@ namespace Oasis.SurrealDb.Schema.Migration
             {
                 throw new MigrationApplyException(file.FileName, result.Detail ?? "could not record applied migration");
             }
+        }
+
+        // SurrealDB 1.5.x ignores IF NOT EXISTS on DEFINE NAMESPACE/DATABASE
+        // and emits ERR "already exists" on re-run -- treat as benign.
+        private static bool IsOnlyAlreadyExistsError(string? detail)
+        {
+            if (string.IsNullOrWhiteSpace(detail)) return false;
+            if (detail.IndexOf("already exists", StringComparison.OrdinalIgnoreCase) < 0)
+                return false;
+            string[] hardFailures = { "Parse error", "permission denied", "Authentication", "could not connect", "syntax error", "Unknown", "Invalid" };
+            foreach (var m in hardFailures)
+                if (detail.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            return true;
         }
 
         /// <summary>Sanitize a filename to a record-id-safe token (letters/digits/underscore).</summary>

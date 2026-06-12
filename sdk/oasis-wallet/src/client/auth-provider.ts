@@ -95,7 +95,13 @@ export class OasisAuthProvider {
     }
 
     const result = await this.api.getAvatar(this.session.avatarId);
-    if (!result.ok) return result;
+    if (!result.ok) {
+      const status = result.error.status;
+      if (status === 401 || status === 403 || status === 404) {
+        await this.session.logout().catch(() => {});
+      }
+      return result;
+    }
 
     const avatar = result.value;
     return ok({

@@ -25,8 +25,8 @@
 # Compose runtimes supported: docker compose v2, docker-compose v1, podman-compose.
 # The companion ./dev-up.sh / ./dev-up.ps1 scripts auto-detect.
 #
-# G1 durability note: surrealkv `?sync=every` flushes every commit to disk
-# before ack -- matches the dev-engine-decision memory contract.
+# G1 durability: RocksDB WAL syncs per commit. (surrealkv would also work
+# but isn't compiled into the v1.5.4 image; 2.x ships it enabled.)
 
 services:
   surrealdb:
@@ -43,7 +43,7 @@ services:
       - root
       - --bind
       - 0.0.0.0:8000
-      - surrealkv:///data/db?sync=every
+      - rocksdb:///data/db
     environment:
       SURREAL_SYNC_DATA: "true"
     ports:
@@ -55,7 +55,8 @@ services:
     volumes:
       - surrealdb_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      # Image is distroless -- use the bundled /surreal binary, not curl.
+      test: ["CMD", "/surreal", "isready", "--conn", "http://localhost:8000"]
       interval: 5s
       timeout: 5s
       retries: 12

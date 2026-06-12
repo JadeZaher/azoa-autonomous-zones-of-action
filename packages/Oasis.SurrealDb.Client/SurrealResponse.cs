@@ -97,10 +97,44 @@ public sealed class SurrealResponse : IReadOnlyList<SurrealStatementResult>
             {
                 throw new SurrealStatementException(
                     index: i,
-                    detail: _statements[i].Detail,
+                    detail: ExtractErrorText(_statements[i]),
                     statementCount: _statements.Count);
             }
         }
+    }
+
+    // SurrealDB error text moves between detail / result-string /
+    // result.{message,error,detail,description} across versions.
+    internal static string? ExtractErrorText(SurrealStatementResult s)
+    {
+        if (!string.IsNullOrWhiteSpace(s.Detail)) return s.Detail;
+
+        switch (s.Result.ValueKind)
+        {
+            case JsonValueKind.String:
+            {
+                var msg = s.Result.GetString();
+                if (!string.IsNullOrWhiteSpace(msg)) return msg;
+                break;
+            }
+            case JsonValueKind.Object:
+            {
+                foreach (var key in new[] { "message", "error", "detail", "description" })
+                {
+                    if (s.Result.TryGetProperty(key, out var p) && p.ValueKind == JsonValueKind.String)
+                    {
+                        var msg = p.GetString();
+                        if (!string.IsNullOrWhiteSpace(msg)) return msg;
+                    }
+                }
+                var raw = s.Result.GetRawText();
+                if (!string.IsNullOrWhiteSpace(raw))
+                    return raw.Length > 512 ? raw.Substring(0, 512) + "…(truncated)" : raw;
+                break;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -117,7 +151,7 @@ public sealed class SurrealResponse : IReadOnlyList<SurrealStatementResult>
         var s = _statements[index];
         if (!s.IsOk)
         {
-            throw new SurrealStatementException(index, s.Detail, _statements.Count);
+            throw new SurrealStatementException(index, ExtractErrorText(s), _statements.Count);
         }
         return s.GetValues<T>(options);
     }

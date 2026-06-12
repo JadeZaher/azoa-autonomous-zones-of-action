@@ -181,11 +181,13 @@ migrating the rest.
   Phase B → Phase C → Phase E (Quest cutover) so the generator settles
   on the new authoring layout before the Quest aggregate moves to
   source-gen'd POCOs.
-- **Environment E1 unblocker** — `surrealdb/surrealdb:v1.5.4` slim
-  image lacks `surrealkv`; integration tests across the repo
-  SkippableFact-skip cleanly. Fix: pin to `v1.5.4-dev` or swap the
-  start URI to `rocksdb://data/oasis.db?sync=every`. Affects ALL
-  integration tests, not just MCP / wave-2.
+- ~~**Environment E1 unblocker**~~ — **RESOLVED 2026-06-12.** Swapped
+  the start URI to `rocksdb:///data/db` in `docker-compose.dev.yml`
+  + `podman-compose.yml`. The 1.5.4 slim image lacks `surrealkv`;
+  RocksDB syncs its WAL per commit so G1 durability is preserved.
+  A 2.x/3.x bump (which restores `surrealkv` default-on) is tracked
+  as a separate workstream:
+  [`surrealdb-major-upgrade`](conductor/tracks/surrealdb-major-upgrade/spec.md).
 
 ---
 
@@ -194,8 +196,8 @@ migrating the rest.
 | Convention | Source | Applies to |
 |---|---|---|
 | SurrealDB entity = hand-authored attributed POCO + partial extensions | [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md) | All SurrealDB-backed aggregates (24 POCOs as of 2026-06-03) |
-| No EF Core migrations on new work | [memory/greenfield-prelaunch-no-compat](.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/greenfield-prelaunch-no-compat.md) | Pre-launch, no customers/data |
-| Integration tests on testcontainer Postgres / SurrealDB | [memory/integration-tests-persistent-postgres](.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/integration-tests-persistent-postgres.md) | All `OASIS.WebAPI.IntegrationTests` |
+| No EF Core migrations on new work (EF + Postgres removed in surrealdb-migration) | [memory/greenfield-prelaunch-no-compat](.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/greenfield-prelaunch-no-compat.md) | Pre-launch, no customers/data |
+| Integration tests run against the dev-up SurrealDB instance (`oasis-dev-surrealdb` on `:8000`) | [memory/integration-tests-persistent-postgres](.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/integration-tests-persistent-postgres.md) (memory name predates SurrealDB cutover) | All `OASIS.WebAPI.IntegrationTests` |
 | Bridge tier-0 hardening invariants | [api-safety-hardening RESIDUAL-RISK-RUNBOOK §4](conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md) | Bridge value flow |
 | TDD on bug fixes + features | [conductor/skills/tdd-workflow](conductor/) | Default |
 
@@ -405,7 +407,7 @@ the full domain model.
 | D. Wave-2 commit + integration | Commit the 3 SurrealQuest stores + tests + `230_quest_graph_edges.*`. | 1h | ✓ Shipped 2026-05-27 (`24a7403`) |
 | E. Quest aggregate cutover to generated POCOs | Partial-class extensions + delete hand-written + rewire wave-2 stores + 34 handlers + QuestManager + tests. Aliases vanish. | 7-9h | **READY 2026-06-11** — runtime stable post-quest-api; partial-class swap is now a focused refactor (no longer gating Phases F/G) |
 | F. quest-api endpoint gaps | 14 new endpoints + 14 new manager methods (4 spec endpoints reframed onto `QuestRun` per ADR §2.2; see `tracks/quest-api/SIGN-OFF.md`) | 2-3h actual | ✓ Shipped 2026-06-11 (autopilot) |
-| G. dapp-composition close-out | Integration tests against testcontainer Postgres + Swagger smoke | 1-2h | After F |
+| G. dapp-composition close-out | Integration tests against the dev-up SurrealDB + Swagger smoke | 1-2h | After F |
 | H. Frontend demo harness `frontend-demo-harness` track | shadcn/ui demo harness, 6 phases | 8-10 days | Independent; can start any time |
 | I. `durable-saga-orchestration` Tier 1 | Reusable durable-saga + transactional-outbox module | TBD | After surrealdb-migration (done) |
 | J. `mcp-surface` Tier 3 | MCP server over SurrealDB graph | — | ✓ Shipped 2026-05-25 (`295d67c`) |

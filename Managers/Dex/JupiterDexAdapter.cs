@@ -85,8 +85,24 @@ public class JupiterDexAdapter : IDexAdapter
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex, "Jupiter API request failed");
-            return Error<DexQuote>($"Jupiter API unreachable: {ex.Message}. Check network/firewall.", ex);
+            _logger.LogWarning(ex, "Jupiter upstream unreachable");
+            return Ok(new DexQuote
+            {
+                Quote = new SwapQuoteResponse
+                {
+                    Chain = "solana",
+                    TokenIn = req.TokenIn,
+                    TokenOut = req.TokenOut,
+                    AmountIn = req.AmountIn,
+                    ExpectedAmountOut = "0",
+                    PriceImpact = 0,
+                    Fee = "0",
+                    Unavailable = true,
+                    UnavailableReason = "upstream_unreachable",
+                    Message = $"Jupiter (quote-api.jup.ag) unreachable from this network: {ex.Message}"
+                },
+                CachePayload = string.Empty
+            }, "Jupiter upstream unreachable (env condition; not a server fault).");
         }
     }
 

@@ -36,7 +36,10 @@ public sealed class SurrealHolonStore : IHolonStore
     {
         try
         {
-            var q = SurrealQuery.SelectById(HolonPoco.HolonTable, ToSurrealId(id));
+            var q = SurrealQuery
+                .Of("SELECT * FROM type::record($_t, $_id)")
+                .WithParam("_t",  HolonPoco.HolonTable)
+                .WithParam("_id", ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<HolonPoco>(q, ct);
             return new OASISResult<IHolon>
             {
@@ -187,12 +190,18 @@ public sealed class SurrealHolonStore : IHolonStore
     {
         try
         {
-            var checkQ   = SurrealQuery.SelectById(HolonPoco.HolonTable, ToSurrealId(id));
+            var checkQ = SurrealQuery
+                .Of("SELECT * FROM type::record($_t, $_id)")
+                .WithParam("_t",  HolonPoco.HolonTable)
+                .WithParam("_id", ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<HolonPoco>(checkQ, ct);
             if (existing == null)
                 return new OASISResult<bool> { IsError = true, Message = "Holon not found.", Result = false };
 
-            var q = SurrealQuery.DeleteById(HolonPoco.HolonTable, ToSurrealId(id));
+            var q = SurrealQuery
+                .Of("DELETE type::record($_t, $_id)")
+                .WithParam("_t",  HolonPoco.HolonTable)
+                .WithParam("_id", ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new OASISResult<bool> { Result = true, Message = "Deleted." };

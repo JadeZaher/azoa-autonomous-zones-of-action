@@ -77,7 +77,7 @@ See `RUNBOOK.md` §1 for detailed setup and image-pin caveats.
 
 ## Known Open Items
 
-**E1 image pin:** `surrealdb/surrealdb:v1.5.4` lacks `surrealkv` storage engine. Blocks all integration test runtime evidence since 2026-05-24. Waiting on E1 deploy pin update.
+**E1 image pin:** ~~Blocks all integration test runtime evidence~~ — **RESOLVED 2026-06-12.** Swapped storage URI to `rocksdb:///data/db` in `docker-compose.dev.yml` + `podman-compose.yml` (RocksDB syncs its WAL per commit; G1 durability preserved). A 2.x/3.x bump that restores `surrealkv` default-on is tracked separately as `surrealdb-major-upgrade`.
 
 **Wormhole VAA gate:** `Secp256k1VaaSignatureVerifier` is registered; awaiting confirmation that `api-safety-hardening` is ready for launch.
 
