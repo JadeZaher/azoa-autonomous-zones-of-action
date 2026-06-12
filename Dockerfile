@@ -39,8 +39,16 @@ COPY --from=build /app/persistence ./persistence/
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-ENV ASPNETCORE_URLS=http://+:5000
-ENV ASPNETCORE_ENVIRONMENT=Development
+# Run as the non-root user the aspnet base image ships (APP_UID=1654).
+# /app must be owned by that user so any runtime-written files (e.g. the
+# dev JSONL exception log dir) succeed without root.
+RUN chown -R $APP_UID /app
+USER $APP_UID
+
+# ASPNETCORE_URLS is set by docker-entrypoint.sh so Railway's injected $PORT
+# is honored (defaults to 5000 for compose). Do NOT bake it here, or the
+# entrypoint's ${ASPNETCORE_URLS:-...} fallback can never see $PORT.
+ENV ASPNETCORE_ENVIRONMENT=Production
 EXPOSE 5000
 
 # The entrypoint waits for SurrealDB, runs `oasis-surreal up`, then execs

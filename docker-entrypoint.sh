@@ -15,14 +15,15 @@
 
 set -eu
 
-# Resolve the SurrealDB endpoint from the same env-var aliases the
-# oasis-surreal CLI recognises. Fall back to the compose service name
-# `surrealdb` so the docker-compose.dev.yml works without extra wiring.
-SURREAL_URL="${OASIS_SURREAL_URL:-http://surrealdb:8000}"
-SURREAL_NS="${OASIS_SURREAL_NS:-oasis}"
-SURREAL_DB="${OASIS_SURREAL_DB:-oasis}"
-SURREAL_USER="${OASIS_SURREAL_USER:-root}"
-SURREAL_PASS="${OASIS_SURREAL_PASS:-root}"
+# Resolve the SurrealDB connection from the migration CLI's OASIS_SURREAL_*
+# aliases first, then fall back to the .NET SurrealDb__* config family so a
+# Railway deploy only needs ONE env-var family wired up, then finally to the
+# compose service name `surrealdb` so docker-compose.dev.yml works unwired.
+SURREAL_URL="${OASIS_SURREAL_URL:-${SurrealDb__Endpoint:-http://surrealdb:8000}}"
+SURREAL_NS="${OASIS_SURREAL_NS:-${SurrealDb__Namespace:-oasis}}"
+SURREAL_DB="${OASIS_SURREAL_DB:-${SurrealDb__Database:-oasis}}"
+SURREAL_USER="${OASIS_SURREAL_USER:-${SurrealDb__User:-root}}"
+SURREAL_PASS="${OASIS_SURREAL_PASS:-${SurrealDb__Password:-root}}"
 
 if [ "${OASIS_SKIP_MIGRATIONS:-0}" != "1" ]; then
     echo "[entrypoint] Waiting for SurrealDB at $SURREAL_URL ..."
@@ -53,5 +54,10 @@ else
     echo "[entrypoint] OASIS_SKIP_MIGRATIONS=1 -- skipping migration step."
 fi
 
-echo "[entrypoint] Starting WebAPI host ..."
+# Honor Railway's injected $PORT (falls back to 5000 for compose). The
+# Dockerfile's ENV ASPNETCORE_URLS is overridden here so a platform-provided
+# port takes effect without rebuilding the image.
+export ASPNETCORE_URLS="${ASPNETCORE_URLS:-http://0.0.0.0:${PORT:-5000}}"
+
+echo "[entrypoint] Starting WebAPI host on $ASPNETCORE_URLS ..."
 exec dotnet /app/OASIS.WebAPI.dll

@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -82,6 +83,30 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 });
+
+// Fail-fast secret guards: outside Development/IntegrationTest, the JWT signing
+// key and the wallet encryption key MUST be supplied from the environment and
+// must not be the committed placeholders. A missing or placeholder secret in
+// Production is a hard startup failure, not a silent fallback.
+if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("IntegrationTest"))
+{
+    const string jwtPlaceholder = "your-super-secret-key-min-32-chars!!";
+    const string walletPlaceholder = "oasis-sleek-wallet-encryption-key-change-in-production!";
+
+    var jwtKey = builder.Configuration.GetValue<string>("Jwt:Key");
+    if (string.IsNullOrEmpty(jwtKey) || jwtKey == jwtPlaceholder)
+        throw new InvalidOperationException(
+            "Jwt:Key is missing or set to the committed placeholder. Set a strong " +
+            "(>=32 char) secret via the Jwt__Key environment variable before starting " +
+            "outside Development.");
+
+    var walletKey = builder.Configuration.GetValue<string>("OASIS:WalletEncryptionKey");
+    if (string.IsNullOrEmpty(walletKey) || walletKey == walletPlaceholder)
+        throw new InvalidOperationException(
+            "OASIS:WalletEncryptionKey is missing or set to the committed placeholder. " +
+            "Set a strong secret via the OASIS__WalletEncryptionKey environment variable " +
+            "before starting outside Development.");
+}
 
 builder.Services.AddAuthentication(options =>
 {
@@ -494,8 +519,25 @@ builder.Services.AddOasisHealthChecks();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("Dev", policy =>
-        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+    options.AddPolicy("Default", policy =>
+    {
+        if (builder.Environment.IsDevelopment()
+            || builder.Environment.IsEnvironment("IntegrationTest"))
+        {
+            policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        }
+        else
+        {
+            var origins = builder.Configuration
+                .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+            if (origins.Length == 0)
+                throw new InvalidOperationException(
+                    "Cors:AllowedOrigins is empty outside Development. Set the allowed " +
+                    "origin list via the Cors__AllowedOrigins__0 (etc.) environment " +
+                    "variables before starting in Production.");
+            policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+        }
+    });
 });
 
 var app = builder.Build();
@@ -519,9 +561,23 @@ if (debugRequested && app.Environment.IsProduction())
     app.Logger.LogWarning(
         "OASIS:DebugErrors was requested but is FORCE-DISABLED in Production.");
 
-// Must be the first middleware so it wraps the entire pipeline and turns any
-// unhandled throw into a structured (debug-aware) JSON error instead of a
-// blank HTTP 500.
+// Forwarded headers FIRST so every downstream component (https redirect, rate
+// limiter partitioned by client IP, auth) sees the real client scheme/IP from
+// the edge proxy rather than the proxy's own. KnownNetworks/KnownProxies are
+// cleared because Railway's proxy IP is not statically known; the trade-off is
+// that X-Forwarded-* is trusted unconditionally, which is acceptable only
+// because the app is always fronted by Railway's edge (never directly exposed).
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
+
+// Must be the first error-handling middleware so it wraps the entire pipeline
+// and turns any unhandled throw into a structured (debug-aware) JSON error
+// instead of a blank HTTP 500.
 app.UseMiddleware<DebugExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("IntegrationTest"))
@@ -585,7 +641,7 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
 
 app.UseHttpsRedirection();
 app.UseRouting();
-app.UseCors("Dev");
+app.UseCors("Default");
 // W1-A1: Observer middleware — captures 401/429/5xx and unhandled exceptions into JSONL logs.
 // Placed after UseRouting (so TraceIdentifier is stable) and before UseAuthentication so
 // that downstream 401 and 429 status codes are also captured.
@@ -608,7 +664,7 @@ app.UseMcpAuth();
 app.MapMcp();
 // ISwapManager + IDexAdapter registrations are above (DEX adapters block)
 app.MapControllers();
-app.MapOasisHealth();
+app.MapOasisHealth(app.Environment);
 await app.RunAsync();
 
 public partial class Program { }

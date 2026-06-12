@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
 
 namespace OASIS.WebAPI.Observability;
 
@@ -36,17 +37,20 @@ public static class HealthCheckExtensions
 
     /// <summary>
     /// Maps GET /health returning a JSON payload listing each check's name, status, and description.
-    /// Call from Program.cs: app.MapOasisHealth();
+    /// Call from Program.cs: app.MapOasisHealth(app.Environment);
     /// </summary>
-    public static void MapOasisHealth(this IEndpointRouteBuilder app)
+    public static void MapOasisHealth(this IEndpointRouteBuilder app, IHostEnvironment environment)
     {
+        // Exception messages can leak internals (connection strings, host names)
+        // so they are only included in Development; the bare probe stays minimal.
+        var includeExceptions = environment.IsDevelopment();
         app.MapHealthChecks("/health", new HealthCheckOptions
         {
-            ResponseWriter = WriteJsonResponseAsync
+            ResponseWriter = (context, report) => WriteJsonResponseAsync(context, report, includeExceptions)
         });
     }
 
-    private static async Task WriteJsonResponseAsync(HttpContext context, HealthReport report)
+    private static async Task WriteJsonResponseAsync(HttpContext context, HealthReport report, bool includeExceptions)
     {
         context.Response.ContentType = "application/json; charset=utf-8";
 
@@ -60,7 +64,7 @@ public static class HealthCheckExtensions
                 status = entry.Value.Status.ToString(),
                 description = entry.Value.Description,
                 durationMs = entry.Value.Duration.TotalMilliseconds,
-                exception = entry.Value.Exception?.Message
+                exception = includeExceptions ? entry.Value.Exception?.Message : null
             })
         };
 
