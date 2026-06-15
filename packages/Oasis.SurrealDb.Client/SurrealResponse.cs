@@ -30,6 +30,16 @@ public sealed class SurrealResponse : IReadOnlyList<SurrealStatementResult>
     }
 
     /// <summary>
+    /// A single-OK response returned synchronously when a statement is buffered
+    /// into an open transaction rather than executed immediately (SurrealDB 3.x
+    /// transactions are flushed as one request on commit). The real per-statement
+    /// results arrive in the commit round-trip; this ack only keeps the caller's
+    /// control flow (e.g. <c>EnsureAllOk()</c>) intact while buffering.
+    /// </summary>
+    public static SurrealResponse BufferedAck() =>
+        new(new[] { new SurrealStatementResult { Status = "OK" } });
+
+    /// <summary>
     /// Parse a SurrealDB HTTP <c>/sql</c> JSON body into a strongly-typed
     /// response. The body MUST be a JSON array (the SurrealDB contract).
     /// </summary>

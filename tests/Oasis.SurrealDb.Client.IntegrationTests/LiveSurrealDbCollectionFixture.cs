@@ -46,13 +46,54 @@ public sealed class LiveSurrealDbCollectionFixture : IDisposable
     {
         SurrealAvailable = ProbeHealth(Endpoint);
         if (!SurrealAvailable)
+        {
             SkipReason = $"local SurrealDB at {Endpoint} unreachable — start your local instance and retry.";
+            return;
+        }
+
+        // SurrealDB 3.x strictly rejects scoped queries against a namespace
+        // that does not exist yet (1.5.x auto-materialized it). Bootstrap the
+        // fixture's namespace/database once so the per-test CREATE/SELECT
+        // round-trips have a scope to target.
+        EnsureNamespace(Endpoint, User, Password, Namespace, Database);
     }
 
     public void Dispose()
     {
         // Nothing to tear down — tests run against the developer's local instance
         // which persists across runs independently of this fixture.
+    }
+
+    /// <summary>
+    /// Define an ad-hoc database under the fixture namespace. SurrealDB 3.x
+    /// rejects scoped CREATE/SELECT against a database that does not exist yet
+    /// (1.5.x auto-created it on first write), so per-test random databases
+    /// must be defined before use.
+    /// </summary>
+    public void EnsureDatabase(string db) =>
+        EnsureNamespace(Endpoint, User, Password, Namespace, db);
+
+    private static void EnsureNamespace(string baseUrl, string user, string pass, string ns, string db)
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var basic = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{user}:{pass}"));
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", basic);
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+
+            var sql =
+                $"DEFINE NAMESPACE IF NOT EXISTS {ns}; " +
+                $"USE NS {ns}; DEFINE DATABASE IF NOT EXISTS {db};";
+            using var content = new StringContent(sql, System.Text.Encoding.UTF8, "text/plain");
+            client.PostAsync(baseUrl.TrimEnd('/') + "/sql", content).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // Best-effort: if the bootstrap fails the scoped tests will surface
+            // the real error, and the probe already confirmed reachability.
+        }
     }
 
     private static bool ProbeHealth(string baseUrl)

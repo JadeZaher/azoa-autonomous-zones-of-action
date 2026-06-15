@@ -5,8 +5,10 @@ using Oasis.SurrealDb.Client.Connection;
 namespace Oasis.SurrealDb.Client.Tests;
 
 /// <summary>
-/// Closes negative-space G-C: COMMIT on explicit commit, CANCEL on
-/// dispose-without-commit, and idempotent commit.
+/// Transaction contract on SurrealDB 3.x: statements executed while a txn is
+/// open are buffered and flushed as ONE <c>BEGIN; ...; COMMIT;</c> request on
+/// commit; dispose-without-commit discards the buffer and sends nothing (so no
+/// server-side transaction can leak).
 /// </summary>
 public class SurrealTransactionTests
 {
@@ -16,15 +18,15 @@ public class SurrealTransactionTests
         MaxRetries = 1,
     };
 
-    private const string OkBody = """[ { "status": "OK", "time": "1µs", "result": null } ]""";
+    // /rpc envelope: a 3-slot result array (BEGIN, the user statement, COMMIT).
+    private const string TxnOkBody =
+        """{ "id": "1", "result": [ { "status": "OK", "result": null }, { "status": "OK", "result": null }, { "status": "OK", "result": null } ] }""";
 
     [Fact]
-    public async Task CommitPath_EmitsBeginThenCommit_NoCancel()
+    public async Task CommitPath_FlushesBeginStatementCommit_InOneRequest()
     {
         var handler = new FakeHttpHandler();
-        handler.EnqueueOk(OkBody); // BEGIN
-        handler.EnqueueOk(OkBody); // user statement
-        handler.EnqueueOk(OkBody); // COMMIT
+        handler.EnqueueOk(TxnOkBody); // single combined flush
 
         await using var conn = new HttpSurrealConnection(handler, Opts());
 
@@ -35,48 +37,49 @@ public class SurrealTransactionTests
             txn.IsCommitted.Should().BeTrue();
         }
 
-        // Bodies are now the /rpc envelope -- assert via Contain instead of Be.
-        handler.Requests.Should().HaveCount(3);
-        handler.Requests[0].Body.Should().Contain("BEGIN TRANSACTION;");
-        handler.Requests[1].Body.Should().Contain("UPDATE wallet:abc");
-        handler.Requests[2].Body.Should().Contain("COMMIT TRANSACTION;");
+        // One request carrying the whole transaction — not three round-trips.
+        handler.Requests.Should().HaveCount(1);
+        var body = handler.Requests[0].Body;
+        body.Should().Contain("BEGIN TRANSACTION;");
+        body.Should().Contain("UPDATE wallet:abc");
+        body.Should().Contain("COMMIT TRANSACTION;");
     }
 
     [Fact]
-    public async Task DisposeWithoutCommit_EmitsCancel()
+    public async Task DisposeWithoutCommit_SendsNothing()
     {
         var handler = new FakeHttpHandler();
-        handler.EnqueueOk(OkBody); // BEGIN
-        handler.EnqueueOk(OkBody); // CANCEL on dispose
+        // No statements enqueued — the buffer is discarded on dispose, so the
+        // connection never sends a request.
 
         await using var conn = new HttpSurrealConnection(handler, Opts());
 
         await using (var txn = await conn.BeginTransactionAsync())
         {
-            // No CommitAsync — dispose path should send CANCEL.
+            await conn.ExecuteRawAsync("CREATE wallet:abc CONTENT { amount: 1 };");
             txn.IsCommitted.Should().BeFalse();
+            // No CommitAsync — dispose must discard the buffer, sending nothing.
         }
 
-        handler.Requests.Should().HaveCount(2);
-        handler.Requests[0].Body.Should().Contain("BEGIN TRANSACTION;");
-        handler.Requests[1].Body.Should().Contain("CANCEL TRANSACTION;");
+        handler.Requests.Should().BeEmpty(
+            "buffered statements are only flushed on commit; an abandoned txn touches the server zero times");
     }
 
     [Fact]
     public async Task CommitAsync_Idempotent_SecondCallIsNoOp()
     {
         var handler = new FakeHttpHandler();
-        handler.EnqueueOk(OkBody); // BEGIN
-        handler.EnqueueOk(OkBody); // COMMIT (first)
+        handler.EnqueueOk(TxnOkBody); // single flush on first commit
 
         await using var conn = new HttpSurrealConnection(handler, Opts());
         var txn = await conn.BeginTransactionAsync();
+        await conn.ExecuteRawAsync("UPDATE wallet:abc SET amount = 1;");
         await txn.CommitAsync();
-        await txn.CommitAsync(); // no-op — must NOT send a second COMMIT
+        await txn.CommitAsync(); // no-op — must NOT send a second flush
 
         await txn.DisposeAsync();
 
-        handler.Requests.Should().HaveCount(2,
-            "second CommitAsync and dispose-after-commit must not emit further statements");
+        handler.Requests.Should().HaveCount(1,
+            "second CommitAsync and dispose-after-commit must not emit further requests");
     }
 }

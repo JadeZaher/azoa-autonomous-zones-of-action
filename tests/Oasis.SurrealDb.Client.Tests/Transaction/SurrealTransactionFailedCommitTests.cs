@@ -7,10 +7,11 @@ using Oasis.SurrealDb.Client.Tests; // FakeHttpHandler
 namespace Oasis.SurrealDb.Client.Tests.Transaction;
 
 /// <summary>
-/// Regression tests for HIGH#1 — when the COMMIT round-trip itself faults,
-/// the dispose path must still send CANCEL TRANSACTION and IsCommitted must
-/// stay <c>false</c>. The earlier implementation set the committed bit BEFORE
-/// the await, leaking the server-side transaction whenever COMMIT failed.
+/// Regression for HIGH#1 under the 3.x buffered-flush model: when the single
+/// <c>BEGIN; ...; COMMIT;</c> flush returns an error, the failure must bubble
+/// to the caller and <c>IsCommitted</c> must stay <c>false</c>. There is no
+/// separate CANCEL round-trip — the buffered statements were flushed in one
+/// request that the server auto-aborts on error, so dispose sends nothing.
 /// </summary>
 public class SurrealTransactionFailedCommitTests
 {
@@ -20,17 +21,15 @@ public class SurrealTransactionFailedCommitTests
         MaxRetries = 1,
     };
 
-    private const string OkBody  = """[ { "status": "OK",  "time": "1µs", "result": null } ]""";
-    private const string ErrBody = """[ { "status": "ERR", "time": "1µs", "result": null, "detail": "synthetic commit failure" } ]""";
+    // /rpc envelope whose COMMIT slot is ERR (BEGIN ok, statement ok, COMMIT err).
+    private const string FlushErrBody =
+        """{ "id": "1", "result": [ { "status": "OK", "result": null }, { "status": "OK", "result": null }, { "status": "ERR", "result": null, "detail": "synthetic commit failure" } ] }""";
 
     [Fact]
-    public async Task CommitAsync_ServerReturnsErr_PreservesIsCommittedFalse_AndDisposeSendsCancel()
+    public async Task CommitAsync_FlushReturnsErr_PreservesIsCommittedFalse_AndDisposeSendsNothingMore()
     {
         var handler = new FakeHttpHandler();
-        handler.EnqueueOk(OkBody);  // BEGIN
-        handler.EnqueueOk(OkBody);  // user statement
-        handler.EnqueueOk(ErrBody); // COMMIT — server-side error
-        handler.EnqueueOk(OkBody);  // CANCEL on dispose
+        handler.EnqueueOk(FlushErrBody); // the single combined flush, COMMIT slot ERR
 
         await using var conn = new HttpSurrealConnection(handler, Opts());
 
@@ -39,19 +38,19 @@ public class SurrealTransactionFailedCommitTests
 
         var commit = async () => await txn.CommitAsync();
         await commit.Should().ThrowAsync<SurrealStatementException>(
-            "the COMMIT result has status ERR; the failure must bubble to the caller");
+            "a flush whose COMMIT slot is ERR must bubble to the caller");
 
         txn.IsCommitted.Should().BeFalse(
-            "commit failed server-side so IsCommitted must NOT flip to true");
+            "the flush failed server-side so IsCommitted must NOT flip to true");
 
         await txn.DisposeAsync();
 
-        // Bodies are now /rpc envelopes -- assert via Contain on the inner SurrealQL.
-        handler.Requests.Should().HaveCount(4);
-        handler.Requests[0].Body.Should().Contain("BEGIN TRANSACTION;");
-        handler.Requests[1].Body.Should().Contain("UPDATE wallet:abc");
-        handler.Requests[2].Body.Should().Contain("COMMIT TRANSACTION;");
-        handler.Requests[3].Body.Should().Contain("CANCEL TRANSACTION;",
-            "dispose-after-failed-commit must issue CANCEL to release the server-side txn");
+        // Exactly one request — the combined flush. No separate CANCEL: the
+        // failed BEGIN..COMMIT is auto-aborted by the server in that same call.
+        handler.Requests.Should().HaveCount(1);
+        var body = handler.Requests[0].Body;
+        body.Should().Contain("BEGIN TRANSACTION;");
+        body.Should().Contain("UPDATE wallet:abc");
+        body.Should().Contain("COMMIT TRANSACTION;");
     }
 }

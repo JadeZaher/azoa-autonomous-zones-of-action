@@ -41,10 +41,11 @@ public interface ISurrealConnection : IAsyncDisposable, IDisposable
 
     /// <summary>
     /// Begin a SurrealDB transaction. The returned handle MUST be
-    /// <c>await using</c>d; CommitAsync sends <c>COMMIT TRANSACTION;</c>,
-    /// while DisposeAsync sends <c>CANCEL TRANSACTION;</c> if Commit was not
-    /// called. This is the explicit transaction shape that closes
-    /// negative-space G-C.
+    /// <c>await using</c>d. Statements executed while the handle is open are
+    /// buffered and flushed as a single <c>BEGIN; ...; COMMIT;</c> request on
+    /// <c>CommitAsync</c> — the only transaction shape SurrealDB 3.x's stateless
+    /// HTTP transport supports. Disposing without committing discards the buffer
+    /// (nothing was sent), so no server-side transaction can leak.
     /// </summary>
     Task<ISurrealTransaction> BeginTransactionAsync(CancellationToken ct = default);
 }

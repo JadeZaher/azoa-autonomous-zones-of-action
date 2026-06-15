@@ -56,8 +56,11 @@ public abstract class IntegrationTestBase : IClassFixture<OASISTestWebApplicatio
                 System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
             _surrealDirectClient.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-            _surrealDirectClient.DefaultRequestHeaders.Add("NS", TestNamespace);
-            _surrealDirectClient.DefaultRequestHeaders.Add("DB", "test");
+            // SurrealDB 3.x requires the "Surreal-NS"/"Surreal-DB" header names;
+            // the legacy "NS"/"DB" headers are ignored and the server returns
+            // NamespaceEmpty.
+            _surrealDirectClient.DefaultRequestHeaders.Add("Surreal-NS", TestNamespace);
+            _surrealDirectClient.DefaultRequestHeaders.Add("Surreal-DB", "test");
             _surrealDirectClient.DefaultRequestHeaders.Add("Accept", "application/json");
             return _surrealDirectClient;
         }

@@ -67,6 +67,7 @@ public class LiveHttpRoundTripTests
         if (TrySkip()) return;
 
         var db = $"client_int_{Guid.NewGuid():N}"[..30];
+        _fx.EnsureDatabase(db);
         await using var conn = new HttpSurrealConnection(new HttpClientHandler(), MakeOptions(db));
 
         // Set up a record we can select back.
@@ -76,9 +77,11 @@ public class LiveHttpRoundTripTests
 
         var selectResp = await conn.ExecuteRawAsync(
             "SELECT * FROM wallet WHERE id = $id",
-            new { id = new { tb = "wallet", id = "abc" } });
+            new { id = "wallet:abc" });
         selectResp.Count.Should().Be(1);
         selectResp[0].IsOk.Should().BeTrue();
+        selectResp.GetValues<System.Text.Json.JsonElement>(0).Should().HaveCount(1,
+            "the parameterized SELECT must match the record created above");
     }
 
     [Fact]
@@ -87,6 +90,7 @@ public class LiveHttpRoundTripTests
         if (TrySkip()) return;
 
         var db = $"client_int_{Guid.NewGuid():N}"[..30];
+        _fx.EnsureDatabase(db);
         await using var conn = new HttpSurrealConnection(new HttpClientHandler(), MakeOptions(db));
 
         var q = SurrealQuery.Combine(
@@ -106,6 +110,7 @@ public class LiveHttpRoundTripTests
         if (TrySkip()) return;
 
         var db = $"client_int_{Guid.NewGuid():N}"[..30];
+        _fx.EnsureDatabase(db);
         await using (var writer = new HttpSurrealConnection(new HttpClientHandler(), MakeOptions(db)))
         {
             await using var txn = await writer.BeginTransactionAsync();
@@ -119,7 +124,7 @@ public class LiveHttpRoundTripTests
         await using var reader = new HttpSurrealConnection(new HttpClientHandler(), MakeOptions(db));
         var resp = await reader.ExecuteRawAsync(
             "SELECT * FROM wallet WHERE id = $id",
-            new { id = new { tb = "wallet", id = "ghi" } });
+            new { id = "wallet:ghi" });
         resp[0].IsOk.Should().BeTrue();
         resp.GetValues<System.Text.Json.JsonElement>(0).Should().HaveCountGreaterOrEqualTo(1,
             "commit must persist the CREATE so a separate connection sees it");
@@ -131,11 +136,21 @@ public class LiveHttpRoundTripTests
         if (TrySkip()) return;
 
         var db = $"client_int_{Guid.NewGuid():N}"[..30];
+        _fx.EnsureDatabase(db);
+
+        // Define the table up front so the rollback assertion below is about
+        // ROW absence, not table absence (SurrealDB 3.x errors on SELECT from an
+        // undefined table rather than returning an empty result).
+        await using (var setup = new HttpSurrealConnection(new HttpClientHandler(), MakeOptions(db)))
+        {
+            (await setup.ExecuteRawAsync("DEFINE TABLE IF NOT EXISTS wallet SCHEMALESS;")).EnsureAllOk();
+        }
+
         await using (var writer = new HttpSurrealConnection(new HttpClientHandler(), MakeOptions(db)))
         {
             // Open the txn and CREATE — but dispose without committing. The
-            // dispose path must send CANCEL TRANSACTION; so the row is rolled
-            // back on the server.
+            // buffered statements are discarded on dispose (nothing was sent to
+            // the server), so the row never reaches the database.
             await using var txn = await writer.BeginTransactionAsync();
             var create = await writer.ExecuteRawAsync(
                 "CREATE wallet:jkl CONTENT { id: 'jkl', amount: 1 }");
@@ -146,7 +161,7 @@ public class LiveHttpRoundTripTests
         await using var reader = new HttpSurrealConnection(new HttpClientHandler(), MakeOptions(db));
         var resp = await reader.ExecuteRawAsync(
             "SELECT * FROM wallet WHERE id = $id",
-            new { id = new { tb = "wallet", id = "jkl" } });
+            new { id = "wallet:jkl" });
         resp[0].IsOk.Should().BeTrue();
         resp.GetValues<System.Text.Json.JsonElement>(0).Should().BeEmpty(
             "dispose-without-commit must roll back the CREATE so a separate connection sees no row");

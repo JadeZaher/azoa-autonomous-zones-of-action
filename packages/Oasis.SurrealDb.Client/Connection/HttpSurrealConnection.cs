@@ -118,6 +118,17 @@ public sealed class HttpSurrealConnection : ISurrealConnection
         }
         ThrowIfDisposed();
 
+        // When a transaction is open on this connection, buffer the statement
+        // into it instead of sending immediately. SurrealDB 3.x scopes a
+        // transaction to a single HTTP request, so the buffered statements are
+        // flushed together as one BEGIN; ...; COMMIT; on CommitAsync. The flush
+        // itself clears _activeTransaction first, so it is not re-buffered.
+        var activeTxn = _activeTransaction;
+        if (activeTxn is not null)
+        {
+            return activeTxn.Buffer(sql, parameters);
+        }
+
         // Retry transient transport failures with jittered exponential backoff.
         // We rebuild the HttpRequestMessage every attempt (HttpRequestMessage
         // cannot be reused once sent). The connection-pool layer above us
@@ -256,10 +267,28 @@ public sealed class HttpSurrealConnection : ISurrealConnection
         return !char.IsLetterOrDigit(next) && next != '_';
     }
 
+    // The transaction currently buffering statements on this connection, or
+    // null when none is open. A connection is single-logical-caller (the txn
+    // model is not designed for concurrent use of one connection), so a plain
+    // field is sufficient — the enlist/delist calls bracket the open period.
+    private SurrealTransaction? _activeTransaction;
+
     /// <inheritdoc/>
     public async Task<ISurrealTransaction> BeginTransactionAsync(CancellationToken ct = default)
     {
+        ThrowIfDisposed();
+        if (_activeTransaction is not null)
+            throw new InvalidOperationException("A transaction is already open on this connection.");
         return await SurrealTransaction.StartAsync(this, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Mark <paramref name="txn"/> as the connection's active buffering transaction.</summary>
+    internal void EnlistTransaction(SurrealTransaction txn) => _activeTransaction = txn;
+
+    /// <summary>Clear the active transaction if it is <paramref name="txn"/> (idempotent).</summary>
+    internal void DelistTransaction(SurrealTransaction txn)
+    {
+        if (ReferenceEquals(_activeTransaction, txn)) _activeTransaction = null;
     }
 
     private HttpRequestMessage BuildRequest(string sql, object? parameters)

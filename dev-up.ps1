@@ -221,19 +221,29 @@ if ($ExistingSurrealDb) {
 }
 
 # ── SDK rebuild (host-side dist; container build does its own tsup pass) ────
+#
+# This is a convenience for host-run frontend dev only — the compose flow
+# rebuilds the SDK from source via tsup inside the frontend image, so the
+# host dist is not consumed by the containers. tsup writes benign warnings
+# (e.g. "Generated an empty chunk") to stderr; with $ErrorActionPreference =
+# 'Stop' a native command's stderr would otherwise abort the whole script, so
+# we temporarily relax it here and key success strictly on the exit code.
 
 $SdkDir = Join-Path $ScriptDir "sdk/oasis-wallet"
 if ($DoRebuild -and (Test-Path $SdkDir)) {
     Write-Host "[dev-up] Rebuilding @oasis/wallet-sdk (host-side dist)..."
     Push-Location $SdkDir
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
         if (-not (Test-Path (Join-Path $SdkDir "node_modules"))) {
-            & npm install --silent
-            if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Error "[dev-up] SDK npm install failed."; exit 1 }
+            & npm install --silent 2>&1 | Write-Host
+            if ($LASTEXITCODE -ne 0) { Write-Error "[dev-up] SDK npm install failed."; exit 1 }
         }
-        & npm run build --silent
-        if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Error "[dev-up] SDK build (tsup) failed."; exit 1 }
+        & npm run build --silent 2>&1 | Write-Host
+        if ($LASTEXITCODE -ne 0) { Write-Error "[dev-up] SDK build (tsup) failed."; exit 1 }
     } finally {
+        $ErrorActionPreference = $prevEap
         Pop-Location
     }
 }

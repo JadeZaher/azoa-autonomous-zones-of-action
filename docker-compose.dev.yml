@@ -5,7 +5,7 @@
 #   ./dev-up.sh        # or dev-up.ps1 on Windows
 #
 # Services:
-#   - surrealdb       SurrealKV-backed v1.5.4 instance (port 8000)
+#   - surrealdb       RocksDB-backed v3.1.4 instance (port 8000)
 #   - oasis-api       .NET 8 WebAPI (port 5000) -- runs `oasis-surreal up`
 #                     against `surrealdb` on first boot to apply schemas,
 #                     then starts the WebAPI host.
@@ -25,14 +25,19 @@
 # Compose runtimes supported: docker compose v2, docker-compose v1, podman-compose.
 # The companion ./dev-up.sh / ./dev-up.ps1 scripts auto-detect.
 #
-# G1 durability: RocksDB WAL syncs per commit. (surrealkv would also work
-# but isn't compiled into the v1.5.4 image; 2.x ships it enabled.)
+# G1 durability: RocksDB WAL syncs per commit. (surrealkv ships enabled on
+# 3.x; rocksdb is kept here deliberately — see the surrealdb-major-upgrade
+# DECISION.md. Switching engines is a separate follow-up.)
 
 services:
   surrealdb:
-    image: surrealdb/surrealdb:v1.5.4
+    image: surrealdb/surrealdb:v3.1.4
     container_name: oasis-dev-surrealdb
     restart: unless-stopped
+    # 3.x runs as the distroless `nonroot` user, which cannot create the
+    # RocksDB dir inside a root-owned named-volume mount. Run the DB service
+    # as root so /data is writable (the 1.5.x image did this implicitly).
+    user: "0:0"
     command:
       - start
       - --log
@@ -56,7 +61,8 @@ services:
       - surrealdb_data:/data
     healthcheck:
       # Image is distroless -- use the bundled /surreal binary, not curl.
-      test: ["CMD", "/surreal", "isready", "--conn", "http://localhost:8000"]
+      # 3.x renamed the flag: is-ready takes --endpoint (was --conn on 1.5.x).
+      test: ["CMD", "/surreal", "is-ready", "--endpoint", "http://localhost:8000"]
       interval: 5s
       timeout: 5s
       retries: 12
