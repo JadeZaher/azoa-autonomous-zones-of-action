@@ -455,6 +455,11 @@ builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IDappCompositionMana
 // Adding a chain is one new ITransactionSigner registration here.
 builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Signing.ITransactionSigner,
     OASIS.WebAPI.Providers.Blockchain.Algorand.AlgorandTransactionSigner>();
+// Solana signer is a fail-closed stub (deploy-stub H1): GetSigner("Solana")
+// resolves so the seam is probeable, but Sign returns an error (no silent no-op).
+// Real Solana Ed25519 signing replaces only the stub body; the seam is unchanged.
+builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Signing.ITransactionSigner,
+    OASIS.WebAPI.Providers.Blockchain.Solana.SolanaTransactionSigner>();
 builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(sp =>
     new OASIS.WebAPI.Core.Signing.TransactionSignerFactory(
         sp.GetServices<OASIS.WebAPI.Interfaces.Signing.ITransactionSigner>()));
