@@ -10,6 +10,31 @@
 
 ## In flight
 
+### Initiative: workflow-engine (scoped 2026-06-16)
+
+Make OASIS a **durable, consumer-driven workflow engine**: an external app (ArdaNova,
+via the TS SDK) DESIGNS a multi-phase process as a quest template and PUSHES an actor
+(player/user/tenant) through it phase-by-phase — pseudocode `quest(holonStep1).step(holonStep2B)`.
+The DAG suspends between phases (hybrid: consumer-driven `step()` advance OR engine-driven
+auto-run that parks at gate/wait nodes until a `signal()` or timer), survives restart, and
+runs first-class compensation on cancel. **OASIS ships generic mechanism-only nodes**
+(GateCheck/Swap/Transfer/Grant/Hold/Refund/Emit); **all economic semantics stay in ArdaNova**
+(swap rates, what a project token is, cancel conditions, vesting math). Worked example to
+support generically: platform-token→project-token swap → HOLD until phase-met-or-cancelled →
+on-cancel refund / on-continue grant equity → equity pays freelancers or swaps→platform→fiat.
+Grounded in the 2026-06-16 review ([REVIEW-economic-substrate-2026-06-16.md](REVIEW-economic-substrate-2026-06-16.md)):
+the durable engine builds ON the already-shipped saga layer (`Services/Sagas/*` — `durable-saga-orchestration`
+already named "quest step dispatch" as a consumer); the one missing capability is suspend-on-signal.
+Ordering: **value-path-wiring first (real value movement)** → durable-workflow-engine →
+economic-primitive-nodes → workflow-sdk.
+
+| Track | Status | Description |
+|-------|--------|-------------|
+| [value-path-wiring](tracks/value-path-wiring/spec.md) | `[ ]` | **Tier 0 — value-flow correctness blocker.** Fix the review's Part-A gaps so workflow value-nodes can be real: wire `IKeyCustodyService` into `AlgorandProvider` (C1 — stop signing every op with the platform key); make `AllocationManager` mints actually broadcast + record real `TxHash` (C2); persist the allocation idempotency key for crash recovery (H1); move the KYC gate into `NftManager.MintAsync` so raw `POST /api/nft/mint` is gated too (H3); widen provider amount `int`→`ulong` (H4); preserve txId on confirm-timeout (M1). Deps: signing-core-keystone ✓ + custody ✓ + kyc ✓ + fiat ✓ (all shipped). |
+| [durable-workflow-engine](tracks/durable-workflow-engine/spec.md) | `[ ]` | **Tier 0.5 — centerpiece.** Make Quest runs durable + step-addressable + suspendable, built on the saga layer (`Services/Sagas/*`): a run = a saga instance, a node = a step, a gate/wait node = a parked step, refund-on-cancel = a declared compensation step. New `QuestRunStatus` Suspended/AwaitingSignal/AwaitingTimer; advancement API (`advance(runId,nodeId)`, `signal(runId,gateId,payload)`, timer un-park); crash-safe resume. The one saga extension needed: suspend-on-external-signal (a `Parked` status). Soft dep on durable-saga-orchestration (foundation already shipped); hard dep on value-path-wiring for real-value runs. |
+| [economic-primitive-nodes](tracks/economic-primitive-nodes/spec.md) | `[ ]` | **Tier 1.** The generic mechanism-only node-handler library a consumer composes: adds 6 `QuestNodeType` — `GateCheck` (real predicate eval, replaces the no-op `ConditionNodeHandler` + dead `QuestEdge.Condition`), `Swap` (wraps `ISwapManager`/DEX), `Grant`/`Transfer` (mint/move to the run's actor), `Refund` (first-class compensation), `Emit` (hand settlement back to the tenant for fiat/equity-payout). Plus the missing Holon↔on-chain-asset typed link (review Part B #1). ZERO economics in handlers. Deps: durable-workflow-engine + value-path-wiring. |
+| [workflow-sdk](tracks/workflow-sdk/spec.md) | `[ ]` | **Tier 1.** Extend `@oasis/wallet-sdk` (TypeScript) with the consumer surface: template authoring/instantiate methods + a fluent thenable run driver — `quest(id).start({actor,params}).step(nodeId)` / `.signal(gateId,payload)` / `.status()` / `.forActor(childAvatarId)` (lazily acquires a tenant-issued child JWT). Maps 1:1 to the engine endpoints; hybrid drive modes; idempotency-key + assertUuid + amounts-as-strings conventions. No brand leak (generic workflow SDK). Deps: durable-workflow-engine + economic-primitive-nodes + tenant-onboarding ✓. |
+
 ### Initiative: ardanova-provider-port (started 2026-06-15)
 
 Make OASIS the custodial blockchain provider ("avatar wallet manager") for ArdaNova
