@@ -139,7 +139,12 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddAuthorization();
+// TenantScope policy (tenant-onboarding): a tenant-surface action requires the
+// tenant:provision scope claim (emitted per-CSV-entry by ApiKeyAuthenticationHandler).
+builder.Services.AddAuthorization(o =>
+    o.AddPolicy("TenantScope", p =>
+        p.RequireAssertion(ctx =>
+            ctx.User.HasScope(OASIS.WebAPI.Core.OasisScopes.TenantProvision))));
 
 // ─── Rate limiting + per-API-key metering (api-safety-hardening task 18) ───
 // Built-in ASP.NET Core 8 rate limiting (Microsoft.AspNetCore.RateLimiting —
@@ -289,6 +294,9 @@ builder.Services.AddScoped<IBlockchainOperationStore,
     OASIS.WebAPI.Providers.Stores.Surreal.SurrealBlockchainOperationStore>();
 builder.Services.AddScoped<ISTARStore,
     OASIS.WebAPI.Providers.Stores.Surreal.SurrealStarStore>();
+// kyc-module: KYC submission/document persistence (SurrealDB).
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Stores.IKycStore,
+    OASIS.WebAPI.Providers.Stores.Surreal.SurrealKycStore>();
 // surrealdb-migration wave-2 round-3 close (residual task 9): IQuestStore
 // flips to the SurrealDB-backed adapter now that the definition-side
 // schema files (150_quest / 160_quest_node / 170_quest_edge) and the
@@ -371,6 +379,38 @@ builder.Services.AddSingleton<WalletKeyService>();
 builder.Services.AddSingleton<IAlgorandFaucet, AlgorandFaucet>();
 builder.Services.AddScoped<IWalletManager, WalletManager>();
 builder.Services.AddScoped<IHolonManager, HolonManager>();
+
+// ─── Custodial-provider initiative: custody / tenant / kyc / allocation managers ───
+// custody-key-management: decrypt→sign→zero resolver (the only signer-facing
+// key path besides WalletManager.ExportWalletAsync). Scoped to match IWalletStore.
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IKeyCustodyService,
+    OASIS.WebAPI.Managers.KeyCustodyService>();
+// tenant-onboarding: tenant principal provisioning + cross-tenant isolation.
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.ITenantManager,
+    OASIS.WebAPI.Managers.TenantManager>();
+// kyc-module: KycSettings bound from the "Kyc" section; the provider is selected
+// by Kyc:Provider (manual default; veriff = config-gated deploy-stub, throws).
+builder.Services.Configure<OASIS.WebAPI.Settings.KycSettings>(
+    builder.Configuration.GetSection(OASIS.WebAPI.Settings.KycSettings.SectionName));
+if (string.Equals(
+        builder.Configuration[$"{OASIS.WebAPI.Settings.KycSettings.SectionName}:Provider"],
+        "veriff", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Providers.IKycProviderService,
+        OASIS.WebAPI.Providers.Kyc.VeriffKycProviderService>();
+}
+else
+{
+    builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Providers.IKycProviderService,
+        OASIS.WebAPI.Providers.Kyc.ManualKycProviderService>();
+}
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IKycManager,
+    OASIS.WebAPI.Managers.KycManager>();
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IKycGateService,
+    OASIS.WebAPI.Managers.KycGateService>();
+// fiat-stripe-bridge: idempotent, KYC-gated, tenant-callable allocation primitive.
+builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IAllocationManager,
+    OASIS.WebAPI.Managers.AllocationManager>();
 // Bind Jupiter DEX configuration
 builder.Services.Configure<JupiterConfig>(
     builder.Configuration.GetSection(JupiterConfig.SectionName));
@@ -409,9 +449,31 @@ builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IDappCompositionMana
     OASIS.WebAPI.Managers.DappCompositionManager>();
 // </dapp-composition>
 
+// ─── Transaction signing seam (signing-core-keystone) ───
+// Real server-side signing behind a chain-agnostic ITransactionSigner, selected
+// by ChainType via TransactionSignerFactory (mirrors BlockchainProviderFactory).
+// Adding a chain is one new ITransactionSigner registration here.
+builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Signing.ITransactionSigner,
+    OASIS.WebAPI.Providers.Blockchain.Algorand.AlgorandTransactionSigner>();
+builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(sp =>
+    new OASIS.WebAPI.Core.Signing.TransactionSignerFactory(
+        sp.GetServices<OASIS.WebAPI.Interfaces.Signing.ITransactionSigner>()));
+
 // ─── Blockchain providers & factory ───
-builder.Services.AddSingleton<IBlockchainProvider, AlgorandProvider>();
+// AlgorandProvider is constructed explicitly so it receives the signer factory +
+// (interim) custody key service; the parameterless overload exists only for tests.
+builder.Services.AddSingleton<IBlockchainProvider>(sp => new AlgorandProvider(
+    sp.GetRequiredService<IConfiguration>(),
+    sp.GetRequiredService<ILogger<AlgorandProvider>>(),
+    sp.GetRequiredService<OASIS.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(),
+    sp.GetRequiredService<WalletKeyService>()));
 builder.Services.AddSingleton<IBlockchainProvider, SolanaProvider>();
+// db-only-null-provider: the no-signer simulated provider. The factory hands it
+// out for every chain when Blockchain:Mode == "Simulated"; otherwise it is only
+// reachable as the "Simulated" ChainType. Registered before the factory so the
+// factory's IEnumerable<IBlockchainProvider> sees it.
+builder.Services.AddSingleton<IBlockchainProvider,
+    OASIS.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>();
 builder.Services.AddSingleton<IBlockchainProviderFactory>(sp =>
 {
     var registeredProviders = sp.GetRequiredService<IEnumerable<IBlockchainProvider>>();
