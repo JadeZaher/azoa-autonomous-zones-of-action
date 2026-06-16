@@ -63,22 +63,24 @@ public class WalletKeyService
 
     private (string, string, string, string?) GenerateAlgorandKeypair()
     {
-        // Algorand uses Ed25519 keys
-        var seed = RandomNumberGenerator.GetBytes(32);
-        // We can't use algosdk directly in Core, so we'll use our own Ed25519
-        // The seed IS the private key for Algorand
-        var privateKeyHex = Convert.ToHexString(seed).ToLowerInvariant();
+        // Real Ed25519 keypair via the already-referenced Algorand2 package
+        // (signing-core-keystone B1). Algorand2 owns the canonical
+        // address/checksum/mnemonic rules — no hand-rolled curve math.
+        var account = new Algorand.Algod.Model.Account();
 
-        // For Algorand address derivation, we need the public key from Ed25519
-        // This is a simplified version — in production use algosdk
-        var publicKey = DeriveEd25519PublicKey(seed);
-        // Algorand address is a base32 encoding of the public key with checksum
-        var address = AlgorandAddressFromPublicKey(publicKey);
+        // The private key we persist is Algorand2's clear-text Ed25519 private key
+        // bytes. AlgorandTransactionSigner reconstructs the signing account via
+        // `new Account(privateKeyBytes)`, so keygen and signing share this exact
+        // representation — the round-trip test pins that invariant.
+        var privateKeyBytes = account.KeyPair.ClearTextPrivateKey;
+        var publicKeyBytes = account.KeyPair.ClearTextPublicKey;
 
-        // Generate a BIP39-style mnemonic from the seed
-        var seedPhrase = GenerateMnemonic(seed);
+        var privateKeyHex = Convert.ToHexString(privateKeyBytes).ToLowerInvariant();
+        var publicKeyHex = Convert.ToHexString(publicKeyBytes).ToLowerInvariant();
+        var address = account.Address.EncodeAsString();   // real SHA-512/256 checksum + base32
+        var seedPhrase = account.ToMnemonic();            // real, restorable 25-word mnemonic
 
-        return (Convert.ToHexString(publicKey).ToLowerInvariant(), privateKeyHex, address, seedPhrase);
+        return (publicKeyHex, privateKeyHex, address, seedPhrase);
     }
 
     private (string, string, string, string?) GenerateSolanaKeypair()
@@ -115,6 +117,11 @@ public class WalletKeyService
 
     private byte[] DeriveEd25519PublicKey(byte[] seed)
     {
+        // DEPLOY-STUB (H1, see conductor/DEPLOY-STEPS-TODO.md): Solana keygen is
+        // still a placeholder. Algorand now routes through Algorand2 (real
+        // Ed25519); this HMAC derivation remains ONLY for the not-yet-real Solana
+        // path and must be replaced with the Solana SDK keypair before Solana
+        // value flow is enabled.
         // In production, use a proper Ed25519 implementation like libsodium or BouncyCastle.
         // For now, we use HMAC-SHA512 to derive a clamped scalar and then multiply.
         // This is a placeholder that matches the key format — real Ed25519 requires
@@ -132,6 +139,10 @@ public class WalletKeyService
 
     private byte[] DeriveSecp256k1PublicKey(byte[] privateKey)
     {
+        // DEPLOY-STUB (H1, see conductor/DEPLOY-STEPS-TODO.md): Ethereum keygen is
+        // still a placeholder (HMAC, not secp256k1). Out of scope for the
+        // Algorand-first signing-core-keystone track; replace before Ethereum
+        // value flow is enabled.
         // In production, use a proper secp256k1 library.
         // Placeholder that generates a 64-byte uncompressed public key
         using var hmac = new HMACSHA256(privateKey);
@@ -477,8 +488,12 @@ public class WalletKeyService
 
     private string GenerateMnemonic(byte[] seed)
     {
+        // DEPLOY-STUB (H1, see conductor/DEPLOY-STEPS-TODO.md): word-index helper
+        // for the still-stubbed Solana/Ethereum chains only. Algorand now uses
+        // Algorand2's real 25-word mnemonic (see GenerateAlgorandKeypair) and does
+        // NOT call this. Replace with a real BIP39 implementation before Solana/
+        // Ethereum mnemonics need to be restorable.
         // Simple 12-word mnemonic: use seed bytes to index into wordlist
-        // In production, use a proper BIP39 implementation
         var words = new string[12];
         for (int i = 0; i < 12; i++)
         {

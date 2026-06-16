@@ -200,15 +200,33 @@ The SDK provides a typed `OasisApiClient` wrapping all 15 controllers. All amoun
 Implements `IBlockchainProvider` fully:
 - `GetBalance` — Native ALGO balance
 - `GetTokenBalance` — ASA balance (via indexer)
-- `GetNFTMetadata` — ASA params (checksum validation is a gap; see caveats below)
+- `GetNFTMetadata` — ASA params
+- `Transfer` / `Burn` / `Mint` / `CreateASA` / `OptIn` — **real server-side signing**
+  (params → build → sign → submit → confirm), plus a soulbound-ASA mint primitive
 - `SendTransaction` — POST to algod
-- `GetTransactionStatus` — Query algod pending tx
+- `GetTransactionStatus` — Query algod pending tx / indexer
 - `GetFeeEstimate` — algod /v2/status
 - `Health` — Connectivity check
 
+**Server-side signing (signing-core-keystone):** the .NET `AlgorandProvider` now
+performs real Ed25519 signing through a chain-agnostic seam — `ITransactionSigner`
+(+ `SigningKeyMaterial(byte[])`) selected by ChainType via `ITransactionSignerFactory`,
+implemented for Algorand by `AlgorandTransactionSigner`. Canonical msgpack
+build/encode/sign comes entirely from the `Algorand2` package (no homebake msgpack
+or curve math). Value-moving calls honor `RetrySafety.Broadcast` (no post-broadcast
+retry). Keygen (`WalletKeyService.GenerateAlgorandKeypair`) produces real,
+spendable Ed25519 keypairs with restorable 25-word mnemonics. Address validation
+uses the real SHA-512/256 checksum (`Algorand.Address.IsValid`).
+
 **Caveats:**
-- `validateAddress` is regex-only (length + base32 charset); no checksum verification
-- Native Ed25519 direct signing uses canonical msgpack encoding via `@msgpack/msgpack` — produces algod-submittable envelopes through `AlgorandProvider.signAndEncodeTransaction()` (sorted keys, omit-empty, `bin` for byte fields, `"TX"` domain prefix on the signed bytes). Wallet-adapter path (`signTransaction()`) continues to delegate encoding to the adapter.
+- Custody is INTERIM: the signing key is resolved by decrypting
+  `OASIS:Algorand:PlatformMnemonic` from config (no per-user ownership check). The
+  production ownership-checked, KMS-backed, byte[]-zeroing resolver is the
+  `custody-key-management` track (DEPLOY-STEPS-TODO B3/P1). Mainnet stays gated (B6).
+- Soulbound clawback-revoke is deferred (D4 → H2); the mint path sets the platform
+  as manager/freeze/clawback so revoke is a pure follow-up.
+- The TypeScript SDK provider still builds `json-descriptor`/wallet-adapter signing
+  envelopes client-side; the real server-side signer above is the .NET backend path.
 
 ### Solana Provider
 Implements `IBlockchainProvider` fully:
