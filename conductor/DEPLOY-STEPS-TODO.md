@@ -73,7 +73,24 @@ track and the file:line evidence where the stub lives.
   no value-bearing private key is recoverable from app config alone. Cross-ref
   `bridge-unsafe-pre-launch` memory + `api-safety-hardening` track risk posture.
 
-### B4. Idempotency / replay / atomicity for fiat-triggered allocation — ✅ DONE (fiat-stripe-bridge)
+### B4. Idempotency / replay / atomicity for fiat-triggered allocation — ✅ DONE (fiat-stripe-bridge + value-path-wiring)
+
+> **value-path-wiring closeout (2026-06-16):** the remaining B4 holes are now
+> closed. The allocation primitive **actually broadcasts** through
+> `IBlockchainOperationManager.ExecuteAsync` and records a real `TxHash` (C2 —
+> previously it upserted a `Pending` op and `Complete`d the key with no on-chain
+> effect). The `alloc:{apiKeyId}:…` key is persisted on the op row
+> (`Parameters["IdempotencyKey"]`) so `ReconciliationService.SettleOperationIdempotencyAsync`
+> releases an orphaned claim after a crash between broadcast and complete (H1).
+> The allocation key is `Complete`d **only** when the op carries a real `TxHash`
+> (else left InProgress so a replay returns "in progress", not false success).
+> Amount widened `int`→`ulong` end-to-end (H4) — the idempotency key keys off the
+> true `ulong`, closing a collision where two distinct >int.MaxValue allocations
+> clamped to one key (caught by independent review, guarded by
+> `AmountIdempotencyKeyTests`). Confirm-timeout now records `PendingConfirmation`
+> + `TxHash` (M1) so reconciliation settles from chain truth, never re-broadcasts.
+
+
 - **Was:** fiat settles on the tenant and triggers an OASIS wallet/asset
   allocation. Without idempotency a webhook replay double-allocates. The bridge
   already shipped this mistake once (`bridge-unsafe-pre-launch`).
@@ -185,21 +202,22 @@ track and the file:line evidence where the stub lives.
 - **Owner:** `kyc-module` (seam + stub shipped) + ops/future provider track (secrets
   + real integration).
 
-### P5. KYC gating actually wired on wallet-generate + mint
+### P5. KYC gating actually wired on wallet-generate + mint — ✅ MINT DONE (value-path-wiring); wallet-generate still owed
 - **Seam shipped (kyc-module):** the reusable gate `IKycGateService`
   (`Interfaces/Managers/IKycGateService.cs`) + `KycGateService`
   (`Managers/KycGateService.cs`) + `KycAuthorizationError` are landed and registered
   in DI. `RequireVerifiedAsync(Guid avatarId)` returns a success result when the
   avatar has an APPROVED submission, else an error whose Message starts with
   `KycAuthorizationError.Forbidden` (`KYC_FORBIDDEN: `).
-- **Gap:** the actual call into `WalletManager.GenerateWalletAsync` and the mint path
-  on `NftController` is a DOCUMENTED cross-track seam (see
-  `conductor/tracks/kyc-module/plan.md` Phase 4 worked example), NOT executed by
-  this track — those files are owned by other lanes. Enforcement = a one-line
-  `await _kycGate.RequireVerifiedAsync(avatarId)` guard + translating a
-  `KYC_FORBIDDEN:`-prefixed result to 403 in the controller.
-- **Owner:** `kyc-module` (reusable gate seam, shipped) +
-  `signing-core-keystone`/wallet + NFT owners (enforcement wiring, owed).
+- **Mint path WIRED (value-path-wiring, 2026-06-16, H3):** the gate moved INTO
+  `NftManager.MintAsync` (the single choke point) so BOTH the allocation door
+  (`AllocationManager`) AND the raw `POST /api/nft/mint` door inherit it — an
+  unverified avatar is rejected with no Holon upsert and no `BlockchainOperation`
+  created (proven by `NftManagerTests`). `NftController.Mint` translates the
+  `KYC_FORBIDDEN:` prefix to **403**.
+- **Still owed:** `WalletManager.GenerateWalletAsync` gating (wallet-provision
+  pre-KYC is currently allowed per fiat D3 — confirm whether a zero-balance
+  wallet may exist pre-KYC, or gate it too). Owner: wallet owners.
 
 ### P6. Tenant onboarding runbook executed for the first tenant — ✅ runbook authored; execution owed
 - **Mechanism + runbook:** ✅ done. The provisioning surface (`api/tenant`) ships and
@@ -282,7 +300,7 @@ track and the file:line evidence where the stub lives.
 | P2 | 🟠 | Key rotation | custody-key-management | ✅ stub+test done; live orchestration follow-up |
 | P3 | 🟠 | Platform fee-funding | ops | open |
 | P4 | 🟠 | KYC provider secrets | kyc-module | open |
-| P5 | 🟠 | KYC gating wired | kyc-module + wallet owners | open |
+| P5 | 🟠 | KYC gating wired | kyc-module + value-path-wiring + wallet owners | ✅ mint done (gate in NftManager choke point); wallet-generate owed |
 | P6 | 🟠 | First-tenant onboarding | tenant-onboarding + ops | runbook authored; execution owed |
 | H1 | 🟡 | Solana/Ethereum keygen+signing | future chain tracks | open |
 | H2 | 🟡 | Soulbound clawback-revoke | signing-core follow-up | deferred (D4); mint shipped |
