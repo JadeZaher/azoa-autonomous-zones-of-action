@@ -26,15 +26,15 @@ public class BlockchainOperationManagerExtendedTests
 
         _algoProvider = new Mock<IBlockchainProvider>();
         _algoProvider.Setup(p => p.ChainType).Returns("Algorand");
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string> { Result = "algo_tx" });
-        _algoProvider.Setup(p => p.BurnAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.BurnAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string> { Result = "algo_burn" });
         _algoProvider.Setup(p => p.ExchangeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string> { Result = "algo_ex" });
         _algoProvider.Setup(p => p.SwapAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<decimal>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string> { Result = "algo_swap" });
-        _algoProvider.Setup(p => p.TransferAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.TransferAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string> { Result = "algo_xfer" });
         _algoProvider.Setup(p => p.DeployContractAsync(It.IsAny<byte[]>(), It.IsAny<string>(), It.IsAny<Dictionary<string, object>?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string> { Result = "algo_deploy" });
@@ -65,7 +65,7 @@ public class BlockchainOperationManagerExtendedTests
 
         result.IsError.Should().BeFalse();
         op.Status.Should().Be(OperationStatus.Burned);
-        _algoProvider.Verify(p => p.BurnAsync("123", 5, "addr", It.IsAny<CancellationToken>()), Times.Once);
+        _algoProvider.Verify(p => p.BurnAsync("123", 5UL, "addr", It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public class BlockchainOperationManagerExtendedTests
     [Fact]
     public async Task ExecuteAsync_WithProviderFailure_ShouldSetFailedStatus()
     {
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string> { IsError = true, Message = "Insufficient funds" });
 
         var op = new BlockchainOperation
@@ -220,7 +220,7 @@ public class BlockchainOperationManagerExtendedTests
     [Fact]
     public async Task ExecuteAsync_WithException_ShouldSetFailedStatus()
     {
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ThrowsAsync(new InvalidOperationException("boom"));
 
         var op = new BlockchainOperation
@@ -247,7 +247,7 @@ public class BlockchainOperationManagerExtendedTests
 
         await _manager.ExecuteAsync(op);
 
-        _algoProvider.Verify(p => p.MintAsync("uri", 1, "NFT", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _algoProvider.Verify(p => p.MintAsync("uri", 1UL, "NFT", It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

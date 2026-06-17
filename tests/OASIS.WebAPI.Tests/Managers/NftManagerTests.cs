@@ -14,13 +14,20 @@ public class NftManagerTests
 {
     private readonly Mock<IHolonStore> _holonStore;
     private readonly Mock<IBlockchainOperationStore> _blockchainOperationStore;
+    private readonly Mock<IKycGateService> _kycGate;
     private readonly NftManager _manager;
 
     public NftManagerTests()
     {
         _holonStore = new Mock<IHolonStore>();
         _blockchainOperationStore = new Mock<IBlockchainOperationStore>();
-        _manager = new NftManager(_holonStore.Object, _blockchainOperationStore.Object);
+        _kycGate = new Mock<IKycGateService>();
+        // value-path-wiring H3: MintAsync now gates on KYC at the choke point.
+        // Default to approved so the existing mint-path tests exercise the same
+        // behaviour; the dedicated H3 test overrides this to assert fail-closed.
+        _kycGate.Setup(k => k.RequireVerifiedAsync(It.IsAny<Guid>()))
+                .ReturnsAsync(new OASISResult<bool> { Result = true, Message = "Success" });
+        _manager = new NftManager(_holonStore.Object, _blockchainOperationStore.Object, _kycGate.Object);
     }
 
     private static INft CreateNftMock(Guid id, string name, string assetType = "NFT", Guid? avatarId = null, string? chainId = null) =>
@@ -103,6 +110,34 @@ public class NftManagerTests
         var result = await _manager.QueryAsync(new NftQueryRequest());
 
         result.Result.Should().ContainSingle();
+    }
+
+    // ── value-path-wiring H3: KYC gate at the single choke point ──────────────
+
+    [Fact]
+    public async Task MintAsync_UnverifiedAvatar_RejectedWithNoHolonAndNoOperationSideEffect()
+    {
+        var avatarId = Guid.NewGuid();
+        // KYC gate closed: the latest submission is not APPROVED.
+        _kycGate.Setup(k => k.RequireVerifiedAsync(avatarId))
+                .ReturnsAsync(new OASISResult<bool>
+                {
+                    IsError = true,
+                    Result = false,
+                    Message = $"{KycAuthorizationError.Forbidden}{KycAuthorizationError.VerificationRequiredMessage}"
+                });
+
+        var request = new NftMintRequest { Name = "NFT", Description = "D", ChainId = "algorand", WalletId = Guid.NewGuid() };
+        var result = await _manager.MintAsync(request, avatarId);
+
+        result.IsError.Should().BeTrue("an unverified avatar must be rejected at the NftManager choke point");
+        result.Message.Should().StartWith(KycAuthorizationError.Forbidden,
+            "the KYC_FORBIDDEN: prefix must be preserved so the controller maps it to 403");
+
+        // No side effect before the gate: no Holon upsert and no BlockchainOperation.
+        _holonStore.Verify(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
+        _blockchainOperationStore.Verify(
+            p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

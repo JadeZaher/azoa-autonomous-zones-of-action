@@ -7,6 +7,7 @@ using OASIS.WebAPI.Interfaces;
 using OASIS.WebAPI.Interfaces.Managers;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Managers;
+using OASIS.WebAPI.Models;
 using OASIS.WebAPI.Models.Idempotency;
 using OASIS.WebAPI.Models.Kyc;
 using OASIS.WebAPI.Models.Requests;
@@ -29,13 +30,34 @@ public class AllocationManagerTests
     private readonly Mock<IWalletManager> _walletManager = new();
     private readonly Mock<IWalletStore> _walletStore = new();
     private readonly Mock<INftManager> _nft = new();
+    private readonly Mock<IBlockchainOperationManager> _blockchainOps = new();
     private readonly InMemoryIdempotencyStore _idempotency = new();
 
     private readonly Guid _avatarId = Guid.NewGuid();
     private readonly Guid _callerAvatarId = Guid.NewGuid();
 
-    private AllocationManager BuildManager() => new(
-        _kyc.Object, _walletManager.Object, _walletStore.Object, _nft.Object, _idempotency);
+    // value-path-wiring C2: the allocation now broadcasts through
+    // IBlockchainOperationManager.ExecuteAsync (it no longer treats NftManager's
+    // upsert-only op as the value-bearing result). The default broadcast returns a
+    // confirmed op carrying a TxHash so the alloc idempotency key can Complete; a
+    // dedicated test overrides this to assert the no-TxHash → stay-InProgress path.
+    private AllocationManager BuildManager()
+    {
+        SetupBroadcastReturnsTxHash();
+        return new(
+            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _nft.Object, _blockchainOps.Object, _idempotency);
+    }
+
+    private void SetupBroadcastReturnsTxHash(string txHash = "algo_tx_alloc")
+        => _blockchainOps
+            .Setup(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<OASISRequest?>()))
+            .ReturnsAsync((IBlockchainOperation op, OASISRequest? _) =>
+            {
+                op.Parameters["TxHash"] = txHash;
+                op.Status = OperationStatus.Minted;
+                return new OASISResult<IBlockchainOperation> { Result = op };
+            });
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -80,11 +102,15 @@ public class AllocationManagerTests
                    Result = Mock.Of<IBlockchainOperation>(o => o.Id == Guid.NewGuid())
                });
 
+    // value-path-wiring H4/D5: the allocation amount is a base-unit INTEGER string
+    // (the provider surface is ulong). The prior "100.00" decimal data predates the
+    // strict integer parse; it is now an integer so the broadcast amount round-trips
+    // without truncation. (Idempotency/replay/IDOR assertions are unaffected.)
     private static AllocationRequest MintRequest() => new()
     {
         Kind = AllocationKind.Mint,
         ChainType = ChainType,
-        Amount = "100.00",
+        Amount = "100",
         Name = "Project Alpha",
         AssetId = "PRJALPHA"
     };
@@ -134,6 +160,186 @@ public class AllocationManagerTests
         second.Result!.Replayed.Should().BeTrue();
         _nft.Verify(n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<OASISRequest?>()),
             Times.Once);
+    }
+
+    // ── value-path-wiring C2 + H1: real broadcast + crash-replay exactly-once ──
+
+    [Fact]
+    public async Task AllocateAsync_BroadcastsThroughExecuteAsync_AndPersistsIdempotencyKeyOnOpRow()
+    {
+        ApproveKyc(_avatarId);
+        var wallet = WalletFor(_avatarId, ChainType);
+        HasWallet(_avatarId, wallet);
+        SetupMintSucceeds();
+
+        IBlockchainOperation? broadcastOp = null;
+        _blockchainOps
+            .Setup(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<OASISRequest?>()))
+            .ReturnsAsync((IBlockchainOperation op, OASISRequest? _) =>
+            {
+                broadcastOp = op;
+                op.Parameters["TxHash"] = "algo_tx_real";
+                op.Status = OperationStatus.Minted;
+                return new OASISResult<IBlockchainOperation> { Result = op };
+            });
+        var manager = new AllocationManager(
+            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _nft.Object, _blockchainOps.Object, _idempotency);
+
+        var result = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "pi_broadcast", ApiKeyId);
+
+        // C2: the allocation actually drove the real broadcast path and the key was
+        // Completed only with the recorded TxHash.
+        result.IsError.Should().BeFalse(result.Message);
+        _blockchainOps.Verify(
+            b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<OASISRequest?>()), Times.Once);
+        broadcastOp.Should().NotBeNull();
+        broadcastOp!.Parameters.Should().ContainKey("TxHash");
+
+        // H1: the alloc:{apiKeyId}:… key is persisted on the op row so reconciliation
+        // can release an orphaned claim from chain truth (bridge precedent).
+        broadcastOp.Parameters.Should().ContainKey("IdempotencyKey");
+        broadcastOp.Parameters["IdempotencyKey"].Should().Be(result.Result!.IdempotencyKey);
+        broadcastOp.Parameters["IdempotencyKey"].Should().StartWith($"alloc:{ApiKeyId}:");
+
+        // The key settled Completed (a TxHash was recorded).
+        var record = await _idempotency.GetAsync(result.Result!.IdempotencyKey, CancellationToken.None);
+        record!.State.Should().Be(IdempotencyState.Completed);
+    }
+
+    [Fact]
+    public async Task AllocateAsync_CrashBetweenBroadcastAndComplete_DuplicateDoesNotReMint()
+    {
+        // Models a crash AFTER the provider minted (op has a TxHash) but BEFORE the
+        // alloc idempotency key was Completed: the claim is stuck InProgress. A
+        // duplicate must NOT re-broadcast; reconciliation settles the orphan from the
+        // persisted op.Parameters["IdempotencyKey"].
+        ApproveKyc(_avatarId);
+        var wallet = WalletFor(_avatarId, ChainType);
+        HasWallet(_avatarId, wallet);
+        SetupMintSucceeds();
+
+        var mintCalls = 0;
+        IBlockchainOperation? broadcastOp = null;
+        _blockchainOps
+            .Setup(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<OASISRequest?>()))
+            .ReturnsAsync((IBlockchainOperation op, OASISRequest? _) =>
+            {
+                Interlocked.Increment(ref mintCalls);
+                broadcastOp = op;
+                op.Parameters["TxHash"] = "algo_tx_crash";
+                op.Status = OperationStatus.Minted;
+                return new OASISResult<IBlockchainOperation> { Result = op };
+            });
+
+        // CompleteAsync is a no-op (the crash) so the key stays InProgress after the
+        // first call — exactly the orphaned-claim state.
+        var crashStore = new CrashAfterBroadcastIdempotencyStore();
+        var manager = new AllocationManager(
+            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _nft.Object, _blockchainOps.Object, crashStore);
+
+        var first = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "pi_crash", ApiKeyId);
+        var second = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "pi_crash", ApiKeyId);
+
+        // The provider mint ran EXACTLY ONCE across the duplicate calls.
+        mintCalls.Should().Be(1, "the crashed claim must not re-broadcast on the duplicate");
+        _blockchainOps.Verify(
+            b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<OASISRequest?>()), Times.Once);
+
+        // The second call replays the still-InProgress claim (not a false success).
+        second.IsError.Should().BeTrue("a duplicate against an InProgress claim replays in-progress");
+        second.Message.Should().Contain("in progress");
+
+        // H1: the orphaned claim is recoverable — the op row carries the alloc key.
+        broadcastOp!.Parameters.Should().ContainKey("IdempotencyKey");
+        broadcastOp.Parameters["IdempotencyKey"].Should().StartWith($"alloc:{ApiKeyId}:");
+        var orphan = await crashStore.GetAsync(broadcastOp.Parameters["IdempotencyKey"], CancellationToken.None);
+        orphan!.State.Should().Be(IdempotencyState.InProgress,
+            "the claim stays InProgress until reconciliation settles it from the persisted key + chain truth");
+    }
+
+    // ── value-path-wiring H4: amount widening + rejection-before-broadcast ──────
+
+    [Fact]
+    public async Task AllocateAsync_AmountAboveIntMax_ReachesProviderAsCorrectUlong()
+    {
+        // 5_000_000_000 > int.MaxValue (~2.147e9): an int surface would truncate.
+        const string bigAmount = "5000000000";
+        ApproveKyc(_avatarId);
+        var wallet = WalletFor(_avatarId, ChainType);
+        HasWallet(_avatarId, wallet);
+        SetupMintSucceeds();
+
+        IBlockchainOperation? broadcastOp = null;
+        _blockchainOps
+            .Setup(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<OASISRequest?>()))
+            .ReturnsAsync((IBlockchainOperation op, OASISRequest? _) =>
+            {
+                broadcastOp = op;
+                op.Parameters["TxHash"] = "algo_tx_big";
+                op.Status = OperationStatus.Minted;
+                return new OASISResult<IBlockchainOperation> { Result = op };
+            });
+        var manager = new AllocationManager(
+            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _nft.Object, _blockchainOps.Object, _idempotency);
+
+        var request = new AllocationRequest
+        {
+            Kind = AllocationKind.Mint,
+            ChainType = ChainType,
+            Amount = bigAmount,
+            Name = "Big Grant",
+            AssetId = "BIG"
+        };
+        var result = await manager.AllocateAsync(_avatarId, request, _callerAvatarId, "pi_big", ApiKeyId);
+
+        result.IsError.Should().BeFalse(result.Message);
+        broadcastOp.Should().NotBeNull();
+        broadcastOp!.Parameters["Amount"].Should().Be(bigAmount,
+            "the full ulong amount must round-trip to the op without int truncation");
+        ulong.Parse(broadcastOp.Parameters["Amount"]).Should().Be(5_000_000_000UL);
+    }
+
+    [Theory]
+    [InlineData("abc")]      // non-numeric
+    [InlineData("100.00")]   // non-integer (base units must be integral)
+    [InlineData("-5")]       // negative
+    [InlineData("99999999999999999999999999")] // overflows ulong
+    public async Task AllocateAsync_InvalidAmount_RejectedBeforeBroadcast_KeyFailedNotLeaked(string badAmount)
+    {
+        ApproveKyc(_avatarId);
+        var wallet = WalletFor(_avatarId, ChainType);
+        HasWallet(_avatarId, wallet);
+        SetupMintSucceeds();
+        var manager = new AllocationManager(
+            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _nft.Object, _blockchainOps.Object, _idempotency);
+
+        var request = new AllocationRequest
+        {
+            Kind = AllocationKind.Mint,
+            ChainType = ChainType,
+            Amount = badAmount,
+            Name = "Bad",
+            AssetId = "BAD"
+        };
+        var result = await manager.AllocateAsync(_avatarId, request, _callerAvatarId, "pi_bad", ApiKeyId);
+
+        result.IsError.Should().BeTrue($"'{badAmount}' is not a valid base-unit amount");
+
+        // No broadcast happened (rejected before ExecuteAsync).
+        _blockchainOps.Verify(
+            b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<OASISRequest?>()), Times.Never);
+
+        // The idempotency key is FAILED (terminal) — not leaked as a perpetual
+        // InProgress duplicate.
+        var record = await _idempotency.GetAsync($"alloc:{ApiKeyId}:pi_bad", CancellationToken.None);
+        record!.State.Should().Be(IdempotencyState.Failed);
     }
 
     // ── KYC fail-closed ──────────────────────────────────────────────────────
@@ -222,7 +428,7 @@ public class AllocationManagerTests
         {
             Kind = AllocationKind.Transfer,
             ChainType = ChainType,
-            Amount = "100.00",
+            Amount = "100",
             AssetRecordId = Guid.NewGuid(),
             Memo = "x"
         };
@@ -282,6 +488,64 @@ public class AllocationManagerTests
             return Task.CompletedTask;
         }
 
+        public Task FailAsync(string key, string error, CancellationToken ct)
+        {
+            if (_records.TryGetValue(key, out var record) && record.State == IdempotencyState.InProgress)
+            {
+                record.State = IdempotencyState.Failed;
+                record.Error = error;
+                record.UpdatedAt = DateTime.UtcNow;
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task<IdempotencyRecord?> GetAsync(string key, CancellationToken ct)
+            => Task.FromResult(_records.TryGetValue(key, out var r) ? Clone(r) : null);
+
+        private static IdempotencyRecord Clone(IdempotencyRecord r) => new()
+        {
+            Key = r.Key,
+            OperationType = r.OperationType,
+            State = r.State,
+            ResultPayload = r.ResultPayload,
+            Error = r.Error,
+            CreatedAt = r.CreatedAt,
+            UpdatedAt = r.UpdatedAt
+        };
+    }
+
+    /// <summary>
+    /// Models a crash BETWEEN broadcast and settle: <see cref="CompleteAsync"/> is a
+    /// no-op so a won claim stays InProgress forever (the orphaned-claim state). A
+    /// duplicate must replay "in progress" and NOT re-broadcast; reconciliation later
+    /// settles it from the op row's persisted IdempotencyKey (H1).
+    /// </summary>
+    private sealed class CrashAfterBroadcastIdempotencyStore : IIdempotencyStore
+    {
+        private readonly Dictionary<string, IdempotencyRecord> _records = new(StringComparer.Ordinal);
+
+        public Task<IdempotencyClaim> TryClaimAsync(string key, string operationType, CancellationToken ct)
+        {
+            if (_records.TryGetValue(key, out var existing))
+                return Task.FromResult(new IdempotencyClaim(false, Clone(existing)));
+
+            var record = new IdempotencyRecord
+            {
+                Key = key,
+                OperationType = operationType,
+                State = IdempotencyState.InProgress,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _records[key] = record;
+            return Task.FromResult(new IdempotencyClaim(true, Clone(record)));
+        }
+
+        // The "crash": the process dies before the settle write lands.
+        public Task CompleteAsync(string key, string resultPayload, CancellationToken ct) => Task.CompletedTask;
+
+        // A real failure path still settles (so amount/wallet rejections are terminal);
+        // only the post-broadcast Complete is lost in this model.
         public Task FailAsync(string key, string error, CancellationToken ct)
         {
             if (_records.TryGetValue(key, out var record) && record.State == IdempotencyState.InProgress)

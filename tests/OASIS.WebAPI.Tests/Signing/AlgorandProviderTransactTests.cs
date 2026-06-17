@@ -129,7 +129,7 @@ public class AlgorandProviderTransactTests : IDisposable
     public async Task Transfer_builds_signs_and_submits()
     {
         const ulong tokenId = 12345UL;
-        const int transferAmount = 1;
+        const ulong transferAmount = 1UL;
         using var _ = RunStub(confirmedRound: 3, assetIndex: null, poolError: null);
 
         var provider = NewProvider();

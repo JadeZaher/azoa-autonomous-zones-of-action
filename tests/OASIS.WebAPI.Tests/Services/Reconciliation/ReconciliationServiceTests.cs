@@ -731,21 +731,25 @@ public class ReconciliationServiceTests
         /// NEVER broadcasts/mutates on-chain.</summary>
         public void AssertNoOnChainMutation()
         {
+            // value-path-wiring H4: Mint/Burn/Transfer value amounts are ulong and
+            // carry a trailing SigningContext? param. Bridge methods (MintWrapped/
+            // BurnWrapped/LockForBridge) keep the int amount. The Times.Never
+            // assertion is unchanged — only the type-matchers track the new surface.
             ProviderMock.Verify(p => p.MintAsync(
-                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
-                It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.MintWrappedAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.BurnAsync(
-                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
-                It.IsAny<CancellationToken>()), Times.Never);
+                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.BurnWrappedAsync(
                 It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.TransferAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+                It.IsAny<ulong>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.SwapAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<decimal>(),
                 It.IsAny<decimal>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);

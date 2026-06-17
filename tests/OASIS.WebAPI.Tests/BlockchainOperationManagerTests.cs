@@ -27,12 +27,12 @@ public class BlockchainOperationManagerTests
 
         _algoProvider = new Mock<IBlockchainProvider>();
         _algoProvider.Setup(p => p.ChainType).Returns("Algorand");
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string> { Result = "algo_tx_123" });
 
         _solProvider = new Mock<IBlockchainProvider>();
         _solProvider.Setup(p => p.ChainType).Returns("Solana");
-        _solProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _solProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                     .ReturnsAsync(new OASISResult<string> { Result = "sol_tx_456" });
 
         var config = new ConfigurationBuilder().Build();
@@ -61,13 +61,13 @@ public class BlockchainOperationManagerTests
         result.IsError.Should().BeFalse();
         operation.Status.Should().Be(OperationStatus.Minted);
         operation.Parameters.Should().ContainKey("TxHash");
-        _algoProvider.Verify(p => p.MintAsync("ipfs://test", 1, "NFT", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _algoProvider.Verify(p => p.MintAsync("ipfs://test", 1UL, "NFT", It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task ExecuteAsync_WithChainFailure_ShouldSetFailedStatus()
     {
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string> { IsError = true, Message = "Insufficient funds" });
 
         var operation = new BlockchainOperation
@@ -135,11 +135,14 @@ public class BlockchainOperationManagerTests
     // change must derive a distinct key. Single-winner under parallelism comes
     // from the INSERT-WINS FakeIdempotencyStore.
 
-    private BlockchainOperation NewMintOp(string wallet = "WALLET_A", string tokenUri = "ipfs://nft", int amount = 1, string asset = "NFT")
+    private BlockchainOperation NewMintOp(string wallet = "WALLET_A", string tokenUri = "ipfs://nft", ulong amount = 1, string asset = "NFT")
         => new()
         {
             OperationType = "Mint",
             TokenUri = tokenUri,
+            // The typed ulong Amount field is the single source of truth the real
+            // DeriveIdempotencyKey reads — set it (NOT a Parameters["Amount"] string)
+            // so the test exercises the production key-derivation path.
             Amount = amount,
             AssetType = asset,
             Parameters = new Dictionary<string, string>
@@ -154,7 +157,7 @@ public class BlockchainOperationManagerTests
     {
         // Count real chain invocations.
         var mintCalls = 0;
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(() => { Interlocked.Increment(ref mintCalls); return new OASISResult<string> { Result = "algo_tx_DUP" }; });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new OASISResult<IBlockchainOperation> { Result = op });
@@ -201,7 +204,7 @@ public class BlockchainOperationManagerTests
     {
         const int concurrency = 16;
         var mintCalls = 0;
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(() => { Interlocked.Increment(ref mintCalls); return new OASISResult<string> { Result = "algo_tx_CONC" }; });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new OASISResult<IBlockchainOperation> { Result = op });
@@ -279,7 +282,7 @@ public class BlockchainOperationManagerTests
     public async Task ExecuteAsync_DifferentValueBearingParam_IsNotDeduped()
     {
         var mintCalls = 0;
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(() => { Interlocked.Increment(ref mintCalls); return new OASISResult<string> { Result = "algo_tx_X" }; });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new OASISResult<IBlockchainOperation> { Result = op });
@@ -306,6 +309,122 @@ public class BlockchainOperationManagerTests
         _idempotency.Keys.Distinct().Should().HaveCount(2);
     }
 
+    // ── C-1 regression: large mint amounts must NOT collide on the idempotency key ──
+    //
+    // Before the fix the typed mint Amount was an int and AllocationManager clamped
+    // the real ulong with ClampToInt (ulong→int saturating to int.MaxValue). The
+    // idempotency key is derived from that typed Amount, so TWO distinct allocations
+    // whose amounts both exceed int.MaxValue clamped to the SAME 2147483647, derived
+    // the SAME key, and the second silently deduped → it NEVER broadcast → silent
+    // under-allocation. Widening Amount to ulong keys off the true value.
+    //
+    // This drives the REAL DeriveIdempotencyKey path (no mocked ExecuteAsync): two
+    // distinct amounts both above int.MaxValue, same wallet/asset/avatar. Pre-fix:
+    // identical keys ⇒ ONE record, mintCalls == 1 (the bug). Post-fix: distinct keys
+    // ⇒ TWO records, mintCalls == 2.
+    [Fact]
+    public async Task ExecuteAsync_DistinctLargeMintAmounts_AboveIntMaxValue_DeriveDistinctKeys()
+    {
+        var mintCalls = 0;
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+                     .ReturnsAsync(() => { Interlocked.Increment(ref mintCalls); return new OASISResult<string> { Result = "algo_tx_BIG" }; });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new OASISResult<IBlockchainOperation> { Result = op });
+
+        // Both amounts exceed int.MaxValue (2_147_483_647). Under the old int-clamp
+        // both collapsed to int.MaxValue and collided; they MUST now stay distinct.
+        const ulong amountA = 5_000_000_000UL;
+        const ulong amountB = 9_000_000_000UL;
+        amountA.Should().BeGreaterThan(int.MaxValue);
+        amountB.Should().BeGreaterThan(int.MaxValue);
+
+        // Root-cause pin: under the historic int-clamp these DISTINCT amounts both
+        // saturated to int.MaxValue, so the key (derived from the clamped Amount)
+        // collided and the second op was silently deduped. This documents WHY the
+        // pre-fix code returned mintCalls == 1; the assertions below prove the fix.
+        HistoricIntClamp(amountA).Should().Be(HistoricIntClamp(amountB),
+            "the pre-fix int-clamp collapsed both distinct amounts to int.MaxValue — the source of C-1");
+
+        var opA = NewMintOp(amount: amountA);
+        var opB = NewMintOp(amount: amountB);
+
+        var rA = await _manager.ExecuteAsync(opA);
+        var rB = await _manager.ExecuteAsync(opB);
+
+        rA.IsError.Should().BeFalse();
+        rB.IsError.Should().BeFalse();
+
+        // The provider received the FULL ulong amounts (no clamp/truncation).
+        _algoProvider.Verify(p => p.MintAsync(It.IsAny<string>(), amountA, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Once);
+        _algoProvider.Verify(p => p.MintAsync(It.IsAny<string>(), amountB, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        // THE C-1 invariant: two distinct large allocations derive DISTINCT
+        // idempotency keys and BOTH broadcast. The pre-fix bug would fail here with
+        // mintCalls == 1 and a single key (the second silently deduped).
+        mintCalls.Should().Be(2, "distinct amounts above int.MaxValue must derive distinct keys and both broadcast — no clamp collision");
+        _idempotency.RecordCount.Should().Be(2);
+        _idempotency.Keys.Distinct().Should().HaveCount(2, "the idempotency key must be derived from the TRUE ulong amount, not a clamped int");
+    }
+
+    /// <summary>
+    /// Models the historic (pre-C-1-fix) saturating ulong→int clamp purely to
+    /// document the collision. Test-only; the production path now keys off the
+    /// true ulong so this projection no longer exists outside this regression.
+    /// </summary>
+    private static int HistoricIntClamp(ulong amount)
+        => amount > int.MaxValue ? int.MaxValue : (int)amount;
+
+    // ── value-path-wiring M1: confirm-timeout preserves txId (Pending, not Failed) ──
+
+    [Fact]
+    public async Task ExecuteAsync_ConfirmTimeout_RecordsPendingConfirmationWithTxHash_NotFailed()
+    {
+        const string txId = "algo_tx_pending_M1";
+        var mintCalls = 0;
+        // The provider broadcast succeeded but did not confirm in the poll window:
+        // it returns a SUCCESS carrying the txId + the pending-confirmation marker.
+        _algoProvider.Setup(p => p.MintAsync(
+                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                Interlocked.Increment(ref mintCalls);
+                return new OASISResult<string>
+                {
+                    IsError = false,
+                    Result = txId,
+                    Message = $"{OperationStatus.PendingConfirmationMarker}: submitted but not yet confirmed."
+                };
+            });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new OASISResult<IBlockchainOperation> { Result = op });
+
+        var op = NewMintOp();
+        var result = await _manager.ExecuteAsync(op);
+
+        result.IsError.Should().BeFalse();
+        // The op is PendingConfirmation (NOT Failed, NOT a terminal success) and it
+        // CARRIES the tx hash so reconciliation can settle it from chain truth.
+        op.Status.Should().Be(OperationStatus.PendingConfirmation);
+        op.Status.Should().NotBe(OperationStatus.Failed, "a slow-but-valid tx must never be false-Failed");
+        op.Parameters.Should().ContainKey("TxHash");
+        op.Parameters["TxHash"].Should().Be(txId);
+
+        // The idempotency record stays InProgress (recoverable) — not Completed,
+        // not Failed — until positive chain signal settles it.
+        var key = _idempotency.Keys.Single();
+        var record = await _idempotency.GetAsync(key, CancellationToken.None);
+        record!.State.Should().Be(IdempotencyState.InProgress,
+            "a pending-confirmation op leaves the claim recoverable for reconciliation");
+
+        // A duplicate must REPLAY in-progress and must NOT re-broadcast.
+        var dup = await _manager.ExecuteAsync(NewMintOp());
+        dup.IsError.Should().BeFalse();
+        dup.Result!.Status.Should().Be(OperationStatus.Pending,
+            "a duplicate against an InProgress claim replays pending — never re-broadcasts");
+        mintCalls.Should().Be(1, "the pending-confirmation op must not be re-broadcast by a duplicate");
+    }
+
     [Fact]
     public async Task ExecuteAsync_AwaitingSignatureOp_IsNotMarkedCompleted()
     {
@@ -313,7 +432,7 @@ public class BlockchainOperationManagerTests
         // "Requires client-side signing" message → AwaitingSignature). Such
         // an op was NOT broadcast server-side, so it must NOT be a terminal
         // Completed idempotency record (no false "done").
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new OASISResult<string>
                      {
                          IsError = false,

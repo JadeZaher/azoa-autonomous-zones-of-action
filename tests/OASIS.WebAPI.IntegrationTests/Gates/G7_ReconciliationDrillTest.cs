@@ -310,8 +310,9 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             MutationNotExpected<bool>(nameof(ValidateAddressAsync));
 
         public Task<OASISResult<string>> MintAsync(
-            string tokenUri, int amount, string assetType,
-            string walletAddress, CancellationToken ct = default) =>
+            string tokenUri, ulong amount, string assetType,
+            string walletAddress, SigningContext? signingContext = null,
+            CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(MintAsync));
 
         public Task<OASISResult<string>> MintWrappedAsync(
@@ -320,8 +321,8 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             MutationNotExpected<string>(nameof(MintWrappedAsync));
 
         public Task<OASISResult<string>> BurnAsync(
-            string tokenId, int amount, string walletAddress,
-            CancellationToken ct = default) =>
+            string tokenId, ulong amount, string walletAddress,
+            SigningContext? signingContext = null, CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(BurnAsync));
 
         public Task<OASISResult<string>> BurnWrappedAsync(
@@ -331,7 +332,8 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
 
         public Task<OASISResult<string>> TransferAsync(
             string tokenId, string fromAddress, string toAddress,
-            int amount, CancellationToken ct = default) =>
+            ulong amount, SigningContext? signingContext = null,
+            CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(TransferAsync));
 
         public Task<OASISResult<string>> ExchangeAsync(
