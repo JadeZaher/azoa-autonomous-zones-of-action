@@ -29,6 +29,7 @@ public class QuestManager : IQuestManager
     private readonly IQuestDagValidator _dagValidator;
     private readonly IQuestNodeHandlerRegistry _registry;
     private readonly ISagaStore _sagaStore;
+    private readonly IWalletManager _walletManager;
 
     public QuestManager(
         IQuestStore questStore,
@@ -36,7 +37,8 @@ public class QuestManager : IQuestManager
         IQuestNodeExecutionStore executionStore,
         IQuestDagValidator dagValidator,
         IQuestNodeHandlerRegistry registry,
-        ISagaStore sagaStore)
+        ISagaStore sagaStore,
+        IWalletManager walletManager)
     {
         _questStore = questStore;
         _runStore = runStore;
@@ -44,6 +46,7 @@ public class QuestManager : IQuestManager
         _dagValidator = dagValidator;
         _registry = registry;
         _sagaStore = sagaStore;
+        _walletManager = walletManager;
     }
 
     /// <summary>
@@ -334,6 +337,14 @@ public class QuestManager : IQuestManager
             if (!_registry.TryGet(node.NodeType, out var handler))
             {
                 result = QuestNodeResults.Fail($"Unsupported node type: {node.NodeType}");
+            }
+            else if (handler.RequiresChainCapability
+                && !await ChainCapabilityGate.HasWalletBoundAsync(_walletManager, quest.AvatarId))
+            {
+                // D1 pre-execution capability gate — fails closed (no broadcast):
+                // a chain-requiring node may not run unless the actor has a wallet
+                // bound. HandleAsync is SKIPPED entirely.
+                result = QuestNodeResults.Fail(ChainCapabilityGate.NoWalletBoundMessage);
             }
             else
             {

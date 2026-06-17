@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OASIS.WebAPI.Interfaces.Managers;
 using OASIS.WebAPI.Interfaces.QuestExecution;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Managers;
@@ -57,13 +58,22 @@ public sealed class DurableWorkflowEngineTests
         public InMemoryQuestNodeExecutionStore ExecutionStore { get; } = new();
         public required IQuestNodeHandler NodeHandler { get; init; }
 
+        /// <summary>
+        /// The wallet manager the chain-capability gate (D1) resolves
+        /// "wallet bound" from. Defaults to "no wallet bound" (empty) so the
+        /// existing engine tests — which drive Tier-1 nodes — are unaffected;
+        /// a capability test overrides it to a bound wallet.
+        /// </summary>
+        public IWalletManager WalletManager { get; init; } = WalletManagerMocks.Empty();
+
         public QuestManager NewManager() => new(
             QuestStore,
             RunStore,
             ExecutionStore,
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new[] { NodeHandler }),
-            SagaStore);
+            SagaStore,
+            WalletManager);
 
         /// <summary>
         /// Build a FRESH <see cref="SagaProcessor"/> over a FRESH DI scope, all
@@ -84,6 +94,7 @@ public sealed class DurableWorkflowEngineTests
             services.AddSingleton<IQuestNodeExecutionStore>(ExecutionStore);
             services.AddSingleton<IQuestNodeHandlerRegistry>(
                 new QuestNodeHandlerRegistry(new[] { NodeHandler }));
+            services.AddSingleton<IWalletManager>(WalletManager);
 
             // The two typed step handlers the QuestWorkflow saga dispatches.
             services.AddScoped<IStepHandler<QuestStepPayload>, QuestNodeStepHandler>();

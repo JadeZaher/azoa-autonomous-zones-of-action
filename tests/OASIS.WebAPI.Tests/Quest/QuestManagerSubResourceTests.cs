@@ -75,7 +75,8 @@ public class QuestManagerSubResourceTests
             execStore,
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
-            new InMemorySagaStore());
+            new InMemorySagaStore(),
+            WalletManagerMocks.Empty());
 
         return (manager, questStore, runStore, execStore, quest);
     }
@@ -212,7 +213,8 @@ public class QuestManagerSubResourceTests
             questStore, runStore, execStore,
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
-            new InMemorySagaStore());
+            new InMemorySagaStore(),
+            WalletManagerMocks.Empty());
 
         var first = await manager.AddEdgeAsync(quest.Id, new QuestEdgeAddModel
         {

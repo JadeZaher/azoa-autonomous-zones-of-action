@@ -94,7 +94,8 @@ public class QuestNodeHandlerRegistryTests
             execStore,
             validator.Object,
             emptyRegistry,
-            new InMemorySagaStore());
+            new InMemorySagaStore(),
+            WalletManagerMocks.Empty());
 
         var result = await manager.ExecuteNodeAsync(questId, node.Id, quest.AvatarId);
 

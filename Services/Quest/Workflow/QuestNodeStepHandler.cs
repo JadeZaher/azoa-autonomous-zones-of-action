@@ -1,3 +1,4 @@
+using OASIS.WebAPI.Interfaces.Managers;
 using OASIS.WebAPI.Interfaces.QuestExecution;
 using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Models.Quest;
@@ -41,6 +42,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
     private readonly IQuestNodeExecutionStore _executionStore;
     private readonly IQuestNodeHandlerRegistry _registry;
     private readonly ISagaStore _sagaStore;
+    private readonly IWalletManager _walletManager;
     private readonly ILogger<QuestNodeStepHandler> _logger;
 
     public QuestNodeStepHandler(
@@ -49,6 +51,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         IQuestNodeExecutionStore executionStore,
         IQuestNodeHandlerRegistry registry,
         ISagaStore sagaStore,
+        IWalletManager walletManager,
         ILogger<QuestNodeStepHandler> logger)
     {
         _questStore = questStore;
@@ -56,6 +59,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         _executionStore = executionStore;
         _registry = registry;
         _sagaStore = sagaStore;
+        _walletManager = walletManager;
         _logger = logger;
     }
 
@@ -132,6 +136,15 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         if (!_registry.TryGet(node.NodeType, out var handler))
         {
             result = QuestNodeHandlerResult.Fail($"Unsupported node type: {node.NodeType}");
+        }
+        else if (handler.RequiresChainCapability
+            && !await ChainCapabilityGate.HasWalletBoundAsync(_walletManager, quest.AvatarId, ct))
+        {
+            // D1 pre-execution capability gate — fails closed (no broadcast):
+            // a chain-requiring node may not run unless the actor has a wallet
+            // bound. HandleAsync is SKIPPED, so the durable path cannot bypass
+            // the gate the legacy executor also enforces.
+            result = QuestNodeHandlerResult.Fail(ChainCapabilityGate.NoWalletBoundMessage);
         }
         else
         {

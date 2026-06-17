@@ -66,7 +66,8 @@ public class QuestManagerExecutionOrderTests
             new InMemoryQuestNodeExecutionStore(),
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
-            new InMemorySagaStore());
+            new InMemorySagaStore(),
+            WalletManagerMocks.Empty());
 
         var result = await manager.ValidateDAGAsync(questId);
 
@@ -120,7 +121,8 @@ public class QuestManagerExecutionOrderTests
             execStore,
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { new ConditionNodeHandler() }),
-            new InMemorySagaStore());
+            new InMemorySagaStore(),
+            WalletManagerMocks.Empty());
 
         var result = await manager.ExecuteAsync(questId, quest.AvatarId);
 
