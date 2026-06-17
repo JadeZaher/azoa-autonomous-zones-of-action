@@ -21,6 +21,15 @@ public interface IQuestNodeHandler
     QuestNodeType NodeType { get; }
 
     /// <summary>
+    /// True if this node requires a chain capability (a wallet bound to the
+    /// run). The engine refuses to run such a node pre-execution when no
+    /// wallet/capability is bound (fails closed). Default false: holon
+    /// transforms are pure metadata and need no chain. Only the Tier-2
+    /// chain-action subset (Swap/Grant/Transfer/Refund) overrides this to true.
+    /// </summary>
+    bool RequiresChainCapability => false;
+
+    /// <summary>
     /// Executes the node identified by <paramref name="context"/> and returns
     /// either a success <see cref="QuestNodeHandlerResult"/> carrying serialized
     /// output JSON, or a failure carrying the error message. The manager turns

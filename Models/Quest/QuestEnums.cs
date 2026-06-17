@@ -66,7 +66,17 @@ public enum QuestNodeType
 
     // Internal/control-flow
     Condition,
-    ComposeOutputs
+    ComposeOutputs,
+
+    // Holon-transformation nodes (economic-primitive-nodes track).
+    // Tier-1 (chain-free): GateCheck supersedes the no-op Condition; Emit hands settlement to the tenant.
+    GateCheck,
+    Emit,
+    // Tier-2 (RequiresChainCapability == true): wrap real managers; actor from run context.
+    Swap,
+    Grant,
+    Transfer,
+    Refund
 }
 
 /// <summary>
