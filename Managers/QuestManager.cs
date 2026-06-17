@@ -5,7 +5,10 @@ using OASIS.WebAPI.Interfaces.Stores;
 using OASIS.WebAPI.Models.Quest;
 using OASIS.WebAPI.Models.Requests;
 using OASIS.WebAPI.Models.Responses;
+using OASIS.WebAPI.Models.Sagas;
+using OASIS.WebAPI.Sagas;
 using OASIS.WebAPI.Services.Quest;
+using OASIS.WebAPI.Services.Quest.Workflow;
 
 namespace OASIS.WebAPI.Managers;
 
@@ -25,19 +28,22 @@ public class QuestManager : IQuestManager
     private readonly IQuestNodeExecutionStore _executionStore;
     private readonly IQuestDagValidator _dagValidator;
     private readonly IQuestNodeHandlerRegistry _registry;
+    private readonly ISagaStore _sagaStore;
 
     public QuestManager(
         IQuestStore questStore,
         IQuestRunStore runStore,
         IQuestNodeExecutionStore executionStore,
         IQuestDagValidator dagValidator,
-        IQuestNodeHandlerRegistry registry)
+        IQuestNodeHandlerRegistry registry,
+        ISagaStore sagaStore)
     {
         _questStore = questStore;
         _runStore = runStore;
         _executionStore = executionStore;
         _dagValidator = dagValidator;
         _registry = registry;
+        _sagaStore = sagaStore;
     }
 
     /// <summary>
@@ -1183,5 +1189,221 @@ public class QuestManager : IQuestManager
         var updated = await _runStore.UpdateAsync(run);
 
         return new OASISResult<QuestRun> { Result = updated.Result, Message = $"Run marked {run.Status}." };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DURABLE WORKFLOW ENGINE (durable-workflow-engine)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Start a durable, suspendable workflow run. Mirrors <see cref="ExecuteAsync"/>'s
+    /// run + per-node-execution creation (so the existing read surface and
+    /// fork/supervisor paths keep working), then — instead of the in-process
+    /// node <c>foreach</c> — enqueues the ENTRY node as the first saga step. The
+    /// saga processor advances the DAG asynchronously, suspending at
+    /// manual/gate/timer nodes (durable-workflow-engine D1, Phase 2).
+    /// </summary>
+    public async Task<OASISResult<QuestRun>> StartWorkflowRunAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
+    {
+        var owned = await LoadOwnedQuestAsync(questId, avatarId);
+        if (owned.IsError || owned.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = owned.Message };
+
+        var validationResult = await ValidateDAGAsync(questId, request);
+        if (validationResult.IsError)
+            return new OASISResult<QuestRun> { IsError = true, Message = validationResult.Message };
+
+        var questResult = await _questStore.GetQuestAsync(questId);
+        if (questResult.IsError || questResult.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = questResult.Message };
+        var quest = questResult.Result;
+
+        var entry = ResolveEntryNode(quest);
+        if (entry is null)
+            return new OASISResult<QuestRun> { IsError = true, Message = "Quest has no entry node to start the workflow run." };
+
+        // Create the run + one Pending QuestNodeExecution per node — identical to
+        // ExecuteAsync so the per-node claim/idempotency surface is shared.
+        var run = new QuestRun
+        {
+            Id = Guid.NewGuid(),
+            QuestId = quest.Id,
+            AvatarId = quest.AvatarId,
+            Status = QuestRunStatus.Pending,
+            StartedAt = DateTime.UtcNow
+        };
+        var createRun = await _runStore.CreateAsync(run);
+        if (createRun.IsError || createRun.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = createRun.Message };
+
+        foreach (var node in quest.Nodes)
+        {
+            var exec = new QuestNodeExecution
+            {
+                Id = Guid.NewGuid(),
+                RunId = run.Id,
+                NodeId = node.Id,
+                State = QuestNodeState.Pending,
+                StartedAt = DateTime.UtcNow
+            };
+            var createExec = await _executionStore.CreateAsync(exec);
+            if (createExec.IsError)
+                return new OASISResult<QuestRun> { IsError = true, Message = createExec.Message };
+        }
+
+        // Enqueue the entry node as the first saga step (step name = node id).
+        // Started directly via the store, not the coordinator, because the
+        // quest-workflow definition is not a SagaDefinition (D1, Approach A).
+        await EnqueueWorkflowNodeAsync(run.Id, quest.Id, run.AvatarId, entry.Id, signalPayload: null);
+
+        run.Status = QuestRunStatus.Running;
+        var updated = await _runStore.UpdateAsync(run);
+        return new OASISResult<QuestRun> { Result = updated.Result ?? run, Message = "Workflow run started." };
+    }
+
+    /// <summary>
+    /// The <c>step(nodeId)</c> primitive: resume a SUSPENDED manual-advance run
+    /// from <paramref name="fromNodeId"/> into its single Control successor by
+    /// enqueuing that downstream node as a fresh saga step. Avatar-scoped; only
+    /// Suspended runs accept advance (mirrors the <see cref="MarkRunCompletedAsync"/>
+    /// state-machine guard).
+    /// </summary>
+    public async Task<OASISResult<QuestRun>> AdvanceAsync(Guid runId, Guid fromNodeId, Guid avatarId, OASISRequest? request = null)
+    {
+        var runResult = await LoadOwnedRunAsync(runId, avatarId);
+        if (runResult.IsError || runResult.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message };
+        var run = runResult.Result;
+
+        if (run.Status is not (QuestRunStatus.Suspended or QuestRunStatus.AwaitingSignal))
+            return new OASISResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Cannot advance run {runId}: status is {run.Status} (only Suspended/AwaitingSignal runs accept advance)."
+            };
+
+        var questResult = await _questStore.GetQuestAsync(run.QuestId);
+        if (questResult.IsError || questResult.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = questResult.Message };
+        var quest = questResult.Result;
+
+        var successors = quest.Edges
+            .Where(e => e.SourceNodeId == fromNodeId && e.EdgeType == QuestEdgeType.Control)
+            .Select(e => e.TargetNodeId)
+            .Distinct()
+            .ToList();
+
+        if (successors.Count == 0)
+        {
+            // Manual-advance from a terminal node ⇒ the run completes.
+            run.Status = QuestRunStatus.Succeeded;
+            run.EndedAt = DateTime.UtcNow;
+            var done = await _runStore.UpdateAsync(run);
+            return new OASISResult<QuestRun> { Result = done.Result ?? run, Message = "Workflow run completed (advanced past terminal node)." };
+        }
+
+        if (successors.Count > 1)
+            return new OASISResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Cannot advance: node {fromNodeId} has {successors.Count} Control successors (fan-out is out of scope)."
+            };
+
+        await EnqueueWorkflowNodeAsync(run.Id, run.QuestId, run.AvatarId, successors[0], signalPayload: null);
+        run.Status = QuestRunStatus.Running;
+        var updated = await _runStore.UpdateAsync(run);
+        return new OASISResult<QuestRun> { Result = updated.Result ?? run, Message = "Workflow run advanced." };
+    }
+
+    /// <summary>
+    /// Deliver an external signal to a PARKED gate node: un-park the matching
+    /// saga step (G2 single-winner via <c>ISagaStore.TrySignalAsync</c>) so the
+    /// processor resumes the gate node, carrying <paramref name="payload"/> into
+    /// it. Avatar-scoped; idempotent — a duplicate signal un-parks at most once.
+    /// </summary>
+    public async Task<OASISResult<QuestRun>> SignalAsync(Guid runId, string gateId, string? payload, Guid avatarId, OASISRequest? request = null)
+    {
+        if (string.IsNullOrWhiteSpace(gateId))
+            return new OASISResult<QuestRun> { IsError = true, Message = "Signal requires a non-empty gateId." };
+
+        var runResult = await LoadOwnedRunAsync(runId, avatarId);
+        if (runResult.IsError || runResult.Result == null)
+            return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message };
+        var run = runResult.Result;
+
+        if (run.Status is not (QuestRunStatus.AwaitingSignal or QuestRunStatus.AwaitingTimer or QuestRunStatus.Suspended))
+            return new OASISResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Cannot signal run {runId}: status is {run.Status} (only a parked/suspended run accepts a signal)."
+            };
+
+        var unparked = await _sagaStore.TrySignalAsync(run.Id.ToString(), gateId, CancellationToken.None);
+        if (unparked is null)
+            return new OASISResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"No node in run {runId} is parked on gate '{gateId}' (already signalled, or wrong gate)."
+            };
+
+        // Re-stamp the un-parked step's payload with the signal body so the
+        // resumed gate node receives it. TrySignalAsync set the row to Pending;
+        // we overwrite its payload via a fresh enqueue-equivalent is unnecessary
+        // — instead the resumed node reads SignalPayload from the payload we
+        // re-serialize here onto the un-parked record.
+        await StampSignalPayloadAsync(unparked, payload);
+
+        run.Status = QuestRunStatus.Running;
+        var updated = await _runStore.UpdateAsync(run);
+        return new OASISResult<QuestRun> { Result = updated.Result ?? run, Message = "Signal delivered; workflow run resuming." };
+    }
+
+    // ── Workflow helpers ───────────────────────────────────────────────────
+
+    /// <summary>The entry node: the explicit <c>IsEntry</c> node, else the
+    /// lowest <c>ExecutionOrder</c> node (the validator's topological head).</summary>
+    private static QuestNode? ResolveEntryNode(Quest quest)
+    {
+        var entry = quest.Nodes.FirstOrDefault(n => n.IsEntry);
+        if (entry is not null)
+            return entry;
+        return quest.Nodes.OrderBy(n => n.ExecutionOrder).FirstOrDefault();
+    }
+
+    /// <summary>Enqueue a quest node as a saga step (the first step of a run, or
+    /// a manual/signal-driven resume). Mirrors the handler's self-advance enqueue
+    /// so the correlation key, step name, and idempotency key are derived
+    /// identically.</summary>
+    private async Task EnqueueWorkflowNodeAsync(
+        Guid runId, Guid questId, Guid avatarId, Guid nodeId, string? signalPayload)
+    {
+        var payload = new QuestStepPayload(runId, questId, avatarId, nodeId, signalPayload);
+        var stepName = nodeId.ToString();
+        var idemKey = SagaKeys.StepIdempotencyKey(runId.ToString(), stepName);
+        await _sagaStore.EnqueueNextStepAsync(
+            QuestWorkflowSaga.Name, stepName, runId.ToString(),
+            idemKey, SagaStep<QuestStepPayload>.Serialize(payload), CancellationToken.None);
+    }
+
+    /// <summary>Re-serialize the un-parked gate step's payload with the delivered
+    /// signal body so the resumed node sees <c>SignalPayload != null</c> and
+    /// falls through to do its work instead of re-parking.</summary>
+    private async Task StampSignalPayloadAsync(SagaStepRecord unparked, string? payload)
+    {
+        QuestStepPayload? parsed;
+        try
+        {
+            parsed = System.Text.Json.JsonSerializer.Deserialize<QuestStepPayload>(unparked.Payload);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return; // leave the row as-is; the node re-parks (safe, not lost)
+        }
+        if (parsed is null)
+            return;
+
+        var stamped = parsed with { SignalPayload = payload ?? string.Empty };
+        await _sagaStore.UpdateStepPayloadAsync(
+            unparked.Id, SagaStep<QuestStepPayload>.Serialize(stamped), CancellationToken.None);
     }
 }

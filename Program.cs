@@ -562,6 +562,21 @@ builder.Services.AddSingleton<OASIS.WebAPI.Sagas.ISagaTrigger,
     OASIS.WebAPI.Sagas.PollingSagaTrigger>();
 builder.Services.AddHostedService<OASIS.WebAPI.Sagas.SagaProcessorHostedService>();
 
+// ─── Durable workflow engine (durable-workflow-engine) ───
+// The FIRST real saga consumer: a single "quest-workflow" ISagaDefinition whose
+// type-uniform FindStep resolves every node-id step to one self-advancing node
+// handler (Approach A). The definition is pure metadata (Singleton); the step
+// handlers wrap scoped quest stores (Scoped). The two handlers close over
+// DISTINCT payload types so GetRequiredService<IStepHandler<T>> is unambiguous.
+builder.Services.AddSingleton<OASIS.WebAPI.Sagas.ISagaDefinition,
+    OASIS.WebAPI.Services.Quest.Workflow.QuestWorkflowSagaDefinition>();
+builder.Services.AddScoped<
+    OASIS.WebAPI.Sagas.IStepHandler<OASIS.WebAPI.Services.Quest.Workflow.QuestStepPayload>,
+    OASIS.WebAPI.Services.Quest.Workflow.QuestNodeStepHandler>();
+builder.Services.AddScoped<
+    OASIS.WebAPI.Sagas.IStepHandler<OASIS.WebAPI.Services.Quest.Workflow.QuestCompensatePayload>,
+    OASIS.WebAPI.Services.Quest.Workflow.QuestCompensateStepHandler>();
+
 // ─── MCP surface (mcp-surface track Phase 1) ───
 // Registers McpToolRegistry (singleton) + the SDK's Streamable HTTP transport
 // at /mcp. Tool implementations (W2-W5) register themselves as IMcpTool via DI;

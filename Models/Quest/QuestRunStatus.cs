@@ -34,5 +34,30 @@ public enum QuestRunStatus
     Forked,
 
     /// <summary>Run was explicitly cancelled before completion.</summary>
-    Cancelled
+    Cancelled,
+
+    /// <summary>
+    /// Run is SUSPENDED between nodes awaiting an explicit consumer
+    /// <c>advance(runId, fromNodeId)</c> (the durable-workflow-engine
+    /// manual-advance hop). Non-terminal: the run resumes when the consumer
+    /// pushes the actor into the next phase. Durable — the suspension lives on
+    /// the parked saga step + this projection, surviving a process restart.
+    /// </summary>
+    Suspended,
+
+    /// <summary>
+    /// Run is parked at a GATE node awaiting an external
+    /// <c>signal(runId, gateId, payload)</c> (durable-workflow-engine).
+    /// Non-terminal: a matching signal un-parks the gate and the engine resumes
+    /// the DAG. Durable across restart.
+    /// </summary>
+    AwaitingSignal,
+
+    /// <summary>
+    /// Run is parked at a WAIT node until a timer becomes due
+    /// (durable-workflow-engine). Non-terminal: the existing saga due-scan fires
+    /// the parked step when its <c>NextRunAt</c> passes — no external call
+    /// needed. Durable across restart.
+    /// </summary>
+    AwaitingTimer
 }

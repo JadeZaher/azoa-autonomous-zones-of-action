@@ -419,6 +419,25 @@ public sealed class SurrealSagaStore : ISagaStore
         return response[0].AffectedCount() == 1;
     }
 
+    // ── UpdateStepPayloadAsync — re-stamp payload on signal resume ────────────
+
+    public async Task<bool> UpdateStepPayloadAsync(Guid id, string payloadJson, CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var surrealId = ToSurrealId(id);
+
+        var q = SurrealQuery
+            .Of("UPDATE type::thing($_t, $_id) SET payload = $_payload, updated_at = $_now RETURN AFTER")
+            .WithParam("_t", TableName)
+            .WithParam("_id", surrealId)
+            .WithParam("_payload", payloadJson ?? string.Empty)
+            .WithParam("_now", nowUtc);
+
+        var response = await _executor.ExecuteAsync(q, ct);
+        if (response.Count == 0 || !response[0].IsOk) return false;
+        return response[0].AffectedCount() == 1;
+    }
+
     // ── GetAsync ──────────────────────────────────────────────────────────────
 
     public async Task<SagaStepRecord?> GetAsync(Guid id, CancellationToken ct)

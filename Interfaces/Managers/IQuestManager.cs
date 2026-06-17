@@ -76,4 +76,27 @@ public interface IQuestManager
     Task<OASISResult<IEnumerable<QuestRun>>> ListRunsByQuestAsync(Guid questId, Guid avatarId, OASISRequest? request = null);
     Task<OASISResult<QuestExecutionState>> GetExecutionStateAsync(Guid runId, Guid avatarId, OASISRequest? request = null);
     Task<OASISResult<QuestRun>> MarkRunCompletedAsync(Guid runId, Guid avatarId, OASISRequest? request = null);
+
+    // ── Durable workflow engine (durable-workflow-engine) ──
+    // A durable, step-addressable, consumer-driven run. Unlike ExecuteAsync
+    // (which runs the whole DAG synchronously in one call), a workflow run maps
+    // onto a saga instance: it can SUSPEND between nodes (manual-advance), PARK
+    // at a gate/wait node until signalled/timed, survive a process restart, and
+    // run a first-class compensation on cancel.
+
+    /// <summary>Start a durable workflow run: create the run + per-node
+    /// executions, then enqueue the entry node as the first saga step. Returns
+    /// immediately with the run in its initial (Pending/Running) state — the
+    /// engine advances it asynchronously.</summary>
+    Task<OASISResult<QuestRun>> StartWorkflowRunAsync(Guid questId, Guid avatarId, OASISRequest? request = null);
+
+    /// <summary>The <c>step(nodeId)</c> primitive: resume a SUSPENDED
+    /// manual-advance run from <paramref name="fromNodeId"/> into its successor.
+    /// Avatar-scoped. Only Suspended runs accept advance.</summary>
+    Task<OASISResult<QuestRun>> AdvanceAsync(Guid runId, Guid fromNodeId, Guid avatarId, OASISRequest? request = null);
+
+    /// <summary>Deliver an external signal to a PARKED gate node, un-parking it
+    /// so the engine resumes the DAG. Avatar-scoped; idempotent (a duplicate
+    /// signal un-parks at most once).</summary>
+    Task<OASISResult<QuestRun>> SignalAsync(Guid runId, string gateId, string? payload, Guid avatarId, OASISRequest? request = null);
 }

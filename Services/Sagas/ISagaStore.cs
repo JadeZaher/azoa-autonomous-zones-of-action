@@ -137,6 +137,16 @@ public interface ISagaStore
     Task<SagaStepRecord?> TrySignalAsync(
         string correlationKey, string gateId, CancellationToken ct);
 
+    /// <summary>
+    /// Overwrite a step's opaque <c>Payload</c> (durable-workflow-engine). Used
+    /// to thread an external <c>signal</c> body onto a just-un-parked gate step
+    /// so the resumed handler sees it. Unconditional (no status guard) — the
+    /// caller has already won the un-park via <see cref="TrySignalAsync"/>, and
+    /// the payload is opaque to the saga layer. Returns whether the row was
+    /// found and written.
+    /// </summary>
+    Task<bool> UpdateStepPayloadAsync(Guid id, string payloadJson, CancellationToken ct);
+
     /// <summary>Fetch a step by id (diagnostics / tests). No tracking.</summary>
     Task<SagaStepRecord?> GetAsync(Guid id, CancellationToken ct);
 }
