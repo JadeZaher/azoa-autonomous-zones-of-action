@@ -155,7 +155,7 @@ public sealed class SurrealSagaStore : ISagaStore
     // ── TrySignalAsync — un-park a gate step (G2 single-winner) ───────────────
 
     public async Task<SagaStepRecord?> TrySignalAsync(
-        string correlationKey, string gateId, CancellationToken ct)
+        string correlationKey, string gateId, string? newPayloadJson, CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
 
@@ -163,15 +163,33 @@ public sealed class SurrealSagaStore : ISagaStore
         // correlation+gate) is the arbiter: a duplicate/racing signal sees the
         // row already Pending and mutates zero rows. Un-parking sets next_run_at
         // to now so the very next due scan resumes the step, and clears gate_id.
-        // This is a multi-row WHERE (no single id), so it drops to a typed
-        // SurrealQuery.Of with parameterized bindings (G3 enforced).
-        var q = SurrealQuery
-            .Of("UPDATE saga_steps SET status = $_pending, next_run_at = $_now, gate_id = NONE, updated_at = $_now WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate RETURN AFTER")
-            .WithParam("_pending", StatusPending)
-            .WithParam("_parked", StatusParked)
-            .WithParam("_corr", correlationKey)
-            .WithParam("_gate", gateId)
-            .WithParam("_now", nowUtc);
+        // The signal body (when supplied) is written in the SAME atomic
+        // statement so the processor can never claim a now-due row whose payload
+        // still lacks the signal body (no un-park/stamp race — review finding H).
+        // Two fully-literal query variants (G3: no interpolation) — the
+        // payload-stamping one adds the payload SET + a bound $_payload param.
+        SurrealQuery q;
+        if (newPayloadJson is not null)
+        {
+            q = SurrealQuery
+                .Of("UPDATE saga_steps SET status = $_pending, next_run_at = $_now, gate_id = NONE, payload = $_payload, updated_at = $_now WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate RETURN AFTER")
+                .WithParam("_pending", StatusPending)
+                .WithParam("_parked", StatusParked)
+                .WithParam("_corr", correlationKey)
+                .WithParam("_gate", gateId)
+                .WithParam("_payload", newPayloadJson)
+                .WithParam("_now", nowUtc);
+        }
+        else
+        {
+            q = SurrealQuery
+                .Of("UPDATE saga_steps SET status = $_pending, next_run_at = $_now, gate_id = NONE, updated_at = $_now WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate RETURN AFTER")
+                .WithParam("_pending", StatusPending)
+                .WithParam("_parked", StatusParked)
+                .WithParam("_corr", correlationKey)
+                .WithParam("_gate", gateId)
+                .WithParam("_now", nowUtc);
+        }
 
         var response = await _executor.ExecuteAsync(q, ct);
         if (response.Count == 0 || !response[0].IsOk)
@@ -196,13 +214,18 @@ public sealed class SurrealSagaStore : ISagaStore
         var nowUtc = DateTime.SpecifyKind(now, DateTimeKind.Utc);
         var leaseCutoff = nowUtc - leaseTimeout;
 
-        // Two-statement transaction:
+        // Three-statement transaction:
         //   [0] Reclaim stale leases: any InProgress row whose claimed_at is
         //       older than the lease boundary is a crashed processor — return
         //       it to Pending+due so it is included in the scan.
-        //   [1] Select due step ids ordered by next_run_at ASC, bounded by batch.
+        //   [1] Fire due timers: a TIMER-armed Parked row (gate_id is NONE/empty
+        //       — a pure wait node) whose next_run_at has passed returns to
+        //       Pending so it auto-resumes. Signal-only parks carry a far-future
+        //       next_run_at sentinel (and a non-empty gate_id), so they are never
+        //       timer-due and only TrySignalAsync un-parks them.
+        //   [2] Select due step ids ordered by next_run_at ASC, bounded by batch.
         //
-        // Statement [0] is a conditional UPDATE — only the truly-lapsed rows
+        // Statements [0]/[1] are conditional UPDATEs — only the truly-due rows
         // mutate. Crash-safe re-entry. The handler keying its effect on the
         // stable step_idempotency_key means a resumed step is an idempotent
         // replay (via IIdempotencyStore), never a double-run.
@@ -213,21 +236,27 @@ public sealed class SurrealSagaStore : ISagaStore
             .WithParam("_now", nowUtc)
             .WithParam("_lease_cutoff", leaseCutoff);
 
+        var fireTimers = SurrealQuery
+            .Of("UPDATE saga_steps SET status = $_pending, gate_id = NONE, updated_at = $_now WHERE status = $_parked AND (gate_id = NONE OR gate_id = \"\") AND next_run_at <= $_now")
+            .WithParam("_pending", StatusPending)
+            .WithParam("_parked", StatusParked)
+            .WithParam("_now", nowUtc);
+
         var scan = SurrealQuery
             .Of("SELECT id FROM saga_steps WHERE status = $_pending AND next_run_at <= $_now ORDER BY next_run_at ASC LIMIT $_batch")
             .WithParam("_pending", StatusPending)
             .WithParam("_now", nowUtc)
             .WithParam("_batch", safeBatch);
 
-        var combined = SurrealQuery.Combine(reclaim, scan);
+        var combined = SurrealQuery.Combine(reclaim, fireTimers, scan);
         var response = await _executor.ExecuteAsync(combined, ct);
         response.EnsureAllOk();
 
-        // Statement [1]: SELECT id projects to { "id": <thing> }; thing
+        // Statement [2]: SELECT id projects to { "id": <thing> }; thing
         // serialization renders as a string of the form "saga_steps:<hex>" or
         // an object { "tb": "saga_steps", "id": "<hex>" }. We deserialize via
         // a minimal projection that accepts either shape.
-        var idRows = response.GetValues<SagaStepIdProjection>(1);
+        var idRows = response.GetValues<SagaStepIdProjection>(2);
 
         var result = new List<Guid>(idRows.Count);
         foreach (var row in idRows)
@@ -419,23 +448,19 @@ public sealed class SurrealSagaStore : ISagaStore
         return response[0].AffectedCount() == 1;
     }
 
-    // ── UpdateStepPayloadAsync — re-stamp payload on signal resume ────────────
+    // ── GetParkedStepAsync — read parked row for signal-payload derivation ────
 
-    public async Task<bool> UpdateStepPayloadAsync(Guid id, string payloadJson, CancellationToken ct)
+    public async Task<SagaStepRecord?> GetParkedStepAsync(
+        string correlationKey, string gateId, CancellationToken ct)
     {
-        var nowUtc = DateTime.UtcNow;
-        var surrealId = ToSurrealId(id);
-
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET payload = $_payload, updated_at = $_now RETURN AFTER")
-            .WithParam("_t", TableName)
-            .WithParam("_id", surrealId)
-            .WithParam("_payload", payloadJson ?? string.Empty)
-            .WithParam("_now", nowUtc);
+            .Of("SELECT * FROM saga_steps WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate LIMIT 1")
+            .WithParam("_parked", StatusParked)
+            .WithParam("_corr", correlationKey)
+            .WithParam("_gate", gateId);
 
-        var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0 || !response[0].IsOk) return false;
-        return response[0].AffectedCount() == 1;
+        var rows = await _executor.QueryAsync<SagaStepPoco>(q, ct);
+        return rows.Count == 0 ? null : ToDomain(rows[0]);
     }
 
     // ── GetAsync ──────────────────────────────────────────────────────────────

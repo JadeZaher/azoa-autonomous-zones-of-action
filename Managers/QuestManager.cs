@@ -1338,20 +1338,24 @@ public class QuestManager : IQuestManager
                 Message = $"Cannot signal run {runId}: status is {run.Status} (only a parked/suspended run accepts a signal)."
             };
 
-        var unparked = await _sagaStore.TrySignalAsync(run.Id.ToString(), gateId, CancellationToken.None);
+        // Build the signal-stamped payload BEFORE the un-park so it is written
+        // in the SAME atomic statement (no un-park/stamp race). The new payload
+        // is the parked step's payload with SignalPayload set; we re-derive it
+        // from the parked row read read-only first. A concurrent signal still
+        // races single-winner on the un-park itself.
+        var parked = await _sagaStore.GetParkedStepAsync(run.Id.ToString(), gateId, CancellationToken.None);
+        string? stampedPayloadJson = null;
+        if (parked is not null)
+            stampedPayloadJson = BuildSignalStampedPayload(parked.Payload, payload);
+
+        var unparked = await _sagaStore.TrySignalAsync(
+            run.Id.ToString(), gateId, stampedPayloadJson, CancellationToken.None);
         if (unparked is null)
             return new OASISResult<QuestRun>
             {
                 IsError = true,
                 Message = $"No node in run {runId} is parked on gate '{gateId}' (already signalled, or wrong gate)."
             };
-
-        // Re-stamp the un-parked step's payload with the signal body so the
-        // resumed gate node receives it. TrySignalAsync set the row to Pending;
-        // we overwrite its payload via a fresh enqueue-equivalent is unnecessary
-        // — instead the resumed node reads SignalPayload from the payload we
-        // re-serialize here onto the un-parked record.
-        await StampSignalPayloadAsync(unparked, payload);
 
         run.Status = QuestRunStatus.Running;
         var updated = await _runStore.UpdateAsync(run);
@@ -1385,25 +1389,27 @@ public class QuestManager : IQuestManager
             idemKey, SagaStep<QuestStepPayload>.Serialize(payload), CancellationToken.None);
     }
 
-    /// <summary>Re-serialize the un-parked gate step's payload with the delivered
+    /// <summary>Re-serialize the parked gate step's payload with the delivered
     /// signal body so the resumed node sees <c>SignalPayload != null</c> and
-    /// falls through to do its work instead of re-parking.</summary>
-    private async Task StampSignalPayloadAsync(SagaStepRecord unparked, string? payload)
+    /// falls through to do its work instead of re-parking. Pure: the result is
+    /// handed to <c>TrySignalAsync</c> to write atomically with the un-park.
+    /// Returns <c>null</c> when the existing payload is unparseable (leave it
+    /// as-is; the node re-parks — safe, not lost).</summary>
+    private static string? BuildSignalStampedPayload(string existingPayloadJson, string? signalPayload)
     {
         QuestStepPayload? parsed;
         try
         {
-            parsed = System.Text.Json.JsonSerializer.Deserialize<QuestStepPayload>(unparked.Payload);
+            parsed = System.Text.Json.JsonSerializer.Deserialize<QuestStepPayload>(existingPayloadJson);
         }
         catch (System.Text.Json.JsonException)
         {
-            return; // leave the row as-is; the node re-parks (safe, not lost)
+            return null;
         }
         if (parsed is null)
-            return;
+            return null;
 
-        var stamped = parsed with { SignalPayload = payload ?? string.Empty };
-        await _sagaStore.UpdateStepPayloadAsync(
-            unparked.Id, SagaStep<QuestStepPayload>.Serialize(stamped), CancellationToken.None);
+        var stamped = parsed with { SignalPayload = signalPayload ?? string.Empty };
+        return SagaStep<QuestStepPayload>.Serialize(stamped);
     }
 }

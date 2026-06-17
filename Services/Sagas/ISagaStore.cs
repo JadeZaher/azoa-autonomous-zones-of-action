@@ -128,24 +128,27 @@ public interface ISagaStore
     /// Deliver an external signal to a PARKED gate step (durable-workflow-engine).
     /// G2 single-winner conditional UPDATE: <c>WHERE status==Parked AND
     /// correlation_key==$c AND gate_id==$g</c> ⇒ <see cref="StepStatus.Pending"/>,
-    /// <c>NextRunAt=now</c>, clear <c>gate_id</c>, so the processor resumes it on
-    /// the next tick. A duplicate or racing signal un-parks AT MOST ONCE (the
-    /// second sees the row already <c>Pending</c> and affects zero rows).
-    /// Returns the un-parked record, or <c>null</c> if no parked row matched
-    /// (already signalled, never parked, or wrong gate).
+    /// <c>NextRunAt=now</c>, clear <c>gate_id</c>, AND (when
+    /// <paramref name="newPayloadJson"/> is non-null) overwrite the step payload
+    /// — all in ONE atomic statement, so the processor never observes a due row
+    /// whose payload still lacks the signal body (no un-park/stamp race). A
+    /// duplicate or racing signal un-parks AT MOST ONCE (the second sees the row
+    /// already <c>Pending</c> and affects zero rows). Returns the un-parked
+    /// record, or <c>null</c> if no parked row matched (already signalled, never
+    /// parked, or wrong gate).
     /// </summary>
     Task<SagaStepRecord?> TrySignalAsync(
-        string correlationKey, string gateId, CancellationToken ct);
+        string correlationKey, string gateId, string? newPayloadJson, CancellationToken ct);
 
     /// <summary>
-    /// Overwrite a step's opaque <c>Payload</c> (durable-workflow-engine). Used
-    /// to thread an external <c>signal</c> body onto a just-un-parked gate step
-    /// so the resumed handler sees it. Unconditional (no status guard) — the
-    /// caller has already won the un-park via <see cref="TrySignalAsync"/>, and
-    /// the payload is opaque to the saga layer. Returns whether the row was
-    /// found and written.
+    /// Read (no mutation) the PARKED step matching <paramref name="correlationKey"/>
+    /// + <paramref name="gateId"/>, or <c>null</c> if none is parked on that gate
+    /// (durable-workflow-engine). Used to derive the signal-stamped payload
+    /// BEFORE the atomic un-park, so the stamp can be folded into
+    /// <see cref="TrySignalAsync"/>.
     /// </summary>
-    Task<bool> UpdateStepPayloadAsync(Guid id, string payloadJson, CancellationToken ct);
+    Task<SagaStepRecord?> GetParkedStepAsync(
+        string correlationKey, string gateId, CancellationToken ct);
 
     /// <summary>Fetch a step by id (diagnostics / tests). No tracking.</summary>
     Task<SagaStepRecord?> GetAsync(Guid id, CancellationToken ct);

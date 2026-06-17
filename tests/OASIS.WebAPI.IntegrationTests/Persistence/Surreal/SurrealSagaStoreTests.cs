@@ -372,6 +372,127 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         fetched.ClaimedAt.Should().BeNull();
     }
 
+    // ── Park / signal / timer (durable-workflow-engine) ──────────────────────
+
+    /// <summary>
+    /// ParkStepAsync (signal-only) suspends an InProgress step: status → Parked,
+    /// gate_id persisted, lease cleared, and the row is INVISIBLE to the due scan
+    /// (next_run_at pushed to the far-future sentinel). Only a signal un-parks it.
+    /// </summary>
+    [SkippableFact]
+    public async Task ParkStep_SignalOnly_SuspendsAndIsNotDue()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var corr = UniqueCorrelation();
+        var enq = await _store.EnqueueAsync(
+            "quest-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
+        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+
+        var parked = await _store.ParkStepAsync(enq.Id, "phase-met", resumeAt: null, CancellationToken.None);
+        parked.Should().BeTrue("a claimed InProgress step parks");
+
+        var fetched = await _store.GetAsync(enq.Id, CancellationToken.None);
+        fetched!.Status.Should().Be(StepStatus.Parked);
+        fetched.GateId.Should().Be("phase-met");
+        fetched.ClaimedAt.Should().BeNull("park clears the lease");
+
+        // A signal-only park is NOT due (sentinel far-future next_run_at).
+        var due = await _store.GetDueStepIdsAsync(
+            DateTime.UtcNow, 10, TimeSpan.FromMinutes(5), CancellationToken.None);
+        due.Should().NotContain(enq.Id, "a parked step must not be claimable until signalled");
+    }
+
+    /// <summary>
+    /// TrySignalAsync un-parks the matching (correlation, gate) parked step:
+    /// status → Pending, next_run_at = now (due), gate_id cleared. A second
+    /// (racing/duplicate) signal un-parks at most once — the G2 single-winner
+    /// property translated to the gate path.
+    /// </summary>
+    [SkippableFact]
+    public async Task TrySignal_UnparksMatchingGate_AndIsIdempotent()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var corr = UniqueCorrelation();
+        var enq = await _store.EnqueueAsync(
+            "quest-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
+        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        await _store.ParkStepAsync(enq.Id, "phase-met", resumeAt: null, CancellationToken.None);
+
+        var first  = await _store.TrySignalAsync(corr, "phase-met", null, CancellationToken.None);
+        var second = await _store.TrySignalAsync(corr, "phase-met", null, CancellationToken.None);
+
+        first.Should().NotBeNull("first signal un-parks the gate");
+        first!.Status.Should().Be(StepStatus.Pending, "un-parked step is due again");
+        second.Should().BeNull("a duplicate signal must un-park at most once");
+
+        var fetched = await _store.GetAsync(enq.Id, CancellationToken.None);
+        fetched!.Status.Should().Be(StepStatus.Pending);
+        fetched.GateId.Should().BeNull("un-park clears the gate id");
+
+        // Now claimable again.
+        var due = await _store.GetDueStepIdsAsync(
+            DateTime.UtcNow.AddSeconds(1), 10, TimeSpan.FromMinutes(5), CancellationToken.None);
+        due.Should().Contain(enq.Id, "an un-parked step is due in the next scan");
+    }
+
+    /// <summary>
+    /// TrySignalAsync on the WRONG gate (or a never-parked correlation) matches
+    /// nothing and returns null — it cannot un-park an unrelated step.
+    /// </summary>
+    [SkippableFact]
+    public async Task TrySignal_WrongGate_MatchesNothing()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var corr = UniqueCorrelation();
+        var enq = await _store.EnqueueAsync(
+            "quest-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
+        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        await _store.ParkStepAsync(enq.Id, "phase-met", resumeAt: null, CancellationToken.None);
+
+        var wrong = await _store.TrySignalAsync(corr, "some-other-gate", null, CancellationToken.None);
+        wrong.Should().BeNull("a signal on a non-matching gate un-parks nothing");
+
+        var fetched = await _store.GetAsync(enq.Id, CancellationToken.None);
+        fetched!.Status.Should().Be(StepStatus.Parked, "the parked step is untouched by a wrong-gate signal");
+    }
+
+    /// <summary>
+    /// A TIMER-armed park (resumeAt set forward) auto-resumes via the existing
+    /// due scan once its next_run_at passes — no signal needed. Proves a wait
+    /// node fires through GetDueStepIdsAsync.
+    /// </summary>
+    [SkippableFact]
+    public async Task ParkStep_TimerArmed_BecomesDueWhenTimerPasses()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var corr = UniqueCorrelation();
+        var enq = await _store.EnqueueAsync(
+            "quest-workflow", "waitNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
+        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+
+        var resumeAt = DateTime.UtcNow.AddSeconds(30);
+        await _store.ParkStepAsync(enq.Id, gateId: "", resumeAt: resumeAt, CancellationToken.None);
+
+        // Before the timer: not due (Parked, timer in the future).
+        var notYet = await _store.GetDueStepIdsAsync(
+            DateTime.UtcNow, 10, TimeSpan.FromMinutes(5), CancellationToken.None);
+        notYet.Should().NotContain(enq.Id, "a timer-armed park is not due before its timer");
+
+        // After the timer passes: GetDueStepIdsAsync's fire-timers statement
+        // returns the Parked-with-empty-gate row to Pending, so it appears in
+        // the due scan. A pure wait node resumes with no external signal.
+        var afterTimer = await _store.GetDueStepIdsAsync(
+            resumeAt.AddSeconds(1), 10, TimeSpan.FromMinutes(5), CancellationToken.None);
+        afterTimer.Should().Contain(enq.Id, "a timer-armed park becomes due once its timer passes");
+
+        var resumed = await _store.GetAsync(enq.Id, CancellationToken.None);
+        resumed!.Status.Should().Be(StepStatus.Pending, "the fired timer returns the step to Pending");
+    }
+
     // ── Test-only helpers (direct SurrealQL through the same executor) ────────
 
     /// <summary>
@@ -454,7 +575,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
             DEFINE FIELD IF NOT EXISTS step_name            ON saga_steps TYPE string ASSERT $value != NONE AND $value != "";
             DEFINE FIELD IF NOT EXISTS step_idempotency_key ON saga_steps TYPE string ASSERT $value != NONE AND $value != "";
             DEFINE FIELD IF NOT EXISTS payload              ON saga_steps TYPE string;
-            DEFINE FIELD IF NOT EXISTS status               ON saga_steps TYPE string DEFAULT "Pending" ASSERT $value INSIDE ["Pending","InProgress","Completed","Compensating","DeadLettered"];
+            DEFINE FIELD IF NOT EXISTS status               ON saga_steps TYPE string DEFAULT "Pending" ASSERT $value INSIDE ["Pending","InProgress","Completed","Compensating","DeadLettered","Parked"];
             DEFINE FIELD IF NOT EXISTS is_compensation      ON saga_steps TYPE bool DEFAULT false;
             DEFINE FIELD IF NOT EXISTS attempt_count        ON saga_steps TYPE int DEFAULT 0;
             DEFINE FIELD IF NOT EXISTS next_run_at          ON saga_steps TYPE datetime;
@@ -464,6 +585,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
             DEFINE FIELD IF NOT EXISTS dead_lettered        ON saga_steps TYPE bool DEFAULT false;
             DEFINE FIELD IF NOT EXISTS created_at           ON saga_steps TYPE datetime;
             DEFINE FIELD IF NOT EXISTS updated_at           ON saga_steps TYPE datetime;
+            DEFINE FIELD IF NOT EXISTS gate_id              ON saga_steps FLEXIBLE TYPE option<string>;
             DEFINE INDEX IF NOT EXISTS saga_steps_correlation_key   ON saga_steps FIELDS correlation_key;
             DEFINE INDEX IF NOT EXISTS saga_steps_due_scan          ON saga_steps FIELDS status, next_run_at;
             DEFINE INDEX IF NOT EXISTS saga_steps_lease_scan        ON saga_steps FIELDS status, claimed_at;

@@ -85,19 +85,23 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         if ((advance is WorkflowAdvance.Gated or WorkflowAdvance.Timer)
             && p.SignalPayload is null)
         {
+            if (advance is WorkflowAdvance.Timer)
+            {
+                // A pure WAIT node parks with an EMPTY gate id + a forward timer
+                // so GetDueStepIdsAsync's fire-timers clause (which matches only
+                // empty-gate parks) auto-resumes it with no external signal. A
+                // non-empty gate would strand the wait node forever (only a
+                // signal could release it) — gate_id is meaningless for a timer.
+                var resumeAt = DateTime.UtcNow.AddSeconds(Math.Max(1, marker?.ResumeInSeconds ?? 0));
+                await ProjectRunStatusAsync(p.RunId, QuestRunStatus.AwaitingTimer, ct);
+                return StepResult.Parked(gateId: string.Empty, resumeAt: resumeAt);
+            }
+
+            // A GATE node parks on its signal id with no timer: only
+            // signal(runId, gateId, …) un-parks it.
             var gateId = marker?.GateId ?? node.Id.ToString();
-            DateTime? resumeAt = advance is WorkflowAdvance.Timer
-                ? DateTime.UtcNow.AddSeconds(Math.Max(1, marker?.ResumeInSeconds ?? 0))
-                : null;
-
-            await ProjectRunStatusAsync(
-                p.RunId,
-                advance is WorkflowAdvance.Timer
-                    ? QuestRunStatus.AwaitingTimer
-                    : QuestRunStatus.AwaitingSignal,
-                ct);
-
-            return StepResult.Parked(gateId, resumeAt);
+            await ProjectRunStatusAsync(p.RunId, QuestRunStatus.AwaitingSignal, ct);
+            return StepResult.Parked(gateId, resumeAt: null);
         }
 
         // ── 2. Per-node exactly-once claim ────────────────────────────────────
