@@ -43,6 +43,31 @@ public class QuestMarkFailedRequest
     public string Reason { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// Body for the durable-workflow-engine <c>advance</c> endpoint (the
+/// <c>step(nodeId)</c> primitive): resume a Suspended manual-advance run from
+/// <see cref="FromNodeId"/> into its successor.
+/// </summary>
+public class QuestAdvanceRequest
+{
+    public Guid FromNodeId { get; set; }
+}
+
+/// <summary>
+/// Body for the durable-workflow-engine <c>signal</c> endpoint: deliver an
+/// external signal to a parked gate node, un-parking it.
+/// </summary>
+public class QuestSignalRequest
+{
+    /// <summary>The gate id the parked node is waiting on.</summary>
+    public string GateId { get; set; } = string.Empty;
+
+    /// <summary>Optional signal body carried into the resumed gate node
+    /// (e.g. "phase-met" / "cancelled"). The economic-primitive-nodes track's
+    /// GateCheck handler interprets it; this engine only delivers it.</summary>
+    public string? Payload { get; set; }
+}
+
 public class QuestNodeCreateModel
 {
     public string Name { get; set; } = string.Empty;

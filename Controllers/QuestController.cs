@@ -147,6 +147,58 @@ public class QuestController : ControllerBase
         return Ok(result);
     }
 
+    // ─── Durable workflow engine (durable-workflow-engine) ───
+
+    /// <summary>
+    /// Start a durable, suspendable workflow run for a quest. Unlike
+    /// <c>/{id}/execute</c> (which runs the whole DAG synchronously), this
+    /// returns immediately and the engine advances the run asynchronously,
+    /// suspending at manual/gate/timer nodes.
+    /// </summary>
+    [HttpPost("{id:guid}/start-workflow")]
+    public async Task<ActionResult<OASISResult<QuestRun>>> StartWorkflow(Guid id, [FromQuery] OASISRequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new OASISResult<QuestRun> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.StartWorkflowRunAsync(id, avatarId.Value, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// The <c>step(nodeId)</c> primitive: resume a SUSPENDED manual-advance run
+    /// from <c>fromNodeId</c> into its successor.
+    /// </summary>
+    [HttpPost("runs/{runId:guid}/advance")]
+    public async Task<ActionResult<OASISResult<QuestRun>>> Advance(Guid runId, [FromBody] QuestAdvanceRequest body, [FromQuery] OASISRequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new OASISResult<QuestRun> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.AdvanceAsync(runId, body.FromNodeId, avatarId.Value, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Deliver an external signal to a PARKED gate node, un-parking it so the
+    /// engine resumes the DAG.
+    /// </summary>
+    [HttpPost("runs/{runId:guid}/signal")]
+    public async Task<ActionResult<OASISResult<QuestRun>>> Signal(Guid runId, [FromBody] QuestSignalRequest body, [FromQuery] OASISRequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new OASISResult<QuestRun> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.SignalAsync(runId, body.GateId, body.Payload, avatarId.Value, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
     // ─── Templates ───
 
     [HttpPost("templates")]
