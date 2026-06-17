@@ -1,6 +1,8 @@
 using System.Text.Json;
 using FluentAssertions;
+using OASIS.WebAPI.Interfaces.QuestExecution;
 using OASIS.WebAPI.Models.Quest;
+using OASIS.WebAPI.Services.Quest;
 using OASIS.WebAPI.Services.Quest.Handlers;
 using Xunit;
 using QuestEntity = OASIS.WebAPI.Models.Quest.Quest;
@@ -36,7 +38,7 @@ public class EmitNodeHandlerTests
     [Fact]
     public void EmitNodeHandler_RequiresChainCapability_IsFalse()
     {
-        var handler = new EmitNodeHandler();
+        IQuestNodeHandler handler = new EmitNodeHandler();
         handler.RequiresChainCapability.Should().BeFalse();
     }
 
