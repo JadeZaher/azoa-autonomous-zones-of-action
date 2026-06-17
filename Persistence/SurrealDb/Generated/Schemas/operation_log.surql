@@ -51,6 +51,11 @@ DEFINE FIELD IF NOT EXISTS error ON TABLE operation_log TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE operation_log TYPE datetime;
 DEFINE FIELD IF NOT EXISTS completed_date ON TABLE operation_log TYPE option<datetime>;
 
+-- Holon-asset link (economic-primitive-nodes)
+DEFINE FIELD IF NOT EXISTS asset_id ON TABLE operation_log TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS tx_hash ON TABLE operation_log TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS holon_id ON TABLE operation_log TYPE option<record<holon>>;
+
 -- ── Indexes ──────────────────────────────────────────────────
 
 DEFINE INDEX IF NOT EXISTS operation_log_idempotency_key

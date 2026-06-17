@@ -26,7 +26,7 @@ graph LR
     %%   quest_node_execution.state: Pending, Running, Succeeded, Failed, Skipped, Cancelled  (QuestNodeExecution.QuestNodeState)
     %%   quest_node_template.node_type: HolonCreate, HolonUpdate, HolonDelete, HolonGet, HolonQuery, HolonInteract, HolonGetChildren, HolonGetPeers, HolonGetAncestors, HolonGetDescendants, HolonPropagate, HolonCompose, HolonClone, HolonMoveSubtree, NftMint, NftTransfer, NftBurn, NftGet, NftQuery, NftGetMetadata, WalletCreate, WalletUpdate, WalletDelete, WalletGet, WalletQuery, WalletSetDefault, WalletGetPortfolio, StarGenerate, StarDeploy, Search, AvatarNFTGetComposite, BlockchainExecute, Condition, ComposeOutputs  (QuestNodeTemplate.NodeTypeKind)
     %%   quest_run.status: Pending, Running, Succeeded, Failed, Forked, Cancelled  (QuestRun.QuestRunStatusKind)
-    %%   saga_steps.status: Pending, InProgress, Completed, Compensating, DeadLettered  (SagaSteps.StepStatus)
+    %%   saga_steps.status: Pending, InProgress, Completed, Compensating, DeadLettered, Parked  (SagaSteps.StepStatus)
     %%   swap_state.status: Pending, Unknown, Failed, Completed, AwaitingSignature, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (SwapState.StatusKind)
     %%   wallet.wallet_type: External, Platform  (Wallet.WalletTypeKind)
 
@@ -76,7 +76,7 @@ graph LR
 
     %% Edges (slice-local + cross-slice)
     api_key -- "avatar_id [N:1]" --> avatar
-    avatar -- "owner_tenant_id [N:1]" --> avatar
+    avatar -- "owner_tenant_id [N:0..1]" --> avatar
     bridge_tx -- "avatar_id [N:1]" --> avatar
     consumed_vaa_ledger -- "bridge_transaction_id [N:0..1]" --> bridge_tx
     dapp_series -- "avatar_id [N:1]" --> avatar
@@ -89,6 +89,7 @@ graph LR
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
     nft_ownership -- "avatar_id [N:1]" --> avatar
     operation_log -- "avatar_id [N:0..1]" --> avatar
+    operation_log -- "holon_id [N:0..1]" --> holon
     operation_log -- "source_holon_id [N:0..1]" --> holon
     operation_log -- "target_holon_id [N:0..1]" --> holon
     operation_log -- "wallet_id [N:0..1]" --> wallet

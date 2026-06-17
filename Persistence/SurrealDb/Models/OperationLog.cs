@@ -125,5 +125,19 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 17, Type = "option<datetime>")]
         [JsonPropertyName("completed_date")]
         public DateTimeOffset? CompletedDate { get; set; }
+
+        [Column(Order = 18, Type = "option<string>")]
+        [FieldGroup("Holon-asset link (economic-primitive-nodes)")]
+        [JsonPropertyName("asset_id")]
+        public string? AssetId { get; set; }
+
+        [Column(Order = 19, Type = "option<string>")]
+        [JsonPropertyName("tx_hash")]
+        public string? TxHash { get; set; }
+
+        [Column(Order = 20)]
+        [References(typeof(Holon), Optional = true)]
+        [JsonPropertyName("holon_id")]
+        public string? HolonId { get; set; }
     }
 }

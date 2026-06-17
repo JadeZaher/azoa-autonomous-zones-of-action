@@ -13,7 +13,7 @@ graph LR
 
     %% Edges (outbound from this slice)
     api_key -- "avatar_id [N:1]" --> avatar
-    avatar -- "owner_tenant_id [N:1]" --> avatar
+    avatar -- "owner_tenant_id [N:0..1]" --> avatar
     holon -- "avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission

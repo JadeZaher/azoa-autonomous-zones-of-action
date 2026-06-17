@@ -19,6 +19,7 @@ graph LR
     bridge_tx -- "avatar_id [N:1]" --> avatar
     consumed_vaa_ledger -- "bridge_transaction_id [N:0..1]" --> bridge_tx
     operation_log -- "avatar_id [N:0..1]" --> avatar
+    operation_log -- "holon_id [N:0..1]" --> holon
     operation_log -- "source_holon_id [N:0..1]" --> holon
     operation_log -- "target_holon_id [N:0..1]" --> holon
     operation_log -- "wallet_id [N:0..1]" --> wallet
