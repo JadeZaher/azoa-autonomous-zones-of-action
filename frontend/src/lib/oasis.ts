@@ -4,7 +4,7 @@
  * OASIS SDK integration for the frontend.
  *
  * Replaces the hand-rolled BlockchainApiClient and mock auth with
- * the @oasis/wallet-sdk OasisClient, providing:
+ * the @oasis/sdk OasisClient, providing:
  * - Real API calls to the .NET backend
  * - Session management with localStorage
  * - Multi-chain wallet with client-side signing
@@ -16,7 +16,7 @@ import {
   OasisClient,
   isOk,
   isErr,
-} from '@oasis/wallet-sdk'
+} from '@oasis/sdk'
 import { buildChainRegistrations, readInitialNetwork } from './networks'
 import { readInitialDebug } from './debug'
 import type {
@@ -28,7 +28,7 @@ import type {
   AuthProfile,
   Result,
   SdkError,
-} from '@oasis/wallet-sdk'
+} from '@oasis/sdk'
 
 /** Placeholder type for avatar API responses (not exported by SDK) */
 export type AvatarResponse = {

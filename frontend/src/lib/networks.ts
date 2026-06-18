@@ -14,8 +14,8 @@
  * ever registered, so operations can never span devnet/testnet/mainnet.
  */
 
-import { AlgorandProvider, SolanaProvider } from '@oasis/wallet-sdk'
-import type { ChainProviderRegistration, ChainNetwork } from '@oasis/wallet-sdk'
+import { AlgorandProvider, SolanaProvider } from '@oasis/sdk'
+import type { ChainProviderRegistration, ChainNetwork } from '@oasis/sdk'
 
 export type NetworkEnv = 'devnet' | 'testnet' | 'mainnet'
 

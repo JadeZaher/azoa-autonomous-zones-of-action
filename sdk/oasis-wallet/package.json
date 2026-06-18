@@ -1,7 +1,7 @@
 {
-  "name": "@oasis/wallet-sdk",
+  "name": "@oasis/sdk",
   "version": "0.1.0",
-  "description": "Cross-platform wallet SDK for OASIS — client-side signing, multi-chain support, DEX integration",
+  "description": "Cross-platform OASIS SDK — client-side signing, multi-chain wallets, DEX, holons, and durable workflow runs",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

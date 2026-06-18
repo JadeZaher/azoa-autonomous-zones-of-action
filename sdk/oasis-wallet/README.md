@@ -1,4 +1,4 @@
-# @oasis/wallet-sdk
+# @oasis/sdk
 
 Cross-platform TypeScript SDK for OASIS — a typed HTTP client + fluent facades
 over the OASIS WebAPI, built for **browser / React Native / Lynx**. Client-side
@@ -6,7 +6,7 @@ signing, multi-chain wallet, DEX integration, and a durable **workflow** run
 driver. No `btoa`/`atob`/`Buffer`; pure-JS encoding only.
 
 ```ts
-import { OasisClient } from "@oasis/wallet-sdk";
+import { OasisClient } from "@oasis/sdk";
 
 const oasis = new OasisClient({
   apiUrl: "https://api.oasis.example",
@@ -20,7 +20,7 @@ string) that fires before any network call. Check the result with `isOk` /
 `isErr`:
 
 ```ts
-import { isOk } from "@oasis/wallet-sdk";
+import { isOk } from "@oasis/sdk";
 
 const res = await oasis.workflow.templates /* … */;
 if (isOk(res)) { /* res.value */ } else { /* res.error: SdkError */ }
@@ -162,7 +162,7 @@ generic params — amounts are **strings**, and there is no rate, token meaning,
 economic concept. A raw `Config` is always accepted as an escape hatch.
 
 ```ts
-import { nodeConfig } from "@oasis/wallet-sdk";
+import { nodeConfig } from "@oasis/sdk";
 
 nodeConfig.gateCheck({ predicate: "upstream.swap.outAmount >= reads.threshold",
                        reads: { threshold: "1000" } });
@@ -189,7 +189,7 @@ this SDK only wires the generic mechanism.
 ## Path constants
 
 The workflow run-driver routes are exported on `API_PATHS` (from
-`@oasis/wallet-sdk/api`):
+`@oasis/sdk/api`):
 
 | Constant | Route |
 | --- | --- |
