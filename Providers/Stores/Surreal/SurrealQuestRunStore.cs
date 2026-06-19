@@ -79,10 +79,17 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
                 return Ok(run, "Created.");
             }
 
-            // Fork path — CREATE quest_run + RELATE forked_from in one BEGIN/COMMIT.
-            // SurrealDB executes BEGIN/COMMIT-wrapped statements atomically; an
-            // error in either statement rolls back both, satisfying the
-            // §6.1 write contract.
+            // Fork path — CREATE quest_run + RELATE forked_from atomically.
+            // BUG (flagged 2026-06-18, live smoke test): the BEGIN;...;COMMIT
+            // body below is REJECTED by SurrealQuery.Of, which throws on any ';'
+            // in the body (single-statement-only; see SurrealQuery.cs:110). This
+            // fork path therefore throws the first time a run is forked. The
+            // correct fix is the connection's transaction API
+            // (HttpSurrealConnection.BeginTransactionAsync → ISurrealTransaction),
+            // NOT an inline BEGIN/COMMIT string and NOT SurrealQuery.Combine
+            // (which composes single statements, not a transaction). Tracked as a
+            // follow-up; not on the create-fresh-run path. Sibling delete-path
+            // multi-statement .Of bugs in SurrealQuestStore were fixed the same day.
             var parentSurrId = ToSurrealId(run.ParentRunId.Value);
 
             var atomic = SurrealQuery

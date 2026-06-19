@@ -151,11 +151,19 @@ public sealed class SurrealQuestStore : IQuestStore
             // Each step is its own ExecuteAsync call so a SCHEMAFULL field-level
             // assertion failure in step 2 fails fast and does not leave the head
             // row in place with no children.
-            var deleteChildrenQ = SurrealQuery
-                .Of("DELETE quest_node WHERE quest_id = $_qid; DELETE quest_edge WHERE quest_id = $_qid")
-                .WithParam("_qid", SurrealLink.ToLink("quest", surrealId));
+            // Two single-statement DELETEs combined into one request:
+            // SurrealQuery.Of rejects a multi-statement (';'-joined) body, so
+            // compose them via Combine (mirrors HydrateChildrenAsync).
+            var questLink = SurrealLink.ToLink("quest", surrealId);
+            var deleteNodesQ = SurrealQuery
+                .Of("DELETE quest_node WHERE quest_id = $_qid")
+                .WithParam("_qid", questLink);
+            var deleteEdgesQ = SurrealQuery
+                .Of("DELETE quest_edge WHERE quest_id = $_qid")
+                .WithParam("_qid", questLink);
 
-            var deleteResp = await _executor.ExecuteAsync(deleteChildrenQ, ct);
+            var deleteResp = await _executor.ExecuteAsync(
+                SurrealQuery.Combine(deleteNodesQ, deleteEdgesQ), ct);
             deleteResp.EnsureAllOk();
 
             var headQ = SurrealQuery
@@ -222,16 +230,25 @@ public sealed class SurrealQuestStore : IQuestStore
         {
             var surrealId = ToSurrealId(id);
 
-            // Multi-statement delete: head + child rows. SurrealDB does not
-            // emit "affected count" on DELETE in a way we can rely on across
-            // versions, so we check the head row absence after the call.
-            var q = SurrealQuery
-                .Of("DELETE type::record($_t, $_id); DELETE quest_node WHERE quest_id = $_qid; DELETE quest_edge WHERE quest_id = $_qid")
-                .WithParam("_t",   QuestTable)
-                .WithParam("_id",  surrealId)
-                .WithParam("_qid", SurrealLink.ToLink("quest", surrealId));
+            // Delete head + child rows. SurrealQuery.Of rejects a multi-statement
+            // (';'-joined) body, so compose three single-statement DELETEs via
+            // Combine (mirrors HydrateChildrenAsync / UpsertQuestAsync). SurrealDB
+            // does not emit a reliable "affected count" on DELETE across versions,
+            // so we check the head row absence after the call.
+            var questLink = SurrealLink.ToLink("quest", surrealId);
+            var deleteHeadQ = SurrealQuery
+                .Of("DELETE type::record($_t, $_id)")
+                .WithParam("_t",  QuestTable)
+                .WithParam("_id", surrealId);
+            var deleteNodesQ = SurrealQuery
+                .Of("DELETE quest_node WHERE quest_id = $_qid")
+                .WithParam("_qid", questLink);
+            var deleteEdgesQ = SurrealQuery
+                .Of("DELETE quest_edge WHERE quest_id = $_qid")
+                .WithParam("_qid", questLink);
 
-            var resp = await _executor.ExecuteAsync(q, ct);
+            var resp = await _executor.ExecuteAsync(
+                SurrealQuery.Combine(deleteHeadQ, deleteNodesQ, deleteEdgesQ), ct);
             resp.EnsureAllOk();
 
             // Verify the head row is gone (returns empty set on missing row).
