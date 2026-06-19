@@ -30,17 +30,17 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string Id { get; set; } = string.Empty;
 
         [Column(Order = 2, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("username")]
         public string Username { get; set; } = string.Empty;
 
         [Column(Order = 3, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("email")]
         public string Email { get; set; } = string.Empty;
 
         [Column(Order = 4, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("password_hash")]
         public string PasswordHash { get; set; } = string.Empty;
 

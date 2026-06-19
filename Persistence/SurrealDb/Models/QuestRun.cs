@@ -38,7 +38,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Id, Column(Order = 1, Type = "string")]
         [FieldGroup("Run identity (record id is the Guid('N') of QuestRun.Id) -- unique across all runs of all quests")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 

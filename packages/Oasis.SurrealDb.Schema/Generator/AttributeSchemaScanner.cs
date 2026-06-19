@@ -217,11 +217,20 @@ namespace Oasis.SurrealDb.Schema.Generator
                     sourceLine: 0));
             }
 
-            // Columns (ordered by [Column(Order)]).
+            // Columns: AUTO-INCLUDE every public read/write instance property
+            // as a column. [Column] is now an OPTIONAL override (order, explicit
+            // type, name, flexible) — not the gate for inclusion. Excluded:
+            //   * get-only properties (no setter) — e.g. the SchemaName
+            //     interface member and any computed/expression-bodied property;
+            //   * [NotMapped] properties — the explicit opt-out for helper /
+            //     navigation properties that must not persist.
+            // [Column(Order)] still drives ordering when present; otherwise
+            // declaration order (MetadataToken) is the source-order key.
             var props = pocoType
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.CanRead && p.CanWrite
+                            && p.GetCustomAttribute<NotMappedAttribute>(inherit: false) == null)
                 .Select(p => new { Prop = p, Column = p.GetCustomAttribute<ColumnAttribute>(inherit: false) })
-                .Where(x => x.Column != null || x.Prop.GetCustomAttribute<IdAttribute>(inherit: false) != null)
                 .ToList();
 
             // Source-order key: explicit Order > MetadataToken > Name.
@@ -391,6 +400,16 @@ namespace Oasis.SurrealDb.Schema.Generator
                     continue;
                 }
                 annotations.Add(QuotedAnnotation("assert", assert.Expression));
+            }
+            // [Required(NotEmpty=true)] -> the sleek replacement for the raw
+            // `$value != NONE AND $value != ""` assert. Emitted at the SAME
+            // position as a hand-written [Assert] so the output is byte-identical
+            // to the legacy form, and dropped on record<>-typed (FK) columns for
+            // the same reason the legacy assert is (see above).
+            var requiredAttr = prop.GetCustomAttribute<RequiredAttribute>(inherit: false);
+            if (requiredAttr?.NotEmpty == true && !isRecordTyped)
+            {
+                annotations.Add(QuotedAnnotation("assert", "$value != NONE AND $value != \"\""));
             }
             // [Inside(...)] -> emit a DEFINE PARAM block + ASSERT $value INSIDE $<table>_<col>.
             // When the property type is also a CLR enum, capture the enum

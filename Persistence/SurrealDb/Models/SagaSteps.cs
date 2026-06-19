@@ -43,30 +43,30 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Id, Column(Order = 1, Type = "string")]
         [FieldGroup("Core identity")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
         [Column(Order = 2, Type = "string")]
         [FieldGroup("Instance correlation key (NON-unique -- many rows per instance: forwards + compensation + retries)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("correlation_key")]
         public string CorrelationKey { get; set; } = string.Empty;
 
         [Column(Order = 3, Type = "string")]
         [FieldGroup("Saga definition + step name (free strings -- generic outbox)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("saga_name")]
         public string SagaName { get; set; } = string.Empty;
 
         [Column(Order = 4, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("step_name")]
         public string StepName { get; set; } = string.Empty;
 
         [Column(Order = 5, Type = "string")]
         [FieldGroup("Per-step idempotency key (handler keys irreversible effect on THIS value via IIdempotencyStore -- stable across retries/reclaims)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("step_idempotency_key")]
         public string StepIdempotencyKey { get; set; } = string.Empty;
 

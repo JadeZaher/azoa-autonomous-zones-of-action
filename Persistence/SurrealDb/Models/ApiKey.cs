@@ -26,7 +26,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Id, Column(Order = 1, Type = "string")]
         [FieldGroup("Core identity (record id is the Guid('N') of ApiKey.Id)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
@@ -43,7 +43,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 4, Type = "string")]
         [FieldGroup("SHA-256(raw key) hex -- the dedup key; UNIQUE")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("key_hash")]
         public string KeyHash { get; set; } = string.Empty;
 

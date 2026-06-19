@@ -33,7 +33,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string Id { get; set; } = string.Empty;
 
         [Column(Order = 2, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
 
@@ -52,7 +52,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string? AvatarId { get; set; }
 
         [Column(Order = 6, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("provider_name")]
         public string ProviderName { get; set; } = string.Empty;
 

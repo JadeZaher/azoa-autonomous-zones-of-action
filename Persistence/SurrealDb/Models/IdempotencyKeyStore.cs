@@ -32,19 +32,19 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         }
 
         [Id, Column(Order = 1, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
         [Column(Order = 2, Type = "string")]
         [FieldGroup("Idempotency key (caller-supplied or content hash); primary dedup key")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("key")]
         public string Key { get; set; } = string.Empty;
 
         [Column(Order = 3, Type = "string")]
         [FieldGroup("Logical operation type (e.g. bridge_redeem, faucet_dispense)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("operation_type")]
         public string OperationType { get; set; } = string.Empty;
 

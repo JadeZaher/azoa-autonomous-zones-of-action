@@ -43,7 +43,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Id, Column(Order = 1, Type = "string")]
         [FieldGroup("Core identity")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
@@ -54,17 +54,17 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 3, Type = "string")]
         [FieldGroup("Route")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("source_chain")]
         public string SourceChain { get; set; } = string.Empty;
 
         [Column(Order = 4, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("target_chain")]
         public string TargetChain { get; set; } = string.Empty;
 
         [Column(Order = 5, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("source_token_id")]
         public string SourceTokenId { get; set; } = string.Empty;
 
@@ -73,18 +73,18 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string? TargetTokenId { get; set; }
 
         [Column(Order = 7, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("source_address")]
         public string SourceAddress { get; set; } = string.Empty;
 
         [Column(Order = 8, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("target_address")]
         public string TargetAddress { get; set; } = string.Empty;
 
         [Column(Order = 9, Type = "string")]
         [FieldGroup("Amount (string for arbitrary precision)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("amount")]
         public string Amount { get; set; } = string.Empty;
 

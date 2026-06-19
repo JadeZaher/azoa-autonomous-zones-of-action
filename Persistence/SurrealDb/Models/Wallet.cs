@@ -46,12 +46,12 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string AvatarId { get; set; } = string.Empty;
 
         [Column(Order = 3, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("chain_type")]
         public string ChainType { get; set; } = string.Empty;
 
         [Column(Order = 4, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("address")]
         public string Address { get; set; } = string.Empty;
 

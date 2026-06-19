@@ -41,7 +41,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         }
 
         [Id, Column(Order = 1, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
@@ -51,24 +51,24 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string AvatarId { get; set; } = string.Empty;
 
         [Column(Order = 3, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("chain")]
         public string Chain { get; set; } = string.Empty;
 
         [Column(Order = 4, Type = "string")]
         [FieldGroup("Source/target token pair")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("token_in")]
         public string TokenIn { get; set; } = string.Empty;
 
         [Column(Order = 5, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("token_out")]
         public string TokenOut { get; set; } = string.Empty;
 
         [Column(Order = 6, Type = "string")]
         [FieldGroup("Amounts (strings -- arbitrary precision)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("amount_in")]
         public string AmountIn { get; set; } = string.Empty;
 

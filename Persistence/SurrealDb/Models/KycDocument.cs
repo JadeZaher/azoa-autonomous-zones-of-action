@@ -24,7 +24,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Id, Column(Order = 1, Type = "string")]
         [FieldGroup("Core identity (record id is the Guid('N') of the document)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
@@ -42,12 +42,12 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 4, Type = "string")]
         [FieldGroup("Blob reference + display metadata")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("file_url")]
         public string FileUrl { get; set; } = string.Empty;
 
         [Column(Order = 5, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("file_name")]
         public string FileName { get; set; } = string.Empty;
 

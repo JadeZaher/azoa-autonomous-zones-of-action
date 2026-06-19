@@ -27,13 +27,13 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string SchemaName => SchemaNameConst;
 
         [Id, Column(Order = 1, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
         [Column(Order = 2, Type = "string")]
         [FieldGroup("Digest is the replay-protection key (keccak256 of VAA body, hex)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("digest")]
         public string Digest { get; set; } = string.Empty;
 

@@ -1,3 +1,5 @@
+using Oasis.SurrealDb.Client.Schema;
+
 namespace OASIS.WebAPI.Persistence.SurrealDb.Models;
 
 /// <summary>
@@ -11,6 +13,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models;
 public partial class DappSeriesQuest
 {
     /// <summary>Caller-friendly Guid view of the storage-side Id (Guid('N') hex).</summary>
+    [NotMapped]
     public Guid IdGuid
     {
         get => Guid.ParseExact(Id, "N");
@@ -18,6 +21,7 @@ public partial class DappSeriesQuest
     }
 
     /// <summary>Caller-friendly Guid view of <c>dapp_series_id</c>.</summary>
+    [NotMapped]
     public Guid DappSeriesIdGuid
     {
         get => Guid.ParseExact(DappSeriesId, "N");
@@ -25,6 +29,7 @@ public partial class DappSeriesQuest
     }
 
     /// <summary>Caller-friendly Guid view of <c>quest_id</c>.</summary>
+    [NotMapped]
     public Guid QuestIdGuid
     {
         get => Guid.ParseExact(QuestId, "N");

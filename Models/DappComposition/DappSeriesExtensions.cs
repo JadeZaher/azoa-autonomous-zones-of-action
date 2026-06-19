@@ -1,5 +1,6 @@
 using System.Text.Json;
 using OASIS.WebAPI.Core.Json;
+using Oasis.SurrealDb.Client.Schema;
 
 namespace OASIS.WebAPI.Persistence.SurrealDb.Models;
 
@@ -19,6 +20,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models;
 public partial class DappSeries
 {
     /// <summary>Caller-friendly Guid view of the storage-side Id (Guid('N') hex).</summary>
+    [NotMapped]
     public Guid IdGuid
     {
         get => Guid.ParseExact(Id, "N");
@@ -26,6 +28,7 @@ public partial class DappSeries
     }
 
     /// <summary>Caller-friendly Guid view of <c>avatar_id</c>.</summary>
+    [NotMapped]
     public Guid AvatarIdGuid
     {
         get => Guid.ParseExact(AvatarId, "N");
@@ -36,6 +39,7 @@ public partial class DappSeries
     /// Caller-friendly Guid view of <c>star_odk_id</c>. Null when the series
     /// has not yet been generated.
     /// </summary>
+    [NotMapped]
     public Guid? StarOdkIdGuid
     {
         get => string.IsNullOrEmpty(StarOdkId) ? null : Guid.ParseExact(StarOdkId, "N");
@@ -48,6 +52,7 @@ public partial class DappSeries
     /// Round-trips through <see cref="JsonElementExtensions"/>; safe for
     /// typical config-blob sizes (small N keys).
     /// </summary>
+    [NotMapped]
     public IDictionary<string, string> SharedConfigDict
     {
         get => SharedConfig.ToStringDictionary();

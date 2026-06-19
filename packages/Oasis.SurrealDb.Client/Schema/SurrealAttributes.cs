@@ -214,10 +214,23 @@ namespace Oasis.SurrealDb.Client.Schema
     /// (e.g. <c>int?</c>, <c>DateTime?</c>) that should still persist as a
     /// required SurrealDB column. Mutually exclusive with <c>[Optional]</c>;
     /// the scanner throws if both are present on the same property.
+    /// <para>
+    /// Set <see cref="NotEmpty"/> to also emit the
+    /// <c>ASSERT $value != NONE AND $value != ""</c> guard — the sleek
+    /// replacement for hand-writing that raw <c>[Assert(...)]</c> on every
+    /// required string column. On a <c>record&lt;&gt;</c>-typed (FK) column the
+    /// assert is omitted (a record id is never the empty string and SurrealDB
+    /// type-checks it), matching the legacy hand-written behavior byte-for-byte.
+    /// </para>
     /// </summary>
     [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
     public sealed class RequiredAttribute : Attribute
     {
+        /// <summary>
+        /// Emit <c>ASSERT $value != NONE AND $value != ""</c> in addition to
+        /// forcing NOT NULL. Default <c>false</c>.
+        /// </summary>
+        public bool NotEmpty { get; set; }
     }
 
     /// <summary>
@@ -228,6 +241,19 @@ namespace Oasis.SurrealDb.Client.Schema
     /// </summary>
     [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
     public sealed class ReadOnlyAttribute : Attribute
+    {
+    }
+
+    /// <summary>
+    /// Excludes a public property from the SurrealDB schema. The scanner
+    /// auto-includes every public read/write instance property as a column, so
+    /// this is the opt-out for computed/helper/navigation properties that must
+    /// not become persisted columns. The EF equivalent of <c>[NotMapped]</c>.
+    /// (Get-only properties such as the <c>SchemaName</c> interface member are
+    /// already excluded without this attribute.)
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
+    public sealed class NotMappedAttribute : Attribute
     {
     }
 

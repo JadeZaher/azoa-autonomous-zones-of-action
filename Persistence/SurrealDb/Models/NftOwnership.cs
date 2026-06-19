@@ -26,7 +26,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string SchemaName => SchemaNameConst;
 
         [Id, Column(Order = 1, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
@@ -36,28 +36,28 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string AvatarId { get; set; } = string.Empty;
 
         [Column(Order = 3, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("chain_type")]
         public string ChainType { get; set; } = string.Empty;
 
         [Column(Order = 4, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("contract_address")]
         public string ContractAddress { get; set; } = string.Empty;
 
         [Column(Order = 5, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("token_id")]
         public string TokenId { get; set; } = string.Empty;
 
         [Column(Order = 6, Type = "string")]
         [FieldGroup("Token standard (ERC721, ERC1155, ARC3, ...)")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("token_standard")]
         public string TokenStandard { get; set; } = string.Empty;
 
         [Column(Order = 7, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("metadata_uri")]
         public string MetadataUri { get; set; } = string.Empty;
 

@@ -42,7 +42,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         }
 
         [Id, Column(Order = 1, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
@@ -57,7 +57,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string? WalletId { get; set; }
 
         [Column(Order = 4, Type = "string")]
-        [Assert("$value != NONE AND $value != \"\"")]
+        [Required(NotEmpty = true)]
         [JsonPropertyName("operation_type")]
         public string OperationType { get; set; } = string.Empty;
 
