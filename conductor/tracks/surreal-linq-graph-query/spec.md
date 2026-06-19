@@ -1,15 +1,44 @@
 # SurrealDB LINQ + Graph Query Layer — Specification
 
 ## Status
-**`[ ]` NOT STARTED.** Tier 1 (infrastructure / DX). Umbrella track for an
-EF-Core-style typed query surface over SurrealDB **extended with SurrealDB-native
-graph operations** (RELATE, `->edge->` traversal, FETCH, relationship-based
-computation) and a **live-query socket** (`ExecuteLiveAsync`) — the two
-capabilities EF Core has no equivalent for and that make this worth more than a
-SurrealDB-flavored EF clone.
+**`[~]` Phases 1–4 SHIPPED (2026-06-19); Phase 5 (live socket) DEFERRED on the
+version pin.** Tier 1 (infrastructure / DX). EF-Core-style typed query surface
+over SurrealDB **extended with SurrealDB-native graph operations**
+(`->edge->` traversal, relationship-based `count()`) on the
+`surreal-linq-graph-query` branch.
 
-Branch (to be created off a clean tree once in-flight `api-safety-hardening`
-work is committed): **`surreal-linq-graph-query`**.
+As-built so far:
+- **Phase 1 (translator adopt + broaden):** `SurrealQuestRunStore.GetByStatusAsync`
+  pilots `SurrealQuery<T>`; `ExpressionTranslator` broadened (null↔NONE,
+  `HasValue`, `string::starts_with/ends_with/contains`, ranges).
+- **Phase 2 (`IQueryable` deferral):** `SurrealQueryable<T>` + `SurrealQueryProvider`
+  fold a Where/OrderBy/ThenBy/Skip/Take/SelectFields chain into ONE
+  `SurrealQuery<T>` at materialization; async `ToListAsync/FirstOrDefaultAsync/
+  SingleOrDefaultAsync/CountAsync/AnyAsync`.
+- **Phase 3 (`SurrealContext`):** DbContext-equivalent — `Set<T>()`, identity-map
+  change tracker (D4), `SaveChangesAsync` flushing CREATE/UPSERT/DELETE in one
+  BEGIN..COMMIT (D3).
+- **Phase 4 (graph — the differentiator):** typed `Key(id).Traverse(r =>
+  r.Out<TEdge>().To<TTarget>())` / `.In<>().From<>()` arrow-path emit + `CountVia`
+  (`count(->edge->)`). **Marquee delivered:** `GetLineageAsync` now walks the
+  `forked_from` RELATE edges via the typed graph traversal (one hop per ancestor)
+  instead of the `parent_run_id` scalar loop — proven against a real SurrealDB
+  (lineage integration test green).
+- **Phase 5 (live `ExecuteLiveAsync` over WebSocket): DEFERRED** — soft-dep on
+  `surrealdb-major-upgrade` (D10).
+
+Also landed alongside: the long-standing **integration-test-namespace-isolation**
+harness bug fixed (per-test namespace literal-identifier DDL + `Generated/Schemas`
+apply path), the **fork-path** multi-statement bug fixed (Combine + LET-var
+RELATE + LET-aware param validator), and `[ReadOnly]` applied to 18 models'
+creation timestamps (proven safe with the stores' CONTENT-replace writes via the
+now-working integration tests).
+
+**Known limit (gated on the version pin):** unbounded single-statement recursive
+ancestor collection (`.{..}` path syntax) is unstable across the pinned
+SurrealDB majors, so lineage takes one typed graph hop per level rather than one
+recursive statement. Each hop is a real graph read; the recursive collapse lands
+with `surrealdb-major-upgrade` + Phase 5.
 
 ## Why now / as-built baseline
 

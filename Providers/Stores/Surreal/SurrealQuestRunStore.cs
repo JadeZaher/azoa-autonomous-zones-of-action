@@ -289,34 +289,49 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
     {
         try
         {
+            // GRAPH READ (surreal-linq-graph-query Phase 4 marquee): walk the
+            // `forked_from` RELATE edges via the typed graph-traversal surface
+            // instead of the `parent_run_id` SCALAR. The fork write relates
+            // `child->forked_from->parent`, so each ancestor hop is one typed
+            // outgoing traversal: `SELECT VALUE ->forked_from->quest_run FROM <run>`.
+            // We still iterate per level (one hop per query) because unbounded
+            // single-statement recursive collection is gated on the SurrealDB
+            // version pin (plan D10 / surrealdb-major-upgrade) — but every hop
+            // is now a real graph read, not a scalar join. Child-to-root order
+            // + the defensive walk-til-missing semantics are preserved.
             var chain = new List<QuestRun>();
             var visited = new HashSet<Guid>();
-            var cursor = runId;
 
-            while (visited.Add(cursor))
+            // Seed: fetch the starting run directly (need its data + the
+            // bogus-id check). Each subsequent ancestor is reached by ONE typed
+            // outgoing `->forked_from->quest_run` hop anchored on the PREVIOUS
+            // node — so we read the parent's full row via the graph edge, never
+            // the parent_run_id scalar.
+            var seed = await _executor.QueryAsync<QuestRunPoco>(
+                SurrealQuery<QuestRunPoco>.Key(ToSurrealId(runId)), ct);
+            if (seed.Count == 0)
+                return Missing<IEnumerable<QuestRun>>($"QuestRun {runId} not found.");
+
+            var current = ToDomain(seed[0]);
+            while (true)
             {
-                var q = SurrealQuery
-                    .Of("SELECT * FROM type::record($_t, $_id)")
-                    .WithParam("_t",  RunTable)
-                    .WithParam("_id", ToSurrealId(cursor));
+                if (!visited.Add(current.Id)) break; // cycle guard
+                chain.Add(current);
 
-                var rows = await _executor.QueryAsync<QuestRunPoco>(q, ct);
-                if (rows.Count == 0)
-                {
-                    // First hop missing → run id is bogus.
-                    if (chain.Count == 0)
-                        return Missing<IEnumerable<QuestRun>>($"QuestRun {runId} not found.");
+                // One graph hop to the parent. The edge mirrors parent_run_id;
+                // if the scalar is null there is no parent edge to follow.
+                if (current.ParentRunId is null) break;
 
-                    // Mid-chain missing → parent pointer is dangling; stop and
-                    // return what we have rather than throwing (matches the
-                    // in-memory store's defensive walk-til-null semantic).
-                    break;
-                }
+                var parentRows = await _executor.QueryAsync<QuestRunPoco>(
+                    SurrealQuery<QuestRunPoco>
+                        .Key(ToSurrealId(current.Id))
+                        .Traverse<QuestRunPoco>(r => r.Out<ForkedFromEdge>().To<QuestRunPoco>()),
+                    ct);
 
-                var run = ToDomain(rows[0]);
-                chain.Add(run);
-                if (run.ParentRunId is null) break;
-                cursor = run.ParentRunId.Value;
+                // Dangling edge mid-chain → stop and return what we have
+                // (matches the in-memory store's walk-til-null semantic).
+                if (parentRows.Count == 0) break;
+                current = ToDomain(parentRows[0]);
             }
 
             return OkMany((IEnumerable<QuestRun>)chain);
@@ -431,5 +446,17 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
     private sealed class QuestRunIdProjection
     {
         [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
+    }
+
+    // Edge POCO for the typed `->forked_from->` graph traversal in
+    // GetLineageAsync. Only its schema name is consumed by the traversal emit
+    // (the edge body isn't deserialized here), but it must satisfy
+    // ISurrealRecord,new() so the graph operators can resolve "forked_from".
+    private sealed class ForkedFromEdge : Oasis.SurrealDb.Client.ISurrealRecord
+    {
+        public string SchemaName => "forked_from";
+        [JsonPropertyName("id")]  public string Id  { get; set; } = string.Empty;
+        [JsonPropertyName("in")]  public string In  { get; set; } = string.Empty;
+        [JsonPropertyName("out")] public string Out { get; set; } = string.Empty;
     }
 }

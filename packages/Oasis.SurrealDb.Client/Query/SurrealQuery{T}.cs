@@ -61,6 +61,88 @@ namespace Oasis.SurrealDb.Client.Query
         }
 
         /// <summary>
+        /// Anchor the query to a single record by id:
+        /// <c>SELECT * FROM type::record($_t, $_id)</c>. The id is bound as a
+        /// parameter; the table comes from <typeparamref name="T"/>'s schema.
+        /// A leading <c>table:</c> prefix on <paramref name="id"/> is stripped
+        /// so a link-form or bare id both bind correctly. This is the start of
+        /// a graph <see cref="Traverse{TTarget}"/>.
+        /// </summary>
+        public static SurrealQuery<T> Key(string id)
+        {
+            if (string.IsNullOrEmpty(id)) throw new ArgumentException("Key id must not be empty.", nameof(id));
+            var table = RecordId<T>.SchemaNameOf<T>();
+            int colon = id.IndexOf(':');
+            var bareId = colon >= 0 ? id.Substring(colon + 1) : id;
+            var inner = SurrealQuery
+                .Of("SELECT * FROM type::record($_t, $_id)")
+                .WithParam("_t", table)
+                .WithParam("_id", bareId);
+            return new SurrealQuery<T>(inner);
+        }
+
+        /// <summary>
+        /// Emit a typed graph traversal from this query's anchored record(s).
+        /// The <paramref name="path"/> lambda builds an arrow path off the
+        /// modeled <c>[RelateEdge]</c> POCOs
+        /// (<c>r =&gt; r.Out&lt;ForkedFrom&gt;().To&lt;QuestRun&gt;()</c> →
+        /// <c>-&gt;forked_from-&gt;quest_run</c>); the result is a
+        /// <see cref="SurrealQuery{TTarget}"/> deserializing the traversed
+        /// target records:
+        /// <c>SELECT VALUE &lt;path&gt; FROM &lt;anchor&gt;</c>.
+        /// Anchor this with <see cref="Key"/> (single record) or
+        /// <see cref="Where"/> (a filtered set) first.
+        /// </summary>
+        public SurrealQuery<TTarget> Traverse<TTarget>(Func<GraphRoot<T>, GraphPath> path)
+            where TTarget : ISurrealRecord, new()
+        {
+            if (path == null) throw new ArgumentNullException(nameof(path));
+            var arrow = path(new GraphRoot<T>());
+
+            // Pull the anchoring FROM <record> off the inner query and re-author
+            // as `SELECT VALUE <arrow>.* FROM ONLY <anchor>`:
+            //   * VALUE      -> unwrap each row to the traversed value directly
+            //   * <arrow>.*  -> dereference the edge target to its full record
+            //                   body (without `.*` SurrealDB yields bare record
+            //                   ids, which won't deserialize into TTarget)
+            //   * FROM ONLY  -> the anchor is a single record (Key), so the
+            //                   result is the flat target array, not an array
+            //                   of per-row arrays.
+            var sql = _inner.Sql;
+            const string selectStar = "SELECT * FROM ";
+            if (!sql.StartsWith(selectStar, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "Traverse() must anchor on a single record via Key(id) before traversing.");
+            var anchor = sql.Substring(selectStar.Length);
+            var newSql = "SELECT VALUE " + arrow.Path + ".* FROM ONLY " + anchor;
+            var rebuilt = SurrealQuery.Of(newSql).WithParams(_inner.Params);
+            return SurrealQuery<TTarget>.FromUntyped(rebuilt);
+        }
+
+        /// <summary>
+        /// Relationship-based computation (decision D6): emit
+        /// <c>SELECT VALUE count(&lt;arrow&gt;) FROM ONLY &lt;anchor&gt;</c> — the
+        /// number of records reachable from the anchored record over the graph
+        /// path (e.g. <c>Graph.Count of -&gt;member-&gt;</c>). Returns an untyped
+        /// query whose single scalar result is the count; dispatch with
+        /// <see cref="ISurrealExecutor.QueryAsync{T}"/> as <c>long</c>. Anchor
+        /// with <see cref="Key"/> first.
+        /// </summary>
+        public SurrealQuery CountVia(Func<GraphRoot<T>, GraphPath> path)
+        {
+            if (path == null) throw new ArgumentNullException(nameof(path));
+            var arrow = path(new GraphRoot<T>());
+            var sql = _inner.Sql;
+            const string selectStar = "SELECT * FROM ";
+            if (!sql.StartsWith(selectStar, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "CountVia() must anchor on a single record via Key(id) before counting.");
+            var anchor = sql.Substring(selectStar.Length);
+            var newSql = "SELECT VALUE count(" + arrow.Path + ") FROM ONLY " + anchor;
+            return SurrealQuery.Of(newSql).WithParams(_inner.Params);
+        }
+
+        /// <summary>
         /// Add a WHERE clause (or chain AND) derived from the supplied
         /// expression. Field references on <typeparamref name="T"/> resolve
         /// via <see cref="System.Text.Json.Serialization.JsonPropertyNameAttribute"/>
