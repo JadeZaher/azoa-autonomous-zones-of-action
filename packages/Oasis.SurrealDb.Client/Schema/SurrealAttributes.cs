@@ -62,6 +62,57 @@ namespace Oasis.SurrealDb.Client.Schema
     }
 
     /// <summary>
+    /// Emits a SurrealDB <c>CHANGEFEED &lt;duration&gt;</c> clause on the table,
+    /// enabling change-data-capture for the given retention window. No EF
+    /// analog; used by SurrealDB live queries / CDC consumers.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class ChangeFeedAttribute : Attribute
+    {
+        /// <summary>Retention duration token (e.g. <c>"3d"</c>, <c>"1h"</c>).</summary>
+        public string Duration { get; }
+
+        /// <summary>
+        /// Emit the <c>INCLUDE ORIGINAL</c> modifier so the feed carries the
+        /// pre-change row state alongside the new one. Default <c>false</c>.
+        /// </summary>
+        public bool IncludeOriginal { get; set; }
+
+        public ChangeFeedAttribute(string duration)
+        {
+            if (string.IsNullOrWhiteSpace(duration))
+                throw new ArgumentException("Changefeed duration must not be empty.", nameof(duration));
+            Duration = duration;
+        }
+    }
+
+    /// <summary>
+    /// Emits a SurrealDB <c>PERMISSIONS</c> clause on the table, the engine's
+    /// row-level security gate (the analog of EF's <c>HasQueryFilter</c>, but
+    /// enforced for writes too). Each property is a raw SurrealQL boolean
+    /// expression (e.g. <c>"$auth.id = id"</c>); the special tokens
+    /// <c>"FULL"</c> and <c>"NONE"</c> are passed through unquoted. A null
+    /// operation clause is omitted, leaving that operation at the SurrealDB
+    /// default (NONE). Set <see cref="Full"/> to emit the table-wide
+    /// <c>PERMISSIONS FULL</c> shorthand instead of per-operation clauses.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    public sealed class PermissionsAttribute : Attribute
+    {
+        /// <summary>Emit <c>PERMISSIONS FULL</c>; ignores the per-operation clauses.</summary>
+        public bool Full { get; set; }
+
+        /// <summary>Expression for <c>FOR select</c>. Null omits the clause.</summary>
+        public string? Select { get; set; }
+        /// <summary>Expression for <c>FOR create</c>. Null omits the clause.</summary>
+        public string? Create { get; set; }
+        /// <summary>Expression for <c>FOR update</c>. Null omits the clause.</summary>
+        public string? Update { get; set; }
+        /// <summary>Expression for <c>FOR delete</c>. Null omits the clause.</summary>
+        public string? Delete { get; set; }
+    }
+
+    /// <summary>
     /// Long-form note attached to a table. Emitted as one <c>-- Note:</c>
     /// header line per occurrence; multi-line strings split on <c>\n</c>.
     /// </summary>
@@ -153,6 +204,58 @@ namespace Oasis.SurrealDb.Client.Schema
     [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
     public sealed class OptionalAttribute : Attribute
     {
+    }
+
+    /// <summary>
+    /// Forces a column to be NOT NULL (bare <c>T</c>, never <c>option&lt;T&gt;</c>),
+    /// overriding the emitter's CLR nullability inference. The mirror of
+    /// <see cref="OptionalAttribute"/> and the equivalent of EF's
+    /// <c>[Required]</c>: apply it to a <c>Nullable&lt;T&gt;</c> property
+    /// (e.g. <c>int?</c>, <c>DateTime?</c>) that should still persist as a
+    /// required SurrealDB column. Mutually exclusive with <c>[Optional]</c>;
+    /// the scanner throws if both are present on the same property.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
+    public sealed class RequiredAttribute : Attribute
+    {
+    }
+
+    /// <summary>
+    /// Emits the SurrealDB <c>READONLY</c> modifier on the column: the field
+    /// can be set at create time but never updated afterwards. The equivalent
+    /// of EF's <c>[Editable(false)]</c>; use for set-once columns such as
+    /// <c>created_at</c> or an externally-assigned correlation id.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
+    public sealed class ReadOnlyAttribute : Attribute
+    {
+    }
+
+    /// <summary>
+    /// Emits a SurrealDB <c>VALUE</c> clause verbatim on the column: a
+    /// server-side computed expression re-evaluated on every write (e.g.
+    /// <c>time::now()</c> or <c>string::lowercase($value)</c>). Distinct from
+    /// <see cref="DefaultAttribute"/>, which only applies when the field is
+    /// absent on insert. The expression is passed through unquoted.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
+    public sealed class ValueAttribute : Attribute
+    {
+        /// <summary>The raw SurrealQL VALUE expression (no leading <c>VALUE</c>).</summary>
+        public string Expression { get; }
+        public ValueAttribute(string expression) { Expression = expression ?? string.Empty; }
+    }
+
+    /// <summary>
+    /// Emits a SurrealDB <c>COMMENT</c> clause on the column. The equivalent
+    /// of EF Core's <c>[Comment]</c>; free text surfaced in the schema for
+    /// operators. The value is emitted as a quoted string literal.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
+    public sealed class CommentAttribute : Attribute
+    {
+        public string Text { get; }
+        public CommentAttribute(string text) { Text = text ?? string.Empty; }
     }
 
     /// <summary>

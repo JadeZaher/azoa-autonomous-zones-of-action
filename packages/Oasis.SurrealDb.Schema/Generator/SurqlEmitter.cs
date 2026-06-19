@@ -137,6 +137,28 @@ namespace Oasis.SurrealDb.Schema.Generator
                 sb.Append(" TYPE RELATION FROM ").Append(fromTbl).Append(" TO ").Append(toTbl);
             }
             if (isSchemafull) sb.Append(" SCHEMAFULL");
+
+            // CHANGEFEED clause (from @surreal.changefeed): CDC retention window.
+            var changefeed = FindAnnotation(entity.Annotations, "changefeed");
+            if (changefeed != null
+                && changefeed.Arguments.TryGetValue("duration", out var cfDuration)
+                && !string.IsNullOrEmpty(cfDuration))
+            {
+                sb.Append(" CHANGEFEED ").Append(cfDuration);
+                if (changefeed.Arguments.TryGetValue("original", out var cfOriginal)
+                    && cfOriginal == "true")
+                {
+                    sb.Append(" INCLUDE ORIGINAL");
+                }
+            }
+
+            // PERMISSIONS clause (from @surreal.permissions): row-level security.
+            var permissions = FindAnnotation(entity.Annotations, "permissions");
+            if (permissions != null)
+            {
+                EmitPermissions(sb, permissions);
+            }
+
             sb.Append(";\n\n");
 
             // Fields
@@ -305,7 +327,56 @@ namespace Oasis.SurrealDb.Schema.Generator
                 sb.Append('\n').Append("    DEFAULT ").Append(defaultValue);
             }
 
+            // VALUE clause (from @surreal.value "<expr>"): server-side computed
+            // expression re-evaluated on every write.
+            var valueExpr = FirstArg(attr.Annotations, "value");
+            if (!string.IsNullOrEmpty(valueExpr))
+            {
+                sb.Append('\n').Append("    VALUE ").Append(valueExpr);
+            }
+
+            // READONLY modifier (from @surreal.readonly): set-once column.
+            if (HasDirective(attr.Annotations, "readonly"))
+            {
+                sb.Append('\n').Append("    READONLY");
+            }
+
+            // COMMENT clause (from SchemaAttribute.Comment): quoted free text.
+            if (!string.IsNullOrEmpty(attr.Comment))
+            {
+                sb.Append('\n').Append("    COMMENT \"").Append(EscapeSurqlString(attr.Comment!)).Append('"');
+            }
+
             sb.Append(";\n");
+        }
+
+        /// <summary>
+        /// Emit the table <c>PERMISSIONS</c> clause. <c>full=true</c> renders the
+        /// table-wide <c>PERMISSIONS FULL</c> shorthand; otherwise each present
+        /// operation renders <c>FOR &lt;op&gt; &lt;expr&gt;</c>. The <c>FULL</c>
+        /// and <c>NONE</c> expression tokens pass through unquoted; every other
+        /// value is a raw SurrealQL boolean expression also emitted verbatim.
+        /// </summary>
+        private static void EmitPermissions(StringBuilder sb, SchemaAnnotation permissions)
+        {
+            if (permissions.Arguments.TryGetValue("full", out var full) && full == "true")
+            {
+                sb.Append(" PERMISSIONS FULL");
+                return;
+            }
+
+            // Stable operation order regardless of dictionary insertion.
+            var ops = new[] { "select", "create", "update", "delete" };
+            var clauses = new List<string>();
+            foreach (var op in ops)
+            {
+                if (permissions.Arguments.TryGetValue(op, out var expr) && !string.IsNullOrEmpty(expr))
+                {
+                    clauses.Add("FOR " + op + " " + expr);
+                }
+            }
+            if (clauses.Count == 0) return;
+            sb.Append(" PERMISSIONS ").Append(string.Join(" ", clauses));
         }
 
         private static void EmitIndex(StringBuilder sb, string table, SchemaIndex idx, EmitOptions options)

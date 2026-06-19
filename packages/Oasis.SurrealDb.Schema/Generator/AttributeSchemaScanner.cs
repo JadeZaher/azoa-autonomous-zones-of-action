@@ -158,6 +158,46 @@ namespace Oasis.SurrealDb.Schema.Generator
                 annotations.Add(QuotedAnnotation("slice", sliceName));
             }
 
+            // [ChangeFeed("3d")] -> @surreal.changefeed annotation carrying the
+            // duration token + (optional) INCLUDE ORIGINAL flag.
+            var changeFeed = pocoType.GetCustomAttribute<ChangeFeedAttribute>(inherit: false);
+            if (changeFeed != null)
+            {
+                annotations.Add(new SchemaAnnotation(
+                    directive: "changefeed",
+                    rawArguments: "duration=" + changeFeed.Duration
+                        + (changeFeed.IncludeOriginal ? " original=true" : string.Empty),
+                    arguments: new Dictionary<string, string>
+                    {
+                        ["duration"] = changeFeed.Duration,
+                        ["original"] = changeFeed.IncludeOriginal ? "true" : "false",
+                    },
+                    sourceLine: 0,
+                    sourceColumn: 0));
+            }
+
+            // [Permissions(...)] -> @surreal.permissions annotation carrying the
+            // FULL shorthand or the per-operation clause expressions.
+            var perms = pocoType.GetCustomAttribute<PermissionsAttribute>(inherit: false);
+            if (perms != null)
+            {
+                var args = new Dictionary<string, string>();
+                if (perms.Full) args["full"] = "true";
+                if (perms.Select != null) args["select"] = perms.Select;
+                if (perms.Create != null) args["create"] = perms.Create;
+                if (perms.Update != null) args["update"] = perms.Update;
+                if (perms.Delete != null) args["delete"] = perms.Delete;
+                if (args.Count > 0)
+                {
+                    annotations.Add(new SchemaAnnotation(
+                        directive: "permissions",
+                        rawArguments: string.Join(" ", args.Select(kv => kv.Key + "=" + kv.Value)),
+                        arguments: args,
+                        sourceLine: 0,
+                        sourceColumn: 0));
+                }
+            }
+
             // [Relation(typeof(From), typeof(To), Cardinality, Label)] -> flowchart-only
             // edge declarations on the class. Doesn't affect .surql.
             foreach (var rel in pocoType.GetCustomAttributes<RelationAttribute>(inherit: false))
@@ -328,6 +368,12 @@ namespace Oasis.SurrealDb.Schema.Generator
                 annotations.Add(SimpleAnnotation("flexible", string.Empty));
             }
 
+            // READONLY modifier ([ReadOnly]) -> @surreal.readonly flag.
+            if (prop.GetCustomAttribute<ReadOnlyAttribute>(inherit: false) != null)
+            {
+                annotations.Add(SimpleAnnotation("readonly", string.Empty));
+            }
+
             var fieldGroup = prop.GetCustomAttribute<FieldGroupAttribute>(inherit: false);
             if (fieldGroup != null)
             {
@@ -376,6 +422,13 @@ namespace Oasis.SurrealDb.Schema.Generator
                     sourceColumn: 0));
                 annotations.Add(QuotedAnnotation("assert", "$value INSIDE $" + paramName));
             }
+            // VALUE -- server-side computed expression ([Value]).
+            var valueAttr = prop.GetCustomAttribute<ValueAttribute>(inherit: false);
+            if (valueAttr != null && !string.IsNullOrWhiteSpace(valueAttr.Expression))
+            {
+                annotations.Add(QuotedAnnotation("value", valueAttr.Expression));
+            }
+
             // DEFAULT
             var defaultAttr = prop.GetCustomAttribute<DefaultAttribute>(inherit: false);
             if (defaultAttr != null)
@@ -383,11 +436,15 @@ namespace Oasis.SurrealDb.Schema.Generator
                 annotations.Add(QuotedAnnotation("default", defaultAttr.Value));
             }
 
+            // COMMENT ([Comment]) -> the SchemaAttribute.Comment slot the
+            // emitter renders as a COMMENT "<text>" clause.
+            var commentAttr = prop.GetCustomAttribute<CommentAttribute>(inherit: false);
+
             return new SchemaAttribute(
                 name: columnName,
                 type: typeToken,
                 isKey: prop.GetCustomAttribute<IdAttribute>(inherit: false) != null,
-                comment: null,
+                comment: commentAttr?.Text,
                 annotations: annotations,
                 sourceLine: 0);
         }
@@ -479,8 +536,18 @@ namespace Oasis.SurrealDb.Schema.Generator
             if (column != null && !string.IsNullOrWhiteSpace(column.Type)) return column.Type!;
 
             var optional = prop.GetCustomAttribute<OptionalAttribute>(inherit: false) != null;
+            var required = prop.GetCustomAttribute<RequiredAttribute>(inherit: false) != null;
+            if (optional && required)
+            {
+                throw new InvalidOperationException(
+                    $"'{prop.DeclaringType?.Name}.{prop.Name}' carries both [Optional] and [Required] -- " +
+                    "these are mutually exclusive nullability overrides.");
+            }
             var (baseToken, inferredOption) = MapClrTypeToSurreal(prop.PropertyType);
-            if (optional || inferredOption)
+            // [Required] suppresses the option<> wrap regardless of CLR
+            // inference (e.g. forces a `int?` property to a NOT NULL column),
+            // exactly mirroring how [Optional] forces the wrap.
+            if (!required && (optional || inferredOption))
             {
                 return baseToken.StartsWith("option<", StringComparison.Ordinal) ? baseToken : "option<" + baseToken + ">";
             }
