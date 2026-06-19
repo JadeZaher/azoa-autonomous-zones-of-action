@@ -37,7 +37,8 @@ DEFINE FIELD IF NOT EXISTS output ON TABLE quest_node_execution TYPE option<stri
 DEFINE FIELD IF NOT EXISTS error ON TABLE quest_node_execution TYPE option<string>;
 
 -- Wall-clock time at which the row entered Running
-DEFINE FIELD IF NOT EXISTS started_at ON TABLE quest_node_execution TYPE datetime;
+DEFINE FIELD IF NOT EXISTS started_at ON TABLE quest_node_execution TYPE datetime
+    READONLY;
 
 -- Wall-clock time at which the row reached a terminal state (null while non-terminal)
 DEFINE FIELD IF NOT EXISTS ended_at ON TABLE quest_node_execution TYPE option<datetime>;

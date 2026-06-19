@@ -113,6 +113,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public bool IsActive { get; set; }
 
         [Column(Order = 19, Type = "datetime")]
+        [ReadOnly]
         [JsonPropertyName("minted_date")]
         public DateTimeOffset MintedDate { get; set; }
 

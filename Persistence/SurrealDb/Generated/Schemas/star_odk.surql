@@ -21,7 +21,8 @@ DEFINE FIELD IF NOT EXISTS bound_holon_ids ON TABLE star_odk TYPE option<array<s
 DEFINE FIELD IF NOT EXISTS target_chain ON TABLE star_odk TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS generated_code ON TABLE star_odk TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS deployment_config ON TABLE star_odk TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS created_date ON TABLE star_odk TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_date ON TABLE star_odk TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS modified_date ON TABLE star_odk TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS is_active ON TABLE star_odk TYPE bool
     DEFAULT true;

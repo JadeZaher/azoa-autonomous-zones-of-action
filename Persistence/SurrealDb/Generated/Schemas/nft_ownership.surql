@@ -43,7 +43,8 @@ DEFINE FIELD IF NOT EXISTS is_current ON TABLE nft_ownership TYPE bool
 DEFINE FIELD IF NOT EXISTS current_owner ON TABLE nft_ownership TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS is_active ON TABLE nft_ownership TYPE bool
     DEFAULT true;
-DEFINE FIELD IF NOT EXISTS minted_date ON TABLE nft_ownership TYPE datetime;
+DEFINE FIELD IF NOT EXISTS minted_date ON TABLE nft_ownership TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS last_transfer_date ON TABLE nft_ownership TYPE option<datetime>;
 
 -- ── Indexes ──────────────────────────────────────────────────

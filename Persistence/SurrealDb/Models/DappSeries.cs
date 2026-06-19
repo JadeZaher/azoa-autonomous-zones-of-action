@@ -88,6 +88,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 10, Type = "datetime")]
         [FieldGroup("Creation timestamp")]
+        [ReadOnly]
         [JsonPropertyName("created_date")]
         public DateTimeOffset CreatedDate { get; set; }
 

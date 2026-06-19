@@ -69,6 +69,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 8, Type = "datetime")]
         [FieldGroup("Definition birthdate -- STAYS on the definition, not a runtime artifact")]
+        [ReadOnly]
         [JsonPropertyName("created_date")]
         public DateTimeOffset CreatedDate { get; set; }
     }

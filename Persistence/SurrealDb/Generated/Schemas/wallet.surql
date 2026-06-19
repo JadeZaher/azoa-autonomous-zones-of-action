@@ -27,7 +27,8 @@ DEFINE FIELD IF NOT EXISTS wallet_type ON TABLE wallet TYPE string
     ASSERT $value INSIDE $wallet_wallet_type;
 DEFINE FIELD IF NOT EXISTS encrypted_private_key ON TABLE wallet TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS encrypted_seed_phrase ON TABLE wallet TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS created_date ON TABLE wallet TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_date ON TABLE wallet TYPE datetime
+    READONLY;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

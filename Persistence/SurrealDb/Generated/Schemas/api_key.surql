@@ -27,7 +27,8 @@ DEFINE FIELD IF NOT EXISTS key_hash ON TABLE api_key TYPE string
 DEFINE FIELD IF NOT EXISTS key_prefix ON TABLE api_key TYPE string;
 
 -- Creation timestamp (UTC)
-DEFINE FIELD IF NOT EXISTS created_date ON TABLE api_key TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_date ON TABLE api_key TYPE datetime
+    READONLY;
 
 -- Optional expiry (NONE = no expiry)
 DEFINE FIELD IF NOT EXISTS expires_at ON TABLE api_key TYPE option<datetime>;

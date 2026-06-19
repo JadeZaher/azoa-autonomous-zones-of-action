@@ -33,7 +33,8 @@ DEFINE FIELD IF NOT EXISTS sequence ON TABLE consumed_vaa_ledger TYPE int
 DEFINE FIELD IF NOT EXISTS bridge_transaction_id ON TABLE consumed_vaa_ledger TYPE option<record<bridge_tx>>;
 
 -- Timestamp of consumption (immutable after insert)
-DEFINE FIELD IF NOT EXISTS consumed_at ON TABLE consumed_vaa_ledger TYPE datetime;
+DEFINE FIELD IF NOT EXISTS consumed_at ON TABLE consumed_vaa_ledger TYPE datetime
+    READONLY;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

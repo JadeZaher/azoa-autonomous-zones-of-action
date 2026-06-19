@@ -18,7 +18,8 @@ DEFINE FIELD IF NOT EXISTS password_hash ON TABLE avatar TYPE string
 DEFINE FIELD IF NOT EXISTS title ON TABLE avatar TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS first_name ON TABLE avatar TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS last_name ON TABLE avatar TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS created_date ON TABLE avatar TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_date ON TABLE avatar TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS last_beamed_in_date ON TABLE avatar TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS is_active ON TABLE avatar TYPE bool
     DEFAULT true;

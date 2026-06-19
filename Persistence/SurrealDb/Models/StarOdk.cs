@@ -69,6 +69,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string? DeploymentConfig { get; set; }
 
         [Column(Order = 11, Type = "datetime")]
+        [ReadOnly]
         [JsonPropertyName("created_date")]
         public DateTimeOffset CreatedDate { get; set; }
 

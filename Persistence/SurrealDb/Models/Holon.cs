@@ -81,6 +81,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         // Order = 12 is the [ExtraSurrealField("embedding", ...)] declared at class level.
 
         [Column(Order = 13, Type = "datetime")]
+        [ReadOnly]
         [JsonPropertyName("created_date")]
         public DateTimeOffset CreatedDate { get; set; }
 

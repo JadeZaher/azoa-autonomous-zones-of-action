@@ -74,6 +74,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 7, Type = "datetime")]
         [FieldGroup("Wall-clock time at which the row entered Running")]
+        [ReadOnly]
         [JsonPropertyName("started_at")]
         public DateTimeOffset StartedAt { get; set; }
 

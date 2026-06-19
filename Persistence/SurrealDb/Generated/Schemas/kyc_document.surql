@@ -31,7 +31,8 @@ DEFINE FIELD IF NOT EXISTS file_name ON TABLE kyc_document TYPE string
 DEFINE FIELD IF NOT EXISTS mime_type ON TABLE kyc_document TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS file_size_bytes ON TABLE kyc_document TYPE option<int>;
 DEFINE FIELD IF NOT EXISTS metadata ON TABLE kyc_document TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS created_date ON TABLE kyc_document TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_date ON TABLE kyc_document TYPE datetime
+    READONLY;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

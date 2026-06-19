@@ -33,7 +33,8 @@ DEFINE FIELD IF NOT EXISTS dapp_series_id ON TABLE quest TYPE option<record<dapp
 DEFINE FIELD IF NOT EXISTS metadata ON TABLE quest TYPE object FLEXIBLE;
 
 -- Definition birthdate -- STAYS on the definition, not a runtime artifact
-DEFINE FIELD IF NOT EXISTS created_date ON TABLE quest TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_date ON TABLE quest TYPE datetime
+    READONLY;
 
 -- Embedding vector for HNSW semantic search (384-dimensional, MiniLM-style)
 DEFINE FIELD IF NOT EXISTS embedding ON TABLE quest TYPE option<array<float, 384>>;

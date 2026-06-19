@@ -114,6 +114,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string? ErrorMessage { get; set; }
 
         [Column(Order = 15, Type = "datetime")]
+        [ReadOnly]
         [JsonPropertyName("created_at")]
         public DateTimeOffset CreatedAt { get; set; }
 

@@ -46,7 +46,8 @@ DEFINE FIELD IF NOT EXISTS target_chain ON TABLE dapp_series TYPE option<string>
 DEFINE FIELD IF NOT EXISTS manifest ON TABLE dapp_series TYPE option<string>;
 
 -- Creation timestamp
-DEFINE FIELD IF NOT EXISTS created_date ON TABLE dapp_series TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_date ON TABLE dapp_series TYPE datetime
+    READONLY;
 
 -- Deployment timestamp (null until Deployed)
 DEFINE FIELD IF NOT EXISTS deployed_date ON TABLE dapp_series TYPE option<datetime>;

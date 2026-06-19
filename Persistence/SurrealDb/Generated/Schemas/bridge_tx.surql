@@ -56,7 +56,8 @@ DEFINE FIELD IF NOT EXISTS proof_data ON TABLE bridge_tx TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS error_message ON TABLE bridge_tx TYPE option<string>;
 
 -- Timestamps
-DEFINE FIELD IF NOT EXISTS created_at ON TABLE bridge_tx TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE bridge_tx TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS completed_at ON TABLE bridge_tx TYPE option<datetime>;
 
 -- Wormhole-specific (populated when mode == Wormhole)

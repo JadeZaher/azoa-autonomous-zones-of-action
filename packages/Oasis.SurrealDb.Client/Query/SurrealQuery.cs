@@ -32,6 +32,14 @@ namespace Oasis.SurrealDb.Client.Query
         private static readonly Regex ParamTokenRegex =
             new Regex(@"\$([a-zA-Z_][a-zA-Z0-9_]*)", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
+        // Matches the assignment target of a `LET $var = ...` statement. Such
+        // variables are DEFINED inside the SQL body itself (not supplied via the
+        // param bag), so they must be excluded from the "missing parameter"
+        // check — e.g. a BEGIN; LET $x = ...; RELATE $x->edge->$y; COMMIT block.
+        private static readonly Regex LetTargetRegex =
+            new Regex(@"(?:^|;)\s*LET\s+\$([a-zA-Z_][a-zA-Z0-9_]*)\s*=",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
+
         /// <summary>The SurrealQL statement.  Must not be interpolated at call sites.</summary>
         public string Sql { get; }
 
@@ -474,6 +482,13 @@ namespace Oasis.SurrealDb.Client.Query
             var referenced = new HashSet<string>(StringComparer.Ordinal);
             foreach (Match m in ParamTokenRegex.Matches(Sql))
                 referenced.Add(m.Groups[1].Value);
+
+            // Variables defined by `LET $x = ...` inside the body are supplied by
+            // the SQL itself, not the param bag — drop them from the reference set.
+            var letDefined = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Match m in LetTargetRegex.Matches(Sql))
+                letDefined.Add(m.Groups[1].Value);
+            referenced.ExceptWith(letDefined);
 
             var provided = new HashSet<string>(Params.Keys, StringComparer.Ordinal);
 

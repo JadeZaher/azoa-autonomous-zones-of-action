@@ -65,7 +65,8 @@ DEFINE FIELD IF NOT EXISTS dead_lettered ON TABLE saga_steps TYPE bool
     DEFAULT false;
 
 -- Timestamps
-DEFINE FIELD IF NOT EXISTS created_at ON TABLE saga_steps TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE saga_steps TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE saga_steps TYPE datetime;
 
 -- Gate id a Parked step waits on (durable-workflow-engine). NONE unless status==Parked. SignalAsync(correlationKey, gateId) un-parks the matching row via a G2 conditional UPDATE; a timer-armed park leaves this NONE and relies on next_run_at instead.

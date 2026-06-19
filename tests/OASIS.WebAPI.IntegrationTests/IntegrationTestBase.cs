@@ -109,28 +109,75 @@ public abstract class IntegrationTestBase : IClassFixture<OASISTestWebApplicatio
 
     private async Task CreateTestNamespaceAsync()
     {
-        // USE NS + DB is implicit when we send the NS/DB headers in the request.
-        // Explicitly define the namespace so it can be dropped on teardown.
-        // G3: no string interpolation into SurrealQL — namespace name is in the
-        //     HTTP header, not embedded in the query.
-        await ExecuteSurrealSqlAsync("DEFINE NAMESPACE IF NOT EXISTS $ns", new { ns = TestNamespace });
-        await ExecuteSurrealSqlAsync("USE NS $ns DB test; DEFINE DATABASE IF NOT EXISTS test",
-            new { ns = TestNamespace });
+        // SurrealDB does NOT accept a parameter for a namespace/database
+        // IDENTIFIER in DDL — `DEFINE NAMESPACE $ns` fails with
+        // NamespaceEmpty (verified against the live engine). The identifier
+        // must be literal. TestNamespace is server-generated
+        // ($"test{Guid:N}") — pure hex, no user input, no hyphens — so
+        // injecting it directly is identifier-safe and the ONLY form that
+        // works. This is the fix for the long-standing
+        // integration-test-namespace-isolation gap: the per-test namespace
+        // is now actually created before the WebAPI executor connects to it.
+        //
+        // DEFINE NAMESPACE runs at ROOT scope (no NS header); DEFINE DATABASE
+        // runs scoped INTO the freshly-created namespace.
+        await ExecuteRootSqlAsync($"DEFINE NAMESPACE IF NOT EXISTS {TestNamespace}");
+        await ExecuteScopedSqlAsync("DEFINE DATABASE IF NOT EXISTS test");
     }
 
     private async Task DropTestNamespaceAsync()
     {
         // Drop the entire namespace to clean up all test data atomically.
-        // Parameter binding: namespace name is passed via the NS header, not
-        // interpolated into the query string (G3 compliant).
+        // Identifier must be literal (see CreateTestNamespaceAsync); runs at
+        // ROOT scope.
         try
         {
-            await ExecuteSurrealSqlAsync("REMOVE NAMESPACE $ns", new { ns = TestNamespace });
+            await ExecuteRootSqlAsync($"REMOVE NAMESPACE IF EXISTS {TestNamespace}");
         }
         catch
         {
             // Best-effort teardown — swallow errors so test results are not polluted.
         }
+    }
+
+    /// <summary>
+    /// Execute literal SurrealQL at ROOT scope (no NS/DB headers). Required
+    /// for namespace-level DDL (DEFINE/REMOVE NAMESPACE) which cannot run
+    /// "inside" the namespace being created. The SQL is constructed only
+    /// from the server-generated identifier-safe <see cref="TestNamespace"/>,
+    /// never from user input (G3).
+    /// </summary>
+    private async Task ExecuteRootSqlAsync(string sql)
+    {
+        if (!await IsSurrealDbAvailableAsync()) return;
+        using var client = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
+        var credentials = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+        var response = await client.PostAsync("/sql",
+            new StringContent(sql, System.Text.Encoding.UTF8, "text/plain"));
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// Execute literal SurrealQL scoped to the test namespace + database
+    /// (NS/DB headers set). Used for database-level DDL after the namespace
+    /// exists. Identifier-safe-literal only (G3).
+    /// </summary>
+    private async Task ExecuteScopedSqlAsync(string sql)
+    {
+        if (!await IsSurrealDbAvailableAsync()) return;
+        using var client = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
+        var credentials = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+        client.DefaultRequestHeaders.Add("Surreal-NS", TestNamespace);
+        client.DefaultRequestHeaders.Add("Surreal-DB", "test");
+        var response = await client.PostAsync("/sql",
+            new StringContent(sql, System.Text.Encoding.UTF8, "text/plain"));
+        response.EnsureSuccessStatusCode();
     }
 
     private async Task ApplySchemasIfPresentAsync()
@@ -140,7 +187,12 @@ public abstract class IntegrationTestBase : IClassFixture<OASISTestWebApplicatio
         var repoRoot = FindRepoRoot();
         if (repoRoot is null) return;
 
-        var schemaDir = Path.Combine(repoRoot, "Persistence", "SurrealDb", "Schemas");
+        // Goldens live under Generated/Schemas/ (the C#-first emit target).
+        // The legacy Schemas/ path never existed, so schemas were silently
+        // never applied — the per-test namespace ran SCHEMALESS. Point at the
+        // real directory so stores exercise the actual SCHEMAFULL DDL
+        // (READONLY, ASSERT, typed fields, etc.).
+        var schemaDir = Path.Combine(repoRoot, "Persistence", "SurrealDb", "Generated", "Schemas");
         if (!Directory.Exists(schemaDir)) return;
 
         var surqlFiles = Directory.GetFiles(schemaDir, "*.surql")

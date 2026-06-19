@@ -36,7 +36,8 @@ DEFINE FIELD IF NOT EXISTS result_payload ON TABLE idempotency_key_store TYPE op
 DEFINE FIELD IF NOT EXISTS error ON TABLE idempotency_key_store TYPE option<string>;
 
 -- Timestamps
-DEFINE FIELD IF NOT EXISTS created_at ON TABLE idempotency_key_store TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE idempotency_key_store TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE idempotency_key_store TYPE datetime;
 
 -- TTL expiry timestamp -- sweep job purges old InProgress rows

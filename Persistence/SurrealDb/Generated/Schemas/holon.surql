@@ -27,7 +27,8 @@ DEFINE FIELD IF NOT EXISTS peer_holon_ids ON TABLE holon TYPE option<array<strin
 
 -- Embedding vector for HNSW semantic search (384-dimensional, MiniLM-style)
 DEFINE FIELD IF NOT EXISTS embedding ON TABLE holon TYPE option<array<float, 384>>;
-DEFINE FIELD IF NOT EXISTS created_date ON TABLE holon TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_date ON TABLE holon TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS modified_date ON TABLE holon TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS is_active ON TABLE holon TYPE bool
     DEFAULT true;

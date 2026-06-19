@@ -131,6 +131,40 @@ public sealed class SurrealQueryTests
     }
 
     [Fact]
+    public void Validate_excludes_LET_defined_vars_from_missing_check()
+    {
+        // `LET $x = ...` defines $x inside the body; it must NOT be reported
+        // missing even though it isn't in the param bag. The supplied params
+        // ($_t/$_cid/$_pid) feed the type::record() casts.
+        var q = SurrealQuery.Combine(
+            SurrealQuery.Of("BEGIN"),
+            SurrealQuery.Of("LET $_child = type::record($_t, $_cid)")
+                        .WithParam("_t", "quest_run").WithParam("_cid", "a"),
+            SurrealQuery.Of("LET $_parent = type::record($_t, $_pid)")
+                        .WithParam("_t", "quest_run").WithParam("_pid", "b"),
+            SurrealQuery.Of("RELATE $_child->forked_from->$_parent"),
+            SurrealQuery.Of("COMMIT"));
+
+        var act = () => q.Validate(strict: true);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_still_flags_non_LET_missing_param_alongside_LET_vars()
+    {
+        // $_child is LET-defined (ok) but $_missing is neither LET-defined nor
+        // supplied — it must still be reported.
+        var q = SurrealQuery.Combine(
+            SurrealQuery.Of("LET $_child = type::record($_t, $_cid)")
+                        .WithParam("_t", "quest_run").WithParam("_cid", "a"),
+            SurrealQuery.Of("RELATE $_child->forked_from->$_missing"));
+
+        var act = () => q.Validate(strict: false);
+        act.Should().Throw<SurrealQueryValidationException>()
+           .WithMessage("*$_missing*");
+    }
+
+    [Fact]
     public void Validate_strict_throws_on_extra_param()
     {
         var q = SurrealQuery.Of("SELECT * FROM wallet WHERE owner = $owner")

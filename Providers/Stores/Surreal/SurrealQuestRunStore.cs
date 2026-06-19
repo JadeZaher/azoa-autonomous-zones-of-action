@@ -19,9 +19,10 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// <b>Fork write contract</b> (per <c>SURREAL-SCHEMA-HINTS.md</c> §6.1):
 /// <see cref="CreateAsync"/> inspects <see cref="QuestRun.ParentRunId"/>; when
 /// non-null it CREATEs the child row AND <c>RELATE child -&gt; forked_from
-/// -&gt; parent</c> inside a single <c>BEGIN / COMMIT</c> block so either both
-/// writes land or neither does. Root runs (no parent) take the single-CREATE
-/// path. The scalar <see cref="QuestRun.ParentRunId"/> is the authoritative
+/// -&gt; parent</c> inside a single <c>BEGIN / COMMIT</c> block (composed via
+/// <see cref="SurrealQuery.Combine"/>, since <see cref="SurrealQuery.Of"/>
+/// rejects multi-statement bodies) so either both writes land or neither
+/// does. Root runs (no parent) take the single-CREATE path. The scalar <see cref="QuestRun.ParentRunId"/> is the authoritative
 /// pointer; the RELATE edge mirrors it for native graph traversal — both must
 /// be kept in sync at write time.
 /// </para>
@@ -80,24 +81,42 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
             }
 
             // Fork path — CREATE quest_run + RELATE forked_from atomically.
-            // BUG (flagged 2026-06-18, live smoke test): the BEGIN;...;COMMIT
-            // body below is REJECTED by SurrealQuery.Of, which throws on any ';'
-            // in the body (single-statement-only; see SurrealQuery.cs:110). This
-            // fork path therefore throws the first time a run is forked. The
-            // correct fix is the connection's transaction API
-            // (HttpSurrealConnection.BeginTransactionAsync → ISurrealTransaction),
-            // NOT an inline BEGIN/COMMIT string and NOT SurrealQuery.Combine
-            // (which composes single statements, not a transaction). Tracked as a
-            // follow-up; not on the create-fresh-run path. Sibling delete-path
-            // multi-statement .Of bugs in SurrealQuestStore were fixed the same day.
+            // SurrealQuery.Of rejects a ';'-joined body (single-statement only),
+            // so compose the BEGIN / CREATE / RELATE / COMMIT sequence via
+            // SurrealQuery.Combine (mirrors the SurrealQuestStore delete-path
+            // fix). SurrealDB executes a BEGIN; …; COMMIT; sequence in one
+            // request atomically — an error in either inner statement rolls
+            // back both, satisfying the §6.1 fork write contract. The params
+            // merge across the combined statements.
             var parentSurrId = ToSurrealId(run.ParentRunId.Value);
 
-            var atomic = SurrealQuery
-                .Of("BEGIN; CREATE type::record($_t, $_cid) CONTENT $_body RETURN AFTER; RELATE type::record($_t, $_cid)->forked_from->type::record($_t, $_pid); COMMIT")
+            // RELATE cannot parse an inline type::record(...) on either side of
+            // the ->edge-> arrow (SurrealDB rejects it: "Unexpected token `::`").
+            // Bind the two endpoints to LET variables first, then RELATE the
+            // variables. CREATE accepts the inline type::record() form fine.
+            var createChild = SurrealQuery
+                .Of("CREATE type::record($_t, $_cid) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    RunTable)
                 .WithParam("_cid",  childSurrId)
-                .WithParam("_pid",  parentSurrId)
                 .WithParam("_body", poco);
+            var letChild = SurrealQuery
+                .Of("LET $_child = type::record($_t, $_cid)")
+                .WithParam("_t",   RunTable)
+                .WithParam("_cid", childSurrId);
+            var letParent = SurrealQuery
+                .Of("LET $_parent = type::record($_t, $_pid)")
+                .WithParam("_t",   RunTable)
+                .WithParam("_pid", parentSurrId);
+            var relateEdge = SurrealQuery
+                .Of("RELATE $_child->forked_from->$_parent");
+
+            var atomic = SurrealQuery.Combine(
+                SurrealQuery.Of("BEGIN"),
+                createChild,
+                letChild,
+                letParent,
+                relateEdge,
+                SurrealQuery.Of("COMMIT"));
 
             var atomicResp = await _executor.ExecuteAsync(atomic, ct);
             atomicResp.EnsureAllOk();

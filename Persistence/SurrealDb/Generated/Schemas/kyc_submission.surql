@@ -40,7 +40,8 @@ DEFINE FIELD IF NOT EXISTS provider_session_id ON TABLE kyc_submission TYPE opti
 DEFINE FIELD IF NOT EXISTS provider_result ON TABLE kyc_submission TYPE option<string>;
 
 -- Timestamps
-DEFINE FIELD IF NOT EXISTS submitted_at ON TABLE kyc_submission TYPE datetime;
+DEFINE FIELD IF NOT EXISTS submitted_at ON TABLE kyc_submission TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS reviewed_at ON TABLE kyc_submission TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS expires_at ON TABLE kyc_submission TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE kyc_submission TYPE datetime;

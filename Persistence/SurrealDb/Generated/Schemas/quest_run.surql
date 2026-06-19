@@ -30,7 +30,8 @@ DEFINE FIELD IF NOT EXISTS status ON TABLE quest_run TYPE string
     DEFAULT "Pending";
 
 -- Wall-clock time at which the run row was created
-DEFINE FIELD IF NOT EXISTS started_at ON TABLE quest_run TYPE datetime;
+DEFINE FIELD IF NOT EXISTS started_at ON TABLE quest_run TYPE datetime
+    READONLY;
 
 -- Wall-clock time at which the run reached a terminal state (null while non-terminal)
 DEFINE FIELD IF NOT EXISTS ended_at ON TABLE quest_run TYPE option<datetime>;

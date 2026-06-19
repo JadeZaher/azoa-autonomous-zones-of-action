@@ -49,7 +49,8 @@ DEFINE FIELD IF NOT EXISTS status ON TABLE swap_state TYPE string
 -- G2 idempotency
 DEFINE FIELD IF NOT EXISTS idempotency_key ON TABLE swap_state TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS error_message ON TABLE swap_state TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS created_at ON TABLE swap_state TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE swap_state TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE swap_state TYPE datetime;
 DEFINE FIELD IF NOT EXISTS completed_at ON TABLE swap_state TYPE option<datetime>;
 

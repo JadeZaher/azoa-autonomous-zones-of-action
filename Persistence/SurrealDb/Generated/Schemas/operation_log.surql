@@ -48,7 +48,8 @@ DEFINE FIELD IF NOT EXISTS idempotency_key ON TABLE operation_log TYPE option<st
 DEFINE FIELD IF NOT EXISTS error ON TABLE operation_log TYPE option<string>;
 
 -- Timestamps
-DEFINE FIELD IF NOT EXISTS created_date ON TABLE operation_log TYPE datetime;
+DEFINE FIELD IF NOT EXISTS created_date ON TABLE operation_log TYPE datetime
+    READONLY;
 DEFINE FIELD IF NOT EXISTS completed_date ON TABLE operation_log TYPE option<datetime>;
 
 -- Holon-asset link (economic-primitive-nodes)

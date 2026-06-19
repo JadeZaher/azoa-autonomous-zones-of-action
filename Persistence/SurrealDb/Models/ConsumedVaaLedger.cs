@@ -63,6 +63,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 7, Type = "datetime")]
         [FieldGroup("Timestamp of consumption (immutable after insert)")]
+        [ReadOnly]
         [JsonPropertyName("consumed_at")]
         public DateTimeOffset ConsumedAt { get; set; }
     }
