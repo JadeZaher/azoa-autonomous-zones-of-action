@@ -240,9 +240,18 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
     {
         try
         {
-            var q = SurrealQuery
-                .Of("SELECT * FROM quest_run WHERE status = $_status")
-                .WithParam("_status", status.ToString());
+            // PILOT (surreal-linq-graph-query Phase 1): the typed builder
+            // proving the dead ExpressionTranslator path executes against a
+            // real store. Emits `SELECT * FROM quest_run WHERE status = $status`
+            // — semantically identical to the prior hand-written raw string.
+            // Status persists PascalCase (FromDomain does `r.Status.ToString()`;
+            // ParseStatus reads it back case-sensitively), and QuestRunPoco.Status
+            // is a `string?`, so this is a plain string comparison — the literal
+            // binds as `"Running"` with no enum lowercasing.
+            var statusText = status.ToString();
+            var q = SurrealQuery<QuestRunPoco>
+                .From()
+                .Where(r => r.Status == statusText);
 
             var rows = await _executor.QueryAsync<QuestRunPoco>(q, ct);
             return OkMany(rows.Select(ToDomain).ToList());

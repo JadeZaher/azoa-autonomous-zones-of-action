@@ -189,6 +189,102 @@ public class SurrealQueryTypedTests
         u1.Sql.Should().Be(u2.Sql);
     }
 
+    // ─── Phase 1.2: broadened operators ───────────────────────────────────────
+
+    [Fact]
+    public void Where_equals_null_emits_NONE_check_not_a_param()
+    {
+        var q = SurrealQuery<TWallet>.From()
+            .Where(w => w.Label == null);
+        SurrealQuery untyped = q;
+        untyped.Sql.Should().Be("SELECT * FROM wallet WHERE label = NONE");
+        untyped.Params.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Where_not_equals_null_emits_NOT_NONE_check()
+    {
+        var q = SurrealQuery<TWallet>.From()
+            .Where(w => w.Label != null);
+        SurrealQuery untyped = q;
+        untyped.Sql.Should().Be("SELECT * FROM wallet WHERE label != NONE");
+        untyped.Params.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Where_HasValue_emits_NOT_NONE_check()
+    {
+        var q = SurrealQuery<TWallet>.From()
+            .Where(w => w.EndedAt.HasValue);
+        SurrealQuery untyped = q;
+        untyped.Sql.Should().Be("SELECT * FROM wallet WHERE ended_at != NONE");
+        untyped.Params.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Where_not_HasValue_emits_negated_NOT_NONE_check()
+    {
+        var q = SurrealQuery<TWallet>.From()
+            .Where(w => !w.EndedAt.HasValue);
+        SurrealQuery untyped = q;
+        untyped.Sql.Should().Be("SELECT * FROM wallet WHERE !(ended_at != NONE)");
+    }
+
+    [Fact]
+    public void Where_StartsWith_emits_string_starts_with()
+    {
+        var q = SurrealQuery<TWallet>.From()
+            .Where(w => w.Address.StartsWith("0x"));
+        SurrealQuery untyped = q;
+        untyped.Sql.Should().Be("SELECT * FROM wallet WHERE string::starts_with(address, $address)");
+        untyped.Params.Should().ContainKey("address").WhoseValue.Should().Be("0x");
+    }
+
+    [Fact]
+    public void Where_EndsWith_emits_string_ends_with()
+    {
+        var q = SurrealQuery<TWallet>.From()
+            .Where(w => w.Address.EndsWith("eth"));
+        SurrealQuery untyped = q;
+        untyped.Sql.Should().Be("SELECT * FROM wallet WHERE string::ends_with(address, $address)");
+        untyped.Params.Should().ContainKey("address").WhoseValue.Should().Be("eth");
+    }
+
+    [Fact]
+    public void Where_string_Contains_emits_string_contains_not_INSIDE()
+    {
+        var q = SurrealQuery<TWallet>.From()
+            .Where(w => w.Address.Contains("dead"));
+        SurrealQuery untyped = q;
+        untyped.Sql.Should().Be("SELECT * FROM wallet WHERE string::contains(address, $address)");
+        untyped.Sql.Should().NotContain("INSIDE");
+        untyped.Params.Should().ContainKey("address").WhoseValue.Should().Be("dead");
+    }
+
+    [Fact]
+    public void Where_range_compound_emits_two_bound_comparisons()
+    {
+        var q = SurrealQuery<TWallet>.From()
+            .Where(w => w.Counter >= 5 && w.Counter <= 10);
+        SurrealQuery untyped = q;
+        untyped.Sql.Should().Be("SELECT * FROM wallet WHERE (counter >= $counter AND counter <= $counter_2)");
+        untyped.Params.Should().ContainKey("counter").WhoseValue.Should().Be(5);
+        untyped.Params.Should().ContainKey("counter_2").WhoseValue.Should().Be(10);
+    }
+
+    [Fact]
+    public void Where_collection_Contains_still_emits_INSIDE()
+    {
+        // Guard: the new string-method branch must not regress the existing
+        // collection-membership (INSIDE) path.
+        var statuses = new[] { WalletStatus.Active, WalletStatus.Pending };
+        var q = SurrealQuery<TWallet>.From()
+            .Where(w => statuses.Contains(w.Status));
+        SurrealQuery untyped = q;
+        untyped.Sql.Should().Contain("status INSIDE $status");
+        untyped.Sql.Should().NotContain("string::contains");
+    }
+
     // ─── Fixtures ────────────────────────────────────────────────────────────
 
     /// <summary>Test-only POCO mimicking the source-gen output for wallet.</summary>
@@ -217,6 +313,9 @@ public class SurrealQueryTypedTests
 
         [JsonPropertyName("created_at")]
         public DateTimeOffset CreatedAt { get; set; }
+
+        [JsonPropertyName("ended_at")]
+        public DateTimeOffset? EndedAt { get; set; }
     }
 
     public enum WalletStatus

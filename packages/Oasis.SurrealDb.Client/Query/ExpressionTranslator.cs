@@ -9,8 +9,17 @@
 //     [JsonPropertyName] on the C# property (or snake_case fallback).
 //   * ConstantExpression / closure-captured constant -> parameter binding.
 //   * BinaryExpression: ==, !=, <, <=, >, >=, &&, ||
-//   * MethodCallExpression: string.IsNullOrEmpty(x) -> `(x = NONE OR x = "")`
-//     and array.Contains(value) -> `value INSIDE array`.
+//     - `col == null` / `col != null` -> `col = NONE` / `col != NONE`.
+//     - ranges express as a compound `col >= a && col <= b`.
+//   * MemberExpression: bare bool col -> `col = true`; `col.HasValue` (on a
+//     Nullable<T> column) -> `col != NONE`.
+//   * MethodCallExpression:
+//     - string.IsNullOrEmpty(x) -> `(x = NONE OR x = "")`
+//     - col.StartsWith/EndsWith/Contains(v) -> string::starts_with / ends_with
+//       / contains(col, $v)
+//     - array.Contains(col) / col.Contains(value) -> `col INSIDE $array`
+//       / `$value INSIDE col` (collection membership; string.Contains is the
+//       string:: form above, not this branch).
 // Enum operand values are translated through JsonStringEnumConverter so
 // `WalletStatus.Active` becomes the SurrealDB string `"active"` (lowercased)
 // to match the JsonNamingPolicy convention used by the source-generator
@@ -179,10 +188,7 @@ namespace Oasis.SurrealDb.Client.Query
                         Visit(((UnaryExpression)node).Operand);
                         return;
                     case ExpressionType.MemberAccess:
-                        // Bare member access in a bool predicate: `w => w.IsActive`.
-                        // Translate as `<col> = true`.
-                        SqlBuffer.Append(ResolveColumnName((MemberExpression)node));
-                        SqlBuffer.Append(" = true");
+                        VisitBoolMember((MemberExpression)node);
                         return;
                     case ExpressionType.Constant:
                         // Bare bool constant (true/false). Emit literally.
@@ -204,6 +210,39 @@ namespace Oasis.SurrealDb.Client.Query
                 SqlBuffer.Append(node.NodeType == ExpressionType.AndAlso ? " AND " : " OR ");
                 Visit(node.Right);
                 SqlBuffer.Append(")");
+            }
+
+            /// <summary>
+            /// A member access used as a standalone bool sub-expression. Two
+            /// shapes: <c>Nullable&lt;T&gt;.HasValue</c> on a column maps to
+            /// <c>&lt;col&gt; != NONE</c>; a bare bool column maps to
+            /// <c>&lt;col&gt; = true</c>.
+            /// </summary>
+            private void VisitBoolMember(MemberExpression node)
+            {
+                // `col.HasValue` -> `col != NONE` (the inner expression is the
+                // column; `.HasValue` is the Nullable<T> property).
+                if (node.Member.Name == "HasValue"
+                    && node.Expression is MemberExpression inner
+                    && inner.Expression == _root)
+                {
+                    SqlBuffer.Append(ResolveColumnName(inner));
+                    SqlBuffer.Append(" != NONE");
+                    return;
+                }
+                // Bare bool column: `w => w.IsActive` -> `is_active = true`.
+                SqlBuffer.Append(ResolveColumnName(node));
+                SqlBuffer.Append(" = true");
+            }
+
+            private bool IsNullLiteral(Expression node)
+            {
+                while (node is UnaryExpression u
+                       && (u.NodeType == ExpressionType.Convert || u.NodeType == ExpressionType.ConvertChecked))
+                {
+                    node = u.Operand;
+                }
+                return node is ConstantExpression { Value: null };
             }
 
             private void VisitComparison(BinaryExpression node)
@@ -232,6 +271,22 @@ namespace Oasis.SurrealDb.Client.Query
                 }
 
                 var column = ResolveColumnName(columnExpr);
+
+                // Null comparison: `col == null` / `col != null` map to the
+                // SurrealDB NONE sentinel, NOT a bound `$param` (a parameter
+                // bound to null would compare against the JSON null literal,
+                // which is distinct from an absent/NONE field in SurrealDB).
+                // Only `==`/`!=` are meaningful against null; relational
+                // operators against null fall through to the param path and
+                // bind null verbatim (SurrealDB treats it as a no-match).
+                if (IsNullLiteral(valueExpr)
+                    && (node.NodeType == ExpressionType.Equal || node.NodeType == ExpressionType.NotEqual))
+                {
+                    SqlBuffer.Append(column);
+                    SqlBuffer.Append(node.NodeType == ExpressionType.Equal ? " = NONE" : " != NONE");
+                    return;
+                }
+
                 var op = OperatorFor(node.NodeType, flipped);
                 // Pass the column expression's declared C# type as the
                 // expected operand type so an enum literal folded to its
@@ -268,8 +323,43 @@ namespace Oasis.SurrealDb.Client.Query
                         return;
                     }
                 }
-                // (IEnumerable<T>).Contains(member) or member.Contains(value)
-                if (node.Method.Name == nameof(Enumerable.Contains))
+                // string.StartsWith / EndsWith / Contains on a column ->
+                // SurrealDB string:: functions. Instance form only
+                // (`col.StartsWith(value)`); the argument is the search literal.
+                if (node.Method.DeclaringType == typeof(string)
+                    && node.Object != null
+                    && node.Arguments.Count >= 1
+                    && (node.Method.Name == nameof(string.StartsWith)
+                        || node.Method.Name == nameof(string.EndsWith)
+                        || node.Method.Name == nameof(string.Contains)))
+                {
+                    var columnExpr = TryGetColumnExpression(node.Object);
+                    if (columnExpr != null)
+                    {
+                        var fn = node.Method.Name switch
+                        {
+                            nameof(string.StartsWith) => "string::starts_with",
+                            nameof(string.EndsWith)   => "string::ends_with",
+                            _                          => "string::contains",
+                        };
+                        var column = ResolveColumnName(columnExpr);
+                        var paramName = AllocateParamName(column);
+                        SqlBuffer.Append(fn);
+                        SqlBuffer.Append('(');
+                        SqlBuffer.Append(column);
+                        SqlBuffer.Append(", $");
+                        SqlBuffer.Append(paramName);
+                        SqlBuffer.Append(')');
+                        Parameters[paramName] = NormaliseValue(EvaluateLiteral(node.Arguments[0]));
+                        return;
+                    }
+                }
+
+                // (IEnumerable<T>).Contains(member) or member.Contains(value).
+                // string.Contains is handled above; this branch is collection
+                // membership only (INSIDE), so skip it for string receivers.
+                if (node.Method.Name == nameof(Enumerable.Contains)
+                    && node.Object?.Type != typeof(string))
                 {
                     Expression? collectionExpr = null;
                     Expression? valueExpr = null;
