@@ -23,7 +23,7 @@ namespace OASIS.WebAPI.Sagas;
 ///
 /// <para><b>G3 — no string interpolation.</b> Every value reaches SurrealDB via
 /// <see cref="SurrealQuery.WithParam"/> bindings; the table identifier is
-/// hard-coded ("saga_steps") and only flows through <c>type::thing($_t, $_id)</c>
+/// hard-coded ("saga_steps") and only flows through <c>type::record($_t, $_id)</c>
 /// so it cannot be smuggled by callers.</para>
 ///
 /// <para><b>POCO seam.</b> The repo does not yet emit a generated POCO for the
@@ -101,11 +101,11 @@ public sealed class SurrealSagaStore : ISagaStore
     {
         var poco = FromDomain(record);
 
-        // CREATE type::thing('saga_steps', <id>) CONTENT <body> RETURN AFTER.
-        // type::thing() builds the SurrealDB record id from a parameterized
+        // CREATE type::record('saga_steps', <id>) CONTENT <body> RETURN AFTER.
+        // type::record() builds the SurrealDB record id from a parameterized
         // table+id pair so the table identifier cannot be smuggled.
         var q = SurrealQuery
-            .Of("CREATE type::thing($_t, $_id) CONTENT $_body RETURN AFTER")
+            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", poco.Id)
             .WithParam("_body", poco);
@@ -139,7 +139,7 @@ public sealed class SurrealSagaStore : ISagaStore
         {
             var nextRunUtc = DateTime.SpecifyKind(resumeAt.Value, DateTimeKind.Utc);
             q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) SET status = $_parked, gate_id = NONE, next_run_at = $_next, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+                .Of("UPDATE type::record($_t, $_id) SET status = $_parked, gate_id = NONE, next_run_at = $_next, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
                 .WithParam("_t", TableName)
                 .WithParam("_id", surrealId)
                 .WithParam("_parked", StatusParked)
@@ -150,7 +150,7 @@ public sealed class SurrealSagaStore : ISagaStore
         else
         {
             q = SurrealQuery
-                .Of("UPDATE type::thing($_t, $_id) SET status = $_parked, gate_id = $_gate, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+                .Of("UPDATE type::record($_t, $_id) SET status = $_parked, gate_id = $_gate, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
                 .WithParam("_t", TableName)
                 .WithParam("_id", surrealId)
                 .WithParam("_parked", StatusParked)
@@ -256,7 +256,9 @@ public sealed class SurrealSagaStore : ISagaStore
             .WithParam("_now", nowUtc);
 
         var scan = SurrealQuery
-            .Of("SELECT id FROM saga_steps WHERE status = $_pending AND next_run_at <= $_now ORDER BY next_run_at ASC LIMIT $_batch")
+            // SurrealDB 3.x requires the ORDER BY idiom to appear in the
+            // SELECT projection; include next_run_at (the id projection ignores it).
+            .Of("SELECT id, next_run_at FROM saga_steps WHERE status = $_pending AND next_run_at <= $_now ORDER BY next_run_at ASC LIMIT $_batch")
             .WithParam("_pending", StatusPending)
             .WithParam("_now", nowUtc)
             .WithParam("_batch", safeBatch);
@@ -301,7 +303,7 @@ public sealed class SurrealSagaStore : ISagaStore
         // in its current minimal shape, so the query drops down to a typed
         // SurrealQuery.Of with parameterized bindings (G3 still enforced).
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET status = $_in_progress, claimed_at = $_now, updated_at = $_now WHERE status = $_pending AND next_run_at <= $_now RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_in_progress, claimed_at = $_now, updated_at = $_now WHERE status = $_pending AND next_run_at <= $_now RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_pending", StatusPending)
@@ -329,7 +331,7 @@ public sealed class SurrealSagaStore : ISagaStore
         var truncatedOutput = Truncate(output, OutputMaxLength);
 
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET status = $_completed, output = $_output, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_completed, output = $_output, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_completed", StatusCompleted)
@@ -352,7 +354,7 @@ public sealed class SurrealSagaStore : ISagaStore
         var surrealId = ToSurrealId(id);
 
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET status = $_pending, attempt_count = attempt_count + 1, next_run_at = $_next, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_pending, attempt_count = attempt_count + 1, next_run_at = $_next, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_pending", StatusPending)
@@ -411,7 +413,7 @@ public sealed class SurrealSagaStore : ISagaStore
         // First: conditional transition of the failing step. Only proceed to
         // enqueue the compensation row when this winner-of-the-race succeeded.
         var transition = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET status = $_compensating, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_compensating, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_compensating", StatusCompensating)
@@ -429,7 +431,7 @@ public sealed class SurrealSagaStore : ISagaStore
         // Sequenced AFTER the conditional transition succeeded so the same
         // single-winner property keeps it from being double-enqueued.
         var create = SurrealQuery
-            .Of("CREATE type::thing($_t2, $_cid) CONTENT $_cbody RETURN AFTER")
+            .Of("CREATE type::record($_t2, $_cid) CONTENT $_cbody RETURN AFTER")
             .WithParam("_t2", TableName)
             .WithParam("_cid", compensationPoco.Id)
             .WithParam("_cbody", compensationPoco);
@@ -448,7 +450,7 @@ public sealed class SurrealSagaStore : ISagaStore
         var surrealId = ToSurrealId(id);
 
         var q = SurrealQuery
-            .Of("UPDATE type::thing($_t, $_id) SET status = $_dead, dead_lettered = true, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_dead, dead_lettered = true, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_dead", StatusDeadLettered)
@@ -496,7 +498,7 @@ public sealed class SurrealSagaStore : ISagaStore
     {
         var surrealId = ToSurrealId(id);
         var q = SurrealQuery
-            .Of("SELECT * FROM type::thing($_t, $_id)")
+            .Of("SELECT * FROM type::record($_t, $_id)")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId);
 

@@ -312,13 +312,28 @@ public sealed class SurrealBlockchainOperationStoreTests : IAsyncLifetime
             System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
-        ddlClient.DefaultRequestHeaders.Add("DB", "test");
+        // SurrealDB 3.x requires "Surreal-NS"/"Surreal-DB" headers; scope the
+        // DDL client to the per-test namespace so the table DDL lands there.
+        ddlClient.DefaultRequestHeaders.Add("Surreal-NS", _testNamespace);
+        ddlClient.DefaultRequestHeaders.Add("Surreal-DB", "test");
+
+        // The namespace/database identifiers cannot be $params in DDL. Create
+        // the namespace at ROOT, then the database scoped to the namespace with
+        // the NS header ONLY (a Surreal-DB header naming a not-yet-existing db
+        // makes the connection-level USE fail). The table DDL below then runs
+        // with both NS+DB headers set.
+        using (var nsClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) })
+        {
+            nsClient.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+            await nsClient.PostAsync("/sql", new StringContent(
+                $"DEFINE NAMESPACE IF NOT EXISTS {_testNamespace}", System.Text.Encoding.UTF8, "text/plain"));
+            nsClient.DefaultRequestHeaders.Add("Surreal-NS", _testNamespace);
+            await nsClient.PostAsync("/sql", new StringContent(
+                "DEFINE DATABASE IF NOT EXISTS test", System.Text.Encoding.UTF8, "text/plain"));
+        }
 
         const string ddl = """
-            DEFINE NAMESPACE IF NOT EXISTS $ns;
-            USE NS $ns DB test;
-            DEFINE DATABASE IF NOT EXISTS test;
             DEFINE TABLE IF NOT EXISTS operation_log SCHEMAFULL;
             DEFINE FIELD IF NOT EXISTS id             ON operation_log TYPE string;
             DEFINE FIELD IF NOT EXISTS avatar_id      ON operation_log TYPE option<string>;
@@ -353,10 +368,7 @@ public sealed class SurrealBlockchainOperationStoreTests : IAsyncLifetime
             System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);
-        dropClient.DefaultRequestHeaders.Add("DB", "test");
-
-        const string removeSql = "REMOVE NAMESPACE $ns";
+                var removeSql = $"REMOVE NAMESPACE IF EXISTS {_testNamespace}";
         var content = new StringContent(removeSql, System.Text.Encoding.UTF8, "text/plain");
         await dropClient.PostAsync("/sql", content);
     }

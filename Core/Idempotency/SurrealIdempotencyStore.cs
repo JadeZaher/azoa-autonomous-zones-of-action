@@ -154,7 +154,7 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
         // for multi-field state transitions. All values are bound as $params —
         // no interpolation.
         var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) WHERE state = $_expected SET state = $_next, result_payload = $_payload, updated_at = $_now RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET state = $_next, result_payload = $_payload, updated_at = $_now WHERE state = $_expected RETURN AFTER")
             .WithParam("_t",        Table)
             .WithParam("_id",       recordId)
             .WithParam("_expected", "InProgress")
@@ -192,7 +192,7 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
         var recordId = DeterministicId(key);
 
         var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) WHERE state = $_expected SET state = $_next, error = $_error, updated_at = $_now RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET state = $_next, error = $_error, updated_at = $_now WHERE state = $_expected RETURN AFTER")
             .WithParam("_t",        Table)
             .WithParam("_id",       recordId)
             .WithParam("_expected", "InProgress")
@@ -292,17 +292,19 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
         string key,
         string operationType,
         DateTimeOffset now)
+        // option<T> columns (result_payload / error / ttl_expires_at) are OMITTED
+        // rather than set to null: SurrealDB 3.x rejects an explicit JSON null on
+        // an option<T> field ("Expected `none | string` but found `NULL`") — an
+        // absent field is the NONE the schema wants. (Dictionary null values are
+        // not stripped by JsonIgnoreCondition.WhenWritingNull, so omit them here.)
         => new(StringComparer.Ordinal)
         {
             ["id"]             = recordId,
             ["key"]            = key,
             ["operation_type"] = operationType,
             ["state"]          = "InProgress",
-            ["result_payload"] = null,
-            ["error"]          = null,
             ["created_at"]     = now,
             ["updated_at"]     = now,
-            ["ttl_expires_at"] = null,
         };
 
     /// <summary>Maps the generated POCO to the legacy domain model.</summary>

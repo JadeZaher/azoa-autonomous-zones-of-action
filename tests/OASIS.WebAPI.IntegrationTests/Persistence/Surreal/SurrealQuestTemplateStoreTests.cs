@@ -261,32 +261,47 @@ public sealed class SurrealQuestTemplateStoreTests : IAsyncLifetime
             System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
-        ddlClient.DefaultRequestHeaders.Add("DB", "test");
+        // SurrealDB 3.x requires "Surreal-NS"/"Surreal-DB" headers; scope the
+        // DDL client to the per-test namespace so the table DDL lands there.
+        ddlClient.DefaultRequestHeaders.Add("Surreal-NS", _testNamespace);
+        ddlClient.DefaultRequestHeaders.Add("Surreal-DB", "test");
+
+        // The namespace/database identifiers cannot be $params in DDL. Create
+        // the namespace at ROOT, then the database scoped to the namespace with
+        // the NS header ONLY (a Surreal-DB header naming a not-yet-existing db
+        // makes the connection-level USE fail). The table DDL below then runs
+        // with both NS+DB headers set.
+        using (var nsClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) })
+        {
+            nsClient.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+            await nsClient.PostAsync("/sql", new StringContent(
+                $"DEFINE NAMESPACE IF NOT EXISTS {_testNamespace}", System.Text.Encoding.UTF8, "text/plain"));
+            nsClient.DefaultRequestHeaders.Add("Surreal-NS", _testNamespace);
+            await nsClient.PostAsync("/sql", new StringContent(
+                "DEFINE DATABASE IF NOT EXISTS test", System.Text.Encoding.UTF8, "text/plain"));
+        }
 
         const string ddl = """
-            DEFINE NAMESPACE IF NOT EXISTS $ns;
-            USE NS $ns DB test;
-            DEFINE DATABASE IF NOT EXISTS test;
 
             DEFINE TABLE IF NOT EXISTS quest_template SCHEMAFULL;
             DEFINE FIELD IF NOT EXISTS id               ON quest_template TYPE string ASSERT $value != NONE AND $value != "";
             DEFINE FIELD IF NOT EXISTS name             ON quest_template TYPE string;
-            DEFINE FIELD IF NOT EXISTS description      ON quest_template FLEXIBLE TYPE option<string>;
+            DEFINE FIELD IF NOT EXISTS description      ON quest_template TYPE option<string>;
             DEFINE FIELD IF NOT EXISTS author_avatar_id ON quest_template TYPE string ASSERT $value != NONE AND $value != "";
             DEFINE FIELD IF NOT EXISTS parameters       ON quest_template TYPE string;
             DEFINE FIELD IF NOT EXISTS version          ON quest_template TYPE string;
             DEFINE FIELD IF NOT EXISTS is_public        ON quest_template TYPE bool DEFAULT false;
-            DEFINE FIELD IF NOT EXISTS nodes            ON quest_template FLEXIBLE TYPE array;
-            DEFINE FIELD IF NOT EXISTS edges            ON quest_template FLEXIBLE TYPE array;
-            DEFINE FIELD IF NOT EXISTS tags             ON quest_template FLEXIBLE TYPE array;
+            DEFINE FIELD IF NOT EXISTS nodes            ON quest_template TYPE array;
+            DEFINE FIELD IF NOT EXISTS edges            ON quest_template TYPE array;
+            DEFINE FIELD IF NOT EXISTS tags             ON quest_template TYPE array;
             DEFINE INDEX IF NOT EXISTS quest_template_by_author ON quest_template FIELDS author_avatar_id;
 
             DEFINE TABLE IF NOT EXISTS quest_node_template SCHEMAFULL;
             DEFINE FIELD IF NOT EXISTS id               ON quest_node_template TYPE string ASSERT $value != NONE AND $value != "";
             DEFINE FIELD IF NOT EXISTS name             ON quest_node_template TYPE string;
             DEFINE FIELD IF NOT EXISTS node_type        ON quest_node_template TYPE string;
-            DEFINE FIELD IF NOT EXISTS description      ON quest_node_template FLEXIBLE TYPE option<string>;
+            DEFINE FIELD IF NOT EXISTS description      ON quest_node_template TYPE option<string>;
             DEFINE FIELD IF NOT EXISTS default_config   ON quest_node_template TYPE string;
             DEFINE FIELD IF NOT EXISTS config_schema    ON quest_node_template TYPE string;
             DEFINE FIELD IF NOT EXISTS input_schema     ON quest_node_template TYPE string;
@@ -294,7 +309,7 @@ public sealed class SurrealQuestTemplateStoreTests : IAsyncLifetime
             DEFINE FIELD IF NOT EXISTS version          ON quest_node_template TYPE string;
             DEFINE FIELD IF NOT EXISTS author_avatar_id ON quest_node_template TYPE string ASSERT $value != NONE AND $value != "";
             DEFINE FIELD IF NOT EXISTS is_public        ON quest_node_template TYPE bool DEFAULT false;
-            DEFINE FIELD IF NOT EXISTS tags             ON quest_node_template FLEXIBLE TYPE array;
+            DEFINE FIELD IF NOT EXISTS tags             ON quest_node_template TYPE array;
             DEFINE INDEX IF NOT EXISTS quest_node_template_by_author ON quest_node_template FIELDS author_avatar_id;
             DEFINE INDEX IF NOT EXISTS quest_node_template_by_type   ON quest_node_template FIELDS node_type
             """;
@@ -311,10 +326,7 @@ public sealed class SurrealQuestTemplateStoreTests : IAsyncLifetime
             System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);
-        dropClient.DefaultRequestHeaders.Add("DB", "test");
-
-        const string removeSql = "REMOVE NAMESPACE $ns";
+                var removeSql = $"REMOVE NAMESPACE IF EXISTS {_testNamespace}";
         var content = new StringContent(removeSql, System.Text.Encoding.UTF8, "text/plain");
         await dropClient.PostAsync("/sql", content);
     }

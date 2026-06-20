@@ -144,7 +144,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
             throw new ArgumentException("Bridge id must not be empty.", nameof(id));
 
         var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) WHERE status != $_completed SET status = $_completed, completed_at = $_now RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_completed, completed_at = $_now WHERE status != $_completed RETURN AFTER")
             .WithParam("_t",         BridgeTable)
             .WithParam("_id",        id)
             .WithParam("_completed", BridgeStatus.Completed.ToString())
@@ -197,7 +197,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         // G3: status set is parameter-bound (string[] -> SurrealQL array), not
         // interpolated. INSIDE handles the membership predicate.
         var q = SurrealQuery
-            .Of("SELECT id FROM bridge_tx WHERE status INSIDE $_statuses AND created_at < $_stale ORDER BY created_at ASC LIMIT $_batch")
+            .Of("SELECT id, created_at FROM bridge_tx WHERE status INSIDE $_statuses AND created_at < $_stale ORDER BY created_at ASC LIMIT $_batch")
             .WithParam("_statuses", nonTerminal.Select(s => s.ToString()).ToArray())
             .WithParam("_stale",    ToUtcOffset(staleBefore))
             .WithParam("_batch",    batch);
@@ -218,7 +218,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
             return Array.Empty<Guid>();
 
         var q = SurrealQuery
-            .Of("SELECT id FROM operation_log WHERE status INSIDE $_statuses AND created_date < $_stale ORDER BY created_date ASC LIMIT $_batch")
+            .Of("SELECT id, created_date FROM operation_log WHERE status INSIDE $_statuses AND created_date < $_stale ORDER BY created_date ASC LIMIT $_batch")
             .WithParam("_statuses", nonTerminal.ToArray())
             .WithParam("_stale",    ToUtcOffset(staleBefore))
             .WithParam("_batch",    batch);
@@ -497,14 +497,15 @@ public sealed class SurrealBridgeStore : IBridgeStore
     /// </summary>
     private static string BuildConditionalUpdateSql(IReadOnlyList<string> setParts)
     {
+        // SurrealDB 3.x requires SET before WHERE (UPDATE ... SET ... WHERE ...).
         var sb = new System.Text.StringBuilder();
-        sb.Append("UPDATE type::record($_t, $_id) WHERE status = $_expected SET ");
+        sb.Append("UPDATE type::record($_t, $_id) SET ");
         for (int i = 0; i < setParts.Count; i++)
         {
             if (i > 0) sb.Append(", ");
             sb.Append(setParts[i]);
         }
-        sb.Append(" RETURN AFTER");
+        sb.Append(" WHERE status = $_expected RETURN AFTER");
         return sb.ToString();
     }
 

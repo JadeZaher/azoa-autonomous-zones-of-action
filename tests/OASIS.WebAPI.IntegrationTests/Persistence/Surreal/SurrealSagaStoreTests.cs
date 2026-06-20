@@ -557,17 +557,33 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
             System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         ddlClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
-        ddlClient.DefaultRequestHeaders.Add("DB", "test");
+        // SurrealDB 3.x requires "Surreal-NS"/"Surreal-DB" headers; the legacy
+        // "NS"/"DB" names are ignored. Scope the DDL client to the per-test
+        // namespace so the table DDL lands there.
+        ddlClient.DefaultRequestHeaders.Add("Surreal-NS", _testNamespace);
+        ddlClient.DefaultRequestHeaders.Add("Surreal-DB", "test");
+
+        // The namespace/database identifier cannot be a $param in DDL — define
+        // them with the identifier-safe (Guid hex) test namespace interpolated,
+        // BEFORE the scoped table DDL below. DEFINE NAMESPACE runs at ROOT;
+        // DEFINE DATABASE runs scoped to the namespace (NS header only — the DB
+        // does not exist yet, so a DB header would fault).
+        using (var nsClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) })
+        {
+            nsClient.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+            await nsClient.PostAsync("/sql", new StringContent(
+                $"DEFINE NAMESPACE IF NOT EXISTS {_testNamespace}", System.Text.Encoding.UTF8, "text/plain"));
+            nsClient.DefaultRequestHeaders.Add("Surreal-NS", _testNamespace);
+            await nsClient.PostAsync("/sql", new StringContent(
+                "DEFINE DATABASE IF NOT EXISTS test", System.Text.Encoding.UTF8, "text/plain"));
+        }
 
         // DDL mirrors 080_saga_steps.surql. Uses IF NOT EXISTS so it is safe to
-        // re-apply, and FLEXIBLE TYPE on option<...> fields so SurrealDB does
+        // re-apply, and TYPE on FLEXIBLE option<...> fields so SurrealDB does
         // not reject explicit NULLs on CREATE (the production runner does the
         // same for 070_idempotency_key_store).
         const string ddl = """
-            DEFINE NAMESPACE IF NOT EXISTS $ns;
-            USE NS $ns DB test;
-            DEFINE DATABASE IF NOT EXISTS test;
             DEFINE TABLE IF NOT EXISTS saga_steps SCHEMAFULL;
             DEFINE FIELD IF NOT EXISTS id                   ON saga_steps TYPE string ASSERT $value != NONE AND $value != "";
             DEFINE FIELD IF NOT EXISTS correlation_key      ON saga_steps TYPE string ASSERT $value != NONE AND $value != "";
@@ -579,13 +595,13 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
             DEFINE FIELD IF NOT EXISTS is_compensation      ON saga_steps TYPE bool DEFAULT false;
             DEFINE FIELD IF NOT EXISTS attempt_count        ON saga_steps TYPE int DEFAULT 0;
             DEFINE FIELD IF NOT EXISTS next_run_at          ON saga_steps TYPE datetime;
-            DEFINE FIELD IF NOT EXISTS claimed_at           ON saga_steps FLEXIBLE TYPE option<datetime>;
-            DEFINE FIELD IF NOT EXISTS last_error           ON saga_steps FLEXIBLE TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS output               ON saga_steps FLEXIBLE TYPE option<string>;
+            DEFINE FIELD IF NOT EXISTS claimed_at           ON saga_steps TYPE option<datetime>;
+            DEFINE FIELD IF NOT EXISTS last_error           ON saga_steps TYPE option<string>;
+            DEFINE FIELD IF NOT EXISTS output               ON saga_steps TYPE option<string>;
             DEFINE FIELD IF NOT EXISTS dead_lettered        ON saga_steps TYPE bool DEFAULT false;
             DEFINE FIELD IF NOT EXISTS created_at           ON saga_steps TYPE datetime;
             DEFINE FIELD IF NOT EXISTS updated_at           ON saga_steps TYPE datetime;
-            DEFINE FIELD IF NOT EXISTS gate_id              ON saga_steps FLEXIBLE TYPE option<string>;
+            DEFINE FIELD IF NOT EXISTS gate_id              ON saga_steps TYPE option<string>;
             DEFINE INDEX IF NOT EXISTS saga_steps_correlation_key   ON saga_steps FIELDS correlation_key;
             DEFINE INDEX IF NOT EXISTS saga_steps_due_scan          ON saga_steps FIELDS status, next_run_at;
             DEFINE INDEX IF NOT EXISTS saga_steps_lease_scan        ON saga_steps FIELDS status, claimed_at;
@@ -605,10 +621,9 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
             System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         dropClient.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);
-        dropClient.DefaultRequestHeaders.Add("DB", "test");
-
-        const string removeSql = "REMOVE NAMESPACE $ns";
+        // REMOVE NAMESPACE runs at ROOT; the identifier cannot be a $param, so
+        // interpolate the identifier-safe (Guid hex) test namespace.
+        var removeSql = $"REMOVE NAMESPACE IF EXISTS {_testNamespace}";
         var content = new StringContent(removeSql, System.Text.Encoding.UTF8, "text/plain");
         await dropClient.PostAsync("/sql", content);
     }

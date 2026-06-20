@@ -402,9 +402,9 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
             DEFINE FIELD IF NOT EXISTS is_compensation      ON saga_steps TYPE bool DEFAULT false;
             DEFINE FIELD IF NOT EXISTS attempt_count        ON saga_steps TYPE int DEFAULT 0;
             DEFINE FIELD IF NOT EXISTS next_run_at          ON saga_steps TYPE datetime;
-            DEFINE FIELD IF NOT EXISTS claimed_at           ON saga_steps FLEXIBLE TYPE option<datetime>;
-            DEFINE FIELD IF NOT EXISTS last_error           ON saga_steps FLEXIBLE TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS output               ON saga_steps FLEXIBLE TYPE option<string>;
+            DEFINE FIELD IF NOT EXISTS claimed_at           ON saga_steps TYPE option<datetime>;
+            DEFINE FIELD IF NOT EXISTS last_error           ON saga_steps TYPE option<string>;
+            DEFINE FIELD IF NOT EXISTS output               ON saga_steps TYPE option<string>;
             DEFINE FIELD IF NOT EXISTS dead_lettered        ON saga_steps TYPE bool DEFAULT false;
             DEFINE FIELD IF NOT EXISTS created_at           ON saga_steps TYPE datetime;
             DEFINE FIELD IF NOT EXISTS updated_at           ON saga_steps TYPE datetime;
