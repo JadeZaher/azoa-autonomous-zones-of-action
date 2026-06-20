@@ -249,15 +249,13 @@ public sealed class SurrealBridgeStore : IBridgeStore
 
         var poco = ToBridgePoco(tx);
 
-        // CREATE inserts and fails (per-statement ERR) on duplicate id — that
-        // matches the prior EF PK-violation semantics (SaveChangesAsync threw).
-        // We surface the error via EnsureAllOk so the caller sees a
-        // SurrealStatementException instead of a silent no-op.
-        var q = SurrealQuery
-            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-            .WithParam("_t",    BridgeTable)
-            .WithParam("_id",   tx.Id)
-            .WithParam("_body", poco);
+        // Coercion-safe SET-based CREATE (SurrealWriter): emits per-field SET
+        // with type::string() on string columns, so a `table:id`-shaped value
+        // like source_token_id="ASA:123" is not mis-coerced into a record id
+        // (which the parameterized CONTENT $body path does on SurrealDB 3.x).
+        // Still fails (per-statement ERR) on duplicate id — matches the prior
+        // PK-violation semantics; EnsureAllOk surfaces it.
+        var q = SurrealWriter.Create(poco);
 
         var response = await _executor.ExecuteAsync(q, ct);
         response.EnsureAllOk();

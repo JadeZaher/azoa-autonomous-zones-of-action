@@ -111,17 +111,11 @@ namespace Oasis.SurrealDb.Client.Query
             switch (entry.State)
             {
                 case SurrealEntityState.Added:
-                    return SurrealQuery
-                        .Of("CREATE type::record($_t, $_id) CONTENT $_body")
-                        .WithParam("_t", entry.Table)
-                        .WithParam("_id", bareId)
-                        .WithParam("_body", entry.Entity);
+                    // Coercion-safe SET-based CREATE (SurrealWriter), not
+                    // CONTENT $body — see SurrealWriter for the 3.x rationale.
+                    return entry.CreateStatement();
                 case SurrealEntityState.Modified:
-                    return SurrealQuery
-                        .Of("UPSERT type::record($_t, $_id) CONTENT $_body")
-                        .WithParam("_t", entry.Table)
-                        .WithParam("_id", bareId)
-                        .WithParam("_body", entry.Entity);
+                    return entry.UpsertStatement();
                 case SurrealEntityState.Deleted:
                     return SurrealQuery
                         .Of("DELETE type::record($_t, $_id)")

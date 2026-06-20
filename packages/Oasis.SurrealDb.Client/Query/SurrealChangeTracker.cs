@@ -39,12 +39,22 @@ namespace Oasis.SurrealDb.Client.Query
         public string Id { get; }
         public SurrealEntityState State { get; internal set; }
 
-        internal SurrealEntityEntry(object entity, string table, string id, SurrealEntityState state)
+        // Typed statement factories captured at track-time (where T is known),
+        // so SaveChanges can emit the coercion-safe SET-based CREATE/UPSERT via
+        // SurrealWriter<T> without reflecting T back out of `object`.
+        internal Func<SurrealQuery> CreateStatement { get; }
+        internal Func<SurrealQuery> UpsertStatement { get; }
+
+        internal SurrealEntityEntry(
+            object entity, string table, string id, SurrealEntityState state,
+            Func<SurrealQuery> createStatement, Func<SurrealQuery> upsertStatement)
         {
             Entity = entity;
             Table = table;
             Id = id;
             State = state;
+            CreateStatement = createStatement;
+            UpsertStatement = upsertStatement;
         }
 
         internal (string table, string id) Key => (Table, Id);
@@ -100,7 +110,11 @@ namespace Oasis.SurrealDb.Client.Query
                 existing.State = state;
                 return existing;
             }
-            var entry = new SurrealEntityEntry(entity, table, id, state);
+            var typed = (T)entity;
+            var entry = new SurrealEntityEntry(
+                entity, table, id, state,
+                createStatement: () => SurrealWriter.Create(typed),
+                upsertStatement: () => SurrealWriter.Upsert(typed));
             _entries[key] = entry;
             return entry;
         }

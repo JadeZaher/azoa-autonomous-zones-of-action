@@ -96,9 +96,16 @@ public class SurrealContextTests
 
         n.Should().Be(1);
         exec.Executed.Should().HaveCount(1);
-        exec.Executed[0].Sql.Should().Be("CREATE type::record($_t, $_id) CONTENT $_body");
+        // SET-based CREATE (coercion-safe), not CONTENT $body. The id addresses
+        // the record (not a SET column); status is a string-valued column so it
+        // is wrapped in type::string() to defeat record coercion.
+        exec.Executed[0].Sql.Should().Be(
+            "CREATE type::record($_t, $_id) SET status = type::string($_f_status) RETURN AFTER");
         exec.Executed[0].Params["_t"].Should().Be("wallet");
         exec.Executed[0].Params["_id"].Should().Be("abc");
+        // Enum bound as its NAME (PascalCase) — matches the schema INSIDE sets;
+        // a SET-bound param wouldn't pick up a per-property [JsonConverter].
+        exec.Executed[0].Params["_f_status"].Should().Be("Active");
     }
 
     [Fact]
@@ -110,11 +117,8 @@ public class SurrealContextTests
 
         await ctx.SaveChangesAsync();
 
-        exec.Executed.Select(e => e.Sql).Should().Contain(new[]
-        {
-            "UPSERT type::record($_t, $_id) CONTENT $_body",
-            "DELETE type::record($_t, $_id)",
-        });
+        exec.Executed.Select(e => e.Sql).Should().Contain(s => s.StartsWith("UPSERT type::record($_t, $_id) SET "));
+        exec.Executed.Select(e => e.Sql).Should().Contain("DELETE type::record($_t, $_id)");
     }
 
     [Fact]
