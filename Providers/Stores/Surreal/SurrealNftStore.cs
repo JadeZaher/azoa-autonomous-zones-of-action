@@ -49,14 +49,11 @@ public sealed class SurrealNftStore : INftStore
                 avatarNFT.Id = Guid.NewGuid();
 
             var poco   = ToNftPoco(avatarNFT);
-            var surrId = poco.Id;
 
-            // UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER
-            var q = SurrealQuery
-                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t",    GeneratedNft.SchemaNameConst)
-                .WithParam("_id",   surrId)
-                .WithParam("_body", poco);
+            // Coercion-safe SET-based UPSERT (SurrealWriter): omits null option<>
+            // fields (3.x rejects an explicit null on option<string> like
+            // description) and type::string-wraps string columns.
+            var q = SurrealWriter.Upsert(poco);
 
             var resp = await _executor.ExecuteAsync(q, ct);
             resp.EnsureAllOk();

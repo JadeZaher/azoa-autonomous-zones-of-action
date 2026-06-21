@@ -79,10 +79,12 @@ namespace Oasis.SurrealDb.Client.Query
             // type::thing with a "did you maybe mean `type::record`" hint.
             // Same change applied across RelateBuilder + every store-level
             // raw SurrealQL helper.
+            // SurrealDB 3.x requires SET before WHERE (UPDATE … SET … WHERE …);
+            // the legacy WHERE…SET order fails with "Unexpected token `SET`".
             var sql =
                 "UPDATE type::record($_t, $_id) " +
-                "WHERE " + _whereField + " = $_w_" + _whereField + " " +
                 "SET " + field + " = $_s_" + field + " " +
+                "WHERE " + _whereField + " = $_w_" + _whereField + " " +
                 "RETURN AFTER";
 
             var paramBag = new Dictionary<string, object?>(StringComparer.Ordinal)

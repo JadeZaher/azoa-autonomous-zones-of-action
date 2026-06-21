@@ -26,7 +26,7 @@ public sealed class SurrealQueryUpdateOnlyTests
 
         q.Sql.Should().Be(
             "UPDATE type::record($_t, $_id) " +
-            "WHERE status = $_w_status SET status = $_s_status " +
+            "SET status = $_s_status WHERE status = $_w_status " +
             "RETURN AFTER");
 
         q.Params.Should().Contain(new System.Collections.Generic.KeyValuePair<string, object?>("_t", "operation_log"));
