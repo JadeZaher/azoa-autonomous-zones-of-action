@@ -35,9 +35,11 @@ DEFINE FIELD IF NOT EXISTS is_public ON TABLE quest_template TYPE bool
 
 -- Embedded template-node slots (FLEXIBLE -- shape validated by C# POCO at deserialization time, not by SurrealDB).
 DEFINE FIELD IF NOT EXISTS nodes ON TABLE quest_template TYPE array<object> FLEXIBLE;
+DEFINE FIELD OVERWRITE nodes.* ON TABLE quest_template TYPE object FLEXIBLE;
 
 -- Embedded template-edge slots (FLEXIBLE -- same rationale as nodes).
 DEFINE FIELD IF NOT EXISTS edges ON TABLE quest_template TYPE array<object> FLEXIBLE;
+DEFINE FIELD OVERWRITE edges.* ON TABLE quest_template TYPE object FLEXIBLE;
 
 -- Free-form tags.
 DEFINE FIELD IF NOT EXISTS tags ON TABLE quest_template TYPE array<string>;

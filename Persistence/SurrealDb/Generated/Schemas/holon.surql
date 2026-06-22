@@ -20,7 +20,7 @@ DEFINE FIELD IF NOT EXISTS asset_type ON TABLE holon TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS token_id ON TABLE holon TYPE option<string>;
 
 -- Metadata (flexible key->value bag)
-DEFINE FIELD IF NOT EXISTS metadata ON TABLE holon TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS metadata ON TABLE holon TYPE option<object> FLEXIBLE;
 
 -- PeerHolonIds (list of holon-id strings)
 DEFINE FIELD IF NOT EXISTS peer_holon_ids ON TABLE holon TYPE option<array<string>>;

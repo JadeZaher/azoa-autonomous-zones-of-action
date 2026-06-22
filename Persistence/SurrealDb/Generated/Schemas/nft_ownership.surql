@@ -28,7 +28,7 @@ DEFINE FIELD IF NOT EXISTS name ON TABLE nft_ownership TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS description ON TABLE nft_ownership TYPE option<string>;
 
 -- Attributes (flexible key->value bag)
-DEFINE FIELD IF NOT EXISTS attributes ON TABLE nft_ownership TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS attributes ON TABLE nft_ownership TYPE option<object> FLEXIBLE;
 DEFINE FIELD IF NOT EXISTS royalty_percentage ON TABLE nft_ownership TYPE decimal
     DEFAULT 0.0;
 DEFINE FIELD IF NOT EXISTS royalty_recipient ON TABLE nft_ownership TYPE option<string>;

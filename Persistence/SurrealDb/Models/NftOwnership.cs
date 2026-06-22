@@ -63,7 +63,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 10, Type = "option<string>")]
         public string? Description { get; set; }
 
-        [Column(Order = 11, Type = "option<object>")]
+        [Column(Order = 11, Type = "option<object>", Flexible = true)]
         [FieldGroup("Attributes (flexible key->value bag)")]
         public JsonElement? Attributes { get; set; }
 

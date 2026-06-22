@@ -59,7 +59,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 9, Type = "option<string>")]
         public string? TokenId { get; set; }
 
-        [Column(Order = 10, Type = "option<object>")]
+        [Column(Order = 10, Type = "option<object>", Flexible = true)]
         [FieldGroup("Metadata (flexible key->value bag)")]
         public JsonElement? Metadata { get; set; }
 
