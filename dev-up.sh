@@ -177,6 +177,27 @@ if [ "$EXTERNAL_SURREALDB" -eq 1 ]; then
     COMPOSE_UP_SERVICES="oasis-api oasis-frontend"
 fi
 
+# ── Guard: container shell scripts MUST be LF ─────────────────────────────────
+#
+# A Windows checkout with core.autocrlf=true rewrites *.sh to CRLF on disk. A
+# CRLF shebang gets baked into the image and the container dies at startup with
+#   /usr/bin/env: 'sh\r': No such file or directory
+# .gitattributes now pins these to eol=lf, but a stale working-tree copy (or a
+# checkout before the attribute landed) can still slip through -- so normalise
+# in-place here, BEFORE any image build, and warn loudly so it gets noticed.
+
+CONTAINER_SCRIPTS="docker-entrypoint.sh"   # scripts COPYd into images (see Dockerfile)
+for rel in $CONTAINER_SCRIPTS; do
+    f="$SCRIPT_DIR/$rel"
+    [ -f "$f" ] || continue
+    if grep -qU $'\r' "$f" 2>/dev/null; then
+        echo "[dev-up] WARN: $rel had CRLF line endings -- normalising to LF before build." >&2
+        echo "[dev-up]       (a CRLF shebang would crash the container: \"env: 'sh\\r'...\")" >&2
+        # Strip trailing CR on every line, in place.
+        sed -i 's/\r$//' "$f"
+    fi
+done
+
 # ── SDK rebuild (host-side dist; container build does its own tsup pass) ────
 
 SDK_DIR="$SCRIPT_DIR/sdk/oasis-wallet"
@@ -298,7 +319,7 @@ else
         fi
         echo "" >&2
         echo "[dev-up] Common causes:" >&2
-        echo "  * Storage URI rejected by surrealdb 1.5.4 (look for 'failed to parse' in the log above)." >&2
+        echo "  * Storage URI rejected by surrealdb v3.1.4 (look for 'failed to parse' in the log above)." >&2
         echo "  * Rootless podman volume ownership (look for 'permission denied' on /data)." >&2
         echo "  * Port 8000 already bound on host (look for 'address already in use')." >&2
         echo "  * Set OASIS_SKIP_RESET=1 to bypass schema sync while you investigate." >&2

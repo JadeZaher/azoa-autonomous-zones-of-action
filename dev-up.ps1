@@ -220,6 +220,29 @@ if ($ExistingSurrealDb) {
     $ComposeUpServices        = @()  # empty == all services
 }
 
+# ── Guard: container shell scripts MUST be LF ─────────────────────────────────
+#
+# A Windows checkout with core.autocrlf=true rewrites *.sh to CRLF on disk. A
+# CRLF shebang gets baked into the image and the container dies at startup with
+#   /usr/bin/env: 'sh\r': No such file or directory
+# .gitattributes now pins these to eol=lf, but a stale working-tree copy (or a
+# checkout before the attribute landed) can still slip through -- so normalise
+# in-place here, BEFORE any image build, and warn loudly so it gets noticed.
+
+$ContainerScripts = @("docker-entrypoint.sh")   # scripts COPYd into images (see Dockerfile)
+foreach ($rel in $ContainerScripts) {
+    $f = Join-Path $ScriptDir $rel
+    if (-not (Test-Path $f)) { continue }
+    $bytes = [System.IO.File]::ReadAllBytes($f)
+    if ($bytes -contains 13) {   # 13 = CR; presence means CRLF (or stray CR)
+        Write-Host "[dev-up] WARN: $rel had CRLF line endings -- normalising to LF before build." -ForegroundColor Yellow
+        Write-Host "[dev-up]       (a CRLF shebang would crash the container: `"env: 'sh\r'...`")" -ForegroundColor Yellow
+        $text = [System.Text.Encoding]::UTF8.GetString($bytes) -replace "`r`n", "`n" -replace "`r", "`n"
+        # Write LF-only UTF-8 with NO BOM so the shebang stays valid.
+        [System.IO.File]::WriteAllText($f, $text, (New-Object System.Text.UTF8Encoding($false)))
+    }
+}
+
 # ── SDK rebuild (host-side dist; container build does its own tsup pass) ────
 #
 # This is a convenience for host-run frontend dev only — the compose flow
@@ -359,7 +382,7 @@ if ($env:OASIS_SKIP_RESET -eq "1") {
         }
         Write-Host ""
         Write-Host "[dev-up] Common causes:" -ForegroundColor Yellow
-        Write-Host "  * Storage URI rejected by surrealdb 1.5.4 (look for 'failed to parse' in the log above)."
+        Write-Host "  * Storage URI rejected by surrealdb v3.1.4 (look for 'failed to parse' in the log above)."
         Write-Host "  * Rootless podman volume ownership (look for 'permission denied' on /data)."
         Write-Host "  * Port 8000 already bound on host (look for 'address already in use')."
         Write-Host "  * Set OASIS_SKIP_RESET=1 to bypass schema sync while you investigate."
