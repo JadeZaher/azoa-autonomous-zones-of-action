@@ -78,11 +78,6 @@ nCrunchTemp_*
 *.vs/
 *.vscode/
 
-# Visual Studio 2017+ with Git repo
-*.gitattributes
-*.gitignore
-.git/
-
 # Visual Studio Code
 .vscode/
 
@@ -215,3 +210,4 @@ StrykerOutput/
 
 # Dev-only JSONL exception logs (W1-A1)
 logs/exceptions/
+conductor/.conductor_session_log
