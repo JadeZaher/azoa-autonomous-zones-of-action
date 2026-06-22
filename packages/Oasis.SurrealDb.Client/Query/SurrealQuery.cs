@@ -220,11 +220,34 @@ namespace Oasis.SurrealDb.Client.Query
             if (key.StartsWith("$", StringComparison.Ordinal))
                 throw new ArgumentException(
                     "Parameter key must not include the leading '$' — the SDK adds it.", nameof(key));
+            RejectMixedCaseParam(key);
 
             var newParams = CloneParams(Params);
             newParams[key] = value;
 
             return CloneWith(Sql, new ReadOnlyDictionary<string, object?>(newParams));
+        }
+
+        /// <summary>
+        /// Guards against a SurrealDB 3.x footgun: a <c>$param</c> token whose
+        /// name contains an uppercase letter is case-folded in the query text but
+        /// NOT in the RPC vars key, so the binding silently resolves to NONE and
+        /// the predicate matches nothing (no error is raised). Reserved system
+        /// params (<c>_t</c>, <c>_id</c>, <c>_body</c>, <c>_f_*</c>) and the
+        /// snake_case names the LINQ translator emits are all lowercase, so this
+        /// only ever fires on a hand-written camel/PascalCase key.
+        /// </summary>
+        private static void RejectMixedCaseParam(string key)
+        {
+            foreach (var c in key)
+            {
+                if (c >= 'A' && c <= 'Z')
+                    throw new ArgumentException(
+                        $"Parameter key '{key}' contains an uppercase letter. SurrealDB 3.x " +
+                        "case-folds $param tokens but not the vars key, so a mixed-case name " +
+                        "binds to NONE and silently matches nothing. Use a lowercase " +
+                        "(snake_case) key, e.g. 'avatar_nft_id'.", nameof(key));
+            }
         }
 
         /// <summary>

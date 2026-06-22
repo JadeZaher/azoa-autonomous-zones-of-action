@@ -40,6 +40,19 @@ public sealed class SurrealStatementResult
         string.Equals(Status, "OK", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The server error message for a failed statement, regardless of where the
+    /// transport placed it. SurrealDB moves the text between the top-level
+    /// <see cref="Detail"/> field and the <c>result</c> slot (a bare string, or
+    /// an object with <c>message</c>/<c>error</c>/<c>detail</c>/<c>description</c>)
+    /// across versions — notably 3.x puts a failed statement's message in
+    /// <c>result</c>, leaving <see cref="Detail"/> null. Callers doing graceful
+    /// per-statement handling (e.g. treating a UNIQUE violation as a race-loss)
+    /// MUST read this instead of <see cref="Detail"/>, which is often empty.
+    /// Returns <c>null</c> when the statement succeeded or carried no message.
+    /// </summary>
+    public string? ErrorText => SurrealResponse.ExtractErrorText(this);
+
+    /// <summary>
     /// Materialise this statement's <c>result</c> as <c>IReadOnlyList&lt;T&gt;</c>.
     /// SurrealDB statement results are normally a JSON array; when the server
     /// returns a single object (e.g. <c>RETURN $value</c>) it is wrapped here

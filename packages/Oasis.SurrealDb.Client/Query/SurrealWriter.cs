@@ -82,17 +82,47 @@ namespace Oasis.SurrealDb.Client.Query
                 if (!first) sb.Append(", ");
                 first = false;
                 sb.Append(f.Column).Append(" = ");
+
+                // Build the bound value expression.
+                string valueExpr;
                 if (f.WrapString)
                 {
                     // String-typed column: force string interpretation so a
                     // `table:id`-shaped value (or an enum serialized to its
                     // string name) is not coerced into a record id. type::string
                     // on an already-string param is a no-op.
-                    sb.Append("type::string($").Append(p).Append(')');
+                    valueExpr = "type::string($" + p + ")";
+                }
+                else if (f.WrapDecimal)
+                {
+                    // Decimal-typed column: the global JSON options serialize a
+                    // C# decimal as a STRING on the wire (arbitrary-precision
+                    // preservation). A bare `$p` then arrives as a string and 3.x
+                    // refuses to coerce a string into a `decimal` column, so wrap
+                    // in type::decimal() to parse it back. Symmetric with the
+                    // string-wrap rule above.
+                    valueExpr = "type::decimal($" + p + ")";
                 }
                 else
                 {
-                    sb.Append('$').Append(p);
+                    valueExpr = "$" + p;
+                }
+
+                if (f.IsReadOnly)
+                {
+                    // READONLY column under a single UPSERT (which must serve both
+                    // create and update): SET-ting a *changed* value on an existing
+                    // row is rejected by 3.x ("field is readonly"). Guard so the
+                    // incoming value is only applied when the column is still NONE
+                    // (i.e. on create); on update the existing value is preserved,
+                    // which satisfies READONLY even when the caller re-sends the
+                    // whole object with a different value.
+                    sb.Append("(IF ").Append(f.Column).Append(" != NONE THEN ")
+                      .Append(f.Column).Append(" ELSE ").Append(valueExpr).Append(" END)");
+                }
+                else
+                {
+                    sb.Append(valueExpr);
                 }
                 paramBag[p] = value;
             }
@@ -117,6 +147,8 @@ namespace Oasis.SurrealDb.Client.Query
             public string Column = "";
             public bool IsId;
             public bool WrapString;   // wrap string values in type::string()
+            public bool WrapDecimal;  // wrap decimal values in type::decimal()
+            public bool IsReadOnly;   // [ReadOnly] -> guard so update keeps original
             public Func<object, object?> Getter = _ => null;
         }
 
@@ -157,29 +189,43 @@ namespace Oasis.SurrealDb.Client.Query
                 bool isRecord = p.GetCustomAttribute<ReferencesAttribute>(inherit: false) != null
                     || (colType != null && colType.IndexOf("record<", StringComparison.Ordinal) >= 0);
 
+                var clrType = Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType;
+
                 bool wrap;
+                bool wrapDecimal = false;
                 if (isRecord)
                 {
                     wrap = false;
                 }
                 else if (colType != null)
                 {
-                    // Explicit column type: wrap iff it is a string / option<string>.
-                    wrap = colType.IndexOf("string", StringComparison.Ordinal) >= 0;
+                    // Explicit column type: wrap iff it is a SCALAR string column
+                    // (`string` / `option<string>`). A container type that merely
+                    // CONTAINS "string" (e.g. `array<string>`, `set<string>`) must
+                    // NOT be type::string-wrapped — that would stringify the whole
+                    // JSON array. Same for `object`.
+                    wrap = IsScalarStringColumn(colType);
+                    // A `decimal` column needs type::decimal() because the global
+                    // JSON options put decimals on the wire as strings.
+                    wrapDecimal = !wrap && colType.IndexOf("decimal", StringComparison.Ordinal) >= 0;
                 }
                 else
                 {
                     // Inferred from the CLR property type: string or enum
                     // (enums serialize to their string name) -> string column.
-                    var pt = Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType;
-                    wrap = pt == typeof(string) || pt.IsEnum;
+                    wrap = clrType == typeof(string) || clrType.IsEnum;
+                    wrapDecimal = !wrap && clrType == typeof(decimal);
                 }
+
+                bool isReadOnly = p.GetCustomAttribute<ReadOnlyAttribute>(inherit: false) != null;
 
                 list.Add(new FieldPlan
                 {
                     Column = column,
                     IsId = isId,
                     WrapString = wrap,
+                    WrapDecimal = wrapDecimal,
+                    IsReadOnly = isReadOnly,
                     Getter = MakeGetter(p),
                 });
             }
@@ -187,6 +233,23 @@ namespace Oasis.SurrealDb.Client.Query
         }
 
         private static Func<object, object?> MakeGetter(PropertyInfo p) => obj => p.GetValue(obj);
+
+        /// <summary>
+        /// True only for a SCALAR string column: <c>string</c> or
+        /// <c>option&lt;string&gt;</c>. Container types that contain the word
+        /// "string" (<c>array&lt;string&gt;</c>, <c>set&lt;string&gt;</c>) and
+        /// <c>object</c>/<c>record&lt;…&gt;</c> return false so they are bound
+        /// as-is rather than type::string-wrapped.
+        /// </summary>
+        private static bool IsScalarStringColumn(string colType)
+        {
+            var t = colType.Trim();
+            // Unwrap one option<…> layer.
+            const string opt = "option<";
+            if (t.StartsWith(opt, StringComparison.Ordinal) && t.EndsWith(">", StringComparison.Ordinal))
+                t = t.Substring(opt.Length, t.Length - opt.Length - 1).Trim();
+            return t.Equals("string", StringComparison.Ordinal);
+        }
 
         private static string ResolveColumnName(PropertyInfo p)
         {

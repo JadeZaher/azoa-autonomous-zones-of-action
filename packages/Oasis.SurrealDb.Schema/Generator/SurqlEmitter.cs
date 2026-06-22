@@ -348,6 +348,34 @@ namespace Oasis.SurrealDb.Schema.Generator
             }
 
             sb.Append(";\n");
+
+            // FLEXIBLE on an `array<object>` only relaxes the array container, NOT
+            // the embedded objects' fields: SurrealDB 3.x SCHEMAFULL still rejects
+            // any undefined nested field (`Found field 'edges[0].edge_type', but no
+            // such field exists`). Defining `array<object>` auto-creates a strict
+            // `<name>.*` object slot, so OVERWRITE it with a FLEXIBLE object to let
+            // arbitrary nested fields through (their shape is validated by the C#
+            // POCO at deserialization time, which is the whole point of FLEXIBLE).
+            if (flexible && IsArrayOfObject(attr.Type))
+            {
+                // OVERWRITE (not IF NOT EXISTS): the parent `array<object>` field
+                // auto-creates a strict `<name>.*` slot we must replace. OVERWRITE
+                // is also idempotent (re-running the DDL re-applies cleanly).
+                sb.Append("DEFINE FIELD OVERWRITE ")
+                  .Append(attr.Name).Append(".*")
+                  .Append(" ON TABLE ").Append(table)
+                  .Append(" TYPE object FLEXIBLE;\n");
+            }
+        }
+
+        /// <summary>True for a SurrealDB <c>array&lt;object&gt;</c> column type
+        /// (optionally bounded, e.g. <c>array&lt;object, 8&gt;</c>) and its
+        /// <c>option&lt;…&gt;</c> wrapping.</summary>
+        private static bool IsArrayOfObject(string? type)
+        {
+            if (string.IsNullOrEmpty(type)) return false;
+            var t = type!.Replace(" ", "");
+            return t.IndexOf("array<object", StringComparison.Ordinal) >= 0;
         }
 
         /// <summary>

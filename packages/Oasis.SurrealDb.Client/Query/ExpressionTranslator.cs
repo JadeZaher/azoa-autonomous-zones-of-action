@@ -516,7 +516,45 @@ namespace Oasis.SurrealDb.Client.Query
                         throw ex.InnerException;
                     }
                 }
+                // Any other closed-over sub-expression (method call, `new`,
+                // binary arithmetic on captured values, etc.) that does NOT
+                // reference the lambda parameter is a literal: compile + invoke
+                // it. Without this, e.g. `w.AvatarId == SurrealLink.ToLink(...)`
+                // bound an empty value (the method call fell through to null),
+                // so the predicate silently matched nothing.
+                if (!ReferencesRoot(node))
+                {
+                    try
+                    {
+                        return Expression.Lambda(node).Compile().DynamicInvoke();
+                    }
+                    catch (TargetInvocationException ex) when (ex.InnerException != null)
+                    {
+                        throw ex.InnerException;
+                    }
+                }
                 return null;
+            }
+
+            /// <summary>
+            /// True if <paramref name="node"/> (or any descendant) references the
+            /// lambda's row parameter. Used to decide whether a sub-expression is
+            /// a closed-over literal that can be compiled + invoked at translation
+            /// time (false) or a column reference that must stay symbolic (true).
+            /// </summary>
+            private bool ReferencesRoot(Expression node) => new RootFinder(_root).Found(node);
+
+            private sealed class RootFinder : ExpressionVisitor
+            {
+                private readonly ParameterExpression _root;
+                private bool _found;
+                public RootFinder(ParameterExpression root) => _root = root;
+                public bool Found(Expression node) { _found = false; Visit(node); return _found; }
+                protected override Expression VisitParameter(ParameterExpression node)
+                {
+                    if (node == _root) _found = true;
+                    return base.VisitParameter(node);
+                }
             }
 
             private string AllocateParamName(string columnName)

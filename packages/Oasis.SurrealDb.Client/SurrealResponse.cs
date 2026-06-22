@@ -115,7 +115,7 @@ public sealed class SurrealResponse : IReadOnlyList<SurrealStatementResult>
 
     // SurrealDB error text moves between detail / result-string /
     // result.{message,error,detail,description} across versions.
-    internal static string? ExtractErrorText(SurrealStatementResult s)
+    public static string? ExtractErrorText(SurrealStatementResult s)
     {
         if (!string.IsNullOrWhiteSpace(s.Detail)) return s.Detail;
 
