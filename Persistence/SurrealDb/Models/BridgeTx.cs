@@ -41,100 +41,86 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             Wormhole,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [References(typeof(Avatar))]
         public string AvatarId { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         [FieldGroup("Route")]
         [Required(NotEmpty = true)]
         public string SourceChain { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "string")]
         [Required(NotEmpty = true)]
         public string TargetChain { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "string")]
         [Required(NotEmpty = true)]
         public string SourceTokenId { get; set; } = string.Empty;
 
-        [Column(Order = 6, Type = "option<string>")]
+        [Optional]
         public string? TargetTokenId { get; set; }
 
-        [Column(Order = 7, Type = "string")]
         [Required(NotEmpty = true)]
         public string SourceAddress { get; set; } = string.Empty;
 
-        [Column(Order = 8, Type = "string")]
         [Required(NotEmpty = true)]
         public string TargetAddress { get; set; } = string.Empty;
 
-        [Column(Order = 9, Type = "string")]
         [FieldGroup("Amount (string for arbitrary precision)")]
         [Required(NotEmpty = true)]
         public string Amount { get; set; } = string.Empty;
 
-        [Column(Order = 10, Type = "string")]
         [FieldGroup("State machine")]
         [Inside("Initiated", "Locked", "AwaitingVAA", "VAAReady", "Redeeming", "Completed",
                 "Failed", "Refunded", "Reversing")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public StatusKind Status { get; set; }
 
-        [Column(Order = 11, Type = "string")]
         [FieldGroup("Mode")]
         [Inside("Trusted", "Wormhole")]
         [Default("\"Trusted\"")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public ModeKind Mode { get; set; }
 
-        [Column(Order = 12, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Transaction hashes (nullable)")]
         public string? LockTxHash { get; set; }
 
-        [Column(Order = 13, Type = "option<string>")]
+        [Optional]
         public string? MintTxHash { get; set; }
 
-        [Column(Order = 14, Type = "option<string>")]
+        [Optional]
         public string? ProofData { get; set; }
 
-        [Column(Order = 15, Type = "option<string>")]
+        [Optional]
         public string? ErrorMessage { get; set; }
 
-        [Column(Order = 16, Type = "datetime")]
         [FieldGroup("Timestamps")]
         [ReadOnly]
         public DateTimeOffset CreatedAt { get; set; }
 
-        [Column(Order = 17, Type = "option<datetime>")]
         public DateTimeOffset? CompletedAt { get; set; }
 
-        [Column(Order = 18, Type = "option<int>")]
         [FieldGroup("Wormhole-specific (populated when mode == Wormhole)")]
         public long? WormholeEmitterChainId { get; set; }
 
-        [Column(Order = 19, Type = "option<string>")]
+        [Optional]
         [Assert("$value = NONE OR string::matches($value, \"^[0-9a-f]{64}$\")")]
         public string? WormholeEmitterAddress { get; set; }
 
-        [Column(Order = 20, Type = "option<int>")]
         public long? WormholeSequence { get; set; }
 
-        [Column(Order = 21, Type = "option<string>")]
+        [Optional]
         public string? VaaBytes { get; set; }
 
-        [Column(Order = 22, Type = "option<int>")]
         public long? VaaSignatureCount { get; set; }
 
-        [Column(Order = 23, Type = "option<string>")]
+        [Optional]
         public string? RedemptionTxHash { get; set; }
 
-        [Column(Order = 24, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Exactly-once / atomic-transition safety (G2)")]
         public string? IdempotencyKey { get; set; }
     }

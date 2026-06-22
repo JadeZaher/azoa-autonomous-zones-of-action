@@ -22,11 +22,9 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "executes";
         public string SchemaName => SchemaNameConst;
 
-        [Column(Order = 1, Name = "in", Type = "string")]
         [FieldGroup("RELATION quest_run -> quest_node_execution (per-(run, node) ownership; many-to-many across forks).")]
         public string In { get; set; } = string.Empty;
 
-        [Column(Order = 2, Name = "out", Type = "string")]
         public string Out { get; set; } = string.Empty;
     }
 }

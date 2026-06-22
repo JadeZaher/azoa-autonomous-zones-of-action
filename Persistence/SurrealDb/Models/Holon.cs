@@ -28,14 +28,14 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "holon";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id, Column(Order = 1)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2, Type = "string")]
+        [Column(Order = 2)]
         [Required(NotEmpty = true)]
         public string Name { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
+        [Column(Order = 3)]
         public string Description { get; set; } = string.Empty;
 
         [Column(Order = 4)]
@@ -46,37 +46,37 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [References(typeof(Avatar), Optional = true)]
         public string? AvatarId { get; set; }
 
-        [Column(Order = 6, Type = "string")]
+        [Column(Order = 6)]
         [Required(NotEmpty = true)]
         public string ProviderName { get; set; } = string.Empty;
 
-        [Column(Order = 7, Type = "option<string>")]
+        [Column(Order = 7), Optional]
         public string? ChainId { get; set; }
 
-        [Column(Order = 8, Type = "option<string>")]
+        [Column(Order = 8), Optional]
         public string? AssetType { get; set; }
 
-        [Column(Order = 9, Type = "option<string>")]
+        [Column(Order = 9), Optional]
         public string? TokenId { get; set; }
 
-        [Column(Order = 10, Type = "option<object>", Flexible = true)]
+        [Column(Order = 10, Flexible = true)]
         [FieldGroup("Metadata (flexible key->value bag)")]
         public JsonElement? Metadata { get; set; }
 
-        [Column(Order = 11, Type = "option<array<string>>")]
+        [Column(Order = 11), Optional]
         [FieldGroup("PeerHolonIds (list of holon-id strings)")]
         public IReadOnlyList<string>? PeerHolonIds { get; set; }
 
         // Order = 12 is the [ExtraSurrealField("embedding", ...)] declared at class level.
 
-        [Column(Order = 13, Type = "datetime")]
+        [Column(Order = 13)]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }
 
-        [Column(Order = 14, Type = "option<datetime>")]
+        [Column(Order = 14)]
         public DateTimeOffset? ModifiedDate { get; set; }
 
-        [Column(Order = 15, Type = "bool")]
+        [Column(Order = 15)]
         [Default("true")]
         public bool IsActive { get; set; }
     }

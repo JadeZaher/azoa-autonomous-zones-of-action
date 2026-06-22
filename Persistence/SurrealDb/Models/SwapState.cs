@@ -40,52 +40,45 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             Called,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [References(typeof(Avatar))]
         public string AvatarId { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         [Required(NotEmpty = true)]
         public string Chain { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "string")]
         [FieldGroup("Source/target token pair")]
         [Required(NotEmpty = true)]
         public string TokenIn { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "string")]
         [Required(NotEmpty = true)]
         public string TokenOut { get; set; } = string.Empty;
 
-        [Column(Order = 6, Type = "string")]
         [FieldGroup("Amounts (strings -- arbitrary precision)")]
         [Required(NotEmpty = true)]
         public string AmountIn { get; set; } = string.Empty;
 
-        [Column(Order = 7, Type = "option<string>")]
+        [Optional]
         public string? ExpectedAmountOut { get; set; }
 
-        [Column(Order = 8, Type = "option<string>")]
+        [Optional]
         public string? ActualAmountOut { get; set; }
 
-        [Column(Order = 9, Type = "int")]
         [FieldGroup("Slippage in basis points")]
         [Default("50")]
         public long SlippageBps { get; set; }
 
-        [Column(Order = 10, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Wallet executing the swap")]
         public string? WalletAddress { get; set; }
 
-        [Column(Order = 11, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Quote reference (chain-side opaque)")]
         public string? QuoteId { get; set; }
 
-        [Column(Order = 12, Type = "string")]
         [FieldGroup("Status (OperationStatus constants)")]
         [Inside("Pending", "Unknown", "Failed", "Completed", "AwaitingSignature",
                 "Minted", "Burned", "Exchanged", "Swapped", "Transferred", "Deployed", "Called")]
@@ -93,21 +86,18 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public StatusKind Status { get; set; }
 
-        [Column(Order = 13, Type = "option<string>")]
+        [Optional]
         [FieldGroup("G2 idempotency")]
         public string? IdempotencyKey { get; set; }
 
-        [Column(Order = 14, Type = "option<string>")]
+        [Optional]
         public string? ErrorMessage { get; set; }
 
-        [Column(Order = 15, Type = "datetime")]
         [ReadOnly]
         public DateTimeOffset CreatedAt { get; set; }
 
-        [Column(Order = 16, Type = "datetime")]
         public DateTimeOffset UpdatedAt { get; set; }
 
-        [Column(Order = 17, Type = "option<datetime>")]
         public DateTimeOffset? CompletedAt { get; set; }
     }
 }

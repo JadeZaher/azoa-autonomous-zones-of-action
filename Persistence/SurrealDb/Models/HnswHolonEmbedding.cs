@@ -22,11 +22,9 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "hnsw_holon_embedding";
         public string SchemaName => SchemaNameConst;
 
-        [Column(Order = 1, Type = "string")]
         [FieldGroup("HNSW index on holon.embedding (DIMENSION 384, DIST COSINE)")]
         public string Table { get; set; } = string.Empty;
 
-        [Column(Order = 2, Type = "string")]
         public string Fields { get; set; } = string.Empty;
     }
 }

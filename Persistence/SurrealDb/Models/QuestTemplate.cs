@@ -28,33 +28,33 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "quest_template";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id, Column(Order = 1)]
         [FieldGroup("Core identity (record id is the Guid('N') of QuestTemplate.Id)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2, Type = "string")]
+        [Column(Order = 2)]
         [FieldGroup("Caller-supplied label")]
         public string Name { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "option<string>")]
+        [Column(Order = 3), Optional]
         [FieldGroup("Optional description")]
         public string? Description { get; set; }
 
-        [Column(Order = 4, Type = "string")]
+        [Column(Order = 4)]
         [FieldGroup("Owner avatar (Guid('N') hex)")]
         [Required(NotEmpty = true)]
         public string AuthorAvatarId { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "string")]
+        [Column(Order = 5)]
         [FieldGroup("JSON-Schema for instantiation parameters (string-encoded)")]
         public string Parameters { get; set; } = string.Empty;
 
-        [Column(Order = 6, Type = "string")]
+        [Column(Order = 6)]
         [FieldGroup("Semantic version (free string -- e.g. 1.0.0)")]
         public string Version { get; set; } = string.Empty;
 
-        [Column(Order = 7, Type = "bool")]
+        [Column(Order = 7)]
         [FieldGroup("Marketplace visibility flag")]
         [Default("false")]
         public bool IsPublic { get; set; }
@@ -62,9 +62,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         // Order = 8 is the [ExtraSurrealField("nodes", ...)] declared at class level.
         // Order = 9 is the [ExtraSurrealField("edges", ...)] declared at class level.
 
-        // array<string> (not array<object>): Tags is a string list; SurrealDB
-        // 3.x strictly coerces array<object> and rejects string elements.
-        [Column(Order = 10, Type = "array<string>")]
+        [Column(Order = 10)]
         [FieldGroup("Free-form tags.")]
         public IReadOnlyList<string> Tags { get; set; } = System.Array.Empty<string>();
     }

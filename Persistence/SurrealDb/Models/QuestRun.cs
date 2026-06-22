@@ -36,52 +36,45 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             Cancelled,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Run identity (record id is the Guid('N') of QuestRun.Id) -- unique across all runs of all quests")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Quest definition this run executes")]
         [References(typeof(Quest))]
         public string QuestId { get; set; } = string.Empty;
 
-        [Column(Order = 3)]
         [FieldGroup("Avatar that initiated this run (denormalized for query convenience)")]
         [References(typeof(Avatar))]
         public string AvatarId { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "string")]
         [FieldGroup("QuestRunStatus enum name")]
         [Inside("Pending", "Running", "Succeeded", "Failed", "Forked", "Cancelled")]
         [Default("\"Pending\"")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public QuestRunStatusKind Status { get; set; }
 
-        [Column(Order = 5, Type = "datetime")]
         [FieldGroup("Wall-clock time at which the run row was created")]
         [ReadOnly]
         public DateTimeOffset StartedAt { get; set; }
 
-        [Column(Order = 6, Type = "option<datetime>")]
         [FieldGroup("Wall-clock time at which the run reached a terminal state (null while non-terminal)")]
         public DateTimeOffset? EndedAt { get; set; }
 
-        [Column(Order = 7)]
         [FieldGroup("Parent run id if forked from another; null for root runs")]
         [References(typeof(QuestRun), Optional = true)]
         public string? ParentRunId { get; set; }
 
-        [Column(Order = 8)]
         [FieldGroup("Node at which the fork occurred (set iff this is a child fork run)")]
         [References(typeof(QuestNode), Optional = true)]
         public string? ForkedAtNodeId { get; set; }
 
-        [Column(Order = 9, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Free-form audit reason supplied when fork was triggered")]
         public string? ForkReason { get; set; }
 
-        [Column(Order = 10, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Free-form audit reason when a supervisor explicitly marked the run failed (distinct from internal-error path)")]
         public string? FailReason { get; set; }
     }

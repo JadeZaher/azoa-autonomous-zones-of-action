@@ -24,27 +24,24 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "dapp_series_quest";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity (record id is the Guid('N') of DappSeriesQuest.Id)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Parent series")]
         [References(typeof(DappSeries))]
         public string DappSeriesId { get; set; } = string.Empty;
 
-        [Column(Order = 3)]
         [FieldGroup("Referenced quest")]
         [References(typeof(Quest))]
         public string QuestId { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "int")]
         [FieldGroup("1-indexed execution order within the series")]
         [Assert("$value > 0")]
         public long Order { get; set; }
 
-        [Column(Order = 5, Type = "option<string>")]
+        [Optional]
         [FieldGroup("JSON array of InputMapping entries (null when no cross-quest flow needed)")]
         public string? InputMappings { get; set; }
     }

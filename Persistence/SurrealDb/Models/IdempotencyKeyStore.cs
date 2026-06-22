@@ -31,44 +31,38 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             Failed,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2, Type = "string")]
         [FieldGroup("Idempotency key (caller-supplied or content hash); primary dedup key")]
         [Required(NotEmpty = true)]
         public string Key { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         [FieldGroup("Logical operation type (e.g. bridge_redeem, faucet_dispense)")]
         [Required(NotEmpty = true)]
         public string OperationType { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "string")]
         [FieldGroup("Lifecycle state")]
         [Inside("InProgress", "Completed", "Failed")]
         [Default("\"InProgress\"")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public StateKind State { get; set; }
 
-        [Column(Order = 5, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Serialized result of completed operation (replayed verbatim to duplicates)")]
         public string? ResultPayload { get; set; }
 
-        [Column(Order = 6, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Failure reason when state == Failed")]
         public string? Error { get; set; }
 
-        [Column(Order = 7, Type = "datetime")]
         [FieldGroup("Timestamps")]
         [ReadOnly]
         public DateTimeOffset CreatedAt { get; set; }
 
-        [Column(Order = 8, Type = "datetime")]
         public DateTimeOffset UpdatedAt { get; set; }
 
-        [Column(Order = 9, Type = "option<datetime>")]
         [FieldGroup("TTL expiry timestamp -- sweep job purges old InProgress rows")]
         public DateTimeOffset? TtlExpiresAt { get; set; }
     }

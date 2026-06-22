@@ -26,36 +26,30 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "consumed_vaa_ledger";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2, Type = "string")]
         [FieldGroup("Digest is the replay-protection key (keccak256 of VAA body, hex)")]
         [Required(NotEmpty = true)]
         public string Digest { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "int")]
         [FieldGroup("Wormhole emitter chain ID")]
         [Assert("$value != NONE")]
         public long EmitterChainId { get; set; }
 
-        [Column(Order = 4, Type = "string")]
         [FieldGroup("Wormhole emitter address (hex, 32-byte Wormhole format)")]
         [Assert("$value != NONE AND $value != \"\" AND string::matches($value, \"^[0-9a-f]{64}$\")")]
         public string EmitterAddress { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "int")]
         [FieldGroup("Wormhole sequence number")]
         [Assert("$value != NONE")]
         public long Sequence { get; set; }
 
-        [Column(Order = 6)]
         [FieldGroup("Bridge transaction this VAA was consumed for (audit linkage)")]
         [References(typeof(BridgeTx), Optional = true)]
         public string? BridgeTransactionId { get; set; }
 
-        [Column(Order = 7, Type = "datetime")]
         [FieldGroup("Timestamp of consumption (immutable after insert)")]
         [ReadOnly]
         public DateTimeOffset ConsumedAt { get; set; }

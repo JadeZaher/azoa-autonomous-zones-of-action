@@ -22,41 +22,35 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "kyc_document";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity (record id is the Guid('N') of the document)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Parent submission (Guid('N') hex record link); indexed for per-submission listing")]
         [References(typeof(KycSubmission), Optional = true)]
         public string? SubmissionId { get; set; }
 
-        [Column(Order = 3, Type = "string")]
         [FieldGroup("Document classification")]
         [Inside("GOVERNMENT_ID", "PASSPORT", "DRIVERS_LICENSE", "SELFIE", "PROOF_OF_ADDRESS")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public KycDocumentType Type { get; set; }
 
-        [Column(Order = 4, Type = "string")]
         [FieldGroup("Blob reference + display metadata")]
         [Required(NotEmpty = true)]
         public string FileUrl { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "string")]
         [Required(NotEmpty = true)]
         public string FileName { get; set; } = string.Empty;
 
-        [Column(Order = 6, Type = "option<string>")]
+        [Optional]
         public string? MimeType { get; set; }
 
-        [Column(Order = 7, Type = "option<int>")]
         public long? FileSizeBytes { get; set; }
 
-        [Column(Order = 8, Type = "option<string>")]
+        [Optional]
         public string? Metadata { get; set; }
 
-        [Column(Order = 9, Type = "datetime")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }
     }

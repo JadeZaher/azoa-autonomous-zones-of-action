@@ -37,37 +37,33 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             Cancelled,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Execution row identity (record id is the Guid('N') of QuestNodeExecution.Id)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Owning run (originating run; cross-run references via `executes` RELATE edge)")]
         [References(typeof(QuestRun))]
         public string RunId { get; set; } = string.Empty;
 
-        [Column(Order = 3)]
         [FieldGroup("Quest definition node this execution corresponds to")]
         [References(typeof(QuestNode))]
         public string NodeId { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "string")]
         [FieldGroup("QuestNodeState enum name")]
         [Inside("Pending", "Running", "Succeeded", "Failed", "Skipped", "Cancelled")]
         [Default("\"Pending\"")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public QuestNodeState State { get; set; }
 
-        [Column(Order = 5, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Serialized OASISResult<T> from the handler call (null until Succeeded)")]
         public string? Output { get; set; }
 
-        [Column(Order = 6, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Failure message when state is Failed")]
         public string? Error { get; set; }
 
-        [Column(Order = 7, Type = "datetime")]
         [FieldGroup("Wall-clock time at which the row entered Running")]
         // NOT [ReadOnly]: started_at is set at the Pending->Running CLAIM
         // (TryClaimPendingAsync UPDATE ... SET started_at = $_now), not at row
@@ -76,7 +72,6 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         // the other 17 models whose creation timestamp is set at CREATE time.
         public DateTimeOffset StartedAt { get; set; }
 
-        [Column(Order = 8, Type = "option<datetime>")]
         [FieldGroup("Wall-clock time at which the row reached a terminal state (null while non-terminal)")]
         public DateTimeOffset? EndedAt { get; set; }
     }

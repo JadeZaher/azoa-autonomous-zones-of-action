@@ -24,48 +24,42 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "star_odk";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2, Type = "string")]
         [Required(NotEmpty = true)]
         public string Name { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         public string Description { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "option<string>")]
+        [Optional]
         public string? PublicKey { get; set; }
 
-        [Column(Order = 5, Type = "option<string>")]
+        [Optional]
         public string? PrivateKeyHash { get; set; }
 
-        [Column(Order = 6)]
         [References(typeof(Avatar), Optional = true)]
         public string? AvatarId { get; set; }
 
-        [Column(Order = 7, Type = "option<array<string>>")]
+        [Optional]
         [FieldGroup("BoundHolonIds (list of holon-id strings)")]
         public IReadOnlyList<string>? BoundHolonIds { get; set; }
 
-        [Column(Order = 8, Type = "option<string>")]
+        [Optional]
         public string? TargetChain { get; set; }
 
-        [Column(Order = 9, Type = "option<string>")]
+        [Optional]
         public string? GeneratedCode { get; set; }
 
-        [Column(Order = 10, Type = "option<string>")]
+        [Optional]
         public string? DeploymentConfig { get; set; }
 
-        [Column(Order = 11, Type = "datetime")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }
 
-        [Column(Order = 12, Type = "option<datetime>")]
         public DateTimeOffset? ModifiedDate { get; set; }
 
-        [Column(Order = 13, Type = "bool")]
         [Default("true")]
         public bool IsActive { get; set; }
     }

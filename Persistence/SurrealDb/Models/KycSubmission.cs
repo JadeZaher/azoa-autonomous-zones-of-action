@@ -24,60 +24,52 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "kyc_submission";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity (record id is the Guid('N') of the submission)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Owner avatar (Guid('N') hex record link); indexed for owner lookups")]
         [References(typeof(Avatar), Optional = true)]
         public string? AvatarId { get; set; }
 
-        [Column(Order = 3, Type = "string")]
         [FieldGroup("Verification provider that owns this submission")]
         [Inside("MANUAL", "VERIFF")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public KycProvider Provider { get; set; }
 
-        [Column(Order = 4, Type = "string")]
         [FieldGroup("Lifecycle status")]
         [Inside("PENDING", "IN_REVIEW", "APPROVED", "REJECTED", "EXPIRED")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public KycStatus Status { get; set; }
 
-        [Column(Order = 5, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Review metadata (set by the admin review path)")]
         public string? ReviewerId { get; set; }
 
-        [Column(Order = 6, Type = "option<string>")]
+        [Optional]
         public string? ReviewNotes { get; set; }
 
-        [Column(Order = 7, Type = "option<string>")]
+        [Optional]
         public string? RejectionReason { get; set; }
 
-        [Column(Order = 8, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Provider session linkage (manual provider stamps the avatar id as a pseudo-session)")]
         public string? ProviderSessionId { get; set; }
 
-        [Column(Order = 9, Type = "option<string>")]
+        [Optional]
         public string? ProviderResult { get; set; }
 
-        [Column(Order = 10, Type = "datetime")]
         [FieldGroup("Timestamps")]
         [ReadOnly]
         public DateTimeOffset SubmittedAt { get; set; }
 
-        [Column(Order = 11, Type = "option<datetime>")]
         public DateTimeOffset? ReviewedAt { get; set; }
 
-        [Column(Order = 12, Type = "option<datetime>")]
         public DateTimeOffset? ExpiresAt { get; set; }
 
-        [Column(Order = 13, Type = "datetime")]
         public DateTimeOffset CreatedDate { get; set; }
 
-        [Column(Order = 14, Type = "option<datetime>")]
         public DateTimeOffset? ModifiedDate { get; set; }
     }
 }

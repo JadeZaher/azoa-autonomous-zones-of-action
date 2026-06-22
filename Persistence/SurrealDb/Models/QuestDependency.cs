@@ -29,27 +29,23 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             Optional,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity (record id is the Guid('N') of QuestDependency.Id)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Dependent quest (the one that won't run until the dependency is satisfied)")]
         [References(typeof(Quest))]
         public string QuestId { get; set; } = string.Empty;
 
-        [Column(Order = 3)]
         [FieldGroup("Dependency target quest")]
         [References(typeof(Quest))]
         public string DependsOnQuestId { get; set; } = string.Empty;
 
-        [Column(Order = 4)]
         [FieldGroup("Optional: depend on a specific node output rather than full quest completion")]
         [References(typeof(QuestNode), Optional = true)]
         public string? DependsOnNodeId { get; set; }
 
-        [Column(Order = 5, Type = "string")]
         [FieldGroup("QuestDependencyType enum name")]
         [Inside("Required", "Optional")]
         [Default("\"Required\"")]

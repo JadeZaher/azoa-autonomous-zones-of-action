@@ -27,40 +27,35 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "quest";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity (record id is the Guid('N') of Quest.Id)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Owner avatar (Guid('N') hex)")]
         [References(typeof(Avatar))]
         public string AvatarId { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         [FieldGroup("Caller-supplied label")]
         [Required(NotEmpty = true)]
         public string Name { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Optional description")]
         public string? Description { get; set; }
 
-        [Column(Order = 5)]
         [FieldGroup("Source template id when instantiated from a QuestTemplate (null for hand-authored quests)")]
         [References(typeof(QuestTemplate), Optional = true)]
         public string? TemplateId { get; set; }
 
-        [Column(Order = 6)]
         [FieldGroup("Owning DappSeries when this quest is part of a composed dApp (null for standalone quests)")]
         [References(typeof(DappSeries), Optional = true)]
         public string? DappSeriesId { get; set; }
 
-        [Column(Order = 7, Type = "object", Flexible = true)]
+        [Column(Flexible = true)]
         [FieldGroup("Free-form caller-supplied metadata (string->string map)")]
         public JsonElement Metadata { get; set; }
 
-        [Column(Order = 8, Type = "datetime")]
         [FieldGroup("Definition birthdate -- STAYS on the definition, not a runtime artifact")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }

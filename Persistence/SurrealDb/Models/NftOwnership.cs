@@ -25,80 +25,67 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "nft_ownership";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [References(typeof(Avatar))]
         public string AvatarId { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         [Required(NotEmpty = true)]
         public string ChainType { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "string")]
         [Required(NotEmpty = true)]
         public string ContractAddress { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "string")]
         [Required(NotEmpty = true)]
         public string TokenId { get; set; } = string.Empty;
 
-        [Column(Order = 6, Type = "string")]
         [FieldGroup("Token standard (ERC721, ERC1155, ARC3, ...)")]
         [Required(NotEmpty = true)]
         public string TokenStandard { get; set; } = string.Empty;
 
-        [Column(Order = 7, Type = "string")]
         [Required(NotEmpty = true)]
         public string MetadataUri { get; set; } = string.Empty;
 
-        [Column(Order = 8, Type = "option<string>")]
+        [Optional]
         public string? ImageUri { get; set; }
 
-        [Column(Order = 9, Type = "option<string>")]
+        [Optional]
         public string? Name { get; set; }
 
-        [Column(Order = 10, Type = "option<string>")]
+        [Optional]
         public string? Description { get; set; }
 
-        [Column(Order = 11, Type = "option<object>", Flexible = true)]
+        [Column(Flexible = true)]
         [FieldGroup("Attributes (flexible key->value bag)")]
         public JsonElement? Attributes { get; set; }
 
-        [Column(Order = 12, Type = "decimal")]
         [Default("0.0")]
         public decimal RoyaltyPercentage { get; set; }
 
-        [Column(Order = 13, Type = "option<string>")]
+        [Optional]
         public string? RoyaltyRecipient { get; set; }
 
-        [Column(Order = 14, Type = "bool")]
         [Default("false")]
         public bool IsSoulbound { get; set; }
 
-        [Column(Order = 15, Type = "bool")]
         [Default("true")]
         public bool IsTransferable { get; set; }
 
-        [Column(Order = 16, Type = "bool")]
         [FieldGroup("is_current: true = live ownership; false = historical")]
         [Default("true")]
         public bool IsCurrent { get; set; }
 
-        [Column(Order = 17, Type = "option<string>")]
+        [Optional]
         public string? CurrentOwner { get; set; }
 
-        [Column(Order = 18, Type = "bool")]
         [Default("true")]
         public bool IsActive { get; set; }
 
-        [Column(Order = 19, Type = "datetime")]
         [ReadOnly]
         public DateTimeOffset MintedDate { get; set; }
 
-        [Column(Order = 20, Type = "option<datetime>")]
         public DateTimeOffset? LastTransferDate { get; set; }
     }
 }

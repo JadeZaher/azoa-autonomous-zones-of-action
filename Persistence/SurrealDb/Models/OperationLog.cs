@@ -41,23 +41,19 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             Called,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [References(typeof(Avatar), Optional = true)]
         public string? AvatarId { get; set; }
 
-        [Column(Order = 3)]
         [References(typeof(Wallet), Optional = true)]
         public string? WalletId { get; set; }
 
-        [Column(Order = 4, Type = "string")]
         [Required(NotEmpty = true)]
         public string OperationType { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "string")]
         [FieldGroup("Status (OperationStatus closed set)")]
         [Inside("Pending", "Unknown", "Failed", "Completed", "AwaitingSignature",
                 "Minted", "Burned", "Exchanged", "Swapped", "Transferred", "Deployed", "Called")]
@@ -65,60 +61,53 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public StatusKind Status { get; set; }
 
-        [Column(Order = 6, Type = "option<object>")]
         [FieldGroup("Opaque parameters bag (Dictionary<string,string>)")]
         public JsonElement? Parameters { get; set; }
 
-        [Column(Order = 7, Type = "option<string>")]
+        [Optional]
         [FieldGroup("IMintOperation fields")]
         public string? TokenUri { get; set; }
 
-        [Column(Order = 8, Type = "option<int>")]
         public long? Amount { get; set; }
 
-        [Column(Order = 9, Type = "option<string>")]
+        [Optional]
         public string? AssetType { get; set; }
 
-        [Column(Order = 10)]
         [FieldGroup("IExchangeOperation fields")]
         [References(typeof(Holon), Optional = true)]
         public string? SourceHolonId { get; set; }
 
-        [Column(Order = 11)]
         [References(typeof(Holon), Optional = true)]
         public string? TargetHolonId { get; set; }
 
-        [Column(Order = 12, Type = "option<string>")]
+        [Optional]
         public string? ExchangeRate { get; set; }
 
-        [Column(Order = 13, Type = "option<string>")]
+        [Optional]
         [FieldGroup("ITransferOperation fields")]
         public string? RecipientAddress { get; set; }
 
-        [Column(Order = 14, Type = "option<string>")]
+        [Optional]
         [FieldGroup("G2 idempotency")]
         public string? IdempotencyKey { get; set; }
 
-        [Column(Order = 15, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Error detail (populated on failure)")]
         public string? Error { get; set; }
 
-        [Column(Order = 16, Type = "datetime")]
         [FieldGroup("Timestamps")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }
 
-        [Column(Order = 17, Type = "option<datetime>")]
         public DateTimeOffset? CompletedDate { get; set; }
 
-        [Column(Order = 18, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Holon-asset link (economic-primitive-nodes)")]
         public string? AssetId { get; set; }
 
-        [Column(Order = 19, Type = "option<string>")]
+        [Optional]
         public string? TxHash { get; set; }
 
-        [Column(Order = 20)]
         [References(typeof(Holon), Optional = true)]
         public string? HolonId { get; set; }
     }

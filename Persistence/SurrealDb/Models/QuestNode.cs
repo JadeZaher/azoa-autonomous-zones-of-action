@@ -62,22 +62,19 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             ComposeOutputs,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity (record id is the Guid('N') of QuestNode.Id)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Owning quest")]
         [References(typeof(Quest))]
         public string QuestId { get; set; } = string.Empty;
 
-        [Column(Order = 3)]
         [FieldGroup("Reusable node template this node was instantiated from (null for hand-authored)")]
         [References(typeof(QuestNodeTemplate), Optional = true)]
         public string? NodeTemplateId { get; set; }
 
-        [Column(Order = 4, Type = "string")]
         [FieldGroup("QuestNodeType enum name (e.g. HolonCreate, NftMint)")]
         [Inside("HolonCreate", "HolonUpdate", "HolonDelete", "HolonGet", "HolonQuery",
                 "HolonInteract", "HolonGetChildren", "HolonGetPeers", "HolonGetAncestors",
@@ -92,26 +89,21 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public QuestNodeTypeKind NodeType { get; set; }
 
-        [Column(Order = 5, Type = "string")]
         [FieldGroup("Caller-supplied label")]
         public string Name { get; set; } = string.Empty;
 
-        [Column(Order = 6, Type = "string")]
         [FieldGroup("Node-specific JSON config -- deserialized to the matching request model at execution time")]
         [Default("\"{}\"")]
         public string Config { get; set; } = string.Empty;
 
-        [Column(Order = 7, Type = "bool")]
         [FieldGroup("Entry point (no incoming control edges) -- cached from DAG analysis")]
         [Default("false")]
         public bool IsEntry { get; set; }
 
-        [Column(Order = 8, Type = "bool")]
         [FieldGroup("Terminal node (no outgoing control edges) -- cached from DAG analysis")]
         [Default("false")]
         public bool IsTerminal { get; set; }
 
-        [Column(Order = 9, Type = "int")]
         [FieldGroup("Topological position (0-based; computed during DAG validation)")]
         public long ExecutionOrder { get; set; }
     }

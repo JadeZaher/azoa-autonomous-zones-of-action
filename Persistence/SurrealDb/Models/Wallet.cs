@@ -36,43 +36,37 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             Platform,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [References(typeof(Avatar))]
         public string AvatarId { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         [Required(NotEmpty = true)]
         public string ChainType { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "string")]
         [Required(NotEmpty = true)]
         public string Address { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "option<string>")]
+        [Optional]
         public string? PublicKey { get; set; }
 
-        [Column(Order = 6, Type = "option<string>")]
+        [Optional]
         public string? Label { get; set; }
 
-        [Column(Order = 7, Type = "bool")]
         [Default("false")]
         public bool IsDefault { get; set; }
 
-        [Column(Order = 8, Type = "string")]
         [Inside("External", "Platform")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public WalletTypeKind WalletType { get; set; }
 
-        [Column(Order = 9, Type = "option<string>")]
+        [Optional]
         public string? EncryptedPrivateKey { get; set; }
 
-        [Column(Order = 10, Type = "option<string>")]
+        [Optional]
         public string? EncryptedSeedPhrase { get; set; }
 
-        [Column(Order = 11, Type = "datetime")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }
     }

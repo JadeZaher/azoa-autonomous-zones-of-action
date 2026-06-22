@@ -65,16 +65,14 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             ComposeOutputs,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity (record id is the Guid('N') of QuestNodeTemplate.Id)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2, Type = "string")]
         [FieldGroup("Caller-supplied label")]
         public string Name { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         [FieldGroup("QuestNodeType enum name (e.g. HolonCreate, NftMint)")]
         [Inside("HolonCreate", "HolonUpdate", "HolonDelete", "HolonGet", "HolonQuery",
                 "HolonInteract", "HolonGetChildren", "HolonGetPeers", "HolonGetAncestors",
@@ -89,43 +87,33 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public NodeTypeKind NodeType { get; set; }
 
-        [Column(Order = 4, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Optional description")]
         public string? Description { get; set; }
 
-        [Column(Order = 5, Type = "string")]
         [FieldGroup("JSON default config blob (string-encoded)")]
         public string DefaultConfig { get; set; } = string.Empty;
 
-        [Column(Order = 6, Type = "string")]
         [FieldGroup("JSON-Schema for config validation")]
         public string ConfigSchema { get; set; } = string.Empty;
 
-        [Column(Order = 7, Type = "string")]
         [FieldGroup("JSON-Schema for upstream-input contract")]
         public string InputSchema { get; set; } = string.Empty;
 
-        [Column(Order = 8, Type = "string")]
         [FieldGroup("JSON-Schema for produced-output contract")]
         public string OutputSchema { get; set; } = string.Empty;
 
-        [Column(Order = 9, Type = "string")]
         [FieldGroup("Semantic version (free string)")]
         public string Version { get; set; } = string.Empty;
 
-        [Column(Order = 10, Type = "string")]
         [FieldGroup("Owner avatar (Guid('N') hex)")]
         [Required(NotEmpty = true)]
         public string AuthorAvatarId { get; set; } = string.Empty;
 
-        [Column(Order = 11, Type = "bool")]
         [FieldGroup("Marketplace visibility flag")]
         [Default("false")]
         public bool IsPublic { get; set; }
 
-        // array<string> (not array<object>): Tags is a string list; SurrealDB
-        // 3.x strictly coerces array<object> and rejects string elements.
-        [Column(Order = 12, Type = "array<string>")]
         [FieldGroup("Free-form tags")]
         public IReadOnlyList<string> Tags { get; set; } = System.Array.Empty<string>();
     }

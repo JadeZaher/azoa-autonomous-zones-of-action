@@ -30,31 +30,27 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
             Conditional,
         }
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity (record id is the Guid('N') of QuestEdge.Id)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Owning quest")]
         [References(typeof(Quest))]
         public string QuestId { get; set; } = string.Empty;
 
-        [Column(Order = 3)]
         [FieldGroup("Upstream node")]
         [References(typeof(QuestNode))]
         public string SourceNodeId { get; set; } = string.Empty;
 
-        [Column(Order = 4)]
         [FieldGroup("Downstream node")]
         [References(typeof(QuestNode))]
         public string TargetNodeId { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Optional condition expression (only with edge_type=Conditional)")]
         public string? Condition { get; set; }
 
-        [Column(Order = 6, Type = "string")]
         [FieldGroup("QuestEdgeType enum name")]
         [Inside("Control", "Conditional")]
         [Default("\"Control\"")]

@@ -25,53 +25,45 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "avatar";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2, Type = "string")]
         [Required(NotEmpty = true)]
         public string Username { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         [Required(NotEmpty = true)]
         public string Email { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "string")]
         [Required(NotEmpty = true)]
         public string PasswordHash { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "option<string>")]
+        [Optional]
         public string? Title { get; set; }
 
-        [Column(Order = 6, Type = "option<string>")]
+        [Optional]
         public string? FirstName { get; set; }
 
-        [Column(Order = 7, Type = "option<string>")]
+        [Optional]
         public string? LastName { get; set; }
 
-        [Column(Order = 8, Type = "datetime")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }
 
-        [Column(Order = 9, Type = "option<datetime>")]
         public DateTimeOffset? LastBeamedInDate { get; set; }
 
-        [Column(Order = 10, Type = "bool")]
         [Default("true")]
         public bool IsActive { get; set; }
 
-        [Column(Order = 11, Type = "bool")]
         [Default("false")]
         public bool IsVerified { get; set; }
 
-        [Column(Order = 12, Type = "option<record<avatar>>")]
         [References(typeof(Avatar), Optional = true)]
         public string? OwnerTenantId { get; set; }
 
-        [Column(Order = 13, Type = "option<string>")]
+        [Optional]
         public string? ExternalUserId { get; set; }
 
-        [Column(Order = 14, Type = "option<string>")]
+        [Optional]
         public string? ExternalRef { get; set; }
     }
 }

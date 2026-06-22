@@ -24,52 +24,43 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "api_key";
         public string SchemaName => SchemaNameConst;
 
-        [Id, Column(Order = 1, Type = "string")]
+        [Id]
         [FieldGroup("Core identity (record id is the Guid('N') of ApiKey.Id)")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [Column(Order = 2)]
         [FieldGroup("Owner avatar (Guid('N') hex); indexed for ListByAvatar")]
         [References(typeof(Avatar))]
         public string AvatarId { get; set; } = string.Empty;
 
-        [Column(Order = 3, Type = "string")]
         [FieldGroup("Caller-supplied label (free string)")]
         public string Name { get; set; } = string.Empty;
 
-        [Column(Order = 4, Type = "string")]
         [FieldGroup("SHA-256(raw key) hex -- the dedup key; UNIQUE")]
         [Required(NotEmpty = true)]
         public string KeyHash { get; set; } = string.Empty;
 
-        [Column(Order = 5, Type = "string")]
         [FieldGroup("Display prefix (first 16 chars of raw key, never the secret)")]
         public string KeyPrefix { get; set; } = string.Empty;
 
-        [Column(Order = 6, Type = "datetime")]
         [FieldGroup("Creation timestamp (UTC)")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }
 
-        [Column(Order = 7, Type = "option<datetime>")]
         [FieldGroup("Optional expiry (NONE = no expiry)")]
         public DateTimeOffset? ExpiresAt { get; set; }
 
-        [Column(Order = 8, Type = "option<datetime>")]
         [FieldGroup("Last-used timestamp (fire-and-forget; may lag under load)")]
         public DateTimeOffset? LastUsedAt { get; set; }
 
-        [Column(Order = 9, Type = "option<datetime>")]
         [FieldGroup("Soft-delete marker (NONE = active)")]
         public DateTimeOffset? RevokedAt { get; set; }
 
-        [Column(Order = 10, Type = "bool")]
         [FieldGroup("Active flag mirror for cheap WHERE filtering")]
         [Default("true")]
         public bool IsActive { get; set; }
 
-        [Column(Order = 11, Type = "option<string>")]
+        [Optional]
         [FieldGroup("Optional comma-separated scopes (empty/NONE = full access)")]
         public string? Scopes { get; set; }
     }
