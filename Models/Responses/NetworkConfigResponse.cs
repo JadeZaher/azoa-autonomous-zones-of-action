@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Responses;
+namespace AZOA.WebAPI.Models.Responses;
 
 /// <summary>
 /// Public, read-only view of the backend's blockchain RPC/network configuration.

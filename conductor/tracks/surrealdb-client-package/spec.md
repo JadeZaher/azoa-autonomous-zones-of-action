@@ -3,7 +3,7 @@
 ## Goal
 **Tier 1.5** — replace the pre-1.0 `SurrealDb.Net` SDK + the archived
 `surrealdb-migrations` tool + the embedded Roslyn analyzer with a project-owned
-**three-package suite** (`Oasis.SurrealDb.Client` / `.Schema` / `.Analyzer`).
+**three-package suite** (`Azoa.SurrealDb.Client` / `.Schema` / `.Analyzer`).
 Postgres is **fully deprecated** — no fallback ramp. The package suite is the
 durable engine boundary. Public NuGet publish is **deferred** until the API is
 proven internally for 3–6 months; ship as internal-feed / repo-local package
@@ -47,7 +47,7 @@ boundary so each of the above stops being someone else's bug.
 
 ## Scope (three sub-packages, one repo, one owner, one release cadence)
 
-### 1. `Oasis.SurrealDb.Client` (netstandard2.0 + net8.0 multi-target)
+### 1. `Azoa.SurrealDb.Client` (netstandard2.0 + net8.0 multi-target)
 - HTTP transport (`POST /sql`) — stable, JSON-in-JSON-out, our default.
 - WebSocket transport with RPC framing — only for LIVE; deferred to 1.5b.
 - Query builder with strict-by-default param validation:
@@ -66,7 +66,7 @@ boundary so each of the above stops being someone else's bug.
   client-side sequence tracking + outbox-replay-on-reconnect**. Documented
   contract: "best-effort-ordered server + at-least-once client."
 
-### 2. `Oasis.SurrealDb.Schema` (netstandard2.0)
+### 2. `Azoa.SurrealDb.Schema` (netstandard2.0)
 - **Mermaid ER as schema source-of-truth.** One `.mermaid` file per aggregate.
   Schema IS the docs (renders natively in GitHub / GitLab / IDE preview).
 - Annotation DSL with strict namespacing: `%% @surreal.schemafull`,
@@ -77,14 +77,14 @@ boundary so each of the above stops being someone else's bug.
   byte-identical SQL on unchanged source).
 - Migration runner: ordered apply + per-file checksum + `schema_migration`
   table + `--dry-run` (closes B7; replaces archived `surrealdb-migrations`).
-- CLI tool (`oasis-surreal`): `migrate {up,down,dry-run,status}`,
+- CLI tool (`azoa-surreal`): `migrate {up,down,dry-run,status}`,
   `validate <file>`, `generate <file>`.
 
-### 3. `Oasis.SurrealDb.Analyzer` (netstandard2.0)
+### 3. `Azoa.SurrealDb.Analyzer` (netstandard2.0)
 - Relocated SRDB0001 from current `analyzers/SurrealQlSafetyAnalyzer/`.
 - Ships as a **companion package** — consumers opt in via
-  `PackageReference Include="Oasis.SurrealDb.Analyzer" PrivateAssets="all"`.
-  Keeps the OASIS-strict opinion from imposing on outside consumers when the
+  `PackageReference Include="Azoa.SurrealDb.Analyzer" PrivateAssets="all"`.
+  Keeps the AZOA-strict opinion from imposing on outside consumers when the
   package eventually publishes.
 - Extend SRDB0001 to follow one-hop variable resolution (closes code-review H3
   largest bypass).
@@ -93,7 +93,7 @@ boundary so each of the above stops being someone else's bug.
 
 - **1.5a (week 1–2, foundation)** — all three packages: HTTP transport, query
   builder, multi-statement, JSON ser/de, transactions, Mermaid parser +
-  generator + migration runner + CLI, analyzer relocation, OASIS integration
+  generator + migration runner + CLI, analyzer relocation, AZOA integration
   (delete `Core/SurrealDb/Query/`, delete current `analyzers/`, delete
   SDK-pin enforcement, regenerate 7 wave-1 schemas from `.mermaid` sources).
   **Unblocks [[surrealdb-migration]] wave-2 adapter work.**
@@ -104,12 +104,12 @@ boundary so each of the above stops being someone else's bug.
 
 ## Acceptance
 - All three packages compile clean as project references (multi-target);
-  unit tests in `tests/Oasis.SurrealDb.*Tests/` green.
-- OASIS replaces `SurrealDb.Net` PackageReference with project references to
+  unit tests in `tests/Azoa.SurrealDb.*Tests/` green.
+- AZOA replaces `SurrealDb.Net` PackageReference with project references to
   the new packages. `SurrealDb.Net` removed from every `.csproj`.
-- `OASIS.WebAPI/Core/SurrealDb/Query/`, `analyzers/SurrealQlSafetyAnalyzer/`,
+- `AZOA.WebAPI/Core/SurrealDb/Query/`, `analyzers/SurrealQlSafetyAnalyzer/`,
   `scripts/surrealdb/check-sdk-pin.ps1`, the `VerifySurrealSdkPin` MSBuild
-  target, and `tests/OASIS.WebAPI.Tests/Core/SurrealDbSdkPinTests.cs` are all
+  target, and `tests/AZOA.WebAPI.Tests/Core/SurrealDbSdkPinTests.cs` are all
   **deleted** — their work now lives in the packages. G4 narrows to
   "pin our own package via `Directory.Build.props`" (trivial; we own semver).
 - The 7 wave-1 `.surql` files are re-authored as `.mermaid` sources under
@@ -128,9 +128,9 @@ boundary so each of the above stops being someone else's bug.
   changelog, public-API doc-comments) but ship to internal feed / repo-local
   only. Publishing decision deferred 3–6 months after 1.5b lands.
 - **No open-sourcing repo split.** Packages live under `/packages/` in the
-  OASIS repo for now. Repo extraction happens at-or-after publish decision.
+  AZOA repo for now. Repo extraction happens at-or-after publish decision.
 - **No support for SurrealDB clustering / TiKV / FoundationDB backends.**
-  Single-node SurrealKV only (matches OASIS deployment shape).
+  Single-node SurrealKV only (matches AZOA deployment shape).
 - **No SurrealQL parser.** Builder emits SQL strings; we don't parse the
   language. (Analyzer detects string-construction patterns, not semantics.)
 - **No automatic schema diffing / migration generation from model classes.**

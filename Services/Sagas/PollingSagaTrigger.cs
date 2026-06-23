@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// The polling <see cref="ISagaTrigger"/>: fires <c>onTick</c> on a fixed

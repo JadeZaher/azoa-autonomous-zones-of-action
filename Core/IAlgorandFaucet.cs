@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 /// <summary>
 /// Dispenses test ALGO from a configured faucet account to a recipient address.

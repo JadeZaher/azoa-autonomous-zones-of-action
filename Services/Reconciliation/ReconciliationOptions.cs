@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Services.Reconciliation;
+namespace AZOA.WebAPI.Services.Reconciliation;
 
 /// <summary>
 /// Configuration for chain reconciliation. Bind from the
@@ -19,7 +19,7 @@ public sealed class ReconciliationOptions
 
     /// <summary>
     /// Whether the background sweep is enabled. The scoped
-    /// <see cref="OASIS.WebAPI.Interfaces.IReconciliationService"/> can still be
+    /// <see cref="AZOA.WebAPI.Interfaces.IReconciliationService"/> can still be
     /// invoked manually (e.g. from an ops endpoint) even when this is false.
     /// Default <c>true</c>.
     /// </summary>

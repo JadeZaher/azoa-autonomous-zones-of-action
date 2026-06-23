@@ -2,11 +2,11 @@ using Algorand;
 using Algorand.Algod;
 using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Models.Idempotency;
-using OASIS.WebAPI.Providers.Blockchain.Base;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Models.Idempotency;
+using AZOA.WebAPI.Providers.Blockchain.Base;
 
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 /// <summary>
 /// Dispenses test ALGO via the Algorand2 SDK (build → sign → submit).
@@ -136,7 +136,7 @@ public class AlgorandFaucet : IAlgorandFaucet
                 faucetAccount.Address,
                 new Address(toAddress),
                 microAlgos,
-                "OASIS faucet top-up",
+                "AZOA faucet top-up",
                 txParams);
 
             var signedTx = payment.Sign(faucetAccount);

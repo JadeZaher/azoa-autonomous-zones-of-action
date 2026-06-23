@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Sagas;
+using AZOA.WebAPI.Sagas;
 
-namespace OASIS.WebAPI.Models.Sagas;
+namespace AZOA.WebAPI.Models.Sagas;
 
 /// <summary>
 /// The durable transactional-outbox / saga-step record. One row == one step of
@@ -14,7 +14,7 @@ namespace OASIS.WebAPI.Models.Sagas;
 /// table (POCO: <c>Persistence/SurrealDb/Models/SagaSteps.cs</c>;
 /// committed DDL: <c>Persistence/SurrealDb/Generated/Schemas/saga_steps.surql</c>).
 /// The mapping between this POCO and the SurrealDB row lives in
-/// <see cref="OASIS.WebAPI.Sagas.SurrealSagaStore"/>.</para>
+/// <see cref="AZOA.WebAPI.Sagas.SurrealSagaStore"/>.</para>
 ///
 /// <para><b>Generic by construction.</b> No bridge (or any domain) type appears
 /// here — <see cref="SagaName"/>/<see cref="StepName"/> are free strings and
@@ -30,7 +30,7 @@ public class SagaStepRecord
     /// Stable instance correlation key for the whole saga run (reuses the
     /// api-safety-hardening key convention). Every step record of one saga
     /// instance shares this. NON-unique index — dedup of irreversible effects
-    /// happens in handlers via <see cref="OASIS.WebAPI.Interfaces.IIdempotencyStore"/>,
+    /// happens in handlers via <see cref="AZOA.WebAPI.Interfaces.IIdempotencyStore"/>,
     /// NOT via a unique constraint here (the outbox legitimately holds many
     /// rows per correlation: forward steps + a compensation step + retries).
     /// </summary>

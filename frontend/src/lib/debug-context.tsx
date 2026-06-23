@@ -3,7 +3,7 @@
 /**
  * DebugProvider — global, app-wide verbose-diagnostics state.
  *
- * Source of truth is the SDK client (`oasis.debug` / `oasis.setDebug`). The
+ * Source of truth is the SDK client (`azoa.debug` / `azoa.setDebug`). The
  * provider seeds from the persisted choice, keeps the SDK client in sync on
  * every change, and persists the user's selection. Flipping it has an
  * immediate runtime effect — no page reload, no client rebuild — so the
@@ -11,7 +11,7 @@
  * the next time tests run.
  *
  * Same split as networks.ts / network-context.tsx: the pure read/storage
- * helpers live in debug.ts so oasis.ts can seed without an import cycle.
+ * helpers live in debug.ts so azoa.ts can seed without an import cycle.
  */
 
 import {
@@ -23,7 +23,7 @@ import {
   useMemo,
   type ReactNode,
 } from 'react'
-import { oasis } from './oasis'
+import { azoa } from './azoa'
 import { DEBUG_STORAGE_KEY, readInitialDebug } from './debug'
 
 interface DebugContextValue {
@@ -43,11 +43,11 @@ export function DebugProvider({ children }: { children: ReactNode }) {
   // every change (the singleton already seeds from readInitialDebug(), but
   // this also covers any post-construction divergence / fast-refresh).
   useEffect(() => {
-    oasis.setDebug(debug)
+    azoa.setDebug(debug)
   }, [debug])
 
   const setDebug = useCallback((enabled: boolean) => {
-    oasis.setDebug(enabled)
+    azoa.setDebug(enabled)
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(DEBUG_STORAGE_KEY, String(enabled))
     }

@@ -1,8 +1,8 @@
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 /// <summary>
 /// Custody policy/lifecycle seam around the real signing primitive
@@ -43,8 +43,21 @@ public interface IKeyCustodyService
     /// duration of the call only; the array is zeroed once the callback returns
     /// or throws. The callback MUST NOT retain the bytes.
     /// </param>
-    /// <returns>The signer's result wrapped in <see cref="OASISResult{T}"/>; NEVER the key.</returns>
-    Task<OASISResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign);
+    /// <returns>The signer's result wrapped in <see cref="AZOAResult{T}"/>; NEVER the key.</returns>
+    Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign);
+
+    /// <summary>
+    /// tenant-consent-delegation C1/AC4: the consent-aware per-user resolve. Same
+    /// decrypt→sign→zero contract and IDOR guard as
+    /// <see cref="WithSigningKeyAsync{T}(Guid, Guid, Func{byte[], Task{T}})"/>, but
+    /// it ALSO consults the live consent gate from <paramref name="ctx"/> BEFORE any
+    /// decrypt. When <paramref name="ctx"/> is tenant-driven
+    /// (<see cref="SigningContext.IsTenantDriven"/>), a missing/revoked/expired/
+    /// out-of-scope grant FAILS CLOSED — even though <c>wallet.AvatarId ==
+    /// ctx.AvatarId</c> passes the legacy ownership check. A user-driven context
+    /// behaves identically to the two-arg overload.
+    /// </summary>
+    Task<AZOAResult<T>> WithSigningKeyAsync<T>(SigningContext ctx, Func<byte[], Task<T>> sign);
 
     /// <summary>
     /// Resolve the <b>platform</b> signing key (a config-sourced pseudo-wallet, not
@@ -65,7 +78,20 @@ public interface IKeyCustodyService
     /// </param>
     /// <param name="sign">The signing callback; same lifetime/zeroing contract as
     /// <see cref="WithSigningKeyAsync{T}"/>.</param>
-    Task<OASISResult<T>> WithPlatformSigningKeyAsync<T>(bool isPlatformContext, Func<byte[], Task<T>> sign);
+    Task<AZOAResult<T>> WithPlatformSigningKeyAsync<T>(bool isPlatformContext, Func<byte[], Task<T>> sign);
+
+    /// <summary>
+    /// tenant-consent-delegation C2/AC4b: the consent-aware platform resolve. Same
+    /// platform-authority + decrypt→sign→zero contract as
+    /// <see cref="WithPlatformSigningKeyAsync{T}(bool, Func{byte[], Task{T}})"/>, but
+    /// it ALSO consults the live consent gate from <paramref name="ctx"/> BEFORE
+    /// decrypt. Grant / FungibleTokenCreate are platform-SIGNED yet tenant-DRIVEN on
+    /// a user's behalf; when <paramref name="ctx"/> is tenant-driven, a missing
+    /// covering grant FAILS CLOSED. <paramref name="isPlatformContext"/> must still
+    /// be <c>true</c>. When <paramref name="ctx"/> is not tenant-driven this is the
+    /// ordinary platform path.
+    /// </summary>
+    Task<AZOAResult<T>> WithPlatformSigningKeyAsync<T>(bool isPlatformContext, SigningContext ctx, Func<byte[], Task<T>> sign);
 
     /// <summary>
     /// Ownership/eligibility predicate — <b>no decrypt</b>. Lets callers pre-flight
@@ -73,12 +99,12 @@ public interface IKeyCustodyService
     /// (exists, owned, <see cref="WalletType.Platform"/>, has ciphertext) without
     /// touching key material.
     /// </summary>
-    Task<OASISResult<bool>> CanSignAsync(Guid walletId, Guid avatarId);
+    Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid avatarId);
 
     /// <summary>
     /// <b>Design + stub.</b> Re-wrap a wallet's encrypted private key (and seed
     /// phrase, if present) from an old data-key to a new one — the in-process
-    /// half of an <c>OASIS:WalletEncryptionKey</c> rotation.
+    /// half of an <c>AZOA:WalletEncryptionKey</c> rotation.
     /// <para>
     /// Operation: <c>cleartext = oldKeyService.DecryptPrivateKey(wallet.EncryptedPrivateKey)</c>
     /// → <c>wallet.EncryptedPrivateKey = newKeyService.EncryptPrivateKey(cleartext)</c>
@@ -98,7 +124,7 @@ public interface IKeyCustodyService
     /// <param name="oldKeyService">A <c>WalletKeyService</c> bound to the OLD data-key (decrypts).</param>
     /// <param name="newKeyService">A <c>WalletKeyService</c> bound to the NEW data-key (re-encrypts).</param>
     /// <returns>The re-wrapped wallet (ciphertext now under the new key); never cleartext.</returns>
-    OASISResult<IWallet> RewrapAsync(
+    AZOAResult<IWallet> RewrapAsync(
         IWallet wallet,
         WalletKeyService oldKeyService,
         WalletKeyService newKeyService);

@@ -3,12 +3,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
 /// The tenant-callable wallet-provision + asset-allocation seam. A
@@ -18,7 +18,7 @@ namespace OASIS.WebAPI.Controllers;
 ///
 /// This controller holds NO payment-provider secret, runs NO checkout, and
 /// exposes NO webhook handler — it trusts the tenant via the API key, not via any
-/// payment-provider signature. Token economics stay in the tenant; OASIS receives
+/// payment-provider signature. Token economics stay in the tenant; AZOA receives
 /// an already-decided amount.
 /// </summary>
 [ApiController]
@@ -44,24 +44,24 @@ public class AllocationController : ControllerBase
     /// </summary>
     [HttpPost("{avatarId:guid}")]
     [EnableRateLimiting("financial")]
-    public async Task<ActionResult<OASISResult<AllocationResult>>> Allocate(
+    public async Task<ActionResult<AZOAResult<AllocationResult>>> Allocate(
         Guid avatarId, [FromBody] AllocationRequest request)
     {
         var callerAvatarId = GetAvatarIdFromClaims();
         if (callerAvatarId is null)
-            return Unauthorized(new OASISResult<AllocationResult> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<AllocationResult> { IsError = true, Message = "Invalid token." });
 
         // The allocation is authorised by the API-key scope, not the body.
-        if (!User.HasScope(OasisScopes.NftMint) && !User.HasScope(OasisScopes.WalletManage))
-            return StatusCode(StatusCodes.Status403Forbidden, new OASISResult<AllocationResult>
+        if (!User.HasScope(AzoaScopes.NftMint) && !User.HasScope(AzoaScopes.WalletManage))
+            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<AllocationResult>
             {
                 IsError = true,
-                Message = $"Caller lacks the '{OasisScopes.NftMint}' scope required to allocate."
+                Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to allocate."
             });
 
         var apiKeyId = GetApiKeyId();
         if (string.IsNullOrEmpty(apiKeyId))
-            return Unauthorized(new OASISResult<AllocationResult>
+            return Unauthorized(new AZOAResult<AllocationResult>
             {
                 IsError = true,
                 Message = "Allocation requires an API-key principal (missing ApiKeyId claim)."
@@ -71,8 +71,12 @@ public class AllocationController : ControllerBase
         // deterministic content key (never a random per-request key).
         var idempotencyKey = ReadIdempotencyKey();
 
+        // AC4: a tenant-driven child credential carries an act_as_tenant claim; pass
+        // it so the signing seam runs the live consent check before key decrypt.
+        var actingTenantId = User.GetActingTenantId();
+
         var result = await _allocationManager.AllocateAsync(
-            avatarId, request, callerAvatarId.Value, idempotencyKey, apiKeyId);
+            avatarId, request, callerAvatarId.Value, idempotencyKey, apiKeyId, actingTenantId);
 
         if (!result.IsError) return Ok(result);
 

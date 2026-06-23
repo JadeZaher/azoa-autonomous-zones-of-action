@@ -35,7 +35,7 @@ export function WalletTypeBadge({ walletType, className }: WalletTypeBadgeProps)
         </Badge>
       </TooltipTrigger>
       <TooltipContent>
-        <p className="text-xs">Generated and managed by OASIS platform. Keys stored encrypted.</p>
+        <p className="text-xs">Generated and managed by AZOA platform. Keys stored encrypted.</p>
       </TooltipContent>
     </Tooltip>
   )

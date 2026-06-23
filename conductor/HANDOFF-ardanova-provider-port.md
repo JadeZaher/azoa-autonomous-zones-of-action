@@ -5,26 +5,26 @@
 > the single source of truth for what was decided, what was verified, and the exact
 > order to build in. Read it top to bottom, then follow "How to start" at the end.
 >
-> Authored 2026-06-15. Repo: `c:\Users\atooz\Programming\Projects\oasis-sleek`
+> Authored 2026-06-15. Repo: `c:\Users\atooz\Programming\Projects\azoa`
 > (branch `api-safety-hardening`).
 
 ---
 
 ## 1. What this initiative is
 
-Make **OASIS** the custodial blockchain provider — an "avatar wallet manager" — for
-**ArdaNova** (a gamified-ICO / worker-co-op platform) and future apps. OASIS assigns
+Make **AZOA** the custodial blockchain provider — an "avatar wallet manager" — for
+**ArdaNova** (a gamified-ICO / worker-co-op platform) and future apps. AZOA assigns
 and manages each user's Algorand wallet, abstracting the chain away entirely (brand
 requirement: the user never sees a key, fee, or signing prompt).
 
 - **Algorand first**, generic/cross-chain where feasible.
 - **Economic/token domain stays in ArdaNova** (dual-gate one-token→many-token model,
-  asset-creation/minting orchestration, treasury, allocation). OASIS exposes
+  asset-creation/minting orchestration, treasury, allocation). AZOA exposes
   blockchain **primitives** + wallet provisioning only.
 - **Fold in** ArdaNova's KYC (provider-agnostic) and Stripe/fiat (ArdaNova gift).
-- **No brand leak**: nothing ArdaNova-branded in OASIS code.
-- Follow existing OASIS patterns/standards (Controllers→Managers→Providers,
-  `OASISResult<T>`, SurrealDB-only POCOs, zero-warning nullable build).
+- **No brand leak**: nothing ArdaNova-branded in AZOA code.
+- Follow existing AZOA patterns/standards (Controllers→Managers→Providers,
+  `AZOAResult<T>`, SurrealDB-only POCOs, zero-warning nullable build).
 
 ArdaNova repo (read-only reference for porting):
 `C:\Users\atooz\Documents\Escherbridge\ardanova\ardanova-backend-api-mcp\api-server`
@@ -41,8 +41,8 @@ just wraps txn bytes in a `"TX"` prefix and its build methods emit **JSON, not m
 What IS portable from ArdaNova = the *orchestration structure* (params→build→sign→
 submit→confirm-poll→extract-asset-id) and the KYC/Stripe/escrow code — never its crypto.
 
-**OASIS is better positioned**: it already references `Algorand2 2.0.0.2024051911`
-(`OASIS.WebAPI.csproj:35`) + `BouncyCastle.Cryptography 2.6.2` aliased `BCCrypto2`
+**AZOA is better positioned**: it already references `Algorand2 2.0.0.2024051911`
+(`AZOA.WebAPI.csproj:35`) + `BouncyCastle.Cryptography 2.6.2` aliased `BCCrypto2`
 (`:34`). The real signing keystone needs **no new dependency**.
 
 ---
@@ -80,8 +80,8 @@ Verified by live reflection + round-trip on 2026-06-15:
    deterministic `sim:`-prefixed fake tx hashes + simulated confirmations), via the
    existing chain factory.
 4. **Several focused tracks** (not one umbrella).
-5. **Economic/token domain stays in ArdaNova**; OASIS = rails only.
-6. **Fold in** KYC + Stripe as OASIS modules; **no brand leak**.
+5. **Economic/token domain stays in ArdaNova**; AZOA = rails only.
+6. **Fold in** KYC + Stripe as AZOA modules; **no brand leak**.
 
 Per-track decision tables (in each `plan.md`) still have a few `[ decision ]` markers
 to lock before that track executes — notably tenant model **A (Tenant entity) vs B
@@ -111,10 +111,10 @@ in `conductor/tracks.md` ("In flight → Initiative: ardanova-provider-port").
 |---|-------|----------------|
 | 1 | signing-core-keystone | Real Ed25519 keygen (replace HMAC placeholder `WalletKeyService.cs:116-129`) + real Algorand signing behind generic `ITransactionSigner`; wire `AlgorandProvider` Transfer/Burn/Mint/CreateASA/OptIn + soulbound (replace hard-error stubs `AlgorandProvider.cs:148-164`). |
 | 2 | custody-key-management | Per-user decrypt-to-sign resolver (`IKeyCustodyService`) + IDOR guard + key rotation + platform-signer seam. `byte[]` key zeroing constraint. |
-| 3 | db-only-null-provider | Simulated provider via chain factory; deterministic `sim:` addresses/hashes + sim balance ledger; `OASIS:BlockchainMode` config flag. |
+| 3 | db-only-null-provider | Simulated provider via chain factory; deterministic `sim:` addresses/hashes + sim balance ledger; `AZOA:BlockchainMode` config flag. |
 | 4 | tenant-onboarding | Multi-tenant: tenant Avatar owns fleet of user Avatars (`OwnerTenantId` FK + `tenant:provision` scope on existing API-key infra); `ExternalUserId` mapping; cross-tenant isolation = security crux. |
-| 5 | kyc-module | Port ArdaNova provider-agnostic KYC (Manual + Veriff stub) as SurrealDB POCOs keyed to AvatarId; `KycManager`→`OASISResult<T>`; reusable gate for wallet/mint. |
-| 6 | fiat-stripe-bridge | Thin OASIS seam: idempotent, KYC-gated, tenant-callable wallet-provision + asset-allocation primitive ArdaNova calls post-Stripe-settle. Heavy Stripe stays in ArdaNova. |
+| 5 | kyc-module | Port ArdaNova provider-agnostic KYC (Manual + Veriff stub) as SurrealDB POCOs keyed to AvatarId; `KycManager`→`AZOAResult<T>`; reusable gate for wallet/mint. |
+| 6 | fiat-stripe-bridge | Thin AZOA seam: idempotent, KYC-gated, tenant-callable wallet-provision + asset-allocation primitive ArdaNova calls post-Stripe-settle. Heavy Stripe stays in ArdaNova. |
 
 ---
 

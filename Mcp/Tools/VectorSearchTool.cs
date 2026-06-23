@@ -2,9 +2,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Oasis.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client.Query;
 
-namespace OASIS.WebAPI.Mcp.Tools;
+namespace AZOA.WebAPI.Mcp.Tools;
 
 /// <summary>
 /// MCP tool that performs HNSW cosine-similarity semantic search over

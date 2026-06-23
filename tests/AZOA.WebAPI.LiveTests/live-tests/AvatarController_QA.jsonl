@@ -1,0 +1,60 @@
+# ═══════════════════════════════════════════════════════════════
+# AvatarController Comprehensive QA
+# Covers: boundary values, state transitions, CRUD cycles, wallet isolation
+# ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"avatarcontroller_qa"}}
+
+# ─── Registration Boundary Tests ───
+{"id":"register_minimal","description":"Register with only required fields","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_min","email":"{{suitePrefix}}_min@qa.azoa","password":"Pass123!"},"expectedStatus":200,"extract":{"id":"result.id","email":"result.email"},"saveAs":"minimalAvatar"}
+{"id":"register_full_profile","description":"Register with all profile fields populated","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_fullprofile","email":"{{suitePrefix}}_full@qa.azoa","password":"ComplexPass123!","title":"Dr.","firstName":"Full","lastName":"Profile"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"fullAvatar"}
+{"id":"register_unicode_username","description":"Register with Unicode username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_用户_ tester","email":"{{suitePrefix}}_unicode@qa.azoa","password":"Pass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"unicodeAvatar"}
+{"id":"register_special_chars_email","description":"Register with email containing plus alias","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_plusemail","email":"{{suitePrefix}}_test+alias@qa.azoa","password":"Pass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"plusAvatar"}
+{"id":"register_long_username","description":"Register with 50-char username","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_verylongusernamethatistotaloffiftycharacterslong","email":"{{suitePrefix}}_longuser@qa.azoa","password":"Pass123!"},"expectedStatus":200}
+
+# ─── Duplicate Detection ───
+{"id":"register_duplicate_username","description":"Register duplicate username should succeed (no unique constraint on username)","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_min","email":"{{suitePrefix}}_different@qa.azoa","password":"Pass123!"},"expectedStatus":200}
+{"id":"register_duplicate_email","description":"Register duplicate email should fail","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_dupetest","email":"{{suitePrefix}}_min@qa.azoa","password":"Pass123!"},"expectedStatus":400}
+
+# ─── Login Tests ───
+{"id":"login_minimal","description":"Login as minimal avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_min@qa.azoa","password":"Pass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"minimalAuth"}
+{"id":"login_full","description":"Login as full profile avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_full@qa.azoa","password":"ComplexPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"fullAuth"}
+{"id":"login_unicode","description":"Login as unicode avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_unicode@qa.azoa","password":"Pass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"unicodeAuth"}
+{"id":"login_wrong_password","description":"Login with wrong password","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_min@qa.azoa","password":"WrongPass123!"},"expectedStatus":401}
+{"id":"login_nonexistent","description":"Login with non-existent email","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"doesnotexist@qa.azoa","password":"Pass123!"},"expectedStatus":401}
+{"id":"login_empty_body","description":"Login with empty body","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{},"expectedStatus":400}
+
+# ─── Authenticated Get Tests ───
+{"id":"get_minimal_avatar","description":"Get minimal avatar by ID","method":"GET","path":"/api/avatar/{{minimalAvatar.id}}","headers":{"Authorization":"Bearer {{minimalAuth.token}}"},"expectedStatus":200}
+{"id":"get_full_avatar","description":"Get full profile avatar by ID","method":"GET","path":"/api/avatar/{{fullAvatar.id}}","headers":{"Authorization":"Bearer {{fullAuth.token}}"},"expectedStatus":200}
+{"id":"get_nonexistent_avatar","description":"Get non-existent avatar returns 404","method":"GET","path":"/api/avatar/00000000-0000-0000-0000-000000000000","headers":{"Authorization":"Bearer {{minimalAuth.token}}"},"expectedStatus":404}
+
+# ─── GetAll Tests ───
+{"id":"get_all_avatars","description":"List all avatars should include seeded ones","method":"GET","path":"/api/avatar","headers":{"Authorization":"Bearer {{minimalAuth.token}}"},"expectedStatus":200}
+
+# ─── Update Tests ───
+{"id":"update_title","description":"Update only title field","method":"PUT","path":"/api/avatar/{{minimalAvatar.id}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{minimalAuth.token}}"},"body":{"title":"UpdatedTitle"},"expectedStatus":200}
+{"id":"update_email","description":"Update email address","method":"PUT","path":"/api/avatar/{{minimalAvatar.id}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{minimalAuth.token}}"},"body":{"email":"{{suitePrefix}}_updated@qa.azoa"},"expectedStatus":200}
+{"id":"update_multiple_fields","description":"Update multiple fields at once","method":"PUT","path":"/api/avatar/{{fullAvatar.id}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{fullAuth.token}}"},"body":{"firstName":"UpdatedFirst","lastName":"UpdatedLast","title":"Prof."},"expectedStatus":200}
+{"id":"update_nonexistent","description":"Update non-existent avatar","method":"PUT","path":"/api/avatar/00000000-0000-0000-0000-000000000000","headers":{"Content-Type":"application/json","Authorization":"Bearer {{minimalAuth.token}}"},"body":{"title":"Ghost"},"expectedStatus":404}
+
+# ─── Wallet CRUD Tests ───
+{"id":"add_algorand_wallet","description":"Add Algorand wallet to avatar","method":"POST","path":"/api/avatar/{{minimalAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{minimalAuth.token}}"},"body":{"chainType":"Algorand","address":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ","label":"AlgoDev","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"algoWallet"}
+{"id":"add_solana_wallet","description":"Add Solana wallet to avatar","method":"POST","path":"/api/avatar/{{minimalAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{minimalAuth.token}}"},"body":{"chainType":"Solana","address":"HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH","label":"SolDev","isDefault":false},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"solWallet"}
+{"id":"add_second_algorand_wallet","description":"Add second Algorand wallet (same avatar)","method":"POST","path":"/api/avatar/{{minimalAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{minimalAuth.token}}"},"body":{"chainType":"Algorand","address":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA5HFKQ","label":"AlgoTest2"},"expectedStatus":200}
+{"id":"get_wallets","description":"Get all wallets for avatar","method":"GET","path":"/api/avatar/{{minimalAvatar.id}}/wallets","headers":{"Authorization":"Bearer {{minimalAuth.token}}"},"expectedStatus":200}
+{"id":"remove_solana_wallet","description":"Remove Solana wallet","method":"DELETE","path":"/api/avatar/{{minimalAvatar.id}}/wallets/{{solWallet.walletId}}","headers":{"Authorization":"Bearer {{minimalAuth.token}}"},"expectedStatus":200}
+{"id":"remove_nonexistent_wallet","description":"Remove non-existent wallet returns 404","method":"DELETE","path":"/api/avatar/{{minimalAvatar.id}}/wallets/00000000-0000-0000-0000-000000000000","headers":{"Authorization":"Bearer {{minimalAuth.token}}"},"expectedStatus":404}
+
+# ─── Wallet Isolation ───
+{"id":"add_wallet_to_other_avatar","description":"Add wallet to another avatar (should succeed - manager allows any avatarId)","method":"POST","path":"/api/avatar/{{fullAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{fullAuth.token}}"},"body":{"chainType":"Solana","address":"DummyAddress1234567890123456789012345678901234567890","label":"OtherWallet"},"expectedStatus":200}
+
+# ─── Auth Boundary Tests ───
+{"id":"get_without_auth","description":"Get avatar without auth returns 401","method":"GET","path":"/api/avatar/{{minimalAvatar.id}}","headers":{},"expectedStatus":401}
+{"id":"get_with_malformed_auth","description":"Get avatar with malformed Bearer token","method":"GET","path":"/api/avatar/{{minimalAvatar.id}}","headers":{"Authorization":"Bearer invalid.token.here"},"expectedStatus":401}
+
+# ─── Cleanup ───
+{"id":"delete_minimal_avatar","description":"Delete minimal avatar","method":"DELETE","path":"/api/avatar/{{minimalAvatar.id}}","headers":{"Authorization":"Bearer {{minimalAuth.token}}"},"expectedStatus":200}
+{"id":"delete_full_avatar","description":"Delete full profile avatar","method":"DELETE","path":"/api/avatar/{{fullAvatar.id}}","headers":{"Authorization":"Bearer {{fullAuth.token}}"},"expectedStatus":200}
+{"id":"delete_unicode_avatar","description":"Delete unicode avatar","method":"DELETE","path":"/api/avatar/{{unicodeAvatar.id}}","headers":{"Authorization":"Bearer {{unicodeAuth.token}}"},"expectedStatus":200}
+{"id":"verify_deleted","description":"Verify deleted avatar returns 404","method":"GET","path":"/api/avatar/{{minimalAvatar.id}}","headers":{"Authorization":"Bearer {{minimalAuth.token}}"},"expectedStatus":404}
+{"id":"delete_nonexistent","description":"Delete non-existent avatar","method":"DELETE","path":"/api/avatar/00000000-0000-0000-0000-000000000000","headers":{"Authorization":"Bearer {{minimalAuth.token}}"},"expectedStatus":404}

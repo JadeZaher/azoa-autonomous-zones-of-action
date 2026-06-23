@@ -20,7 +20,7 @@ Provide a clean `AvatarController` that handles avatar registration, authenticat
 - Register / Login are anonymous
 
 ## Provider Overrides
-- Every mutating endpoint accepts an optional `OASISRequest` body or header to switch providers
+- Every mutating endpoint accepts an optional `AZOARequest` body or header to switch providers
 - `ProviderContext` handles resolution; controller stays thin
 
 ## Models
@@ -35,7 +35,7 @@ Provide a clean `AvatarController` that handles avatar registration, authenticat
 - No old `GetAndActivateDefaultStorageProvider` inline calls
 
 ## Acceptance Criteria
-- [ ] All 6 endpoints return `OASISResult<T>` or `OASISResponse`
+- [ ] All 6 endpoints return `AZOAResult<T>` or `AZOAResponse`
 - [ ] JWT token returned on successful login
-- [ ] Provider switching works via `OASISRequest` in body
+- [ ] Provider switching works via `AZOARequest` in body
 - [ ] Controller uses `ProviderContext`, not manual activation

@@ -1,10 +1,10 @@
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="IApiKeyStore"/>.
@@ -12,7 +12,7 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// Pattern: mirrors <see cref="SurrealNftStore"/> / <see cref="SurrealSagaStore"/>
 ///   — Guid("N") lowercase-hex record ids and inline POCO until the
 ///   source-generator catches up to table 120. Replace the inline POCO with the
-///   generated type when <c>OASIS.WebAPI.Persistence.SurrealDb.Models.ApiKey</c> arrives.
+///   generated type when <c>AZOA.WebAPI.Persistence.SurrealDb.Models.ApiKey</c> arrives.
 ///
 /// Lookups:
 ///   - <see cref="GetByHashAsync"/> uses the UNIQUE <c>api_key_unique_hash</c>
@@ -224,7 +224,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     /// table 120. When it does, delete this type and substitute the generated
     /// one — no contract change.
     /// </summary>
-    private sealed class ApiKeyPoco : Oasis.SurrealDb.Client.ISurrealRecord
+    private sealed class ApiKeyPoco : Azoa.SurrealDb.Client.ISurrealRecord
     {
         public string SchemaName => Table;
 

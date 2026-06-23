@@ -1,7 +1,7 @@
 using FluentValidation;
-using OASIS.WebAPI.Models;
+using AZOA.WebAPI.Models;
 
-namespace OASIS.WebAPI.Validators;
+namespace AZOA.WebAPI.Validators;
 
 public class AvatarRegisterValidator : AbstractValidator<AvatarRegisterModel>
 {

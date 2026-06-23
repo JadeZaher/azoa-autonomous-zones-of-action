@@ -1,7 +1,7 @@
 # Signing Core Keystone — Plan
 
 Source spec: [spec.md](spec.md)
-Initiative: ardanova-provider-port (OASIS as custodial blockchain provider).
+Initiative: ardanova-provider-port (AZOA as custodial blockchain provider).
 
 ## Decisions to record before starting
 
@@ -85,7 +85,7 @@ Initiative: ardanova-provider-port (OASIS as custodial blockchain provider).
 
 ## Phase 4 — Brand scrub, deploy-stubs, docs
 
-- [ ] Grep OASIS source for `ardanova`/`ArdaNova`/`ardanova.com` — zero hits.
+- [ ] Grep AZOA source for `ardanova`/`ArdaNova`/`ardanova.com` — zero hits.
 - [ ] Create/append `conductor/DEPLOY-STEPS-TODO.md` with: Solana+Ethereum real
       keygen, KMS/HSM custody handoff (replace `SHA-256(config-secret)` derivation),
       soulbound clawback-revoke path, mainnet enablement gate, platform-mnemonic
@@ -99,7 +99,7 @@ Initiative: ardanova-provider-port (OASIS as custodial blockchain provider).
 - [ ] `dotnet test` — green; keygen round-trip, msgpack/sign vector, and provider
       transact tests all pass.
 - [ ] Swagger UI launches and lists the wallet/NFT endpoints unchanged — `workflow.md:20`.
-- [ ] No new NuGet reference in `OASIS.WebAPI.csproj`.
+- [ ] No new NuGet reference in `AZOA.WebAPI.csproj`.
 - [ ] Independent review pass (separate lane / `code-reviewer`) — NOT self-approved
       in the authoring context, per the keep-author-and-review-separate rule.
 

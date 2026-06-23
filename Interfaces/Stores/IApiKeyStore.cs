@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models;
+using AZOA.WebAPI.Models;
 
-namespace OASIS.WebAPI.Interfaces.Stores;
+namespace AZOA.WebAPI.Interfaces.Stores;
 
 /// <summary>
 /// Per-aggregate storage seam for <see cref="ApiKey"/>.

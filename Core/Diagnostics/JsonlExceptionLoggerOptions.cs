@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 
-namespace OASIS.WebAPI.Core.Diagnostics;
+namespace AZOA.WebAPI.Core.Diagnostics;
 
 /// <summary>Bound from the <c>Diagnostics:JsonlExceptionLogger</c> config section.</summary>
 public sealed class JsonlExceptionLoggerOptions

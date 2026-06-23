@@ -1,0 +1,320 @@
+# ═══════════════════════════════════════════════════════════════
+# E2E Cross-Controller Flows & Rapid Sequential Stress Tests
+# Holons belong to avatars via JWT claims — all auth flows use
+# real register/login/token chains. Suites are self-contained
+# for parallel-safe execution.
+# ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"e2e-flows"}}
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 1: Full Avatar Lifecycle with Holon Ownership
+# Register → Login → Create Holon → Query → Update Holon →
+# Interact → Create Sub-Holon → Update Parent → Delete Sub →
+# Delete Holon → Delete Avatar
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e1_register","description":"[E2E-1] Register avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2eavatar","email":"{{suitePrefix}}_e2e1@test.azoa","password":"TestPass123!","title":"E2E","firstName":"End","lastName":"ToEnd"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e1Avatar"}
+{"id":"e2e1_login","description":"[E2E-1] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e1@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e1Auth"}
+{"id":"e2e1_add_wallet","description":"[E2E-1] Add wallet","method":"POST","path":"/api/avatar/{{e2e1Avatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e1Auth.token}}"},"body":{"chainType":"Algorand","address":"E2EADDR1234567890123456789012345678","label":"E2EWallet","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"e2e1Wallet"}
+{"id":"e2e1_create_holon","description":"[E2E-1] Create parent holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e1Auth.token}}"},"body":{"name":"E2EParentHolon","description":"Parent in E2E flow","providerName":"InMemory","metadata":{"flow":"e2e1","stage":"created"}},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e1ParentHolon"}
+{"id":"e2e1_get_holon","description":"[E2E-1] Verify holon ownership via GET","method":"GET","path":"/api/holon/{{e2e1ParentHolon.holonId}}","headers":{"Authorization":"Bearer {{e2e1Auth.token}}"},"expectedStatus":200}
+{"id":"e2e1_query_holons","description":"[E2E-1] Query holons by name","method":"GET","path":"/api/holon?name=E2EParentHolon","headers":{"Authorization":"Bearer {{e2e1Auth.token}}"},"expectedStatus":200}
+{"id":"e2e1_update_holon","description":"[E2E-1] Update holon metadata","method":"PUT","path":"/api/holon/{{e2e1ParentHolon.holonId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e1Auth.token}}"},"body":{"description":"Updated in E2E flow","metadata":{"flow":"e2e1","stage":"updated"}},"expectedStatus":200}
+{"id":"e2e1_interact_holon","description":"[E2E-1] Interact adding metadata","method":"POST","path":"/api/holon/{{e2e1ParentHolon.holonId}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e1Auth.token}}"},"body":{"setMetadata":{"interaction":"true","timestamp":"e2e1"}},"expectedStatus":200}
+{"id":"e2e1_create_subholon","description":"[E2E-1] Create child holon with parent","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e1Auth.token}}"},"body":{"name":"E2ESubHolon","description":"Child holon","providerName":"InMemory","parentHolonId":"{{e2e1ParentHolon.holonId}}","metadata":{"parentFlow":"e2e1"}},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e1SubHolon"}
+{"id":"e2e1_get_subholon","description":"[E2E-1] Get child holon","method":"GET","path":"/api/holon/{{e2e1SubHolon.holonId}}","headers":{"Authorization":"Bearer {{e2e1Auth.token}}"},"expectedStatus":200}
+{"id":"e2e1_delete_subholon","description":"[E2E-1] Delete child holon","method":"DELETE","path":"/api/holon/{{e2e1SubHolon.holonId}}","headers":{"Authorization":"Bearer {{e2e1Auth.token}}"},"expectedStatus":200}
+{"id":"e2e1_delete_holon","description":"[E2E-1] Delete parent holon","method":"DELETE","path":"/api/holon/{{e2e1ParentHolon.holonId}}","headers":{"Authorization":"Bearer {{e2e1Auth.token}}"},"expectedStatus":200}
+{"id":"e2e1_remove_wallet","description":"[E2E-1] Remove wallet","method":"DELETE","path":"/api/avatar/{{e2e1Avatar.avatarId}}/wallets/{{e2e1Wallet.walletId}}","headers":{"Authorization":"Bearer {{e2e1Auth.token}}"},"expectedStatus":200}
+{"id":"e2e1_delete_avatar","description":"[E2E-1] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e1Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e1Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 2: STAR ODK + Holon Binding Lifecycle
+# Register → Login → Create Holon → Create ODK → Generate →
+# Deploy → Delete ODK → Delete Holon → Delete Avatar
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e2_register","description":"[E2E-2] Register avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e2avatar","email":"{{suitePrefix}}_e2e2@test.azoa","password":"TestPass123!","firstName":"Star","lastName":"Flow"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e2Avatar"}
+{"id":"e2e2_login","description":"[E2E-2] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e2@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e2Auth"}
+{"id":"e2e2_create_holon","description":"[E2E-2] Create holon to bind to ODK","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e2Auth.token}}"},"body":{"name":"E2E2BoundHolon","description":"Bound to ODK","providerName":"InMemory","metadata":{"bound":"true"}},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e2Holon"}
+{"id":"e2e2_create_odk","description":"[E2E-2] Create STAR ODK linked to avatar","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e2Auth.token}}"},"body":{"name":"E2E2ODK","description":"E2E bound ODK","publicKey":"0xE2EPUBLICKEY","avatarId":"{{e2e2Avatar.avatarId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"e2e2Odk"}
+{"id":"e2e2_get_odk","description":"[E2E-2] Get created ODK","method":"GET","path":"/api/starodk/{{e2e2Odk.odkId}}","headers":{"Authorization":"Bearer {{e2e2Auth.token}}"},"expectedStatus":200}
+{"id":"e2e2_get_all_odks","description":"[E2E-2] List all ODKs","method":"GET","path":"/api/starodk","headers":{"Authorization":"Bearer {{e2e2Auth.token}}"},"expectedStatus":200}
+{"id":"e2e2_generate_odk","description":"[E2E-2] Generate dApp with bound holon","method":"POST","path":"/api/starodk/{{e2e2Odk.odkId}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e2Auth.token}}"},"body":{"targetChain":"Algorand","boundHolonIds":["{{e2e2Holon.holonId}}"],"config":{"theme":"light","enableBridge":true}},"expectedStatus":200}
+{"id":"e2e2_delete_odk","description":"[E2E-2] Delete ODK","method":"DELETE","path":"/api/starodk/{{e2e2Odk.odkId}}","headers":{"Authorization":"Bearer {{e2e2Auth.token}}"},"expectedStatus":200}
+{"id":"e2e2_delete_holon","description":"[E2E-2] Delete bound holon","method":"DELETE","path":"/api/holon/{{e2e2Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e2Auth.token}}"},"expectedStatus":200}
+{"id":"e2e2_delete_avatar","description":"[E2E-2] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e2Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e2Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 3: Multi-Avatar Holon Isolation
+# Verify that avatars cannot access each other's holons.
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e3_register_a","description":"[E2E-3] Register avatar A","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e3a","email":"{{suitePrefix}}_e2e3a@test.azoa","password":"TestPass123!","firstName":"Alice"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e3AvatarA"}
+{"id":"e2e3_login_a","description":"[E2E-3] Login avatar A","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e3a@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e3AuthA"}
+{"id":"e2e3_create_holon_a","description":"[E2E-3] Avatar A creates holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e3AuthA.token}}"},"body":{"name":"AliceHolon","description":"Owned by Alice","providerName":"InMemory"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e3HolonA"}
+{"id":"e2e3_register_b","description":"[E2E-3] Register avatar B","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e3b","email":"{{suitePrefix}}_e2e3b@test.azoa","password":"TestPass123!","firstName":"Bob"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e3AvatarB"}
+{"id":"e2e3_login_b","description":"[E2E-3] Login avatar B","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e3b@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e3AuthB"}
+{"id":"e2e3_b_get_a_holon","description":"[E2E-3] Avatar B tries to get A's holon","method":"GET","path":"/api/holon/{{e2e3HolonA.holonId}}","headers":{"Authorization":"Bearer {{e2e3AuthB.token}}"},"expectedStatus":404}
+{"id":"e2e3_b_update_a_holon","description":"[E2E-3] Avatar B tries to update A's holon","method":"PUT","path":"/api/holon/{{e2e3HolonA.holonId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e3AuthB.token}}"},"body":{"description":"Hacked by Bob"},"expectedStatus":404}
+{"id":"e2e3_b_delete_a_holon","description":"[E2E-3] Avatar B tries to delete A's holon","method":"DELETE","path":"/api/holon/{{e2e3HolonA.holonId}}","headers":{"Authorization":"Bearer {{e2e3AuthB.token}}"},"expectedStatus":404}
+{"id":"e2e3_cleanup_holon_a","description":"[E2E-3] Avatar A deletes her holon","method":"DELETE","path":"/api/holon/{{e2e3HolonA.holonId}}","headers":{"Authorization":"Bearer {{e2e3AuthA.token}}"},"expectedStatus":200}
+{"id":"e2e3_cleanup_avatar_a","description":"[E2E-3] Delete avatar A","method":"DELETE","path":"/api/avatar/{{e2e3AvatarA.avatarId}}","headers":{"Authorization":"Bearer {{e2e3AuthA.token}}"},"expectedStatus":200}
+{"id":"e2e3_cleanup_avatar_b","description":"[E2E-3] Delete avatar B","method":"DELETE","path":"/api/avatar/{{e2e3AvatarB.avatarId}}","headers":{"Authorization":"Bearer {{e2e3AuthB.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 4: Wallet → Blockchain Operation Traceability
+# Register → Login → Add Wallet → Create Holon → Mint →
+# Query Operations → Remove Wallet → Delete Avatar
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e4_register","description":"[E2E-4] Register avatar for blockchain flow","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e4bc","email":"{{suitePrefix}}_e2e4@test.azoa","password":"TestPass123!","firstName":"Block","lastName":"Chain"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e4Avatar"}
+{"id":"e2e4_login","description":"[E2E-4] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e4@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e4Auth"}
+{"id":"e2e4_add_wallet","description":"[E2E-4] Add wallet for minting","method":"POST","path":"/api/avatar/{{e2e4Avatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e4Auth.token}}"},"body":{"chainType":"Solana","address":"SOLMINTADDR1234567890123456789012","label":"MintWallet","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"e2e4Wallet"}
+{"id":"e2e4_create_holon","description":"[E2E-4] Create holon to mint from","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e4Auth.token}}"},"body":{"name":"MintHolon","description":"For mint operation","providerName":"InMemory","assetType":"NFT"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e4Holon"}
+{"id":"e2e4_mint","description":"[E2E-4] Mint tokens on holon","method":"POST","path":"/api/holon/{{e2e4Holon.holonId}}/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e4Auth.token}}"},"body":{"walletId":"{{e2e4Wallet.walletId}}","tokenUri":"ipfs://QmE2E4Token","amount":100,"assetType":"NFT"},"expectedStatus":200,"extract":{"operationId":"result.id"},"saveAs":"e2e4Op"}
+{"id":"e2e4_get_operation","description":"[E2E-4] Get blockchain operation by ID","method":"GET","path":"/api/blockchainoperation/{{e2e4Op.operationId}}","headers":{"Authorization":"Bearer {{e2e4Auth.token}}"},"expectedStatus":200}
+{"id":"e2e4_get_ops_by_avatar","description":"[E2E-4] Get all operations for avatar","method":"GET","path":"/api/blockchainoperation/avatar/{{e2e4Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e4Auth.token}}"},"expectedStatus":200}
+{"id":"e2e4_remove_wallet","description":"[E2E-4] Remove wallet","method":"DELETE","path":"/api/avatar/{{e2e4Avatar.avatarId}}/wallets/{{e2e4Wallet.walletId}}","headers":{"Authorization":"Bearer {{e2e4Auth.token}}"},"expectedStatus":200}
+{"id":"e2e4_delete_holon","description":"[E2E-4] Delete holon","method":"DELETE","path":"/api/holon/{{e2e4Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e4Auth.token}}"},"expectedStatus":200}
+{"id":"e2e4_delete_avatar","description":"[E2E-4] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e4Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e4Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 5: Rapid Sequential Stress Test (Avatar CRUD burst)
+# Register → rapid GET/PUT/GET/PUT → Delete
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e5_register","description":"[E2E-5] Register stress-test avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e5stress","email":"{{suitePrefix}}_e2e5@test.azoa","password":"TestPass123!","firstName":"Stress","lastName":"Test"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e5Avatar"}
+{"id":"e2e5_login","description":"[E2E-5] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e5@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e5Auth"}
+{"id":"e2e5_get_1","description":"[E2E-5] Rapid GET #1","method":"GET","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e5Auth.token}}"},"expectedStatus":200}
+{"id":"e2e5_put_1","description":"[E2E-5] Rapid PUT #1","method":"PUT","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e5Auth.token}}"},"body":{"firstName":"Rapid1"},"expectedStatus":200}
+{"id":"e2e5_get_2","description":"[E2E-5] Rapid GET #2","method":"GET","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e5Auth.token}}"},"expectedStatus":200}
+{"id":"e2e5_put_2","description":"[E2E-5] Rapid PUT #2","method":"PUT","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e5Auth.token}}"},"body":{"firstName":"Rapid2"},"expectedStatus":200}
+{"id":"e2e5_get_3","description":"[E2E-5] Rapid GET #3","method":"GET","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e5Auth.token}}"},"expectedStatus":200}
+{"id":"e2e5_put_3","description":"[E2E-5] Rapid PUT #3","method":"PUT","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e5Auth.token}}"},"body":{"firstName":"Rapid3"},"expectedStatus":200}
+{"id":"e2e5_get_4","description":"[E2E-5] Rapid GET #4","method":"GET","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e5Auth.token}}"},"expectedStatus":200}
+{"id":"e2e5_put_4","description":"[E2E-5] Rapid PUT #4","method":"PUT","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e5Auth.token}}"},"body":{"firstName":"Rapid4"},"expectedStatus":200}
+{"id":"e2e5_get_5","description":"[E2E-5] Rapid GET #5","method":"GET","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e5Auth.token}}"},"expectedStatus":200}
+{"id":"e2e5_delete","description":"[E2E-5] Delete stress avatar","method":"DELETE","path":"/api/avatar/{{e2e5Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e5Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 6: Holon Chain Stress (create → interact x5 → delete)
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e6_register","description":"[E2E-6] Register holon-stress avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e6holon","email":"{{suitePrefix}}_e2e6@test.azoa","password":"TestPass123!","firstName":"Holon","lastName":"Stress"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e6Avatar"}
+{"id":"e2e6_login","description":"[E2E-6] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e6@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e6Auth"}
+{"id":"e2e6_create","description":"[E2E-6] Create holon for stress","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e6Auth.token}}"},"body":{"name":"StressHolon","description":"Rapid interactions","providerName":"InMemory","metadata":{"count":"0"}},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e6Holon"}
+{"id":"e2e6_interact_1","description":"[E2E-6] Rapid interact #1","method":"POST","path":"/api/holon/{{e2e6Holon.holonId}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e6Auth.token}}"},"body":{"setMetadata":{"count":"1","batch":"a"}},"expectedStatus":200}
+{"id":"e2e6_interact_2","description":"[E2E-6] Rapid interact #2","method":"POST","path":"/api/holon/{{e2e6Holon.holonId}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e6Auth.token}}"},"body":{"setMetadata":{"count":"2","batch":"b"}},"expectedStatus":200}
+{"id":"e2e6_interact_3","description":"[E2E-6] Rapid interact #3","method":"POST","path":"/api/holon/{{e2e6Holon.holonId}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e6Auth.token}}"},"body":{"setMetadata":{"count":"3","batch":"c"}},"expectedStatus":200}
+{"id":"e2e6_interact_4","description":"[E2E-6] Rapid interact #4","method":"POST","path":"/api/holon/{{e2e6Holon.holonId}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e6Auth.token}}"},"body":{"setMetadata":{"count":"4","batch":"d"}},"expectedStatus":200}
+{"id":"e2e6_interact_5","description":"[E2E-6] Rapid interact #5","method":"POST","path":"/api/holon/{{e2e6Holon.holonId}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e6Auth.token}}"},"body":{"setMetadata":{"count":"5","batch":"e"}},"expectedStatus":200}
+{"id":"e2e6_get_final","description":"[E2E-6] Final GET to verify state","method":"GET","path":"/api/holon/{{e2e6Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e6Auth.token}}"},"expectedStatus":200}
+{"id":"e2e6_delete_holon","description":"[E2E-6] Delete stress holon","method":"DELETE","path":"/api/holon/{{e2e6Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e6Auth.token}}"},"expectedStatus":200}
+{"id":"e2e6_delete_avatar","description":"[E2E-6] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e6Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e6Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 7: Token Reuse / Session Persistence
+# Verify same token works across all controllers in one session.
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e7_register","description":"[E2E-7] Register persistent avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e7persist","email":"{{suitePrefix}}_e2e7@test.azoa","password":"TestPass123!","firstName":"Persist","lastName":"Session"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e7Avatar"}
+{"id":"e2e7_login","description":"[E2E-7] Login once","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e7@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e7Auth"}
+{"id":"e2e7_get_avatar","description":"[E2E-7] Token reuse: Avatar GET","method":"GET","path":"/api/avatar/{{e2e7Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e7Auth.token}}"},"expectedStatus":200}
+{"id":"e2e7_get_all_avatars","description":"[E2E-7] Token reuse: Avatar list","method":"GET","path":"/api/avatar","headers":{"Authorization":"Bearer {{e2e7Auth.token}}"},"expectedStatus":200}
+{"id":"e2e7_create_holon","description":"[E2E-7] Token reuse: Holon create","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e7Auth.token}}"},"body":{"name":"PersistHolon","description":"Same token","providerName":"InMemory"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e7Holon"}
+{"id":"e2e7_get_holon","description":"[E2E-7] Token reuse: Holon GET","method":"GET","path":"/api/holon/{{e2e7Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e7Auth.token}}"},"expectedStatus":200}
+{"id":"e2e7_query_holon","description":"[E2E-7] Token reuse: Holon query","method":"GET","path":"/api/holon?name=PersistHolon","headers":{"Authorization":"Bearer {{e2e7Auth.token}}"},"expectedStatus":200}
+{"id":"e2e7_get_all_odks","description":"[E2E-7] Token reuse: STAR ODK list","method":"GET","path":"/api/starodk","headers":{"Authorization":"Bearer {{e2e7Auth.token}}"},"expectedStatus":200}
+{"id":"e2e7_get_bc_by_avatar","description":"[E2E-7] Token reuse: Blockchain ops by avatar","method":"GET","path":"/api/blockchainoperation/avatar/{{e2e7Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e7Auth.token}}"},"expectedStatus":200}
+{"id":"e2e7_delete_holon","description":"[E2E-7] Cleanup holon","method":"DELETE","path":"/api/holon/{{e2e7Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e7Auth.token}}"},"expectedStatus":200}
+{"id":"e2e7_delete_avatar","description":"[E2E-7] Cleanup avatar","method":"DELETE","path":"/api/avatar/{{e2e7Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e7Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 8: STAR ODK Full Deploy Lifecycle
+# Register → Login → Create ODK → Generate → Deploy → Get → Delete ODK → Delete Avatar
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e8_register","description":"[E2E-8] Register avatar for deploy flow","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e8deploy","email":"{{suitePrefix}}_e2e8@test.azoa","password":"TestPass123!","firstName":"Deploy","lastName":"Flow"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e8Avatar"}
+{"id":"e2e8_login","description":"[E2E-8] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e8@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e8Auth"}
+{"id":"e2e8_create_holon","description":"[E2E-8] Create holon to bind","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e8Auth.token}}"},"body":{"name":"DeployBoundHolon","description":"Bound to deploy ODK","providerName":"InMemory","metadata":{"deploy":"true"}},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e8Holon"}
+{"id":"e2e8_create_odk","description":"[E2E-8] Create STAR ODK","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e8Auth.token}}"},"body":{"name":"DeployODK","description":"Full deploy lifecycle ODK","publicKey":"0xDEPLOYPUBLICKEY123","avatarId":"{{e2e8Avatar.avatarId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"e2e8Odk"}
+{"id":"e2e8_generate_odk","description":"[E2E-8] Generate dApp","method":"POST","path":"/api/starodk/{{e2e8Odk.odkId}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e8Auth.token}}"},"body":{"targetChain":"Algorand","boundHolonIds":["{{e2e8Holon.holonId}}"],"config":{"theme":"dark","enableBridge":false}},"expectedStatus":200}
+{"id":"e2e8_deploy_odk","description":"[E2E-8] Deploy generated dApp","method":"POST","path":"/api/starodk/{{e2e8Odk.odkId}}/deploy","headers":{"Authorization":"Bearer {{e2e8Auth.token}}"},"expectedStatus":200}
+{"id":"e2e8_get_odk_after_deploy","description":"[E2E-8] Get ODK after deploy","method":"GET","path":"/api/starodk/{{e2e8Odk.odkId}}","headers":{"Authorization":"Bearer {{e2e8Auth.token}}"},"expectedStatus":200}
+{"id":"e2e8_delete_odk","description":"[E2E-8] Delete ODK","method":"DELETE","path":"/api/starodk/{{e2e8Odk.odkId}}","headers":{"Authorization":"Bearer {{e2e8Auth.token}}"},"expectedStatus":200}
+{"id":"e2e8_delete_holon","description":"[E2E-8] Delete bound holon","method":"DELETE","path":"/api/holon/{{e2e8Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e8Auth.token}}"},"expectedStatus":200}
+{"id":"e2e8_delete_avatar","description":"[E2E-8] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e8Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e8Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 9: Holon Exchange Flow
+# Register → Login → Add Wallet → Create Source Holon → Create Target Holon →
+# Exchange → Query Ops → Delete Holons → Remove Wallet → Delete Avatar
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e9_register","description":"[E2E-9] Register avatar for exchange","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e9exchange","email":"{{suitePrefix}}_e2e9@test.azoa","password":"TestPass123!","firstName":"Exchange","lastName":"Flow"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e9Avatar"}
+{"id":"e2e9_login","description":"[E2E-9] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e9@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e9Auth"}
+{"id":"e2e9_add_wallet","description":"[E2E-9] Add wallet","method":"POST","path":"/api/avatar/{{e2e9Avatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e9Auth.token}}"},"body":{"chainType":"Solana","address":"EXCHANGEWALLET12345678901234567890","label":"ExchangeWallet","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"e2e9Wallet"}
+{"id":"e2e9_create_source","description":"[E2E-9] Create source holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e9Auth.token}}"},"body":{"name":"SourceHolon","description":"Source for exchange","providerName":"InMemory","assetType":"Token"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e9Source"}
+{"id":"e2e9_create_target","description":"[E2E-9] Create target holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e9Auth.token}}"},"body":{"name":"TargetHolon","description":"Target for exchange","providerName":"InMemory","assetType":"Token"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e9Target"}
+{"id":"e2e9_mint_source","description":"[E2E-9] Mint on source holon","method":"POST","path":"/api/holon/{{e2e9Source.holonId}}/mint","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e9Auth.token}}"},"body":{"walletId":"{{e2e9Wallet.walletId}}","tokenUri":"ipfs://exchange-source","amount":500,"assetType":"Token"},"expectedStatus":200,"extract":{"operationId":"result.id"},"saveAs":"e2e9MintOp"}
+{"id":"e2e9_get_mint_op","description":"[E2E-9] Verify mint operation","method":"GET","path":"/api/blockchainoperation/{{e2e9MintOp.operationId}}","headers":{"Authorization":"Bearer {{e2e9Auth.token}}"},"expectedStatus":200}
+{"id":"e2e9_exchange","description":"[E2E-9] Exchange source for target","method":"POST","path":"/api/holon/{{e2e9Source.holonId}}/exchange","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e9Auth.token}}"},"body":{"walletId":"{{e2e9Wallet.walletId}}","targetHolonId":"{{e2e9Target.holonId}}","exchangeRate":"1:1"},"expectedStatus":200,"extract":{"operationId":"result.id"},"saveAs":"e2e9ExchangeOp"}
+{"id":"e2e9_get_exchange_op","description":"[E2E-9] Verify exchange operation","method":"GET","path":"/api/blockchainoperation/{{e2e9ExchangeOp.operationId}}","headers":{"Authorization":"Bearer {{e2e9Auth.token}}"},"expectedStatus":200}
+{"id":"e2e9_get_ops_by_avatar","description":"[E2E-9] List all ops for avatar","method":"GET","path":"/api/blockchainoperation/avatar/{{e2e9Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e9Auth.token}}"},"expectedStatus":200}
+{"id":"e2e9_delete_source","description":"[E2E-9] Delete source holon","method":"DELETE","path":"/api/holon/{{e2e9Source.holonId}}","headers":{"Authorization":"Bearer {{e2e9Auth.token}}"},"expectedStatus":200}
+{"id":"e2e9_delete_target","description":"[E2E-9] Delete target holon","method":"DELETE","path":"/api/holon/{{e2e9Target.holonId}}","headers":{"Authorization":"Bearer {{e2e9Auth.token}}"},"expectedStatus":200}
+{"id":"e2e9_remove_wallet","description":"[E2E-9] Remove wallet","method":"DELETE","path":"/api/avatar/{{e2e9Avatar.avatarId}}/wallets/{{e2e9Wallet.walletId}}","headers":{"Authorization":"Bearer {{e2e9Auth.token}}"},"expectedStatus":200}
+{"id":"e2e9_delete_avatar","description":"[E2E-9] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e9Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e9Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 10: Multi-Wallet Management Flow
+# Register → Login → Add Wallet 1 → Add Wallet 2 → Add Wallet 3 →
+# Get Wallets → Remove Wallet 2 → Get Wallets → Remove All → Delete Avatar
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e10_register","description":"[E2E-10] Register multi-wallet avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e10multi","email":"{{suitePrefix}}_e2e10@test.azoa","password":"TestPass123!","firstName":"Multi","lastName":"Wallet"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e10Avatar"}
+{"id":"e2e10_login","description":"[E2E-10] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e10@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e10Auth"}
+{"id":"e2e10_wallet_1","description":"[E2E-10] Add wallet 1 (Algorand)","method":"POST","path":"/api/avatar/{{e2e10Avatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e10Auth.token}}"},"body":{"chainType":"Algorand","address":"ALGOWALLET1ADDR12345678901234567890","label":"AlgoWallet","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"e2e10Wallet1"}
+{"id":"e2e10_wallet_2","description":"[E2E-10] Add wallet 2 (Solana)","method":"POST","path":"/api/avatar/{{e2e10Avatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e10Auth.token}}"},"body":{"chainType":"Solana","address":"SOLWALLET2ADDR12345678901234567890","label":"SolWallet","isDefault":false},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"e2e10Wallet2"}
+{"id":"e2e10_wallet_3","description":"[E2E-10] Add wallet 3 (Ethereum)","method":"POST","path":"/api/avatar/{{e2e10Avatar.avatarId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e10Auth.token}}"},"body":{"chainType":"Ethereum","address":"ETHWALLET3ADDR12345678901234567890","label":"EthWallet","isDefault":false},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"e2e10Wallet3"}
+{"id":"e2e10_get_wallets","description":"[E2E-10] Get all wallets","method":"GET","path":"/api/avatar/{{e2e10Avatar.avatarId}}/wallets","headers":{"Authorization":"Bearer {{e2e10Auth.token}}"},"expectedStatus":200}
+{"id":"e2e10_remove_wallet_2","description":"[E2E-10] Remove middle wallet","method":"DELETE","path":"/api/avatar/{{e2e10Avatar.avatarId}}/wallets/{{e2e10Wallet2.walletId}}","headers":{"Authorization":"Bearer {{e2e10Auth.token}}"},"expectedStatus":200}
+{"id":"e2e10_get_wallets_after","description":"[E2E-10] Get wallets after removal","method":"GET","path":"/api/avatar/{{e2e10Avatar.avatarId}}/wallets","headers":{"Authorization":"Bearer {{e2e10Auth.token}}"},"expectedStatus":200}
+{"id":"e2e10_remove_wallet_1","description":"[E2E-10] Remove wallet 1","method":"DELETE","path":"/api/avatar/{{e2e10Avatar.avatarId}}/wallets/{{e2e10Wallet1.walletId}}","headers":{"Authorization":"Bearer {{e2e10Auth.token}}"},"expectedStatus":200}
+{"id":"e2e10_remove_wallet_3","description":"[E2E-10] Remove wallet 3","method":"DELETE","path":"/api/avatar/{{e2e10Avatar.avatarId}}/wallets/{{e2e10Wallet3.walletId}}","headers":{"Authorization":"Bearer {{e2e10Auth.token}}"},"expectedStatus":200}
+{"id":"e2e10_delete_avatar","description":"[E2E-10] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e10Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e10Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 11: Bulk Holon Operations Flow
+# Register → Login → Create Holon A → Create Holon B → Create Holon C →
+# Query All → Update A → Interact B → Delete C → Query Remaining → Cleanup
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e11_register","description":"[E2E-11] Register bulk avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e11bulk","email":"{{suitePrefix}}_e2e11@test.azoa","password":"TestPass123!","firstName":"Bulk","lastName":"Ops"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e11Avatar"}
+{"id":"e2e11_login","description":"[E2E-11] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e11@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e11Auth"}
+{"id":"e2e11_create_a","description":"[E2E-11] Create holon A","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e11Auth.token}}"},"body":{"name":"BulkHolonA","description":"Bulk A","providerName":"InMemory","metadata":{"batch":"11","letter":"A"}},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e11HolonA"}
+{"id":"e2e11_create_b","description":"[E2E-11] Create holon B","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e11Auth.token}}"},"body":{"name":"BulkHolonB","description":"Bulk B","providerName":"InMemory","metadata":{"batch":"11","letter":"B"}},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e11HolonB"}
+{"id":"e2e11_create_c","description":"[E2E-11] Create holon C","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e11Auth.token}}"},"body":{"name":"BulkHolonC","description":"Bulk C","providerName":"InMemory","metadata":{"batch":"11","letter":"C"}},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e11HolonC"}
+{"id":"e2e11_query_all","description":"[E2E-11] Query all holons","method":"GET","path":"/api/holon","headers":{"Authorization":"Bearer {{e2e11Auth.token}}"},"expectedStatus":200}
+{"id":"e2e11_query_batch","description":"[E2E-11] Query by batch metadata via name","method":"GET","path":"/api/holon?name=BulkHolon","headers":{"Authorization":"Bearer {{e2e11Auth.token}}"},"expectedStatus":200}
+{"id":"e2e11_update_a","description":"[E2E-11] Update holon A","method":"PUT","path":"/api/holon/{{e2e11HolonA.holonId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e11Auth.token}}"},"body":{"description":"Updated Bulk A","metadata":{"batch":"11","letter":"A","updated":"true"}},"expectedStatus":200}
+{"id":"e2e11_interact_b","description":"[E2E-11] Interact holon B","method":"POST","path":"/api/holon/{{e2e11HolonB.holonId}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e11Auth.token}}"},"body":{"setMetadata":{"interacted":"true"}},"expectedStatus":200}
+{"id":"e2e11_delete_c","description":"[E2E-11] Delete holon C","method":"DELETE","path":"/api/holon/{{e2e11HolonC.holonId}}","headers":{"Authorization":"Bearer {{e2e11Auth.token}}"},"expectedStatus":200}
+{"id":"e2e11_query_remaining","description":"[E2E-11] Query after deletion","method":"GET","path":"/api/holon?name=BulkHolon","headers":{"Authorization":"Bearer {{e2e11Auth.token}}"},"expectedStatus":200}
+{"id":"e2e11_delete_a","description":"[E2E-11] Delete holon A","method":"DELETE","path":"/api/holon/{{e2e11HolonA.holonId}}","headers":{"Authorization":"Bearer {{e2e11Auth.token}}"},"expectedStatus":200}
+{"id":"e2e11_delete_b","description":"[E2E-11] Delete holon B","method":"DELETE","path":"/api/holon/{{e2e11HolonB.holonId}}","headers":{"Authorization":"Bearer {{e2e11Auth.token}}"},"expectedStatus":200}
+{"id":"e2e11_delete_avatar","description":"[E2E-11] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e11Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e11Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 12: Avatar Re-registration After Deletion Flow
+# Register → Login → Delete → Attempt Login (fail) → Re-register Same Email →
+# Login → Delete Again
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e12_register","description":"[E2E-12] Register disposable avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e12reuse","email":"{{suitePrefix}}_e2e12@test.azoa","password":"TestPass123!","firstName":"Reuse","lastName":"Test"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e12Avatar"}
+{"id":"e2e12_login","description":"[E2E-12] Login disposable avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e12@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e12Auth"}
+{"id":"e2e12_delete","description":"[E2E-12] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e12Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e12Auth.token}}"},"expectedStatus":200}
+{"id":"e2e12_login_after_delete","description":"[E2E-12] Login after deletion should fail","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e12@test.azoa","password":"TestPass123!"},"expectedStatus":401}
+{"id":"e2e12_reregister","description":"[E2E-12] Re-register same email","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e12reuse2","email":"{{suitePrefix}}_e2e12@test.azoa","password":"TestPass123!","firstName":"Reused","lastName":"Again"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e12Avatar2"}
+{"id":"e2e12_login_reregistered","description":"[E2E-12] Login re-registered avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e12@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e12Auth2"}
+{"id":"e2e12_delete_reregistered","description":"[E2E-12] Delete re-registered avatar","method":"DELETE","path":"/api/avatar/{{e2e12Avatar2.avatarId}}","headers":{"Authorization":"Bearer {{e2e12Auth2.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 13: Deep Holon Nesting (Parent → Child → Grandchild)
+# Register → Login → Create Grandparent → Create Parent → Create Child →
+# Update Parent with Grandparent → Verify Chain → Delete Bottom-Up
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e13_register","description":"[E2E-13] Register nesting avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e13nest","email":"{{suitePrefix}}_e2e13@test.azoa","password":"TestPass123!","firstName":"Nest","lastName":"Deep"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e13Avatar"}
+{"id":"e2e13_login","description":"[E2E-13] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e13@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e13Auth"}
+{"id":"e2e13_create_gp","description":"[E2E-13] Create grandparent holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e13Auth.token}}"},"body":{"name":"GrandParent","description":"Level 0","providerName":"InMemory"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e13GP"}
+{"id":"e2e13_create_parent","description":"[E2E-13] Create parent holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e13Auth.token}}"},"body":{"name":"Parent","description":"Level 1","providerName":"InMemory","parentHolonId":"{{e2e13GP.holonId}}"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e13Parent"}
+{"id":"e2e13_create_child","description":"[E2E-13] Create child holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e13Auth.token}}"},"body":{"name":"Child","description":"Level 2","providerName":"InMemory","parentHolonId":"{{e2e13Parent.holonId}}"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e13Child"}
+{"id":"e2e13_get_gp","description":"[E2E-13] Get grandparent","method":"GET","path":"/api/holon/{{e2e13GP.holonId}}","headers":{"Authorization":"Bearer {{e2e13Auth.token}}"},"expectedStatus":200}
+{"id":"e2e13_get_parent","description":"[E2E-13] Get parent","method":"GET","path":"/api/holon/{{e2e13Parent.holonId}}","headers":{"Authorization":"Bearer {{e2e13Auth.token}}"},"expectedStatus":200}
+{"id":"e2e13_get_child","description":"[E2E-13] Get child","method":"GET","path":"/api/holon/{{e2e13Child.holonId}}","headers":{"Authorization":"Bearer {{e2e13Auth.token}}"},"expectedStatus":200}
+{"id":"e2e13_interact_reparent","description":"[E2E-13] Interact to change child parent","method":"POST","path":"/api/holon/{{e2e13Child.holonId}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e13Auth.token}}"},"body":{"newParentHolonId":"{{e2e13GP.holonId}}","setMetadata":{"reparented":"true"}},"expectedStatus":200}
+{"id":"e2e13_get_child_after","description":"[E2E-13] Get child after reparent","method":"GET","path":"/api/holon/{{e2e13Child.holonId}}","headers":{"Authorization":"Bearer {{e2e13Auth.token}}"},"expectedStatus":200}
+{"id":"e2e13_delete_child","description":"[E2E-13] Delete child","method":"DELETE","path":"/api/holon/{{e2e13Child.holonId}}","headers":{"Authorization":"Bearer {{e2e13Auth.token}}"},"expectedStatus":200}
+{"id":"e2e13_delete_parent","description":"[E2E-13] Delete parent","method":"DELETE","path":"/api/holon/{{e2e13Parent.holonId}}","headers":{"Authorization":"Bearer {{e2e13Auth.token}}"},"expectedStatus":200}
+{"id":"e2e13_delete_gp","description":"[E2E-13] Delete grandparent","method":"DELETE","path":"/api/holon/{{e2e13GP.holonId}}","headers":{"Authorization":"Bearer {{e2e13Auth.token}}"},"expectedStatus":200}
+{"id":"e2e13_delete_avatar","description":"[E2E-13] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e13Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e13Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 14: CreateOrUpdate Idempotency Flow
+# Register → Login → Create ODK → CreateOrUpdate Same Name →
+# Verify Same ID → Delete → Delete Avatar
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e14_register","description":"[E2E-14] Register idempotency avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e14idemp","email":"{{suitePrefix}}_e2e14@test.azoa","password":"TestPass123!","firstName":"Idemp","lastName":"Otest"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e14Avatar"}
+{"id":"e2e14_login","description":"[E2E-14] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e14@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e14Auth"}
+{"id":"e2e14_create_odk","description":"[E2E-14] Create ODK v1","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e14Auth.token}}"},"body":{"name":"IdempotentODK","description":"Version 1","avatarId":"{{e2e14Avatar.avatarId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"e2e14Odk"}
+{"id":"e2e14_update_odk","description":"[E2E-14] CreateOrUpdate ODK v2 (same name)","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e14Auth.token}}"},"body":{"name":"IdempotentODK","description":"Version 2","avatarId":"{{e2e14Avatar.avatarId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"e2e14OdkV2"}
+{"id":"e2e14_verify_same_id","description":"[E2E-14] Verify same ID returned","method":"GET","path":"/api/starodk/{{e2e14OdkV2.odkId}}","headers":{"Authorization":"Bearer {{e2e14Auth.token}}"},"expectedStatus":200}
+{"id":"e2e14_delete_odk","description":"[E2E-14] Delete ODK","method":"DELETE","path":"/api/starodk/{{e2e14OdkV2.odkId}}","headers":{"Authorization":"Bearer {{e2e14Auth.token}}"},"expectedStatus":200}
+{"id":"e2e14_delete_avatar","description":"[E2E-14] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e14Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e14Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 15: Rapid Sequential Stress (Holon CRUD x10)
+# Register → Login → Create → GET → PUT → GET → PUT → GET →
+# PUT → GET → DELETE → Verify 404 → Delete Avatar
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e15_register","description":"[E2E-15] Register stress avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e15stress","email":"{{suitePrefix}}_e2e15@test.azoa","password":"TestPass123!","firstName":"Stress","lastName":"Holon"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e15Avatar"}
+{"id":"e2e15_login","description":"[E2E-15] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e15@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e15Auth"}
+{"id":"e2e15_create","description":"[E2E-15] Create holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e15Auth.token}}"},"body":{"name":"StressHolon15","description":"Rapid CRUD","providerName":"InMemory","metadata":{"version":"0"}},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e15Holon"}
+{"id":"e2e15_get_1","description":"[E2E-15] Rapid GET #1","method":"GET","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e15Auth.token}}"},"expectedStatus":200}
+{"id":"e2e15_put_1","description":"[E2E-15] Rapid PUT #1","method":"PUT","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e15Auth.token}}"},"body":{"description":"Rapid 1","metadata":{"version":"1"}},"expectedStatus":200}
+{"id":"e2e15_get_2","description":"[E2E-15] Rapid GET #2","method":"GET","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e15Auth.token}}"},"expectedStatus":200}
+{"id":"e2e15_put_2","description":"[E2E-15] Rapid PUT #2","method":"PUT","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e15Auth.token}}"},"body":{"description":"Rapid 2","metadata":{"version":"2"}},"expectedStatus":200}
+{"id":"e2e15_get_3","description":"[E2E-15] Rapid GET #3","method":"GET","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e15Auth.token}}"},"expectedStatus":200}
+{"id":"e2e15_put_3","description":"[E2E-15] Rapid PUT #3","method":"PUT","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e15Auth.token}}"},"body":{"description":"Rapid 3","metadata":{"version":"3"}},"expectedStatus":200}
+{"id":"e2e15_get_4","description":"[E2E-15] Rapid GET #4","method":"GET","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e15Auth.token}}"},"expectedStatus":200}
+{"id":"e2e15_put_4","description":"[E2E-15] Rapid PUT #4","method":"PUT","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e15Auth.token}}"},"body":{"description":"Rapid 4","metadata":{"version":"4"}},"expectedStatus":200}
+{"id":"e2e15_get_5","description":"[E2E-15] Rapid GET #5","method":"GET","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e15Auth.token}}"},"expectedStatus":200}
+{"id":"e2e15_delete","description":"[E2E-15] Delete holon","method":"DELETE","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e15Auth.token}}"},"expectedStatus":200}
+{"id":"e2e15_get_deleted","description":"[E2E-15] GET deleted should 404","method":"GET","path":"/api/holon/{{e2e15Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e15Auth.token}}"},"expectedStatus":404}
+{"id":"e2e15_delete_avatar","description":"[E2E-15] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e15Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e15Auth.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 16: Concurrent Multi-Avatar Creation Stress
+# Register A → Register B → Register C → Login A → Login B →
+# Login C → Each creates holon → Cross-query → Cleanup all
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e16_reg_a","description":"[E2E-16] Register avatar A","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e16a","email":"{{suitePrefix}}_e2e16a@test.azoa","password":"TestPass123!","firstName":"Alice"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e16AvatarA"}
+{"id":"e2e16_reg_b","description":"[E2E-16] Register avatar B","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e16b","email":"{{suitePrefix}}_e2e16b@test.azoa","password":"TestPass123!","firstName":"Bob"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e16AvatarB"}
+{"id":"e2e16_reg_c","description":"[E2E-16] Register avatar C","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e16c","email":"{{suitePrefix}}_e2e16c@test.azoa","password":"TestPass123!","firstName":"Carol"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e16AvatarC"}
+{"id":"e2e16_login_a","description":"[E2E-16] Login A","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e16a@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e16AuthA"}
+{"id":"e2e16_login_b","description":"[E2E-16] Login B","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e16b@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e16AuthB"}
+{"id":"e2e16_login_c","description":"[E2E-16] Login C","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e16c@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e16AuthC"}
+{"id":"e2e16_holon_a","description":"[E2E-16] Avatar A creates holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e16AuthA.token}}"},"body":{"name":"AliceHolon","description":"By Alice","providerName":"InMemory"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e16HolonA"}
+{"id":"e2e16_holon_b","description":"[E2E-16] Avatar B creates holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e16AuthB.token}}"},"body":{"name":"BobHolon","description":"By Bob","providerName":"InMemory"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e16HolonB"}
+{"id":"e2e16_holon_c","description":"[E2E-16] Avatar C creates holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e16AuthC.token}}"},"body":{"name":"CarolHolon","description":"By Carol","providerName":"InMemory"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e16HolonC"}
+{"id":"e2e16_query_all","description":"[E2E-16] Query all holons (should see all)","method":"GET","path":"/api/holon","headers":{"Authorization":"Bearer {{e2e16AuthA.token}}"},"expectedStatus":200}
+{"id":"e2e16_a_get_b_holon","description":"[E2E-16] A tries to get B's holon","method":"GET","path":"/api/holon/{{e2e16HolonB.holonId}}","headers":{"Authorization":"Bearer {{e2e16AuthA.token}}"},"expectedStatus":404}
+{"id":"e2e16_b_get_c_holon","description":"[E2E-16] B tries to get C's holon","method":"GET","path":"/api/holon/{{e2e16HolonC.holonId}}","headers":{"Authorization":"Bearer {{e2e16AuthB.token}}"},"expectedStatus":404}
+{"id":"e2e16_c_get_a_holon","description":"[E2E-16] C tries to get A's holon","method":"GET","path":"/api/holon/{{e2e16HolonA.holonId}}","headers":{"Authorization":"Bearer {{e2e16AuthC.token}}"},"expectedStatus":404}
+{"id":"e2e16_del_holon_a","description":"[E2E-16] Delete A's holon","method":"DELETE","path":"/api/holon/{{e2e16HolonA.holonId}}","headers":{"Authorization":"Bearer {{e2e16AuthA.token}}"},"expectedStatus":200}
+{"id":"e2e16_del_holon_b","description":"[E2E-16] Delete B's holon","method":"DELETE","path":"/api/holon/{{e2e16HolonB.holonId}}","headers":{"Authorization":"Bearer {{e2e16AuthB.token}}"},"expectedStatus":200}
+{"id":"e2e16_del_holon_c","description":"[E2E-16] Delete C's holon","method":"DELETE","path":"/api/holon/{{e2e16HolonC.holonId}}","headers":{"Authorization":"Bearer {{e2e16AuthC.token}}"},"expectedStatus":200}
+{"id":"e2e16_del_avatar_a","description":"[E2E-16] Delete avatar A","method":"DELETE","path":"/api/avatar/{{e2e16AvatarA.avatarId}}","headers":{"Authorization":"Bearer {{e2e16AuthA.token}}"},"expectedStatus":200}
+{"id":"e2e16_del_avatar_b","description":"[E2E-16] Delete avatar B","method":"DELETE","path":"/api/avatar/{{e2e16AvatarB.avatarId}}","headers":{"Authorization":"Bearer {{e2e16AuthB.token}}"},"expectedStatus":200}
+{"id":"e2e16_del_avatar_c","description":"[E2E-16] Delete avatar C","method":"DELETE","path":"/api/avatar/{{e2e16AvatarC.avatarId}}","headers":{"Authorization":"Bearer {{e2e16AuthC.token}}"},"expectedStatus":200}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FLOW 17: Avatar Update Cascade → Holon Query Flow
+# Register → Login → Update Name → Update Email → Update Title →
+# Create Holon → Query by AvatarId → Cleanup
+# ═══════════════════════════════════════════════════════════════
+{"id":"e2e17_register","description":"[E2E-17] Register cascade avatar","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_e2e17cascade","email":"{{suitePrefix}}_e2e17@test.azoa","password":"TestPass123!","firstName":"Cascade","lastName":"Flow"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"e2e17Avatar"}
+{"id":"e2e17_login","description":"[E2E-17] Login","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_e2e17@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"e2e17Auth"}
+{"id":"e2e17_update_1","description":"[E2E-17] Update username","method":"PUT","path":"/api/avatar/{{e2e17Avatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e17Auth.token}}"},"body":{"username":"{{suitePrefix}}_e2e17updated"},"expectedStatus":200}
+{"id":"e2e17_update_2","description":"[E2E-17] Update email","method":"PUT","path":"/api/avatar/{{e2e17Avatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e17Auth.token}}"},"body":{"email":"{{suitePrefix}}_e2e17new@test.azoa"},"expectedStatus":200}
+{"id":"e2e17_update_3","description":"[E2E-17] Update title","method":"PUT","path":"/api/avatar/{{e2e17Avatar.avatarId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e17Auth.token}}"},"body":{"title":"UpdatedTitle"},"expectedStatus":200}
+{"id":"e2e17_create_holon","description":"[E2E-17] Create holon","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{e2e17Auth.token}}"},"body":{"name":"CascadeHolon","description":"Created after updates","providerName":"InMemory"},"expectedStatus":200,"extract":{"holonId":"result.id"},"saveAs":"e2e17Holon"}
+{"id":"e2e17_query_by_avatar","description":"[E2E-17] Query holons by avatarId","method":"GET","path":"/api/holon?avatarId={{e2e17Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e17Auth.token}}"},"expectedStatus":200}
+{"id":"e2e17_get_avatar_final","description":"[E2E-17] Get final avatar state","method":"GET","path":"/api/avatar/{{e2e17Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e17Auth.token}}"},"expectedStatus":200}
+{"id":"e2e17_delete_holon","description":"[E2E-17] Delete holon","method":"DELETE","path":"/api/holon/{{e2e17Holon.holonId}}","headers":{"Authorization":"Bearer {{e2e17Auth.token}}"},"expectedStatus":200}
+{"id":"e2e17_delete_avatar","description":"[E2E-17] Delete avatar","method":"DELETE","path":"/api/avatar/{{e2e17Avatar.avatarId}}","headers":{"Authorization":"Bearer {{e2e17Auth.token}}"},"expectedStatus":200}

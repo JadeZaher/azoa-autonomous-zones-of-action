@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
 /// <summary>
 /// Result of evaluating a Quest's cross-quest <see cref="QuestDependency"/>

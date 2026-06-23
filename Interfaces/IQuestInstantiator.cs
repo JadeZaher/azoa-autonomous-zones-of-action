@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Interfaces;
+namespace AZOA.WebAPI.Interfaces;
 
 /// <summary>
 /// Instantiates a Quest from a QuestTemplate with parameters.

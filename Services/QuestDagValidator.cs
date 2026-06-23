@@ -1,11 +1,11 @@
-using OASIS.WebAPI.Interfaces;
-using QuestEntity = OASIS.WebAPI.Models.Quest.Quest;
-using QuestNode = OASIS.WebAPI.Models.Quest.QuestNode;
-using QuestEdge = OASIS.WebAPI.Models.Quest.QuestEdge;
-using QuestNodeState = OASIS.WebAPI.Models.Quest.QuestNodeState;
-using QuestStatus = OASIS.WebAPI.Models.Quest.QuestStatus;
+using AZOA.WebAPI.Interfaces;
+using QuestEntity = AZOA.WebAPI.Models.Quest.Quest;
+using QuestNode = AZOA.WebAPI.Models.Quest.QuestNode;
+using QuestEdge = AZOA.WebAPI.Models.Quest.QuestEdge;
+using QuestNodeState = AZOA.WebAPI.Models.Quest.QuestNodeState;
+using QuestStatus = AZOA.WebAPI.Models.Quest.QuestStatus;
 
-namespace OASIS.WebAPI.Services;
+namespace AZOA.WebAPI.Services;
 
 /// <summary>
 /// Validates quest DAGs using Kahn's algorithm for cycle detection

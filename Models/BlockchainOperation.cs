@@ -1,12 +1,17 @@
-using OASIS.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces;
 
-namespace OASIS.WebAPI.Models;
+namespace AZOA.WebAPI.Models;
 
 public class BlockchainOperation : IBlockchainOperation, IMintOperation, IExchangeOperation, ITransferOperation
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid? AvatarId { get; set; }
     public Guid? WalletId { get; set; }
+
+    // tenant-consent-delegation AC4 — see IBlockchainOperation.
+    public Guid? ActingTenantId { get; set; }
+    public string? SigningScope { get; set; }
+
     public string OperationType { get; set; } = string.Empty;
     public string Status { get; set; } = OperationStatus.Pending;
     public Dictionary<string, string> Parameters { get; set; } = new();

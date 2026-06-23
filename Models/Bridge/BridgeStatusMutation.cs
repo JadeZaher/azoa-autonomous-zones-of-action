@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Bridge;
+namespace AZOA.WebAPI.Models.Bridge;
 
 /// <summary>
 /// Optional SET fields for <c>IBridgeStore.TryTransitionBridgeStatusAsync</c>;

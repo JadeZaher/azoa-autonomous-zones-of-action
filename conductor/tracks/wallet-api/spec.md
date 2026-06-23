@@ -10,7 +10,7 @@ Currently wallets are accessed only via `/api/avatar/{id}/wallets`. This is limi
 - Multi-chain wallet management independent of avatar context
 
 ## Architecture
-Follows the established Controller → Manager → ProviderContext → IOASISStorageProvider pattern.
+Follows the established Controller → Manager → ProviderContext → IAZOAStorageProvider pattern.
 
 ### New / Modified Files
 | Layer | File | Action |
@@ -29,13 +29,13 @@ Follows the established Controller → Manager → ProviderContext → IOASISSto
 ```csharp
 public interface IWalletManager
 {
-    Task<OASISResult<IWallet>> GetAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, OASISRequest? request = null);
-    Task<OASISResult<IWallet>> CreateAsync(WalletCreateModel model, Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, OASISRequest? request = null);
-    Task<OASISResult<bool>> DeleteAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<bool>> SetDefaultAsync(Guid avatarId, Guid walletId, OASISRequest? request = null);
-    Task<OASISResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, OASISRequest? request = null);
+    Task<AZOAResult<IWallet>> GetAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, AZOARequest? request = null);
+    Task<AZOAResult<IWallet>> CreateAsync(WalletCreateModel model, Guid avatarId, AZOARequest? request = null);
+    Task<AZOAResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, AZOARequest? request = null);
+    Task<AZOAResult<bool>> DeleteAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<bool>> SetDefaultAsync(Guid avatarId, Guid walletId, AZOARequest? request = null);
+    Task<AZOAResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, AZOARequest? request = null);
 }
 ```
 

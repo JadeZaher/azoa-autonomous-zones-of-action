@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using OASIS.WebAPI.Interfaces.Providers;
-using OASIS.WebAPI.Models.Kyc;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces.Providers;
+using AZOA.WebAPI.Models.Kyc;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Kyc;
+namespace AZOA.WebAPI.Providers.Kyc;
 
 /// <summary>
 /// Default KYC provider: in-house manual admin review. No external session is
@@ -25,32 +25,32 @@ public sealed class ManualKycProviderService : IKycProviderService
 
     private const int MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
 
-    public Task<OASISResult<string>> CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
+    public Task<AZOAResult<string>> CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
     {
         // The manual provider does not create an external session. The avatar id
         // is returned as a pseudo-session identifier; the real submission id is
         // owned by the manager.
-        return Task.FromResult(new OASISResult<string>
+        return Task.FromResult(new AZOAResult<string>
         {
             Result  = avatarId.ToString("N"),
             Message = "Manual provider — no external session."
         });
     }
 
-    public Task<OASISResult<KycStatus>> GetSessionStatusAsync(string providerSessionId, CancellationToken ct = default)
+    public Task<AZOAResult<KycStatus>> GetSessionStatusAsync(string providerSessionId, CancellationToken ct = default)
     {
         // No external session tracking; status is managed via the database +
         // admin review endpoints. PENDING until a reviewer decides.
-        return Task.FromResult(new OASISResult<KycStatus> { Result = KycStatus.PENDING, Message = "Success" });
+        return Task.FromResult(new AZOAResult<KycStatus> { Result = KycStatus.PENDING, Message = "Success" });
     }
 
-    public Task<OASISResult<KycStatus>> HandleWebhookAsync(string payload, CancellationToken ct = default)
+    public Task<AZOAResult<KycStatus>> HandleWebhookAsync(string payload, CancellationToken ct = default)
     {
         // No-op for the manual provider — the manual flow uses approve/reject.
-        return Task.FromResult(new OASISResult<KycStatus> { Result = KycStatus.PENDING, Message = "Success" });
+        return Task.FromResult(new AZOAResult<KycStatus> { Result = KycStatus.PENDING, Message = "Success" });
     }
 
-    public Task<OASISResult<bool>> ValidateDocumentsAsync(IReadOnlyList<SubmitKycDocumentModel> documents, CancellationToken ct = default)
+    public Task<AZOAResult<bool>> ValidateDocumentsAsync(IReadOnlyList<SubmitKycDocumentModel> documents, CancellationToken ct = default)
     {
         if (documents is null || documents.Count == 0)
             return Fail("At least one document is required.");
@@ -73,9 +73,9 @@ public sealed class ManualKycProviderService : IKycProviderService
                 return Fail($"Document '{doc.FileName}' has an invalid file size.");
         }
 
-        return Task.FromResult(new OASISResult<bool> { Result = true, Message = "Success" });
+        return Task.FromResult(new AZOAResult<bool> { Result = true, Message = "Success" });
     }
 
-    private static Task<OASISResult<bool>> Fail(string message)
-        => Task.FromResult(new OASISResult<bool> { IsError = true, Result = false, Message = message });
+    private static Task<AZOAResult<bool>> Fail(string message)
+        => Task.FromResult(new AZOAResult<bool> { IsError = true, Result = false, Message = message });
 }

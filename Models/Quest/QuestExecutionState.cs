@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
 /// <summary>
 /// Aggregated view of a <see cref="QuestRun"/> plus its per-node

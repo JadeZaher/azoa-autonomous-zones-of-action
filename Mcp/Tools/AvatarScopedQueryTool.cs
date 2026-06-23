@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Oasis.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client.Query;
 
-namespace OASIS.WebAPI.Mcp.Tools;
+namespace AZOA.WebAPI.Mcp.Tools;
 
 /// <summary>
 /// Generic avatar-scoped read query against an allowlisted table with

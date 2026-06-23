@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OASIS.WebAPI.Core.Blockchain.Wormhole;
+namespace AZOA.WebAPI.Core.Blockchain.Wormhole;
 
 /// <summary>
 /// A Verified Action Approval — the cryptographic proof produced by the

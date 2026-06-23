@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
 /// <summary>
 /// Lifecycle status of a Quest.
@@ -14,7 +14,7 @@ public enum QuestStatus
 
 /// <summary>
 /// Type of operation a QuestNode dispatches to.
-/// Maps 1:1 to existing OASIS manager methods.
+/// Maps 1:1 to existing AZOA manager methods.
 /// </summary>
 public enum QuestNodeType
 {
@@ -76,7 +76,10 @@ public enum QuestNodeType
     Swap,
     Grant,
     Transfer,
-    Refund
+    Refund,
+    // fungible-token-node track: launch a fungible ASA (real total/decimals) via
+    // FungibleTokenManager → IAlgorandASAModule.CreateASAAsync. RequiresChainCapability.
+    FungibleTokenCreate
 }
 
 /// <summary>

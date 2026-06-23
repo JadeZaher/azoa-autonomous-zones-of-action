@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Interfaces.QuestExecution;
+namespace AZOA.WebAPI.Interfaces.QuestExecution;
 
 /// <summary>
 /// Executes one <see cref="QuestNodeType"/>; exactly one handler per type.

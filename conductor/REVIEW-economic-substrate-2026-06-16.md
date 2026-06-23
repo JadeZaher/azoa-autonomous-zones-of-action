@@ -3,7 +3,7 @@
 > Read-only architectural review (2026-06-16) following the ardanova-provider-port
 > ship. Three lanes: (A) orchestration-gap audit of the 7 shipped commits, (B) Holon
 > as economic-object substrate, (C) Quest as economic-workflow substrate. The locked
-> constraint holds throughout: **the economic/token domain stays in ArdaNova; OASIS
+> constraint holds throughout: **the economic/token domain stays in ArdaNova; AZOA
 > exposes mechanism-only primitives.** This doc is the recommendation; nothing here is
 > implemented yet.
 
@@ -20,7 +20,7 @@ machinery, and the custody resolver isn't called.
 ### 🔴 C1 — Custody service is unwired; every signed op uses the platform key
 `AlgorandProvider.BuildSignSubmitCoreAsync` signs via `ResolveInterimKeyMaterial(signerAddress)`
 (`AlgorandProvider.cs:654, 785-800`) which **ignores `signerAddress`** and always loads
-`OASIS:Algorand:PlatformMnemonic`. `KeyCustodyService.WithSigningKeyAsync` (the real
+`AZOA:Algorand:PlatformMnemonic`. `KeyCustodyService.WithSigningKeyAsync` (the real
 IDOR-guarded per-user resolver, `KeyCustodyService.cs:73-115`) is DI-registered but its
 **only callers are its own tests**. Consequence: a per-user `TransferAsync(from=userWallet)`
 is signed with the platform key → sender mismatch → chain rejects, or moves the platform's
@@ -164,7 +164,7 @@ and handler library are not — yet.** Two new handler types + one real engine c
 How it works today: a Quest is a generic DAG of typed nodes; each node has an opaque JSON
 `Config`. Definition/runtime split (`Quest`/`QuestNode` vs `QuestRun`/`QuestNodeExecution`).
 One handler per `QuestNodeType` (`IQuestNodeHandler` + registry, exactly-one invariant). Every
-handler is the same shape: deserialize `Config` → call one OASIS manager → serialize result.
+handler is the same shape: deserialize `Config` → call one AZOA manager → serialize result.
 `ComposeOutputs` passes one node's output downstream. Fork lineage via `ParentRunId` +
 copy-completed-history. **Templates + `{{param}}` substitution** is exactly the "tenant supplies
 economic parameters into a node" shape.
@@ -205,7 +205,7 @@ isn't enforced if you rely on it.
 
 ## Synthesis — the shape of the economic system
 
-OASIS provides three composable mechanism layers; ArdaNova supplies all economics:
+AZOA provides three composable mechanism layers; ArdaNova supplies all economics:
 - **Holon** = the economic *objects* (typed by `asset_type`, semantics in `metadata`, linked
   in a graph, linked to real ASAs once the Holon↔asset primitive lands).
 - **Quest** = the economic *workflows* (tenant-composed DAGs of generic `GateCheck` +
@@ -222,5 +222,5 @@ link** (Part B #1) — small, unblocks "economic object = real on-chain asset." 
 the **value-path wiring** (C1/C2/H3) so allocations actually settle and are KYC-gated at the
 single choke point.
 
-None of this puts economic logic in OASIS: gates evaluate tenant-supplied predicates,
+None of this puts economic logic in AZOA: gates evaluate tenant-supplied predicates,
 allocate-nodes forward tenant-supplied amounts, Holon metadata holds tenant semantics.

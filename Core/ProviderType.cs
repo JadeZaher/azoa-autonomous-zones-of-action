@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 public enum ProviderType
 {
@@ -7,7 +7,7 @@ public enum ProviderType
     SQLLite,
     SQLServer,
     IPFS,
-    HoloOASIS,
+    HoloAZOA,
     Ethereum,
     Algorand,
     Solana,

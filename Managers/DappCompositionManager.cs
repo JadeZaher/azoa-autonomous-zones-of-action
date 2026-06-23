@@ -1,20 +1,20 @@
 using System.Text.Json;
-using OASIS.WebAPI.Core.Json;
-using OASIS.WebAPI.Persistence.SurrealDb.Models;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Json;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 // Disambiguate `Quest`: the source-gen'd POCO (Generated.SurrealDb.Quest) is
 // not yet wired through IQuestStore -- the hand-written model stays in
 // service until the quest cutover slice lands. Alias keeps the manager
 // readable without scattering fully-qualified type names everywhere.
-using QuestDef = OASIS.WebAPI.Models.Quest.Quest;
+using QuestDef = AZOA.WebAPI.Models.Quest.Quest;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 public sealed class DappCompositionManager : IDappCompositionManager
 {
@@ -40,7 +40,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
 
     // ── Series CRUD ──────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<DappSeries>> CreateAsync(
+    public async Task<AZOAResult<DappSeries>> CreateAsync(
         Guid avatarId, DappSeriesCreateModel model, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(model.Name))
@@ -50,7 +50,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         return await _seriesStore.UpsertSeriesAsync(series, ct);
     }
 
-    public async Task<OASISResult<DappSeries>> GetAsync(Guid seriesId, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<DappSeries>> GetAsync(Guid seriesId, Guid avatarId, CancellationToken ct = default)
     {
         var load = await _seriesStore.GetSeriesAsync(seriesId, ct);
         if (load.IsError || load.Result is null) return load;
@@ -58,7 +58,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         return load;
     }
 
-    public async Task<OASISResult<IEnumerable<DappSeries>>> ListAsync(
+    public async Task<AZOAResult<IEnumerable<DappSeries>>> ListAsync(
         Guid avatarId, DappSeries.StatusKind? status = null, CancellationToken ct = default)
     {
         var load = await _seriesStore.GetSeriesByAvatarAsync(avatarId, ct);
@@ -66,10 +66,10 @@ public sealed class DappCompositionManager : IDappCompositionManager
         var filtered = status.HasValue
             ? load.Result.Where(s => s.Status == status.Value).ToList()
             : load.Result.ToList();
-        return new OASISResult<IEnumerable<DappSeries>> { Result = filtered, Message = "Success" };
+        return new AZOAResult<IEnumerable<DappSeries>> { Result = filtered, Message = "Success" };
     }
 
-    public async Task<OASISResult<DappSeries>> UpdateAsync(
+    public async Task<AZOAResult<DappSeries>> UpdateAsync(
         Guid seriesId, Guid avatarId, DappSeriesUpdateModel model, CancellationToken ct = default)
     {
         var load = await GetAsync(seriesId, avatarId, ct);
@@ -84,11 +84,11 @@ public sealed class DappCompositionManager : IDappCompositionManager
         return await _seriesStore.UpsertSeriesAsync(series, ct);
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid seriesId, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid seriesId, Guid avatarId, CancellationToken ct = default)
     {
         var load = await GetAsync(seriesId, avatarId, ct);
         if (load.IsError || load.Result is null)
-            return new OASISResult<bool> { IsError = true, Message = load.Message };
+            return new AZOAResult<bool> { IsError = true, Message = load.Message };
 
         if (load.Result.Status != DappSeries.StatusKind.Draft
             && load.Result.Status != DappSeries.StatusKind.Archived)
@@ -101,7 +101,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
 
     // ── Quest Management within Series ───────────────────────────────────────
 
-    public async Task<OASISResult<DappSeriesQuest>> AddQuestAsync(
+    public async Task<AZOAResult<DappSeriesQuest>> AddQuestAsync(
         Guid seriesId, Guid avatarId, DappSeriesAddQuestModel model, CancellationToken ct = default)
     {
         var seriesLoad = await GetAsync(seriesId, avatarId, ct);
@@ -127,17 +127,17 @@ public sealed class DappCompositionManager : IDappCompositionManager
         return await _seriesStore.UpsertSeriesQuestAsync(entry, ct);
     }
 
-    public async Task<OASISResult<bool>> RemoveQuestAsync(
+    public async Task<AZOAResult<bool>> RemoveQuestAsync(
         Guid seriesId, Guid avatarId, Guid questId, CancellationToken ct = default)
     {
         var seriesLoad = await GetAsync(seriesId, avatarId, ct);
         if (seriesLoad.IsError || seriesLoad.Result is null)
-            return new OASISResult<bool> { IsError = true, Message = seriesLoad.Message };
+            return new AZOAResult<bool> { IsError = true, Message = seriesLoad.Message };
 
         return await _seriesStore.DeleteSeriesQuestAsync(seriesId, questId, ct);
     }
 
-    public async Task<OASISResult<DappSeriesQuest>> ReorderQuestAsync(
+    public async Task<AZOAResult<DappSeriesQuest>> ReorderQuestAsync(
         Guid seriesId, Guid avatarId, Guid questId, int newOrder, CancellationToken ct = default)
     {
         if (newOrder < 1) return Fail<DappSeriesQuest>("Order must be 1-indexed (>= 1).");
@@ -156,7 +156,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         return await _seriesStore.UpsertSeriesQuestAsync(target, ct);
     }
 
-    public async Task<OASISResult<DappSeriesQuest>> UpdateMappingsAsync(
+    public async Task<AZOAResult<DappSeriesQuest>> UpdateMappingsAsync(
         Guid seriesId, Guid avatarId, Guid questId, string? inputMappings, CancellationToken ct = default)
     {
         var seriesLoad = await GetAsync(seriesId, avatarId, ct);
@@ -180,18 +180,18 @@ public sealed class DappCompositionManager : IDappCompositionManager
         return await _seriesStore.UpsertSeriesQuestAsync(target, ct);
     }
 
-    public async Task<OASISResult<IEnumerable<DappSeriesQuest>>> ListQuestsAsync(
+    public async Task<AZOAResult<IEnumerable<DappSeriesQuest>>> ListQuestsAsync(
         Guid seriesId, Guid avatarId, CancellationToken ct = default)
     {
         var seriesLoad = await GetAsync(seriesId, avatarId, ct);
         if (seriesLoad.IsError || seriesLoad.Result is null)
-            return new OASISResult<IEnumerable<DappSeriesQuest>> { IsError = true, Message = seriesLoad.Message };
+            return new AZOAResult<IEnumerable<DappSeriesQuest>> { IsError = true, Message = seriesLoad.Message };
         return await _seriesStore.GetQuestsBySeriesAsync(seriesId, ct);
     }
 
     // ── Composition ──────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<CompositionValidationResult>> ValidateAsync(
+    public async Task<AZOAResult<CompositionValidationResult>> ValidateAsync(
         Guid seriesId, Guid avatarId, CancellationToken ct = default)
     {
         var seriesLoad = await GetAsync(seriesId, avatarId, ct);
@@ -229,10 +229,10 @@ public sealed class DappCompositionManager : IDappCompositionManager
         ValidateNoCircularDependencies(entries, quests, report);
         await ValidateHolonBindingsResolvedAsync(quests, report, ct);
 
-        return new OASISResult<CompositionValidationResult> { Result = report, Message = report.IsValid ? "Valid." : "One or more validation rules failed." };
+        return new AZOAResult<CompositionValidationResult> { Result = report, Message = report.IsValid ? "Valid." : "One or more validation rules failed." };
     }
 
-    public async Task<OASISResult<DappManifest>> ComposeAsync(
+    public async Task<AZOAResult<DappManifest>> ComposeAsync(
         Guid seriesId, Guid avatarId, CancellationToken ct = default)
     {
         var validation = await ValidateAsync(seriesId, avatarId, ct);
@@ -271,12 +271,12 @@ public sealed class DappCompositionManager : IDappCompositionManager
         var upsert = await _seriesStore.UpsertSeriesAsync(series, ct);
         if (upsert.IsError) return Fail<DappManifest>(upsert.Message);
 
-        return new OASISResult<DappManifest> { Result = manifest, Message = "Composed." };
+        return new AZOAResult<DappManifest> { Result = manifest, Message = "Composed." };
     }
 
     // ── Generation & Deployment ──────────────────────────────────────────────
 
-    public async Task<OASISResult<ISTARODK>> GenerateAsync(Guid seriesId, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<ISTARODK>> GenerateAsync(Guid seriesId, Guid avatarId, CancellationToken ct = default)
     {
         var composeResult = await ComposeAsync(seriesId, avatarId, ct);
         if (composeResult.IsError || composeResult.Result is null) return Fail<ISTARODK>(composeResult.Message);
@@ -315,7 +315,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         return generated;
     }
 
-    public async Task<OASISResult<ISTARODK>> DeployAsync(
+    public async Task<AZOAResult<ISTARODK>> DeployAsync(
         Guid seriesId, Guid avatarId, string? targetOverride = null, CancellationToken ct = default)
     {
         var seriesLoad = await GetAsync(seriesId, avatarId, ct);
@@ -575,6 +575,6 @@ public sealed class DappCompositionManager : IDappCompositionManager
         return JsonSerializer.Serialize(graph);
     }
 
-    private static OASISResult<T> Fail<T>(string message) =>
+    private static AZOAResult<T> Fail<T>(string message) =>
         new() { IsError = true, Message = message };
 }

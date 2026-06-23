@@ -1,9 +1,9 @@
 using System.Text.Json;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Services.Quest.Handlers;
+namespace AZOA.WebAPI.Services.Quest.Handlers;
 
 /// <summary>
 /// Handles <see cref="QuestNodeType.Refund"/> — Tier-2 chain action (D7).
@@ -47,7 +47,10 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
             return QuestNodeResults.Fail(ClawbackDeferredMessage);
 
         // Actor is ALWAYS the run-context avatar; the config body avatar is ignored.
-        var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.Quest.AvatarId);
+        // tenant-consent-delegation AC4: forward the run's acting tenant so a
+        // tenant-driven refund (reverse transfer) stamps it on the op for the
+        // seam's consent gate.
+        var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.Quest.AvatarId, actingTenantId: context.ActingTenantId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using OASIS.WebAPI.Core.Blockchain.Wormhole;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
 /// Cross-chain bridge endpoints supporting both trusted (custodial)

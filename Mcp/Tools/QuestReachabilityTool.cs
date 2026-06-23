@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client.Query;
 
-namespace OASIS.WebAPI.Mcp.Tools;
+namespace AZOA.WebAPI.Mcp.Tools;
 
 /// <summary>
 /// Returns the set of quest nodes reachable from a starting node via

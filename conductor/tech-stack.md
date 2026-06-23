@@ -15,8 +15,8 @@
 ## Architecture
 - Controllers → Managers → Providers
 - Provider activation lives in a single `ProviderContext` abstraction
-- `IOASISStorageProvider` is the unified provider interface
-- `OASISResult<T>` / `OASISResponse` models for consistent API responses
+- `IAZOAStorageProvider` is the unified provider interface
+- `AZOAResult<T>` / `AZOAResponse` models for consistent API responses
 
 ## Patterns
 - Unified Provider Pattern (replaces per-request manual activation)

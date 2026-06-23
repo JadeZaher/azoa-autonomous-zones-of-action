@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// Hosted singleton that drives the saga processor. Generalizes

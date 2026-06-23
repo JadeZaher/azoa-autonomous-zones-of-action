@@ -1,14 +1,14 @@
 {
   "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
-    "OASIS.WebAPI": {
+    "AZOA.WebAPI": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
       "applicationUrl": "http://localhost:5000",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "OASIS__DebugErrors": "true"
+        "AZOA__DebugErrors": "true"
       }
     },
     "Production-like": {
@@ -18,7 +18,7 @@
       "applicationUrl": "http://localhost:5000",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Production",
-        "OASIS__DebugErrors": "true"
+        "AZOA__DebugErrors": "true"
       }
     }
   }

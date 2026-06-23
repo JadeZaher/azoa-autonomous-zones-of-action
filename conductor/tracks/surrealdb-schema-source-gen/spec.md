@@ -2,7 +2,7 @@
 
 > **SUPERSEDED 2026-06-03.** The Mermaid-first pipeline described in this spec was
 > replaced by the C#-first attribute scanner (`AttributeSchemaScanner` + `SurqlEmitter`
-> in `packages/Oasis.SurrealDb.Schema/`). See the authoritative as-built reference in
+> in `packages/Azoa.SurrealDb.Schema/`). See the authoritative as-built reference in
 > [surreal-schema-package-retro/spec.md](../surreal-schema-package-retro/spec.md) and
 > the canonical convention doc at [Persistence/SurrealDb/CONVENTION.md](../../../Persistence/SurrealDb/CONVENTION.md).
 
@@ -46,16 +46,16 @@ domain layer from the schema, not maintaining them in parallel.
 
 ## Scope (one new package, one source generator, one typed builder companion)
 
-### 1. `Oasis.SurrealDb.SourceGen` (netstandard2.0 Roslyn analyzer assembly)
+### 1. `Azoa.SurrealDb.SourceGen` (netstandard2.0 Roslyn analyzer assembly)
 - `IIncrementalGenerator` reading `*.mermaid` files via the
   `AdditionalFiles` MSBuild item (consumers add `<AdditionalFiles
   Include="Persistence/SurrealDb/Schemas/source/*.mermaid" />` to their
   csproj — wired automatically when the package is referenced).
-- Parses `.mermaid` via the existing `Oasis.SurrealDb.Schema.Mermaid`
+- Parses `.mermaid` via the existing `Azoa.SurrealDb.Schema.Mermaid`
   parser (the source-gen package depends on the schema package; no
   re-implementation).
 - Emits one `partial class` per entity per `.mermaid` file, into the
-  namespace declared via an MSBuild property `OasisSurrealDbModelsNamespace`
+  namespace declared via an MSBuild property `AzoaSurrealDbModelsNamespace`
   (default: the assembly's root namespace + `.Generated.SurrealDb`).
 - Each generated class includes:
   - Strongly-typed properties matching the schema fields, with C# types
@@ -72,16 +72,16 @@ domain layer from the schema, not maintaining them in parallel.
     helpers without losing source-gen integration.
 - **Strict enum policy:** any `string ASSERT INSIDE [...]` field generates
   a C# enum + `JsonStringEnumConverter` opt-in. Round-trips against
-  `Oasis.SurrealDb.Client`'s `SurrealJsonOptions.Default` automatically.
+  `Azoa.SurrealDb.Client`'s `SurrealJsonOptions.Default` automatically.
 
-### 2. `RecordId<T>` (added to `Oasis.SurrealDb.Client`)
+### 2. `RecordId<T>` (added to `Azoa.SurrealDb.Client`)
 - Generic struct extending the existing `RecordId` shape with a type
   parameter pinning the target table. Implicit conversion to untyped
   `RecordId` for callers that don't care about the type parameter.
 - Equality and JSON converter inherit from the base.
 - Generated POCOs use `RecordId<TQuest>` for `quest_id` fields, etc.
 
-### 3. `SurrealQuery<T>` (added to `Oasis.SurrealDb.Client.Query`)
+### 3. `SurrealQuery<T>` (added to `Azoa.SurrealDb.Client.Query`)
 - Typed companion to the existing `SurrealQuery`. `SurrealQuery<TWallet>.From()`
   returns the typed builder; `.Where(w => w.Status == WalletStatus.Active)`
   consumes a lambda whose expression tree is translated into SurrealQL by
@@ -96,20 +96,20 @@ domain layer from the schema, not maintaining them in parallel.
   projection, `.Limit/.Start/.Fetch` mirror the untyped builder.
 
 ## Acceptance
-- New package `packages/Oasis.SurrealDb.SourceGen/` compiles clean; unit
-  tests under `tests/Oasis.SurrealDb.SourceGen.Tests/` cover: golden-file
+- New package `packages/Azoa.SurrealDb.SourceGen/` compiles clean; unit
+  tests under `tests/Azoa.SurrealDb.SourceGen.Tests/` cover: golden-file
   fixtures (one `.mermaid` input + one expected generated `.cs` per
   aggregate), incremental regeneration determinism (re-run produces
   byte-identical generated source), and the C#-type-mapping table.
 - The 7 wave-1 `.mermaid` sources under
   `Persistence/SurrealDb/Schemas/source/` produce 7 generated POCOs in
-  `OASIS.WebAPI/Generated/SurrealDb/` (or wherever the source-gen output
+  `AZOA.WebAPI/Generated/SurrealDb/` (or wherever the source-gen output
   is materialized). Existing hand-written `Models/Wallet.cs`, `Models/BridgeTx.cs`,
   etc. are **deleted** — the generated classes replace them.
-- `OASIS.WebAPI.csproj` adds `<PackageReference Include="Oasis.SurrealDb.SourceGen" />`
+- `AZOA.WebAPI.csproj` adds `<PackageReference Include="Azoa.SurrealDb.SourceGen" />`
   (via `ProjectReference` initially; semver-pinned package later).
 - `SurrealQuery<T>` companion typed builder ships under
-  `Oasis.SurrealDb.Client.Query`; 30+ unit tests covering the
+  `Azoa.SurrealDb.Client.Query`; 30+ unit tests covering the
   expression-visitor scope (positive + every `NotSupportedException`
   shape). `SurrealQuery<TWallet>.From().Where(w => w.Status == WalletStatus.Active)`
   emits SurrealQL byte-identical to the untyped
@@ -141,7 +141,7 @@ domain layer from the schema, not maintaining them in parallel.
 ## Dependencies
 - Requires [[surrealdb-client-package]] sub-wave 1.5a complete (DONE,
   tagged `surrealdb-client-package-1.5a-complete` at `88f6b26`).
-- Depends on `Oasis.SurrealDb.Schema.Mermaid` parser (existing; no
+- Depends on `Azoa.SurrealDb.Schema.Mermaid` parser (existing; no
   changes needed).
 - **Blocks**: every `surrealdb-migration` wave-2 adapter task that touches
   the value tables. Those tasks become substantially smaller because the

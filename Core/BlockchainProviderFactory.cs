@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
-using OASIS.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces;
 
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 public interface IBlockchainProviderFactory
 {
@@ -31,7 +31,7 @@ public class BlockchainProviderFactory : IBlockchainProviderFactory
 
     /// <summary>
     /// Global simulated-mode chain type (db-only-null-provider track). Matches
-    /// <see cref="OASIS.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider.ChainType"/>.
+    /// <see cref="AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider.ChainType"/>.
     /// </summary>
     private const string SimulatedChainType = "Simulated";
 

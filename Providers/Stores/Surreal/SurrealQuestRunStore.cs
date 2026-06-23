@@ -1,18 +1,18 @@
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Responses;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="IQuestRunStore"/>. One row per execution
 /// attempt of a <see cref="Quest"/>. Pattern mirrors
 /// <see cref="SurrealSagaStore"/> — Guid('N') lowercase-hex record ids,
 /// inline POCO (replace with generated POCO when source-gen catches up —
-/// <c>OASIS.WebAPI.Persistence.SurrealDb.Models.QuestRun</c> already exists), every
+/// <c>AZOA.WebAPI.Persistence.SurrealDb.Models.QuestRun</c> already exists), every
 /// value parameter-bound (G3 / SRDB0001).
 ///
 /// <para>
@@ -54,7 +54,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
     // ── Create ────────────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<QuestRun>> CreateAsync(QuestRun run, CancellationToken ct = default)
+    public async Task<AZOAResult<QuestRun>> CreateAsync(QuestRun run, CancellationToken ct = default)
     {
         if (run is null)
             return Err<QuestRun>("CreateAsync: run must not be null.");
@@ -131,7 +131,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
     // ── GetById ───────────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<QuestRun>> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<QuestRun>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -153,7 +153,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
     // ── Update ────────────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<QuestRun>> UpdateAsync(
+    public async Task<AZOAResult<QuestRun>> UpdateAsync(
         QuestRun run, QuestRunStatus? expectedStatus = null, CancellationToken ct = default)
     {
         if (run is null)
@@ -216,7 +216,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
     // ── List queries ──────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IEnumerable<QuestRun>>> GetByQuestIdAsync(
+    public async Task<AZOAResult<IEnumerable<QuestRun>>> GetByQuestIdAsync(
         Guid questId, CancellationToken ct = default)
     {
         try
@@ -235,7 +235,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         }
     }
 
-    public async Task<OASISResult<IEnumerable<QuestRun>>> GetByAvatarIdAsync(
+    public async Task<AZOAResult<IEnumerable<QuestRun>>> GetByAvatarIdAsync(
         Guid avatarId, CancellationToken ct = default)
     {
         try
@@ -254,7 +254,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         }
     }
 
-    public async Task<OASISResult<IEnumerable<QuestRun>>> GetByStatusAsync(
+    public async Task<AZOAResult<IEnumerable<QuestRun>>> GetByStatusAsync(
         QuestRunStatus status, CancellationToken ct = default)
     {
         try
@@ -284,7 +284,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
     // ── Lineage ───────────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IEnumerable<QuestRun>>> GetLineageAsync(
+    public async Task<AZOAResult<IEnumerable<QuestRun>>> GetLineageAsync(
         Guid runId, CancellationToken ct = default)
     {
         try
@@ -350,6 +350,12 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         Id              = ToSurrealId(r.Id),
         QuestId         = SurrealLink.ToLink("quest", ToSurrealId(r.QuestId)),
         AvatarId        = SurrealLink.ToLink("avatar", ToSurrealId(r.AvatarId)),
+        // tenant-consent-delegation AC4: persist the acting tenant as a nullable
+        // record<avatar> link so the seam's live consent check survives the async
+        // saga hop. Mirrors SurrealBlockchainOperationStore's acting_tenant_id.
+        ActingTenantId  = r.ActingTenantId.HasValue
+                          ? SurrealLink.ToLink("avatar", ToSurrealId(r.ActingTenantId.Value))
+                          : null,
         Status          = r.Status.ToString(),
         StartedAt       = ToUtcOffset(r.StartedAt),
         EndedAt         = r.EndedAt.HasValue ? ToUtcOffset(r.EndedAt.Value) : null,
@@ -364,6 +370,9 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         Id              = FromSurrealId(p.Id),
         QuestId         = string.IsNullOrEmpty(p.QuestId)  ? Guid.Empty : FromSurrealIdFk(SurrealLink.FromLink(p.QuestId)!),
         AvatarId        = string.IsNullOrEmpty(p.AvatarId) ? Guid.Empty : FromSurrealIdFk(SurrealLink.FromLink(p.AvatarId)!),
+        // tenant-consent-delegation AC4: read the acting tenant back from the
+        // nullable record<avatar> link.
+        ActingTenantId  = string.IsNullOrEmpty(p.ActingTenantId) ? null : FromSurrealIdFk(SurrealLink.FromLink(p.ActingTenantId)!),
         Status          = ParseStatus(p.Status),
         StartedAt       = p.StartedAt.UtcDateTime,
         EndedAt         = p.EndedAt?.UtcDateTime,
@@ -413,27 +422,28 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
                 $"Unrecognised QuestRunStatus '{raw}' read from SurrealDB. " +
                 "Schema ASSERT INSIDE [...] should have prevented this; refresh the schema.");
 
-    private static OASISResult<T> Ok<T>(T value, string msg = "Success") =>
+    private static AZOAResult<T> Ok<T>(T value, string msg = "Success") =>
         new() { Result = value, Message = msg };
 
-    private static OASISResult<IEnumerable<T>> OkMany<T>(IEnumerable<T> values, string msg = "Success") =>
+    private static AZOAResult<IEnumerable<T>> OkMany<T>(IEnumerable<T> values, string msg = "Success") =>
         new() { Result = values, Message = msg };
 
-    private static OASISResult<T> Missing<T>(string msg) =>
+    private static AZOAResult<T> Missing<T>(string msg) =>
         new() { IsError = true, Message = msg, Result = default };
 
-    private static OASISResult<T> Err<T>(string msg) =>
+    private static AZOAResult<T> Err<T>(string msg) =>
         new() { IsError = true, Message = msg, Result = default };
 
     // ── POCO (private — replace with generated POCO when source-gen catches up) ──
 
-    private sealed class QuestRunPoco : Oasis.SurrealDb.Client.ISurrealRecord
+    private sealed class QuestRunPoco : Azoa.SurrealDb.Client.ISurrealRecord
     {
         public string SchemaName => RunTable;
 
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
         [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
         [JsonPropertyName("avatar_id")]         public string AvatarId { get; set; } = string.Empty;
+        [JsonPropertyName("acting_tenant_id")]  public string? ActingTenantId { get; set; }
         [JsonPropertyName("status")]            public string? Status { get; set; }
         [JsonPropertyName("started_at")]        public DateTimeOffset StartedAt { get; set; }
         [JsonPropertyName("ended_at")]          public DateTimeOffset? EndedAt { get; set; }
@@ -452,7 +462,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
     // GetLineageAsync. Only its schema name is consumed by the traversal emit
     // (the edge body isn't deserialized here), but it must satisfy
     // ISurrealRecord,new() so the graph operators can resolve "forked_from".
-    private sealed class ForkedFromEdge : Oasis.SurrealDb.Client.ISurrealRecord
+    private sealed class ForkedFromEdge : Azoa.SurrealDb.Client.ISurrealRecord
     {
         public string SchemaName => "forked_from";
         [JsonPropertyName("id")]  public string Id  { get; set; } = string.Empty;

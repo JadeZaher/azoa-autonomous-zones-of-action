@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Sagas;
+using AZOA.WebAPI.Sagas;
 
-namespace OASIS.WebAPI.Services.Quest.Workflow;
+namespace AZOA.WebAPI.Services.Quest.Workflow;
 
 /// <summary>
 /// The single registered <see cref="ISagaDefinition"/> for every durable Quest
@@ -12,7 +12,7 @@ namespace OASIS.WebAPI.Services.Quest.Workflow;
 /// <see cref="SagaStep{T}"/> instance. That is what lets one registered handler
 /// dispatch an arbitrary per-run DAG: the saga step name is the node id, and the
 /// handler reads it from the payload to select the right
-/// <see cref="OASIS.WebAPI.Interfaces.QuestExecution.IQuestNodeHandler"/>.</para>
+/// <see cref="AZOA.WebAPI.Interfaces.QuestExecution.IQuestNodeHandler"/>.</para>
 ///
 /// <para><b>Handler-driven advancement.</b> <see cref="NextForwardStep"/> always
 /// returns <c>null</c> so <c>SagaProcessor</c> never advances the saga itself;

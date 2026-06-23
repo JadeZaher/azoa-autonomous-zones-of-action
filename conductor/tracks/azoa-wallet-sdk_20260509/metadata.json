@@ -1,0 +1,7 @@
+{
+  "id": "azoa-wallet-sdk_20260509",
+  "description": "Cross-platform Node SDK (@azoa/wallet-sdk) with client-side signing, DEX adapters, and wallet-of-wallets facade",
+  "type": "feature",
+  "created_at": "2026-05-09T00:00:00Z",
+  "status": "in-progress"
+}

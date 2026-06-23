@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Core.Blockchain.Wormhole;
 
-namespace OASIS.WebAPI.Models.Responses;
+namespace AZOA.WebAPI.Models.Responses;
 
 /// <summary>
 /// Information about a supported cross-chain bridge route.

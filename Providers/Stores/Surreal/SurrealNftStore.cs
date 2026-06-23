@@ -1,15 +1,15 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Json;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Responses;
-using GeneratedNft = OASIS.WebAPI.Persistence.SurrealDb.Models.NftOwnership;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Json;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Responses;
+using GeneratedNft = AZOA.WebAPI.Persistence.SurrealDb.Models.NftOwnership;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="INftStore"/>. Maps between legacy domain
@@ -40,7 +40,7 @@ public sealed class SurrealNftStore : INftStore
 
     // ── AvatarNFT ─────────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IAvatarNFT>> UpsertAvatarNFTAsync(
+    public async Task<AZOAResult<IAvatarNFT>> UpsertAvatarNFTAsync(
         IAvatarNFT avatarNFT, CancellationToken ct = default)
     {
         try
@@ -61,23 +61,23 @@ public sealed class SurrealNftStore : INftStore
             var saved  = resp.GetValues<GeneratedNft>(0).FirstOrDefault();
             var result = saved is not null ? FromPoco(saved) : avatarNFT;
 
-            return new OASISResult<IAvatarNFT> { Result = result, Message = "Saved." };
+            return new AZOAResult<IAvatarNFT> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<IAvatarNFT>().CaptureException(ex,
+            return new AZOAResult<IAvatarNFT>().CaptureException(ex,
                 $"SurrealNftStore.UpsertAvatarNFTAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IAvatarNFT>> GetAvatarNFTByIdAsync(
+    public async Task<AZOAResult<IAvatarNFT>> GetAvatarNFTByIdAsync(
         Guid id, CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery.SelectById(GeneratedNft.SchemaNameConst, ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<GeneratedNft>(q, ct);
-            return new OASISResult<IAvatarNFT>
+            return new AZOAResult<IAvatarNFT>
             {
                 IsError = row == null,
                 Message = row == null ? "NFT not found." : "Success",
@@ -86,12 +86,12 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IAvatarNFT>().CaptureException(ex,
+            return new AZOAResult<IAvatarNFT>().CaptureException(ex,
                 $"SurrealNftStore.GetAvatarNFTByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IAvatarNFT>> GetAvatarNFTByTokenIdAsync(
+    public async Task<AZOAResult<IAvatarNFT>> GetAvatarNFTByTokenIdAsync(
         string chainType, string nftContractAddress, string tokenId, CancellationToken ct = default)
     {
         try
@@ -107,7 +107,7 @@ public sealed class SurrealNftStore : INftStore
             var rows = await _executor.QueryAsync<GeneratedNft>(q, ct);
             var row  = rows.Count > 0 ? rows[0] : null;
 
-            return new OASISResult<IAvatarNFT>
+            return new AZOAResult<IAvatarNFT>
             {
                 IsError = row == null,
                 Message = row == null ? "NFT not found." : "Success",
@@ -116,12 +116,12 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IAvatarNFT>().CaptureException(ex,
+            return new AZOAResult<IAvatarNFT>().CaptureException(ex,
                 $"SurrealNftStore.GetAvatarNFTByTokenIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<IAvatarNFT>>> GetAvatarNFTsByAvatarAsync(
+    public async Task<AZOAResult<IEnumerable<IAvatarNFT>>> GetAvatarNFTsByAvatarAsync(
         Guid avatarId, CancellationToken ct = default)
     {
         try
@@ -131,7 +131,7 @@ public sealed class SurrealNftStore : INftStore
                 .Where(n => n.AvatarId == avatarLink);
 
             var rows = await _executor.QueryAsync<GeneratedNft>(q, ct);
-            return new OASISResult<IEnumerable<IAvatarNFT>>
+            return new AZOAResult<IEnumerable<IAvatarNFT>>
             {
                 Result  = rows.Select(FromPoco).ToList(),
                 Message = "Success"
@@ -139,12 +139,12 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<IAvatarNFT>>().CaptureException(ex,
+            return new AZOAResult<IEnumerable<IAvatarNFT>>().CaptureException(ex,
                 $"SurrealNftStore.GetAvatarNFTsByAvatarAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<bool>> DeleteAvatarNFTAsync(
+    public async Task<AZOAResult<bool>> DeleteAvatarNFTAsync(
         Guid id, CancellationToken ct = default)
     {
         try
@@ -152,23 +152,23 @@ public sealed class SurrealNftStore : INftStore
             var checkQ   = SurrealQuery.SelectById(GeneratedNft.SchemaNameConst, ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<GeneratedNft>(checkQ, ct);
             if (existing == null)
-                return new OASISResult<bool> { IsError = true, Message = "NFT not found.", Result = false };
+                return new AZOAResult<bool> { IsError = true, Message = "NFT not found.", Result = false };
 
             var q = SurrealQuery.DeleteById(GeneratedNft.SchemaNameConst, ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
-            return new OASISResult<bool> { Result = true, Message = "Deleted." };
+            return new AZOAResult<bool> { Result = true, Message = "Deleted." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool>().CaptureException(ex,
+            return new AZOAResult<bool>().CaptureException(ex,
                 $"SurrealNftStore.DeleteAvatarNFTAsync failed: {ex.Message}");
         }
     }
 
     // ── HolonNFTBinding ───────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IHolonNFTBinding>> UpsertHolonNFTBindingAsync(
+    public async Task<AZOAResult<IHolonNFTBinding>> UpsertHolonNFTBindingAsync(
         IHolonNFTBinding binding, CancellationToken ct = default)
     {
         try
@@ -191,23 +191,23 @@ public sealed class SurrealNftStore : INftStore
             var saved  = resp.GetValues<SurrealHolonBinding>(0, BindingJsonOpts);
             var result = saved.Count > 0 ? FromSurrealHolonBinding(saved[0]) : binding;
 
-            return new OASISResult<IHolonNFTBinding> { Result = result, Message = "Saved." };
+            return new AZOAResult<IHolonNFTBinding> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<IHolonNFTBinding>().CaptureException(ex,
+            return new AZOAResult<IHolonNFTBinding>().CaptureException(ex,
                 $"SurrealNftStore.UpsertHolonNFTBindingAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IHolonNFTBinding>> GetHolonNFTBindingByIdAsync(
+    public async Task<AZOAResult<IHolonNFTBinding>> GetHolonNFTBindingByIdAsync(
         Guid id, CancellationToken ct = default)
     {
         try
         {
             var q   = SurrealQuery.SelectById(HolonBindingTable, ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<SurrealHolonBinding>(q, ct);
-            return new OASISResult<IHolonNFTBinding>
+            return new AZOAResult<IHolonNFTBinding>
             {
                 IsError = row == null,
                 Message = row == null ? "Binding not found." : "Success",
@@ -216,12 +216,12 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IHolonNFTBinding>().CaptureException(ex,
+            return new AZOAResult<IHolonNFTBinding>().CaptureException(ex,
                 $"SurrealNftStore.GetHolonNFTBindingByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<IHolonNFTBinding>>> GetHolonNFTBindingsByAvatarNFTAsync(
+    public async Task<AZOAResult<IEnumerable<IHolonNFTBinding>>> GetHolonNFTBindingsByAvatarNFTAsync(
         Guid avatarNFTId, CancellationToken ct = default)
     {
         try
@@ -233,7 +233,7 @@ public sealed class SurrealNftStore : INftStore
                 .WithParam("avatar_nft_id", ToSurrealId(avatarNFTId));
 
             var rows = await _executor.QueryAsync<SurrealHolonBinding>(q, ct);
-            return new OASISResult<IEnumerable<IHolonNFTBinding>>
+            return new AZOAResult<IEnumerable<IHolonNFTBinding>>
             {
                 Result  = rows.Select(FromSurrealHolonBinding).ToList(),
                 Message = "Success"
@@ -241,12 +241,12 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<IHolonNFTBinding>>().CaptureException(ex,
+            return new AZOAResult<IEnumerable<IHolonNFTBinding>>().CaptureException(ex,
                 $"SurrealNftStore.GetHolonNFTBindingsByAvatarNFTAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<bool>> DeleteHolonNFTBindingAsync(
+    public async Task<AZOAResult<bool>> DeleteHolonNFTBindingAsync(
         Guid id, CancellationToken ct = default)
     {
         try
@@ -254,23 +254,23 @@ public sealed class SurrealNftStore : INftStore
             var checkQ   = SurrealQuery.SelectById(HolonBindingTable, ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<SurrealHolonBinding>(checkQ, ct);
             if (existing == null)
-                return new OASISResult<bool> { IsError = true, Message = "Binding not found.", Result = false };
+                return new AZOAResult<bool> { IsError = true, Message = "Binding not found.", Result = false };
 
             var q = SurrealQuery.DeleteById(HolonBindingTable, ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
-            return new OASISResult<bool> { Result = true, Message = "Deleted." };
+            return new AZOAResult<bool> { Result = true, Message = "Deleted." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool>().CaptureException(ex,
+            return new AZOAResult<bool>().CaptureException(ex,
                 $"SurrealNftStore.DeleteHolonNFTBindingAsync failed: {ex.Message}");
         }
     }
 
     // ── WalletNFTBinding ──────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IWalletNFTBinding>> UpsertWalletNFTBindingAsync(
+    public async Task<AZOAResult<IWalletNFTBinding>> UpsertWalletNFTBindingAsync(
         IWalletNFTBinding binding, CancellationToken ct = default)
     {
         try
@@ -293,23 +293,23 @@ public sealed class SurrealNftStore : INftStore
             var saved  = resp.GetValues<SurrealWalletBinding>(0, BindingJsonOpts);
             var result = saved.Count > 0 ? FromSurrealWalletBinding(saved[0]) : binding;
 
-            return new OASISResult<IWalletNFTBinding> { Result = result, Message = "Saved." };
+            return new AZOAResult<IWalletNFTBinding> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<IWalletNFTBinding>().CaptureException(ex,
+            return new AZOAResult<IWalletNFTBinding>().CaptureException(ex,
                 $"SurrealNftStore.UpsertWalletNFTBindingAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IWalletNFTBinding>> GetWalletNFTBindingByIdAsync(
+    public async Task<AZOAResult<IWalletNFTBinding>> GetWalletNFTBindingByIdAsync(
         Guid id, CancellationToken ct = default)
     {
         try
         {
             var q   = SurrealQuery.SelectById(WalletBindingTable, ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<SurrealWalletBinding>(q, ct);
-            return new OASISResult<IWalletNFTBinding>
+            return new AZOAResult<IWalletNFTBinding>
             {
                 IsError = row == null,
                 Message = row == null ? "Binding not found." : "Success",
@@ -318,12 +318,12 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IWalletNFTBinding>().CaptureException(ex,
+            return new AZOAResult<IWalletNFTBinding>().CaptureException(ex,
                 $"SurrealNftStore.GetWalletNFTBindingByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<IWalletNFTBinding>>> GetWalletNFTBindingsByAvatarNFTAsync(
+    public async Task<AZOAResult<IEnumerable<IWalletNFTBinding>>> GetWalletNFTBindingsByAvatarNFTAsync(
         Guid avatarNFTId, CancellationToken ct = default)
     {
         try
@@ -333,7 +333,7 @@ public sealed class SurrealNftStore : INftStore
                 .WithParam("avatar_nft_id", ToSurrealId(avatarNFTId));
 
             var rows = await _executor.QueryAsync<SurrealWalletBinding>(q, ct);
-            return new OASISResult<IEnumerable<IWalletNFTBinding>>
+            return new AZOAResult<IEnumerable<IWalletNFTBinding>>
             {
                 Result  = rows.Select(FromSurrealWalletBinding).ToList(),
                 Message = "Success"
@@ -341,12 +341,12 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<IWalletNFTBinding>>().CaptureException(ex,
+            return new AZOAResult<IEnumerable<IWalletNFTBinding>>().CaptureException(ex,
                 $"SurrealNftStore.GetWalletNFTBindingsByAvatarNFTAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<bool>> DeleteWalletNFTBindingAsync(
+    public async Task<AZOAResult<bool>> DeleteWalletNFTBindingAsync(
         Guid id, CancellationToken ct = default)
     {
         try
@@ -354,16 +354,16 @@ public sealed class SurrealNftStore : INftStore
             var checkQ   = SurrealQuery.SelectById(WalletBindingTable, ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<SurrealWalletBinding>(checkQ, ct);
             if (existing == null)
-                return new OASISResult<bool> { IsError = true, Message = "Binding not found.", Result = false };
+                return new AZOAResult<bool> { IsError = true, Message = "Binding not found.", Result = false };
 
             var q = SurrealQuery.DeleteById(WalletBindingTable, ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
-            return new OASISResult<bool> { Result = true, Message = "Deleted." };
+            return new AZOAResult<bool> { Result = true, Message = "Deleted." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool>().CaptureException(ex,
+            return new AZOAResult<bool>().CaptureException(ex,
                 $"SurrealNftStore.DeleteWalletNFTBindingAsync failed: {ex.Message}");
         }
     }
@@ -576,7 +576,7 @@ public sealed class SurrealNftStore : INftStore
     // These tables have no generated POCOs (not in the Mermaid schema).
     // They are SCHEMALESS (SurrealDB defaults) — adapters manage the shape.
 
-    private sealed class SurrealHolonBinding : Oasis.SurrealDb.Client.ISurrealRecord
+    private sealed class SurrealHolonBinding : Azoa.SurrealDb.Client.ISurrealRecord
     {
         public string SchemaName => HolonBindingTable;
 
@@ -608,7 +608,7 @@ public sealed class SurrealNftStore : INftStore
         public bool IsActive { get; set; } = true;
     }
 
-    private sealed class SurrealWalletBinding : Oasis.SurrealDb.Client.ISurrealRecord
+    private sealed class SurrealWalletBinding : Azoa.SurrealDb.Client.ISurrealRecord
     {
         public string SchemaName => WalletBindingTable;
 

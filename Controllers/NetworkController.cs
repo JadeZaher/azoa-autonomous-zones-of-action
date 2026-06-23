@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Models.Responses;
-using OASIS.WebAPI.Providers.Blockchain.Base;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Providers.Blockchain.Base;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
 /// Public, read-only blockchain RPC/network configuration.
@@ -25,7 +25,7 @@ public class NetworkController : ControllerBase
 
     [HttpGet]
     [AllowAnonymous]
-    public ActionResult<OASISResult<NetworkConfigResponse>> Get()
+    public ActionResult<AZOAResult<NetworkConfigResponse>> Get()
     {
         var configManager = new BlockchainConfigurationManager(_config);
 
@@ -42,7 +42,7 @@ public class NetworkController : ControllerBase
         if (chains.Count == 0)
         {
             // No Blockchain section / no chains configured: succeed with empty Networks.
-            return Ok(new OASISResult<NetworkConfigResponse>
+            return Ok(new AZOAResult<NetworkConfigResponse>
             {
                 Result = response,
                 Message = "Network configuration."
@@ -60,7 +60,7 @@ public class NetworkController : ControllerBase
             };
         }
 
-        return Ok(new OASISResult<NetworkConfigResponse>
+        return Ok(new AZOAResult<NetworkConfigResponse>
         {
             Result = response,
             Message = "Network configuration."

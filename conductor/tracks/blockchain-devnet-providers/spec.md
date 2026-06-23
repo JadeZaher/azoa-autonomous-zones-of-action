@@ -21,7 +21,7 @@ Enhance the existing `IBlockchainProvider` implementations with real devnet conn
 | Providers | `Providers/Blockchain/SolanaProvider.cs` | Replace stub methods with real Solana RPC calls |
 | Models | `Models/Responses/BlockchainResult.cs` | Add new response types for devnet operations |
 | Config | `appsettings.json` | Add devnet configuration settings |
-| Tests | `OASIS.WebAPI.Tests/BlockchainProviderTests.cs` | Update tests for real provider behavior |
+| Tests | `AZOA.WebAPI.Tests/BlockchainProviderTests.cs` | Update tests for real provider behavior |
 
 ## Algorand Devnet Implementation
 
@@ -48,14 +48,14 @@ Enhance the existing `IBlockchainProvider` implementations with real devnet conn
 
 ### Real Implementation Methods
 ```csharp
-public async Task<OASISResult<string>> GetBalanceAsync(string address, string? tokenId = null, CancellationToken ct = default)
+public async Task<AZOAResult<string>> GetBalanceAsync(string address, string? tokenId = null, CancellationToken ct = default)
 {
     try
     {
         var accountInfo = await _algodClient.GetAccountInformationAsync(address);
         var balance = accountInfo.Amount / Algorand.Utils.Algo.AlgosToMicroAlgos;
         
-        return new OASISResult<string>
+        return new AZOAResult<string>
         {
             Result = balance.ToString(),
             Message = $"Retrieved balance {balance} ALGO for address {address}"
@@ -63,7 +63,7 @@ public async Task<OASISResult<string>> GetBalanceAsync(string address, string? t
     }
     catch (Exception ex)
     {
-        return new OASISResult<string>
+        return new AZOAResult<string>
         {
             Success = false,
             Error = ex.Message,
@@ -72,7 +72,7 @@ public async Task<OASISResult<string>> GetBalanceAsync(string address, string? t
     }
 }
 
-public async Task<OASISResult<bool>> ValidateAddressAsync(string address, CancellationToken ct = default)
+public async Task<AZOAResult<bool>> ValidateAddressAsync(string address, CancellationToken ct = default)
 {
     try
     {
@@ -85,7 +85,7 @@ public async Task<OASISResult<bool>> ValidateAddressAsync(string address, Cancel
             await _algodClient.GetAccountInformationAsync(address);
         }
         
-        return new OASISResult<bool>
+        return new AZOAResult<bool>
         {
             Result = isValid,
             Message = isValid ? "Valid Algorand address" : "Invalid Algorand address format"
@@ -93,7 +93,7 @@ public async Task<OASISResult<bool>> ValidateAddressAsync(string address, Cancel
     }
     catch (Exception ex)
     {
-        return new OASISResult<bool>
+        return new AZOAResult<bool>
         {
             Result = false,
             Success = false,
@@ -128,7 +128,7 @@ public async Task<OASISResult<bool>> ValidateAddressAsync(string address, Cancel
 
 ### Real Implementation Methods
 ```csharp
-public async Task<OASISResult<string>> GetBalanceAsync(string address, string? tokenId = null, CancellationToken ct = default)
+public async Task<AZOAResult<string>> GetBalanceAsync(string address, string? tokenId = null, CancellationToken ct = default)
 {
     try
     {
@@ -138,7 +138,7 @@ public async Task<OASISResult<string>> GetBalanceAsync(string address, string? t
         {
             var balance = balanceResult.Result.Value / (decimal)LamportsPerSol;
             
-            return new OASISResult<string>
+            return new AZOAResult<string>
             {
                 Result = balance.ToString(),
                 Message = $"Retrieved balance {balance} SOL for address {address}"
@@ -146,7 +146,7 @@ public async Task<OASISResult<string>> GetBalanceAsync(string address, string? t
         }
         else
         {
-            return new OASISResult<string>
+            return new AZOAResult<string>
             {
                 Success = false,
                 Error = balanceResult.Reason,
@@ -156,7 +156,7 @@ public async Task<OASISResult<string>> GetBalanceAsync(string address, string? t
     }
     catch (Exception ex)
     {
-        return new OASISResult<string>
+        return new AZOAResult<string>
         {
             Success = false,
             Error = ex.Message,
@@ -165,7 +165,7 @@ public async Task<OASISResult<string>> GetBalanceAsync(string address, string? t
     }
 }
 
-public async Task<OASISResult<bool>> ValidateAddressAsync(string address, CancellationToken ct = default)
+public async Task<AZOAResult<bool>> ValidateAddressAsync(string address, CancellationToken ct = default)
 {
     try
     {
@@ -180,7 +180,7 @@ public async Task<OASISResult<bool>> ValidateAddressAsync(string address, Cancel
             isValid = balanceResult.WasSuccessful;
         }
         
-        return new OASISResult<bool>
+        return new AZOAResult<bool>
         {
             Result = isValid,
             Message = isValid ? "Valid Solana address" : "Invalid Solana address or address not found"
@@ -188,7 +188,7 @@ public async Task<OASISResult<bool>> ValidateAddressAsync(string address, Cancel
     }
     catch (Exception ex)
     {
-        return new OASISResult<bool>
+        return new AZOAResult<bool>
         {
             Result = false,
             Success = false,
@@ -207,16 +207,16 @@ public class BlockchainProviderException : Exception
         : base(message, innerException) { }
 }
 
-public async Task<OASISResult<string>> GetTransactionStatusAsync(string txHash, CancellationToken ct = default)
+public async Task<AZOAResult<string>> GetTransactionStatusAsync(string txHash, CancellationToken ct = default)
 {
     try
     {
-        OASISResult<Dictionary<string, object>> result;
+        AZOAResult<Dictionary<string, object>> result;
         
         if (ChainType == "Algorand")
         {
             var txInfo = await _algodClient.GetTransactionInformationAsync(txHash);
-            result = new OASISResult<Dictionary<string, object>>
+            result = new AZOAResult<Dictionary<string, object>>
             {
                 Result = new Dictionary<string, object>
                 {
@@ -231,7 +231,7 @@ public async Task<OASISResult<string>> GetTransactionStatusAsync(string txHash, 
         else if (ChainType == "Solana")
         {
             var txResult = await _rpcClient.GetTransactionAsync(txHash);
-            result = new OASISResult<Dictionary<string, object>>
+            result = new AZOAResult<Dictionary<string, object>>
             {
                 Result = new Dictionary<string, object>
                 {
@@ -248,11 +248,11 @@ public async Task<OASISResult<string>> GetTransactionStatusAsync(string txHash, 
             throw new BlockchainProviderException($"Unsupported chain type: {ChainType}");
         }
         
-        return result as OASISResult<string> ?? throw new BlockchainProviderException("Unexpected response type");
+        return result as AZOAResult<string> ?? throw new BlockchainProviderException("Unexpected response type");
     }
     catch (Exception ex)
     {
-        return new OASISResult<string>
+        return new AZOAResult<string>
         {
             Success = false,
             Error = ex.Message,

@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Core;
+using AZOA.WebAPI.Core;
 
-namespace OASIS.WebAPI.Models.Responses;
+namespace AZOA.WebAPI.Models.Responses;
 
 public class SearchResult
 {

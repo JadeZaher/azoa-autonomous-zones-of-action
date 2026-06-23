@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-namespace OASIS.WebAPI.Core.Diagnostics;
+namespace AZOA.WebAPI.Core.Diagnostics;
 
 /// <summary>
 /// Pipeline observer that writes a JSONL row for any 4xx/5xx response or unhandled exception.

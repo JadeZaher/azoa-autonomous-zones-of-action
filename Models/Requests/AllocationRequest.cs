@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
-namespace OASIS.WebAPI.Models.Requests;
+namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
 /// The on-chain shape of an allocation. The discriminator (D4) dispatches the
@@ -20,8 +20,8 @@ public enum AllocationKind
 /// <summary>
 /// Single tenant-callable allocation request (D4 — one DTO with an asset-kind
 /// discriminator). It carries the asset descriptor + an already-decided amount;
-/// OASIS does NOT compute amounts, run token economics, or evaluate any gate —
-/// those stay in the fiat-settlement tenant. OASIS materialises the wallet (if
+/// AZOA does NOT compute amounts, run token economics, or evaluate any gate —
+/// those stay in the fiat-settlement tenant. AZOA materialises the wallet (if
 /// absent) and moves the on-chain/custodial asset.
 ///
 /// IDOR note: this DTO intentionally does NOT carry an owner / target avatar id.
@@ -48,7 +48,7 @@ public class AllocationRequest
 
     /// <summary>
     /// The already-decided amount of the asset to allocate, as a string for
-    /// arbitrary precision (house convention). OASIS treats this as opaque and
+    /// arbitrary precision (house convention). AZOA treats this as opaque and
     /// authoritative — it does not derive or validate economic meaning.
     /// </summary>
     public string Amount { get; set; } = string.Empty;
@@ -67,7 +67,7 @@ public class AllocationRequest
     public string? AssetId { get; set; }
 
     /// <summary>
-    /// For <see cref="AllocationKind.Transfer"/>: the existing OASIS asset (NFT)
+    /// For <see cref="AllocationKind.Transfer"/>: the existing AZOA asset (NFT)
     /// id to transfer to the target avatar's custodial wallet.
     /// </summary>
     public Guid? AssetRecordId { get; set; }

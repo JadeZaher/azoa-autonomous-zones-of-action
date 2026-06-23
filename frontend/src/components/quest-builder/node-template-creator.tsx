@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { ResultDisplay } from '@/components/shared/result-display'
-import { oasis, isOk } from '@/lib/oasis'
+import { azoa, isOk } from '@/lib/azoa'
 import { NODE_CATALOG, NODE_CATALOG_BY_TYPE, CATEGORY_ORDER } from './node-catalog'
 
 /**
@@ -91,7 +91,7 @@ export function NodeTemplateCreator({ onCreated }: { onCreated?: () => void }) {
         isPublic,
         tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
       }
-      const res = await oasis.api.request('POST', '/api/quest/node-templates', body)
+      const res = await azoa.api.request('POST', '/api/quest/node-templates', body)
       if (isOk(res)) {
         setResult(res.value)
         onCreated?.()

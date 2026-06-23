@@ -47,6 +47,10 @@ DEFINE FIELD IF NOT EXISTS idempotency_key ON TABLE operation_log TYPE option<st
 -- Error detail (populated on failure)
 DEFINE FIELD IF NOT EXISTS error ON TABLE operation_log TYPE option<string>;
 
+-- tenant-consent-delegation AC4: acting tenant + required signing scope
+DEFINE FIELD IF NOT EXISTS acting_tenant_id ON TABLE operation_log TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS signing_scope ON TABLE operation_log TYPE option<string>;
+
 -- Timestamps
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE operation_log TYPE datetime
     READONLY;

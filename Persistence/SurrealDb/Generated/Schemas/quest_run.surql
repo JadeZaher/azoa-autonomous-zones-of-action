@@ -24,6 +24,9 @@ DEFINE FIELD IF NOT EXISTS quest_id ON TABLE quest_run TYPE record<quest>;
 -- Avatar that initiated this run (denormalized for query convenience)
 DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE quest_run TYPE record<avatar>;
 
+-- Tenant that drove this run via a tenant-driven child credential; null = user-driven. Carried on the durable row so the Tier-2 economic node handlers can stamp it on the produced BlockchainOperation and the custody signing seam's live consent check survives the async saga hop (tenant-consent-delegation AC4/AC4b). Mirrors OperationLog.acting_tenant_id.
+DEFINE FIELD IF NOT EXISTS acting_tenant_id ON TABLE quest_run TYPE option<record<avatar>>;
+
 -- QuestRunStatus enum name
 DEFINE FIELD IF NOT EXISTS status ON TABLE quest_run TYPE string
     ASSERT $value INSIDE $quest_run_status

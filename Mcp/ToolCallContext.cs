@@ -1,6 +1,6 @@
-namespace OASIS.WebAPI.Mcp;
+namespace AZOA.WebAPI.Mcp;
 
-using Oasis.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client.Query;
 
 public sealed record ToolCallContext(
     Guid AvatarId,

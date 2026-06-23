@@ -1,12 +1,12 @@
 using System.Security.Cryptography;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Responses;
 using AlgoAccount = Algorand.Algod.Model.Account;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 // ─── DI registration (orchestrator applies to Program.cs — do NOT edit here) ───
 //
@@ -42,6 +42,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
     private readonly IWalletStore _walletStore;
     private readonly WalletKeyService _keyService;
     private readonly IConfiguration _config;
+    private readonly ITenantConsentGate _consentGate;
 
     /// <summary>
     /// Reserved sentinel id for the platform pseudo-wallet. It is deliberately NOT a
@@ -60,20 +61,41 @@ public sealed class KeyCustodyService : IKeyCustodyService
     /// the faucet precedent (<c>Core/AlgorandFaucet.cs:45</c>), so the platform key
     /// supply is single-sourced.
     /// </summary>
-    public const string PlatformMnemonicConfigPath = "OASIS:Algorand:PlatformMnemonic";
+    public const string PlatformMnemonicConfigPath = "AZOA:Algorand:PlatformMnemonic";
 
-    public KeyCustodyService(IWalletStore walletStore, WalletKeyService keyService, IConfiguration config)
+    public KeyCustodyService(
+        IWalletStore walletStore,
+        WalletKeyService keyService,
+        IConfiguration config,
+        ITenantConsentGate consentGate)
     {
         _walletStore = walletStore;
         _keyService = keyService;
         _config = config;
+        _consentGate = consentGate ?? throw new ArgumentNullException(nameof(consentGate));
     }
 
     /// <inheritdoc />
-    public async Task<OASISResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)
+    public async Task<AZOAResult<T>> WithSigningKeyAsync<T>(SigningContext ctx, Func<byte[], Task<T>> sign)
     {
         ArgumentNullException.ThrowIfNull(sign);
-        var result = new OASISResult<T>();
+
+        // tenant-consent-delegation C1/AC4: LIVE consent check BEFORE any decrypt.
+        // No-op allow for a user-driven context; fail-closed for a tenant-driven one
+        // with no covering grant — even though the ownership IDOR check below would
+        // pass (wallet.AvatarId == ctx.AvatarId). This is THE single chokepoint.
+        var gate = await _consentGate.EnsureAllowedAsync(ctx);
+        if (gate.IsError)
+            return new AZOAResult<T> { IsError = true, Message = gate.Message };
+
+        return await WithSigningKeyAsync(ctx.WalletId, ctx.AvatarId, sign);
+    }
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)
+    {
+        ArgumentNullException.ThrowIfNull(sign);
+        var result = new AZOAResult<T>();
 
         // 1. Load — mirrors WalletManager.ExportWalletAsync (:307-309).
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
@@ -115,10 +137,27 @@ public sealed class KeyCustodyService : IKeyCustodyService
     }
 
     /// <inheritdoc />
-    public async Task<OASISResult<T>> WithPlatformSigningKeyAsync<T>(bool isPlatformContext, Func<byte[], Task<T>> sign)
+    public async Task<AZOAResult<T>> WithPlatformSigningKeyAsync<T>(
+        bool isPlatformContext, SigningContext ctx, Func<byte[], Task<T>> sign)
     {
         ArgumentNullException.ThrowIfNull(sign);
-        var result = new OASISResult<T>();
+
+        // tenant-consent-delegation C2/AC4b: Grant / FungibleTokenCreate sign with the
+        // PLATFORM key yet are tenant-DRIVEN on a user's behalf. Run the LIVE consent
+        // check BEFORE any decrypt; a tenant-driven platform op with no covering grant
+        // fails closed. Non-tenant-driven ⇒ ordinary platform path.
+        var gate = await _consentGate.EnsureAllowedAsync(ctx);
+        if (gate.IsError)
+            return new AZOAResult<T> { IsError = true, Message = gate.Message };
+
+        return await WithPlatformSigningKeyAsync(isPlatformContext, sign);
+    }
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<T>> WithPlatformSigningKeyAsync<T>(bool isPlatformContext, Func<byte[], Task<T>> sign)
+    {
+        ArgumentNullException.ThrowIfNull(sign);
+        var result = new AZOAResult<T>();
 
         // Platform-authority guard (decisions table option (c)): the platform
         // pseudo-wallet has no AvatarId to compare, so authority is the caller's
@@ -163,11 +202,11 @@ public sealed class KeyCustodyService : IKeyCustodyService
     }
 
     /// <inheritdoc />
-    public async Task<OASISResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)
+    public async Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)
     {
         // Ownership/eligibility predicate — NO decrypt. Same guards as the resolver,
         // surfaced as a pre-flight so callers can check without touching key bytes.
-        var result = new OASISResult<bool> { Result = false };
+        var result = new AZOAResult<bool> { Result = false };
 
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result is null)
@@ -206,13 +245,13 @@ public sealed class KeyCustodyService : IKeyCustodyService
     }
 
     /// <inheritdoc />
-    public OASISResult<IWallet> RewrapAsync(IWallet wallet, WalletKeyService oldKeyService, WalletKeyService newKeyService)
+    public AZOAResult<IWallet> RewrapAsync(IWallet wallet, WalletKeyService oldKeyService, WalletKeyService newKeyService)
     {
         ArgumentNullException.ThrowIfNull(wallet);
         ArgumentNullException.ThrowIfNull(oldKeyService);
         ArgumentNullException.ThrowIfNull(newKeyService);
 
-        var result = new OASISResult<IWallet>();
+        var result = new AZOAResult<IWallet>();
 
         // Per-wallet re-wrap primitive: decrypt under the OLD data-key, re-encrypt
         // under the NEW one, zeroing the transient cleartext buffer. Wired enough to
@@ -270,7 +309,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
     /// <summary>
     /// Decrypt JIT into a <see cref="byte"/> array, run <paramref name="sign"/>, and
     /// wipe the bytes in a <c>finally</c> (even on signer throw). Returns the signer's
-    /// result wrapped in <see cref="OASISResult{T}"/>; NEVER the key.
+    /// result wrapped in <see cref="AZOAResult{T}"/>; NEVER the key.
     /// <para>
     /// CAVEAT (P1): <see cref="WalletKeyService.DecryptPrivateKey"/> returns a hex
     /// <c>string</c>, which is immutable and cannot be zeroed. We convert it to a
@@ -281,9 +320,9 @@ public sealed class KeyCustodyService : IKeyCustodyService
     /// WalletKeyService.
     /// </para>
     /// </summary>
-    private async Task<OASISResult<T>> DecryptSignZeroAsync<T>(string encryptedPrivateKey, Func<byte[], Task<T>> sign)
+    private async Task<AZOAResult<T>> DecryptSignZeroAsync<T>(string encryptedPrivateKey, Func<byte[], Task<T>> sign)
     {
-        var result = new OASISResult<T>();
+        var result = new AZOAResult<T>();
 
         string keyHex;
         try

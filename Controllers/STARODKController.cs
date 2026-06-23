@@ -1,12 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -21,7 +21,7 @@ public class STARODKController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<OASISResult<ISTARODK>>> Get(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<ISTARODK>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _manager.GetAsync(id, request);
         if (result.IsError || result.Result == null) return NotFound(result);
@@ -29,7 +29,7 @@ public class STARODKController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<OASISResult<IEnumerable<ISTARODK>>>> GetAll([FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<ISTARODK>>>> GetAll([FromQuery] AZOARequest? request)
     {
         var result = await _manager.GetAllAsync(request);
         return Ok(result);
@@ -38,7 +38,7 @@ public class STARODKController : ControllerBase
     /// <summary>Creates a new STARODK owned by the authenticated avatar, or
     /// upserts an existing record they already own (by name).</summary>
     [HttpPost]
-    public async Task<ActionResult<OASISResult<ISTARODK>>> CreateOrUpdate([FromBody] STARODKCreateModel model, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<ISTARODK>>> CreateOrUpdate([FromBody] STARODKCreateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -50,7 +50,7 @@ public class STARODKController : ControllerBase
     /// <summary>Updates an existing STARODK by route id. Verifies the record is
     /// owned by the authenticated avatar before writing — closes the PUT IDOR.</summary>
     [HttpPut("{id:guid}")]
-    public async Task<ActionResult<OASISResult<ISTARODK>>> Update(Guid id, [FromBody] STARODKCreateModel model, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<ISTARODK>>> Update(Guid id, [FromBody] STARODKCreateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -60,18 +60,18 @@ public class STARODKController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    public async Task<ActionResult<OASISResponse>> Delete(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
 
         var result = await _manager.DeleteAsync(id, avatarId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
-        return Ok(new OASISResponse { Message = "STAR ODK deleted." });
+        return Ok(new AZOAResponse { Message = "STAR ODK deleted." });
     }
 
     [HttpPost("{id:guid}/generate")]
-    public async Task<ActionResult<OASISResult<ISTARODK>>> Generate(Guid id, [FromBody] STARDappGenerationRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<ISTARODK>>> Generate(Guid id, [FromBody] STARDappGenerationRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -81,7 +81,7 @@ public class STARODKController : ControllerBase
     }
 
     [HttpPost("{id:guid}/deploy")]
-    public async Task<ActionResult<OASISResult<ISTARODK>>> Deploy(Guid id, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<ISTARODK>>> Deploy(Guid id, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -97,7 +97,7 @@ public class STARODKController : ControllerBase
     /// flags authorisation failures with the <see cref="STARODKAuthorizationError"/>
     /// prefixes so the controller can return 403/404 instead of 400 for them.
     /// </summary>
-    private ActionResult<OASISResult<ISTARODK>> TranslateUpsertResult(OASISResult<ISTARODK> result)
+    private ActionResult<AZOAResult<ISTARODK>> TranslateUpsertResult(AZOAResult<ISTARODK> result)
     {
         if (!result.IsError) return Ok(result);
 

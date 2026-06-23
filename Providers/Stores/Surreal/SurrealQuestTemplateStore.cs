@@ -1,9 +1,9 @@
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Quest;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="IQuestTemplateStore"/>.

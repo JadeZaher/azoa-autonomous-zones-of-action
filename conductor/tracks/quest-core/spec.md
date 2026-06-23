@@ -14,7 +14,7 @@ Define the core domain models and abstractions for the **Quest DAG system** — 
 ├─────────────────────────────────────────────────────────────┤
 │  Quest Core — Models, DAG, Templates                         │  ← THIS TRACK
 ├─────────────────────────────────────────────────────────────┤
-│  Existing OASIS Manager Layer                                │
+│  Existing AZOA Manager Layer                                │
 │  IHolonManager | INftManager | IWalletManager               │
 │  ISTARManager | ISearchManager | IAvatarNFTService          │
 │  IBlockchainOperationManager                                 │
@@ -53,7 +53,7 @@ A single executable DAG representing a workflow unit.
 `Draft` → `Active` → `Completed` | `Failed` → `Archived`
 
 ### QuestNode
-A single task/step within a quest DAG. Wraps a call to an existing OASIS manager method.
+A single task/step within a quest DAG. Wraps a call to an existing AZOA manager method.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -64,7 +64,7 @@ A single task/step within a quest DAG. Wraps a call to an existing OASIS manager
 | `Name` | `string` | Node label |
 | `Config` | `string` (JSON) | Node-specific config (deserialized to the matching request model at execution time) |
 | `State` | `QuestNodeState` | Pending / Running / Succeeded / Failed / Skipped |
-| `Output` | `string?` (JSON) | Serialized `OASISResult<T>` from the manager call |
+| `Output` | `string?` (JSON) | Serialized `AZOAResult<T>` from the manager call |
 | `Error` | `string?` | Error message if failed |
 | `IsEntry` | `bool` | Entry point node (no incoming control edges) |
 | `IsTerminal` | `bool` | Terminal node (no outgoing control edges) |
@@ -217,7 +217,7 @@ An edge within a QuestTemplate.
 ## Interfaces
 
 ### `IQuestRepository`
-Persistence abstraction wrapping `OASISDbContext`. Uses the same EF patterns as existing models (JSON converters for `Dictionary<string, string>` and `List<Guid>`).
+Persistence abstraction wrapping `AZOADbContext`. Uses the same EF patterns as existing models (JSON converters for `Dictionary<string, string>` and `List<Guid>`).
 
 ```csharp
 Task<Quest?> GetByIdAsync(Guid id);
@@ -256,7 +256,7 @@ Task<Quest> InstantiateAsync(Guid templateId, string parametersJson, Guid avatar
 - [ ] `IQuestRepository` interface with full CRUD
 - [ ] `IQuestDagValidator` enforces acyclicity, entry/terminal, orphan checks
 - [ ] `IQuestInstantiator` validates template params and produces valid Quest
-- [ ] EF configurations use same patterns as `OASISDbContext` (dictConverter, listGuidConverter)
+- [ ] EF configurations use same patterns as `AZOADbContext` (dictConverter, listGuidConverter)
 - [ ] Unit tests for DAG validation (cycle detection, topological sort)
 - [ ] Unit tests for template instantiation with parameter substitution
 - [ ] Builds cleanly with `dotnet build`

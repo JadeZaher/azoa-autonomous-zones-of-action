@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OASIS.WebAPI.Interfaces;
+namespace AZOA.WebAPI.Interfaces;
 
 public interface IAvatar
 {
@@ -22,4 +22,18 @@ public interface IAvatar
     Guid? OwnerTenantId { get; set; }
     string? ExternalUserId { get; set; }
     string? ExternalRef { get; set; }
+
+    // ── user-sovereign-identity ───────────────────────────────────────────────
+    // Wallet-challenge auth binding (AC2): the primary external wallet this avatar
+    // authenticates with. Set on first wallet-verify (create) and on an authed
+    // wallet/link. A (AuthWalletAddress, AuthWalletChainType) pair is unique per
+    // avatar and is matched EXACTLY on login — never by email/username/extuser.
+    string? AuthWalletAddress { get; set; }
+    string? AuthWalletChainType { get; set; }
+
+    // Post-claim custody-window cut (AC3b/H2). Any tenant-driven child JWT (or
+    // claim token) issued BEFORE this watermark is rejected at the signing seam and
+    // at credential checks, closing the residual 15-min window after a claim. UTC;
+    // null = never claimed/revoked-forward.
+    DateTime? AuthNotBefore { get; set; }
 }

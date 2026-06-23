@@ -9,9 +9,9 @@ The blockchain provider implementations were deleted. The `IBlockchainProvider` 
 ## Cross-Chain Bridge Architecture
 
 ### Is Cross-Chain Bridging Possible?
-**Yes**, but as a **trusted/custodial bridge orchestrator** at the API layer. True trustless bridging requires on-chain smart contracts (lock-and-mint, burn-and-mint, or HTLC atomic swaps) and a relayer/validator network. The OASIS WebAPI cannot implement trustless bridging alone.
+**Yes**, but as a **trusted/custodial bridge orchestrator** at the API layer. True trustless bridging requires on-chain smart contracts (lock-and-mint, burn-and-mint, or HTLC atomic swaps) and a relayer/validator network. The AZOA WebAPI cannot implement trustless bridging alone.
 
-What OASIS CAN do:
+What AZOA CAN do:
 1. **Coordinate** operations across multiple chain providers (lock on Algorand → mint wrapped on Solana)
 2. **Track** bridge transactions as special `BlockchainOperation` records
 3. **Expose** bridge endpoints for users
@@ -19,7 +19,7 @@ What OASIS CAN do:
 
 ### Bridge Flow (Trusted Orchestrator)
 ```
-User → OASIS API: "Bridge NFT from Algorand to Solana"
+User → AZOA API: "Bridge NFT from Algorand to Solana"
 1. AlgorandProvider.LockAsync(tokenId, bridgeVaultAddress)
 2. Record BridgeTransaction (status: locked)
 3. SolanaProvider.MintAsync(wrappedTokenUri, 1, recipientAddress)
@@ -30,17 +30,17 @@ User → OASIS API: "Bridge NFT from Algorand to Solana"
 ```csharp
 public interface ICrossChainBridgeService
 {
-    Task<OASISResult<BridgeTransactionResult>> InitiateBridgeAsync(
+    Task<AZOAResult<BridgeTransactionResult>> InitiateBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
         string recipientAddress, Guid avatarId, CancellationToken ct = default);
 
-    Task<OASISResult<BridgeTransactionResult>> CompleteBridgeAsync(
+    Task<AZOAResult<BridgeTransactionResult>> CompleteBridgeAsync(
         string bridgeTransactionId, CancellationToken ct = default);
 
-    Task<OASISResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
+    Task<AZOAResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
         Guid avatarId, CancellationToken ct = default);
 
-    Task<OASISResult<BridgeRouteInfo>> GetSupportedRoutesAsync(CancellationToken ct = default);
+    Task<AZOAResult<BridgeRouteInfo>> GetSupportedRoutesAsync(CancellationToken ct = default);
 }
 ```
 

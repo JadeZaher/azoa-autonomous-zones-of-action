@@ -1,21 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl -s -X POST http://localhost:8000/rpc -H 'Surreal-NS: oasis' -H 'Surreal-DB: oasis' -u root:root -H 'Content-Type: application/json' --data-raw '{\"id\":\"1\",\"method\":\"query\",\"params\":[\"UPSERT type::record\\($_t, $_id\\) CONTENT $_body RETURN AFTER\",{\"_t\":\"avatar\",\"_id\":\"aaaabbbbccccddddeeeeffff00009999\",\"_body\":{\"id\":\"aaaabbbbccccddddeeeeffff00009999\",\"username\":\"probe1\",\"email\":\"probe1@example.com\",\"password_hash\":\"x\",\"first_name\":\"P\",\"last_name\":\"R\",\"created_date\":\"2026-06-07T16:00:00.000000+00:00\",\"is_active\":true,\"is_verified\":false,\"karma\":0,\"level\":1}}]}')",
+      "Bash(curl -s -X POST http://localhost:8000/rpc -H 'Surreal-NS: azoa' -H 'Surreal-DB: azoa' -u root:root -H 'Content-Type: application/json' --data-raw '{\"id\":\"1\",\"method\":\"query\",\"params\":[\"UPSERT type::record\\($_t, $_id\\) CONTENT $_body RETURN AFTER\",{\"_t\":\"avatar\",\"_id\":\"aaaabbbbccccddddeeeeffff00009999\",\"_body\":{\"id\":\"aaaabbbbccccddddeeeeffff00009999\",\"username\":\"probe1\",\"email\":\"probe1@example.com\",\"password_hash\":\"x\",\"first_name\":\"P\",\"last_name\":\"R\",\"created_date\":\"2026-06-07T16:00:00.000000+00:00\",\"is_active\":true,\"is_verified\":false,\"karma\":0,\"level\":1}}]}')",
       "Bash(curl -s -X POST http://localhost:5000/api/avatar/register -H \"Content-Type: application/json\" -d '{\"username\":\"after_restart\",\"email\":\"after_restart@example.com\",\"password\":\"Test123!\",\"firstName\":\"After\",\"lastName\":\"Restart\"}')",
       "Bash(curl -s -X POST http://localhost:5000/api/avatar/login -H \"Content-Type: application/json\" -d '{\"email\":\"after_restart@example.com\",\"password\":\"Test123!\"}')",
-      "Bash(curl -s -X POST http://localhost:8000/rpc -H 'Surreal-NS: oasis' -H 'Surreal-DB: oasis' -u root:root -H 'Content-Type: application/json' --data-raw '{\"id\":\"1\",\"method\":\"query\",\"params\":[\"UPSERT type::record\\($_t, $_id\\) CONTENT $_body RETURN AFTER\",{\"_t\":\"avatar\",\"_id\":\"aaaabbbbccccddddeeeeffff0000aaaa\",\"_body\":{\"id\":\"aaaabbbbccccddddeeeeffff0000aaaa\",\"username\":\"upsert_probe\",\"email\":\"upsert_probe@example.com\",\"password_hash\":\"x\",\"created_date\":\"2026-06-07T16:00:00.000000+00:00\",\"is_active\":true,\"is_verified\":false,\"karma\":0,\"level\":1}}]}')",
-      "Bash(curl -s -X POST 'http://localhost:8000/rpc' -H 'Surreal-NS: oasis' -H 'Surreal-DB: oasis' -u 'root:root' -H 'Content-Type: application/json' --data-raw '{\"id\":\"1\",\"method\":\"query\",\"params\":[\"SELECT * FROM avatar LIMIT 1\"]}')",
-      "Bash(curl -s -X POST 'http://localhost:8000/rpc' -H 'Surreal-NS: oasis' -H 'Surreal-DB: oasis' -u 'root:root' -H 'Content-Type: application/json' --data-raw '{\"id\":\"1\",\"method\":\"query\",\"params\":[\"DELETE avatar WHERE string::len\\(record::id\\(id\\)\\) != 32\"]}')",
-      "Bash(mkdir -p tests/OASIS.WebAPI.LiveTests/frontend-only)",
-      "Bash(cp tests/OASIS.WebAPI.LiveTests/live-tests/Frontend.jsonl tests/OASIS.WebAPI.LiveTests/frontend-only/)",
-      "Bash(Get-ChildItem tests/OASIS.WebAPI.LiveTests -File)",
+      "Bash(curl -s -X POST http://localhost:8000/rpc -H 'Surreal-NS: azoa' -H 'Surreal-DB: azoa' -u root:root -H 'Content-Type: application/json' --data-raw '{\"id\":\"1\",\"method\":\"query\",\"params\":[\"UPSERT type::record\\($_t, $_id\\) CONTENT $_body RETURN AFTER\",{\"_t\":\"avatar\",\"_id\":\"aaaabbbbccccddddeeeeffff0000aaaa\",\"_body\":{\"id\":\"aaaabbbbccccddddeeeeffff0000aaaa\",\"username\":\"upsert_probe\",\"email\":\"upsert_probe@example.com\",\"password_hash\":\"x\",\"created_date\":\"2026-06-07T16:00:00.000000+00:00\",\"is_active\":true,\"is_verified\":false,\"karma\":0,\"level\":1}}]}')",
+      "Bash(curl -s -X POST 'http://localhost:8000/rpc' -H 'Surreal-NS: azoa' -H 'Surreal-DB: azoa' -u 'root:root' -H 'Content-Type: application/json' --data-raw '{\"id\":\"1\",\"method\":\"query\",\"params\":[\"SELECT * FROM avatar LIMIT 1\"]}')",
+      "Bash(curl -s -X POST 'http://localhost:8000/rpc' -H 'Surreal-NS: azoa' -H 'Surreal-DB: azoa' -u 'root:root' -H 'Content-Type: application/json' --data-raw '{\"id\":\"1\",\"method\":\"query\",\"params\":[\"DELETE avatar WHERE string::len\\(record::id\\(id\\)\\) != 32\"]}')",
+      "Bash(mkdir -p tests/AZOA.WebAPI.LiveTests/frontend-only)",
+      "Bash(cp tests/AZOA.WebAPI.LiveTests/live-tests/Frontend.jsonl tests/AZOA.WebAPI.LiveTests/frontend-only/)",
+      "Bash(Get-ChildItem tests/AZOA.WebAPI.LiveTests -File)",
       "Bash(Select-Object -ExpandProperty Name)",
-      "Bash(powershell -NoProfile -Command \"Get-ChildItem 'c:/Users/atooz/Programming/Projects/oasis-sleek/.omc/autopilot/' -ErrorAction SilentlyContinue | Select-Object Name\")",
-      "Bash(powershell -NoProfile -Command \"Get-Content 'c:/Users/atooz/Programming/Projects/oasis-sleek/tests/OASIS.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl' | Measure-Object -Line\")",
+      "Bash(powershell -NoProfile -Command \"Get-ChildItem 'c:/Users/atooz/Programming/Projects/azoa/.omc/autopilot/' -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Bash(powershell -NoProfile -Command \"Get-Content 'c:/Users/atooz/Programming/Projects/azoa/tests/AZOA.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl' | Measure-Object -Line\")",
       "Bash(dotnet format *)",
-      "Bash(grep -c '^{' \"/mnt/c/Users/atooz/Programming/Projects/oasis-sleek/tests/OASIS.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl\" 2>/dev/null || wc -l < \"/mnt/c/Users/atooz/Programming/Projects/oasis-sleek/tests/OASIS.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl\")",
-      "Read(//mnt/c/Users/atooz/Programming/Projects/oasis-sleek/tests/OASIS.WebAPI.LiveTests/live-tests/**)",
+      "Bash(grep -c '^{' \"/mnt/c/Users/atooz/Programming/Projects/azoa/tests/AZOA.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl\" 2>/dev/null || wc -l < \"/mnt/c/Users/atooz/Programming/Projects/azoa/tests/AZOA.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl\")",
+      "Read(//mnt/c/Users/atooz/Programming/Projects/azoa/tests/AZOA.WebAPI.LiveTests/live-tests/**)",
       "Bash(curl -sS -m 3 http://localhost:5000/health)",
       "Bash(podman pull *)"
     ]

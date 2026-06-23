@@ -6,7 +6,7 @@ Tier 0: engine-independent correctness that blocks any real value flow,
 independent of the storage engine. Derived from a 2026-05-16 code trace.
 
 ## Architectural principle (source of truth)
-The **blockchain is the source of truth for value**. The OASIS store is an
+The **blockchain is the source of truth for value**. The AZOA store is an
 orchestration + custody + metadata + audit layer — `Wallet` has **no balance
 field** (`Models/Wallet.cs:6-19`); balance is derived live from chain RPC every
 read (`WalletManager.cs:186-194`). Therefore there is **no stored-balance
@@ -24,7 +24,7 @@ races.
    `:129-130`; on-chain mint at `:147`; first persistence at `:154/:163`.
    Scoped service ⇒ concurrent `POST /{id}/redeem` get separate DbContexts,
    both see `VAAReady`, both mint.
-3. **No dedupe key:** `OASISDbContext.cs:204-210` — all three bridge indexes
+3. **No dedupe key:** `AZOADbContext.cs:204-210` — all three bridge indexes
    non-unique; nothing on `LockTxHash` or Wormhole
    `(emitterChain,emitterAddress,sequence)`. (`QuestEdge` uses `.IsUnique()` at
    `:241` — omission is conspicuous.)

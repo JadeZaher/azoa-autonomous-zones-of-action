@@ -21,13 +21,13 @@
 ### Foundation — wave-1 status
 1. ~~Pin `surrealdb.net` exact version + drift check~~ **Dissolved by
    [[surrealdb-client-package]] Phase 6** (replaces vendor SDK with
-   `Oasis.SurrealDb.Client`; G4 pin moves to `Directory.Build.props`)
+   `Azoa.SurrealDb.Client`; G4 pin moves to `Directory.Build.props`)
 2. [x] **Wave-1 done.** SurrealDB local + test container; integration-test
    harness rebuilt (per-test `test{guid}` namespace isolation, HTTP-based
    seeding, no `EnsureDeleted` teardown). `Program.cs db.Database.Migrate()`
    removed. Harness compiles and runs against container when available.
    **Wave-2 follow-up:** rewire `IntegrationTestBase` to use the new
-   `Oasis.SurrealDb.Client` ([[surrealdb-client-package]] Phase 6 task 37)
+   `Azoa.SurrealDb.Client` ([[surrealdb-client-package]] Phase 6 task 37)
 3. [x] **Wave-1 done for value tables** (`010_wallet`/`020_bridge_tx`/
    `030_swap_state`/`040_nft_ownership`/`050_operation_log`/
    `060_consumed_vaa_ledger`/`070_idempotency_key_store`). **Schema source for
@@ -36,7 +36,7 @@
    **Wave-2 follow-up:**
    (a) re-author as `.mermaid` sources ([[surrealdb-client-package]] Phase 6
    task 35), (b) apply **B1 durability fix** (compose URI →
-   `surrealkv://data/oasis.db?sync=every` + boot self-check), (c) apply **B2
+   `surrealkv://data/azoa.db?sync=every` + boot self-check), (c) apply **B2
    Wormhole VAA index correctness** (drop wrong `(emitter_chain_id, sequence)`
    UNIQUE on `consumed_vaa_ledger`; ADD missing `(wormhole_emitter_chain_id,
    wormhole_emitter_address, wormhole_sequence)` UNIQUE on `bridge_tx`), (d)
@@ -45,14 +45,14 @@
    Quest tables still gated on [[quest-temporal-fork-model]]
 4. ~~Parameterized SurrealQL query layer + lint gate (G3)~~ **Moved to
    [[surrealdb-client-package]] Phase 3 + Phase 5** (query builder lives in
-   `Oasis.SurrealDb.Client`; analyzer SRDB0001 ships from
-   `Oasis.SurrealDb.Analyzer`)
+   `Azoa.SurrealDb.Client`; analyzer SRDB0001 ships from
+   `Azoa.SurrealDb.Analyzer`)
 
 ### Adapter behind the seam (wave-2 — REQUIRES [[surrealdb-client-package]] sub-wave 1.5a)
 5. [~] **Partial — 7 of 8 in-scope stores done (2026-05-22).** Wave-2 round 1:
    Wallet, NFT, BlockchainOperation, Bridge SurrealDB adapters landed under
    `Providers/Stores/Surreal/` against the generated POCOs at
-   `OASIS.WebAPI.Generated.SurrealDb.*`. Wave-2 round 2 (CLOSEOUT-RUNBOOK
+   `AZOA.WebAPI.Generated.SurrealDb.*`. Wave-2 round 2 (CLOSEOUT-RUNBOOK
    Stream A, same day): Avatar, Holon, STAR landed with hand-authored
    090/100/110 `.mermaid` + `.surql` and inline POCOs (mark "replace with
    generated POCO when source-gen catches up"). DI flipped in
@@ -81,7 +81,7 @@
    `SurrealIdempotencyStore` match the EF semantics byte-for-byte (proven
    by the wave-2 integration test suite). **Remaining:**
    `ReconciliationService` and `CrossChainBridgeService` still inject
-   `OASISDbContext` directly — refactor onto `IBridgeStore` +
+   `AZOADbContext` directly — refactor onto `IBridgeStore` +
    `IIdempotencyStore` in [CLOSEOUT-RUNBOOK.md](CLOSEOUT-RUNBOOK.md)
    Stream C so the wave-3 storage flip is a one-line DI change
 8a. ~~Replace polling `ISagaTrigger` with LIVE-query~~ **Moved to
@@ -103,7 +103,7 @@
    doc (definition `quest`/`quest_node`/`quest_edge`; runtime `quest_run` +
    `quest_node_execution` with `forked_from` + `executes` edges). Reimplement
    DAG validation (acyclicity within a single quest definition) using the
-   `Oasis.SurrealDb.Client` builder's `.Relate()` + `.Fetch()` helpers or
+   `Azoa.SurrealDb.Client` builder's `.Relate()` + `.Fetch()` helpers or
    retain the iterative validator. **Gated on [[quest-temporal-fork-model]]
    hand-off**
 10. [ ] Model holon polyhierarchy via graph edges; port query / propagate /
@@ -114,7 +114,7 @@
 
 ### Operations (guardrails — wave-2/3)
 12. [x] **Done (2026-05-22, CLOSEOUT Stream B W1).** B1 durability landed in
-    `docker-compose.surrealdb.yml:42` (`surrealkv://data/oasis.db?sync=every`
+    `docker-compose.surrealdb.yml:42` (`surrealkv://data/azoa.db?sync=every`
     on the `surreal start` command line). `Program.cs` boot self-check
     refuses to start unless (a) `SurrealDb:G1DurabilityAcknowledged=true` is
     set in configuration (operator audit-trail ack that compose was reviewed
@@ -126,7 +126,7 @@
 13. [~] **Partial — backup/restore scripts + RTO doc landed (2026-05-22,
     CLOSEOUT Stream B W4).** `scripts/surrealdb/backup.ps1` and
     `restore.ps1` wrap `surreal export` / `surreal import` via `docker exec`
-    against the `oasis-surrealdb` container; `$ErrorActionPreference=Stop`,
+    against the `azoa-surrealdb` container; `$ErrorActionPreference=Stop`,
     `SURREAL_ROOT_PASS` env-var override, exit-code preserved, restore
     confirms before replaying unless `-Force`. RTO target (15 min) +
     trade-off acknowledgement (no incremental, no PITR) documented in
@@ -134,27 +134,27 @@
     scheduled backup job (CI cron) + periodically-run restore drill — sequenced
     into Stream E G5 gate (plan.md task 22)
 14. ~~Schema migration via gated job (`surrealdb-migrations`/`surrealkit`)~~
-    **Replaced by [[surrealdb-client-package]] Phase 4** (`oasis-surreal
-    migrate` CLI from `Oasis.SurrealDb.Schema` — original tools archived /
+    **Replaced by [[surrealdb-client-package]] Phase 4** (`azoa-surreal
+    migrate` CLI from `Azoa.SurrealDb.Schema` — original tools archived /
     immature)
 15. [x] **Done (2026-05-22, CLOSEOUT Stream B W2).** OTEL decorator landed in
     `Observability/InstrumentedSurrealExecutor.cs` wrapping the package's
     `DefaultSurrealExecutor` via a true decorator (the existing DI descriptor
     is removed and re-registered through `ActivatorUtilities` so there's no
     dangling registration). `ActivitySource` and `Meter` both named
-    `Oasis.SurrealDb` (matches package namespace). Emits `surrealdb.queries`
+    `Azoa.SurrealDb` (matches package namespace). Emits `surrealdb.queries`
     + `surrealdb.errors` counters and a `surrealdb.duration_ms` histogram
     tagged with `statement_kind` (SELECT/INSERT/UPDATE/DELETE/CREATE/RELATE/
     INFO/OTHER/MULTI) and `table`. Error path still records duration +
     queries-counter so dashboards don't look like the query disappeared.
     The homebake package stays observability-agnostic (decorator lives in
-    `OASIS.WebAPI`, not the package). **Deferred to a follow-up:** query
+    `AZOA.WebAPI`, not the package). **Deferred to a follow-up:** query
     plan capture, slow-query log, index-use stats, connection-pool depth —
     none are exposed by SurrealDB 1.5.x via the SDK surface yet
 
 ### Strategic-review additions (wave-2)
 A1. [~] **Partial — three of four budgets landed (2026-05-22, CLOSEOUT
-    Stream B W3).** `tests/OASIS.WebAPI.IntegrationTests/Perf/
+    Stream B W3).** `tests/AZOA.WebAPI.IntegrationTests/Perf/
     SurrealPerfBudgets.cs` asserts `Wallet GetById p99 < 50ms`, `BridgeTx
     insert p99 < 100ms`, `SagaSteps due-scan p99 < 200ms` — each over 100
     iterations, FluentAssertions for the budget assertion, linear-interpolation
@@ -175,7 +175,7 @@ A6. [ ] Reserved-word denylist in `SurrealIdentifier.ForTable` (delivered in
     [[surrealdb-client-package]] Phase 3 task 12). This track's job: verify
     after the package lands
 A7. [x] **Done (2026-05-22).** Wave-2 integration tests
-    (`tests/OASIS.WebAPI.IntegrationTests/Persistence/Surreal/*Tests.cs`)
+    (`tests/AZOA.WebAPI.IntegrationTests/Persistence/Surreal/*Tests.cs`)
     use `[SkippableFact]` + `Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
     ...)` so a missing container produces SKIPPED, not silently PASSED.
     `Xunit.SkippableFact` wired into the integration tests csproj
@@ -189,17 +189,17 @@ A10. [ ] G7 chain-reconciliation as chaos-tested CI gate — insert N ops,
 
 ### Remove EF (wave-3)
 16. [x] **Done (2026-05-22, CLOSEOUT Stream D).** `Data/` (containing
-    `OASISDbContext.cs` + `SeedData.cs`), `Migrations/` (all 5 migration
+    `AZOADbContext.cs` + `SeedData.cs`), `Migrations/` (all 5 migration
     files), every `Providers/Stores/Ef*Store.cs` (Avatar, Wallet, Holon,
     BlockchainOperation, STAR, Quest, NFT, Bridge, QuestRunStore stub,
     QuestNodeExecutionStore stub), `Core/Idempotency/IdempotencyStore.cs`
     (EF impl), and `Services/Sagas/EfSagaStore.cs` deleted. The
     `Npgsql.EntityFrameworkCore.PostgreSQL` + `Microsoft.EntityFrameworkCore.Design`
-    package refs dropped from `OASIS.WebAPI.csproj`; the
+    package refs dropped from `AZOA.WebAPI.csproj`; the
     `Microsoft.EntityFrameworkCore.InMemory` + `Microsoft.EntityFrameworkCore.Sqlite`
-    refs dropped from `OASIS.WebAPI.Tests.csproj`. Pre-cleared by **Stream
+    refs dropped from `AZOA.WebAPI.Tests.csproj`. Pre-cleared by **Stream
     C2** (ApiKey + QuestTemplate seams + Surreal adapters — closed the
-    pre-flight gate's `OASISDbContext` injection sites) and **Stream D0**
+    pre-flight gate's `AZOADbContext` injection sites) and **Stream D0**
     (test rewiring: 6 EF-bound test files deleted; ReconciliationServiceTests
     + CrossChainBridgeServiceTests rewired onto in-memory FakeBridgeStore +
     FakeIdempotencyStore preserving every test name + assertion verbatim).
@@ -208,35 +208,35 @@ A10. [ ] G7 chain-reconciliation as chaos-tested CI gate — insert N ops,
     [[quest-temporal-fork-model]] runtime store landing.
 17. [x] **Done (2026-05-22, CLOSEOUT Stream D).** The `db.Database.Migrate()
     + SeedData.SeedAsync(db)` block in `Program.cs` deleted along with the
-    `using Microsoft.EntityFrameworkCore;` + `using OASIS.WebAPI.Data;`
-    imports, the `AddDbContext<OASISDbContext>` registration, the
-    `ConnectionStrings:OASISDatabase` config entry, and the
-    `OASIS:DefaultProvider` / `OASIS:FailOverMode` config keys.
+    `using Microsoft.EntityFrameworkCore;` + `using AZOA.WebAPI.Data;`
+    imports, the `AddDbContext<AZOADbContext>` registration, the
+    `ConnectionStrings:AZOADatabase` config entry, and the
+    `AZOA:DefaultProvider` / `AZOA:FailOverMode` config keys.
     `Observability/StorageHealthCheck.cs` rewritten to probe SurrealDB
-    via `ISurrealExecutor` (`RETURN 1`) instead of `OASISDbContext`.
+    via `ISurrealExecutor` (`RETURN 1`) instead of `AZOADbContext`.
 18. [x] **Done (2026-05-22, CLOSEOUT Stream D).** Solution-wide grep for
     `Npgsql|EntityFramework` in `.cs` and `.csproj` files returns empty
-    after the wave-3 deletion. Production-code grep for `OASISDbContext`
-    is empty (modulo a few `// no OASISDbContext` self-referential
+    after the wave-3 deletion. Production-code grep for `AZOADbContext`
+    is empty (modulo a few `// no AZOADbContext` self-referential
     descriptions in integration-test harness XML-doc comments — kept
     because the description "NO EF DEPENDENCIES" is still load-bearing
-    for harness intent). `dotnet build oasis-sleek.sln` → 0 errors, 19
-    warnings (baseline); `dotnet test tests/OASIS.WebAPI.Tests` → 523/523
+    for harness intent). `dotnet build azoa.sln` → 0 errors, 19
+    warnings (baseline); `dotnet test tests/AZOA.WebAPI.Tests` → 523/523
     pass.
 
 ### Pre-cutover gate — all must PASS (wave-3)
-19. [x] **Done (2026-05-22, CLOSEOUT Stream E).** G1 evidence: `tests/OASIS.WebAPI.IntegrationTests/Gates/G1_CrashDurabilityTest.cs:97` (real SIGKILL + restart + 40-row durability assertion) and `tests/OASIS.WebAPI.IntegrationTests/Gates/G1_CrashDurabilityTest.cs:193` (static sync=every config gate). G7 evidence shared with task 21. See [SIGN-OFF.md](SIGN-OFF.md).
-20. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Evidence: `tests/OASIS.WebAPI.IntegrationTests/Gates/G2_IdempotencyTocTouTest.cs:69` (50 concurrent redeems through real SurrealIdempotencyStore + SurrealBridgeStore, exactly one chain effect) and `tests/OASIS.WebAPI.IntegrationTests/Gates/G2_IdempotencyTocTouTest.cs:277` (20 concurrent TryClaimDueStepAsync, exactly one winner). See [SIGN-OFF.md](SIGN-OFF.md).
-21. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Evidence: `tests/OASIS.WebAPI.IntegrationTests/Gates/G7_ReconciliationDrillTest.cs:44` (orphaned Redeeming row + orphaned InProgress idempotency, single ReconcileBridgeAsync pass with truth-providing stub, row converges to Completed; idempotent re-run scans nothing). See [SIGN-OFF.md](SIGN-OFF.md).
-22. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Evidence: `tests/OASIS.WebAPI.IntegrationTests/Gates/G5_RestoreDrillTest.cs:122` (13-table seed -> backup.ps1 -> REMOVE NAMESPACE -> restore.ps1 -> SHA-256 round-trip byte-equal). P1 residual F1 (backup/restore.ps1 docker-vs-podman gap) closed same day -- both scripts now auto-detect docker (preferred) or podman via `Find-ContainerRuntime`. See [SIGN-OFF.md](SIGN-OFF.md).
-23. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Evidence: `tests/OASIS.WebAPI.IntegrationTests/Gates/G3_InjectionSuiteTest.cs:100` (hostile input through 4 controller paths, wallet row-count invariant) + `tests/OASIS.WebAPI.IntegrationTests/Gates/G3_InjectionSuiteTest.cs:201` (positive WithParam byte-exact round-trip) + `tests/OASIS.WebAPI.IntegrationTests/Gates/G3_InjectionSuiteTest.cs:280` (live `dotnet build` SRDB0001 analyzer fixture). See [SIGN-OFF.md](SIGN-OFF.md).
+19. [x] **Done (2026-05-22, CLOSEOUT Stream E).** G1 evidence: `tests/AZOA.WebAPI.IntegrationTests/Gates/G1_CrashDurabilityTest.cs:97` (real SIGKILL + restart + 40-row durability assertion) and `tests/AZOA.WebAPI.IntegrationTests/Gates/G1_CrashDurabilityTest.cs:193` (static sync=every config gate). G7 evidence shared with task 21. See [SIGN-OFF.md](SIGN-OFF.md).
+20. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Evidence: `tests/AZOA.WebAPI.IntegrationTests/Gates/G2_IdempotencyTocTouTest.cs:69` (50 concurrent redeems through real SurrealIdempotencyStore + SurrealBridgeStore, exactly one chain effect) and `tests/AZOA.WebAPI.IntegrationTests/Gates/G2_IdempotencyTocTouTest.cs:277` (20 concurrent TryClaimDueStepAsync, exactly one winner). See [SIGN-OFF.md](SIGN-OFF.md).
+21. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Evidence: `tests/AZOA.WebAPI.IntegrationTests/Gates/G7_ReconciliationDrillTest.cs:44` (orphaned Redeeming row + orphaned InProgress idempotency, single ReconcileBridgeAsync pass with truth-providing stub, row converges to Completed; idempotent re-run scans nothing). See [SIGN-OFF.md](SIGN-OFF.md).
+22. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Evidence: `tests/AZOA.WebAPI.IntegrationTests/Gates/G5_RestoreDrillTest.cs:122` (13-table seed -> backup.ps1 -> REMOVE NAMESPACE -> restore.ps1 -> SHA-256 round-trip byte-equal). P1 residual F1 (backup/restore.ps1 docker-vs-podman gap) closed same day -- both scripts now auto-detect docker (preferred) or podman via `Find-ContainerRuntime`. See [SIGN-OFF.md](SIGN-OFF.md).
+23. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Evidence: `tests/AZOA.WebAPI.IntegrationTests/Gates/G3_InjectionSuiteTest.cs:100` (hostile input through 4 controller paths, wallet row-count invariant) + `tests/AZOA.WebAPI.IntegrationTests/Gates/G3_InjectionSuiteTest.cs:201` (positive WithParam byte-exact round-trip) + `tests/AZOA.WebAPI.IntegrationTests/Gates/G3_InjectionSuiteTest.cs:280` (live `dotnet build` SRDB0001 analyzer fixture). See [SIGN-OFF.md](SIGN-OFF.md).
 24. ~~SDK-pin test green~~ **Replaced by**: build fails if
-    `OasisSurrealDbVersion` in `Directory.Build.props` drifts from the
-    version actually resolved by `Oasis.SurrealDb.Client` (G4)
+    `AzoaSurrealDbVersion` in `Directory.Build.props` drifts from the
+    version actually resolved by `Azoa.SurrealDb.Client` (G4)
 
 ### Verification
-25. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Integration test harness rebuilt around per-test SurrealDB namespace isolation (`IntegrationTestBase.cs`, `test{guid}` namespace, REMOVE NAMESPACE teardown). The 5 gate tests + the wave-2 Persistence/Surreal/*Tests.cs + Perf/SurrealPerfBudgets.cs all run against the real SurrealDB container via [SkippableFact]+SkipIfSurrealDbUnavailableAsync. Unit suite (523/523) green via `dotnet test tests/OASIS.WebAPI.Tests` per plan.md task 18.
-26. [x] **Done (2026-05-22, CLOSEOUT Stream E).** `dotnet build oasis-sleek.sln` returns 0 errors / 19 warnings (within baseline tolerance per plan.md task 18).
+25. [x] **Done (2026-05-22, CLOSEOUT Stream E).** Integration test harness rebuilt around per-test SurrealDB namespace isolation (`IntegrationTestBase.cs`, `test{guid}` namespace, REMOVE NAMESPACE teardown). The 5 gate tests + the wave-2 Persistence/Surreal/*Tests.cs + Perf/SurrealPerfBudgets.cs all run against the real SurrealDB container via [SkippableFact]+SkipIfSurrealDbUnavailableAsync. Unit suite (523/523) green via `dotnet test tests/AZOA.WebAPI.Tests` per plan.md task 18.
+26. [x] **Done (2026-05-22, CLOSEOUT Stream E).** `dotnet build azoa.sln` returns 0 errors / 19 warnings (within baseline tolerance per plan.md task 18).
 27. [x] **Done (2026-05-22, CLOSEOUT Stream E).** [SIGN-OFF.md](SIGN-OFF.md) committed. All 7 guardrails (G1-G7) demonstrably met with evidence file:line pointers. Post-F1-close, only G1 + G7 carry documented PASS-WITH-RESIDUAL notes (intrinsic SurrealDB 1.5.x fsync-introspection limit; SIGKILL-vs-model crash trade-off where G1 owns the literal SIGKILL evidence and G7 owns the recovery contract). api-safety-hardening section 4 cross-check: zero regressions, one resolved (integration test harness), one architecturally N/A (EF migration baseline).
 
 ## Outstanding strategic-review items dropped from this track

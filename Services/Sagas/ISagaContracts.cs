@@ -1,10 +1,10 @@
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// A step handler does the actual work for one forward (or compensation) step.
 /// It is the ONLY place a saga touches the outside world; it MUST gate any
 /// irreversible effect on <c>ctx.StepIdempotencyKey</c> via the shared
-/// <see cref="OASIS.WebAPI.Interfaces.IIdempotencyStore"/> (the saga layer does
+/// <see cref="AZOA.WebAPI.Interfaces.IIdempotencyStore"/> (the saga layer does
 /// not reinvent exactly-once). Generic over a typed payload — zero bridge
 /// coupling.
 /// </summary>

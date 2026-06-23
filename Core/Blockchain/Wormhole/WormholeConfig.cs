@@ -1,12 +1,12 @@
-namespace OASIS.WebAPI.Core.Blockchain.Wormhole;
+namespace AZOA.WebAPI.Core.Blockchain.Wormhole;
 
 /// <summary>
 /// Bridge execution mode — determines whether cross-chain transfers
-/// use trustless on-chain verification or the OASIS custodial orchestrator.
+/// use trustless on-chain verification or the AZOA custodial orchestrator.
 /// </summary>
 public enum BridgeMode
 {
-    /// <summary>OASIS server coordinates lock→mint. Fast but centralized.</summary>
+    /// <summary>AZOA server coordinates lock→mint. Fast but centralized.</summary>
     Trusted,
 
     /// <summary>Wormhole Guardian network produces VAAs for on-chain proof verification.</summary>
@@ -24,7 +24,7 @@ public class WormholeConfig
     /// <summary>WormholeScan Guardian REST API base URL.</summary>
     public string GuardianRpcUrl { get; set; } = "https://api.wormholescan.io";
 
-    /// <summary>Wormhole chain IDs used to map OASIS chain names to Wormhole emitters.
+    /// <summary>Wormhole chain IDs used to map AZOA chain names to Wormhole emitters.
     /// Addresses are mainnet. For devnet/testnet overrides, see ChainMappingsDevnet.</summary>
     public Dictionary<string, WormholeChainMapping> ChainMappings { get; set; } = new()
     {
@@ -129,7 +129,7 @@ public class WormholeConfig
 }
 
 /// <summary>
-/// Maps an OASIS chain name to its Wormhole chain ID and core bridge contract/program address.
+/// Maps an AZOA chain name to its Wormhole chain ID and core bridge contract/program address.
 /// </summary>
 public class WormholeChainMapping
 {

@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client.Query;
 
-namespace OASIS.WebAPI.Mcp.Tools;
+namespace AZOA.WebAPI.Mcp.Tools;
 
 /// <summary>
 /// Returns all NFT holons owned by the calling avatar, optionally filtered

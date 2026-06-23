@@ -7,7 +7,7 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 
-namespace OASIS.WebAPI.Core.Diagnostics;
+namespace AZOA.WebAPI.Core.Diagnostics;
 
 /// <summary>
 /// Singleton background worker that dequeues <see cref="JsonlEntry"/> items and

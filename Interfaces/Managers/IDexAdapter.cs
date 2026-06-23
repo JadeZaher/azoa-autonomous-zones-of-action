@@ -1,20 +1,20 @@
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 /// <summary>
 /// Per-chain DEX adapter. Mirrors the SDK's <c>DexAdapter</c> contract in
-/// <c>sdk/oasis-wallet/src/core/types.ts</c> (one implementation per chain that
+/// <c>sdk/azoa-wallet/src/core/types.ts</c> (one implementation per chain that
 /// supports swaps, e.g. Tinyman/Algorand, Jupiter/Solana).
 ///
 /// To add a new chain: implement this interface in
 /// <c>Managers/Dex/&lt;Chain&gt;DexAdapter.cs</c> and add a single DI
-/// registration — <see cref="OASIS.WebAPI.Managers.SwapManager"/>'s dispatch
+/// registration — <see cref="AZOA.WebAPI.Managers.SwapManager"/>'s dispatch
 /// never changes.
 ///
 /// The quote→execute cache is cross-cutting and is owned by
-/// <see cref="OASIS.WebAPI.Managers.SwapManager"/>: adapters are stateless with
+/// <see cref="AZOA.WebAPI.Managers.SwapManager"/>: adapters are stateless with
 /// respect to caching. <see cref="GetQuoteAsync"/> returns the quote plus an
 /// opaque payload that SwapManager caches under a generated
 /// <see cref="SwapQuoteResponse.QuoteId"/>; that same payload is handed back to
@@ -33,7 +33,7 @@ public interface IDexAdapter
     /// adapter must NOT set <see cref="SwapQuoteResponse.QuoteId"/> — SwapManager
     /// owns that lifecycle.
     /// </summary>
-    Task<OASISResult<DexQuote>> GetQuoteAsync(SwapQuoteRequest request);
+    Task<AZOAResult<DexQuote>> GetQuoteAsync(SwapQuoteRequest request);
 
     /// <summary>
     /// Build an unsigned swap transaction for client-side signing.
@@ -41,7 +41,7 @@ public interface IDexAdapter
     /// returned from <see cref="GetQuoteAsync"/>; SwapManager has already
     /// validated the request and resolved it from the quote cache.
     /// </summary>
-    Task<OASISResult<SwapQuoteResponse>> BuildSwapTransactionAsync(
+    Task<AZOAResult<SwapQuoteResponse>> BuildSwapTransactionAsync(
         SwapExecuteRequest request, string cachedQuotePayload);
 }
 

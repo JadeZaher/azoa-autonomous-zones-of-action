@@ -1,11 +1,11 @@
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Responses;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="IQuestNodeExecutionStore"/>. One row per
@@ -38,7 +38,7 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// <para>
 /// Pattern mirrors <see cref="SurrealSagaStore"/> — Guid('N') lowercase-hex
 /// record ids, inline POCO (replace with generated POCO when source-gen
-/// catches up — <c>OASIS.WebAPI.Persistence.SurrealDb.Models.QuestNodeExecution</c>
+/// catches up — <c>AZOA.WebAPI.Persistence.SurrealDb.Models.QuestNodeExecution</c>
 /// already exists), every value parameter-bound (G3 / SRDB0001).
 /// </para>
 /// </summary>
@@ -60,7 +60,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
     // ── CreateAsync ──────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<QuestNodeExecution>> CreateAsync(
+    public async Task<AZOAResult<QuestNodeExecution>> CreateAsync(
         QuestNodeExecution execution, CancellationToken ct = default)
     {
         if (execution is null)
@@ -76,7 +76,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
             // is the arbiter — a duplicate per-(run, node) insert fails at the
             // DB boundary rather than overwriting an existing row. The
             // SurrealStatementException (or non-OK status) surfaces as an
-            // OASISResult error to the caller.
+            // AZOAResult error to the caller.
             var q = SurrealQuery
                 .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
                 .WithParam("_t",    ExecTable)
@@ -110,7 +110,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
     // ── GetByIdAsync ─────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<QuestNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<QuestNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -132,7 +132,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
     // ── UpdateAsync ──────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<QuestNodeExecution>> UpdateAsync(
+    public async Task<AZOAResult<QuestNodeExecution>> UpdateAsync(
         QuestNodeExecution execution,
         QuestNodeState? expectedState = null,
         CancellationToken ct = default)
@@ -199,7 +199,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
     // ── GetByRunIdAsync ──────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IEnumerable<QuestNodeExecution>>> GetByRunIdAsync(
+    public async Task<AZOAResult<IEnumerable<QuestNodeExecution>>> GetByRunIdAsync(
         Guid runId, CancellationToken ct = default)
     {
         try
@@ -210,7 +210,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
             var rows = await _executor.QueryAsync<QuestNodeExecutionPoco>(q, ct);
             IEnumerable<QuestNodeExecution> result = rows.Select(ToDomain).ToList();
-            return new OASISResult<IEnumerable<QuestNodeExecution>> { Result = result, Message = "Success" };
+            return new AZOAResult<IEnumerable<QuestNodeExecution>> { Result = result, Message = "Success" };
         }
         catch (Exception ex)
         {
@@ -221,7 +221,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
     // ── GetByRunAndNodeAsync ─────────────────────────────────────────────────
 
-    public async Task<OASISResult<QuestNodeExecution>> GetByRunAndNodeAsync(
+    public async Task<AZOAResult<QuestNodeExecution>> GetByRunAndNodeAsync(
         Guid runId, Guid nodeId, CancellationToken ct = default)
     {
         try
@@ -245,7 +245,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
     // ── TryClaimPendingAsync — G2 single-winner primitive ────────────────────
 
-    public async Task<OASISResult<QuestNodeExecution?>> TryClaimPendingAsync(
+    public async Task<AZOAResult<QuestNodeExecution?>> TryClaimPendingAsync(
         Guid runId, Guid nodeId, CancellationToken ct = default)
     {
         try
@@ -265,7 +265,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
             var probeRows = await _executor.QueryAsync<QuestNodeExecutionIdProjection>(probe, ct);
             if (probeRows.Count == 0)
             {
-                return new OASISResult<QuestNodeExecution?>
+                return new AZOAResult<QuestNodeExecution?>
                 {
                     IsError = true,
                     Message = $"No QuestNodeExecution for (run={runId}, node={nodeId}).",
@@ -288,7 +288,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
             var resp = await _executor.ExecuteAsync(claim, ct);
             if (resp.Count == 0 || !resp[0].IsOk)
             {
-                return new OASISResult<QuestNodeExecution?>
+                return new AZOAResult<QuestNodeExecution?>
                 {
                     Result  = null,
                     Message = $"QuestNodeExecution (run={runId}, node={nodeId}) claim failed."
@@ -299,14 +299,14 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
             if (winners.Count == 0)
             {
                 // Row existed but was NOT Pending — lost the race. Not an error.
-                return new OASISResult<QuestNodeExecution?>
+                return new AZOAResult<QuestNodeExecution?>
                 {
                     Result  = null,
                     Message = $"QuestNodeExecution (run={runId}, node={nodeId}) is not Pending (already claimed)."
                 };
             }
 
-            return new OASISResult<QuestNodeExecution?>
+            return new AZOAResult<QuestNodeExecution?>
             {
                 Result  = ToDomain(winners[0]),
                 Message = "Claimed."
@@ -314,7 +314,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<QuestNodeExecution?>
+            return new AZOAResult<QuestNodeExecution?>
             {
                 IsError = true,
                 Message = $"SurrealQuestNodeExecutionStore.TryClaimPendingAsync({runId},{nodeId}) failed: {ex.Message}",
@@ -383,18 +383,18 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
                 $"Unrecognised QuestNodeState '{raw}' read from SurrealDB. " +
                 "Schema ASSERT INSIDE [...] should have prevented this; refresh the schema.");
 
-    private static OASISResult<T> Ok<T>(T value, string msg = "Success") =>
+    private static AZOAResult<T> Ok<T>(T value, string msg = "Success") =>
         new() { Result = value, Message = msg };
 
-    private static OASISResult<T> Missing<T>(string msg) =>
+    private static AZOAResult<T> Missing<T>(string msg) =>
         new() { IsError = true, Message = msg, Result = default };
 
-    private static OASISResult<T> Err<T>(string msg) =>
+    private static AZOAResult<T> Err<T>(string msg) =>
         new() { IsError = true, Message = msg, Result = default };
 
     // ── POCO (private — replace with generated POCO when source-gen catches up) ──
 
-    private sealed class QuestNodeExecutionPoco : Oasis.SurrealDb.Client.ISurrealRecord
+    private sealed class QuestNodeExecutionPoco : Azoa.SurrealDb.Client.ISurrealRecord
     {
         public string SchemaName => ExecTable;
 

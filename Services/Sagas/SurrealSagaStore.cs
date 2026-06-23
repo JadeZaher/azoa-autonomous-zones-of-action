@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Models.Sagas;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Models.Sagas;
 
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// SurrealDB-backed implementation of <see cref="ISagaStore"/>. All durable

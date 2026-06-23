@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// Per-step retry policy: a bounded attempt budget plus exponential backoff

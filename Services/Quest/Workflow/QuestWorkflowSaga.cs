@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Sagas;
+using AZOA.WebAPI.Sagas;
 
-namespace OASIS.WebAPI.Services.Quest.Workflow;
+namespace AZOA.WebAPI.Services.Quest.Workflow;
 
 /// <summary>
 /// The durable-workflow-engine constants + the typed payload every quest

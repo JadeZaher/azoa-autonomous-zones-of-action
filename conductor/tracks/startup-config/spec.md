@@ -7,7 +7,7 @@ Wire the application with a modern `Program.cs` (minimal-hosting style) or clean
 
 ### 1. Service Registration
 - `ProviderContext` as scoped service
-- `IOASISStorageProvider` singleton or factory registration
+- `IAZOAStorageProvider` singleton or factory registration
 - JWT Bearer authentication
 - Swagger with bearer token support
 - CORS policy (permissive for dev)
@@ -27,8 +27,8 @@ Wire the application with a modern `Program.cs` (minimal-hosting style) or clean
 
 ### 4. appsettings.json
 - `Jwt:Key`, `Jwt:Issuer`, `Jwt:Audience`
-- `OASIS:DefaultProvider`
-- `OASIS:FailOverMode`
+- `AZOA:DefaultProvider`
+- `AZOA:FailOverMode`
 
 ## Exclusions
 - No Karma service registration

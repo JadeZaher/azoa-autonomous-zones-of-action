@@ -6,10 +6,10 @@
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Schema;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Schema;
 
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("quest",
         Aggregate = "Quest (Models/Quest/Quest.cs)",

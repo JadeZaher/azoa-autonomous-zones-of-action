@@ -1,9 +1,9 @@
-# DESIGN — C#-first SurrealDB schema authoring (OASIS-scoped)
+# DESIGN — C#-first SurrealDB schema authoring (AZOA-scoped)
 
 **Status:** Design doc. Created 2026-05-27, revised 2026-05-27 evening
 after the C#-first pivot. **Not yet implemented.** Scope is narrowly
-OASIS-internal — no public-toolkit framing, no umbrella program. If
-the OASIS-internal version proves valuable enough to extract later,
+AZOA-internal — no public-toolkit framing, no umbrella program. If
+the AZOA-internal version proves valuable enough to extract later,
 that's a future conversation.
 
 **Supersedes:** the original Mermaid-portfolio direction in this same
@@ -210,7 +210,7 @@ no longer exists, the generator warns.
 ## Generator: source-gen flipped
 
 Today the Roslyn `IIncrementalGenerator` at
-[packages/Oasis.SurrealDb.SourceGen/](../../../packages/Oasis.SurrealDb.SourceGen)
+[packages/Azoa.SurrealDb.SourceGen/](../../../packages/Azoa.SurrealDb.SourceGen)
 reads `.mermaid` files via `AdditionalTextsProvider` and emits POCOs.
 The pivot **inverts the input source**: read the C# attribute surface
 via `ISymbolProvider` (already available in Roslyn generators) and
@@ -239,7 +239,7 @@ emit the artifacts the Mermaid pipeline used to produce.
 - **Build-time** (Roslyn): every artifact whose consumer is C# code
   (validation calling sites, transition tables) emits during
   `dotnet build`. Zero-config, always current.
-- **CLI** (`dotnet run --project packages/Oasis.SurrealDb.Schema -- generate`):
+- **CLI** (`dotnet run --project packages/Azoa.SurrealDb.Schema -- generate`):
   the artifacts whose consumer is a file checked into git (`.surql`,
   `docs/schema.dbml`, runbook, Mermaid view) emit on explicit
   invocation. Authors run after schema changes; CI runs to verify
@@ -264,7 +264,7 @@ emit the artifacts the Mermaid pipeline used to produce.
   `Models/<Name>.<Aspect>.cs` files.
 - The slice concept — moves from `[Slice("quest")]` attribute, same
   semantics.
-- `Oasis.SurrealDb.Client` (runtime + typed queries) — untouched.
+- `Azoa.SurrealDb.Client` (runtime + typed queries) — untouched.
   POCOs the client consumes are still POCOs; only their authorship
   flips.
 
@@ -318,10 +318,10 @@ deleted at the migration milestone.
 6. **CONVENTION.md rewrite** to reflect the C#-first authoring model.
 
 ## Open questions (resolve before prototype)
-1. **Attribute namespace.** `OASIS.WebAPI.Persistence.SurrealDb.Schema.Attributes`
-   vs `Oasis.SurrealDb.Schema.Attributes` (in the package). The
+1. **Attribute namespace.** `AZOA.WebAPI.Persistence.SurrealDb.Schema.Attributes`
+   vs `Azoa.SurrealDb.Schema.Attributes` (in the package). The
    second is cleaner if attributes are reused by the source-gen; the
-   first keeps the surface OASIS-internal. Default: package
+   first keeps the surface AZOA-internal. Default: package
    namespace, since the source-gen already lives there.
 2. **Validation framework — FluentValidation or homebake.** The
    prior `FluentValidation.AspNetCore` dependency is already in the
@@ -346,11 +346,11 @@ deleted at the migration milestone.
    migrated; cost less than 10 entities of hand-typing.
 
 ## Non-goals
-- Public packaging / cross-ecosystem support. Scope is OASIS-internal.
+- Public packaging / cross-ecosystem support. Scope is AZOA-internal.
   Other ecosystems can build their own; we're not the toolkit author.
 - Replacing the validation pipeline — FluentValidation stays; we just
   collapse the model + validators into one place.
-- Replacing `Oasis.SurrealDb.Client` (runtime, typed queries). The
+- Replacing `Azoa.SurrealDb.Client` (runtime, typed queries). The
   generated POCOs flow through it unchanged.
 - Bespoke schema DSL. We're using C# *as* the DSL.
 

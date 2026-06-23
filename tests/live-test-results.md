@@ -1,4 +1,4 @@
-# 🔬 OASIS Live API Test Results
+# 🔬 AZOA Live API Test Results
 
 - **Base URL:** `http://localhost:5000`
 - **Started:** 2026-06-08T00:45:37.6401181Z
@@ -150,7 +150,7 @@
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"39cfaece-54af-4bbf-b23b-ceac2d1a01ef","username":"xssuser","email":"<img src=x onerror=alert(1)>@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:39.9307409Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"39cfaece-54af-4bbf-b23b-ceac2d1a01ef","username":"xssuser","email":"<img src=x onerror=alert(1)>@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:39.9307409Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -166,7 +166,7 @@
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"3d8282a0-34cb-45d0-bd95-477e24781498","username":"xsstitle","email":"xss2@mal.oasis","title":"<svg onload=alert(1)>","firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.4056743Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"3d8282a0-34cb-45d0-bd95-477e24781498","username":"xsstitle","email":"xss2@mal.azoa","title":"<svg onload=alert(1)>","firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.4056743Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -183,7 +183,7 @@
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealAvatarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealAvatarStore.UpsertAsync(IAvatar avatar, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealAvatarStore.cs:line 91","inner":null}}
+{"isError":true,"message":"SurrealAvatarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealAvatarStore.UpsertAsync(IAvatar avatar, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealAvatarStore.cs:line 91","inner":null}}
 ```
 </details>
 
@@ -233,7 +233,7 @@
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"dc75b118-6492-4f9d-b5d8-3326533a62fa","username":"bigemail","email":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.8445377Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"dc75b118-6492-4f9d-b5d8-3326533a62fa","username":"bigemail","email":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.8445377Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -249,7 +249,7 @@
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"0a2effda-b303-40fc-808f-06d7b37a1963","username":"bigtitle","email":"bigtitle@mal.oasis","title":"Professor Doctor Sir Lord Admiral General Chancellor Vice-President Executive Senior Chief Principal Lead Head Master Grand Supreme Ultimate Almighty Omnipotent Omniscient Transcendent Eternal Immortal Divine Sacred Holy Blessed Sanctified Consecrated Hallowed Venerated Exalted Elevated Ennobled Dignified Illustrious Eminent Prominent Notable Renowned Celebrated Acclaimed Esteemed Respected Honored Revered Worshipped Adored Glorified Magnified Extoled Praised Lauded Commended Applauded Saluted Cheers Hooray Bravo WellDone GoodJob NiceWork Excellent Outstanding superb fantastic amazing incredible unbelievable phenomenal extraordinary remarkable exceptional stupendous tremendous wondrous marvelous spectacular breathtaking awe-inspiring jaw-dropping mind-blowing earth-shattering groundbreaking revolutionary innovative cutting-edge state-of-the-art world-class top-tier first-rate premium elite exclusive luxury deluxe grand majestic magnificent splendid glorious radiant brilliant luminous dazzling shining gleaming glowing blazing flaming fiery intense powerful mighty strong forceful potent vigorous robust sturdy solid firm hard tough durable resilient flexible adaptable versatile capable competent skilled talented gifted brilliant genius prodigy virtuoso master expert specialist professional authority pundit sage wizard magician sorcerer enchanter charmer captivator fascinator mesmerizer hypnotizer spellbinder storyteller narrator chronicler historian biographer autobiographer memoirist diarist journalist reporter correspondent columnist commentator critic reviewer analyst evaluator assessor appraiser estimator calculator mathematician statistician actuary accountant bookkeeper auditor inspector examiner investigator researcher scientist scholar academic intellectual philosopher theorist thinker ideologue ideologistologist"
+{"isError":false,"message":"Saved.","result":{"id":"0a2effda-b303-40fc-808f-06d7b37a1963","username":"bigtitle","email":"bigtitle@mal.azoa","title":"Professor Doctor Sir Lord Admiral General Chancellor Vice-President Executive Senior Chief Principal Lead Head Master Grand Supreme Ultimate Almighty Omnipotent Omniscient Transcendent Eternal Immortal Divine Sacred Holy Blessed Sanctified Consecrated Hallowed Venerated Exalted Elevated Ennobled Dignified Illustrious Eminent Prominent Notable Renowned Celebrated Acclaimed Esteemed Respected Honored Revered Worshipped Adored Glorified Magnified Extoled Praised Lauded Commended Applauded Saluted Cheers Hooray Bravo WellDone GoodJob NiceWork Excellent Outstanding superb fantastic amazing incredible unbelievable phenomenal extraordinary remarkable exceptional stupendous tremendous wondrous marvelous spectacular breathtaking awe-inspiring jaw-dropping mind-blowing earth-shattering groundbreaking revolutionary innovative cutting-edge state-of-the-art world-class top-tier first-rate premium elite exclusive luxury deluxe grand majestic magnificent splendid glorious radiant brilliant luminous dazzling shining gleaming glowing blazing flaming fiery intense powerful mighty strong forceful potent vigorous robust sturdy solid firm hard tough durable resilient flexible adaptable versatile capable competent skilled talented gifted brilliant genius prodigy virtuoso master expert specialist professional authority pundit sage wizard magician sorcerer enchanter charmer captivator fascinator mesmerizer hypnotizer spellbinder storyteller narrator chronicler historian biographer autobiographer memoirist diarist journalist reporter correspondent columnist commentator critic reviewer analyst evaluator assessor appraiser estimator calculator mathematician statistician actuary accountant bookkeeper auditor inspector examiner investigator researcher scientist scholar academic intellectual philosopher theorist thinker ideologue ideologistologist"
 ... [truncated]
 ```
 </details>
@@ -454,7 +454,7 @@
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"b641f1aa-c35f-49d0-8d6a-f965104a8a1e","username":"bidi","email":"admin‮@mal.oasis‬","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:41.8336841Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"b641f1aa-c35f-49d0-8d6a-f965104a8a1e","username":"bidi","email":"admin‮@mal.azoa‬","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:41.8336841Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -486,7 +486,7 @@
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"0d626f83-cb86-460f-bea2-c2fce08bf9a3","username":"arraytest","email":"array@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:42.1185831Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"0d626f83-cb86-460f-bea2-c2fce08bf9a3","username":"arraytest","email":"array@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:42.1185831Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -520,7 +520,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"b832575a-73ac-4771-b220-689c95104c69","username":"rapid1","email":"rapid1@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:42.4791476Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"b832575a-73ac-4771-b220-689c95104c69","username":"rapid1","email":"rapid1@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:42.4791476Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -536,7 +536,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"0523d3f1-03d3-47ec-ac50-87065bc27c4e","username":"rapid2","email":"rapid2@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:42.6804294Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"0523d3f1-03d3-47ec-ac50-87065bc27c4e","username":"rapid2","email":"rapid2@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:42.6804294Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -552,7 +552,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"58c726f5-6dc2-4491-84a0-1eaf82c51e25","username":"rapid3","email":"rapid3@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:42.9300207Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"58c726f5-6dc2-4491-84a0-1eaf82c51e25","username":"rapid3","email":"rapid3@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:42.9300207Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -568,7 +568,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"4beffba6-f863-477d-8400-4f72ffa41766","username":"rapid4","email":"rapid4@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:43.1981699Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"4beffba6-f863-477d-8400-4f72ffa41766","username":"rapid4","email":"rapid4@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:43.1981699Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -584,7 +584,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"afe257fe-5283-4a87-a688-fff717ca0826","username":"rapid5","email":"rapid5@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:43.4182928Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"afe257fe-5283-4a87-a688-fff717ca0826","username":"rapid5","email":"rapid5@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:43.4182928Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -602,7 +602,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"c99cfade-ce06-485d-b254-78e647c10fd9","username":"negative","email":"negative@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:43.6852483Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"c99cfade-ce06-485d-b254-78e647c10fd9","username":"negative","email":"negative@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:43.6852483Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -655,13 +655,13 @@ X-Injected: evil' is invalid.
 - **Duration:** 2376ms
 - **Extracted:**
   - `minimalAvatar.id` = `1a11c017-b129-41a6-baa8-e1f86bed12af`
-  - `minimalAvatar.email` = `min@qa.oasis`
+  - `minimalAvatar.email` = `min@qa.azoa`
 
 <details>
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"1a11c017-b129-41a6-baa8-e1f86bed12af","username":"min","email":"min@qa.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:39.871266Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"1a11c017-b129-41a6-baa8-e1f86bed12af","username":"min","email":"min@qa.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:39.871266Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -679,7 +679,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"b980507b-f002-45b5-b069-88e10f00c9e6","username":"fullprofile","email":"full@qa.oasis","title":"Dr.","firstName":"Full","lastName":"Profile","createdDate":"2026-06-08T00:45:40.1445962Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"b980507b-f002-45b5-b069-88e10f00c9e6","username":"fullprofile","email":"full@qa.azoa","title":"Dr.","firstName":"Full","lastName":"Profile","createdDate":"2026-06-08T00:45:40.1445962Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -714,7 +714,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"f35c63ec-e24e-4ad9-b743-af9bcb0da07f","username":"plusemail","email":"test+alias@qa.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.5423428Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"f35c63ec-e24e-4ad9-b743-af9bcb0da07f","username":"plusemail","email":"test+alias@qa.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.5423428Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -730,7 +730,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"46d3a032-dc26-49d7-acc5-440c56265c11","username":"verylongusernamethatistotaloffiftycharacterslong","email":"longuser@qa.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.757662Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"46d3a032-dc26-49d7-acc5-440c56265c11","username":"verylongusernamethatistotaloffiftycharacterslong","email":"longuser@qa.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.757662Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -930,7 +930,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Success","result":[{"id":"0028eb26-9d88-4b02-b979-04c491996d8d","username":"blockchaintest","email":"blockchain@test.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:41.3544257Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"0a2effda-b303-40fc-808f-06d7b37a1963","username":"bigtitle","email":"bigtitle@mal.oasis","title":"Professor Doctor Sir Lord Admiral General Chancellor Vice-President Executive Senior Chief Principal Lead Head Master Grand Supreme Ultimate Almighty Omnipotent Omniscient Transcendent Eternal Immortal Divine Sacred Holy Blessed Sanctified Consecrated Hallowed Venerated Exalted Elevated Ennobled Dignified Illustrious Eminent Prominent Notable Renowned Celebrated Acclaimed Esteemed Respected Honored Revered Worshipped Adored Glorified Magnified Extoled Praised Lauded Commended Applauded Saluted Cheers Hooray Bravo WellDone GoodJob NiceWork Excellent Outstanding superb fantastic amazing incredible unbelievable phenomenal extraordinary remarkable exceptional stupendous tremendous wondrous marvelous spectacular breathtaking awe-inspiring jaw-dropping mind-blowing earth-shattering groundbreaking revolutionary innovative cutting-edge state-of-the-art world-class top-tier first-rate premium elite exclusive luxury deluxe grand majestic magnificent splendid glorious radiant brilliant luminous dazzling shining gleaming glowing blazing flaming fiery intense powerful mighty strong forceful potent vigorous robust sturdy solid firm hard tough durable resilient flexible adaptable versatile capable competent skilled talented gifted brilliant genius prodigy virtuoso master expert specialist professional authority pundit sage wizard magician sorcerer enchanter charmer captivator fascinator mesmerizer hypnotizer spellbinder storyteller narrator chronicler historian biographer autobiographer memoirist diarist journalist reporter correspondent columnist commentator c
+{"isError":false,"message":"Success","result":[{"id":"0028eb26-9d88-4b02-b979-04c491996d8d","username":"blockchaintest","email":"blockchain@test.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:41.3544257Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"0a2effda-b303-40fc-808f-06d7b37a1963","username":"bigtitle","email":"bigtitle@mal.azoa","title":"Professor Doctor Sir Lord Admiral General Chancellor Vice-President Executive Senior Chief Principal Lead Head Master Grand Supreme Ultimate Almighty Omnipotent Omniscient Transcendent Eternal Immortal Divine Sacred Holy Blessed Sanctified Consecrated Hallowed Venerated Exalted Elevated Ennobled Dignified Illustrious Eminent Prominent Notable Renowned Celebrated Acclaimed Esteemed Respected Honored Revered Worshipped Adored Glorified Magnified Extoled Praised Lauded Commended Applauded Saluted Cheers Hooray Bravo WellDone GoodJob NiceWork Excellent Outstanding superb fantastic amazing incredible unbelievable phenomenal extraordinary remarkable exceptional stupendous tremendous wondrous marvelous spectacular breathtaking awe-inspiring jaw-dropping mind-blowing earth-shattering groundbreaking revolutionary innovative cutting-edge state-of-the-art world-class top-tier first-rate premium elite exclusive luxury deluxe grand majestic magnificent splendid glorious radiant brilliant luminous dazzling shining gleaming glowing blazing flaming fiery intense powerful mighty strong forceful potent vigorous robust sturdy solid firm hard tough durable resilient flexible adaptable versatile capable competent skilled talented gifted brilliant genius prodigy virtuoso master expert specialist professional authority pundit sage wizard magician sorcerer enchanter charmer captivator fascinator mesmerizer hypnotizer spellbinder storyteller narrator chronicler historian biographer autobiographer memoirist diarist journalist reporter correspondent columnist commentator c
 ... [truncated]
 ```
 </details>
@@ -1170,13 +1170,13 @@ X-Injected: evil' is invalid.
 - **Duration:** 2357ms
 - **Extracted:**
   - `avatar1.avatarId` = `2f025fdb-94f5-454b-9136-e3baa3074bd2`
-  - `avatar1.email` = `live@test.oasis`
+  - `avatar1.email` = `live@test.azoa`
 
 <details>
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"2f025fdb-94f5-454b-9136-e3baa3074bd2","username":"livetester","email":"live@test.oasis","title":"Tester","firstName":"Live","lastName":"Test","createdDate":"2026-06-08T00:45:39.835042Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"2f025fdb-94f5-454b-9136-e3baa3074bd2","username":"livetester","email":"live@test.azoa","title":"Tester","firstName":"Live","lastName":"Test","createdDate":"2026-06-08T00:45:39.835042Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -1243,7 +1243,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Success","result":[{"id":"13251342-d296-49a1-a95f-bac80cf2fa50","username":"smoketest_rpc3","email":"smoke_rpc3@example.com","title":null,"firstName":"Smoke","lastName":"RPC3","createdDate":"2026-06-07T15:44:02.4001697Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"1a11c017-b129-41a6-baa8-e1f86bed12af","username":"min","email":"min@qa.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:39.871266Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"2f025fdb-94f5-454b-9136-e3baa3074bd2","username":"livetester","email":"live@test.oasis","title":"Tester","firstName":"Live","lastName":"Test","createdDate":"2026-06-08T00:45:39.835042Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"39cfaece-54af-4bbf-b23b-ceac2d1a01ef","username":"xssuser","email":"<img src=x onerror=alert(1)>@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:39.9307409Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"576ad632-1c83-4fd0-b57b-595f34dc0e28","username":"login_dbg","email":"login_dbg@example.com","title":null,"firstName":"L","lastName":"D","createdDate":"2026-06-07T15:53:57.224447Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"64ccf2dc-12b0-441d-b3e3-2c98dc6d1036","username":"smoketest_final","email":"smoke_final@example.com","title":null,"firstName":"Smoke","lastName":"Final","createdDate":"2026-06-07T15:51:24.6464831Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"86c4b239-b86e-4a9b-a7e4-dac3f2df9996","username":"algodev","email":"algo@devnet.oasis","title":null,"firstName":"Algo","lastName":"Devnet","createdDate":"2026-06-08T00:45:39.8938165Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"a103ef82-188b-491b-91f1-f7
+{"isError":false,"message":"Success","result":[{"id":"13251342-d296-49a1-a95f-bac80cf2fa50","username":"smoketest_rpc3","email":"smoke_rpc3@example.com","title":null,"firstName":"Smoke","lastName":"RPC3","createdDate":"2026-06-07T15:44:02.4001697Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"1a11c017-b129-41a6-baa8-e1f86bed12af","username":"min","email":"min@qa.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:39.871266Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"2f025fdb-94f5-454b-9136-e3baa3074bd2","username":"livetester","email":"live@test.azoa","title":"Tester","firstName":"Live","lastName":"Test","createdDate":"2026-06-08T00:45:39.835042Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"39cfaece-54af-4bbf-b23b-ceac2d1a01ef","username":"xssuser","email":"<img src=x onerror=alert(1)>@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:39.9307409Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"576ad632-1c83-4fd0-b57b-595f34dc0e28","username":"login_dbg","email":"login_dbg@example.com","title":null,"firstName":"L","lastName":"D","createdDate":"2026-06-07T15:53:57.224447Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"64ccf2dc-12b0-441d-b3e3-2c98dc6d1036","username":"smoketest_final","email":"smoke_final@example.com","title":null,"firstName":"Smoke","lastName":"Final","createdDate":"2026-06-07T15:51:24.6464831Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"86c4b239-b86e-4a9b-a7e4-dac3f2df9996","username":"algodev","email":"algo@devnet.azoa","title":null,"firstName":"Algo","lastName":"Devnet","createdDate":"2026-06-08T00:45:39.8938165Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},{"id":"a103ef82-188b-491b-91f1-f7
 ... [truncated]
 ```
 </details>
@@ -1344,7 +1344,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"86c4b239-b86e-4a9b-a7e4-dac3f2df9996","username":"algodev","email":"algo@devnet.oasis","title":null,"firstName":"Algo","lastName":"Devnet","createdDate":"2026-06-08T00:45:39.8938165Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"86c4b239-b86e-4a9b-a7e4-dac3f2df9996","username":"algodev","email":"algo@devnet.azoa","title":null,"firstName":"Algo","lastName":"Devnet","createdDate":"2026-06-08T00:45:39.8938165Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -1389,7 +1389,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"93c61e14-c12a-483e-98fb-8ac4dd20d212","username":"soldev","email":"sol@devnet.oasis","title":null,"firstName":"Solana","lastName":"Devnet","createdDate":"2026-06-08T00:45:40.5149068Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"93c61e14-c12a-483e-98fb-8ac4dd20d212","username":"soldev","email":"sol@devnet.azoa","title":null,"firstName":"Solana","lastName":"Devnet","createdDate":"2026-06-08T00:45:40.5149068Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -1433,7 +1433,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -1450,7 +1450,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -1467,7 +1467,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -1709,7 +1709,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"451ddc6d-c668-4f63-9ecc-fb98fa235feb","username":"bcmal","email":"bcmal@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.7389794Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"451ddc6d-c668-4f63-9ecc-fb98fa235feb","username":"bcmal","email":"bcmal@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:40.7389794Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -1940,7 +1940,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"da5b882e-4656-45a4-b983-18bc1fbb81ec","username":"blockchainqa","email":"blockchain@qa.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:41.3004287Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"da5b882e-4656-45a4-b983-18bc1fbb81ec","username":"blockchainqa","email":"blockchain@qa.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:41.3004287Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -2072,7 +2072,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"0028eb26-9d88-4b02-b979-04c491996d8d","username":"blockchaintest","email":"blockchain@test.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:41.3544257Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"0028eb26-9d88-4b02-b979-04c491996d8d","username":"blockchaintest","email":"blockchain@test.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:41.3544257Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -2164,7 +2164,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"f129f5f2-4c39-4b88-a9c6-dd87149920ce","username":"e2euser","email":"e2e@flow.oasis","title":"Trader","firstName":"End","lastName":"ToEnd","createdDate":"2026-06-08T00:45:41.9400416Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"f129f5f2-4c39-4b88-a9c6-dd87149920ce","username":"e2euser","email":"e2e@flow.azoa","title":"Trader","firstName":"End","lastName":"ToEnd","createdDate":"2026-06-08T00:45:41.9400416Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -2217,7 +2217,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2234,7 +2234,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2390,7 +2390,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"16d8637e-31b2-492c-98a5-f82178f6b178","username":"odkdev","email":"odkdev@flow.oasis","title":null,"firstName":"ODK","lastName":"Developer","createdDate":"2026-06-08T00:45:43.2190367Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"16d8637e-31b2-492c-98a5-f82178f6b178","username":"odkdev","email":"odkdev@flow.azoa","title":null,"firstName":"ODK","lastName":"Developer","createdDate":"2026-06-08T00:45:43.2190367Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -2425,7 +2425,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2442,7 +2442,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2459,7 +2459,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealStarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealStarStore.UpsertAsync(ISTARODK odk, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealStarStore.cs:line 90","inner":null}}
+{"isError":true,"message":"SurrealStarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealStarStore.UpsertAsync(ISTARODK odk, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealStarStore.cs:line 90","inner":null}}
 ```
 </details>
 
@@ -2573,7 +2573,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"921dfe0c-01ee-42a7-9cb3-4d6d53b8e42a","username":"alpha","email":"alpha@iso.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:43.8482121Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"921dfe0c-01ee-42a7-9cb3-4d6d53b8e42a","username":"alpha","email":"alpha@iso.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:43.8482121Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -2609,7 +2609,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"60b33154-67c3-4fb8-9d1b-09d998a6455f","username":"beta","email":"beta@iso.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:44.2594455Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"60b33154-67c3-4fb8-9d1b-09d998a6455f","username":"beta","email":"beta@iso.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:44.2594455Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -2644,7 +2644,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2661,7 +2661,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2788,7 +2788,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"d1d8365d-6752-45a4-b495-1305166df7cc","username":"e2eavatar","email":"e2e1@test.oasis","title":"E2E","firstName":"End","lastName":"ToEnd","createdDate":"2026-06-08T00:45:42.1771795Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"d1d8365d-6752-45a4-b495-1305166df7cc","username":"e2eavatar","email":"e2e1@test.azoa","title":"E2E","firstName":"End","lastName":"ToEnd","createdDate":"2026-06-08T00:45:42.1771795Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -2832,7 +2832,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2963,7 +2963,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"d7393c26-1da3-401e-b606-5ab40bf60268","username":"e2e2avatar","email":"e2e2@test.oasis","title":null,"firstName":"Star","lastName":"Flow","createdDate":"2026-06-08T00:45:42.994141Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"d7393c26-1da3-401e-b606-5ab40bf60268","username":"e2e2avatar","email":"e2e2@test.azoa","title":null,"firstName":"Star","lastName":"Flow","createdDate":"2026-06-08T00:45:42.994141Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -2998,7 +2998,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -3015,7 +3015,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealStarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealStarStore.UpsertAsync(ISTARODK odk, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealStarStore.cs:line 90","inner":null}}
+{"isError":true,"message":"SurrealStarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealStarStore.UpsertAsync(ISTARODK odk, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealStarStore.cs:line 90","inner":null}}
 ```
 </details>
 
@@ -3102,7 +3102,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"ca74748e-ac3c-42f1-8bda-3f2cf1bbb9ca","username":"e2e3a","email":"e2e3a@test.oasis","title":null,"firstName":"Alice","lastName":null,"createdDate":"2026-06-08T00:45:43.5891666Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"ca74748e-ac3c-42f1-8bda-3f2cf1bbb9ca","username":"e2e3a","email":"e2e3a@test.azoa","title":null,"firstName":"Alice","lastName":null,"createdDate":"2026-06-08T00:45:43.5891666Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -3137,7 +3137,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -3155,7 +3155,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"ea1da1ed-a03a-44b3-804c-0ad7029eff7c","username":"e2e3b","email":"e2e3b@test.oasis","title":null,"firstName":"Bob","lastName":null,"createdDate":"2026-06-08T00:45:44.0035804Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"ea1da1ed-a03a-44b3-804c-0ad7029eff7c","username":"e2e3b","email":"e2e3b@test.azoa","title":null,"firstName":"Bob","lastName":null,"createdDate":"2026-06-08T00:45:44.0035804Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -3258,7 +3258,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"d440aa03-5dce-41ef-b272-43dab43c3793","username":"e2e4bc","email":"e2e4@test.oasis","title":null,"firstName":"Block","lastName":"Chain","createdDate":"2026-06-08T00:45:44.4696749Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"d440aa03-5dce-41ef-b272-43dab43c3793","username":"e2e4bc","email":"e2e4@test.azoa","title":null,"firstName":"Block","lastName":"Chain","createdDate":"2026-06-08T00:45:44.4696749Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -3302,7 +3302,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -3389,7 +3389,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"b5c0c23e-db7b-4b56-b709-08ef346e70ed","username":"e2e5stress","email":"e2e5@test.oasis","title":null,"firstName":"Stress","lastName":"Test","createdDate":"2026-06-08T00:45:45.0106251Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"b5c0c23e-db7b-4b56-b709-08ef346e70ed","username":"e2e5stress","email":"e2e5@test.azoa","title":null,"firstName":"Stress","lastName":"Test","createdDate":"2026-06-08T00:45:45.0106251Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -3595,7 +3595,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"05bb26c8-3b4a-45fa-b1e7-5ea72351cd02","username":"e2e6holon","email":"e2e6@test.oasis","title":null,"firstName":"Holon","lastName":"Stress","createdDate":"2026-06-08T00:45:46.1724654Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"05bb26c8-3b4a-45fa-b1e7-5ea72351cd02","username":"e2e6holon","email":"e2e6@test.azoa","title":null,"firstName":"Holon","lastName":"Stress","createdDate":"2026-06-08T00:45:46.1724654Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -4894,7 +4894,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-<!DOCTYPE html><html lang="en" class="dark"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossorigin="" type="font/woff2"/><link rel="stylesheet" href="/_next/static/css/a182cc84ad5e553f.css" crossorigin="" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack-ce6d2ccf7dafb208.js" crossorigin=""/><script src="/_next/static/chunks/fd9d1056-daf3eb0aa35d0696.js" async="" crossorigin=""></script><script src="/_next/static/chunks/4938-a08e11f58b8b8107.js" async="" crossorigin=""></script><script src="/_next/static/chunks/main-app-2f3800c6e4826db2.js" async="" crossorigin=""></script><script src="/_next/static/chunks/6366-064e393ccb2b90e1.js" async=""></script><script src="/_next/static/chunks/3100-73771510b5b24bd0.js" async=""></script><script src="/_next/static/chunks/app/page-0b342f800c3a856f.js" async=""></script><script src="/_next/static/chunks/7895-815176611b89f795.js" async=""></script><script src="/_next/static/chunks/3127-9135edd67742b3a1.js" async=""></script><script src="/_next/static/chunks/9901-314a93d35ab4ee85.js" async=""></script><script src="/_next/static/chunks/5037-e0640acd1698b3aa.js" async=""></script><script src="/_next/static/chunks/3371-56b2dde1af9a0b4e.js" async=""></script><script src="/_next/static/chunks/935-00694eae37c6bf8c.js" async=""></script><script src="/_next/static/chunks/app/layout-8465f0fad9d9adf2.js" async=""></script><title>OASIS Sleek</title><meta name="description" content="Avatar NFT &amp; Blockchain Platform"/><meta name="next-size-adjust"/><script src="/_next/static/chunks/polyfills-c67a75d1b6f99dc8.js" crossorigin="" noModule=""></script></head><body class="__variable_f367f3 font-sans antialiased"><div class="flex h-screen items-center justify-center bg-background"><div class="h-5 w-5 animate-spin rounded-full border-2 border-primary b
+<!DOCTYPE html><html lang="en" class="dark"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossorigin="" type="font/woff2"/><link rel="stylesheet" href="/_next/static/css/a182cc84ad5e553f.css" crossorigin="" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack-ce6d2ccf7dafb208.js" crossorigin=""/><script src="/_next/static/chunks/fd9d1056-daf3eb0aa35d0696.js" async="" crossorigin=""></script><script src="/_next/static/chunks/4938-a08e11f58b8b8107.js" async="" crossorigin=""></script><script src="/_next/static/chunks/main-app-2f3800c6e4826db2.js" async="" crossorigin=""></script><script src="/_next/static/chunks/6366-064e393ccb2b90e1.js" async=""></script><script src="/_next/static/chunks/3100-73771510b5b24bd0.js" async=""></script><script src="/_next/static/chunks/app/page-0b342f800c3a856f.js" async=""></script><script src="/_next/static/chunks/7895-815176611b89f795.js" async=""></script><script src="/_next/static/chunks/3127-9135edd67742b3a1.js" async=""></script><script src="/_next/static/chunks/9901-314a93d35ab4ee85.js" async=""></script><script src="/_next/static/chunks/5037-e0640acd1698b3aa.js" async=""></script><script src="/_next/static/chunks/3371-56b2dde1af9a0b4e.js" async=""></script><script src="/_next/static/chunks/935-00694eae37c6bf8c.js" async=""></script><script src="/_next/static/chunks/app/layout-8465f0fad9d9adf2.js" async=""></script><title>AZOA Sleek</title><meta name="description" content="Avatar NFT &amp; Blockchain Platform"/><meta name="next-size-adjust"/><script src="/_next/static/chunks/polyfills-c67a75d1b6f99dc8.js" crossorigin="" noModule=""></script></head><body class="__variable_f367f3 font-sans antialiased"><div class="flex h-screen items-center justify-center bg-background"><div class="h-5 w-5 animate-spin rounded-full border-2 border-primary b
 ... [truncated]
 ```
 </details>
@@ -4911,7 +4911,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-<!DOCTYPE html><html lang="en" class="dark"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossorigin="" type="font/woff2"/><link rel="stylesheet" href="/_next/static/css/a182cc84ad5e553f.css" crossorigin="" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack-ce6d2ccf7dafb208.js" crossorigin=""/><script src="/_next/static/chunks/fd9d1056-daf3eb0aa35d0696.js" async="" crossorigin=""></script><script src="/_next/static/chunks/4938-a08e11f58b8b8107.js" async="" crossorigin=""></script><script src="/_next/static/chunks/main-app-2f3800c6e4826db2.js" async="" crossorigin=""></script><script src="/_next/static/chunks/7895-815176611b89f795.js" async=""></script><script src="/_next/static/chunks/6366-064e393ccb2b90e1.js" async=""></script><script src="/_next/static/chunks/3127-9135edd67742b3a1.js" async=""></script><script src="/_next/static/chunks/1828-d8246b0f2d68f7a4.js" async=""></script><script src="/_next/static/chunks/1585-d295f1eb847e5fb7.js" async=""></script><script src="/_next/static/chunks/3100-73771510b5b24bd0.js" async=""></script><script src="/_next/static/chunks/3434-c169ba738429bd16.js" async=""></script><script src="/_next/static/chunks/app/(auth)/login/page-dedb407ab7811e85.js" async=""></script><script src="/_next/static/chunks/9901-314a93d35ab4ee85.js" async=""></script><script src="/_next/static/chunks/5037-e0640acd1698b3aa.js" async=""></script><script src="/_next/static/chunks/3371-56b2dde1af9a0b4e.js" async=""></script><script src="/_next/static/chunks/935-00694eae37c6bf8c.js" async=""></script><script src="/_next/static/chunks/app/layout-8465f0fad9d9adf2.js" async=""></script><title>OASIS Sleek</title><meta name="description" content="Avatar NFT &amp; Blockchain Platform"/><meta name="next-size-adjust"/><script src="/_next/static/chunks/polyfills-c67a75d1b6f
+<!DOCTYPE html><html lang="en" class="dark"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossorigin="" type="font/woff2"/><link rel="stylesheet" href="/_next/static/css/a182cc84ad5e553f.css" crossorigin="" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack-ce6d2ccf7dafb208.js" crossorigin=""/><script src="/_next/static/chunks/fd9d1056-daf3eb0aa35d0696.js" async="" crossorigin=""></script><script src="/_next/static/chunks/4938-a08e11f58b8b8107.js" async="" crossorigin=""></script><script src="/_next/static/chunks/main-app-2f3800c6e4826db2.js" async="" crossorigin=""></script><script src="/_next/static/chunks/7895-815176611b89f795.js" async=""></script><script src="/_next/static/chunks/6366-064e393ccb2b90e1.js" async=""></script><script src="/_next/static/chunks/3127-9135edd67742b3a1.js" async=""></script><script src="/_next/static/chunks/1828-d8246b0f2d68f7a4.js" async=""></script><script src="/_next/static/chunks/1585-d295f1eb847e5fb7.js" async=""></script><script src="/_next/static/chunks/3100-73771510b5b24bd0.js" async=""></script><script src="/_next/static/chunks/3434-c169ba738429bd16.js" async=""></script><script src="/_next/static/chunks/app/(auth)/login/page-dedb407ab7811e85.js" async=""></script><script src="/_next/static/chunks/9901-314a93d35ab4ee85.js" async=""></script><script src="/_next/static/chunks/5037-e0640acd1698b3aa.js" async=""></script><script src="/_next/static/chunks/3371-56b2dde1af9a0b4e.js" async=""></script><script src="/_next/static/chunks/935-00694eae37c6bf8c.js" async=""></script><script src="/_next/static/chunks/app/layout-8465f0fad9d9adf2.js" async=""></script><title>AZOA Sleek</title><meta name="description" content="Avatar NFT &amp; Blockchain Platform"/><meta name="next-size-adjust"/><script src="/_next/static/chunks/polyfills-c67a75d1b6f
 ... [truncated]
 ```
 </details>
@@ -4928,7 +4928,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-<!DOCTYPE html><html lang="en" class="dark"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossorigin="" type="font/woff2"/><link rel="stylesheet" href="/_next/static/css/a182cc84ad5e553f.css" crossorigin="" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack-ce6d2ccf7dafb208.js" crossorigin=""/><script src="/_next/static/chunks/fd9d1056-daf3eb0aa35d0696.js" async="" crossorigin=""></script><script src="/_next/static/chunks/4938-a08e11f58b8b8107.js" async="" crossorigin=""></script><script src="/_next/static/chunks/main-app-2f3800c6e4826db2.js" async="" crossorigin=""></script><script src="/_next/static/chunks/7895-815176611b89f795.js" async=""></script><script src="/_next/static/chunks/6366-064e393ccb2b90e1.js" async=""></script><script src="/_next/static/chunks/3127-9135edd67742b3a1.js" async=""></script><script src="/_next/static/chunks/1828-d8246b0f2d68f7a4.js" async=""></script><script src="/_next/static/chunks/1585-d295f1eb847e5fb7.js" async=""></script><script src="/_next/static/chunks/3100-73771510b5b24bd0.js" async=""></script><script src="/_next/static/chunks/3434-c169ba738429bd16.js" async=""></script><script src="/_next/static/chunks/app/(auth)/register/page-58cb2a587a4cc026.js" async=""></script><script src="/_next/static/chunks/9901-314a93d35ab4ee85.js" async=""></script><script src="/_next/static/chunks/5037-e0640acd1698b3aa.js" async=""></script><script src="/_next/static/chunks/3371-56b2dde1af9a0b4e.js" async=""></script><script src="/_next/static/chunks/935-00694eae37c6bf8c.js" async=""></script><script src="/_next/static/chunks/app/layout-8465f0fad9d9adf2.js" async=""></script><title>OASIS Sleek</title><meta name="description" content="Avatar NFT &amp; Blockchain Platform"/><meta name="next-size-adjust"/><script src="/_next/static/chunks/polyfills-c67a75d1
+<!DOCTYPE html><html lang="en" class="dark"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossorigin="" type="font/woff2"/><link rel="stylesheet" href="/_next/static/css/a182cc84ad5e553f.css" crossorigin="" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack-ce6d2ccf7dafb208.js" crossorigin=""/><script src="/_next/static/chunks/fd9d1056-daf3eb0aa35d0696.js" async="" crossorigin=""></script><script src="/_next/static/chunks/4938-a08e11f58b8b8107.js" async="" crossorigin=""></script><script src="/_next/static/chunks/main-app-2f3800c6e4826db2.js" async="" crossorigin=""></script><script src="/_next/static/chunks/7895-815176611b89f795.js" async=""></script><script src="/_next/static/chunks/6366-064e393ccb2b90e1.js" async=""></script><script src="/_next/static/chunks/3127-9135edd67742b3a1.js" async=""></script><script src="/_next/static/chunks/1828-d8246b0f2d68f7a4.js" async=""></script><script src="/_next/static/chunks/1585-d295f1eb847e5fb7.js" async=""></script><script src="/_next/static/chunks/3100-73771510b5b24bd0.js" async=""></script><script src="/_next/static/chunks/3434-c169ba738429bd16.js" async=""></script><script src="/_next/static/chunks/app/(auth)/register/page-58cb2a587a4cc026.js" async=""></script><script src="/_next/static/chunks/9901-314a93d35ab4ee85.js" async=""></script><script src="/_next/static/chunks/5037-e0640acd1698b3aa.js" async=""></script><script src="/_next/static/chunks/3371-56b2dde1af9a0b4e.js" async=""></script><script src="/_next/static/chunks/935-00694eae37c6bf8c.js" async=""></script><script src="/_next/static/chunks/app/layout-8465f0fad9d9adf2.js" async=""></script><title>AZOA Sleek</title><meta name="description" content="Avatar NFT &amp; Blockchain Platform"/><meta name="next-size-adjust"/><script src="/_next/static/chunks/polyfills-c67a75d1
 ... [truncated]
 ```
 </details>
@@ -5030,7 +5030,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-<!DOCTYPE html><html lang="en" class="dark"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossorigin="" type="font/woff2"/><link rel="stylesheet" href="/_next/static/css/a182cc84ad5e553f.css" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack-ce6d2ccf7dafb208.js"/><script src="/_next/static/chunks/fd9d1056-daf3eb0aa35d0696.js" async=""></script><script src="/_next/static/chunks/4938-a08e11f58b8b8107.js" async=""></script><script src="/_next/static/chunks/main-app-2f3800c6e4826db2.js" async=""></script><script src="/_next/static/chunks/7895-815176611b89f795.js" async=""></script><script src="/_next/static/chunks/6366-064e393ccb2b90e1.js" async=""></script><script src="/_next/static/chunks/3127-9135edd67742b3a1.js" async=""></script><script src="/_next/static/chunks/9901-314a93d35ab4ee85.js" async=""></script><script src="/_next/static/chunks/5037-e0640acd1698b3aa.js" async=""></script><script src="/_next/static/chunks/3371-56b2dde1af9a0b4e.js" async=""></script><script src="/_next/static/chunks/935-00694eae37c6bf8c.js" async=""></script><script src="/_next/static/chunks/3100-73771510b5b24bd0.js" async=""></script><script src="/_next/static/chunks/app/layout-8465f0fad9d9adf2.js" async=""></script><meta name="robots" content="noindex"/><title>404: This page could not be found.</title><title>OASIS Sleek</title><meta name="description" content="Avatar NFT &amp; Blockchain Platform"/><meta name="next-size-adjust"/><script src="/_next/static/chunks/polyfills-c67a75d1b6f99dc8.js" noModule=""></script></head><body class="__variable_f367f3 font-sans antialiased"><div style="font-family:system-ui,&quot;Segoe UI&quot;,Roboto,Helvetica,Arial,sans-serif,&quot;Apple Color Emoji&quot;,&quot;Segoe UI Emoji&quot;;height:100vh;text-align:center;display:flex;flex-direction:column;align-items:
+<!DOCTYPE html><html lang="en" class="dark"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" href="/_next/static/media/e4af272ccee01ff0-s.p.woff2" as="font" crossorigin="" type="font/woff2"/><link rel="stylesheet" href="/_next/static/css/a182cc84ad5e553f.css" data-precedence="next"/><link rel="preload" as="script" fetchPriority="low" href="/_next/static/chunks/webpack-ce6d2ccf7dafb208.js"/><script src="/_next/static/chunks/fd9d1056-daf3eb0aa35d0696.js" async=""></script><script src="/_next/static/chunks/4938-a08e11f58b8b8107.js" async=""></script><script src="/_next/static/chunks/main-app-2f3800c6e4826db2.js" async=""></script><script src="/_next/static/chunks/7895-815176611b89f795.js" async=""></script><script src="/_next/static/chunks/6366-064e393ccb2b90e1.js" async=""></script><script src="/_next/static/chunks/3127-9135edd67742b3a1.js" async=""></script><script src="/_next/static/chunks/9901-314a93d35ab4ee85.js" async=""></script><script src="/_next/static/chunks/5037-e0640acd1698b3aa.js" async=""></script><script src="/_next/static/chunks/3371-56b2dde1af9a0b4e.js" async=""></script><script src="/_next/static/chunks/935-00694eae37c6bf8c.js" async=""></script><script src="/_next/static/chunks/3100-73771510b5b24bd0.js" async=""></script><script src="/_next/static/chunks/app/layout-8465f0fad9d9adf2.js" async=""></script><meta name="robots" content="noindex"/><title>404: This page could not be found.</title><title>AZOA Sleek</title><meta name="description" content="Avatar NFT &amp; Blockchain Platform"/><meta name="next-size-adjust"/><script src="/_next/static/chunks/polyfills-c67a75d1b6f99dc8.js" noModule=""></script></head><body class="__variable_f367f3 font-sans antialiased"><div style="font-family:system-ui,&quot;Segoe UI&quot;,Roboto,Helvetica,Arial,sans-serif,&quot;Apple Color Emoji&quot;,&quot;Segoe UI Emoji&quot;;height:100vh;text-align:center;display:flex;flex-direction:column;align-items:
 ... [truncated]
 ```
 </details>
@@ -5054,7 +5054,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"ea04b3f4-85a8-4709-b39b-2b8b1edde3c6","username":"holonmal","email":"holonmal@mal.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:44.1311325Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"ea04b3f4-85a8-4709-b39b-2b8b1edde3c6","username":"holonmal","email":"holonmal@mal.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:44.1311325Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -5089,7 +5089,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5106,7 +5106,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5123,7 +5123,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5140,7 +5140,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5157,7 +5157,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5174,7 +5174,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5191,7 +5191,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5208,7 +5208,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5225,7 +5225,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5242,7 +5242,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5335,7 +5335,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5572,7 +5572,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"e54a6d9d-8c78-485c-967f-3bbbce920510","username":"holonowner_a","email":"holona@qa.oasis","title":null,"firstName":"Owner","lastName":"Alpha","createdDate":"2026-06-08T00:45:44.8619577Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"e54a6d9d-8c78-485c-967f-3bbbce920510","username":"holonowner_a","email":"holona@qa.azoa","title":null,"firstName":"Owner","lastName":"Alpha","createdDate":"2026-06-08T00:45:44.8619577Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -5608,7 +5608,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"182de96d-7460-4447-b8e9-04f48b6038a8","username":"holonowner_b","email":"holonb@qa.oasis","title":null,"firstName":"Owner","lastName":"Beta","createdDate":"2026-06-08T00:45:45.4605887Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"182de96d-7460-4447-b8e9-04f48b6038a8","username":"holonowner_b","email":"holonb@qa.azoa","title":null,"firstName":"Owner","lastName":"Beta","createdDate":"2026-06-08T00:45:45.4605887Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -5643,7 +5643,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5677,7 +5677,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5694,7 +5694,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5892,7 +5892,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -6018,7 +6018,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"b5422d85-1cda-413e-a1ea-4c18c42d8bc1","username":"holontest","email":"holon@test.oasis","title":null,"firstName":"Holon","lastName":"Tester","createdDate":"2026-06-08T00:45:45.039415Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"b5422d85-1cda-413e-a1ea-4c18c42d8bc1","username":"holontest","email":"holon@test.azoa","title":null,"firstName":"Holon","lastName":"Tester","createdDate":"2026-06-08T00:45:45.039415Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -6053,7 +6053,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Oasis.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Oasis.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Oasis.SurrealDb.Client/SurrealResponse.cs:line 98\n   at OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -6145,7 +6145,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"7124964a-2fb0-4fc6-b963-73c49d33fe62","username":"maltester","email":"mal@test.oasis","title":null,"firstName":"Mal","lastName":"icious","createdDate":"2026-06-08T00:45:45.2411061Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"7124964a-2fb0-4fc6-b963-73c49d33fe62","username":"maltester","email":"mal@test.azoa","title":null,"firstName":"Mal","lastName":"icious","createdDate":"2026-06-08T00:45:45.2411061Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -6196,7 +6196,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"6c54593d-0c30-47df-988b-5a47070580e0","username":"sqliuser","email":"' OR '1'='1' --@test.oasis","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:45.780859Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"6c54593d-0c30-47df-988b-5a47070580e0","username":"sqliuser","email":"' OR '1'='1' --@test.azoa","title":null,"firstName":null,"lastName":null,"createdDate":"2026-06-08T00:45:45.780859Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 
@@ -7222,7 +7222,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":false,"message":"Saved.","result":{"id":"dcc7c08d-2a0d-47a1-9e3d-e1da8f2950a4","username":"qaavatar","email":"qaavatar@test.oasis","title":"QA","firstName":"Edge","lastName":"Case","createdDate":"2026-06-08T00:45:45.785985Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
+{"isError":false,"message":"Saved.","result":{"id":"dcc7c08d-2a0d-47a1-9e3d-e1da8f2950a4","username":"qaavatar","email":"qaavatar@test.azoa","title":"QA","firstName":"Edge","lastName":"Case","createdDate":"2026-06-08T00:45:45.785985Z","lastBeamedInDate":null,"isActive":true,"isVerified":false,"karma":0,"level":1},"detail":null}
 ```
 </details>
 

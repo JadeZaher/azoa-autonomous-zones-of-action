@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace OASIS.WebAPI.Core.Diagnostics;
+namespace AZOA.WebAPI.Core.Diagnostics;
 
 /// <summary>One row written to the JSONL exception log (spec §2.A schema).</summary>
 public sealed record JsonlEntry

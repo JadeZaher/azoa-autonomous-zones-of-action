@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════════════
+# Stress & Rapid Operations Tests
+# Sequential burst requests to test concurrency, state consistency,
+# and race conditions in the live API.
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Seed Stress Avatar ───
+{"id":"stress_seed_avatar","description":"Register avatar for stress tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"stresstest","email":"stress@load.azoa","password":"StressPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressAvatar"}
+{"id":"stress_login","description":"Login stress avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"stress@load.azoa","password":"StressPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"stressAuth"}
+
+# ─── Rapid Holon Creation (10 holons back-to-back) ───
+{"id":"stress_holon_1","description":"Stress: rapid holon create 1","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"name":"StressHolon1","description":"Rapid create 1","providerName":"InMemory"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressHolon1"}
+{"id":"stress_holon_2","description":"Stress: rapid holon create 2","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"name":"StressHolon2","description":"Rapid create 2","providerName":"InMemory"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressHolon2"}
+{"id":"stress_holon_3","description":"Stress: rapid holon create 3","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"name":"StressHolon3","description":"Rapid create 3","providerName":"InMemory"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressHolon3"}
+{"id":"stress_holon_4","description":"Stress: rapid holon create 4","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"name":"StressHolon4","description":"Rapid create 4","providerName":"InMemory"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressHolon4"}
+{"id":"stress_holon_5","description":"Stress: rapid holon create 5","method":"POST","path":"/api/holon","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"name":"StressHolon5","description":"Rapid create 5","providerName":"InMemory"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressHolon5"}
+
+# ─── Rapid Metadata Updates on Same Holon ───
+{"id":"stress_update_1","description":"Stress: rapid update 1 on holon 1","method":"PUT","path":"/api/holon/{{stressHolon1.id}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"metadata":{"update":"1","timestamp":"1"}},"expectedStatus":200}
+{"id":"stress_update_2","description":"Stress: rapid update 2 on holon 1","method":"PUT","path":"/api/holon/{{stressHolon1.id}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"metadata":{"update":"2","timestamp":"2"}},"expectedStatus":200}
+{"id":"stress_update_3","description":"Stress: rapid update 3 on holon 1","method":"PUT","path":"/api/holon/{{stressHolon1.id}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"metadata":{"update":"3","timestamp":"3"}},"expectedStatus":200}
+{"id":"stress_update_4","description":"Stress: rapid update 4 on holon 1","method":"PUT","path":"/api/holon/{{stressHolon1.id}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"metadata":{"update":"4","timestamp":"4"}},"expectedStatus":200}
+{"id":"stress_update_5","description":"Stress: rapid update 5 on holon 1","method":"PUT","path":"/api/holon/{{stressHolon1.id}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"metadata":{"update":"5","timestamp":"5"}},"expectedStatus":200}
+
+# ─── Verify Final State After Rapid Updates ───
+{"id":"stress_verify_holon_1","description":"Stress: verify holon 1 final state","method":"GET","path":"/api/holon/{{stressHolon1.id}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+
+# ─── Rapid Interact Operations ───
+{"id":"stress_interact_1","description":"Stress: rapid interact add peers","method":"POST","path":"/api/holon/{{stressHolon1.id}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"addPeerHolonIds":["{{stressHolon2.id}}"],"setMetadata":{"peer":"2"}},"expectedStatus":200}
+{"id":"stress_interact_2","description":"Stress: rapid interact add more peers","method":"POST","path":"/api/holon/{{stressHolon1.id}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"addPeerHolonIds":["{{stressHolon3.id}}","{{stressHolon4.id}}"],"setMetadata":{"peer":"3,4"}},"expectedStatus":200}
+{"id":"stress_interact_3","description":"Stress: rapid interact remove peer","method":"POST","path":"/api/holon/{{stressHolon1.id}}/interact","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"removePeerHolonIds":["{{stressHolon2.id}}"],"setMetadata":{"removed":"2"}},"expectedStatus":200}
+
+# ─── Rapid Wallet Add/Remove Cycles ───
+{"id":"stress_wallet_1","description":"Stress: add wallet 1","method":"POST","path":"/api/avatar/{{stressAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"chainType":"Algorand","address":"STRESSADDR111111111111111111111111111111111111111111111","label":"Stress1"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressWallet1"}
+{"id":"stress_wallet_2","description":"Stress: add wallet 2","method":"POST","path":"/api/avatar/{{stressAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"chainType":"Solana","address":"STRESSADDR222222222222222222222222222222222222222222222","label":"Stress2"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressWallet2"}
+{"id":"stress_wallet_3","description":"Stress: add wallet 3","method":"POST","path":"/api/avatar/{{stressAvatar.id}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"chainType":"Algorand","address":"STRESSADDR333333333333333333333333333333333333333333333","label":"Stress3"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressWallet3"}
+{"id":"stress_get_wallets","description":"Stress: verify all wallets exist","method":"GET","path":"/api/avatar/{{stressAvatar.id}}/wallets","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_remove_wallet_1","description":"Stress: remove wallet 1","method":"DELETE","path":"/api/avatar/{{stressAvatar.id}}/wallets/{{stressWallet1.walletId}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_remove_wallet_2","description":"Stress: remove wallet 2","method":"DELETE","path":"/api/avatar/{{stressAvatar.id}}/wallets/{{stressWallet2.walletId}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_remove_wallet_3","description":"Stress: remove wallet 3","method":"DELETE","path":"/api/avatar/{{stressAvatar.id}}/wallets/{{stressWallet3.walletId}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_get_wallets_empty","description":"Stress: verify wallets are empty","method":"GET","path":"/api/avatar/{{stressAvatar.id}}/wallets","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+
+# ─── Rapid ODK Create/Generate/Deploy/Delete Cycles ───
+{"id":"stress_odk_1","description":"Stress: create ODK 1","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"name":"StressODK1","description":"Rapid ODK 1","publicKey":"0xSTRESS1","avatarId":"{{stressAvatar.id}}"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressODK1"}
+{"id":"stress_odk_1_gen","description":"Stress: generate ODK 1","method":"POST","path":"/api/starodk/{{stressODK1.id}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"targetChain":"Algorand","boundHolonIds":[],"config":{}},"expectedStatus":200}
+{"id":"stress_odk_1_deploy","description":"Stress: deploy ODK 1","method":"POST","path":"/api/starodk/{{stressODK1.id}}/deploy","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_odk_1_del","description":"Stress: delete ODK 1","method":"DELETE","path":"/api/starodk/{{stressODK1.id}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_odk_2","description":"Stress: create ODK 2","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"name":"StressODK2","description":"Rapid ODK 2","publicKey":"0xSTRESS2","avatarId":"{{stressAvatar.id}}"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"stressODK2"}
+{"id":"stress_odk_2_gen","description":"Stress: generate ODK 2","method":"POST","path":"/api/starodk/{{stressODK2.id}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{stressAuth.token}}"},"body":{"targetChain":"Solana","boundHolonIds":[],"config":{}},"expectedStatus":200}
+{"id":"stress_odk_2_deploy","description":"Stress: deploy ODK 2","method":"POST","path":"/api/starodk/{{stressODK2.id}}/deploy","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_odk_2_del","description":"Stress: delete ODK 2","method":"DELETE","path":"/api/starodk/{{stressODK2.id}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+
+# ─── Rapid Query Operations ───
+{"id":"stress_query_1","description":"Stress: query holons 1","method":"GET","path":"/api/holon?name=Stress","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_query_2","description":"Stress: query holons 2","method":"GET","path":"/api/holon?name=StressHolon","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_query_3","description":"Stress: query holons 3 (no match)","method":"GET","path":"/api/holon?name=NonExistentStress","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_get_all_avatars","description":"Stress: get all avatars","method":"GET","path":"/api/avatar","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+
+# ─── Bulk Cleanup ───
+{"id":"stress_del_holon_2","description":"Stress: delete holon 2","method":"DELETE","path":"/api/holon/{{stressHolon2.id}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_del_holon_3","description":"Stress: delete holon 3","method":"DELETE","path":"/api/holon/{{stressHolon3.id}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_del_holon_4","description":"Stress: delete holon 4","method":"DELETE","path":"/api/holon/{{stressHolon4.id}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_del_holon_5","description":"Stress: delete holon 5","method":"DELETE","path":"/api/holon/{{stressHolon5.id}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_del_holon_1","description":"Stress: delete holon 1","method":"DELETE","path":"/api/holon/{{stressHolon1.id}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}
+{"id":"stress_cleanup_avatar","description":"Stress: delete stress avatar","method":"DELETE","path":"/api/avatar/{{stressAvatar.id}}","headers":{"Authorization":"Bearer {{stressAuth.token}}"},"expectedStatus":200}

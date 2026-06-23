@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { oasis, isOk } from '@/lib/oasis'
+import { azoa, isOk } from '@/lib/azoa'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -36,7 +36,7 @@ function MintNftForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true); setResult(null)
-    const res = await oasis.api.mintNft({ walletId, name, description, chainId, imageUri: imageUri || undefined })
+    const res = await azoa.api.mintNft({ walletId, name, description, chainId, imageUri: imageUri || undefined })
     if (isOk(res)) { setResult(res.value); setIsError(false) }
     else { setResult(res.error.message); setIsError(true) }
     setLoading(false)
@@ -78,7 +78,7 @@ function TransferDialog({ nftId, onDone }: { nftId: string; onDone: () => void }
   const [loading, setLoading] = useState(false)
   const handleTransfer = async () => {
     setLoading(true)
-    const res = await oasis.api.transferNft(nftId, { targetAvatarId, walletId })
+    const res = await azoa.api.transferNft(nftId, { targetAvatarId, walletId })
     if (isOk(res)) { onDone() } else { toast.error(res.error.message) }
     setLoading(false); setOpen(false)
   }
@@ -103,7 +103,7 @@ function BurnDialog({ nftId, onDone }: { nftId: string; onDone: () => void }) {
   const [loading, setLoading] = useState(false)
   const handleBurn = async () => {
     setLoading(true)
-    const res = await oasis.api.burnNft(nftId, { walletId })
+    const res = await azoa.api.burnNft(nftId, { walletId })
     if (isOk(res)) { onDone() } else { toast.error(res.error.message) }
     setLoading(false); setOpen(false)
   }
@@ -129,7 +129,7 @@ function NftDetail({ nft, onRefresh }: { nft: NftRecord; onRefresh: () => void }
 
   const fetchMeta = async () => {
     setMetaLoading(true); setMetaResult(null)
-    const res = await oasis.api.getNftMetadata(nft.id)
+    const res = await azoa.api.getNftMetadata(nft.id)
     if (isOk(res)) { setMetaResult(res.value); setMetaError(false) }
     else { setMetaResult(res.error.message); setMetaError(true) }
     setMetaLoading(false)
@@ -174,7 +174,7 @@ function NftGallery() {
 
   const fetchNfts = useCallback(async () => {
     setLoading(true); setError(null)
-    const res = await oasis.api.request<NftRecord[]>('GET', '/api/nft')
+    const res = await azoa.api.request<NftRecord[]>('GET', '/api/nft')
     if (isOk(res)) setNfts(res.value); else setError(res.error.message)
     setLoading(false)
   }, [])

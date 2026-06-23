@@ -1,4 +1,4 @@
-# OASIS Provider & API Architecture
+# AZOA Provider & API Architecture
 
 This guide covers the full system architecture: adding new blockchain providers, the complete API surface, and how the SDK mirrors the backend.
 
@@ -6,9 +6,9 @@ This guide covers the full system architecture: adding new blockchain providers,
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  SDK (@oasis/wallet-sdk)                                │
+│  SDK (@azoa/wallet-sdk)                                │
 │  ┌──────────────┐ ┌──────────────┐ ┌─────────────────┐ │
-│  │ OasisClient   │ │ OasisWallet  │ │ OasisApiClient  │ │
+│  │ AzoaClient   │ │ AzoaWallet  │ │ AzoaApiClient  │ │
 │  │ (session,     │ │ (chain       │ │ (typed HTTP     │ │
 │  │  holons,      │ │  providers,  │ │  client for     │ │
 │  │  auth)        │ │  DEX, sign)  │ │  all endpoints) │ │
@@ -31,7 +31,7 @@ This guide covers the full system architecture: adding new blockchain providers,
                                               │
                           ┌───────────────────┼───────────────────┐
                           │                   │                   │
-                   IOASISStorage    IBlockchainProvider   ICrossChainBridge
+                   IAZOAStorage    IBlockchainProvider   ICrossChainBridge
                    Provider         Factory              Service
                    (EF/InMemory)    (Algo/Sol)           (Trusted/Wormhole)
 ```
@@ -40,7 +40,7 @@ This guide covers the full system architecture: adding new blockchain providers,
 
 Each chain has two mirrored implementations:
 1. **Backend (.NET)** — `Providers/Blockchain/<Chain>/<Chain>Provider.cs`
-2. **SDK (TypeScript)** — `sdk/oasis-wallet/src/<chain>/provider.ts`
+2. **SDK (TypeScript)** — `sdk/azoa-wallet/src/<chain>/provider.ts`
 
 ### Step 1: Backend (.NET)
 
@@ -68,7 +68,7 @@ Register: `builder.Services.AddSingleton<IBlockchainProvider, <Chain>Provider>()
 
 ### Step 2: SDK (TypeScript)
 
-Create `sdk/oasis-wallet/src/<chain>/provider.ts` implementing `ChainProvider`:
+Create `sdk/azoa-wallet/src/<chain>/provider.ts` implementing `ChainProvider`:
 
 ```typescript
 export class <Chain>Provider implements ChainProvider {
@@ -105,15 +105,15 @@ export class <DexName>Adapter implements DexAdapter {
 | `GetTransactionStatusAsync`      | `getTransactionStatus`      | Both live |
 | `GetChainInfoAsync`              | `getChainInfo`              | Both live |
 | `ExchangeAsync` / `SwapAsync`    | `DexAdapter.getQuote/build` | SDK uses DEX adapters |
-| `LockForBridgeAsync`             | via `OasisApiClient.bridge` | Bridge is server-orchestrated |
+| `LockForBridgeAsync`             | via `AzoaApiClient.bridge` | Bridge is server-orchestrated |
 | `DeployContractAsync`            | (chain-specific methods)    | Not in base SDK interface |
 
 ### Existing Providers
 
 | Chain     | Backend                          | SDK                                | DEX       | Bridge |
 |-----------|----------------------------------|------------------------------------|-----------|--------|
-| Algorand  | `Providers/Blockchain/Algorand/` | `sdk/oasis-wallet/src/algorand/`   | Tinyman   | Yes    |
-| Solana    | `Providers/Blockchain/Solana/`   | `sdk/oasis-wallet/src/solana/`     | Jupiter   | Yes    |
+| Algorand  | `Providers/Blockchain/Algorand/` | `sdk/azoa-wallet/src/algorand/`   | Tinyman   | Yes    |
+| Solana    | `Providers/Blockchain/Solana/`   | `sdk/azoa-wallet/src/solana/`     | Jupiter   | Yes    |
 
 ---
 
@@ -257,19 +257,19 @@ BridgeController → CrossChainBridgeService → source.LockForBridgeAsync
 
 ### Two Provider Systems (Do Not Confuse)
 
-1. **IOASISStorageProvider** — data persistence (EF/PostgreSQL or InMemory). Selected per-request via `OASISRequest` query parameter.
+1. **IAZOAStorageProvider** — data persistence (EF/PostgreSQL or InMemory). Selected per-request via `AZOARequest` query parameter.
 2. **IBlockchainProvider** — on-chain operations (Algorand, Solana). Selected by chain type via `BlockchainProviderFactory`.
 
 ### SDK ↔ Backend Data Flow
 
 ```
-SDK OasisWallet                     .NET Backend
+SDK AzoaWallet                     .NET Backend
 ─────────────                       ────────────
 wallet.buildTransfer(params)   →    (not called — SDK builds locally)
 signer.sign(unsignedTx)       →    (not called — client-side)
 wallet.submitTransaction(tx)  →    (direct to chain RPC, bypasses backend)
 
-oasisApi.mintNft(params)      →    NftController.Mint → NftManager → storage
-oasisApi.initiateBridge(...)  →    BridgeController → CrossChainBridgeService
-oasisApi.search(query)        →    SearchController → SearchManager → storage
+azoaApi.mintNft(params)      →    NftController.Mint → NftManager → storage
+azoaApi.initiateBridge(...)  →    BridgeController → CrossChainBridgeService
+azoaApi.search(query)        →    SearchController → SearchManager → storage
 ```

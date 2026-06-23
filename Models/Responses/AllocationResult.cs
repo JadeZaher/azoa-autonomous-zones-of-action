@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 
-namespace OASIS.WebAPI.Models.Responses;
+namespace AZOA.WebAPI.Models.Responses;
 
 /// <summary>
 /// Outcome the fiat-settlement tenant records against its own investment row.
-/// Carries the OASIS-side references the tenant needs to reconcile (the
+/// Carries the AZOA-side references the tenant needs to reconcile (the
 /// custodial wallet that was used/created and the blockchain operation that
 /// moved the asset), plus a <see cref="Replayed"/> flag so a redelivered
 /// webhook can see that the original allocation — not a second one — is being

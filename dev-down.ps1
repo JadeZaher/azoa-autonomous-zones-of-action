@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    OASIS Sleek -- full-stack dev teardown (PowerShell).
+    AZOA Sleek -- full-stack dev teardown (PowerShell).
 
 .PARAMETER Wipe
     Also drop the surrealdb_data volume so the next dev-up sees a fresh DB.
@@ -77,13 +77,13 @@ function Test-Container {
     return -not [string]::IsNullOrWhiteSpace(($ids -join ''))
 }
 
-$surrealExists = Test-Container 'oasis-dev-surrealdb'
+$surrealExists = Test-Container 'azoa-dev-surrealdb'
 $downArgs = @('-f', $ComposeFile, 'down', '--remove-orphans')
 if ($Wipe) { $downArgs += '-v' }
 
 if (-not $surrealExists) {
     Write-Host "[dev-down] bundled SurrealDB container not present -- only tearing down api + frontend."
-    $downArgs += @('oasis-api', 'oasis-frontend')
+    $downArgs += @('azoa-api', 'azoa-frontend')
 }
 
 # Belt-and-suspenders: suppress non-zero exit from compose `down`. The

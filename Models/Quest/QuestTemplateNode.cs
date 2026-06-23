@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
 /// <summary>
 /// A node within a QuestTemplate (parameterized, not yet instantiated).

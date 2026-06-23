@@ -2,15 +2,15 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 public class AvatarManager : IAvatarManager
 {
@@ -23,16 +23,16 @@ public class AvatarManager : IAvatarManager
         _config = config;
     }
 
-    public async Task<OASISResult<IAvatar>> RegisterAsync(AvatarRegisterModel model, OASISRequest? request = null)
+    public async Task<AZOAResult<IAvatar>> RegisterAsync(AvatarRegisterModel model, AZOARequest? request = null)
     {
         // Check for duplicate email
         var allAvatars = await _avatarStore.GetAllAsync(default);
         if (allAvatars.Result?.Any(a => a.Email.Equals(model.Email, StringComparison.OrdinalIgnoreCase)) == true)
-            return new OASISResult<IAvatar> { IsError = true, Message = "An account with this email already exists." };
+            return new AZOAResult<IAvatar> { IsError = true, Message = "An account with this email already exists." };
 
         // Check for duplicate username
         if (allAvatars.Result?.Any(a => a.Username.Equals(model.Username, StringComparison.OrdinalIgnoreCase)) == true)
-            return new OASISResult<IAvatar> { IsError = true, Message = "This username is already taken." };
+            return new AZOAResult<IAvatar> { IsError = true, Message = "This username is already taken." };
 
         var avatar = new Avatar
         {
@@ -47,34 +47,34 @@ public class AvatarManager : IAvatarManager
         return await _avatarStore.UpsertAsync(avatar, default);
     }
 
-    public async Task<OASISResult<string>> LoginAsync(AvatarLoginModel model, OASISRequest? request = null)
+    public async Task<AZOAResult<string>> LoginAsync(AvatarLoginModel model, AZOARequest? request = null)
     {
         var all = await _avatarStore.GetAllAsync(default);
         var avatar = all.Result?.FirstOrDefault(a => a.Email.Equals(model.Email, StringComparison.OrdinalIgnoreCase));
 
         if (avatar == null || !BCrypt.Net.BCrypt.Verify(model.Password, avatar.PasswordHash))
-            return new OASISResult<string> { IsError = true, Message = "Invalid credentials." };
+            return new AZOAResult<string> { IsError = true, Message = "Invalid credentials." };
 
         var token = GenerateJwt(avatar);
-        return new OASISResult<string> { Result = token, Message = "Login successful." };
+        return new AZOAResult<string> { Result = token, Message = "Login successful." };
     }
 
-    public async Task<OASISResult<IAvatar>> GetAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<IAvatar>> GetAsync(Guid id, AZOARequest? request = null)
     {
         return await _avatarStore.GetByIdAsync(id, default);
     }
 
-    public async Task<OASISResult<IEnumerable<IAvatar>>> GetAllAsync(OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IAvatar>>> GetAllAsync(AZOARequest? request = null)
     {
         return await _avatarStore.GetAllAsync(default);
     }
 
-    public async Task<OASISResult<IAvatar>> UpdateAsync(Guid id, AvatarUpdateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IAvatar>> UpdateAsync(Guid id, AvatarUpdateModel model, Guid avatarId, AZOARequest? request = null)
     {
         // IDOR guard: an avatar may only edit its own record — the route id
         // must match the authenticated avatar identity.
         if (id != avatarId)
-            return new OASISResult<IAvatar> { IsError = true, Message = "You may only update your own avatar." };
+            return new AZOAResult<IAvatar> { IsError = true, Message = "You may only update your own avatar." };
 
         var existing = await _avatarStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
@@ -90,11 +90,11 @@ public class AvatarManager : IAvatarManager
         return await _avatarStore.UpsertAsync(avatar, default);
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid avatarId, AZOARequest? request = null)
     {
         // IDOR guard: an avatar may only delete its own record.
         if (id != avatarId)
-            return new OASISResult<bool> { IsError = true, Message = "You may only delete your own avatar." };
+            return new AZOAResult<bool> { IsError = true, Message = "You may only delete your own avatar." };
 
         return await _avatarStore.DeleteAsync(id, default);
     }

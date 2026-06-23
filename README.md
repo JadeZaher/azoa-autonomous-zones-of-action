@@ -1,21 +1,26 @@
-# OASIS Sleek
+# AZOA Sleek
 
-A .NET 8 WebAPI for the OASIS protocol with a TypeScript SDK and Next.js 14 frontend. Single storage engine: SurrealDB.
+A .NET 8 WebAPI for the AZOA protocol with a TypeScript SDK and Next.js 14 frontend. Single storage engine: SurrealDB.
 
 ## Status
 
-**Branch:** `api-safety-hardening`
+**Tests:** 916 unit tests green (2026-06-22). Integration tests run against a persistent podman SurrealDB.
 
-**Tests:** 567 unit tests green (2026-06-05); 934 .NET tests discoverable (146 are integration tests currently skipped waiting for E1 image pin).
+**Latest:** the **user-self-sovereignty** initiative shipped — end users own their own
+avatars (wallet-challenge login, Algorand ed25519) and a tenant may act for a user
+**only** within a live, revocable `ConsentGrant`. The signing custody seam
+(`KeyCustodyService`) is consent-gated and fails closed on every tenant-driven sign.
+See `conductor/tracks/{user-sovereign-identity,tenant-consent-delegation}/spec.md`.
+A separate security review of the auth + custody surface is still owed before launch.
 
-**Tracks:** 20 conductor tracks complete; 2 in-flight; several pending. See `conductor/tracks.md` for full status.
+**Tracks:** see `conductor/tracks.md` for the full feature catalog and status.
 
 ## Stack
 
 - **.NET 8 WebAPI** — 15 controllers, 10 managers, dual auth (JWT + X-Api-Key)
-- **SurrealDB** — sole data engine via `Oasis.SurrealDb.*` packages; no EF/InMemory in production paths
-- **@oasis/wallet-sdk** — TypeScript SDK (vitest, ESM+CJS+DTS via tsup)
-- **Next.js 14 frontend** — linked to SDK via `file:../sdk/oasis-wallet`
+- **SurrealDB** — sole data engine via `Azoa.SurrealDb.*` packages; no EF/InMemory in production paths
+- **@azoa/wallet-sdk** — TypeScript SDK (vitest, ESM+CJS+DTS via tsup)
+- **Next.js 14 frontend** — linked to SDK via `file:../sdk/azoa-wallet`
 - **xUnit + FluentAssertions + Moq** — test stack; integration tests via persistent podman SurrealDB
 
 ## Repo Layout
@@ -25,8 +30,8 @@ A .NET 8 WebAPI for the OASIS protocol with a TypeScript SDK and Next.js 14 fron
 - `Core/` — blockchain providers, base classes, error handling, auth handlers
 - `Persistence/SurrealDb/` — SurrealDB store implementations; schema conventions in `CONVENTION.md`
 - `Providers/Stores/Surreal/` — per-aggregate store interfaces (`I*Store`) and implementations
-- `packages/Oasis.SurrealDb.{Client,Schema,Analyzer}/` — SurrealDB toolkit (C#-first schema authoring, Roslyn analyzer for injection guards)
-- `sdk/oasis-wallet/` — TypeScript SDK with OasisClient facade, ChainProvider + DexAdapter plugin patterns
+- `packages/Azoa.SurrealDb.{Client,Schema,Analyzer}/` — SurrealDB toolkit (C#-first schema authoring, Roslyn analyzer for injection guards)
+- `sdk/azoa-wallet/` — TypeScript SDK with AzoaClient facade, ChainProvider + DexAdapter plugin patterns
 - `frontend/` — Next.js 14 app with React hooks (`useBalance`, `usePortfolio`, `useHolons`, etc.)
 - `conductor/tracks/` — 20+ completed narrative tracks documenting features and architectural decisions
 - `tests/` — xUnit test projects (unit + integration)
@@ -45,7 +50,7 @@ dotnet restore && dotnet build
 
 **SDK:**
 ```bash
-cd sdk/oasis-wallet
+cd sdk/azoa-wallet
 npm install
 npm test
 ```

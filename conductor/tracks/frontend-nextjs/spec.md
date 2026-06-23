@@ -1,11 +1,11 @@
 # Frontend Next.js — Specification
 
 ## Goal
-Create a Next.js frontend application that replicates oasisweb4.com and provides a testing interface for the OASIS backend API, focusing on wallet registration and account management flows.
+Create a Next.js frontend application that replicates azoaweb4.com and provides a testing interface for the AZOA backend API, focusing on wallet registration and account management flows.
 
 ## Motivation
 - Need a testing interface to validate the backend API functionality
-- Want to replicate the oasisweb4.com design and user experience
+- Want to replicate the azoaweb4.com design and user experience
 - Need to test the Algorand and Solana devnet provider integrations
 - Require a user-friendly interface for wallet registration and management
 
@@ -54,7 +54,7 @@ frontend-nextjs/
 
 ## Key Features
 
-### 1. Landing Page (Replicate oasisweb4.com)
+### 1. Landing Page (Replicate azoaweb4.com)
 - Hero section with "One API. All chains. Infinite possibilities."
 - Principles section (Universal Interoperability, Zero Downtime, Permissionless)
 - Ecosystem overview with supported blockchains
@@ -82,7 +82,7 @@ The frontend will integrate with the backend API using TypeScript interfaces:
 
 ```typescript
 // src/lib/api.ts
-export class OASISApiClient {
+export class AZOAApiClient {
   private baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   
   // Identity operations
@@ -188,7 +188,7 @@ export function WalletRegistration({ avatarId, onWalletRegistered }: WalletRegis
 - Tailwind CSS for utility-first styling
 - Responsive design for mobile and desktop
 - Dark/light mode support
-- Consistent color scheme matching oasisweb4.com
+- Consistent color scheme matching azoaweb4.com
 
 ## Environment Configuration
 ```env
@@ -198,7 +198,7 @@ NEXT_PUBLIC_SOLANA_DEVNET_URL=https://api.devnet.solana.com
 ```
 
 ## Acceptance Criteria
-- [ ] Landing page replicates oasisweb4.com design and content
+- [ ] Landing page replicates azoaweb4.com design and content
 - [ ] Avatar creation form works with backend API
 - [ ] Wallet registration supports Algorand and Solana devnet
 - [ ] Wallet connection and display functionality

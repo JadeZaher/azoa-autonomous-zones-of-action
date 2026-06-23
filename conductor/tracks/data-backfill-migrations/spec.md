@@ -12,15 +12,15 @@ after Phase C).
 A **first-class data-backfill primitive** — author idempotent,
 restartable, observable one-shot data mutations next to the schema DDL
 they accompany. Each backfill is a code-defined unit (not a free-form
-script), registered with the existing `oasis-surreal` CLI, with an
+script), registered with the existing `azoa-surreal` CLI, with an
 opinionated execution + observability shell so the operator workflow
 is identical across backfills.
 
 ## Why (decision rationale)
 Schema DDL migrations are already solved:
 [Persistence/SurrealDb/Schemas/*.surql](../../../Persistence/SurrealDb/Schemas/)
-files are applied by `oasis-surreal migrate up` (the runner at
-[packages/Oasis.SurrealDb.Schema/Migration/MigrationRunner.cs](../../../packages/Oasis.SurrealDb.Schema/Migration/MigrationRunner.cs)),
+files are applied by `azoa-surreal migrate up` (the runner at
+[packages/Azoa.SurrealDb.Schema/Migration/MigrationRunner.cs](../../../packages/Azoa.SurrealDb.Schema/Migration/MigrationRunner.cs)),
 with a `schema_migration` ledger preventing re-application. That covers
 *structure*. It does **not** cover *content*.
 
@@ -48,7 +48,7 @@ script per backfill, run it once manually, hope no one reruns it. That
 is brittle. The fix is to give backfills the same "registered, ledger-
 tracked, restartable" treatment that DDL migrations already enjoy.
 
-### Chosen: C# backfill modules registered with `oasis-surreal backfill`
+### Chosen: C# backfill modules registered with `azoa-surreal backfill`
 Rejected alternatives:
 - **SQL-only `.surql` files** — fine for tiny row-rewrites but cannot
   express row-by-row logic with conditional branches (e.g. F6 needs to
@@ -64,7 +64,7 @@ Rejected alternatives:
   depends on.
 
 The C# module approach reuses the existing
-`Oasis.SurrealDb.Client.SurrealQuery<T>` typed builder, the
+`Azoa.SurrealDb.Client.SurrealQuery<T>` typed builder, the
 `SurrealIdentifier` safety layer (G3 injection defence), and the
 `ISurrealConnection` abstraction — so a backfill author writes code
 that looks like the production stores, not a parallel script
@@ -112,18 +112,18 @@ ecosystem.
   idempotency contract ensures that's safe.
 
 ### CLI
-- `oasis-surreal backfill list` — show registered backfills + their
+- `azoa-surreal backfill list` — show registered backfills + their
   ledger status (`Pending` / `Applied` / `Failed`).
-- `oasis-surreal backfill apply <name> [--batch <n>] [--dry-run]` —
+- `azoa-surreal backfill apply <name> [--batch <n>] [--dry-run]` —
   execute a specific backfill.
-- `oasis-surreal backfill apply-all [--dry-run]` — apply every
+- `azoa-surreal backfill apply-all [--dry-run]` — apply every
   `Pending` backfill in registration order.
 
 ### Code location
-- `packages/Oasis.SurrealDb.Schema/Backfill/` — abstractions +
+- `packages/Azoa.SurrealDb.Schema/Backfill/` — abstractions +
   registry + execution shell. Reuses `MigrationRunner`'s ledger
   pattern.
-- `OASIS.WebAPI/Persistence/SurrealDb/Backfills/<NNN>_<name>.cs` —
+- `AZOA.WebAPI/Persistence/SurrealDb/Backfills/<NNN>_<name>.cs` —
   authored backfill modules sit next to the schema source files so
   authors trip over them when touching adjacent DDL. Numbered to give
   a default registration order (lower = earlier).
@@ -146,12 +146,12 @@ ecosystem.
    committed; rerun resumes from the failed batch.
 6. 540/540 unit suite green; new tests cover the registry +
    idempotency contract via a fake `ISurrealConnection`.
-7. `oasis-surreal backfill apply-all` against a fresh namespace is
+7. `azoa-surreal backfill apply-all` against a fresh namespace is
    a no-op (no backfills registered initially; F6 lands as its own
    slice once Phase C is done).
 
 ## Out of scope
-- Schema DDL migrations — already solved by `oasis-surreal migrate up`.
+- Schema DDL migrations — already solved by `azoa-surreal migrate up`.
 - Engine version migrations (SurrealDB 1.5 → 2.x) — separate concern.
 - Cross-environment data export/import (devnet → testnet) — separate
   concern; addressed by future env-migration playbook.

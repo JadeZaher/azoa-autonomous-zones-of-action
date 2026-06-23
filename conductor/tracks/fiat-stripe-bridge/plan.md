@@ -30,7 +30,7 @@ phase.
   authorises allocation; record the scope string. The handler already surfaces
   scope claims (`Core/ApiKeyAuthenticationHandler.cs:81-87`).
 - [ ] Confirm `conductor/DEPLOY-STEPS-TODO.md` exists (create it if not) and add
-  the `OASIS_TENANT_API_KEY` deploy-stub row. No secret value committed.
+  the `AZOA_TENANT_API_KEY` deploy-stub row. No secret value committed.
 
 ## Phase 1 — Allocation primitive (manager)
 
@@ -57,7 +57,7 @@ phase.
   project memory). Caller authority comes from the API-key scope, not the body.
 - [ ] **Execute allocation** via `INftManager.MintAsync`/`TransferAsync`
   (`Interfaces/Managers/INftManager.cs:10-11`) or the fungible equivalent (D4).
-- [ ] Return `OASISResult<…>` consistent with existing managers (no bare
+- [ ] Return `AZOAResult<…>` consistent with existing managers (no bare
   objects).
 
 ## Phase 2 — Controller endpoint
@@ -72,7 +72,7 @@ phase.
   — client key wins, blank ⇒ null ⇒ server deterministic fallback.
 - [ ] Apply `[EnableRateLimiting("financial")]` as on
   `WalletController.cs:153` (value-bearing endpoint).
-- [ ] Map manager `OASISResult` to `Ok`/`BadRequest`/`Unauthorized` in the
+- [ ] Map manager `AZOAResult` to `Ok`/`BadRequest`/`Unauthorized` in the
   house pattern (cf. `WalletController.cs:166-168`).
 - [ ] Confirm no Stripe SDK / `Stripe:*` config key is referenced anywhere in
   the new code.
@@ -87,11 +87,11 @@ phase.
      `Idempotency-Key: <stable per-payment key, e.g. the PaymentIntent id>`.
 - [ ] Include request/response JSON shapes and a **prose sequence diagram**:
   fiat settles on tenant → tenant writes investment + decides amount → tenant
-  calls OASIS allocate (idempotent, KYC-gated) → OASIS provisions wallet if
-  absent + mints/transfers → OASIS returns result → tenant records the OASIS
+  calls AZOA allocate (idempotent, KYC-gated) → AZOA provisions wallet if
+  absent + mints/transfers → AZOA returns result → tenant records the AZOA
   reference.
 - [ ] State explicitly that **token economics, treasury, and Gate evaluation
-  remain in the tenant** (`StripeService.cs:181-258`) and that OASIS receives an
+  remain in the tenant** (`StripeService.cs:181-258`) and that AZOA receives an
   already-decided amount.
 - [ ] Refer to the caller only as "the fiat-settlement tenant" — **no brand
   name** anywhere in the doc.
@@ -117,12 +117,12 @@ phase.
   Quality Gate 1).
 - [ ] `dotnet test` — green, including the four new unit tests above.
 - [ ] Swagger lists the new allocation endpoint.
-- [ ] Grep the OASIS solution for `Stripe` — zero hits in `src`/controllers/
+- [ ] Grep the AZOA solution for `Stripe` — zero hits in `src`/controllers/
   managers/config (only this track's `conductor/` docs may name it, and only as
   the trigger source).
-- [ ] Grep the OASIS solution for the tenant brand name — **zero hits**.
+- [ ] Grep the AZOA solution for the tenant brand name — **zero hits**.
 - [ ] Grep for `Stripe:SecretKey` / `Stripe:WebhookSecret` — **zero hits**;
-  confirm `OASIS_TENANT_API_KEY` is a deploy-stub in
+  confirm `AZOA_TENANT_API_KEY` is a deploy-stub in
   `conductor/DEPLOY-STEPS-TODO.md`, not a committed value.
 - [ ] Move `tracks.md` row for `fiat-stripe-bridge` to `[x]` Shipped.
 
@@ -132,7 +132,7 @@ One commit per phase, house convention `[fiat-stripe-bridge] <imperative verb>`:
 
 - `[fiat-stripe-bridge] add idempotent KYC-gated allocation manager`
 - `[fiat-stripe-bridge] expose tenant-callable allocation endpoint`
-- `[fiat-stripe-bridge] document tenant→OASIS allocation contract`
+- `[fiat-stripe-bridge] document tenant→AZOA allocation contract`
 - `[fiat-stripe-bridge] add replay + KYC-fail-closed unit tests`
 
 ## Known follow-ups (filed separately)

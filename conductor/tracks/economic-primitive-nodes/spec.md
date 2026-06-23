@@ -33,7 +33,7 @@ the distinction is a capability check, NOT a type hierarchy** (see D1).
 
 Each node is still a `QuestNodeType` + an `IQuestNodeHandler` + one DI line,
 following the existing handler shape exactly:
-`JsonSerializer.Deserialize<TConfig>(context.Node.Config)` → call one OASIS
+`JsonSerializer.Deserialize<TConfig>(context.Node.Config)` → call one AZOA
 manager / primitive → serialize the result → `Ok`/`Fail`
 (`Services/Quest/Handlers/NftMintNodeHandler.cs:19-26`).
 
@@ -61,12 +61,12 @@ The chain-action subset ships **mechanism only**. Every Tier-2 node MOVES value
 by *tenant-supplied params*; **none** contains economic logic — no pricing, no
 accounting, no token semantics, no "project" concept, no "equity" type, no
 vesting math, no cancel conditions. The consumer (ArdaNova) defines *what* a
-project token is, the swap *rates*, the cancel *conditions*; OASIS only
+project token is, the swap *rates*, the cancel *conditions*; AZOA only
 *executes the mechanism* the tenant parameterizes. Tier-1 transforms are
 likewise pure mechanism: they shape holons + metadata; they encode no domain
 semantics.
 
-The worked example this node set must support **generically** (OASIS never
+The worked example this node set must support **generically** (AZOA never
 names any of these economic concepts — they are all tenant `asset_type` values
 + `metadata` + tenant params):
 
@@ -74,9 +74,9 @@ names any of these economic concepts — they are all tenant `asset_type` values
 > cancelled) → on-cancel **refund** platform tokens → on-continue **grant**
 > equity → equity used to pay freelancers **OR** swapped → platform → fiat.
 
-Mapped to generic nodes, with **zero** economic vocabulary in OASIS:
+Mapped to generic nodes, with **zero** economic vocabulary in AZOA:
 
-| Worked-example step (ArdaNova words) | Generic OASIS node | Tier |
+| Worked-example step (ArdaNova words) | Generic AZOA node | Tier |
 | --- | --- | --- |
 | holon lifecycle / metadata shaping | **HolonCreate/Update/Interact/Compose/…** (exist) | Tier 1 |
 | HOLD until phase-met or cancelled | **GateCheckNode** predicate + the engine's suspend (Track 2) | Tier 1 |
@@ -184,7 +184,7 @@ only Holon records + metadata + the graph; none calls a chain. The track
 - Swap exists: `ISwapManager.GetQuoteAsync` / `GetSwapTransactionAsync`
   (`Interfaces/Managers/ISwapManager.cs:8,22`), backed by `SwapManager`
   (`Managers/SwapManager.cs:44,87`) + `IDexAdapter` (Tinyman/Jupiter). SwapNode
-  **wraps** this. **Rate/quote come from the DEX, never from OASIS**
+  **wraps** this. **Rate/quote come from the DEX, never from AZOA**
   (`ISwapManager.cs:11-21`).
 - NFT/ASA value path: `INftManager.MintAsync` / `TransferAsync` / `BurnAsync`
   all `(…, Guid avatarId, …)` (`Interfaces/Managers/INftManager.cs:10-12`).
@@ -272,7 +272,7 @@ generic transform) a fill.
      choice recorded in `plan.md` (D3).
    - Inputs are mechanism-only: references *upstream node outputs by name* (the
      `ComposeOutputs` read) and injected reads. **The threshold value, the KYC
-     level, the "phase X met" meaning are tenant params — OASIS only compares.**
+     level, the "phase X met" meaning are tenant params — AZOA only compares.**
      `RequiresChainCapability == false` (reads upstream JSON, not chain).
 
 2. **EmitNode** (hand settlement back to the tenant). Posts a **typed output**
@@ -280,7 +280,7 @@ generic transform) a fill.
    where the **actual settlement happens on the tenant side**. Serializes a
    tenant-shaped output payload (from `Config` + upstream outputs) as the
    node's `QuestNodeExecution.Output`. **No settlement, no fiat rails, no payout
-   math in OASIS.** Pure metadata; `RequiresChainCapability == false`. Callback
+   math in AZOA.** Pure metadata; `RequiresChainCapability == false`. Callback
    sink contract (in-band output vs. outbound webhook) is a decision in
    `plan.md` (D6 → output-only first; webhook deferred).
 
@@ -304,7 +304,7 @@ and **requires a wallet bound** (the capability check rejects it otherwise).
    `INftManager.MintAsync(request, avatarId)` (`INftManager.cs:10`); copy
    `NftMintNodeHandler` (`NftMintNodeHandler.cs:19-26`). The granted thing is
    whatever tenant `asset_type` the request names (e.g. ArdaNova "equity");
-   OASIS sees an ASA. On success, populate `Holon.token_id` / `chain_id` from
+   AZOA sees an ASA. On success, populate `Holon.token_id` / `chain_id` from
    the mint result (the Part-B-#1 link). Actor from `context.Quest.AvatarId`.
 
 2. **TransferNode** — move an ASA to an actor. Wraps
@@ -315,7 +315,7 @@ and **requires a wallet bound** (the capability check rejects it otherwise).
 3. **SwapNode** — wraps `ISwapManager.GetSwapTransactionAsync(request,
    idempotencyKey)` (`ISwapManager.cs:22`) by tenant `Config` (in/out asset,
    amount, minOut, slippage). **Mechanism only** — rate/quote from the DEX
-   adapter (`SwapManager.cs:44,87`), never OASIS. Idempotency key plumbed from
+   adapter (`SwapManager.cs:44,87`), never AZOA. Idempotency key plumbed from
    the run context.
 
 4. **RefundNode** — first-class compensation that **reverses a prior

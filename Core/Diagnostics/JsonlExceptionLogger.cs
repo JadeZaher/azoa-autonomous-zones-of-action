@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 
-namespace OASIS.WebAPI.Core.Diagnostics;
+namespace AZOA.WebAPI.Core.Diagnostics;
 
 /// <summary>
 /// <see cref="ILogger"/> implementation that converts structured log calls into

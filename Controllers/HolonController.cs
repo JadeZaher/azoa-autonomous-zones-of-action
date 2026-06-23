@@ -1,12 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -23,7 +23,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<OASISResult<IHolon>>> Get(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IHolon>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _holonManager.GetAsync(id, request);
         if (result.IsError || result.Result == null) return NotFound(result);
@@ -31,18 +31,18 @@ public class HolonController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<OASISResult<IEnumerable<IHolon>>>> Query([FromQuery] HolonQueryRequest query, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> Query([FromQuery] HolonQueryRequest query, [FromQuery] AZOARequest? request)
     {
         var result = await _holonManager.QueryAsync(query, request);
         return Ok(result);
     }
 
     [HttpPost]
-    public async Task<ActionResult<OASISResult<IHolon>>> Create([FromBody] HolonCreateModel model, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IHolon>>> Create([FromBody] HolonCreateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IHolon> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
         var result = await _holonManager.CreateAsync(model, avatarId.Value, request);
         if (result.IsError) return BadRequest(result);
@@ -50,11 +50,11 @@ public class HolonController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<ActionResult<OASISResult<IHolon>>> Update(Guid id, [FromBody] HolonUpdateModel model, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IHolon>>> Update(Guid id, [FromBody] HolonUpdateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IHolon> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
         var result = await _holonManager.UpdateAsync(id, model, avatarId.Value, request);
         if (result.IsError) return BadRequest(result);
@@ -62,23 +62,23 @@ public class HolonController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    public async Task<ActionResult<OASISResponse>> Delete(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IHolon> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
         var result = await _holonManager.DeleteAsync(id, avatarId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
-        return Ok(new OASISResponse { Message = "Holon deleted." });
+        return Ok(new AZOAResponse { Message = "Holon deleted." });
     }
 
     [HttpPost("{id:guid}/interact")]
-    public async Task<ActionResult<OASISResult<IHolon>>> Interact(Guid id, [FromBody] HolonInteractionRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<IHolon>>> Interact(Guid id, [FromBody] HolonInteractionRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IHolon> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
         var result = await _holonManager.InteractAsync(id, request, avatarId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
@@ -86,7 +86,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost("{id:guid}/mint")]
-    public async Task<ActionResult<OASISResult<IBlockchainOperation>>> Mint(Guid id, [FromBody] MintRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Mint(Guid id, [FromBody] MintRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _blockchainManager.BuildAndExecuteAsync(builder =>
             builder.ForAvatar(GetAvatarIdFromClaims() ?? Guid.Empty)
@@ -99,7 +99,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost("{id:guid}/exchange")]
-    public async Task<ActionResult<OASISResult<IBlockchainOperation>>> Exchange(Guid id, [FromBody] ExchangeRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Exchange(Guid id, [FromBody] ExchangeRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _blockchainManager.BuildAndExecuteAsync(builder =>
             builder.ForAvatar(GetAvatarIdFromClaims() ?? Guid.Empty)
@@ -114,14 +114,14 @@ public class HolonController : ControllerBase
     // ─── Holarchy traversal endpoints — expose the holonic structure ───
 
     [HttpGet("{id:guid}/children")]
-    public async Task<ActionResult<OASISResult<IEnumerable<IHolon>>>> GetChildren(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetChildren(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _holonManager.GetChildrenAsync(id, request);
         return Ok(result);
     }
 
     [HttpGet("{id:guid}/peers")]
-    public async Task<ActionResult<OASISResult<IEnumerable<IHolon>>>> GetPeers(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetPeers(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _holonManager.GetPeersAsync(id, request);
         if (result.IsError) return NotFound(result);
@@ -129,7 +129,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpGet("{id:guid}/ancestors")]
-    public async Task<ActionResult<OASISResult<IEnumerable<IHolon>>>> GetAncestors(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetAncestors(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _holonManager.GetAncestorsAsync(id, request);
         if (result.IsError) return NotFound(result);
@@ -137,7 +137,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpGet("{id:guid}/descendants")]
-    public async Task<ActionResult<OASISResult<IEnumerable<IHolon>>>> GetDescendants(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetDescendants(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _holonManager.GetDescendantsAsync(id, request);
         if (result.IsError) return NotFound(result);
@@ -147,11 +147,11 @@ public class HolonController : ControllerBase
     // ─── Holonic functionality — operations across the holarchy ───
 
     [HttpPost("{id:guid}/propagate")]
-    public async Task<ActionResult<OASISResult<int>>> Propagate(Guid id, [FromBody] HolonPropagateRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<int>>> Propagate(Guid id, [FromBody] HolonPropagateRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IHolon> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
         var result = await _holonManager.PropagateAsync(id, request, avatarId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
@@ -159,7 +159,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpGet("{id:guid}/compose")]
-    public async Task<ActionResult<OASISResult<HolonComposition>>> Compose(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<HolonComposition>>> Compose(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _holonManager.ComposeAsync(id, request);
         if (result.IsError) return NotFound(result);
@@ -167,11 +167,11 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost("{id:guid}/clone")]
-    public async Task<ActionResult<OASISResult<IHolon>>> Clone(Guid id, [FromBody] HolonCloneRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<IHolon>>> Clone(Guid id, [FromBody] HolonCloneRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IHolon> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
         var result = await _holonManager.CloneAsync(id, request, avatarId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
@@ -179,11 +179,11 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost("{id:guid}/move")]
-    public async Task<ActionResult<OASISResult<bool>>> MoveSubtree(Guid id, [FromBody] MoveSubtreeRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<bool>>> MoveSubtree(Guid id, [FromBody] MoveSubtreeRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IHolon> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
         var result = await _holonManager.MoveSubtreeAsync(id, request.NewParentId, avatarId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);

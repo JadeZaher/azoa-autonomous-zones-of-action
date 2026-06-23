@@ -1,12 +1,12 @@
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Models.Responses;
-using OASIS.WebAPI.Providers.Blockchain.Base;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Providers.Blockchain.Base;
 
-namespace OASIS.WebAPI.Providers.Blockchain.Solana;
+namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
 /// <summary>
 /// Solana blockchain provider using direct JSON-RPC calls.
@@ -68,7 +68,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
     // ─── Account / Wallet ───
 
-    public override async Task<OASISResult<string>> GetBalanceAsync(
+    public override async Task<AZOAResult<string>> GetBalanceAsync(
         string address, string? tokenId = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(address))
@@ -103,37 +103,37 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         }
     }
 
-    public override async Task<OASISResult<bool>> ValidateAddressAsync(
+    public override async Task<AZOAResult<bool>> ValidateAddressAsync(
         string address, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(address))
-            return new OASISResult<bool> { IsError = true, Result = false, Message = "Address is required" };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = "Address is required" };
 
         // Solana addresses are base58, 32-44 chars
         if (address.Length < 32 || address.Length > 44)
-            return new OASISResult<bool> { IsError = true, Result = false, Message = "Invalid Solana address length" };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = "Invalid Solana address length" };
 
         const string base58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
         if (!address.All(c => base58.Contains(c)))
-            return new OASISResult<bool> { IsError = true, Result = false, Message = "Invalid base58 characters" };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = "Invalid base58 characters" };
 
         try
         {
             var response = await RpcCallAsync<SolanaBalanceResult>("getBalance", new object[] { address }, ct);
             if (response.Error != null)
-                return new OASISResult<bool> { IsError = true, Result = false, Message = $"Address not found: {response.Error.Message}" };
+                return new AZOAResult<bool> { IsError = true, Result = false, Message = $"Address not found: {response.Error.Message}" };
 
             return Ok(true, "Valid Solana address — confirmed on network");
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool> { IsError = true, Result = false, Message = $"Validation failed: {ex.Message}" };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = $"Validation failed: {ex.Message}" };
         }
     }
 
     // ─── Token / Asset Lifecycle ───
 
-    public override Task<OASISResult<string>> MintAsync(
+    public override Task<AZOAResult<string>> MintAsync(
         string tokenUri, ulong amount, string assetType, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
@@ -142,7 +142,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             $"SPL token mint operation recorded for {assetType} (amount={amount}) by {walletAddress}. Requires client-side signing with Token Program."));
     }
 
-    public override Task<OASISResult<string>> BurnAsync(
+    public override Task<AZOAResult<string>> BurnAsync(
         string tokenId, ulong amount, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
@@ -151,7 +151,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             $"SPL token burn operation recorded for {tokenId} (amount={amount}). Requires client-side signing."));
     }
 
-    public override Task<OASISResult<string>> TransferAsync(
+    public override Task<AZOAResult<string>> TransferAsync(
         string tokenId, string fromAddress, string toAddress, ulong amount,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
@@ -160,7 +160,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             $"SPL transfer operation recorded: {amount} of {tokenId ?? "SOL"} from {fromAddress} to {toAddress}. Requires client-side signing."));
     }
 
-    public override Task<OASISResult<string>> ExchangeAsync(
+    public override Task<AZOAResult<string>> ExchangeAsync(
         string sourceTokenId, string targetTokenId, string exchangeRate,
         string walletAddress, CancellationToken ct = default)
     {
@@ -168,7 +168,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             "Exchange on Solana requires DEX integration (Jupiter/Raydium AMM). Not yet implemented."));
     }
 
-    public override Task<OASISResult<string>> SwapAsync(
+    public override Task<AZOAResult<string>> SwapAsync(
         string tokenIn, string tokenOut, decimal amountIn, decimal minAmountOut,
         string walletAddress, CancellationToken ct = default)
     {
@@ -178,7 +178,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
     // ─── Query / Metadata ───
 
-    public override async Task<OASISResult<Dictionary<string, object>>> GetTokenMetadataAsync(
+    public override async Task<AZOAResult<Dictionary<string, object>>> GetTokenMetadataAsync(
         string tokenId, CancellationToken ct = default)
     {
         try
@@ -210,7 +210,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         }
     }
 
-    public override async Task<OASISResult<List<Dictionary<string, object>>>> GetTokensByOwnerAsync(
+    public override async Task<AZOAResult<List<Dictionary<string, object>>>> GetTokensByOwnerAsync(
         string ownerAddress, CancellationToken ct = default)
     {
         try
@@ -249,7 +249,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         }
     }
 
-    public override async Task<OASISResult<Dictionary<string, object>>> GetTransactionStatusAsync(
+    public override async Task<AZOAResult<Dictionary<string, object>>> GetTransactionStatusAsync(
         string txHash, CancellationToken ct = default)
     {
         try
@@ -283,7 +283,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         }
     }
 
-    public override Task<OASISResult<string>> DeployContractAsync(
+    public override Task<AZOAResult<string>> DeployContractAsync(
         byte[] contractCode, string walletAddress,
         Dictionary<string, object>? args = null, CancellationToken ct = default)
     {
@@ -291,7 +291,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             "Solana program deployment requires BPF compilation and client-side signing. Not yet implemented."));
     }
 
-    public override Task<OASISResult<object>> CallContractAsync(
+    public override Task<AZOAResult<object>> CallContractAsync(
         string contractAddress, string method, Dictionary<string, object> args,
         string walletAddress, CancellationToken ct = default)
     {
@@ -299,7 +299,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             "Solana program calls require client-side signing. Not yet implemented."));
     }
 
-    public override async Task<OASISResult<Dictionary<string, object>>> GetChainInfoAsync(
+    public override async Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(
         CancellationToken ct = default)
     {
         try
@@ -328,7 +328,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
     // ─── Cross-Chain Bridge ───
 
-    public override Task<OASISResult<string>> LockForBridgeAsync(
+    public override Task<AZOAResult<string>> LockForBridgeAsync(
         string tokenId, string vaultAddress, int amount,
         string targetChain, string targetRecipient, CancellationToken ct = default)
     {
@@ -341,7 +341,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             $"Lock request recorded: {amount} of {tokenId ?? "SOL"} → vault {vaultAddress} for {targetChain} bridge to {targetRecipient}"));
     }
 
-    public override Task<OASISResult<string>> MintWrappedAsync(
+    public override Task<AZOAResult<string>> MintWrappedAsync(
         string sourceChain, string sourceTokenId, string tokenUri,
         int amount, string recipientAddress, CancellationToken ct = default)
     {
@@ -350,7 +350,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             $"Wrapped mint recorded: w{sourceChain}-{sourceTokenId} for {recipientAddress}. Requires client-side SPL token mint."));
     }
 
-    public override Task<OASISResult<string>> BurnWrappedAsync(
+    public override Task<AZOAResult<string>> BurnWrappedAsync(
         string tokenId, int amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default)
     {
@@ -359,7 +359,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             $"Wrapped burn recorded for {tokenId} on Solana → release on {sourceChain}"));
     }
 
-    public override Task<OASISResult<bool>> VerifyBridgeProofAsync(
+    public override Task<AZOAResult<bool>> VerifyBridgeProofAsync(
         string proofData, string sourceChain, string targetChainId, CancellationToken ct = default)
     {
         return Task.FromResult(Ok(true, $"Bridge proof verified for {sourceChain} → Solana"));
@@ -367,7 +367,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
     // ─── ISolanaMetaplexModule ───
 
-    public Task<OASISResult<string>> CreateMetadataAccountAsync(
+    public Task<AZOAResult<string>> CreateMetadataAccountAsync(
         string mint, string name, string symbol, string uri,
         int sellerFeeBasisPoints, string walletAddress, CancellationToken ct = default)
     {
@@ -376,7 +376,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             $"Metaplex metadata account recorded for mint {mint}. Requires client-side Metaplex Token Metadata program call."));
     }
 
-    public Task<OASISResult<bool>> UpdateMetadataAsync(
+    public Task<AZOAResult<bool>> UpdateMetadataAsync(
         string mint, string? newUri, string? newName, string walletAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Ok(true,
@@ -385,7 +385,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
     // ─── ISolanaSPLModule ───
 
-    public Task<OASISResult<string>> CreateTokenAccountAsync(
+    public Task<AZOAResult<string>> CreateTokenAccountAsync(
         string mint, string owner, CancellationToken ct = default)
     {
         return Task.FromResult(Ok(
@@ -393,7 +393,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             $"SPL token account creation recorded for mint {mint}, owner {owner}. Requires AssociatedTokenAccountProgram call."));
     }
 
-    public Task<OASISResult<string>> CloseTokenAccountAsync(
+    public Task<AZOAResult<string>> CloseTokenAccountAsync(
         string tokenAccount, string owner, CancellationToken ct = default)
     {
         return Task.FromResult(Ok(

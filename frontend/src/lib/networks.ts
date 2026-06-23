@@ -10,12 +10,12 @@
  * an RPC URL — change them in the backend's appsettings.json instead.
  *
  * Network selection itself is a GLOBAL, app-wide switch held by the SDK client
- * (oasis.network / oasis.setNetwork). Only the active network's providers are
+ * (azoa.network / azoa.setNetwork). Only the active network's providers are
  * ever registered, so operations can never span devnet/testnet/mainnet.
  */
 
-import { AlgorandProvider, SolanaProvider } from '@oasis/sdk'
-import type { ChainProviderRegistration, ChainNetwork } from '@oasis/sdk'
+import { AlgorandProvider, SolanaProvider } from '@azoa/sdk'
+import type { ChainProviderRegistration, ChainNetwork } from '@azoa/sdk'
 
 export type NetworkEnv = 'devnet' | 'testnet' | 'mainnet'
 
@@ -64,7 +64,7 @@ export function isNetworkEnv(v: unknown): v is NetworkEnv {
 }
 
 /** localStorage key for the persisted network choice (shared by all layers). */
-export const NETWORK_STORAGE_KEY = 'oasis.network'
+export const NETWORK_STORAGE_KEY = 'azoa.network'
 
 export function readInitialNetwork(): NetworkEnv {
   if (typeof window === 'undefined') return DEFAULT_NETWORK
@@ -166,7 +166,7 @@ export function applyBackendNetworkConfig(resp: NetworkConfigResponse): NetworkE
 
 /**
  * Build the SDK chain-provider registrations for `env` from the *current*
- * runtime endpoints. Used as the OasisClient `chainsForNetwork` factory, so
+ * runtime endpoints. Used as the AzoaClient `chainsForNetwork` factory, so
  * setNetwork()/refreshChains() always pick up the latest (backend) URLs.
  */
 export function buildChainRegistrations(
@@ -209,7 +209,7 @@ export interface ProjectTokenConfig {
 }
 
 export const PROJECT_TOKEN: ProjectTokenConfig = {
-  symbol: process.env.NEXT_PUBLIC_BUY_TOKEN_SYMBOL || 'OASIS',
+  symbol: process.env.NEXT_PUBLIC_BUY_TOKEN_SYMBOL || 'AZOA',
   solanaMint: process.env.NEXT_PUBLIC_BUY_TOKEN_SOLANA_MINT || undefined,
   algorandAssetId: process.env.NEXT_PUBLIC_BUY_TOKEN_ALGORAND_ASSET_ID || undefined,
   solanaPayWithMint:

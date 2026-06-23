@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useOasisAuth } from '@/lib/oasis-auth'
+import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 
@@ -11,7 +11,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { isAuthenticated, loading } = useOasisAuth()
+  const { isAuthenticated, loading } = useAzoaAuth()
   const router = useRouter()
 
   useEffect(() => {

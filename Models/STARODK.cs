@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces;
 
-namespace OASIS.WebAPI.Models;
+namespace AZOA.WebAPI.Models;
 
 public class STARODK : ISTARODK
 {

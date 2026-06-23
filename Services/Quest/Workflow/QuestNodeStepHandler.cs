@@ -1,10 +1,10 @@
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Sagas;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Sagas;
 
-namespace OASIS.WebAPI.Services.Quest.Workflow;
+namespace AZOA.WebAPI.Services.Quest.Workflow;
 
 /// <summary>
 /// The single generic saga step handler that executes EVERY quest node in a
@@ -150,7 +150,16 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         {
             try
             {
-                var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, upstream);
+                // tenant-consent-delegation AC4: read the acting tenant off the
+                // durable run (persisted at activation by StartWorkflowRunAsync) and
+                // carry it into the node context. This is the seam where the acting
+                // tenant re-enters the async saga path — it is NOT ambient on the
+                // worker, so it MUST come from the persisted run. A user-driven run
+                // has ActingTenantId = null → identical behaviour to before.
+                var runForTenant = await _runStore.GetByIdAsync(p.RunId, ct);
+                var actingTenantId = runForTenant.Result?.ActingTenantId;
+
+                var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, upstream, actingTenantId);
                 result = await handler.HandleAsync(nodeCtx, ct);
             }
             catch (Exception ex)

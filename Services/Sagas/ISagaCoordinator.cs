@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// The producer-side entry point: start a saga instance by enqueuing its first

@@ -5,7 +5,7 @@
 -- Note: Per-(run, node) execution row. Replaces the in-place mutation of QuestNode.State/Output/Error which prevented re-runs from preserving prior attempt's outputs.
 -- Note: On a fork, the same execution row can be referenced by both parent and child run via the `executes` RELATE edge for nodes whose execution_order < forkPoint (copy-by-reference, no duplication). Scalar run_id is the originating run; cross-run reference happens through the RELATE edge defined separately in surrealdb-migration §6.2.
 -- Note: The G2 claim primitive (TryClaimPendingAsync) is a conditional UPDATE that only succeeds when current state == 'Pending'. Empty-result case = lost race (already claimed by another worker). The (run_id, node_id) UNIQUE index is what makes the claim atomically safe.
--- Note: output stores the JSON-serialized OASISResult<T> from the handler call. error carries the failure message when state = Failed. Both are null in non-terminal states.
+-- Note: output stores the JSON-serialized AZOAResult<T> from the handler call. error carries the failure message when state = Failed. Both are null in non-terminal states.
 -- ============================================================
 
 -- ── Enums ─────────────────────────────────────────────────
@@ -30,7 +30,7 @@ DEFINE FIELD IF NOT EXISTS state ON TABLE quest_node_execution TYPE string
     ASSERT $value INSIDE $quest_node_execution_state
     DEFAULT "Pending";
 
--- Serialized OASISResult<T> from the handler call (null until Succeeded)
+-- Serialized AZOAResult<T> from the handler call (null until Succeeded)
 DEFINE FIELD IF NOT EXISTS output ON TABLE quest_node_execution TYPE option<string>;
 
 -- Failure message when state is Failed

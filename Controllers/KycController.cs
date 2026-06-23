@@ -3,11 +3,11 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Kyc;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Kyc;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
 /// Avatar-scoped KYC endpoints. Mirrors <c>STARODKController</c>: the
@@ -37,7 +37,7 @@ public sealed class KycController : ControllerBase
     }
 
     [HttpPost("submit")]
-    public async Task<ActionResult<OASISResult<KycSubmissionModel>>> Submit([FromBody] SubmitKycModel model, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> Submit([FromBody] SubmitKycModel model, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -47,7 +47,7 @@ public sealed class KycController : ControllerBase
     }
 
     [HttpGet("status")]
-    public async Task<ActionResult<OASISResult<KycSubmissionModel>>> GetStatus(CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> GetStatus(CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -57,7 +57,7 @@ public sealed class KycController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<OASISResult<KycSubmissionModel>>> GetById(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> GetById(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -67,7 +67,7 @@ public sealed class KycController : ControllerBase
     }
 
     [HttpGet("{id:guid}/documents")]
-    public async Task<ActionResult<OASISResult<IEnumerable<KycDocumentModel>>>> GetDocuments(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<IEnumerable<KycDocumentModel>>>> GetDocuments(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -79,7 +79,7 @@ public sealed class KycController : ControllerBase
     // ── Admin surface (D5 — per-action admin check, see class remarks) ─────────
 
     [HttpGet("pending")]
-    public async Task<ActionResult<OASISResult<IEnumerable<KycSubmissionModel>>>> GetPending(CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<IEnumerable<KycSubmissionModel>>>> GetPending(CancellationToken ct)
     {
         if (!IsAdmin()) return Forbid();
 
@@ -88,7 +88,7 @@ public sealed class KycController : ControllerBase
     }
 
     [HttpPost("{id:guid}/approve")]
-    public async Task<ActionResult<OASISResult<KycSubmissionModel>>> Approve(Guid id, [FromBody] ReviewKycModel? body, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> Approve(Guid id, [FromBody] ReviewKycModel? body, CancellationToken ct)
     {
         if (!IsAdmin()) return Forbid();
 
@@ -100,7 +100,7 @@ public sealed class KycController : ControllerBase
     }
 
     [HttpPost("{id:guid}/reject")]
-    public async Task<ActionResult<OASISResult<KycSubmissionModel>>> Reject(Guid id, [FromBody] ReviewKycModel? body, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> Reject(Guid id, [FromBody] ReviewKycModel? body, CancellationToken ct)
     {
         if (!IsAdmin()) return Forbid();
 
@@ -117,7 +117,7 @@ public sealed class KycController : ControllerBase
     /// Maps the manager's message-prefix discriminator to the right HTTP status:
     /// Forbidden-prefix → 403, NotFound-prefix → 404, any other error → 400.
     /// </summary>
-    private ActionResult<OASISResult<T>> TranslateResult<T>(OASISResult<T> result)
+    private ActionResult<AZOAResult<T>> TranslateResult<T>(AZOAResult<T> result)
     {
         if (!result.IsError) return Ok(result);
 

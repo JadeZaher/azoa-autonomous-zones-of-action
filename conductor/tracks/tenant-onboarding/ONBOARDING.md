@@ -1,11 +1,11 @@
-# How ArdaNova Becomes an OASIS Tenant
+# How ArdaNova Becomes an AZOA Tenant
 
 > **Audience:** the operator onboarding the first (and every subsequent) tenant
 > application. ArdaNova is used as the running example, but nothing here is
 > ArdaNova-specific — the code and config carry no brand string. Any application
 > follows the identical steps.
 
-A **tenant** is an ordinary OASIS Avatar that owns an API key carrying the
+A **tenant** is an ordinary AZOA Avatar that owns an API key carrying the
 `tenant:provision` scope. That avatar becomes the *tenant principal*; it can
 provision and manage a fleet of *child* avatars (one per ArdaNova end user) and
 act on each child's wallets/NFTs — but only its own children, never another
@@ -18,7 +18,7 @@ Two ownership facts are stored on each child avatar:
   "not tenant-managed" (every self-registered avatar).
 - `ExternalUserId` — the tenant's *own* user id for that child, unique **per
   tenant** (two tenants may each have a user `"42"`). This is the
-  `ArdaNova userId → OASIS AvatarId` lookup key. `ExternalRef` is a free opaque
+  `ArdaNova userId → AZOA AvatarId` lookup key. `ExternalRef` is a free opaque
   string (e.g. org/realm).
 
 ---
@@ -67,7 +67,7 @@ Content-Type: application/json
 ```
 
 The raw key is returned **once** in `Result.key` — store it securely. From here
-on, ArdaNova authenticates to OASIS as the tenant using
+on, ArdaNova authenticates to AZOA as the tenant using
 `X-Api-Key: <raw-key>` (never as an end user).
 
 > A key WITHOUT `tenant:provision` is rejected `403` from every `api/tenant`
@@ -136,9 +136,9 @@ Authorization: Bearer <child-token>
 The call runs under the child's identity through the existing per-avatar
 authorization. When the token expires, request a new one.
 
-## Step 5 — Resolve `ArdaNova userId → OASIS AvatarId`
+## Step 5 — Resolve `ArdaNova userId → AZOA AvatarId`
 
-To map one of your users back to its OASIS avatar without storing the mapping
+To map one of your users back to its AZOA avatar without storing the mapping
 client-side:
 
 ```http

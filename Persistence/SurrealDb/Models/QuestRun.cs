@@ -5,10 +5,10 @@
 
 using System;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Schema;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Schema;
 
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("quest_run",
         Aggregate = "QuestRun (Models/Quest/QuestRun.cs)",
@@ -48,6 +48,10 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Avatar that initiated this run (denormalized for query convenience)")]
         [References(typeof(Avatar))]
         public string AvatarId { get; set; } = string.Empty;
+
+        [FieldGroup("Tenant that drove this run via a tenant-driven child credential; null = user-driven. Carried on the durable row so the Tier-2 economic node handlers can stamp it on the produced BlockchainOperation and the custody signing seam's live consent check survives the async saga hop (tenant-consent-delegation AC4/AC4b). Mirrors OperationLog.acting_tenant_id.")]
+        [References(typeof(Avatar), Optional = true)]
+        public string? ActingTenantId { get; set; }
 
         [FieldGroup("QuestRunStatus enum name")]
         [Inside("Pending", "Running", "Succeeded", "Failed", "Forked", "Cancelled")]

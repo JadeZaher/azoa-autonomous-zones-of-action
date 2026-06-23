@@ -5,17 +5,17 @@
 // table. Carries both the .surql-emit metadata ([SurrealTable], [Column],
 // [Assert], [Index], etc.) AND the runtime JSON shape consumers depend
 // on ([JsonPropertyName], ISurrealRecord.SchemaName). Lives in
-// OASIS.WebAPI.Generated.SurrealDb to preserve source-compat with the 30+
+// AZOA.WebAPI.Generated.SurrealDb to preserve source-compat with the 30+
 // files that import that namespace.
 
 #nullable enable
 
 using System;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Schema;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Schema;
 
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("wallet",
         Aggregate = "Wallet (Models/Wallet.cs)",

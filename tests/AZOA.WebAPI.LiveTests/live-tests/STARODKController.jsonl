@@ -1,0 +1,13 @@
+# ═══════════════════════════════════════════════════════════════
+# STARODKController live API payloads
+# End-to-end STAR ODK lifecycle: create, get all, get by id, generate, deploy, delete.
+# ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"starodkcontroller"}}
+{"id":"seed_avatar","description":"Register avatar for STAR ODK tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_startest","email":"{{suitePrefix}}_star@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"avatarId":"result.id"},"saveAs":"savatar"}
+{"id":"login_seed","description":"Login as STAR test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_star@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"sauth"}
+{"id":"create_odk","description":"Create a STAR ODK","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{sauth.token}}"},"body":{"name":"LiveODK","description":"Test ODK from live harness","publicKey":"0xTESTPUBLICKEY123","avatarId":"{{savatar.avatarId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"odk1"}
+{"id":"get_odk","description":"Get the created ODK","method":"GET","path":"/api/starodk/{{odk1.odkId}}","headers":{"Authorization":"Bearer {{sauth.token}}"},"expectedStatus":200}
+{"id":"get_all_odks","description":"List all ODKs","method":"GET","path":"/api/starodk","headers":{"Authorization":"Bearer {{sauth.token}}"},"expectedStatus":200}
+{"id":"generate_odk","description":"Generate dApp for the ODK","method":"POST","path":"/api/starodk/{{odk1.odkId}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{sauth.token}}"},"body":{"targetChain":"Algorand","boundHolonIds":[],"config":{"theme":"dark"}},"expectedStatus":200}
+{"id":"delete_odk","description":"Delete the ODK","method":"DELETE","path":"/api/starodk/{{odk1.odkId}}","headers":{"Authorization":"Bearer {{sauth.token}}"},"expectedStatus":200}
+{"id":"cleanup_avatar","description":"Clean up the temp avatar","method":"DELETE","path":"/api/avatar/{{savatar.avatarId}}","headers":{"Authorization":"Bearer {{sauth.token}}"},"expectedStatus":200}

@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// What the processor hands a step handler for one attempt. Deliberately small
@@ -9,7 +9,7 @@ namespace OASIS.WebAPI.Sagas;
 /// <para><b>Idempotency contract.</b> Before performing any irreversible
 /// (on-chain / external) effect a handler MUST claim
 /// <see cref="StepIdempotencyKey"/> on the shared
-/// <see cref="OASIS.WebAPI.Interfaces.IIdempotencyStore"/> (the
+/// <see cref="AZOA.WebAPI.Interfaces.IIdempotencyStore"/> (the
 /// api-safety-hardening spine) and only proceed on <c>Won == true</c>; on
 /// <c>Won == false</c> it replays the recorded outcome. The saga layer does NOT
 /// reimplement exactly-once — it composes the existing primitive. The processor

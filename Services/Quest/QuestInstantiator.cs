@@ -1,12 +1,12 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Stores;
-using QuestEntity = OASIS.WebAPI.Models.Quest.Quest;
-using QuestNode = OASIS.WebAPI.Models.Quest.QuestNode;
-using QuestEdge = OASIS.WebAPI.Models.Quest.QuestEdge;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using QuestEntity = AZOA.WebAPI.Models.Quest.Quest;
+using QuestNode = AZOA.WebAPI.Models.Quest.QuestNode;
+using QuestEdge = AZOA.WebAPI.Models.Quest.QuestEdge;
 
-namespace OASIS.WebAPI.Services.Quest;
+namespace AZOA.WebAPI.Services.Quest;
 
 /// <summary>
 /// Instantiates a Quest from a QuestTemplate with parameters.

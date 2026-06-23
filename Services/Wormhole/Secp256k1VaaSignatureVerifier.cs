@@ -3,7 +3,7 @@
 // BouncyCastle.Crypto transitively bundled by the Algorand2/Solana SDKs.
 extern alias BCCrypto2;
 using Microsoft.Extensions.Options;
-using OASIS.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using SecNamedCurves = BCCrypto2::Org.BouncyCastle.Asn1.Sec.SecNamedCurves;
 using X9ECParameters = BCCrypto2::Org.BouncyCastle.Asn1.X9.X9ECParameters;
 using BigInteger = BCCrypto2::Org.BouncyCastle.Math.BigInteger;
@@ -12,7 +12,7 @@ using ECCurve = BCCrypto2::Org.BouncyCastle.Math.EC.ECCurve;
 using FpCurve = BCCrypto2::Org.BouncyCastle.Math.EC.FpCurve;
 using ECAlgorithms = BCCrypto2::Org.BouncyCastle.Math.EC.ECAlgorithms;
 
-namespace OASIS.WebAPI.Services.Wormhole;
+namespace AZOA.WebAPI.Services.Wormhole;
 
 /// <summary>
 /// Real per-signature Wormhole VAA Guardian verification.

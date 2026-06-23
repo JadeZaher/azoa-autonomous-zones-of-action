@@ -1,13 +1,13 @@
 using System.Text.Json;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Persistence.SurrealDb.Models;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Responses;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed implementation of <see cref="IBlockchainOperationStore"/>.
@@ -41,7 +41,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
     // ── GetByIdAsync ──────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IBlockchainOperation>> GetByIdAsync(
+    public async Task<AZOAResult<IBlockchainOperation>> GetByIdAsync(
         Guid id,
         CancellationToken ct = default)
     {
@@ -52,14 +52,14 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             var row = await _executor.QuerySingleAsync<OperationLog>(q, ct);
 
             if (row is null)
-                return new OASISResult<IBlockchainOperation>
+                return new AZOAResult<IBlockchainOperation>
                 {
                     IsError = true,
                     Message = "Operation not found.",
                     Result  = null
                 };
 
-            return new OASISResult<IBlockchainOperation>
+            return new AZOAResult<IBlockchainOperation>
             {
                 Message = "Success",
                 Result  = ToDomain(row)
@@ -67,14 +67,14 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IBlockchainOperation>()
+            return new AZOAResult<IBlockchainOperation>()
                 .CaptureException(ex, $"SurrealBlockchainOperationStore.GetByIdAsync failed: {ex.Message}");
         }
     }
 
     // ── GetByAvatarAsync ──────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(
+    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(
         Guid avatarId,
         CancellationToken ct = default)
     {
@@ -90,7 +90,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             var rows = await _executor.QueryAsync<OperationLog>(q, ct);
             var results = rows.Select(r => (IBlockchainOperation)ToDomain(r)).ToList();
 
-            return new OASISResult<IEnumerable<IBlockchainOperation>>
+            return new AZOAResult<IEnumerable<IBlockchainOperation>>
             {
                 Message = "Success",
                 Result  = results
@@ -98,14 +98,14 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<IBlockchainOperation>>()
+            return new AZOAResult<IEnumerable<IBlockchainOperation>>()
                 .CaptureException(ex, $"SurrealBlockchainOperationStore.GetByAvatarAsync failed: {ex.Message}");
         }
     }
 
     // ── UpsertAsync ───────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IBlockchainOperation>> UpsertAsync(
+    public async Task<AZOAResult<IBlockchainOperation>> UpsertAsync(
         IBlockchainOperation operation,
         CancellationToken ct = default)
     {
@@ -121,7 +121,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             var saved = response.GetValues<OperationLog>(0).FirstOrDefault();
             IBlockchainOperation domain = saved is not null ? ToDomain(saved) : operation;
 
-            return new OASISResult<IBlockchainOperation>
+            return new AZOAResult<IBlockchainOperation>
             {
                 Message = "Saved.",
                 Result  = domain
@@ -129,14 +129,14 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IBlockchainOperation>()
+            return new AZOAResult<IBlockchainOperation>()
                 .CaptureException(ex, $"SurrealBlockchainOperationStore.UpsertAsync failed: {ex.Message}");
         }
     }
 
     // ── DeleteAsync ───────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -146,7 +146,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             var existing = await _executor.QuerySingleAsync<OperationLog>(probeQ, ct);
 
             if (existing is null)
-                return new OASISResult<bool>
+                return new AZOAResult<bool>
                 {
                     IsError = true,
                     Message = "Operation not found.",
@@ -157,7 +157,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             var response = await _executor.ExecuteAsync(delQ, ct);
             response.EnsureAllOk();
 
-            return new OASISResult<bool>
+            return new AZOAResult<bool>
             {
                 Message = "Deleted.",
                 Result  = true
@@ -165,7 +165,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool>()
+            return new AZOAResult<bool>()
                 .CaptureException(ex, $"SurrealBlockchainOperationStore.DeleteAsync failed: {ex.Message}");
         }
     }
@@ -273,6 +273,13 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             // ITransferOperation
             RecipientAddress = concrete?.RecipientAddress,
 
+            // tenant-consent-delegation AC4: persist the acting tenant + signing
+            // scope so the seam's live consent check survives the async saga hop.
+            ActingTenantId = op.ActingTenantId.HasValue
+                             ? SurrealLink.ToLink("avatar", ToSurrealId(op.ActingTenantId.Value))
+                             : null,
+            SigningScope   = op.SigningScope,
+
             // IdempotencyKey and Error are NOT set here:
             //   IdempotencyKey — must be supplied by the caller upstream (§4 validator).
             //   Error          — no corresponding field on IBlockchainOperation.
@@ -319,6 +326,12 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // ITransferOperation
             RecipientAddress = poco.RecipientAddress,
+
+            // tenant-consent-delegation AC4
+            ActingTenantId = poco.ActingTenantId is not null
+                             ? FromSurrealId(SurrealLink.FromLink(poco.ActingTenantId)!)
+                             : null,
+            SigningScope   = poco.SigningScope,
 
             // IdempotencyKey and Error are not represented in BlockchainOperation —
             // they are operation_log-only fields for the SurrealDB idempotency contract.

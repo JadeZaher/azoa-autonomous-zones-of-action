@@ -18,7 +18,7 @@ during development. Operators need it for prod forensics
 (via MCP) benefit from the same structured-introspection primitives.
 
 ## Acceptance
-1. Web UI accessible at `/studio` on the OASIS WebAPI host (gated by
+1. Web UI accessible at `/studio` on the AZOA WebAPI host (gated by
    the same JWT+ApiKey multi-scheme as `/mcp`).
 2. Table browser: list tables, paginate rows, click a record to see
    FK-resolved neighbors (graph traversal as native UI motion, not
@@ -34,7 +34,7 @@ during development. Operators need it for prod forensics
    bypassed.
 
 ## Approach
-- Reuse the existing `oasis-surreal` schema introspection (from
+- Reuse the existing `azoa-surreal` schema introspection (from
   drift detection) for the metadata layer.
 - Single-page app served by an embedded static-files middleware (no
   separate frontend build pipeline; bundle is checked into the

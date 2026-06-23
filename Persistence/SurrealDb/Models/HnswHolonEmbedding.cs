@@ -4,10 +4,10 @@
 #nullable enable
 
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Schema;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Schema;
 
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("hnsw_holon_embedding")]
     [SurrealNote("HNSW vector index definitions for holon and quest tables.")]

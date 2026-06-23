@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Services.Quest.Workflow;
+namespace AZOA.WebAPI.Services.Quest.Workflow;
 
 /// <summary>
 /// The single authority for "what is the next node in a durable run's DAG".

@@ -2,14 +2,14 @@ using System;
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Connection;
-using Oasis.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Connection;
+using Azoa.SurrealDb.Client.Query;
 
-namespace OASIS.WebAPI.Extensions;
+namespace AZOA.WebAPI.Extensions;
 
 /// <summary>
-/// DI registration helper for the homebake <c>Oasis.SurrealDb.Client</c>
+/// DI registration helper for the homebake <c>Azoa.SurrealDb.Client</c>
 /// package (surrealdb-client-package Phase 6, sub-wave 1.5a).
 ///
 /// Replaces the previous direct registration of <c>SurrealDb.Net</c>'s
@@ -37,7 +37,7 @@ namespace OASIS.WebAPI.Extensions;
 public static class SurrealDbServiceCollectionExtensions
 {
     /// <summary>
-    /// Register the homebake SurrealDB client (<c>Oasis.SurrealDb.Client</c>)
+    /// Register the homebake SurrealDB client (<c>Azoa.SurrealDb.Client</c>)
     /// with the application's DI container. Reads connection settings from
     /// the <c>SurrealDb</c> configuration section by default.
     /// </summary>
@@ -47,7 +47,7 @@ public static class SurrealDbServiceCollectionExtensions
     /// Configuration section to bind <see cref="SurrealConnectionOptions"/> from
     /// (default: <c>"SurrealDb"</c>).
     /// </param>
-    public static IServiceCollection AddOasisSurrealDb(
+    public static IServiceCollection AddAzoaSurrealDb(
         this IServiceCollection services,
         IConfiguration configuration,
         string configSectionName = "SurrealDb")
@@ -56,7 +56,7 @@ public static class SurrealDbServiceCollectionExtensions
         if (configuration is null) throw new ArgumentNullException(nameof(configuration));
 
         // Bind options from configuration. Missing section uses property defaults
-        // (host http://localhost:8442, namespace/database "oasis"); that is
+        // (host http://localhost:8442, namespace/database "azoa"); that is
         // intentional for local dev — production deployments override every field.
         services.Configure<SurrealConnectionOptions>(
             configuration.GetSection(configSectionName));
@@ -70,7 +70,7 @@ public static class SurrealDbServiceCollectionExtensions
             var optionsAccessor = sp.GetRequiredService<
                 Microsoft.Extensions.Options.IOptions<SurrealConnectionOptions>>();
             var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var http        = httpFactory.CreateClient("Oasis.SurrealDb.Client");
+            var http        = httpFactory.CreateClient("Azoa.SurrealDb.Client");
             return new HttpSurrealConnection(http, optionsAccessor.Value);
         });
 

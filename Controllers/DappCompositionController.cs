@@ -1,12 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Persistence.SurrealDb.Models;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
 /// Composition + STAR generation/deployment endpoints for the
@@ -24,7 +24,7 @@ public class DappCompositionController : ControllerBase
     public DappCompositionController(IDappCompositionManager manager) => _manager = manager;
 
     [HttpPost("compose")]
-    public async Task<ActionResult<OASISResult<DappManifest>>> Compose(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<DappManifest>>> Compose(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId is null) return Unauthorized(Fail<DappManifest>("Invalid token."));
@@ -34,7 +34,7 @@ public class DappCompositionController : ControllerBase
     }
 
     [HttpGet("validate")]
-    public async Task<ActionResult<OASISResult<CompositionValidationResult>>> Validate(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<CompositionValidationResult>>> Validate(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId is null) return Unauthorized(Fail<CompositionValidationResult>("Invalid token."));
@@ -44,7 +44,7 @@ public class DappCompositionController : ControllerBase
     }
 
     [HttpGet("manifest")]
-    public async Task<ActionResult<OASISResult<DappManifest>>> GetManifest(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<DappManifest>>> GetManifest(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId is null) return Unauthorized(Fail<DappManifest>("Invalid token."));
@@ -55,7 +55,7 @@ public class DappCompositionController : ControllerBase
         try
         {
             var manifest = System.Text.Json.JsonSerializer.Deserialize<DappManifest>(seriesLoad.Result.Manifest!);
-            return Ok(new OASISResult<DappManifest> { Result = manifest, Message = "Success" });
+            return Ok(new AZOAResult<DappManifest> { Result = manifest, Message = "Success" });
         }
         catch (System.Text.Json.JsonException ex)
         {
@@ -64,7 +64,7 @@ public class DappCompositionController : ControllerBase
     }
 
     [HttpPost("generate")]
-    public async Task<ActionResult<OASISResult<ISTARODK>>> Generate(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<ISTARODK>>> Generate(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId is null) return Unauthorized(Fail<ISTARODK>("Invalid token."));
@@ -74,7 +74,7 @@ public class DappCompositionController : ControllerBase
     }
 
     [HttpPost("deploy")]
-    public async Task<ActionResult<OASISResult<ISTARODK>>> Deploy(
+    public async Task<ActionResult<AZOAResult<ISTARODK>>> Deploy(
         Guid id, [FromQuery] string? targetOverride, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -85,13 +85,13 @@ public class DappCompositionController : ControllerBase
     }
 
     [HttpGet("status")]
-    public async Task<ActionResult<OASISResult<DappSeries.StatusKind>>> GetStatus(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<DappSeries.StatusKind>>> GetStatus(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId is null) return Unauthorized(Fail<DappSeries.StatusKind>("Invalid token."));
         var seriesLoad = await _manager.GetAsync(id, avatarId.Value, ct);
         if (seriesLoad.IsError || seriesLoad.Result is null) return NotFound(Fail<DappSeries.StatusKind>(seriesLoad.Message));
-        return Ok(new OASISResult<DappSeries.StatusKind> { Result = seriesLoad.Result.Status, Message = "Success" });
+        return Ok(new AZOAResult<DappSeries.StatusKind> { Result = seriesLoad.Result.Status, Message = "Success" });
     }
 
     private Guid? GetAvatarIdFromClaims()
@@ -101,6 +101,6 @@ public class DappCompositionController : ControllerBase
         return Guid.TryParse(sub, out var id) ? id : null;
     }
 
-    private static OASISResult<T> Fail<T>(string message) =>
+    private static AZOAResult<T> Fail<T>(string message) =>
         new() { IsError = true, Message = message };
 }

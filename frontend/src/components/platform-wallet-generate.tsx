@@ -12,7 +12,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { useOasis } from '@/lib/oasis-context'
+import { useAzoa } from '@/lib/azoa-context'
 import { Key, AlertTriangle } from 'lucide-react'
 
 interface PlatformWalletGenerateDialogProps {
@@ -27,7 +27,7 @@ const CHAINS = [
 ]
 
 export function PlatformWalletGenerateDialog({ open, onOpenChange }: PlatformWalletGenerateDialogProps) {
-  const { generateWallet } = useOasis()
+  const { generateWallet } = useAzoa()
   const [chainType, setChainType] = useState('Algorand')
   const [label, setLabel] = useState('')
   const [isDefault, setIsDefault] = useState(false)
@@ -76,7 +76,7 @@ export function PlatformWalletGenerateDialog({ open, onOpenChange }: PlatformWal
             <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div className="text-xs text-amber-800 dark:text-amber-200 space-y-1">
               <p className="font-medium">Important</p>
-              <p>This creates a wallet managed by the OASIS platform. Your private key is encrypted and stored securely.</p>
+              <p>This creates a wallet managed by the AZOA platform. Your private key is encrypted and stored securely.</p>
               <p>You can export your private key / seed phrase later from the wallet details. <strong>Keep these safe — they cannot be recovered if lost.</strong></p>
             </div>
           </div>

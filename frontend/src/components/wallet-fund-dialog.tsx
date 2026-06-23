@@ -2,17 +2,17 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { SolanaProvider } from '@oasis/sdk'
+import { SolanaProvider } from '@azoa/sdk'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { oasis, isOk } from '@/lib/oasis'
+import { azoa, isOk } from '@/lib/azoa'
 import { useNetwork } from '@/lib/network-context'
 import { PROJECT_TOKEN, getBuyTargetTokenId, getPayWithTokenId } from '@/lib/networks'
-import type { WalletEntry } from '@/lib/oasis-context'
+import type { WalletEntry } from '@/lib/azoa-context'
 import { Coins, ShoppingCart, AlertTriangle, ExternalLink } from 'lucide-react'
 
 /** Matches .NET SwapQuoteResponse (camelCase JSON). */
@@ -92,7 +92,7 @@ function TopUpBody({
     try {
       if (chain === 'solana') {
         // Solana faucet is a client-side RPC airdrop against the active network.
-        const provider = oasis.wallet.getProvider<SolanaProvider>('solana')
+        const provider = azoa.wallet.getProvider<SolanaProvider>('solana')
         if (!provider) {
           toast.error('Solana provider not available')
           return
@@ -106,7 +106,7 @@ function TopUpBody({
         }
       } else {
         // Algorand faucet is server-side (pre-funded platform account).
-        const res = await oasis.api.request<{ txHash?: string; message?: string }>(
+        const res = await azoa.api.request<{ txHash?: string; message?: string }>(
           'POST', `/api/wallet/${wallet.id}/topup`, { amount: amt }
         )
         if (isOk(res)) {
@@ -228,7 +228,7 @@ function BuyBody({
       slippageBps: '50',
       walletAddress: wallet.address,
     })
-    const res = await oasis.api.request<SwapQuoteResponse>('GET', `/api/swap/quote?${qs.toString()}`)
+    const res = await azoa.api.request<SwapQuoteResponse>('GET', `/api/swap/quote?${qs.toString()}`)
     setLoading(false)
     if (isOk(res)) setQuote(res.value)
     else toast.error(res.error.message)
@@ -237,7 +237,7 @@ function BuyBody({
   const handleConfirm = async () => {
     if (!quote?.quoteId) return
     setLoading(true)
-    const res = await oasis.api.request<SwapQuoteResponse>('POST', '/api/swap/execute', {
+    const res = await azoa.api.request<SwapQuoteResponse>('POST', '/api/swap/execute', {
       chain,
       quoteId: quote.quoteId,
       walletAddress: wallet.address,

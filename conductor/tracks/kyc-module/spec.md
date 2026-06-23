@@ -2,15 +2,15 @@
 
 ## Goal
 
-Port ArdaNova's provider-agnostic KYC subsystem into OASIS as a **generic,
+Port ArdaNova's provider-agnostic KYC subsystem into AZOA as a **generic,
 reusable identity-verification module** keyed to `Avatar`. ArdaNova offered the
 code as a gift; this track lifts the *design* (the `IKycProviderService` seam, a
 manual-review default provider, a Veriff adapter behind config, and a reusable
-KYC gate) and re-expresses it in OASIS conventions: `Controllers → Managers →
-Providers/Stores`, `OASISResult<T>`, SurrealDB-only persistence, Avatar
+KYC gate) and re-expresses it in AZOA conventions: `Controllers → Managers →
+Providers/Stores`, `AZOAResult<T>`, SurrealDB-only persistence, Avatar
 identity, IDOR-safe Avatar-scoped routes.
 
-**No ArdaNova branding may leak into OASIS.** Every namespace, type name,
+**No ArdaNova branding may leak into AZOA.** Every namespace, type name,
 string literal, URL, and user-facing message is genericized. The ArdaNova files
 are *read-only reference sources for signatures and behaviour*, not text to copy
 verbatim.
@@ -56,8 +56,8 @@ Two impedance mismatches drive the port and are the source of every decision in
 `plan.md`:
 
 1. **Result type.** ArdaNova returns `Result<T>` with a `ResultType` discriminator
-   (`NotFound` / `ValidationError` / `Forbidden` / `Unauthorized`). OASIS uses
-   `OASISResult<T>` (`Models/Responses/OASISResult.cs:38-85`) which carries only
+   (`NotFound` / `ValidationError` / `Forbidden` / `Unauthorized`). AZOA uses
+   `AZOAResult<T>` (`Models/Responses/AZOAResult.cs:38-85`) which carries only
    `IsError` + `Message` + `Result`. The Forbidden/NotFound distinction is
    preserved at the manager boundary using the **message-prefix discriminator
    pattern** already proven by STARODK (`Interfaces/Managers/ISTARManager.cs:12-19`,
@@ -65,16 +65,16 @@ Two impedance mismatches drive the port and are the source of every decision in
    without leaking a new result shape.
 
 2. **Persistence + identity.** ArdaNova persists via EF `IRepository<T>` +
-   `IUnitOfWork` and keys KYC to `User.id` (string). OASIS persists via
+   `IUnitOfWork` and keys KYC to `User.id` (string). AZOA persists via
    **SurrealDB only** through a hand-authored store seam
    (`Interfaces/Stores/ISTARStore.cs`, `Providers/Stores/Surreal/SurrealStarStore.cs`)
    and keys ownership to `Avatar` (`Persistence/SurrealDb/Models/Avatar.cs:20`).
-   ArdaNova's `userId` → OASIS `AvatarId` throughout.
+   ArdaNova's `userId` → AZOA `AvatarId` throughout.
 
 ArdaNova also auto-upgrades a `User` to a `VerificationLevel.PRO` enum on approval
 (`KycService.cs:184-186`) and the gate reads that enum
-(`KycGateService.cs:18-30`). OASIS `Avatar` has only a boolean `IsVerified`
-(`Avatar.cs:69-72`) and no `VerificationLevel`. The OASIS gate therefore reads
+(`KycGateService.cs:18-30`). AZOA `Avatar` has only a boolean `IsVerified`
+(`Avatar.cs:69-72`) and no `VerificationLevel`. The AZOA gate therefore reads
 **KYC submission status** (the most-recent APPROVED submission for the avatar)
 rather than a denormalized level on the avatar — this avoids schema-changing the
 shared `avatar` table from inside a feature module. See plan decision **D3**.
@@ -125,7 +125,7 @@ for IDOR):
 
 - `IKycProviderService` (`Interfaces/Providers/IKycProviderService.cs`) — the
   genericized port of ArdaNova's `IKycProviderService.cs:7-13`, returning
-  `OASISResult<T>`:
+  `AZOAResult<T>`:
   - `CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents)`
   - `GetSessionStatusAsync(string providerSessionId)`
   - `HandleWebhookAsync(string payload)`
@@ -143,11 +143,11 @@ for IDOR):
   Registered only when `Kyc:Provider == "veriff"`. **Veriff secrets are a
   deploy-stub** — see Scope item 6.
 
-### 3. `KycManager` (OASIS naming)
+### 3. `KycManager` (AZOA naming)
 
 `KycManager : IKycManager` (`Managers/KycManager.cs`,
 `Interfaces/Managers/IKycManager.cs`), the genericized port of `KycService.cs`,
-returning `OASISResult<T>` and depending on `IKycStore` + `IKycProviderService`.
+returning `AZOAResult<T>` and depending on `IKycStore` + `IKycProviderService`.
 Methods (Avatar-scoped):
 
 - `SubmitAsync(SubmitKycModel model, Guid avatarId)` — rejects when an active
@@ -177,8 +177,8 @@ DI registration in `Program.cs` alongside the existing manager/store block
 ### 4. KYC gate (reusable guard for other managers)
 
 - `IKycGateService` (`Interfaces/Managers/IKycGateService.cs`) — genericized port
-  of `IKycGateService.cs:6-11`, returning `OASISResult<bool>` /
-  `OASISResult<KycStatus>`:
+  of `IKycGateService.cs:6-11`, returning `AZOAResult<bool>` /
+  `AZOAResult<KycStatus>`:
   - `RequireVerifiedAsync(Guid avatarId)` — succeeds when the avatar has an
     APPROVED KYC submission; otherwise returns a **Forbidden-prefixed** error
     (mirrors the STARODK discriminator pattern,
@@ -188,7 +188,7 @@ DI registration in `Program.cs` alongside the existing manager/store block
 - `KycGateService : IKycGateService` (`Managers/KycGateService.cs`) — reads via
   `IKycStore` (ports `KycGateService.cs:18-52` but keyed off submission status,
   not a `VerificationLevel` enum — decision **D3**).
-- **A reusable gate seam other OASIS managers call.** Provide a
+- **A reusable gate seam other AZOA managers call.** Provide a
   `KycAuthorizationError` static (Forbidden/NotFound prefixes, exactly like
   `STARODKAuthorizationError`, `ISTARManager.cs:12-19`) so a calling controller
   can translate the gate result to 403 without a new result type. The gate is
@@ -233,7 +233,7 @@ mirroring `STARODKController` (`Controllers/STARODKController.cs:14-118`):
 
 ### 7. No brand leak
 
-Every `ArdaNova.*` namespace becomes `OASIS.WebAPI.*`. Every user-facing string,
+Every `ArdaNova.*` namespace becomes `AZOA.WebAPI.*`. Every user-facing string,
 URL, route, and comment that references ArdaNova, its product names, or its
 `/settings/verification` path is genericized. A grep gate (Acceptance) proves
 zero `ArdaNova` / `Karma`-style brand tokens in the new files.
@@ -244,12 +244,12 @@ zero `ArdaNova` / `Karma`-style brand tokens in the new files.
   `Persistence/SurrealDb/Models/`, following the `Holon.cs` attribute pattern,
   keyed to `AvatarId`, with the listed indexes; both implement `ISurrealRecord`.
 - [ ] `KycStatus`, `KycProvider`, `KycDocumentType` enums ported (values only)
-  under the OASIS namespace.
+  under the AZOA namespace.
 - [ ] `IKycStore` seam + `SurrealKycStore` implementation authored, mirroring
   `SurrealStarStore` id-encoding + `avatar` link conventions.
 - [ ] `IKycProviderService` seam + `ManualKycProviderService` (default) +
   `VeriffKycProviderService` (stub) authored; provider selected by `Kyc:Provider`.
-- [ ] `IKycManager` + `KycManager` authored, returning `OASISResult<T>`, with the
+- [ ] `IKycManager` + `KycManager` authored, returning `AZOAResult<T>`, with the
   message-prefix discriminator for Forbidden/NotFound.
 - [ ] `IKycGateService` + `KycGateService` authored with a `KycAuthorizationError`
   static; one consuming example documented (see cross-track seam below).
@@ -266,7 +266,7 @@ zero `ArdaNova` / `Karma`-style brand tokens in the new files.
 - [ ] `dotnet build` zero-warning green (nullable enabled — `workflow.md:18`).
 - [ ] `dotnet test` green.
 - [ ] Grep gate: **zero** `ArdaNova` (or other ArdaNova brand tokens) in any new
-  OASIS file.
+  AZOA file.
 - [ ] `tracks.md` row for this track moves to `[x]` Shipped.
 
 ## Cross-track seam: wallet-generate / mint gating

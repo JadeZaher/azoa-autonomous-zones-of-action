@@ -5,11 +5,11 @@
 
 using System;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Schema;
-using OASIS.WebAPI.Models.Kyc;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Schema;
+using AZOA.WebAPI.Models.Kyc;
 
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("kyc_document",
         Aggregate = "KycDocument (generic identity-verification module)",

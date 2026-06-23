@@ -1,19 +1,19 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Responses;
-using OASIS.WebAPI.Providers.Blockchain.Base;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Providers.Blockchain.Base;
 
-namespace OASIS.WebAPI.Providers.Blockchain.Simulated;
+namespace AZOA.WebAPI.Providers.Blockchain.Simulated;
 
 /// <summary>
 /// Database-only / no-chain blockchain provider (db-only-null-provider track).
 /// The <b>no-signer</b> member of the provider seam: it overrides every
 /// value-moving op to return <b>deterministic, clearly-marked synthetic</b>
 /// results and NEVER calls a signer or a node — there is no <c>HttpClient</c>,
-/// no node URL, and no <see cref="OASIS.WebAPI.Interfaces.Signing.ITransactionSigner"/>
+/// no node URL, and no <see cref="AZOA.WebAPI.Interfaces.Signing.ITransactionSigner"/>
 /// dependency anywhere in this class.
 ///
 /// <para><b>Marker guardrail (brand/safety):</b> every synthetic address and tx
@@ -104,17 +104,17 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
     /// address is reported invalid in simulated mode so it can never be silently
     /// treated as a simulated owner.
     /// </summary>
-    public override Task<OASISResult<bool>> ValidateAddressAsync(
+    public override Task<AZOAResult<bool>> ValidateAddressAsync(
         string address, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(address))
-            return Task.FromResult(new OASISResult<bool>
+            return Task.FromResult(new AZOAResult<bool>
             {
                 IsError = true, Result = false, Message = "Address is required"
             });
 
         if (!IsSimulated(address))
-            return Task.FromResult(new OASISResult<bool>
+            return Task.FromResult(new AZOAResult<bool>
             {
                 IsError = true,
                 Result = false,
@@ -125,7 +125,7 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
         return Task.FromResult(Ok(true, "Valid simulated address"));
     }
 
-    public override Task<OASISResult<string>> GetBalanceAsync(
+    public override Task<AZOAResult<string>> GetBalanceAsync(
         string address, string? tokenId = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(address))
@@ -139,7 +139,7 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
 
     // ─── Token / Asset lifecycle (deterministic simulated successes) ───
 
-    public override Task<OASISResult<string>> MintAsync(
+    public override Task<AZOAResult<string>> MintAsync(
         string tokenUri, ulong amount, string assetType, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
@@ -153,7 +153,7 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
         return Task.FromResult(Ok(hash, $"Simulated mint of {amount} {assetType} to {walletAddress}"));
     }
 
-    public override Task<OASISResult<string>> TransferAsync(
+    public override Task<AZOAResult<string>> TransferAsync(
         string tokenId, string fromAddress, string toAddress, ulong amount,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
@@ -173,7 +173,7 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
         return Task.FromResult(Ok(hash, $"Simulated transfer of {amount} (token {tokenId}) {fromAddress} → {toAddress}"));
     }
 
-    public override Task<OASISResult<string>> BurnAsync(
+    public override Task<AZOAResult<string>> BurnAsync(
         string tokenId, ulong amount, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
@@ -197,7 +197,7 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
     /// non-simulated hash is rejected so a real hash can never be reported
     /// "confirmed" by the simulated provider.
     /// </summary>
-    public override Task<OASISResult<Dictionary<string, object>>> GetTransactionStatusAsync(
+    public override Task<AZOAResult<Dictionary<string, object>>> GetTransactionStatusAsync(
         string txHash, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(txHash))
@@ -221,7 +221,7 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
 
     // ─── Chain info ───
 
-    public override Task<OASISResult<Dictionary<string, object>>> GetChainInfoAsync(
+    public override Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(
         CancellationToken ct = default)
     {
         var info = new Dictionary<string, object>

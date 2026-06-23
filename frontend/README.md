@@ -1,4 +1,4 @@
-# OASIS Sleek Frontend
+# AZOA Sleek Frontend
 
 A comprehensive Next.js frontend for testing blockchain providers with real connectivity to Algorand and Solana devnet networks.
 
@@ -42,8 +42,8 @@ A comprehensive Next.js frontend for testing blockchain providers with real conn
 ### Setup
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/oasis-sleek-frontend.git
-cd oasis-sleek-frontend
+git clone https://github.com/your-username/azoa-frontend.git
+cd azoa-frontend
 
 # Install dependencies
 npm install

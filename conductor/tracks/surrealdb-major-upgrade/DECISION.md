@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | **Server major + patch** | **`surrealdb/surrealdb:v3.1.4`** | Newest stable as of 2026-06-10. The 3.1 line (released 2026-05-27) is the explicitly *stability-focused* minor — "a thorough security pass, many correctness fixes... continues the stream of fixes that shipped in v3.0.1 through v3.0.5." v3.1.4 is the 4th patch on that line, two days old at decision time. Image pulled and confirmed on the dev machine. |
 | **Storage engine** | **`rocksdb`** (keep current) | Already what compose ships; durable, no migration churn. SurrealKV is available default-on in 3.x but switching engines is orthogonal risk we are not taking in this cutover. Revisit `surrealkv://...?sync=every` as a separate follow-up if the G1 durability review wants it. |
-| **.NET client** | **Homebake `Oasis.SurrealDb.Client` v0.1.0 (unchanged)** | This repo does NOT use the upstream `surrealdb.net` NuGet — it speaks raw HTTP `/rpc` via `HttpSurrealConnection`. There is therefore no third-party SDK version matrix to satisfy; the client work is auditing/fixing the SurrealQL wire surface our own client emits against the 3.1 server. |
+| **.NET client** | **Homebake `Azoa.SurrealDb.Client` v0.1.0 (unchanged)** | This repo does NOT use the upstream `surrealdb.net` NuGet — it speaks raw HTTP `/rpc` via `HttpSurrealConnection`. There is therefore no third-party SDK version matrix to satisfy; the client work is auditing/fixing the SurrealQL wire surface our own client emits against the 3.1 server. |
 
 ## Risk acceptance — 3.0.1 RecordId data-loss class
 

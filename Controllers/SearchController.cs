@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -19,7 +19,7 @@ public class SearchController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<OASISResult<SearchResult>>> Search([FromBody] SearchRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<SearchResult>>> Search([FromBody] SearchRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _searchManager.SearchAsync(request, providerRequest);
         if (result.IsError) return BadRequest(result);
@@ -27,7 +27,7 @@ public class SearchController : ControllerBase
     }
 
     [HttpGet("facets")]
-    public async Task<ActionResult<OASISResult<List<SearchFacet>>>> GetFacets([FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<List<SearchFacet>>>> GetFacets([FromQuery] AZOARequest? providerRequest)
     {
         var result = await _searchManager.GetFacetsAsync(providerRequest);
         if (result.IsError) return BadRequest(result);

@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Interfaces.Signing;
+namespace AZOA.WebAPI.Interfaces.Signing;
 
 /// <summary>
 /// Selects an <see cref="ITransactionSigner"/> by chain type, mirroring

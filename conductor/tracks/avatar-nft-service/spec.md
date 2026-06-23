@@ -13,7 +13,7 @@ The IAvatarNFTService interface is defined and the AvatarNFTController consumes 
 ### FR-1: AvatarNFTService Implementation
 - Implement all 19 methods of IAvatarNFTService
 - Follow the ProviderContext + Activate pattern used by all other managers
-- Delegate to IOASISStorageProviderNFTExtensions methods on CurrentProvider
+- Delegate to IAZOAStorageProviderNFTExtensions methods on CurrentProvider
 
 ### FR-2: Authentication
 - Add `[Authorize]` to AvatarNFTController

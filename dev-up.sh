@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OASIS Sleek -- full-stack dev launcher (bash).
+# AZOA Sleek -- full-stack dev launcher (bash).
 #
 # Brings up SurrealDB + WebAPI + Frontend via docker-compose.dev.yml.
 # Auto-detects docker compose v2, docker-compose v1, or podman-compose.
@@ -150,7 +150,7 @@ case "$COMPOSE" in
 esac
 BUNDLED_RUNNING=0
 if command -v "$PS_RUNTIME" >/dev/null 2>&1; then
-    if [ -n "$("$PS_RUNTIME" ps --filter 'name=oasis-dev-surrealdb' --format '{{.Names}}' 2>/dev/null)" ]; then
+    if [ -n "$("$PS_RUNTIME" ps --filter 'name=azoa-dev-surrealdb' --format '{{.Names}}' 2>/dev/null)" ]; then
         BUNDLED_RUNNING=1
     fi
 fi
@@ -169,19 +169,40 @@ if [ "$EXTERNAL_SURREALDB" -eq 1 ]; then
         *podman*) HOST_DB_INTERNAL="host.containers.internal" ;;
         *)        HOST_DB_INTERNAL="host.docker.internal" ;;
     esac
-    # OASIS_SURREAL_URL drives BOTH the schema CLI's --connection and the
+    # AZOA_SURREAL_URL drives BOTH the schema CLI's --connection and the
     # WebAPI's SurrealDb:Endpoint (the compose file interpolates the same
     # value into both). Single-underscore-safe -- podman-compose's
     # ${VAR:-default} parser drops names with double underscores.
-    export OASIS_SURREAL_URL="http://${HOST_DB_INTERNAL}:${SURREALDB_HOST_PORT}"
-    COMPOSE_UP_SERVICES="oasis-api oasis-frontend"
+    export AZOA_SURREAL_URL="http://${HOST_DB_INTERNAL}:${SURREALDB_HOST_PORT}"
+    COMPOSE_UP_SERVICES="azoa-api azoa-frontend"
 fi
+
+# ── Guard: container shell scripts MUST be LF ─────────────────────────────────
+#
+# A Windows checkout with core.autocrlf=true rewrites *.sh to CRLF on disk. A
+# CRLF shebang gets baked into the image and the container dies at startup with
+#   /usr/bin/env: 'sh\r': No such file or directory
+# .gitattributes now pins these to eol=lf, but a stale working-tree copy (or a
+# checkout before the attribute landed) can still slip through -- so normalise
+# in-place here, BEFORE any image build, and warn loudly so it gets noticed.
+
+CONTAINER_SCRIPTS="docker-entrypoint.sh"   # scripts COPYd into images (see Dockerfile)
+for rel in $CONTAINER_SCRIPTS; do
+    f="$SCRIPT_DIR/$rel"
+    [ -f "$f" ] || continue
+    if grep -qU $'\r' "$f" 2>/dev/null; then
+        echo "[dev-up] WARN: $rel had CRLF line endings -- normalising to LF before build." >&2
+        echo "[dev-up]       (a CRLF shebang would crash the container: \"env: 'sh\\r'...\")" >&2
+        # Strip trailing CR on every line, in place.
+        sed -i 's/\r$//' "$f"
+    fi
+done
 
 # ── SDK rebuild (host-side dist; container build does its own tsup pass) ────
 
-SDK_DIR="$SCRIPT_DIR/sdk/oasis-wallet"
+SDK_DIR="$SCRIPT_DIR/sdk/azoa-wallet"
 if [ "$DO_REBUILD" -eq 1 ] && [ -d "$SDK_DIR" ]; then
-    echo "[dev-up] Rebuilding @oasis/wallet-sdk (host-side dist)..."
+    echo "[dev-up] Rebuilding @azoa/wallet-sdk (host-side dist)..."
     pushd "$SDK_DIR" >/dev/null
     if [ ! -d node_modules ]; then
         npm install --silent || { popd >/dev/null; echo "[dev-up] FATAL: SDK npm install failed." >&2; exit 1; }
@@ -204,15 +225,15 @@ fi
 
 prebuild_for_podman() {
     if [ "$DO_REBUILD" -ne 1 ] \
-       && podman image exists "localhost/${PROJECT_NAME}_oasis-api:latest" \
-       && podman image exists "localhost/${PROJECT_NAME}_oasis-frontend:latest"; then
+       && podman image exists "localhost/${PROJECT_NAME}_azoa-api:latest" \
+       && podman image exists "localhost/${PROJECT_NAME}_azoa-frontend:latest"; then
         echo "[dev-up] --no-build + cached images present: skipping rebuild."
         return 0
     fi
     echo "[dev-up] podman runtime detected -- pre-building images per Dockerfile"
     echo "[dev-up]   (works around podman-compose v1.5.0 'dockerfile:' bug)"
-    podman build -f Dockerfile -t "localhost/${PROJECT_NAME}_oasis-api:latest" "$SCRIPT_DIR"
-    podman build -f frontend/Dockerfile -t "localhost/${PROJECT_NAME}_oasis-frontend:latest" "$SCRIPT_DIR"
+    podman build -f Dockerfile -t "localhost/${PROJECT_NAME}_azoa-api:latest" "$SCRIPT_DIR"
+    podman build -f frontend/Dockerfile -t "localhost/${PROJECT_NAME}_azoa-frontend:latest" "$SCRIPT_DIR"
 }
 
 case "$COMPOSE" in
@@ -223,7 +244,7 @@ esac
 
 BUILD_FLAG=""
 # Don't pass --build for podman runtimes -- we already pre-built above,
-# and triggering compose's broken builder would tag oasis-frontend with
+# and triggering compose's broken builder would tag azoa-frontend with
 # the wrong image content.
 case "$COMPOSE" in
     *podman*) BUILD_FLAG="" ;;
@@ -245,33 +266,33 @@ $COMPOSE -f "$COMPOSE_FILE" ps
 
 # ── SurrealDB schema sync ─────────────────────────────────────────────────────
 #
-# Default: `oasis-surreal up` -- idempotent. The CLI tracks applied files
+# Default: `azoa-surreal up` -- idempotent. The CLI tracks applied files
 # via the schema_migration table, so re-running is a no-op when nothing
 # has changed and applies only pending files when there's drift.
 #
 # --reset: destructive wipe + full re-apply (delegates to the `reset` verb).
-# OASIS_SKIP_RESET=1: skip the schema step entirely (preserves DB state,
+# AZOA_SKIP_RESET=1: skip the schema step entirely (preserves DB state,
 #   useful when iterating on UI without touching schema).
 
-if [ "${OASIS_SKIP_RESET:-}" = "1" ]; then
-    echo "[dev-up] OASIS_SKIP_RESET=1 set -- skipping schema sync"
+if [ "${AZOA_SKIP_RESET:-}" = "1" ]; then
+    echo "[dev-up] AZOA_SKIP_RESET=1 set -- skipping schema sync"
 else
-    : "${OASIS_SURREAL_NS:=oasis}"
-    : "${OASIS_SURREAL_DB:=oasis}"
-    : "${OASIS_SURREAL_USER:=root}"
-    : "${OASIS_SURREAL_PASS:=root}"
-    export OASIS_SURREAL_NS OASIS_SURREAL_DB OASIS_SURREAL_USER OASIS_SURREAL_PASS
+    : "${AZOA_SURREAL_NS:=azoa}"
+    : "${AZOA_SURREAL_DB:=azoa}"
+    : "${AZOA_SURREAL_USER:=root}"
+    : "${AZOA_SURREAL_PASS:=root}"
+    export AZOA_SURREAL_NS AZOA_SURREAL_DB AZOA_SURREAL_USER AZOA_SURREAL_PASS
 
-    # Schema CLI runs on the HOST. The OASIS_SURREAL_URL set earlier for
+    # Schema CLI runs on the HOST. The AZOA_SURREAL_URL set earlier for
     # the API container points at host.containers.internal which won't
     # resolve here -- override for the CLI call, restore after.
-    SCHEMA_URL_BACKUP="${OASIS_SURREAL_URL:-}"
-    export OASIS_SURREAL_URL="http://127.0.0.1:${SURREALDB_HOST_PORT}"
+    SCHEMA_URL_BACKUP="${AZOA_SURREAL_URL:-}"
+    export AZOA_SURREAL_URL="http://127.0.0.1:${SURREALDB_HOST_PORT}"
 
     # Wait for SurrealDB to be reachable.
     SURREAL_READY=0
     for _ in $(seq 1 20); do
-        if curl -sfo /dev/null --max-time 2 "$OASIS_SURREAL_URL/health" 2>/dev/null; then
+        if curl -sfo /dev/null --max-time 2 "$AZOA_SURREAL_URL/health" 2>/dev/null; then
             SURREAL_READY=1
             break
         fi
@@ -279,7 +300,7 @@ else
     done
 
     if [ "$SURREAL_READY" -ne 1 ]; then
-        export OASIS_SURREAL_URL="$SCHEMA_URL_BACKUP"
+        export AZOA_SURREAL_URL="$SCHEMA_URL_BACKUP"
         echo "" >&2
         echo "[dev-up] SurrealDB at http://127.0.0.1:${SURREALDB_HOST_PORT} never became reachable." >&2
         echo "[dev-up] Dumping bundled surrealdb container state + logs to diagnose:" >&2
@@ -288,20 +309,20 @@ else
             *)        RUNTIME=docker ;;
         esac
         if command -v "$RUNTIME" >/dev/null 2>&1; then
-            echo "---- $RUNTIME ps (oasis-dev-surrealdb) ----" >&2
-            "$RUNTIME" ps -a --filter 'name=oasis-dev-surrealdb' --format '{{.Status}}  {{.Names}}' 2>&1 >&2 || true
-            echo "---- $RUNTIME logs --tail=50 oasis-dev-surrealdb ----" >&2
-            "$RUNTIME" logs --tail=50 oasis-dev-surrealdb 2>&1 >&2 || true
+            echo "---- $RUNTIME ps (azoa-dev-surrealdb) ----" >&2
+            "$RUNTIME" ps -a --filter 'name=azoa-dev-surrealdb' --format '{{.Status}}  {{.Names}}' 2>&1 >&2 || true
+            echo "---- $RUNTIME logs --tail=50 azoa-dev-surrealdb ----" >&2
+            "$RUNTIME" logs --tail=50 azoa-dev-surrealdb 2>&1 >&2 || true
             echo "---- end ----" >&2
         else
             echo "[dev-up] (no '$RUNTIME' on PATH to dump logs)" >&2
         fi
         echo "" >&2
         echo "[dev-up] Common causes:" >&2
-        echo "  * Storage URI rejected by surrealdb 1.5.4 (look for 'failed to parse' in the log above)." >&2
+        echo "  * Storage URI rejected by surrealdb v3.1.4 (look for 'failed to parse' in the log above)." >&2
         echo "  * Rootless podman volume ownership (look for 'permission denied' on /data)." >&2
         echo "  * Port 8000 already bound on host (look for 'address already in use')." >&2
-        echo "  * Set OASIS_SKIP_RESET=1 to bypass schema sync while you investigate." >&2
+        echo "  * Set AZOA_SKIP_RESET=1 to bypass schema sync while you investigate." >&2
         echo "[dev-up] Aborting -- SurrealDB unreachable. Logs above should name the cause." >&2
         exit 1
     fi
@@ -313,17 +334,17 @@ else
     SCHEMA_EXIT=0
     if [ "$DO_RESET_SCHEMA" -eq 1 ]; then
         echo "[dev-up] --reset: wiping + re-applying SurrealDB schema..."
-        dotnet run --project packages/Oasis.SurrealDb.Schema --framework net8.0 -- reset || SCHEMA_EXIT=$?
+        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net8.0 -- reset || SCHEMA_EXIT=$?
     else
         echo "[dev-up] syncing SurrealDB schema (idempotent; use --reset to wipe)..."
-        dotnet run --project packages/Oasis.SurrealDb.Schema --framework net8.0 -- up || SCHEMA_EXIT=$?
+        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net8.0 -- up || SCHEMA_EXIT=$?
     fi
-    export OASIS_SURREAL_URL="$SCHEMA_URL_BACKUP"
+    export AZOA_SURREAL_URL="$SCHEMA_URL_BACKUP"
     if [ "$SCHEMA_EXIT" -ne 0 ]; then
         if [ "$DO_RESET_SCHEMA" -eq 1 ]; then
-            echo "[dev-up] SurrealDB reset failed (exit $SCHEMA_EXIT). Set OASIS_SKIP_RESET=1 to skip, or pass --reset-db for a clean volume wipe." >&2
+            echo "[dev-up] SurrealDB reset failed (exit $SCHEMA_EXIT). Set AZOA_SKIP_RESET=1 to skip, or pass --reset-db for a clean volume wipe." >&2
         else
-            echo "[dev-up] SurrealDB up failed (exit $SCHEMA_EXIT). Set OASIS_SKIP_RESET=1 to skip, or pass --reset to force a clean schema apply." >&2
+            echo "[dev-up] SurrealDB up failed (exit $SCHEMA_EXIT). Set AZOA_SKIP_RESET=1 to skip, or pass --reset to force a clean schema apply." >&2
         fi
         exit "$SCHEMA_EXIT"
     fi

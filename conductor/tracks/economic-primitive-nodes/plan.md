@@ -86,7 +86,7 @@ chain actions are the **same shape**; the distinction is a capability check,
 
 | New member | Handler | Wraps | Mechanism (no economics) |
 | --- | --- | --- | --- |
-| `Swap` | `SwapNodeHandler` | `ISwapManager.GetSwapTransactionAsync` | DEX rate; OASIS only passes params |
+| `Swap` | `SwapNodeHandler` | `ISwapManager.GetSwapTransactionAsync` | DEX rate; AZOA only passes params |
 | `Grant` (a.k.a. Mint) | `GrantNodeHandler` | `INftManager.MintAsync` | mint-to-actor (avatar from run ctx) + populate `Holon.token_id`/`chain_id` |
 | `Transfer` | `TransferNodeHandler` | `INftManager.TransferAsync` | move-to-actor (avatar from run ctx) |
 | `Refund` | `RefundNodeHandler` | `INftManager.TransferAsync` (reverse) | transfer-back / clawback-deferred |
@@ -170,7 +170,7 @@ it. Soulbound reversal fails closed (clawback deferred,
 ### D8 — Emit: output-only first (RESOLVED: in-band output; webhook deferred)
 `Emit` writes a tenant-shaped payload to `QuestNodeExecution.Output` (consumed
 by ArdaNova reading the run). **No outbound webhook in this track** — deferred
-to `workflow-sdk`. Keeps fiat/payout settlement entirely tenant-side; OASIS
+to `workflow-sdk`. Keeps fiat/payout settlement entirely tenant-side; AZOA
 holds no delivery/retry state.
 
 ### D9 — A separate generic `Transform`/`Branch` node? (RESOLVED: don't add unless a gap is found)

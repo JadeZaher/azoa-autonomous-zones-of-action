@@ -1,8 +1,8 @@
-using OASIS.WebAPI.Core.Signing;
-using OASIS.WebAPI.Interfaces.Signing;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Signing;
+using AZOA.WebAPI.Interfaces.Signing;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Blockchain.Solana;
+namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
 /// <summary>
 /// Fail-closed Solana signer stub (signing-core-keystone follow-up; deploy-stub
@@ -15,7 +15,7 @@ namespace OASIS.WebAPI.Providers.Blockchain.Solana;
 /// "no signer registered", which lets a caller probe the seam — while
 /// <see cref="Sign"/> FAILS LOUDLY with no side effect. A silent no-op would be
 /// the dangerous outcome for a value-moving primitive; an explicit error
-/// <see cref="OASISResult{T}"/> is not. Mirrors the Veriff KYC provider stub.
+/// <see cref="AZOAResult{T}"/> is not. Mirrors the Veriff KYC provider stub.
 /// </para>
 /// <para>
 /// To make Solana real, replace the body of <see cref="Sign"/> with an Ed25519
@@ -28,7 +28,7 @@ public sealed class SolanaTransactionSigner : ITransactionSigner
 {
     public string ChainType => "Solana";
 
-    public OASISResult<byte[]> Sign(byte[] canonicalTxn, SigningKeyMaterial key) =>
+    public AZOAResult<byte[]> Sign(byte[] canonicalTxn, SigningKeyMaterial key) =>
         new()
         {
             IsError = true,

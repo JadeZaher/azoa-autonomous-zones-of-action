@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Core.Blockchain.Wormhole;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces;
+namespace AZOA.WebAPI.Interfaces;
 
 /// <summary>
 /// Hybrid cross-chain bridge orchestrator supporting both trusted (custodial)
@@ -22,7 +22,7 @@ public interface ICrossChainBridgeService
     /// from (avatar, route, token, recipient, amount) — absence is still
     /// dedup-safe (no random per-request key is ever generated).
     /// </param>
-    Task<OASISResult<BridgeTransactionResult>> InitiateBridgeAsync(
+    Task<AZOAResult<BridgeTransactionResult>> InitiateBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
         string recipientAddress, Guid avatarId, int amount = 1,
         BridgeMode? mode = null, CancellationToken ct = default,
@@ -31,14 +31,14 @@ public interface ICrossChainBridgeService
     /// <summary>
     /// Complete a bridge by confirming the target-chain mint (trusted mode).
     /// </summary>
-    Task<OASISResult<BridgeTransactionResult>> CompleteBridgeAsync(
+    Task<AZOAResult<BridgeTransactionResult>> CompleteBridgeAsync(
         string bridgeTransactionId, CancellationToken ct = default);
 
     /// <summary>
     /// Fetch the signed VAA for a Wormhole bridge transaction.
     /// Polls the Guardian network until the VAA is available or timeout.
     /// </summary>
-    Task<OASISResult<BridgeTransactionResult>> FetchVAAAsync(
+    Task<AZOAResult<BridgeTransactionResult>> FetchVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default);
 
     /// <summary>
@@ -50,7 +50,7 @@ public interface ICrossChainBridgeService
     /// as the redeem idempotency key; when null the service derives a
     /// deterministic key from (bridge id, VAA digest) — absence is dedup-safe.
     /// </param>
-    Task<OASISResult<BridgeTransactionResult>> RedeemWithVAAAsync(
+    Task<AZOAResult<BridgeTransactionResult>> RedeemWithVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
         string? clientIdempotencyKey = null);
 
@@ -63,25 +63,25 @@ public interface ICrossChainBridgeService
     /// deterministic key from (bridge id, source recipient) — absence is
     /// dedup-safe.
     /// </param>
-    Task<OASISResult<BridgeTransactionResult>> ReverseBridgeAsync(
+    Task<AZOAResult<BridgeTransactionResult>> ReverseBridgeAsync(
         string bridgeTransactionId, string sourceRecipientAddress, CancellationToken ct = default,
         string? clientIdempotencyKey = null);
 
     /// <summary>
     /// Get bridge history for an avatar.
     /// </summary>
-    Task<OASISResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
+    Task<AZOAResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
         Guid avatarId, CancellationToken ct = default);
 
     /// <summary>
     /// Get all supported bridge routes (including Wormhole availability).
     /// </summary>
-    Task<OASISResult<IEnumerable<BridgeRouteInfo>>> GetSupportedRoutesAsync(
+    Task<AZOAResult<IEnumerable<BridgeRouteInfo>>> GetSupportedRoutesAsync(
         CancellationToken ct = default);
 
     /// <summary>
     /// Get the status of a specific bridge transaction.
     /// </summary>
-    Task<OASISResult<BridgeTransactionResult>> GetBridgeStatusAsync(
+    Task<AZOAResult<BridgeTransactionResult>> GetBridgeStatusAsync(
         string bridgeTransactionId, CancellationToken ct = default);
 }

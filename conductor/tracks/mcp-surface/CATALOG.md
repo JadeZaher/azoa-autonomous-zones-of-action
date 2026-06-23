@@ -4,7 +4,7 @@
 
 ### Mounting
 
-The MCP server is hosted in-process alongside `OASIS.WebAPI` at the path `/mcp`.
+The MCP server is hosted in-process alongside `AZOA.WebAPI` at the path `/mcp`.
 Registration is performed by `McpServerSetup.AddMcpSurface()` +
 `McpServerSetup.MapMcp()` in `Program.cs`:
 

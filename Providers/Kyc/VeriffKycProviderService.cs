@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using OASIS.WebAPI.Interfaces.Providers;
-using OASIS.WebAPI.Models.Kyc;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces.Providers;
+using AZOA.WebAPI.Models.Kyc;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Kyc;
+namespace AZOA.WebAPI.Providers.Kyc;
 
 /// <summary>
 /// Config-gated external KYC provider adapter. This is a deploy-stub: it is
@@ -20,15 +20,15 @@ public sealed class VeriffKycProviderService : IKycProviderService
         "External KYC provider integration is not yet configured. " +
         "Set Kyc:Provider=manual to use the built-in manual review provider.";
 
-    public Task<OASISResult<string>> CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
+    public Task<AZOAResult<string>> CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
         => throw new NotImplementedException(NotImplementedMessage);
 
-    public Task<OASISResult<KycStatus>> GetSessionStatusAsync(string providerSessionId, CancellationToken ct = default)
+    public Task<AZOAResult<KycStatus>> GetSessionStatusAsync(string providerSessionId, CancellationToken ct = default)
         => throw new NotImplementedException(NotImplementedMessage);
 
-    public Task<OASISResult<KycStatus>> HandleWebhookAsync(string payload, CancellationToken ct = default)
+    public Task<AZOAResult<KycStatus>> HandleWebhookAsync(string payload, CancellationToken ct = default)
         => throw new NotImplementedException(NotImplementedMessage);
 
-    public Task<OASISResult<bool>> ValidateDocumentsAsync(IReadOnlyList<SubmitKycDocumentModel> documents, CancellationToken ct = default)
+    public Task<AZOAResult<bool>> ValidateDocumentsAsync(IReadOnlyList<SubmitKycDocumentModel> documents, CancellationToken ct = default)
         => throw new NotImplementedException(NotImplementedMessage);
 }

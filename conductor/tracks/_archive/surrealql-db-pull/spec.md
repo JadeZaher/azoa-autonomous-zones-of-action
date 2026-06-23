@@ -6,7 +6,7 @@ Pending. Created 2026-05-27. **Tier 3.** Constituent track of the
 [ADR](../surrealql-toolkit/spec.md) for the strategic framing.
 
 ## Goal
-`oasis-surreal db pull` — reverse-engineer `.mermaid` source files
+`azoa-surreal db pull` — reverse-engineer `.mermaid` source files
 from a running SurrealDB namespace. Mirrors Prisma `db pull`. Closes
 the loop for users who land on the toolkit via an existing DB rather
 than a clean slate.
@@ -18,7 +18,7 @@ adopt the toolkit without manually re-authoring every table as
 Mermaid. `db pull` removes that adoption friction.
 
 ## Acceptance
-1. `oasis-surreal db pull --namespace <ns>` reads `INFO FOR DB +
+1. `azoa-surreal db pull --namespace <ns>` reads `INFO FOR DB +
    INFO FOR TABLE *` and writes one `.mermaid` file per table to a
    target directory (default: `Persistence/SurrealDb/Schemas/source`).
 2. Output is byte-identical to a hand-authored Mermaid file

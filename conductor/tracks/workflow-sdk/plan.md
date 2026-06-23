@@ -7,7 +7,7 @@ the existing ~82-test vitest suite green and the SDK `tsc` clean — those are t
 regression gate. Tests run **once at the end** (SDK `tsc` + vitest only; **no
 frontend typecheck**, per project memory `no-frontend-typecheck`).
 
-The whole track is **additive** to `sdk/oasis-wallet/src/` — no existing public
+The whole track is **additive** to `sdk/azoa-wallet/src/` — no existing public
 symbol changes shape. The driver wraps endpoints from `durable-workflow-engine`
 (Track 2); where an endpoint is not yet final, code the SDK method against the
 documented CONTRACT and keep the dependency note in `spec.md`.
@@ -16,17 +16,17 @@ documented CONTRACT and keep the dependency note in `spec.md`.
 
 | # | Decision | Choice (recommended) | Rationale / evidence |
 |---|----------|----------------------|----------------------|
-| **D1** | Where does the new surface live? | A new `sdk/oasis-wallet/src/workflow/` module: a `WorkflowClient` (template authoring + run-status reads, thin over `OasisApiClient`) and a `WorkflowRunHandle` + `quest()` factory (the fluent driver). Composed on the facade as `oasis.workflow`. | Mirrors the existing `client/` + `api/` split and the way `holons` / `portfolio` are composed in `OasisClient` (`sdk/oasis-wallet/src/client/oasis-client.ts:143-146`). Keeps the driver out of the already-large `api/client.ts`. |
-| **D2** | Add new HTTP plumbing, or reuse `request`? | **Reuse `OasisApiClient.request` / `requestBare`.** The driver builds paths + bodies and calls the existing primitive with `extraHeaders` for the idempotency key. No new fetch path. | The idempotency-key passthrough is already proven by `executeSwap` via `extraHeaders` (`sdk/oasis-wallet/src/api/client.ts:879-893`); `request` already does auth, 401-refresh, OASISResult unwrap (`:1105-1148`). Inventing a parallel transport would duplicate the refresh-dedup + error model. |
+| **D1** | Where does the new surface live? | A new `sdk/azoa-wallet/src/workflow/` module: a `WorkflowClient` (template authoring + run-status reads, thin over `AzoaApiClient`) and a `WorkflowRunHandle` + `quest()` factory (the fluent driver). Composed on the facade as `azoa.workflow`. | Mirrors the existing `client/` + `api/` split and the way `holons` / `portfolio` are composed in `AzoaClient` (`sdk/azoa-wallet/src/client/azoa-client.ts:143-146`). Keeps the driver out of the already-large `api/client.ts`. |
+| **D2** | Add new HTTP plumbing, or reuse `request`? | **Reuse `AzoaApiClient.request` / `requestBare`.** The driver builds paths + bodies and calls the existing primitive with `extraHeaders` for the idempotency key. No new fetch path. | The idempotency-key passthrough is already proven by `executeSwap` via `extraHeaders` (`sdk/azoa-wallet/src/api/client.ts:879-893`); `request` already does auth, 401-refresh, AZOAResult unwrap (`:1105-1148`). Inventing a parallel transport would duplicate the refresh-dedup + error model. |
 | **D3** | How does `quest(...)` disambiguate template vs quest vs run? | **Explicit modifiers / variants** — `quest.fromTemplate(id)`, `quest(questId)`, `quest.run(runId)` (or a `.forRun()` modifier) — **no id-shape sniffing.** | Sniffing a UUID's meaning is fragile and surprising; explicit entrypoints are self-documenting and testable. (spec.md Open Q1.) |
-| **D-AUTH** | How is the child Bearer token threaded for `forActor` without disturbing the tenant `X-Api-Key`? | **Per-call `Authorization` override via `extraHeaders`** on `request`, scoped to one run handle. The global `OasisApiClient` config (tenant `X-Api-Key`) is untouched. | `fetchWithAuth` already merges `extraHeaders` over the built auth headers (`sdk/oasis-wallet/src/api/client.ts:1270-1274`), so a handle-scoped `Authorization: Bearer <childJWT>` wins for that run's calls only. Avoids mutating shared client state. If a cleaner seam is wanted, add an optional `token` arg to `request`; the `extraHeaders` route works today. |
-| **D4** | Acquire the child credential eagerly or lazily? | **Lazily, on the first advancement call for that actor; cache per handle; re-acquire on expiry** reusing the refresh-dedup discipline. | Mirrors the existing `_refreshInFlight` dedup (`sdk/oasis-wallet/src/api/client.ts:1291-1306`) — don't invent a second refresh path. A `.forActor()` that never drives shouldn't burn a credential. |
+| **D-AUTH** | How is the child Bearer token threaded for `forActor` without disturbing the tenant `X-Api-Key`? | **Per-call `Authorization` override via `extraHeaders`** on `request`, scoped to one run handle. The global `AzoaApiClient` config (tenant `X-Api-Key`) is untouched. | `fetchWithAuth` already merges `extraHeaders` over the built auth headers (`sdk/azoa-wallet/src/api/client.ts:1270-1274`), so a handle-scoped `Authorization: Bearer <childJWT>` wins for that run's calls only. Avoids mutating shared client state. If a cleaner seam is wanted, add an optional `token` arg to `request`; the `extraHeaders` route works today. |
+| **D4** | Acquire the child credential eagerly or lazily? | **Lazily, on the first advancement call for that actor; cache per handle; re-acquire on expiry** reusing the refresh-dedup discipline. | Mirrors the existing `_refreshInFlight` dedup (`sdk/azoa-wallet/src/api/client.ts:1291-1306`) — don't invent a second refresh path. A `.forActor()` that never drives shouldn't burn a credential. |
 | **D5** | Ship `nodeConfig` builders now or defer? | **Land the driver + template + actor surface first; add builders in this track once `economic-primitive-nodes` freezes its config shapes.** Raw `Config` strings accepted meanwhile (forward-compat escape hatch). | The configs are opaque JSON on the wire (`durable-workflow-engine/plan.md:18`). Typing them before Track 3 finalizes risks churn; the raw-string escape hatch unblocks authoring now. (spec.md Open Q3 / FR-5.) |
-| **D6** | `gateId` guard — UUID or free string? | **`assertUuid`**, per the current engine model where `StepName = nodeId` (`durable-workflow-engine/plan.md:24,30`). Relax to a non-empty-string guard only if Track 2 finalizes `gateId` as a free label. | Keeps the path-traversal guard uniform with every other interpolated id (`sdk/oasis-wallet/src/api/client.ts:569-576`). Recorded as a contract dependency (spec.md Open Q4). |
-| **D7** | Handle ergonomics — eager calls or queued thenable? | **Thenable (PromiseLike) handle**: each chained method awaits the prior op and returns the same handle; the chain is `await`-able and short-circuits on the first `err` (Result discipline, no throw). | Delivers the literal `await quest(a).start({...}).step(b)` from the user's pseudocode while preserving the SDK's `Result<T, SdkError>` no-throw contract (`oasis-wallet-sdk_20260509/spec.md:124-128`). |
+| **D6** | `gateId` guard — UUID or free string? | **`assertUuid`**, per the current engine model where `StepName = nodeId` (`durable-workflow-engine/plan.md:24,30`). Relax to a non-empty-string guard only if Track 2 finalizes `gateId` as a free label. | Keeps the path-traversal guard uniform with every other interpolated id (`sdk/azoa-wallet/src/api/client.ts:569-576`). Recorded as a contract dependency (spec.md Open Q4). |
+| **D7** | Handle ergonomics — eager calls or queued thenable? | **Thenable (PromiseLike) handle**: each chained method awaits the prior op and returns the same handle; the chain is `await`-able and short-circuits on the first `err` (Result discipline, no throw). | Delivers the literal `await quest(a).start({...}).step(b)` from the user's pseudocode while preserving the SDK's `Result<T, SdkError>` no-throw contract (`azoa-wallet-sdk_20260509/spec.md:124-128`). |
 
 ## Phase 1 — Types + path constants (foundation, no behavior)
-1. `[ ]` Add the run-driver DTOs to a new `sdk/oasis-wallet/src/workflow/types.ts`:
+1. `[ ]` Add the run-driver DTOs to a new `sdk/azoa-wallet/src/workflow/types.ts`:
    `WorkflowRunStatus` (the run + node-execution read shape incl.
    `Suspended` / `AwaitingSignal` / `AwaitingTimer`,
    `durable-workflow-engine/spec.md:138-142`), `AdvanceParams` (`{ fromNodeId }`),
@@ -34,7 +34,7 @@ documented CONTRACT and keep the dependency note in `spec.md`.
    (`{ actor; params }`), and `WorkflowRunResult`. Extend the existing
    `QuestRunStatus`-adjacent types in `api/client.ts:382-533` only if a shared
    enum is cleaner — prefer additive new types.
-2. `[ ]` Add path constants to `sdk/oasis-wallet/src/api/api-version.ts`:
+2. `[ ]` Add path constants to `sdk/azoa-wallet/src/api/api-version.ts`:
    `QUEST_RUN_ADVANCE(runId)`, `QUEST_RUN_SIGNAL(runId)`,
    `QUEST_RUN_STATUS(runId)`, `TENANT_CHILD_CREDENTIAL(avatarId)`; add `"tenant"`
    to the `ApiController` union (`api-version.ts:19-30`). Pin the exact
@@ -42,13 +42,13 @@ documented CONTRACT and keep the dependency note in `spec.md`.
    Open Q5).
 
 ## Phase 2 — Thin WorkflowClient: template authoring + run reads (FR-1)
-3. `[ ]` `WorkflowClient` in `sdk/oasis-wallet/src/workflow/client.ts`, thin over
-   `OasisApiClient`: `createTemplate` / `getTemplate` / `listTemplates`
+3. `[ ]` `WorkflowClient` in `sdk/azoa-wallet/src/workflow/client.ts`, thin over
+   `AzoaApiClient`: `createTemplate` / `getTemplate` / `listTemplates`
    delegate to the already-present `createQuestTemplate` / `getQuestTemplate` /
-   `listQuestTemplates` (`sdk/oasis-wallet/src/api/client.ts:1042-1055`).
+   `listQuestTemplates` (`sdk/azoa-wallet/src/api/client.ts:1042-1055`).
    `assertUuid` on `templateId`.
 4. `[ ]` `instantiate(templateId, params)` → `instantiateQuestTemplate`
-   (`sdk/oasis-wallet/src/api/client.ts:1058-1061`), returning a **bound run
+   (`sdk/azoa-wallet/src/api/client.ts:1058-1061`), returning a **bound run
    handle** (Phase 3) rather than the raw `QuestResult`, so DESIGN flows into
    DRIVE.
 5. `[ ]` `getRunStatus(runId)` → `GET` the run-status route (Phase 1 constant),
@@ -56,7 +56,7 @@ documented CONTRACT and keep the dependency note in `spec.md`.
 
 ## Phase 3 — The fluent `quest()` driver (the headline, FR-2 + FR-4)
 6. `[ ]` `WorkflowRunHandle` + `quest()` factory in
-   `sdk/oasis-wallet/src/workflow/run.ts`:
+   `sdk/azoa-wallet/src/workflow/run.ts`:
    - `quest(questId)` / `quest.fromTemplate(templateId)` / `quest.run(runId)`
      (D3) open a handle.
    - `.start({ actor, params })` instantiates+starts a durable run, binds the
@@ -72,7 +72,7 @@ documented CONTRACT and keep the dependency note in `spec.md`.
    `Result<WorkflowRunStatus, SdkError>`; first `err` short-circuits.
 8. `[ ]` Guards + idempotency (FR-4): `assertUuid` on `runId` / `nodeId` /
    `gateId` (D6) before interpolation (pattern at
-   `sdk/oasis-wallet/src/api/client.ts:569-576`); optional `idempotencyKey` sets
+   `sdk/azoa-wallet/src/api/client.ts:569-576`); optional `idempotencyKey` sets
    the `Idempotency-Key` header (pattern at `:879-893`); amounts in params stay
    **strings**; verbose method+path errors (`:1202-1217`).
 
@@ -83,7 +83,7 @@ documented CONTRACT and keep the dependency note in `spec.md`.
     for the actor, `POST /api/tenant/avatars/{childAvatarId}/credential`
     (`tenant-onboarding/spec.md:124-131`) using the tenant `X-Api-Key`; cache the
     returned child JWT per handle; re-acquire on expiry via the existing
-    refresh-dedup discipline (`sdk/oasis-wallet/src/api/client.ts:1291-1306`).
+    refresh-dedup discipline (`sdk/azoa-wallet/src/api/client.ts:1291-1306`).
 11. `[ ]` Thread the child JWT as a per-run `Authorization: Bearer` override via
     `extraHeaders` (D-AUTH) on the advance/signal calls only; the tenant
     `X-Api-Key` remains the principal for the credential-acquisition call.
@@ -94,7 +94,7 @@ documented CONTRACT and keep the dependency note in `spec.md`.
     in the public type.
 
 ## Phase 5 — Optional node-config builders (FR-5, gated on Track 3 — D5)
-13. `[ ]` `nodeConfig` namespace in `sdk/oasis-wallet/src/workflow/node-config.ts`
+13. `[ ]` `nodeConfig` namespace in `sdk/azoa-wallet/src/workflow/node-config.ts`
     with pure typed builders for the shipped generic node types
     (`gateCheck` / `swap` / `grant` / `transfer` / `hold` / `refund` / `emit`),
     each returning the serialized `Config` string the template DTO expects.
@@ -106,19 +106,19 @@ documented CONTRACT and keep the dependency note in `spec.md`.
     commit once Track 3 ships — the driver does not block on it.)
 
 ## Phase 6 — Exports, README, tests (FR-6 + house rules)
-15. `[ ]` Export the new surface from `sdk/oasis-wallet/src/index.ts`
-    (`sdk/oasis-wallet/src/index.ts:72-82` pattern): `quest`, `WorkflowClient`,
+15. `[ ]` Export the new surface from `sdk/azoa-wallet/src/index.ts`
+    (`sdk/azoa-wallet/src/index.ts:72-82` pattern): `quest`, `WorkflowClient`,
     `WorkflowRunHandle`, `nodeConfig`, and the new types.
-16. `[ ]` Compose `oasis.workflow` on the facade in
-    `sdk/oasis-wallet/src/client/oasis-client.ts` exactly as `holons` /
+16. `[ ]` Compose `azoa.workflow` on the facade in
+    `sdk/azoa-wallet/src/client/azoa-client.ts` exactly as `holons` /
     `portfolio` are constructed (`:143-146`).
 17. `[ ]` Document the new methods in the SDK README (create one if absent —
-    `sdk/oasis-wallet/README.md` does not exist today) and the `api-version`
+    `sdk/azoa-wallet/README.md` does not exist today) and the `api-version`
     constants; show `quest(step1).step(step2B)`, the hybrid start+signal path,
     and `forActor`.
-18. `[ ]` Tests in `sdk/oasis-wallet/tests/workflow/` using the existing
+18. `[ ]` Tests in `sdk/azoa-wallet/tests/workflow/` using the existing
     `ApiConfigBuilder` + `vi.stubGlobal("fetch", …)` harness
-    (`sdk/oasis-wallet/tests/api/self-audit-one-fix.test.ts:13-24`):
+    (`sdk/azoa-wallet/tests/api/self-audit-one-fix.test.ts:13-24`):
     - **ordered-call**: `quest(a).start({...}).step(b).step(c)` ⇒ start →
       `advance {fromNodeId:b}` → `advance {fromNodeId:c}` (assert
       `mockFetch.mock.calls`, mirror `self-audit-one-fix.test.ts:218-245`);
@@ -135,11 +135,11 @@ documented CONTRACT and keep the dependency note in `spec.md`.
       `AwaitingTimer`; `.onSuspend` fires when a call leaves the run awaiting.
 
 ## Verification (run ONCE at the end)
-19. `[ ]` `pnpm --filter @oasis/wallet-sdk tsc --noEmit` (or the repo's SDK
+19. `[ ]` `pnpm --filter @azoa/wallet-sdk tsc --noEmit` (or the repo's SDK
     typecheck script) — clean. **No frontend typecheck** (project memory).
-20. `[ ]` `pnpm --filter @oasis/wallet-sdk test` (vitest) — green, including the
+20. `[ ]` `pnpm --filter @azoa/wallet-sdk test` (vitest) — green, including the
     existing ~82 tests and the new `tests/workflow/` suite.
-21. `[ ]` `pnpm --filter @oasis/wallet-sdk build` (tsup) — ESM + CJS + DTS emit
+21. `[ ]` `pnpm --filter @azoa/wallet-sdk build` (tsup) — ESM + CJS + DTS emit
     unchanged; new symbols present in the `.d.ts`.
 22. `[ ]` Grep the SDK `src/` for `ArdaNova` / brand terms and for
     `btoa`/`atob`/`Buffer` → **zero** hits (NO brand leak; cross-platform).

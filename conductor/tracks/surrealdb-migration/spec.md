@@ -12,13 +12,13 @@ Realistic effort: **~4–5 weeks** (full storage layer + graph remodel + test
 port + guardrails), not the "5–7 days" an earlier draft claimed.
 
 ## Removed by decision
-PostgreSQL, EF Core (`OASISDbContext`, `EfStorageProvider`, migrations, Npgsql),
+PostgreSQL, EF Core (`AZOADbContext`, `EfStorageProvider`, migrations, Npgsql),
 `InMemoryStorageProvider`. **No SpacetimeDB, no in-memory hot layer, no
 hot/cold split** — premature optimization, consciously deferred.
 
 ## Non-negotiable guardrails (acceptance criteria, not best-effort)
 - **G1 — Durability forced on.** SurrealKV defaults to `Eventual` (no `fsync`
-  before commit). Deploy config sets `surrealkv://data/oasis.db?sync=every`
+  before commit). Deploy config sets `surrealkv://data/azoa.db?sync=every`
   in the connection URI (the env-var path attempted in wave-1 was wrong for
   SurrealKV — confirmed against GH #5001 + journalistic-persona research);
   Program.cs boot self-check refuses to start if sync != every;
@@ -33,12 +33,12 @@ hot/cold split** — premature optimization, consciously deferred.
   delivered in `api-safety-hardening`; this track preserves it through the
   engine swap.)
 - **G3 — Parameterized queries only.** No C# string interpolation into
-  SurrealQL ever; enforced by `Oasis.SurrealDb.Analyzer` (SRDB0001 Error
+  SurrealQL ever; enforced by `Azoa.SurrealDb.Analyzer` (SRDB0001 Error
   severity, ships from [[surrealdb-client-package]]).
 - **G4 — Pin our own client package.** Wave-1 pinned `SurrealDb.Net 0.10.2`
   (pre-1.0, single small vendor, 3 open data-loss bugs); [[surrealdb-client-package]]
-  replaces that dependency with `Oasis.SurrealDb.Client` which we own and
-  semver. G4 narrows to "pin `OasisSurrealDbVersion` in `Directory.Build.props`."
+  replaces that dependency with `Azoa.SurrealDb.Client` which we own and
+  semver. G4 narrows to "pin `AzoaSurrealDbVersion` in `Directory.Build.props`."
   Integration tests still run against a real container.
 - **G5 — Backup/restore is first-class.** Scheduled `surreal export` +
   periodically **exercised** restore drill; schema via the in-tree migration
@@ -46,7 +46,7 @@ hot/cold split** — premature optimization, consciously deferred.
   `Odonno/surrealdb-migrations` tool the original spec referenced).
 - **G6 — Value tables `SCHEMAFULL`.** Wallets, bridge tx, swap state, NFT
   ownership, operation log: enforced schema + asserts. Authored in `.mermaid`
-  source (via [[surrealdb-client-package]] `Oasis.SurrealDb.Schema`),
+  source (via [[surrealdb-client-package]] `Azoa.SurrealDb.Schema`),
   generated to `.surql`. Schemaless only for holon/quest flexible attributes
   and MCP context.
 - **G7 — Chain reconciliation mandatory.** Re-derive op/bridge truth from
@@ -75,11 +75,11 @@ on that hand-off being merged; foundation + value-table schemas
 - Reconciliation drill: kill mid-op → recovery re-derives chain truth (G7).
 - Restore drill: export → wipe → import → integrity assertions pass (G5).
 - Injection suite: hostile input through every query path (G3).
-- Package-pin: build fails if `OasisSurrealDbVersion` in `Directory.Build.props`
-  drifts from the version actually resolved by `Oasis.SurrealDb.Client` (G4).
+- Package-pin: build fails if `AzoaSurrealDbVersion` in `Directory.Build.props`
+  drifts from the version actually resolved by `Azoa.SurrealDb.Client` (G4).
 
 ## Carried over (owned here, not in api-safety-hardening)
-- **Integration-test harness rebuild.** `OASIS.WebAPI.IntegrationTests` was
+- **Integration-test harness rebuild.** `AZOA.WebAPI.IntegrationTests` was
   built for disposable per-factory EF-InMemory DBs; `api-safety-hardening`
   exposed that it cannot run correctly against a shared persistent relational
   DB (destructive `EnsureDeleted`-style teardown + parallel collections racing

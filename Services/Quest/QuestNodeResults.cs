@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Services.Quest;
+namespace AZOA.WebAPI.Services.Quest;
 
 /// <summary>
 /// Builds the success / failure <see cref="QuestNodeHandlerResult"/> for a

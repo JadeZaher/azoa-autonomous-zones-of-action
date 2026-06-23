@@ -1,13 +1,13 @@
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
-using OASIS.WebAPI.Providers.Blockchain.Base;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Providers.Blockchain.Base;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 public class WalletManager : IWalletManager
 {
@@ -36,18 +36,18 @@ public class WalletManager : IWalletManager
         _blockchainConfig = new BlockchainConfigurationManager(config);
     }
 
-    public async Task<OASISResult<IWallet>> GetAsync(Guid id, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IWallet>> GetAsync(Guid id, Guid avatarId, AZOARequest? request = null)
     {
         var result = await _walletStore.GetByIdAsync(id, default);
         if (result.IsError || result.Result == null) return result;
 
         if (result.Result.AvatarId != avatarId)
-            return new OASISResult<IWallet> { IsError = true, Message = "Wallet not found." };
+            return new AZOAResult<IWallet> { IsError = true, Message = "Wallet not found." };
 
         return result;
     }
 
-    public async Task<OASISResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, Guid avatarId, AZOARequest? request = null)
     {
         var all = await _walletStore.GetAllAsync(default);
         if (all.IsError || all.Result == null) return all;
@@ -60,10 +60,10 @@ public class WalletManager : IWalletManager
         if (query.IsDefault.HasValue)
             filtered = filtered.Where(w => w.IsDefault == query.IsDefault.Value);
 
-        return new OASISResult<IEnumerable<IWallet>> { Result = filtered.ToList(), Message = "Success" };
+        return new AZOAResult<IEnumerable<IWallet>> { Result = filtered.ToList(), Message = "Success" };
     }
 
-    public async Task<OASISResult<IWallet>> CreateAsync(WalletCreateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IWallet>> CreateAsync(WalletCreateModel model, Guid avatarId, AZOARequest? request = null)
     {
         // Address uniqueness per chain
         var all = await _walletStore.GetAllAsync(default);
@@ -72,7 +72,7 @@ public class WalletManager : IWalletManager
             w.ChainType.Equals(model.ChainType, StringComparison.OrdinalIgnoreCase));
 
         if (existing != null)
-            return new OASISResult<IWallet> { IsError = true, Message = "Wallet address already exists for this chain." };
+            return new AZOAResult<IWallet> { IsError = true, Message = "Wallet address already exists for this chain." };
 
         var wallet = new Wallet
         {
@@ -93,13 +93,13 @@ public class WalletManager : IWalletManager
         return await _walletStore.UpsertAsync(wallet, default);
     }
 
-    public async Task<OASISResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, Guid avatarId, AZOARequest? request = null)
     {
         var existing = await _walletStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
 
         if (existing.Result.AvatarId != avatarId)
-            return new OASISResult<IWallet> { IsError = true, Message = "Wallet not found." };
+            return new AZOAResult<IWallet> { IsError = true, Message = "Wallet not found." };
 
         var wallet = (Wallet)existing.Result;
         if (model.Label != null) wallet.Label = model.Label;
@@ -117,48 +117,48 @@ public class WalletManager : IWalletManager
         return await _walletStore.UpsertAsync(wallet, default);
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid avatarId, AZOARequest? request = null)
     {
         var existing = await _walletStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null)
-            return new OASISResult<bool> { IsError = true, Message = "Wallet not found." };
+            return new AZOAResult<bool> { IsError = true, Message = "Wallet not found." };
 
         if (existing.Result.AvatarId != avatarId)
-            return new OASISResult<bool> { IsError = true, Message = "Wallet not found." };
+            return new AZOAResult<bool> { IsError = true, Message = "Wallet not found." };
 
         return await _walletStore.DeleteAsync(id, default);
     }
 
-    public async Task<OASISResult<bool>> SetDefaultAsync(Guid avatarId, Guid walletId, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> SetDefaultAsync(Guid avatarId, Guid walletId, AZOARequest? request = null)
     {
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result == null)
-            return new OASISResult<bool> { IsError = true, Message = "Wallet not found." };
+            return new AZOAResult<bool> { IsError = true, Message = "Wallet not found." };
 
         var wallet = walletResult.Result;
         if (wallet.AvatarId != avatarId)
-            return new OASISResult<bool> { IsError = true, Message = "Wallet not owned by avatar." };
+            return new AZOAResult<bool> { IsError = true, Message = "Wallet not owned by avatar." };
 
         await UnsetPreviousDefaultAsync(avatarId, wallet.ChainType, walletId);
 
         wallet.IsDefault = true;
         var saveResult = await _walletStore.UpsertAsync(wallet, default);
         if (saveResult.IsError)
-            return new OASISResult<bool> { IsError = true, Message = saveResult.Message };
+            return new AZOAResult<bool> { IsError = true, Message = saveResult.Message };
 
-        return new OASISResult<bool> { Result = true, Message = "Default wallet set." };
+        return new AZOAResult<bool> { Result = true, Message = "Default wallet set." };
     }
 
-    public async Task<OASISResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, Guid avatarId, AZOARequest? request = null)
     {
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result == null)
-            return new OASISResult<PortfolioResult> { IsError = true, Message = "Wallet not found." };
+            return new AZOAResult<PortfolioResult> { IsError = true, Message = "Wallet not found." };
 
         var wallet = walletResult.Result;
 
         if (wallet.AvatarId != avatarId)
-            return new OASISResult<PortfolioResult> { IsError = true, Message = "Wallet not found." };
+            return new AZOAResult<PortfolioResult> { IsError = true, Message = "Wallet not found." };
 
         // Stub: linked NFT Holons for this avatar
         var allHolons = await _holonStore.QueryAsync(null, default);
@@ -210,12 +210,12 @@ public class WalletManager : IWalletManager
             ComputedAt = DateTime.UtcNow
         };
 
-        return new OASISResult<PortfolioResult> { Result = portfolio, Message = "Portfolio computed." };
+        return new AZOAResult<PortfolioResult> { Result = portfolio, Message = "Portfolio computed." };
     }
 
     // ─── New: Generate a wallet on-platform ───
 
-    public async Task<OASISResult<IWallet>> GenerateWalletAsync(WalletGenerateRequest model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IWallet>> GenerateWalletAsync(WalletGenerateRequest model, Guid avatarId, AZOARequest? request = null)
     {
         try
         {
@@ -228,7 +228,7 @@ public class WalletManager : IWalletManager
                 w.ChainType.Equals(model.ChainType, StringComparison.OrdinalIgnoreCase));
 
             if (existing != null)
-                return new OASISResult<IWallet> { IsError = true, Message = "Generated address collision — please retry." };
+                return new AZOAResult<IWallet> { IsError = true, Message = "Generated address collision — please retry." };
 
             var wallet = new Wallet
             {
@@ -250,16 +250,16 @@ public class WalletManager : IWalletManager
         }
         catch (NotSupportedException ex)
         {
-            return new OASISResult<IWallet> { IsError = true, Message = ex.Message };
+            return new AZOAResult<IWallet> { IsError = true, Message = ex.Message };
         }
     }
 
     // ─── New: Connect an external wallet (MetaMask, Ghost, etc.) ───
 
-    public async Task<OASISResult<IWallet>> ConnectWalletAsync(WalletConnectRequest model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IWallet>> ConnectWalletAsync(WalletConnectRequest model, Guid avatarId, AZOARequest? request = null)
     {
         if (string.IsNullOrWhiteSpace(model.Address))
-            return new OASISResult<IWallet> { IsError = true, Message = "Address is required." };
+            return new AZOAResult<IWallet> { IsError = true, Message = "Address is required." };
 
         // Optional: Verify ownership via signed message
         if (!string.IsNullOrEmpty(model.SignedMessage) && !string.IsNullOrEmpty(model.OriginalMessage))
@@ -278,9 +278,9 @@ public class WalletManager : IWalletManager
         {
             // If the wallet belongs to this avatar, return it
             if (existing.AvatarId == avatarId)
-                return new OASISResult<IWallet> { Result = existing, Message = "Wallet already connected." };
+                return new AZOAResult<IWallet> { Result = existing, Message = "Wallet already connected." };
 
-            return new OASISResult<IWallet> { IsError = true, Message = "Address already registered by another avatar." };
+            return new AZOAResult<IWallet> { IsError = true, Message = "Address already registered by another avatar." };
         }
 
         var wallet = new Wallet
@@ -302,22 +302,22 @@ public class WalletManager : IWalletManager
 
     // ─── New: Export wallet private key ───
 
-    public async Task<OASISResult<WalletExportResult>> ExportWalletAsync(Guid walletId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<WalletExportResult>> ExportWalletAsync(Guid walletId, Guid avatarId, AZOARequest? request = null)
     {
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result == null)
-            return new OASISResult<WalletExportResult> { IsError = true, Message = "Wallet not found." };
+            return new AZOAResult<WalletExportResult> { IsError = true, Message = "Wallet not found." };
 
         var wallet = walletResult.Result;
 
         if (wallet.AvatarId != avatarId)
-            return new OASISResult<WalletExportResult> { IsError = true, Message = "Wallet not owned by this avatar." };
+            return new AZOAResult<WalletExportResult> { IsError = true, Message = "Wallet not owned by this avatar." };
 
         if (wallet.WalletType != WalletType.Platform)
-            return new OASISResult<WalletExportResult> { IsError = true, Message = "Only platform-generated wallets can be exported. External wallets are managed by their respective browser wallet." };
+            return new AZOAResult<WalletExportResult> { IsError = true, Message = "Only platform-generated wallets can be exported. External wallets are managed by their respective browser wallet." };
 
         if (string.IsNullOrEmpty(wallet.EncryptedPrivateKey))
-            return new OASISResult<WalletExportResult> { IsError = true, Message = "No private key stored for this wallet." };
+            return new AZOAResult<WalletExportResult> { IsError = true, Message = "No private key stored for this wallet." };
 
         try
         {
@@ -326,7 +326,7 @@ public class WalletManager : IWalletManager
                 ? _keyService.DecryptSeedPhrase(wallet.EncryptedSeedPhrase)
                 : null;
 
-            return new OASISResult<WalletExportResult>
+            return new AZOAResult<WalletExportResult>
             {
                 Result = new WalletExportResult
                 {
@@ -342,40 +342,40 @@ public class WalletManager : IWalletManager
         }
         catch (Exception ex)
         {
-            return new OASISResult<WalletExportResult> { IsError = true, Message = $"Decryption failed: {ex.Message}" };
+            return new AZOAResult<WalletExportResult> { IsError = true, Message = $"Decryption failed: {ex.Message}" };
         }
     }
 
     // ─── New: Top-up a wallet via faucet (dev / test networks only) ───
 
-    public async Task<OASISResult<object>> TopUpAsync(Guid walletId, decimal? amount, Guid avatarId, OASISRequest? request = null, string? clientIdempotencyKey = null)
+    public async Task<AZOAResult<object>> TopUpAsync(Guid walletId, decimal? amount, Guid avatarId, AZOARequest? request = null, string? clientIdempotencyKey = null)
     {
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result == null)
-            return new OASISResult<object> { IsError = true, Message = "Wallet not found." };
+            return new AZOAResult<object> { IsError = true, Message = "Wallet not found." };
 
         var wallet = walletResult.Result;
 
         // Ownership check — mirror ExportWalletAsync.
         if (wallet.AvatarId != avatarId)
-            return new OASISResult<object> { IsError = true, Message = "Wallet not owned by this avatar." };
+            return new AZOAResult<object> { IsError = true, Message = "Wallet not owned by this avatar." };
 
         // HARD GUARD: never dispense on mainnet.
         var network = _blockchainConfig.GetDefaultNetwork(wallet.ChainType);
         if (network == ChainNetwork.Mainnet)
-            return new OASISResult<object> { IsError = true, Message = "Top-up (faucet) is disabled on mainnet." };
+            return new AZOAResult<object> { IsError = true, Message = "Top-up (faucet) is disabled on mainnet." };
 
         var defaultAmount = _config.GetValue<decimal?>("Blockchain:Faucet:DefaultAmount") ?? 5m;
         var dispenseAmount = amount.GetValueOrDefault(defaultAmount);
         if (dispenseAmount <= 0)
-            return new OASISResult<object> { IsError = true, Message = "Amount must be a positive value." };
+            return new AZOAResult<object> { IsError = true, Message = "Amount must be a positive value." };
 
         switch (wallet.ChainType.ToLowerInvariant())
         {
             case "algorand":
             case "algo":
                 if (!_algorandFaucet.IsConfigured)
-                    return new OASISResult<object>
+                    return new AZOAResult<object>
                     {
                         IsError = true,
                         Message = "Algorand faucet is not configured (set Blockchain:Faucet:Algorand:Mnemonic)."
@@ -390,7 +390,7 @@ public class WalletManager : IWalletManager
                     var txHash = string.IsNullOrWhiteSpace(clientIdempotencyKey)
                         ? await _algorandFaucet.DispenseAsync(wallet.Address, dispenseAmount, ct: default)
                         : await _algorandFaucet.DispenseAsync(wallet.Address, dispenseAmount, clientIdempotencyKey, ct: default);
-                    return new OASISResult<object>
+                    return new AZOAResult<object>
                     {
                         Result = new
                         {
@@ -404,14 +404,14 @@ public class WalletManager : IWalletManager
                 }
                 catch (Exception ex)
                 {
-                    return new OASISResult<object> { IsError = true, Message = $"Algorand faucet failed: {ex.Message}", Exception = ex };
+                    return new AZOAResult<object> { IsError = true, Message = $"Algorand faucet failed: {ex.Message}", Exception = ex };
                 }
 
             case "solana":
             case "sol":
                 // Solana devnet/testnet top-up is performed client-side via RPC airdrop
                 // (the frontend handles Solana). Keep the method shape consistent.
-                return new OASISResult<object>
+                return new AZOAResult<object>
                 {
                     IsError = false,
                     Result = new
@@ -425,7 +425,7 @@ public class WalletManager : IWalletManager
                 };
 
             default:
-                return new OASISResult<object>
+                return new AZOAResult<object>
                 {
                     IsError = true,
                     Message = $"Top-up not supported for chain {wallet.ChainType}."

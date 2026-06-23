@@ -1,28 +1,36 @@
 graph LR
     %% Slice: bridge
     %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
-    %% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- flowcharts
+    %% Regenerate with: dotnet run --project packages/Azoa.SurrealDb.Schema -- flowcharts
 
     %% Nodes in this slice
     bridge_tx["bridge_tx: Node"]:::nodeClass
+    consent_webhook_event["consent_webhook_event: Node"]:::nodeClass
     consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
     idempotency_key_store["idempotency_key_store: Node"]:::nodeClass
     operation_log["operation_log: Node"]:::nodeClass
     saga_steps["saga_steps: Node"]:::nodeClass
+    webhook_registration["webhook_registration: Node"]:::nodeClass
 
     %% Cross-slice targets (rendered as ghost nodes)
     avatar["avatar: Node (external)"]:::externalNode
+    consent_grant["consent_grant: Node (external)"]:::externalNode
     holon["holon: Node (external)"]:::externalNode
     wallet["wallet: Node (external)"]:::externalNode
 
     %% Edges (outbound from this slice)
     bridge_tx -- "avatar_id [N:1]" --> avatar
+    consent_webhook_event -- "avatar_id [N:1]" --> avatar
+    consent_webhook_event -- "tenant_id [N:1]" --> avatar
+    consent_webhook_event -- "grant_id [N:1]" --> consent_grant
     consumed_vaa_ledger -- "bridge_transaction_id [N:0..1]" --> bridge_tx
+    operation_log -- "acting_tenant_id [N:0..1]" --> avatar
     operation_log -- "avatar_id [N:0..1]" --> avatar
     operation_log -- "holon_id [N:0..1]" --> holon
     operation_log -- "source_holon_id [N:0..1]" --> holon
     operation_log -- "target_holon_id [N:0..1]" --> holon
     operation_log -- "wallet_id [N:0..1]" --> wallet
+    webhook_registration -- "tenant_id [N:1]" --> avatar
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
     classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;

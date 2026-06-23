@@ -42,7 +42,7 @@ The provider seam already supports this cleanly. Three facts make it a drop-in:
    the flag *selects* it (see Decisions).
 
 3. **Providers in this codebase return tx hashes; managers own persistence.**
-   The provider contract returns `OASISResult<string>` (a tx hash) for write ops —
+   The provider contract returns `AZOAResult<string>` (a tx hash) for write ops —
    e.g. `MintAsync` (`Interfaces/IBlockchainProvider.cs:23-28`),
    `TransferAsync` (`:36-41`), `BurnAsync` (`:30-34`). SurrealDB persistence of the
    resulting entity lives in the manager layer: `NftManager.MintAsync`
@@ -90,7 +90,7 @@ implements (via the base class):
 ### Base class
 
 `Core/Blockchain/Base/BaseBlockchainProvider.cs` (namespace
-`OASIS.WebAPI.Providers.Blockchain.Base`, `:6`):
+`AZOA.WebAPI.Providers.Blockchain.Base`, `:6`):
 
 - `abstract string ChainType` (`:45`), `ChainNetwork ActiveNetwork` settable
   (`:46`), `virtual Initialize` (`:54-61`).

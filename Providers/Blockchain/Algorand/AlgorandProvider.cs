@@ -6,18 +6,18 @@ using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
 using Microsoft.Extensions.DependencyInjection;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Core.Signing;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Signing;
-using OASIS.WebAPI.Managers;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Responses;
-using OASIS.WebAPI.Providers.Blockchain.Base;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Signing;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Signing;
+using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Providers.Blockchain.Base;
 using AlgoAccount = Algorand.Algod.Model.Account;
 
-namespace OASIS.WebAPI.Providers.Blockchain.Algorand;
+namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
 /// <summary>
 /// Algorand blockchain provider using direct REST API calls to Algod and Indexer.
@@ -130,7 +130,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
 
     // ─── Account / Wallet ───
 
-    public override async Task<OASISResult<string>> GetBalanceAsync(
+    public override async Task<AZOAResult<string>> GetBalanceAsync(
         string address, string? tokenId = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(address))
@@ -167,14 +167,14 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         }
     }
 
-    public override async Task<OASISResult<bool>> ValidateAddressAsync(
+    public override async Task<AZOAResult<bool>> ValidateAddressAsync(
         string address, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(address))
-            return new OASISResult<bool> { IsError = true, Result = false, Message = "Address is required" };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = "Address is required" };
 
         if (!ValidateAddressFormat(address))
-            return new OASISResult<bool> { IsError = true, Result = false, Message = "Invalid Algorand address format" };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = "Invalid Algorand address format" };
 
         try
         {
@@ -182,17 +182,17 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
                 $"/v2/accounts/{address}", cancellationToken: ct);
             return account != null
                 ? Ok(true, "Valid Algorand address — confirmed on network")
-                : new OASISResult<bool> { IsError = true, Result = false, Message = "Address not found on network" };
+                : new AZOAResult<bool> { IsError = true, Result = false, Message = "Address not found on network" };
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool> { IsError = true, Result = false, Message = $"Validation failed: {ex.Message}" };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = $"Validation failed: {ex.Message}" };
         }
     }
 
     // ─── Token / Asset Lifecycle ───
 
-    public override async Task<OASISResult<string>> MintAsync(
+    public override async Task<AZOAResult<string>> MintAsync(
         string tokenUri, ulong amount, string assetType, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
@@ -209,7 +209,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             walletAddress, signingContext ?? SigningContext.Platform, ct);
     }
 
-    public override async Task<OASISResult<string>> BurnAsync(
+    public override async Task<AZOAResult<string>> BurnAsync(
         string tokenId, ulong amount, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
@@ -233,7 +233,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             ct: ct);
     }
 
-    public override async Task<OASISResult<string>> TransferAsync(
+    public override async Task<AZOAResult<string>> TransferAsync(
         string tokenId, string fromAddress, string toAddress, ulong amount,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
@@ -264,7 +264,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             ct: ct);
     }
 
-    public override Task<OASISResult<string>> ExchangeAsync(
+    public override Task<AZOAResult<string>> ExchangeAsync(
         string sourceTokenId, string targetTokenId, string exchangeRate,
         string walletAddress, CancellationToken ct = default)
     {
@@ -272,7 +272,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             "Exchange on Algorand requires DEX integration (Tinyman/Pact AMM). Not yet implemented."));
     }
 
-    public override Task<OASISResult<string>> SwapAsync(
+    public override Task<AZOAResult<string>> SwapAsync(
         string tokenIn, string tokenOut, decimal amountIn, decimal minAmountOut,
         string walletAddress, CancellationToken ct = default)
     {
@@ -282,7 +282,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
 
     // ─── Query / Metadata ───
 
-    public override async Task<OASISResult<Dictionary<string, object>>> GetTokenMetadataAsync(
+    public override async Task<AZOAResult<Dictionary<string, object>>> GetTokenMetadataAsync(
         string tokenId, CancellationToken ct = default)
     {
         try
@@ -322,7 +322,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         }
     }
 
-    public override async Task<OASISResult<List<Dictionary<string, object>>>> GetTokensByOwnerAsync(
+    public override async Task<AZOAResult<List<Dictionary<string, object>>>> GetTokensByOwnerAsync(
         string ownerAddress, CancellationToken ct = default)
     {
         try
@@ -353,7 +353,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         }
     }
 
-    public override async Task<OASISResult<Dictionary<string, object>>> GetTransactionStatusAsync(
+    public override async Task<AZOAResult<Dictionary<string, object>>> GetTransactionStatusAsync(
         string txHash, CancellationToken ct = default)
     {
         try
@@ -420,7 +420,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         }
     }
 
-    public override Task<OASISResult<string>> DeployContractAsync(
+    public override Task<AZOAResult<string>> DeployContractAsync(
         byte[] contractCode, string walletAddress,
         Dictionary<string, object>? args = null, CancellationToken ct = default)
     {
@@ -428,7 +428,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             "AVM contract deployment requires TEAL compilation and client-side signing. Not yet implemented."));
     }
 
-    public override Task<OASISResult<object>> CallContractAsync(
+    public override Task<AZOAResult<object>> CallContractAsync(
         string contractAddress, string method, Dictionary<string, object> args,
         string walletAddress, CancellationToken ct = default)
     {
@@ -436,7 +436,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             "AVM contract calls require client-side signing. Not yet implemented."));
     }
 
-    public override async Task<OASISResult<Dictionary<string, object>>> GetChainInfoAsync(
+    public override async Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(
         CancellationToken ct = default)
     {
         try
@@ -466,7 +466,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
 
     // ─── Cross-Chain Bridge ───
 
-    public override Task<OASISResult<string>> LockForBridgeAsync(
+    public override Task<AZOAResult<string>> LockForBridgeAsync(
         string tokenId, string vaultAddress, int amount,
         string targetChain, string targetRecipient, CancellationToken ct = default)
     {
@@ -482,7 +482,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             $"Lock request recorded: {amount} of asset {tokenId} → vault {vaultAddress} for {targetChain} bridge to {targetRecipient}"));
     }
 
-    public override async Task<OASISResult<string>> MintWrappedAsync(
+    public override async Task<AZOAResult<string>> MintWrappedAsync(
         string sourceChain, string sourceTokenId, string tokenUri,
         int amount, string recipientAddress, CancellationToken ct = default)
     {
@@ -493,7 +493,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             recipientAddress, recipientAddress, recipientAddress, ct);
     }
 
-    public override Task<OASISResult<string>> BurnWrappedAsync(
+    public override Task<AZOAResult<string>> BurnWrappedAsync(
         string tokenId, int amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default)
     {
@@ -502,7 +502,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             $"Wrapped burn request recorded for {tokenId} on Algorand → release on {sourceChain}"));
     }
 
-    public override Task<OASISResult<bool>> VerifyBridgeProofAsync(
+    public override Task<AZOAResult<bool>> VerifyBridgeProofAsync(
         string proofData, string sourceChain, string targetChainId, CancellationToken ct = default)
     {
         // In production, verify a Wormhole VAA or LayerZero proof here.
@@ -511,24 +511,37 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
 
     // ─── IAlgorandASAModule ───
 
-    public async Task<OASISResult<string>> CreateASAAsync(
+    public async Task<AZOAResult<string>> CreateASAAsync(
         string name, string unitName, int total, int decimals,
         string managerAddress, string reserveAddress, string freezeAddress,
         string clawbackAddress, string walletAddress, CancellationToken ct = default)
     {
-        // The IAlgorandASAModule surface is unchanged; ASA-create is always a
-        // platform/ASA-admin op, so it signs with the platform key.
+        // ASA-create is a platform/ASA-admin op, so it signs with the platform key.
         return await CreateAsaCoreAsync(
             name, unitName, checked((ulong)total), decimals,
             managerAddress, reserveAddress, freezeAddress, clawbackAddress,
             walletAddress, SigningContext.Platform, ct);
     }
 
+    public async Task<AZOAResult<string>> CreateASAAsync(
+        string name, string unitName, int total, int decimals,
+        string managerAddress, string reserveAddress, string freezeAddress,
+        string clawbackAddress, string walletAddress, SigningContext signingContext, CancellationToken ct = default)
+    {
+        // tenant-consent-delegation AC4b: platform-signed, but the caller-supplied
+        // context may carry an acting tenant so the custody seam runs the live
+        // consent check before decrypt (a tenant-driven FungibleTokenCreate).
+        return await CreateAsaCoreAsync(
+            name, unitName, checked((ulong)total), decimals,
+            managerAddress, reserveAddress, freezeAddress, clawbackAddress,
+            walletAddress, signingContext, ct);
+    }
+
     /// <summary>
     /// Shared ASA-create implementation that carries the resolved
     /// <see cref="SigningContext"/> through to the signer (value-path-wiring C1).
     /// </summary>
-    private async Task<OASISResult<string>> CreateAsaCoreAsync(
+    private async Task<AZOAResult<string>> CreateAsaCoreAsync(
         string name, string unitName, ulong total, int decimals,
         string managerAddress, string reserveAddress, string freezeAddress,
         string clawbackAddress, string walletAddress, SigningContext signingContext,
@@ -555,10 +568,10 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     /// manager/freeze/clawback (total=1, decimals=0, defaultFrozen=true). FULLY
     /// PARAMETERIZED — the caller supplies name/unitName/url/metadata and the
     /// platform admin address; this method hardcodes NO brand, label, or URL. The
-    /// credential domain semantics stay in the caller; OASIS provides the on-chain
+    /// credential domain semantics stay in the caller; AZOA provides the on-chain
     /// soulbound primitive only. (Clawback-revoke is deferred per D4 → H2.)
     /// </summary>
-    public async Task<OASISResult<string>> CreateSoulboundAsaAsync(
+    public async Task<AZOAResult<string>> CreateSoulboundAsaAsync(
         string name, string unitName, string platformAddress,
         string? url = null, byte[]? metadataHash = null, CancellationToken ct = default)
     {
@@ -578,13 +591,13 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             platformAddress, assetParams, $"create soulbound ASA '{name}'", SigningContext.Platform, ct);
     }
 
-    public async Task<OASISResult<bool>> OptInAsync(
+    public async Task<AZOAResult<bool>> OptInAsync(
         string assetId, string walletAddress, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(assetId) || !ulong.TryParse(assetId, out var assetIndex))
-            return new OASISResult<bool> { IsError = true, Result = false, Message = "A numeric asset ID is required to opt in" };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = "A numeric asset ID is required to opt in" };
         if (string.IsNullOrWhiteSpace(walletAddress) || !ValidateAddressFormat(walletAddress))
-            return new OASISResult<bool> { IsError = true, Result = false, Message = "A valid wallet address is required to opt in" };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = "A valid wallet address is required to opt in" };
 
         // Opt-in = a 0-amount AssetTransfer to self. Opt-in of the platform
         // account is an ASA-admin op signed by the platform key.
@@ -601,11 +614,11 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             ct: ct);
 
         return result.IsError
-            ? new OASISResult<bool> { IsError = true, Result = false, Message = result.Message, Exception = result.Exception }
+            ? new AZOAResult<bool> { IsError = true, Result = false, Message = result.Message, Exception = result.Exception }
             : Ok(true, result.Message);
     }
 
-    public async Task<OASISResult<string>> GetAssetHoldingAsync(
+    public async Task<AZOAResult<string>> GetAssetHoldingAsync(
         string assetId, string address, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(assetId) || string.IsNullOrWhiteSpace(address))
@@ -626,7 +639,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     /// confirmation. Returns the confirmed tx id in <c>Result</c> (the manager
     /// persists it on the BlockchainOperation record via ApplyChainResult).
     /// </summary>
-    private async Task<OASISResult<string>> BuildSignSubmitAsync(
+    private async Task<AZOAResult<string>> BuildSignSubmitAsync(
         string signerAddress,
         Func<AlgodSuggestedParams, Address, Transaction> buildTransaction,
         string opLabel,
@@ -649,7 +662,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     }
 
     /// <summary>ASA-create variant that extracts and returns the real on-chain asset id.</summary>
-    private async Task<OASISResult<string>> CreateAsaWithParamsAsync(
+    private async Task<AZOAResult<string>> CreateAsaWithParamsAsync(
         string creatorAddress, AssetParams assetParams, string opLabel,
         SigningContext signingContext, CancellationToken ct)
     {
@@ -685,7 +698,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             $"Algorand {opLabel} confirmed: asset id {submitted.Result.AssetIndex} (tx {submitted.Result.TxId}, round {submitted.Result.ConfirmedRound})");
     }
 
-    private async Task<OASISResult<ConfirmedTxn>> BuildSignSubmitCoreAsync(
+    private async Task<AZOAResult<ConfirmedTxn>> BuildSignSubmitCoreAsync(
         string signerAddress,
         Func<AlgodSuggestedParams, Address, Transaction> buildTransaction,
         string opLabel,
@@ -731,7 +744,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         //    user-wallet op → WithSigningKeyAsync (IDOR-guarded); platform/ASA-admin
         //    op → WithPlatformSigningKeyAsync. A user context that cannot be resolved
         //    returns a CLEAR ERROR — it NEVER falls back to the platform key.
-        OASISResult<byte[]> signResult;
+        AZOAResult<byte[]> signResult;
         try
         {
             var canonicalUnsigned = Encoder.EncodeToMsgPackOrdered(txn);
@@ -787,7 +800,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         txn.SetFee(fee == 0 ? 1000UL : fee);
     }
 
-    private async Task<OASISResult<ConfirmedTxn>> WaitForConfirmationAsync(
+    private async Task<AZOAResult<ConfirmedTxn>> WaitForConfirmationAsync(
         string txId, string opLabel, CancellationToken ct)
     {
         const int maxPolls = 10;
@@ -805,7 +818,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
                         return ErrorT<ConfirmedTxn>($"Transaction rejected by the pool while trying to {opLabel}: {pending.PoolError}");
 
                     if (pending.ConfirmedRound > 0)
-                        return new OASISResult<ConfirmedTxn>
+                        return new AZOAResult<ConfirmedTxn>
                         {
                             IsError = false,
                             Result = new ConfirmedTxn(txId, pending.ConfirmedRound, pending.AssetIndex, PendingConfirmation: false),
@@ -828,7 +841,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         // result carrying the txId with PendingConfirmation=true so the manager
         // records the op Pending + Parameters["TxHash"]=txId and reconciliation
         // settles it from chain truth.
-        return new OASISResult<ConfirmedTxn>
+        return new AZOAResult<ConfirmedTxn>
         {
             IsError = false,
             Result = new ConfirmedTxn(txId, ConfirmedRound: 0, AssetIndex: null, PendingConfirmation: true),
@@ -879,12 +892,12 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     /// the review flagged). The unconditional config-mnemonic load for user ops is
     /// gone; the platform mnemonic is now reachable ONLY via the platform door.
     /// </summary>
-    private async Task<OASISResult<byte[]>> SignViaCustodyAsync(
+    private async Task<AZOAResult<byte[]>> SignViaCustodyAsync(
         byte[] canonicalUnsigned, string opLabel, SigningContext ctx)
     {
         // The signing delegate: hand the decrypted key bytes to the chain-agnostic
         // signer. Runs inside the custody resolver's decrypt→sign→zero scope.
-        Func<byte[], Task<OASISResult<byte[]>>> sign = keyBytes =>
+        Func<byte[], Task<AZOAResult<byte[]>>> sign = keyBytes =>
         {
             using var material = new SigningKeyMaterial(keyBytes);
             return Task.FromResult(_signerFactory!.GetSigner(ChainType).Sign(canonicalUnsigned, material));
@@ -920,17 +933,23 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     /// <see cref="IKeyCustodyService.WithPlatformSigningKeyAsync{T}"/>. A per-user
     /// context with no resolvable wallet/avatar fails closed — never the platform key.
     /// </summary>
-    private static async Task<OASISResult<byte[]>> SignWithCustodyAsync(
+    private static async Task<AZOAResult<byte[]>> SignWithCustodyAsync(
         IKeyCustodyService custody, string opLabel, SigningContext ctx,
-        Func<byte[], Task<OASISResult<byte[]>>> sign)
+        Func<byte[], Task<AZOAResult<byte[]>>> sign)
     {
+        // tenant-consent-delegation C1/C2/AC4/AC4b: route BOTH the platform and the
+        // per-user resolve through the consent-aware overloads, passing the full
+        // SigningContext so the custody seam runs the LIVE grant check before any
+        // decrypt. A tenant-driven op (ctx.IsTenantDriven) with no covering grant
+        // fails closed — on the platform key (Grant/FungibleTokenCreate) AND the
+        // user key (Transfer/Refund) alike. Non-tenant-driven ⇒ no grant required.
         if (ctx.IsPlatform)
-            return Flatten(await custody.WithPlatformSigningKeyAsync(true, sign), opLabel);
+            return Flatten(await custody.WithPlatformSigningKeyAsync(true, ctx, sign), opLabel);
 
         if (!ctx.IsResolvableUserContext)
             return UserContextNotResolvable(opLabel);
 
-        return Flatten(await custody.WithSigningKeyAsync(ctx.WalletId, ctx.AvatarId, sign), opLabel);
+        return Flatten(await custody.WithSigningKeyAsync(ctx, sign), opLabel);
     }
 
     /// <summary>
@@ -940,11 +959,32 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     /// reaches here (it fails closed above), so the unconditional config-mnemonic
     /// load the review flagged for user ops is gone.
     /// </summary>
-    private async Task<OASISResult<byte[]>> SignWithFallbackPlatformKeyAsync(
-        string opLabel, Func<byte[], Task<OASISResult<byte[]>>> sign)
+    private async Task<AZOAResult<byte[]>> SignWithFallbackPlatformKeyAsync(
+        string opLabel, Func<byte[], Task<AZOAResult<byte[]>>> sign)
     {
+        // Fail-closed backstop (security review): the ungated platform-key fallback (no
+        // custody service ⇒ no consent gate) must NEVER run in a real deployment. A
+        // deployed app always sets ASPNETCORE_ENVIRONMENT explicitly (Production /
+        // Staging), so we DENY there — a missing custody service in those environments
+        // is a DI regression and silently signing ungated would defeat the whole consent
+        // chokepoint. Everywhere else (Development, IntegrationTest, or an UNSET env as
+        // in unit tests) the fallback is permitted: those contexts have no real value at
+        // stake and exercise the signing path directly. Deny-list, not allow-list, so an
+        // unrecognised future test env still works while production stays closed.
+        var aspnetEnv = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? string.Empty;
+        var isProtectedEnv = aspnetEnv.Equals("Production", StringComparison.OrdinalIgnoreCase)
+            || aspnetEnv.Equals("Staging", StringComparison.OrdinalIgnoreCase);
+        if (isProtectedEnv)
+            return new AZOAResult<byte[]>
+            {
+                IsError = true,
+                Message =
+                    $"Cannot {opLabel}: platform signing fallback is disabled in {aspnetEnv}; " +
+                    "the custody service must be wired."
+            };
+
         if (_keyService is null)
-            return new OASISResult<byte[]>
+            return new AZOAResult<byte[]>
             {
                 IsError = true,
                 Message =
@@ -953,7 +993,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
 
         var mnemonic = _config.GetValue<string>(KeyCustodyService.PlatformMnemonicConfigPath);
         if (string.IsNullOrWhiteSpace(mnemonic))
-            return new OASISResult<byte[]>
+            return new AZOAResult<byte[]>
             {
                 IsError = true,
                 Message = $"Cannot {opLabel}: no platform signing key configured."
@@ -972,7 +1012,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         }
     }
 
-    private static OASISResult<byte[]> UserContextNotResolvable(string opLabel) =>
+    private static AZOAResult<byte[]> UserContextNotResolvable(string opLabel) =>
         new()
         {
             IsError = true,
@@ -983,14 +1023,14 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         };
 
     /// <summary>
-    /// Flatten the custody resolver's outer <see cref="OASISResult{T}"/> (which
+    /// Flatten the custody resolver's outer <see cref="AZOAResult{T}"/> (which
     /// carries resolve-time errors: wallet not found, IDOR rejection, no platform
     /// key) and the signer's inner result (sign-time errors) into one result.
     /// </summary>
-    private static OASISResult<byte[]> Flatten(OASISResult<OASISResult<byte[]>> outer, string opLabel)
+    private static AZOAResult<byte[]> Flatten(AZOAResult<AZOAResult<byte[]>> outer, string opLabel)
     {
         if (outer.IsError || outer.Result is null)
-            return new OASISResult<byte[]>
+            return new AZOAResult<byte[]>
             {
                 IsError = true,
                 Message = string.IsNullOrWhiteSpace(outer.Message)
@@ -1001,10 +1041,10 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         return outer.Result;
     }
 
-    private OASISResult<T> ErrorT<T>(string message, Exception? ex = null)
+    private AZOAResult<T> ErrorT<T>(string message, Exception? ex = null)
     {
         _logger.LogError(ex, "{ChainType} error: {Message}", ChainType, message);
-        return new OASISResult<T> { IsError = true, Message = message, Exception = ex };
+        return new AZOAResult<T> { IsError = true, Message = message, Exception = ex };
     }
 
     private sealed record ConfirmedTxn(string TxId, long ConfirmedRound, ulong? AssetIndex, bool PendingConfirmation);

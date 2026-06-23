@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces;
 
-namespace OASIS.WebAPI.Models;
+namespace AZOA.WebAPI.Models;
 
 public class Avatar : IAvatar
 {
@@ -25,6 +25,17 @@ public class Avatar : IAvatar
     public Guid? OwnerTenantId { get; set; }
     public string? ExternalUserId { get; set; }
     public string? ExternalRef { get; set; }
+
+    // ── user-sovereign-identity ───────────────────────────────────────────────
+    // Primary wallet-challenge auth binding (AC2). Matched EXACTLY on login; never
+    // derived from email/username/extuser. Both null = no wallet auth bound.
+    public string? AuthWalletAddress { get; set; }
+    public string? AuthWalletChainType { get; set; }
+
+    // Post-claim / forward-revocation watermark (AC3b/H2). A tenant-driven token
+    // (child JWT or claim token) minted before this instant is rejected at the
+    // signing seam + credential checks. UTC; null = no cut applied.
+    public DateTime? AuthNotBefore { get; set; }
 
     public List<Wallet> Wallets { get; set; } = new();
 }

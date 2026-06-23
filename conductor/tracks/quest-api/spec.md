@@ -1,11 +1,11 @@
 # Quest API — Specification
 
 ## Goal
-Expose the Quest DAG system via REST API. Provides CRUD for quests, templates, and node templates, plus quest execution orchestration. Builds on quest-core domain models and dispatches node execution to existing OASIS managers.
+Expose the Quest DAG system via REST API. Provides CRUD for quests, templates, and node templates, plus quest execution orchestration. Builds on quest-core domain models and dispatches node execution to existing AZOA managers.
 
 ## Architecture
 ```
-Controllers → QuestManager → IQuestRepository → OASISDbContext
+Controllers → QuestManager → IQuestRepository → AZOADbContext
                          ↓
                     IHolonManager        (holon CRUD, query, interact, propagate, compose, clone, move-subtree)
                     INftManager          (mint, transfer, burn)
@@ -85,34 +85,34 @@ When a node executes, the QuestManager deserializes the Config JSON to the match
 
 | QuestNodeType | Config Deserializes To | Dispatch Call |
 |---|---|---|
-| `HolonCreate` | `HolonCreateModel` | `_holonManager.CreateAsync(model, avatarId, oasisNull)` |
-| `HolonUpdate` | `HolonUpdateModel` | `_holonManager.UpdateAsync(holonId, model, oasisNull)` |
-| `HolonDelete` | `{ holonId }` | `_holonManager.DeleteAsync(holonId, oasisNull)` |
-| `HolonGet` | `{ holonId }` | `_holonManager.GetAsync(holonId, oasisNull)` |
-| `HolonQuery` | `HolonQueryRequest` | `_holonManager.QueryAsync(query, oasisNull)` |
-| `HolonInteract` | `HolonInteractionRequest` | `_holonManager.InteractAsync(holonId, request, oasisNull)` |
-| `HolonPropagate` | `HolonPropagateRequest` | `_holonManager.PropagateAsync(holonId, request, oasisNull)` |
-| `HolonCompose` | `{ holonId }` | `_holonManager.ComposeAsync(holonId, oasisNull)` |
-| `HolonClone` | `HolonCloneRequest` | `_holonManager.CloneAsync(holonId, request, avatarId, oasisNull)` |
-| `HolonMoveSubtree` | `MoveSubtreeRequest` | `_holonManager.MoveSubtreeAsync(holonId, newParentId, oasisNull)` |
-| `NftMint` | `NftMintRequest` | `_nftManager.MintAsync(request, avatarId, oasisNull)` |
-| `NftTransfer` | `NftTransferRequest` | `_nftManager.TransferAsync(nftId, request, avatarId, oasisNull)` |
-| `NftBurn` | `NftBurnRequest` | `_nftManager.BurnAsync(nftId, walletId, avatarId, oasisNull)` |
-| `NftGet` | `{ nftId }` | `_nftManager.GetAsync(nftId, oasisNull)` |
-| `NftQuery` | `{ chainId?, owner?, ... }` | `_nftManager.QueryAsync(query, oasisNull)` |
-| `NftGetMetadata` | `{ nftId }` | `_nftManager.GetMetadataAsync(nftId, oasisNull)` |
-| `WalletCreate` | `WalletCreateModel` | `_walletManager.CreateAsync(model, avatarId, oasisNull)` |
-| `WalletUpdate` | `WalletUpdateModel` | `_walletManager.UpdateAsync(walletId, model, oasisNull)` |
-| `WalletDelete` | `{ walletId }` | `_walletManager.DeleteAsync(walletId, oasisNull)` |
-| `WalletGet` | `{ walletId }` | `_walletManager.GetAsync(walletId, oasisNull)` |
-| `WalletQuery` | `WalletQueryRequest` | `_walletManager.QueryAsync(query, oasisNull)` |
-| `WalletSetDefault` | `{ walletId }` | `_walletManager.SetDefaultAsync(avatarId, walletId, oasisNull)` |
-| `WalletGetPortfolio` | `{ walletId }` | `_walletManager.GetPortfolioAsync(walletId, oasisNull)` |
-| `StarGenerate` | `{ starId, STARDappGenerationRequest }` | `_starManager.GenerateAsync(starId, request, oasisNull)` |
-| `StarDeploy` | `{ starId }` | `_starManager.DeployAsync(starId, oasisNull)` |
-| `Search` | `SearchRequest` | `_searchManager.SearchAsync(query, avatarId, oasisNull)` |
+| `HolonCreate` | `HolonCreateModel` | `_holonManager.CreateAsync(model, avatarId, azoaNull)` |
+| `HolonUpdate` | `HolonUpdateModel` | `_holonManager.UpdateAsync(holonId, model, azoaNull)` |
+| `HolonDelete` | `{ holonId }` | `_holonManager.DeleteAsync(holonId, azoaNull)` |
+| `HolonGet` | `{ holonId }` | `_holonManager.GetAsync(holonId, azoaNull)` |
+| `HolonQuery` | `HolonQueryRequest` | `_holonManager.QueryAsync(query, azoaNull)` |
+| `HolonInteract` | `HolonInteractionRequest` | `_holonManager.InteractAsync(holonId, request, azoaNull)` |
+| `HolonPropagate` | `HolonPropagateRequest` | `_holonManager.PropagateAsync(holonId, request, azoaNull)` |
+| `HolonCompose` | `{ holonId }` | `_holonManager.ComposeAsync(holonId, azoaNull)` |
+| `HolonClone` | `HolonCloneRequest` | `_holonManager.CloneAsync(holonId, request, avatarId, azoaNull)` |
+| `HolonMoveSubtree` | `MoveSubtreeRequest` | `_holonManager.MoveSubtreeAsync(holonId, newParentId, azoaNull)` |
+| `NftMint` | `NftMintRequest` | `_nftManager.MintAsync(request, avatarId, azoaNull)` |
+| `NftTransfer` | `NftTransferRequest` | `_nftManager.TransferAsync(nftId, request, avatarId, azoaNull)` |
+| `NftBurn` | `NftBurnRequest` | `_nftManager.BurnAsync(nftId, walletId, avatarId, azoaNull)` |
+| `NftGet` | `{ nftId }` | `_nftManager.GetAsync(nftId, azoaNull)` |
+| `NftQuery` | `{ chainId?, owner?, ... }` | `_nftManager.QueryAsync(query, azoaNull)` |
+| `NftGetMetadata` | `{ nftId }` | `_nftManager.GetMetadataAsync(nftId, azoaNull)` |
+| `WalletCreate` | `WalletCreateModel` | `_walletManager.CreateAsync(model, avatarId, azoaNull)` |
+| `WalletUpdate` | `WalletUpdateModel` | `_walletManager.UpdateAsync(walletId, model, azoaNull)` |
+| `WalletDelete` | `{ walletId }` | `_walletManager.DeleteAsync(walletId, azoaNull)` |
+| `WalletGet` | `{ walletId }` | `_walletManager.GetAsync(walletId, azoaNull)` |
+| `WalletQuery` | `WalletQueryRequest` | `_walletManager.QueryAsync(query, azoaNull)` |
+| `WalletSetDefault` | `{ walletId }` | `_walletManager.SetDefaultAsync(avatarId, walletId, azoaNull)` |
+| `WalletGetPortfolio` | `{ walletId }` | `_walletManager.GetPortfolioAsync(walletId, azoaNull)` |
+| `StarGenerate` | `{ starId, STARDappGenerationRequest }` | `_starManager.GenerateAsync(starId, request, azoaNull)` |
+| `StarDeploy` | `{ starId }` | `_starManager.DeployAsync(starId, azoaNull)` |
+| `Search` | `SearchRequest` | `_searchManager.SearchAsync(query, avatarId, azoaNull)` |
 | `AvatarNFTGetComposite` | `{ avatarId }` | `_avatarNFTService.GetAvatarNFTCompositeAsync(avatarId)` |
-| `BlockchainExecute` | `BlockchainOperation` (built from config) | `_blockchainManager.ExecuteAsync(operation, oasisNull)` |
+| `BlockchainExecute` | `BlockchainOperation` (built from config) | `_blockchainManager.ExecuteAsync(operation, azoaNull)` |
 | `Condition` | `{ expression, inputs }` | Evaluate expression against accumulated node outputs |
 | `ComposeOutputs` | `{ outputFields }` | Merge upstream outputs into single JSON |
 
@@ -120,44 +120,44 @@ When a node executes, the QuestManager deserializes the Config JSON to the match
 
 ```csharp
 // CRUD
-Task<OASISResult<Quest>> CreateAsync(Guid avatarId, QuestCreateModel model);
-Task<OASISResult<Quest>> GetAsync(Guid questId, Guid avatarId);
-Task<OASISResult<IEnumerable<Quest>>> ListAsync(Guid avatarId, QuestStatus? status = null, Guid? dappSeriesId = null);
-Task<OASISResult<Quest>> UpdateAsync(Guid questId, Guid avatarId, QuestUpdateModel model);
-Task<OASISResult<bool>> DeleteAsync(Guid questId, Guid avatarId);
+Task<AZOAResult<Quest>> CreateAsync(Guid avatarId, QuestCreateModel model);
+Task<AZOAResult<Quest>> GetAsync(Guid questId, Guid avatarId);
+Task<AZOAResult<IEnumerable<Quest>>> ListAsync(Guid avatarId, QuestStatus? status = null, Guid? dappSeriesId = null);
+Task<AZOAResult<Quest>> UpdateAsync(Guid questId, Guid avatarId, QuestUpdateModel model);
+Task<AZOAResult<bool>> DeleteAsync(Guid questId, Guid avatarId);
 
 // Nodes
-Task<OASISResult<QuestNode>> AddNodeAsync(Guid questId, Guid avatarId, QuestNodeCreateModel model);
-Task<OASISResult<QuestNode>> UpdateNodeAsync(Guid questId, Guid nodeId, Guid avatarId, QuestNodeUpdateModel model);
-Task<OASISResult<bool>> DeleteNodeAsync(Guid questId, Guid nodeId, Guid avatarId);
+Task<AZOAResult<QuestNode>> AddNodeAsync(Guid questId, Guid avatarId, QuestNodeCreateModel model);
+Task<AZOAResult<QuestNode>> UpdateNodeAsync(Guid questId, Guid nodeId, Guid avatarId, QuestNodeUpdateModel model);
+Task<AZOAResult<bool>> DeleteNodeAsync(Guid questId, Guid nodeId, Guid avatarId);
 
 // Edges
-Task<OASISResult<QuestEdge>> AddEdgeAsync(Guid questId, Guid avatarId, QuestEdgeCreateModel model);
-Task<OASISResult<bool>> RemoveEdgeAsync(Guid questId, Guid edgeId, Guid avatarId);
-Task<OASISResult<int[]>> GetTopologicalOrderAsync(Guid questId, Guid avatarId);
+Task<AZOAResult<QuestEdge>> AddEdgeAsync(Guid questId, Guid avatarId, QuestEdgeCreateModel model);
+Task<AZOAResult<bool>> RemoveEdgeAsync(Guid questId, Guid edgeId, Guid avatarId);
+Task<AZOAResult<int[]>> GetTopologicalOrderAsync(Guid questId, Guid avatarId);
 
 // Dependencies
-Task<OASISResult<QuestDependency>> AddDependencyAsync(Guid questId, Guid avatarId, QuestDependencyCreateModel model);
-Task<OASISResult<bool>> RemoveDependencyAsync(Guid questId, Guid depId, Guid avatarId);
-Task<OASISResult<DependencyCheckResult>> CheckDependenciesAsync(Guid questId, Guid avatarId);
+Task<AZOAResult<QuestDependency>> AddDependencyAsync(Guid questId, Guid avatarId, QuestDependencyCreateModel model);
+Task<AZOAResult<bool>> RemoveDependencyAsync(Guid questId, Guid depId, Guid avatarId);
+Task<AZOAResult<DependencyCheckResult>> CheckDependenciesAsync(Guid questId, Guid avatarId);
 
 // Execution
-Task<OASISResult<Quest>> ActivateAsync(Guid questId, Guid avatarId);
-Task<OASISResult<Quest>> CompleteAsync(Guid questId, Guid avatarId, string? output = null);
-Task<OASISResult<Quest>> FailAsync(Guid questId, Guid avatarId, string error);
-Task<OASISResult<QuestExecutionState>> GetExecutionStateAsync(Guid questId, Guid avatarId);
-Task<OASISResult<Quest>> ExecuteNextAsync(Guid questId, Guid avatarId);
-Task<OASISResult<Quest>> ExecuteNodeAsync(Guid questId, Guid nodeId, Guid avatarId);
+Task<AZOAResult<Quest>> ActivateAsync(Guid questId, Guid avatarId);
+Task<AZOAResult<Quest>> CompleteAsync(Guid questId, Guid avatarId, string? output = null);
+Task<AZOAResult<Quest>> FailAsync(Guid questId, Guid avatarId, string error);
+Task<AZOAResult<QuestExecutionState>> GetExecutionStateAsync(Guid questId, Guid avatarId);
+Task<AZOAResult<Quest>> ExecuteNextAsync(Guid questId, Guid avatarId);
+Task<AZOAResult<Quest>> ExecuteNodeAsync(Guid questId, Guid nodeId, Guid avatarId);
 
 // Templates
-Task<OASISResult<Quest>> InstantiateFromTemplateAsync(Guid avatarId, QuestInstantiateModel model);
-Task<OASISResult<QuestNodeTemplate>> CreateNodeTemplateAsync(Guid avatarId, QuestNodeTemplateCreateModel model);
-Task<OASISResult<IEnumerable<QuestNodeTemplate>>> ListNodeTemplatesAsync(bool publicOnly = true);
-Task<OASISResult<QuestTemplate>> CreateQuestTemplateAsync(Guid avatarId, QuestTemplateCreateModel model);
-Task<OASISResult<IEnumerable<QuestTemplate>>> ListQuestTemplatesAsync(bool publicOnly = true);
+Task<AZOAResult<Quest>> InstantiateFromTemplateAsync(Guid avatarId, QuestInstantiateModel model);
+Task<AZOAResult<QuestNodeTemplate>> CreateNodeTemplateAsync(Guid avatarId, QuestNodeTemplateCreateModel model);
+Task<AZOAResult<IEnumerable<QuestNodeTemplate>>> ListNodeTemplatesAsync(bool publicOnly = true);
+Task<AZOAResult<QuestTemplate>> CreateQuestTemplateAsync(Guid avatarId, QuestTemplateCreateModel model);
+Task<AZOAResult<IEnumerable<QuestTemplate>>> ListQuestTemplatesAsync(bool publicOnly = true);
 ```
 
-All methods return `OASISResult<T>`, matching the existing manager pattern.
+All methods return `AZOAResult<T>`, matching the existing manager pattern.
 
 ## Controller Pattern
 
@@ -170,12 +170,12 @@ public class QuestController : ControllerBase
     private readonly IQuestManager _manager;
 
     [HttpGet]
-    public async Task<ActionResult<OASISResult<IEnumerable<Quest>>>> List(
+    public async Task<ActionResult<AZOAResult<IEnumerable<Quest>>>> List(
         [FromQuery] QuestStatus? status = null, [FromQuery] Guid? dappSeriesId = null)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IEnumerable<Quest>> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IEnumerable<Quest>> { IsError = true, Message = "Invalid token." });
 
         var result = await _manager.ListAsync(avatarId.Value, status, dappSeriesId);
         return Ok(result);
@@ -191,7 +191,7 @@ public class QuestController : ControllerBase
 ```
 
 ## Acceptance Criteria
-- [ ] All endpoints return `OASISResult<T>` or `OASISResponse`
+- [ ] All endpoints return `AZOAResult<T>` or `AZOAResponse`
 - [ ] `[Authorize]` on all controllers; `GetAvatarIdFromClaims()` using `ClaimTypes.NameIdentifier` / `"sub"`
 - [ ] Avatar-scoped access control
 - [ ] DAG validation on edge add, quest activate

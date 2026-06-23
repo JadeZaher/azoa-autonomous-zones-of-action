@@ -1,6 +1,6 @@
 using System.Security.Claims;
 
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 /// <summary>
 /// The single, reusable consuming side of the scope claims emitted by
@@ -52,5 +52,19 @@ public static class ClaimsPrincipalExtensions
         }
 
         return set;
+    }
+
+    /// <summary>
+    /// tenant-consent-delegation C1/AC4: reads the <c>act_as_tenant</c> claim
+    /// (<see cref="Managers.TenantManager.ActAsTenantClaim"/>) that
+    /// <c>TenantManager.IssueChildCredentialAsync</c> stamps on a tenant-driven child
+    /// JWT. Returns the acting tenant id when the principal is a tenant-driven child
+    /// credential, or <c>null</c> for a plain user / tenant-API-key principal. The
+    /// signing seam uses this to require a live consent grant before key decrypt.
+    /// </summary>
+    public static Guid? GetActingTenantId(this ClaimsPrincipal principal)
+    {
+        var raw = principal?.FindFirst("act_as_tenant")?.Value;
+        return Guid.TryParse(raw, out var id) && id != Guid.Empty ? id : null;
     }
 }

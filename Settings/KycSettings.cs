@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
-namespace OASIS.WebAPI.Settings;
+namespace AZOA.WebAPI.Settings;
 
 /// <summary>
 /// KYC module configuration, bound from the <c>Kyc</c> section. The default

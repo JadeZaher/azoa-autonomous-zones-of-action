@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models.Idempotency;
+using AZOA.WebAPI.Models.Idempotency;
 
-namespace OASIS.WebAPI.Interfaces;
+namespace AZOA.WebAPI.Interfaces;
 
 /// <summary>
 /// Result of an atomic claim-or-get against the idempotency ledger.

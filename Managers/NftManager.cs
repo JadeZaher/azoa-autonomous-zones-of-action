@@ -1,12 +1,12 @@
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 public class NftManager : INftManager
 {
@@ -24,21 +24,21 @@ public class NftManager : INftManager
         _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
     }
 
-    public async Task<OASISResult<INft>> GetAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<INft>> GetAsync(Guid id, AZOARequest? request = null)
     {
         var result = await _holonStore.GetByIdAsync(id, default);
-        if (result.IsError || result.Result == null) return new OASISResult<INft> { IsError = true, Message = result.Message };
+        if (result.IsError || result.Result == null) return new AZOAResult<INft> { IsError = true, Message = result.Message };
 
         if (!string.Equals(result.Result.AssetType, "NFT", StringComparison.OrdinalIgnoreCase))
-            return new OASISResult<INft> { IsError = true, Message = "Holon is not an NFT." };
+            return new AZOAResult<INft> { IsError = true, Message = "Holon is not an NFT." };
 
-        return new OASISResult<INft> { Result = (INft)result.Result, Message = "Success" };
+        return new AZOAResult<INft> { Result = (INft)result.Result, Message = "Success" };
     }
 
-    public async Task<OASISResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, AZOARequest? request = null)
     {
         var all = await _holonStore.QueryAsync(null, default);
-        if (all.IsError || all.Result == null) return new OASISResult<IEnumerable<INft>> { IsError = true, Message = all.Message };
+        if (all.IsError || all.Result == null) return new AZOAResult<IEnumerable<INft>> { IsError = true, Message = all.Message };
 
         var filtered = all.Result
             .Where(h => string.Equals(h.AssetType, "NFT", StringComparison.OrdinalIgnoreCase));
@@ -52,10 +52,10 @@ public class NftManager : INftManager
         if (!string.IsNullOrEmpty(query.Name))
             filtered = filtered.Where(h => h.Name.Contains(query.Name, StringComparison.OrdinalIgnoreCase));
 
-        return new OASISResult<IEnumerable<INft>> { Result = filtered.Cast<INft>().ToList(), Message = "Success" };
+        return new AZOAResult<IEnumerable<INft>> { Result = filtered.Cast<INft>().ToList(), Message = "Success" };
     }
 
-    public async Task<OASISResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid avatarId, OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid avatarId, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
     {
         // value-path-wiring H3: KYC gate at the single choke point. Both the
         // allocation door and the raw POST /api/nft/mint door pass through here, so
@@ -64,7 +64,7 @@ public class NftManager : INftManager
         // KYC_FORBIDDEN: prefix is preserved so NftController maps it to 403.
         var gate = await _kycGate.RequireVerifiedAsync(avatarId);
         if (gate.IsError)
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
 
         // Build the Holon with AssetType = "NFT"
         var metadata = new Dictionary<string, string>(request.Metadata);
@@ -86,7 +86,7 @@ public class NftManager : INftManager
 
         var saveResult = await _holonStore.UpsertAsync(holon, default);
         if (saveResult.IsError || saveResult.Result == null)
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = saveResult.Message };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = saveResult.Message };
 
         // Build blockchain operation for mint
         var operation = new BlockchainOperation
@@ -95,6 +95,15 @@ public class NftManager : INftManager
             WalletId = request.WalletId,
             OperationType = "Mint",
             Status = OperationStatus.Pending,
+            // tenant-consent-delegation AC4: when a tenant-driven quest Grant node
+            // drives this mint, stamp the acting tenant + the nft:mint signing scope
+            // so BuildSigningContext marks the op tenant-driven and the custody seam
+            // fails closed without a live consent grant. NftMint is the scope a
+            // consent grant would name for a mint (vs. transfer:sign for transfers);
+            // GrantSign overlaps semantically but Mint is shared with allocation, so
+            // the per-operation scope (nft:mint) is the precise, non-overloaded choice.
+            ActingTenantId = actingTenantId,
+            SigningScope = actingTenantId.HasValue ? AzoaScopes.NftMint : null,
             Parameters = new Dictionary<string, string>
             {
                 ["holonId"] = holon.Id.ToString(),
@@ -106,19 +115,19 @@ public class NftManager : INftManager
         return await _blockchainOperationStore.UpsertAsync(operation, default);
     }
 
-    public async Task<OASISResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid avatarId, OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid avatarId, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
     {
         // Load and verify ownership
         var holonResult = await _holonStore.GetByIdAsync(nftId, default);
         if (holonResult.IsError || holonResult.Result == null)
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = "NFT not found." };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "NFT not found." };
 
         var holon = holonResult.Result;
         if (!string.Equals(holon.AssetType, "NFT", StringComparison.OrdinalIgnoreCase))
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = "Holon is not an NFT." };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Holon is not an NFT." };
 
         if (holon.AvatarId != avatarId)
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };
 
         // Transfer ownership
         holon.AvatarId = request.TargetAvatarId;
@@ -126,7 +135,7 @@ public class NftManager : INftManager
 
         var saveResult = await _holonStore.UpsertAsync(holon, default);
         if (saveResult.IsError)
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = saveResult.Message };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = saveResult.Message };
 
         // Build blockchain operation for transfer
         var operation = new BlockchainOperation
@@ -135,6 +144,13 @@ public class NftManager : INftManager
             WalletId = request.WalletId,
             OperationType = "Transfer",
             Status = OperationStatus.Pending,
+            // tenant-consent-delegation AC4: a tenant-driven quest Transfer/Refund
+            // node stamps the acting tenant + the transfer:sign scope so the custody
+            // seam runs its live consent gate (fail-closed without a grant). The
+            // Refund node reuses this path (reversed direction), so transfer:sign
+            // correctly covers both.
+            ActingTenantId = actingTenantId,
+            SigningScope = actingTenantId.HasValue ? AzoaScopes.TransferSign : null,
             Parameters = new Dictionary<string, string>
             {
                 ["holonId"] = nftId.ToString(),
@@ -147,19 +163,19 @@ public class NftManager : INftManager
         return await _blockchainOperationStore.UpsertAsync(operation, default);
     }
 
-    public async Task<OASISResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid avatarId, OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid avatarId, AZOARequest? providerRequest = null)
     {
         // Load and verify ownership
         var holonResult = await _holonStore.GetByIdAsync(nftId, default);
         if (holonResult.IsError || holonResult.Result == null)
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = "NFT not found." };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "NFT not found." };
 
         var holon = holonResult.Result;
         if (!string.Equals(holon.AssetType, "NFT", StringComparison.OrdinalIgnoreCase))
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = "Holon is not an NFT." };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Holon is not an NFT." };
 
         if (holon.AvatarId != avatarId)
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };
 
         // Burn: deactivate the holon
         holon.IsActive = false;
@@ -167,7 +183,7 @@ public class NftManager : INftManager
 
         var saveResult = await _holonStore.UpsertAsync(holon, default);
         if (saveResult.IsError)
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = saveResult.Message };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = saveResult.Message };
 
         // Build blockchain operation for burn
         var operation = new BlockchainOperation
@@ -185,15 +201,15 @@ public class NftManager : INftManager
         return await _blockchainOperationStore.UpsertAsync(operation, default);
     }
 
-    public async Task<OASISResult<NftMetadata>> GetMetadataAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<NftMetadata>> GetMetadataAsync(Guid id, AZOARequest? request = null)
     {
         var result = await _holonStore.GetByIdAsync(id, default);
         if (result.IsError || result.Result == null)
-            return new OASISResult<NftMetadata> { IsError = true, Message = "NFT not found." };
+            return new AZOAResult<NftMetadata> { IsError = true, Message = "NFT not found." };
 
         var holon = result.Result;
         if (!string.Equals(holon.AssetType, "NFT", StringComparison.OrdinalIgnoreCase))
-            return new OASISResult<NftMetadata> { IsError = true, Message = "Holon is not an NFT." };
+            return new AZOAResult<NftMetadata> { IsError = true, Message = "Holon is not an NFT." };
 
         var metadata = new NftMetadata
         {
@@ -225,6 +241,6 @@ public class NftManager : INftManager
             }
         }
 
-        return new OASISResult<NftMetadata> { Result = metadata, Message = "Success" };
+        return new AZOAResult<NftMetadata> { Result = metadata, Message = "Success" };
     }
 }

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    OASIS Sleek -- full-stack dev launcher (PowerShell).
+    AZOA Sleek -- full-stack dev launcher (PowerShell).
 
 .DESCRIPTION
     Brings up SurrealDB + WebAPI + Frontend via docker-compose.dev.yml.
@@ -173,9 +173,9 @@ if ($DoWipe) {
 if (-not $env:SURREALDB_HOST_PORT) { $env:SURREALDB_HOST_PORT = '8000' }
 $SurrealHostPort = $env:SURREALDB_HOST_PORT
 
-# Snapshot OASIS_SURREAL_URL so the host.containers.internal / 127.0.0.1
+# Snapshot AZOA_SURREAL_URL so the host.containers.internal / 127.0.0.1
 # rewrites below don't leak into the caller's shell. Restored in finally.
-$OasisSurrealUrlEntry = $env:OASIS_SURREAL_URL
+$AzoaSurrealUrlEntry = $env:AZOA_SURREAL_URL
 try {
 
 # A responder on the host port is only "external" when it ISN'T our own
@@ -185,7 +185,7 @@ try {
 $bundledRunning = $false
 $psRuntime = if ($compose.Exe -like '*podman*') { 'podman' } else { 'docker' }
 if (Get-Command $psRuntime -ErrorAction SilentlyContinue) {
-    $names = & $psRuntime ps --filter 'name=oasis-dev-surrealdb' --format '{{.Names}}' 2>$null
+    $names = & $psRuntime ps --filter 'name=azoa-dev-surrealdb' --format '{{.Names}}' 2>$null
     if (-not [string]::IsNullOrWhiteSpace(($names -join ''))) { $bundledRunning = $true }
 }
 
@@ -210,14 +210,37 @@ if ($ExistingSurrealDb) {
     # parsed at runtime, but podman-compose still validates the field at
     # config-load time. The default `8000` lets that validation pass; the
     # service simply doesn't start.
-    # OASIS_SURREAL_URL drives BOTH the schema CLI's --connection and the
+    # AZOA_SURREAL_URL drives BOTH the schema CLI's --connection and the
     # WebAPI's SurrealDb:Endpoint (the compose file interpolates the same
     # value into both). Single-underscore-safe -- podman-compose's
     # ${VAR:-default} parser drops names with double underscores.
-    $env:OASIS_SURREAL_URL    = "http://${HostDbInternal}:$SurrealHostPort"
-    $ComposeUpServices        = @('oasis-api', 'oasis-frontend')
+    $env:AZOA_SURREAL_URL    = "http://${HostDbInternal}:$SurrealHostPort"
+    $ComposeUpServices        = @('azoa-api', 'azoa-frontend')
 } else {
     $ComposeUpServices        = @()  # empty == all services
+}
+
+# ── Guard: container shell scripts MUST be LF ─────────────────────────────────
+#
+# A Windows checkout with core.autocrlf=true rewrites *.sh to CRLF on disk. A
+# CRLF shebang gets baked into the image and the container dies at startup with
+#   /usr/bin/env: 'sh\r': No such file or directory
+# .gitattributes now pins these to eol=lf, but a stale working-tree copy (or a
+# checkout before the attribute landed) can still slip through -- so normalise
+# in-place here, BEFORE any image build, and warn loudly so it gets noticed.
+
+$ContainerScripts = @("docker-entrypoint.sh")   # scripts COPYd into images (see Dockerfile)
+foreach ($rel in $ContainerScripts) {
+    $f = Join-Path $ScriptDir $rel
+    if (-not (Test-Path $f)) { continue }
+    $bytes = [System.IO.File]::ReadAllBytes($f)
+    if ($bytes -contains 13) {   # 13 = CR; presence means CRLF (or stray CR)
+        Write-Host "[dev-up] WARN: $rel had CRLF line endings -- normalising to LF before build." -ForegroundColor Yellow
+        Write-Host "[dev-up]       (a CRLF shebang would crash the container: `"env: 'sh\r'...`")" -ForegroundColor Yellow
+        $text = [System.Text.Encoding]::UTF8.GetString($bytes) -replace "`r`n", "`n" -replace "`r", "`n"
+        # Write LF-only UTF-8 with NO BOM so the shebang stays valid.
+        [System.IO.File]::WriteAllText($f, $text, (New-Object System.Text.UTF8Encoding($false)))
+    }
 }
 
 # ── SDK rebuild (host-side dist; container build does its own tsup pass) ────
@@ -229,9 +252,9 @@ if ($ExistingSurrealDb) {
 # 'Stop' a native command's stderr would otherwise abort the whole script, so
 # we temporarily relax it here and key success strictly on the exit code.
 
-$SdkDir = Join-Path $ScriptDir "sdk/oasis-wallet"
+$SdkDir = Join-Path $ScriptDir "sdk/azoa-wallet"
 if ($DoRebuild -and (Test-Path $SdkDir)) {
-    Write-Host "[dev-up] Rebuilding @oasis/wallet-sdk (host-side dist)..."
+    Write-Host "[dev-up] Rebuilding @azoa/wallet-sdk (host-side dist)..."
     Push-Location $SdkDir
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -264,8 +287,8 @@ function Test-PodmanImage {
 }
 
 if ($compose.Exe -like '*podman*') {
-    $apiImage      = "localhost/${ProjectName}_oasis-api:latest"
-    $frontendImage = "localhost/${ProjectName}_oasis-frontend:latest"
+    $apiImage      = "localhost/${ProjectName}_azoa-api:latest"
+    $frontendImage = "localhost/${ProjectName}_azoa-frontend:latest"
     $apiCached      = Test-PodmanImage $apiImage
     $frontendCached = Test-PodmanImage $frontendImage
     if ($DoRebuild -or -not $apiCached -or -not $frontendCached) {
@@ -284,7 +307,7 @@ if ($compose.Exe -like '*podman*') {
 
 $upArgs = @('-f', $ComposeFile, 'up', '-d', '--remove-orphans')
 # Don't pass --build for podman runtimes -- we already pre-built above,
-# and triggering compose's broken builder would re-tag oasis-frontend with
+# and triggering compose's broken builder would re-tag azoa-frontend with
 # the wrong image content.
 if ($DoRebuild -and ($compose.Exe -notlike '*podman*')) { $upArgs += '--build' }
 # When an external SurrealDB was detected, only bring up the API + frontend.
@@ -307,34 +330,34 @@ Invoke-Compose @('-f', $ComposeFile, 'ps')
 
 # ── SurrealDB schema sync ─────────────────────────────────────────────────────
 #
-# Default: run `oasis-surreal up` -- idempotent. The CLI tracks applied files
+# Default: run `azoa-surreal up` -- idempotent. The CLI tracks applied files
 # via the schema_migration table, so re-running is a no-op when nothing has
 # changed and applies only pending files when there's drift. This is the
 # "newcomer clones the repo and runs ./dev-up.ps1" path.
 #
 # -Reset: destructive wipe + full re-apply (delegates to `reset` verb).
-# OASIS_SKIP_RESET=1: skip the schema step entirely (preserves DB state,
+# AZOA_SKIP_RESET=1: skip the schema step entirely (preserves DB state,
 #   useful when iterating on UI without touching schema).
 
-if ($env:OASIS_SKIP_RESET -eq "1") {
-    Write-Host "[dev-up] OASIS_SKIP_RESET=1 set -- skipping schema sync"
+if ($env:AZOA_SKIP_RESET -eq "1") {
+    Write-Host "[dev-up] AZOA_SKIP_RESET=1 set -- skipping schema sync"
 } else {
-    if (-not $env:OASIS_SURREAL_NS)   { $env:OASIS_SURREAL_NS   = 'oasis' }
-    if (-not $env:OASIS_SURREAL_DB)   { $env:OASIS_SURREAL_DB   = 'oasis' }
-    if (-not $env:OASIS_SURREAL_USER) { $env:OASIS_SURREAL_USER = 'root' }
-    if (-not $env:OASIS_SURREAL_PASS) { $env:OASIS_SURREAL_PASS = 'root' }
+    if (-not $env:AZOA_SURREAL_NS)   { $env:AZOA_SURREAL_NS   = 'azoa' }
+    if (-not $env:AZOA_SURREAL_DB)   { $env:AZOA_SURREAL_DB   = 'azoa' }
+    if (-not $env:AZOA_SURREAL_USER) { $env:AZOA_SURREAL_USER = 'root' }
+    if (-not $env:AZOA_SURREAL_PASS) { $env:AZOA_SURREAL_PASS = 'root' }
 
-    # Schema CLI runs on the HOST. The OASIS_SURREAL_URL set earlier for
+    # Schema CLI runs on the HOST. The AZOA_SURREAL_URL set earlier for
     # the API container points at host.containers.internal which won't
     # resolve here -- override for the CLI call, restore after.
-    $schemaUrlBackup = $env:OASIS_SURREAL_URL
-    $env:OASIS_SURREAL_URL = "http://127.0.0.1:$SurrealHostPort"
+    $schemaUrlBackup = $env:AZOA_SURREAL_URL
+    $env:AZOA_SURREAL_URL = "http://127.0.0.1:$SurrealHostPort"
 
     # Wait for SurrealDB to be reachable (the container case needs a beat).
     $surrealReady = $false
     for ($i = 0; $i -lt 20; $i++) {
         try {
-            $null = Invoke-WebRequest -Uri "$env:OASIS_SURREAL_URL/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+            $null = Invoke-WebRequest -Uri "$env:AZOA_SURREAL_URL/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
             $surrealReady = $true
             break
         } catch {
@@ -342,27 +365,27 @@ if ($env:OASIS_SKIP_RESET -eq "1") {
         }
     }
     if (-not $surrealReady) {
-        $probedUrl = $env:OASIS_SURREAL_URL
-        $env:OASIS_SURREAL_URL = $schemaUrlBackup
+        $probedUrl = $env:AZOA_SURREAL_URL
+        $env:AZOA_SURREAL_URL = $schemaUrlBackup
         Write-Host ""
         Write-Host "[dev-up] SurrealDB at $probedUrl never became reachable." -ForegroundColor Yellow
         Write-Host "[dev-up] Dumping bundled surrealdb container state + logs to diagnose:" -ForegroundColor Yellow
         $runtime = if ($compose.Exe -like '*podman*') { 'podman' } else { 'docker' }
         if (Get-Command $runtime -ErrorAction SilentlyContinue) {
-            Write-Host "---- $runtime ps (oasis-dev-surrealdb) ----"
-            & $runtime ps -a --filter 'name=oasis-dev-surrealdb' --format '{{.Status}}  {{.Names}}' 2>&1
-            Write-Host "---- $runtime logs --tail=50 oasis-dev-surrealdb ----"
-            & $runtime logs --tail=50 oasis-dev-surrealdb 2>&1
+            Write-Host "---- $runtime ps (azoa-dev-surrealdb) ----"
+            & $runtime ps -a --filter 'name=azoa-dev-surrealdb' --format '{{.Status}}  {{.Names}}' 2>&1
+            Write-Host "---- $runtime logs --tail=50 azoa-dev-surrealdb ----"
+            & $runtime logs --tail=50 azoa-dev-surrealdb 2>&1
             Write-Host "---- end ----"
         } else {
             Write-Host "[dev-up] (no '$runtime' on PATH to dump logs)"
         }
         Write-Host ""
         Write-Host "[dev-up] Common causes:" -ForegroundColor Yellow
-        Write-Host "  * Storage URI rejected by surrealdb 1.5.4 (look for 'failed to parse' in the log above)."
+        Write-Host "  * Storage URI rejected by surrealdb v3.1.4 (look for 'failed to parse' in the log above)."
         Write-Host "  * Rootless podman volume ownership (look for 'permission denied' on /data)."
         Write-Host "  * Port 8000 already bound on host (look for 'address already in use')."
-        Write-Host "  * Set OASIS_SKIP_RESET=1 to bypass schema sync while you investigate."
+        Write-Host "  * Set AZOA_SKIP_RESET=1 to bypass schema sync while you investigate."
         Write-Error "[dev-up] Aborting -- SurrealDB unreachable. Logs above should name the cause."
         exit 1
     }
@@ -370,17 +393,17 @@ if ($env:OASIS_SKIP_RESET -eq "1") {
     Write-Host ""
     if ($Reset) {
         Write-Host "[dev-up] -Reset: wiping + re-applying SurrealDB schema..."
-        dotnet run --project packages/Oasis.SurrealDb.Schema --framework net8.0 -- reset
+        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net8.0 -- reset
     } else {
         Write-Host "[dev-up] syncing SurrealDB schema (idempotent; use -Reset to wipe)..."
-        dotnet run --project packages/Oasis.SurrealDb.Schema --framework net8.0 -- up
+        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net8.0 -- up
     }
     $schemaExit = $LASTEXITCODE
-    $env:OASIS_SURREAL_URL = $schemaUrlBackup
+    $env:AZOA_SURREAL_URL = $schemaUrlBackup
     $global:LASTEXITCODE = $schemaExit
     if ($LASTEXITCODE -ne 0) {
         $verb = if ($Reset) { 'reset' } else { 'up' }
-        Write-Error "SurrealDB $verb failed (exit $LASTEXITCODE). Set OASIS_SKIP_RESET=1 to skip, or pass -Reset to force a clean wipe."
+        Write-Error "SurrealDB $verb failed (exit $LASTEXITCODE). Set AZOA_SKIP_RESET=1 to skip, or pass -Reset to force a clean wipe."
         exit 1
     }
 }
@@ -414,11 +437,11 @@ if ($Logs) {
     Invoke-Compose @('-f', $ComposeFile, 'logs', '-f')
 }
 } finally {
-    # Restore the caller's OASIS_SURREAL_URL so host.containers.internal /
+    # Restore the caller's AZOA_SURREAL_URL so host.containers.internal /
     # 127.0.0.1 rewrites don't leak into the shell after the script exits.
-    if ($null -eq $OasisSurrealUrlEntry) {
-        Remove-Item Env:OASIS_SURREAL_URL -ErrorAction SilentlyContinue
+    if ($null -eq $AzoaSurrealUrlEntry) {
+        Remove-Item Env:AZOA_SURREAL_URL -ErrorAction SilentlyContinue
     } else {
-        $env:OASIS_SURREAL_URL = $OasisSurrealUrlEntry
+        $env:AZOA_SURREAL_URL = $AzoaSurrealUrlEntry
     }
 }

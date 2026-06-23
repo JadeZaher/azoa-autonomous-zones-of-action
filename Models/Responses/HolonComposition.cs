@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Responses;
+namespace AZOA.WebAPI.Models.Responses;
 
 /// <summary>
 /// A super-holon aggregate view computed from children — no new storage, pure composition.

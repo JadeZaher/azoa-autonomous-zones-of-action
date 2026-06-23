@@ -7,7 +7,7 @@ replaced `surrealdb-schema-source-gen` on 2026-06-03. This track produces no
 new code; it closes by absorbing the as-built architecture into
 `Persistence/SurrealDb/CONVENTION.md` and fixing the stale references in
 `RUNBOOK.md` §4 and §8 that still point at the deleted Mermaid source directory
-and the removed `Oasis.SurrealDb.SourceGen` package.
+and the removed `Azoa.SurrealDb.SourceGen` package.
 
 ## Background
 
@@ -23,14 +23,14 @@ The spec described 889+ tests and ongoing FK-emission work.
 ### What changed on 2026-06-03
 
 The pipeline was inverted. `Persistence/SurrealDb/Schemas/source/` (the Mermaid
-source directory) was deleted. `Oasis.SurrealDb.SourceGen` was emptied of source
+source directory) was deleted. `Azoa.SurrealDb.SourceGen` was emptied of source
 files (only `bin/` + `obj/` artifacts remained; confirmed by Lane C's execution
 on 2026-06-10). The new authoritative flow is:
 
 ```
 Decorated POCOs in Persistence/SurrealDb/Models/*.cs
-  → oasis-surreal generate-from-assembly <dll>
-      → AttributeSchemaScanner (Oasis.SurrealDb.Schema)
+  → azoa-surreal generate-from-assembly <dll>
+      → AttributeSchemaScanner (Azoa.SurrealDb.Schema)
           → SurqlEmitter       → Persistence/SurrealDb/Generated/Schemas/*.surql
           → MermaidFlowchartEmitter → Persistence/SurrealDb/Generated/Flowcharts/*.flowchart.mermaid
 ```
@@ -59,7 +59,7 @@ C# is now the source of truth; Mermaid diagrams are generated output, not input.
 
 ### Attribute surface
 
-`packages/Oasis.SurrealDb.Client/Schema/SurrealAttributes.cs`
+`packages/Azoa.SurrealDb.Client/Schema/SurrealAttributes.cs`
 
 Three sealed attribute classes decorate POCOs:
 
@@ -83,18 +83,18 @@ Three sealed attribute classes decorate POCOs:
 
 ### Generator
 
-`packages/Oasis.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs`
+`packages/Azoa.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs`
 
-Reflects over a compiled assembly via `oasis-surreal generate-from-assembly <dll>`.
+Reflects over a compiled assembly via `azoa-surreal generate-from-assembly <dll>`.
 Finds all types decorated with `[SurrealTable]` and projects them onto the
 internal `SchemaModel` shape. This feeds both emitters.
 
-`packages/Oasis.SurrealDb.Schema/Generator/SurqlEmitter.cs`
+`packages/Azoa.SurrealDb.Schema/Generator/SurqlEmitter.cs`
 
 Converts `SchemaModel` to SurrealQL DDL. One `.surql` file per table.
 Output: `Persistence/SurrealDb/Generated/Schemas/*.surql` (26 files).
 
-`packages/Oasis.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs`
+`packages/Azoa.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs`
 
 Converts `SchemaModel` to Mermaid ER flowcharts. Produces one diagram per
 aggregate slice plus a master `domain` diagram.
@@ -104,9 +104,9 @@ Output: `Persistence/SurrealDb/Generated/Flowcharts/*.flowchart.mermaid` (7 file
 
 ### CLI
 
-`packages/Oasis.SurrealDb.Schema/Migration/MigrationRunner.cs`
+`packages/Azoa.SurrealDb.Schema/Migration/MigrationRunner.cs`
 
-Commands available via the `oasis-surreal` tool:
+Commands available via the `azoa-surreal` tool:
 
 | Command | Status |
 |---------|--------|
@@ -121,20 +121,20 @@ Commands available via the `oasis-surreal` tool:
 
 `AttributePocoByteEquivalenceTests` — verifies that the generated `.surql` bytes
 produced from the decorated POCOs are stable across runs. This replaces the old
-Roslyn generator test suite that was deleted with `Oasis.SurrealDb.SourceGen`.
+Roslyn generator test suite that was deleted with `Azoa.SurrealDb.SourceGen`.
 
 ### Packages remaining in the tree
 
 | Package | Status |
 |---------|--------|
-| `packages/Oasis.SurrealDb.Client/` | Active — attributes, query builder, connection, JSON |
-| `packages/Oasis.SurrealDb.Schema/` | Active — scanner, emitters, migration runner, CLI |
-| `packages/Oasis.SurrealDb.Analyzer/` | Active — SRDB0001 Roslyn diagnostic (injection prevention) |
-| `packages/Oasis.SurrealDb.SourceGen/` | Removed by Lane C (only `bin/`+`obj/` remained) |
+| `packages/Azoa.SurrealDb.Client/` | Active — attributes, query builder, connection, JSON |
+| `packages/Azoa.SurrealDb.Schema/` | Active — scanner, emitters, migration runner, CLI |
+| `packages/Azoa.SurrealDb.Analyzer/` | Active — SRDB0001 Roslyn diagnostic (injection prevention) |
+| `packages/Azoa.SurrealDb.SourceGen/` | Removed by Lane C (only `bin/`+`obj/` remained) |
 
 ## SRDB0001 analyzer (orthogonal — keep)
 
-`packages/Oasis.SurrealDb.Analyzer/SurrealQlSafetyAnalyzerDiagnostic.cs`
+`packages/Azoa.SurrealDb.Analyzer/SurrealQlSafetyAnalyzerDiagnostic.cs`
 
 Bans string-interpolated or concatenated SurrealQL outside the parameterized
 `SurrealQuery` builder. This rule is orthogonal to schema generation — it
@@ -161,17 +161,17 @@ is Mermaid or C#. It should be kept and is not affected by this retro.
 
 - [ ] `Persistence/SurrealDb/CONVENTION.md` exists and contains the as-built
   architecture description (attribute surface, POCO authoring walkthrough,
-  `oasis-surreal generate-from-assembly` invocation) so future contributors do
+  `azoa-surreal generate-from-assembly` invocation) so future contributors do
   not need to read this retro to understand the system.
 - [ ] `RUNBOOK.md` §4 stale references to `Persistence/SurrealDb/Schemas/source/`
   (deleted Mermaid source directory) are updated to point at the C#-first surface
-  (`Persistence/SurrealDb/Models/` + `oasis-surreal generate-from-assembly`).
-- [ ] `RUNBOOK.md` §8 stale references to `Oasis.SurrealDb.SourceGen` package
-  are updated to `Oasis.SurrealDb.Schema` (the active package).
+  (`Persistence/SurrealDb/Models/` + `azoa-surreal generate-from-assembly`).
+- [ ] `RUNBOOK.md` §8 stale references to `Azoa.SurrealDb.SourceGen` package
+  are updated to `Azoa.SurrealDb.Schema` (the active package).
 - [ ] `conductor/tracks/surrealdb-schema-source-gen/spec.md` has a SUPERSEDED
   banner at the top pointing at this retro track.
 - [ ] Grep across the repo for any remaining references to the deleted
-  `Persistence/SurrealDb/Schemas/source/` path or `Oasis.SurrealDb.SourceGen`
+  `Persistence/SurrealDb/Schemas/source/` path or `Azoa.SurrealDb.SourceGen`
   package name returns zero hits outside of historical documents (this spec,
   the old spec, SIGN-OFF notes).
 - [ ] `tracks.md` row for `surreal-schema-package-retro` moves to `[x]` Shipped.

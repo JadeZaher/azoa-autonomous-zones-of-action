@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// Immutable registry over every DI-registered <see cref="ISagaDefinition"/>.

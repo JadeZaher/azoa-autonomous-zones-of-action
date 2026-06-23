@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Mcp;
+namespace AZOA.WebAPI.Mcp;
 
 public sealed class McpToolRegistry
 {

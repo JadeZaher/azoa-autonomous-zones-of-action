@@ -120,7 +120,7 @@ function Logo() {
       <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
         <span className="text-xs font-bold text-primary-foreground">O</span>
       </div>
-      <span className="text-sm font-semibold tracking-tight">OASIS</span>
+      <span className="text-sm font-semibold tracking-tight">AZOA</span>
     </div>
   )
 }

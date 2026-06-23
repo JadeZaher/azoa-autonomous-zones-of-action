@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Caching.Memory;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 /// <summary>
 /// Thin swap dispatcher. Validates the request, resolves the per-chain
@@ -41,19 +41,19 @@ public class SwapManager : ISwapManager
         _logger = logger;
     }
 
-    public async Task<OASISResult<SwapQuoteResponse>> GetQuoteAsync(SwapQuoteRequest request)
+    public async Task<AZOAResult<SwapQuoteResponse>> GetQuoteAsync(SwapQuoteRequest request)
     {
         try
         {
             if (!_adapters.TryGetValue(request.Chain, out var adapter))
-                return new OASISResult<SwapQuoteResponse> { IsError = true, Message = "Unsupported chain" };
+                return new AZOAResult<SwapQuoteResponse> { IsError = true, Message = "Unsupported chain" };
 
             if (request.SlippageBps is < 0 or > 10000)
-                return new OASISResult<SwapQuoteResponse> { IsError = true, Message = "SlippageBps must be between 0 and 10000" };
+                return new AZOAResult<SwapQuoteResponse> { IsError = true, Message = "SlippageBps must be between 0 and 10000" };
 
             var quoteResult = await adapter.GetQuoteAsync(request);
             if (quoteResult.IsError || quoteResult.Result is null)
-                return new OASISResult<SwapQuoteResponse>
+                return new AZOAResult<SwapQuoteResponse>
                 {
                     IsError = true,
                     Message = quoteResult.Message,
@@ -70,7 +70,7 @@ public class SwapManager : ISwapManager
                 CacheQuote(quote.QuoteId, request.Chain, dexQuote.CachePayload);
             }
 
-            return new OASISResult<SwapQuoteResponse>
+            return new AZOAResult<SwapQuoteResponse>
             {
                 IsError = false,
                 Result = quote,
@@ -80,11 +80,11 @@ public class SwapManager : ISwapManager
         catch (Exception ex)
         {
             _logger.LogError(ex, "Swap quote failed for {Chain}", request.Chain);
-            return new OASISResult<SwapQuoteResponse> { IsError = true, Message = ex.Message, Exception = ex };
+            return new AZOAResult<SwapQuoteResponse> { IsError = true, Message = ex.Message, Exception = ex };
         }
     }
 
-    public async Task<OASISResult<SwapQuoteResponse>> GetSwapTransactionAsync(SwapExecuteRequest request, string? clientIdempotencyKey = null)
+    public async Task<AZOAResult<SwapQuoteResponse>> GetSwapTransactionAsync(SwapExecuteRequest request, string? clientIdempotencyKey = null)
     {
         // clientIdempotencyKey is accepted for forward-compat/audit only: this
         // path returns an UNSIGNED tx (client signs + broadcasts), so there is
@@ -155,6 +155,6 @@ public class SwapManager : ISwapManager
 
     // ─── Result helpers ───
 
-    private static OASISResult<T> Error<T>(string message, Exception? ex = null)
+    private static AZOAResult<T> Error<T>(string message, Exception? ex = null)
         => new() { IsError = true, Message = message, Exception = ex };
 }

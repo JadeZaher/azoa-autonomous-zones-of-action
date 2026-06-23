@@ -1,12 +1,12 @@
-namespace OASIS.WebAPI.Mcp;
+namespace AZOA.WebAPI.Mcp;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using OASIS.WebAPI.Mcp.Tools;
+using AZOA.WebAPI.Mcp.Tools;
 
 /// <summary>
-/// In-process MCP server hosted alongside OASIS.WebAPI at /mcp.
+/// In-process MCP server hosted alongside AZOA.WebAPI at /mcp.
 /// Uses Anthropic's official ModelContextProtocol.AspNetCore 1.3.0 SDK.
 /// Tools self-register via DI: any class implementing IMcpTool that is
 /// registered as IMcpTool gets picked up by McpToolRegistry's ctor.

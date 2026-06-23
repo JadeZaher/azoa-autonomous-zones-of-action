@@ -1,7 +1,7 @@
 # Holon API — Specification
 
 ## Goal
-Expose a unified Holon API that allows users to create, read, update, delete, and query holons across all registered storage providers. Holons are the primary data units in OASIS; NFTs function as on-chain storage-backed holons.
+Expose a unified Holon API that allows users to create, read, update, delete, and query holons across all registered storage providers. Holons are the primary data units in AZOA; NFTs function as on-chain storage-backed holons.
 
 ## Endpoints
 
@@ -24,8 +24,8 @@ Expose a unified Holon API that allows users to create, read, update, delete, an
 - `HolonInteractionRequest` — payload for orchestrating multi-holon operations
 
 ## Provider Overrides
-- Same pattern as Avatar API: optional `OASISRequest` switches provider via `ProviderContext`
-- Providers must implement `IHolonStorageProvider` (extends `IOASISStorageProvider`)
+- Same pattern as Avatar API: optional `AZOARequest` switches provider via `ProviderContext`
+- Providers must implement `IHolonStorageProvider` (extends `IAZOAStorageProvider`)
 
 ## NFT-as-Storage
 - NFT-backed providers map token metadata + on-chain state to `Holon` instances
@@ -38,8 +38,8 @@ Expose a unified Holon API that allows users to create, read, update, delete, an
 - Optional `provider` filter restricts to a single provider/chain
 
 ## Acceptance Criteria
-- [ ] All 5 endpoints return `OASISResult<T>` or `OASISResponse`
+- [ ] All 5 endpoints return `AZOAResult<T>` or `AZOAResponse`
 - [ ] Only authenticated users can access; holons scoped to avatar
-- [ ] Provider switching works via `OASISRequest` in body
+- [ ] Provider switching works via `AZOARequest` in body
 - [ ] NFT-as-storage provider can map token data to holon model
 - [ ] Cross-provider query aggregates results from all active providers

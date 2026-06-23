@@ -4,11 +4,11 @@
 Establish the foundational abstractions and shared infrastructure used by all higher-level tracks (Avatar, Holon, STAR, Blockchain).
 
 ## In-Scope
-- `IOASISStorageProvider` interface and base result types (`OASISResult<T>`, `OASISResponse`)
+- `IAZOAStorageProvider` interface and base result types (`AZOAResult<T>`, `AZOAResponse`)
 - `ProviderContext` / provider activation logic
 - `BlockchainProviderFactory` and `IBlockchainProvider` contracts
-- `OASISDbContext` (EF Core) with JSON value converters
-- Unified `OASISRequest` / `OASISResult` serialization patterns
+- `AZOADbContext` (EF Core) with JSON value converters
+- Unified `AZOARequest` / `AZOAResult` serialization patterns
 - `BlockchainOperationBuilder` fluent API
 
 ## Out-of-Scope (per product.md)
@@ -21,6 +21,6 @@ Establish the foundational abstractions and shared infrastructure used by all hi
 
 ## Acceptance Criteria
 - [x] Base interfaces compile and are implemented by all providers
-- [x] `OASISDbContext` handles Avatar, Wallet, Holon, BlockchainOperation, STARODK
+- [x] `AZOADbContext` handles Avatar, Wallet, Holon, BlockchainOperation, STARODK
 - [x] Provider switching works via `ProviderContext.Activate`
 - [x] Stryker mutation score for core files ≥ 50 %

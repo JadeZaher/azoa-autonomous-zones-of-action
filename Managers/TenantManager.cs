@@ -2,32 +2,38 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 /// <summary>
-/// Tenant provisioning manager (Decision D1 — Option B). A tenant is an Avatar
-/// that owns a <c>tenant:provision</c> key; child avatars carry
-/// <c>OwnerTenantId == tenantId</c>. Cross-tenant isolation is the security crux
-/// (DEPLOY-STEP B5): every per-child op asserts ownership and reports a miss as
-/// 404 (<see cref="TenantAuthorizationError.NotFound"/>), never 403, so a prober
-/// cannot enumerate another tenant's avatars.
+/// Tenant provisioning manager — REARCHITECTED by user-self-sovereignty (2026-06-22).
 ///
-/// JWT issuance (Decision D2): this manager DUPLICATES the minimal symmetric
-/// signing primitive from <c>AvatarManager.GenerateJwt</c> (same <c>Jwt:Key</c> /
-/// HmacSha256 / issuer / audience) rather than coupling to AvatarManager, because
-/// a CHILD token is structurally different — subject is the child avatar id and
-/// the claims are delegated <c>scope</c> claims with a SHORTENED TTL
-/// (<see cref="ChildTokenLifetime"/>), not the login token's email/username
-/// claims with a 24h TTL. The shared part is only the config key + algorithm,
-/// which is one line; the token shape is the genuinely different bit.
+/// <para><b>HARD CUTOVER (user-sovereign-identity AC6).</b> A tenant no longer OWNS
+/// its users. <see cref="ProvisionChildAsync"/> mints a SELF-OWNED avatar
+/// (<c>OwnerTenantId = null</c>) the user can claim — never a tenant-locked child.
+/// The tenant-provision-and-lock model is gone; no path here permanently locks an
+/// avatar to a tenant.</para>
+///
+/// <para><b>Consent-gated issuance (tenant-consent-delegation AC2/M2).</b>
+/// <see cref="IssueChildCredentialAsync"/> ALWAYS requires a LIVE
+/// <see cref="Models.ConsentGrant"/> (grantor = the user, tenant = the caller,
+/// scope ⊇ requested). The legacy <c>OwnerTenantId == tenantId</c> ownership-only
+/// path is REMOVED — there is no credential issued on ownership alone. A target
+/// with no covering live grant returns <see cref="TenantAuthorizationError.NotFound"/>
+/// (404, never 403 — the isolation crux).</para>
+///
+/// <para>The issued child JWT carries the USER's avatar id as subject PLUS an
+/// <c>act_as_tenant</c> claim (the tenant id) so a tenant-driven action is
+/// DISTINGUISHABLE from a user-driven one at the signing seam (C1); and its
+/// <c>nbf</c> respects the user's <c>AuthNotBefore</c> watermark so a token minted
+/// before a claim cannot act after it (AC3b).</para>
 /// </summary>
 public class TenantManager : ITenantManager
 {
@@ -36,16 +42,21 @@ public class TenantManager : ITenantManager
 
     private readonly IAvatarStore _avatarStore;
     private readonly IConfiguration _config;
+    private readonly IConsentGrantStore _consentGrants;
 
-    public TenantManager(IAvatarStore avatarStore, IConfiguration config)
+    public TenantManager(
+        IAvatarStore avatarStore,
+        IConfiguration config,
+        IConsentGrantStore consentGrants)
     {
         _avatarStore = avatarStore;
         _config = config;
+        _consentGrants = consentGrants;
     }
 
-    public async Task<OASISResult<ChildAvatarResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default)
+    public async Task<AZOAResult<ChildAvatarResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default)
     {
-        var result = new OASISResult<ChildAvatarResponse>();
+        var result = new AZOAResult<ChildAvatarResponse>();
 
         if (string.IsNullOrWhiteSpace(model.ExternalUserId))
         {
@@ -56,57 +67,52 @@ public class TenantManager : ITenantManager
 
         var externalUserId = model.ExternalUserId.Trim();
 
-        // Idempotency: a repeat provision for the same (tenant, externalUserId)
-        // returns the existing child, not a duplicate. The store query is
-        // owner-scoped, so it can only ever surface THIS tenant's row.
-        var existing = await _avatarStore.GetByTenantAndExternalUserAsync(tenantId, externalUserId, ct);
-        if (!existing.IsError && existing.Result is not null)
-        {
-            result.Result = ToResponse(existing.Result);
-            result.Message = "Existing child returned (idempotent).";
-            return result;
-        }
-
-        // Deterministic username/email seeds when not supplied — both are
-        // unique-indexed and required on the avatar record. The tenant-id prefix
-        // keeps two tenants' identical externalUserIds from colliding globally.
-        var seed = $"tenant-{tenantId:N}-{externalUserId}";
+        // HARD CUTOVER (AC6): mint a SELF-OWNED avatar (OwnerTenantId = null), NOT a
+        // tenant-locked child. The user owns it from birth and can claim a login
+        // credential later (WalletAuthManager.ClaimAsync). The tenant gets NO
+        // standing authority from provisioning — only a live ConsentGrant lets it
+        // act. We correlate the row to the tenant's onboarding via ExternalRef
+        // (tenant:{id}:{extuser}) for the claim-invite lookup, NOT via ownership.
+        var seed = $"onboard-{tenantId:N}-{externalUserId}";
         var username = string.IsNullOrWhiteSpace(model.Username) ? seed : model.Username.Trim();
-        var email = string.IsNullOrWhiteSpace(model.Email) ? $"{seed}@tenant.oasis.local" : model.Email.Trim();
+        var email = string.IsNullOrWhiteSpace(model.Email) ? $"{seed}@onboard.azoa.local" : model.Email.Trim();
 
         var child = new Avatar
         {
             Username = username,
             Email = email,
-            // No password login path for tenant-managed children; the tenant
-            // acts for them via short-lived child credentials. A random hash
-            // keeps the column non-empty without granting a usable password.
+            // No password login path yet; the USER sets their own credential at
+            // claim time (user-side, AC3). A random hash keeps the column non-empty
+            // without granting a usable password and is NOT derivable by the tenant.
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N")),
             IsActive = true,
             IsVerified = false,
-            // IDOR rule: ownership is set from the PARAMETER, never the model.
-            OwnerTenantId = tenantId,
+            // AC6: NEVER lock to the tenant. Self-owned from birth.
+            OwnerTenantId = null,
             ExternalUserId = externalUserId,
-            ExternalRef = string.IsNullOrWhiteSpace(model.ExternalRef) ? null : model.ExternalRef.Trim(),
+            // Correlation for the tenant's claim-invite flow (not an ownership link).
+            ExternalRef = string.IsNullOrWhiteSpace(model.ExternalRef)
+                ? $"tenant:{tenantId:N}:{externalUserId}"
+                : model.ExternalRef.Trim(),
         };
 
         var saved = await _avatarStore.UpsertAsync(child, ct);
         if (saved.IsError || saved.Result is null)
         {
             result.IsError = true;
-            result.Message = saved.IsError ? saved.Message : "Failed to provision child avatar.";
+            result.Message = saved.IsError ? saved.Message : "Failed to provision avatar.";
             result.Exception = saved.Exception;
             return result;
         }
 
         result.Result = ToResponse(saved.Result);
-        result.Message = "Child avatar provisioned.";
+        result.Message = "Self-owned avatar provisioned (claimable; not tenant-locked).";
         return result;
     }
 
-    public async Task<OASISResult<IEnumerable<ChildAvatarResponse>>> ListChildrenAsync(Guid tenantId, string? externalUserId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<ChildAvatarResponse>>> ListChildrenAsync(Guid tenantId, string? externalUserId, CancellationToken ct = default)
     {
-        var result = new OASISResult<IEnumerable<ChildAvatarResponse>>();
+        var result = new AZOAResult<IEnumerable<ChildAvatarResponse>>();
 
         var owned = await _avatarStore.ListByOwnerTenantAsync(tenantId, ct);
         if (owned.IsError)
@@ -129,9 +135,9 @@ public class TenantManager : ITenantManager
         return result;
     }
 
-    public async Task<OASISResult<ChildAvatarResponse>> ResolveChildAsync(Guid tenantId, string externalUserId, CancellationToken ct = default)
+    public async Task<AZOAResult<ChildAvatarResponse>> ResolveChildAsync(Guid tenantId, string externalUserId, CancellationToken ct = default)
     {
-        var result = new OASISResult<ChildAvatarResponse>();
+        var result = new AZOAResult<ChildAvatarResponse>();
 
         if (string.IsNullOrWhiteSpace(externalUserId))
         {
@@ -155,63 +161,100 @@ public class TenantManager : ITenantManager
         return result;
     }
 
-    public async Task<OASISResult<ChildCredentialResponse>> IssueChildCredentialAsync(
+    public async Task<AZOAResult<ChildCredentialResponse>> IssueChildCredentialAsync(
         Guid tenantId,
         Guid childId,
         IEnumerable<string> requestedScopes,
         IEnumerable<string> tenantScopes,
         CancellationToken ct = default)
     {
-        var result = new OASISResult<ChildCredentialResponse>();
+        var result = new AZOAResult<ChildCredentialResponse>();
 
-        // Load the child and assert ownership. A cross-tenant or unowned target
-        // (OwnerTenantId == null OR != tenantId) is reported as NOT_FOUND (404),
-        // never FORBIDDEN — the isolation crux (spec §3 / acceptance c).
+        // Load the user avatar. A missing avatar is NOT_FOUND (404) — the isolation
+        // crux: a prober cannot distinguish "no such avatar" from "no grant".
         var loaded = await _avatarStore.GetByIdAsync(childId, ct);
-        if (loaded.IsError || loaded.Result is null
-            || loaded.Result.OwnerTenantId is null
-            || loaded.Result.OwnerTenantId.Value != tenantId)
+        if (loaded.IsError || loaded.Result is null)
         {
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No such child avatar for this tenant.";
+            result.Message = TenantAuthorizationError.NotFound + "No such avatar.";
             return result;
         }
 
-        var child = loaded.Result;
+        var user = loaded.Result;
 
-        // Delegation: the issued credential may carry ONLY scopes the tenant key
-        // itself holds (no privilege escalation). Intersect requested ∩ tenant's
-        // own; an empty requested set delegates the full tenant set.
+        // Server-trusted tenant scopes (M3): the ceiling derived from the
+        // authenticated tenant principal, never a request-body field. tenant:provision
+        // is never delegated down (a credential must not provision further avatars).
         var tenantOwn = new HashSet<string>(
             (tenantScopes ?? Enumerable.Empty<string>()).Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()),
             StringComparer.Ordinal);
+        tenantOwn.Remove(AzoaScopes.TenantProvision);
 
         var requested = (requestedScopes ?? Enumerable.Empty<string>())
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .Select(s => s.Trim())
-            .ToList();
-
-        // tenant:provision is never delegated down to a child credential — a
-        // child must not be able to provision further avatars.
-        tenantOwn.Remove(OasisScopes.TenantProvision);
-
-        var delegated = (requested.Count == 0
-                ? tenantOwn
-                : requested.Where(tenantOwn.Contains))
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        var expiresAt = DateTime.UtcNow.Add(ChildTokenLifetime);
-        var token = GenerateChildJwt(child.Id, delegated, expiresAt);
+        // AC2/M2 — NO OWNERSHIP-ONLY PATH. Find a LIVE ConsentGrant from this user to
+        // this tenant. No grant ⇒ NOT_FOUND (404, never 403). The legacy
+        // OwnerTenantId == tenantId check is GONE.
+        var now = DateTime.UtcNow;
+        var grantsResult = await _consentGrants.ListByGrantorAsync(user.Id, ct);
+        if (grantsResult.IsError)
+        {
+            // Fail closed — a grant-lookup failure denies issuance.
+            result.IsError = true;
+            result.Message = TenantAuthorizationError.NotFound + "No such avatar.";
+            return result;
+        }
+
+        var liveGrantScopes = (grantsResult.Result ?? Enumerable.Empty<Models.ConsentGrant>())
+            .Where(g => g.TenantId == tenantId && g.IsLiveAt(now))
+            .SelectMany(g => g.Scopes)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (liveGrantScopes.Count == 0)
+        {
+            // No covering live grant — the tenant has no authority for this user.
+            result.IsError = true;
+            result.Message = TenantAuthorizationError.NotFound + "No such avatar.";
+            return result;
+        }
+
+        // M3 scope ceiling = (tenant scopes) ∩ (granted scopes) ∩ (requested). An
+        // empty requested set delegates the full (tenant ∩ granted) intersection.
+        var ceiling = tenantOwn.Where(liveGrantScopes.Contains);
+        var delegated = (requested.Count == 0
+                ? ceiling
+                : ceiling.Where(requested.Contains))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (delegated.Count == 0)
+        {
+            // The grant exists but covers none of the requested/allowed scopes.
+            result.IsError = true;
+            result.Message = TenantAuthorizationError.NotFound + "No such avatar.";
+            return result;
+        }
+
+        // AC3b: the token's nbf is at/after the user's AuthNotBefore watermark, so a
+        // credential cannot reference a pre-claim state.
+        var notBefore = user.AuthNotBefore.HasValue && user.AuthNotBefore.Value > now
+            ? user.AuthNotBefore.Value
+            : now;
+        var expiresAt = notBefore.Add(ChildTokenLifetime);
+        var token = GenerateChildJwt(user.Id, tenantId, delegated, notBefore, expiresAt);
 
         result.Result = new ChildCredentialResponse
         {
-            AvatarId = child.Id,
+            AvatarId = user.Id,
             Token = token,
             ExpiresAt = expiresAt,
             Scopes = delegated,
         };
-        result.Message = "Child credential issued.";
+        result.Message = "Child credential issued (consent-gated).";
         return result;
     }
 
@@ -227,12 +270,16 @@ public class TenantManager : ITenantManager
     };
 
     /// <summary>
-    /// Minimal symmetric child-token primitive (D2). Subject = child avatar id;
-    /// one <c>scope</c> claim per delegated scope (matching the shape the API-key
-    /// handler emits at <c>ApiKeyAuthenticationHandler.cs:81-87</c>, so downstream
-    /// per-avatar authorization treats the child token identically). Short TTL.
+    /// Minimal symmetric child-token primitive. Subject = the USER's avatar id (so
+    /// downstream per-avatar authorization treats it like the user); one
+    /// <c>scope</c> claim per delegated scope. tenant-consent-delegation C1/AC4: a
+    /// distinguishing <c>act_as_tenant</c> claim (the tenant id) marks this as
+    /// tenant-driven so the signing seam runs the live consent check. AC3b: an
+    /// explicit <c>nbf</c> (not-before) at/after the user's claim watermark.
     /// </summary>
-    private string GenerateChildJwt(Guid childAvatarId, IEnumerable<string> scopes, DateTime expiresAt)
+    public const string ActAsTenantClaim = "act_as_tenant";
+
+    private string GenerateChildJwt(Guid userAvatarId, Guid tenantId, IEnumerable<string> scopes, DateTime notBefore, DateTime expiresAt)
     {
         var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
@@ -240,8 +287,14 @@ public class TenantManager : ITenantManager
 
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, childAvatarId.ToString()),
-            new("AvatarId", childAvatarId.ToString()),
+            new(JwtRegisteredClaimNames.Sub, userAvatarId.ToString()),
+            new("AvatarId", userAvatarId.ToString()),
+            // C1/AC4: marks the token as tenant-driven; the signing seam reads this
+            // to require a live consent grant before any key decrypt.
+            new(ActAsTenantClaim, tenantId.ToString()),
+            // token-type segregation (security-review S5): explicitly classes this as a
+            // scoped tenant child credential, not a full-authority user login.
+            new(AzoaClaims.TokenUse, AzoaClaims.TokenUseChild),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 
@@ -252,6 +305,7 @@ public class TenantManager : ITenantManager
             issuer: _config["Jwt:Issuer"],
             audience: _config["Jwt:Audience"],
             claims: claims,
+            notBefore: notBefore,
             expires: expiresAt,
             signingCredentials: credentials);
 

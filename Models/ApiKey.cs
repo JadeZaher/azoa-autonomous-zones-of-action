@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models;
+namespace AZOA.WebAPI.Models;
 
 public class ApiKey
 {
@@ -12,7 +12,7 @@ public class ApiKey
     public string KeyHash { get; set; } = string.Empty;
 
     /// <summary>
-    /// First 8 characters of the key for display/identification (e.g., "oasis_ab12cd34...").
+    /// First 8 characters of the key for display/identification (e.g., "azoa_ab12cd34...").
     /// </summary>
     public string KeyPrefix { get; set; } = string.Empty;
 

@@ -10,8 +10,8 @@
 6. [x] Create `Models/Quest/QuestNodeTemplate.cs` — Reusable meta-node with schema validation
 7. [x] Create `Models/Quest/QuestTemplate.cs` — Reusable full-DAG template
 8. [x] Create `Models/Quest/QuestTemplateNode.cs` and `QuestTemplateEdge.cs` — Template building blocks
-9. [x] Add EF configurations inline to `OASISDbContext` (dictConverter, listGuidConverter, listStringConverter)
-10. [x] Add DbSets to `OASISDbContext` for quest entities
+9. [x] Add EF configurations inline to `AZOADbContext` (dictConverter, listGuidConverter, listStringConverter)
+10. [x] Add DbSets to `AZOADbContext` for quest entities
 11. [x] Create `Interfaces/IQuestRepository.cs` — persistence abstraction
 12. [x] Create `Interfaces/IQuestDagValidator.cs` — DAG validation abstraction
 13. [x] Create `Interfaces/IQuestInstantiator.cs` — template instantiation abstraction

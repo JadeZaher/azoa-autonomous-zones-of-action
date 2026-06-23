@@ -6,10 +6,10 @@
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Schema;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Schema;
 
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("operation_log",
         Aggregate = "BlockchainOperation (Models/BlockchainOperation.cs)",
@@ -88,6 +88,15 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
 
         [FieldGroup("Error detail (populated on failure)")]
         public string? Error { get; set; }
+
+        [FieldGroup("tenant-consent-delegation AC4: acting tenant + required signing scope")]
+        // The tenant that DROVE this value op via a child credential (null =
+        // user-driven / platform-internal). Carried on the durable row so the signing
+        // seam's live consent check survives the async saga-worker hop.
+        [References(typeof(Avatar), Optional = true)]
+        public string? ActingTenantId { get; set; }
+
+        public string? SigningScope { get; set; }
 
         [FieldGroup("Timestamps")]
         [ReadOnly]

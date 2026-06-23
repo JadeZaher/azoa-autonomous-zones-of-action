@@ -1,13 +1,13 @@
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 /// <summary>
 /// Discriminator the controller uses to translate a manager auth failure
 /// into the right HTTP status without string-matching <c>Message</c>.
-/// Carried via <see cref="OASISResult{T}.Message"/> prefix.
+/// Carried via <see cref="AZOAResult{T}.Message"/> prefix.
 /// </summary>
 public static class STARODKAuthorizationError
 {
@@ -20,8 +20,8 @@ public static class STARODKAuthorizationError
 
 public interface ISTARManager
 {
-    Task<OASISResult<ISTARODK>> GetAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<ISTARODK>>> GetAllAsync(OASISRequest? request = null);
+    Task<AZOAResult<ISTARODK>> GetAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(AZOARequest? request = null);
 
     /// <summary>
     /// Creates a new STARODK or updates an existing one, scoped to the
@@ -32,17 +32,17 @@ public interface ISTARManager
     ///      AvatarId MUST equal <paramref name="avatarId"/> or the operation
     ///      fails with <see cref="STARODKAuthorizationError.Forbidden"/>.
     /// </summary>
-    Task<OASISResult<ISTARODK>> CreateOrUpdateAsync(
+    Task<AZOAResult<ISTARODK>> CreateOrUpdateAsync(
         STARODKCreateModel model,
         Guid avatarId,
         Guid? routeId = null,
-        OASISRequest? request = null);
+        AZOARequest? request = null);
 
     // avatarId scopes ownership: a non-null value enforces the IsOwnedBy guard
     // (closes the IDOR for the HTTP routes). A null avatarId is the trusted
     // internal path (quest node handlers) which has no avatar context and runs
     // unscoped — never pass null from a controller.
-    Task<OASISResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, OASISRequest? request = null);
-    Task<OASISResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, Guid? avatarId = null, OASISRequest? providerRequest = null);
-    Task<OASISResult<ISTARODK>> DeployAsync(Guid id, Guid? avatarId = null, OASISRequest? providerRequest = null);
+    Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, AZOARequest? request = null);
+    Task<AZOAResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null);
+    Task<AZOAResult<ISTARODK>> DeployAsync(Guid id, Guid? avatarId = null, AZOARequest? providerRequest = null);
 }

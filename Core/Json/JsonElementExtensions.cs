@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OASIS.WebAPI.Core.Json;
+namespace AZOA.WebAPI.Core.Json;
 
 /// <summary>
 /// Helpers for converting between caller-facing

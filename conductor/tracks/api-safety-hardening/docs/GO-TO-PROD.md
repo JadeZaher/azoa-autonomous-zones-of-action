@@ -1,4 +1,4 @@
-# GO TO PROD — OASIS API production-readiness
+# GO TO PROD — AZOA API production-readiness
 
 **Purpose:** the single gate between "code complete" and "real cross-chain value
 flows." Greenfield / pre-launch: no customers, no data — bias to clean config,
@@ -21,7 +21,7 @@ Code gate **GREEN**: prod build 0 errors / 17 baseline warnings; unit suite gree
 **§4 cleanup items 1–4: LANDED** (commit `1b25f50`, "api-safety-hardening §4
 pre-launch cleanup"; unit suite 567/567 at that point). **Tier-1
 `architecture-decoupling` track: COMPLETE** — per-aggregate persistence seam (god
-`IOASISStorageProvider` + `IQuestRepository` deleted), 34-handler `QuestManager`
+`IAZOAStorageProvider` + `IQuestRepository` deleted), 34-handler `QuestManager`
 registry, `ExecutionOrder` dedup, bounded `IMemoryCache`, OpenTelemetry + live
 `/health`; independent review **APPROVE-WITH-SIMPLIFICATIONS** (0 CRITICAL/HIGH);
 unit suite **532/532** (count dropped from 567 only because ~35 tests that
@@ -59,7 +59,7 @@ not a bug.
 ## 2. Configuration requirements (every key; secrets flagged)
 
 **SECRET — must come from the deploy secret store / env, never committed appsettings:**
-- `ConnectionStrings:OASISDatabase` — prod Postgres DSN (host/port/db/user/**password**).
+- `ConnectionStrings:AZOADatabase` — prod Postgres DSN (host/port/db/user/**password**).
 - `Jwt:Key` — signing key (long, random, rotated).
 - `WalletEncryptionKey` — at-rest wallet key material. **Confirm overridden** (appsettings ships a placeholder; a real deploy MUST replace it before any wallet/seed is created).
 - `Blockchain:Faucet:Algorand:Mnemonic` — faucet broadcaster seed (testnet only; do not fund on mainnet unless intended).
@@ -74,7 +74,7 @@ not a bug.
 - `Reconciliation` — `Enabled=true`, `IntervalSeconds` (300), `Bridge*/Operation*` staleness + hard-stuck thresholds.
 - `Sagas` — `Enabled=false` until durable-saga Phase 2 ships a consumer (see §4).
 - `OpenTelemetry` (added by `architecture-decoupling`; all optional, safe defaults):
-  `OpenTelemetry:ServiceName` (default `"OASIS.WebAPI"`),
+  `OpenTelemetry:ServiceName` (default `"AZOA.WebAPI"`),
   `OpenTelemetry:Otlp:Endpoint` (none ⇒ SDK default / honours `OTEL_EXPORTER_OTLP_ENDPOINT`;
   never throws at startup if unset — set to your collector URL to export traces/metrics),
   `OpenTelemetry:Otlp:Protocol` (`"grpc"` default | `"http/protobuf"`).
@@ -107,7 +107,7 @@ The review explicitly defended the safety spine as *not* overengineered, but
 flagged localized cleanup. **MUST land before launch** (small, high-value, align
 with the no-overengineering intent):
 
-1. **Remove the vestigial `xmin`/`Version` concurrency token** (`BridgeTransactionResult`, `SagaStepRecord`, `OASISDbContext` mappings, `SqliteTestDbContext` override). Never exercised — all flows use conditional `ExecuteUpdateAsync`; tests strip it. Pure deletion, zero behavior change. *(~1h)*
+1. **Remove the vestigial `xmin`/`Version` concurrency token** (`BridgeTransactionResult`, `SagaStepRecord`, `AZOADbContext` mappings, `SqliteTestDbContext` override). Never exercised — all flows use conditional `ExecuteUpdateAsync`; tests strip it. Pure deletion, zero behavior change. *(~1h)*
 2. **`OperationStatus` enum/constants** for `BlockchainOperation.Status` (currently stringly-typed across producer + reconciler → silent-divergence risk). *(~1–2h)*
 3. **`Sagas:Enabled=false` default** / pull saga DI from the prod composition until Phase 2 — a consumerless hosted loop + migration should not run in the pre-launch financial graph. *(~30m)*
 4. **Add `BridgeStatus.Reversing`** (or a phase discriminator); replace the `IsReversalInFlight` `CompletedAt`-timestamp heuristic with explicit provenance. Highest-value correctness simplification. *(~½d incl. tests)*

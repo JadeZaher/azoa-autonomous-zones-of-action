@@ -1,32 +1,32 @@
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 public interface IHolonManager
 {
-    Task<OASISResult<IHolon>> GetAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IHolon>>> GetAllAsync(OASISRequest? request = null);
-    Task<OASISResult<IHolon>> CreateAsync(HolonCreateModel model, Guid avatarId, OASISRequest? request = null);
+    Task<AZOAResult<IHolon>> GetAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IHolon>>> GetAllAsync(AZOARequest? request = null);
+    Task<AZOAResult<IHolon>> CreateAsync(HolonCreateModel model, Guid avatarId, AZOARequest? request = null);
     // avatarId scopes ownership: a non-null value enforces the IsOwnedBy guard
     // (closes the IDOR for the HTTP routes). A null avatarId is the trusted
     // internal path (quest node handlers) which has no avatar context and runs
     // unscoped — never pass null from a controller.
-    Task<OASISResult<IHolon>> UpdateAsync(Guid id, HolonUpdateModel model, Guid? avatarId = null, OASISRequest? request = null);
-    Task<OASISResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IHolon>>> QueryAsync(HolonQueryRequest query, OASISRequest? request = null);
-    Task<OASISResult<IHolon>> InteractAsync(Guid id, HolonInteractionRequest request, Guid? avatarId = null, OASISRequest? providerRequest = null);
+    Task<AZOAResult<IHolon>> UpdateAsync(Guid id, HolonUpdateModel model, Guid? avatarId = null, AZOARequest? request = null);
+    Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IHolon>>> QueryAsync(HolonQueryRequest query, AZOARequest? request = null);
+    Task<AZOAResult<IHolon>> InteractAsync(Guid id, HolonInteractionRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null);
 
     // Holarchy traversal — expose the holonic structure
-    Task<OASISResult<IEnumerable<IHolon>>> GetChildrenAsync(Guid parentId, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IHolon>>> GetPeersAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IHolon>>> GetAncestorsAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IHolon>>> GetDescendantsAsync(Guid id, OASISRequest? request = null);
+    Task<AZOAResult<IEnumerable<IHolon>>> GetChildrenAsync(Guid parentId, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IHolon>>> GetPeersAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IHolon>>> GetAncestorsAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IHolon>>> GetDescendantsAsync(Guid id, AZOARequest? request = null);
 
     // Holonic functionality — operations across the holarchy
-    Task<OASISResult<int>> PropagateAsync(Guid id, HolonPropagateRequest request, Guid? avatarId = null, OASISRequest? providerRequest = null);
-    Task<OASISResult<HolonComposition>> ComposeAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IHolon>> CloneAsync(Guid id, HolonCloneRequest request, Guid avatarId, OASISRequest? providerRequest = null);
-    Task<OASISResult<bool>> MoveSubtreeAsync(Guid id, Guid newParentId, Guid? avatarId = null, OASISRequest? request = null);
+    Task<AZOAResult<int>> PropagateAsync(Guid id, HolonPropagateRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null);
+    Task<AZOAResult<HolonComposition>> ComposeAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IHolon>> CloneAsync(Guid id, HolonCloneRequest request, Guid avatarId, AZOARequest? providerRequest = null);
+    Task<AZOAResult<bool>> MoveSubtreeAsync(Guid id, Guid newParentId, Guid? avatarId = null, AZOARequest? request = null);
 }

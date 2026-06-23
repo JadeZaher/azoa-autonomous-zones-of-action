@@ -1,8 +1,8 @@
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
 /// <summary>
 /// A single task/step within a quest DAG.
-/// Wraps a call to an existing OASIS manager method.
+/// Wraps a call to an existing AZOA manager method.
 /// </summary>
 /// <remarks>
 /// Runtime per-node state (status, output, error) lives on

@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { oasis, isOk } from '@/lib/oasis'
-import { useChainInfo } from '@/lib/oasis-hooks'
+import { azoa, isOk } from '@/lib/azoa'
+import { useChainInfo } from '@/lib/azoa-hooks'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,7 +27,7 @@ function BalanceChecker({ chain }: { chain: string }) {
     e.preventDefault()
     setLoading(true)
     setResult(null)
-    const res = await oasis.wallet.getBalance(chain, address, tokenId || undefined)
+    const res = await azoa.wallet.getBalance(chain, address, tokenId || undefined)
     if (isOk(res)) {
       setResult(res.value)
       setIsError(false)
@@ -96,7 +96,7 @@ function AddressValidator({ chain }: { chain: string }) {
     setLoading(true)
     setValid(null)
     setError(null)
-    const res = await oasis.wallet.validateAddress(chain, address)
+    const res = await azoa.wallet.validateAddress(chain, address)
     if (isOk(res)) {
       setValid(res.value as boolean)
     } else {
@@ -153,7 +153,7 @@ function TransactionLookup({ chain }: { chain: string }) {
     e.preventDefault()
     setLoading(true)
     setResult(null)
-    const res = await oasis.wallet.getTransactionStatus(chain, txHash)
+    const res = await azoa.wallet.getTransactionStatus(chain, txHash)
     if (isOk(res)) {
       setResult(res.value)
       setIsError(false)
@@ -214,7 +214,7 @@ function TokenMetadata({ chain }: { chain: string }) {
     e.preventDefault()
     setLoading(true)
     setResult(null)
-    const res = await oasis.api.request('GET', `/api/blockchain/${chain}/token/${tokenId}/metadata`)
+    const res = await azoa.api.request('GET', `/api/blockchain/${chain}/token/${tokenId}/metadata`)
     if (isOk(res)) {
       setResult(res.value)
       setIsError(false)

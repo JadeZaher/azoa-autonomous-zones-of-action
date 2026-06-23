@@ -5,10 +5,10 @@
 
 using System;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Schema;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Schema;
 
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("avatar",
         Aggregate = "Avatar (Models/Avatar.cs)",
@@ -20,6 +20,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
     [Index("avatar_email", Fields = new[] { "email" }, Unique = true)]
     [Index("avatar_owner_tenant", Fields = new[] { "owner_tenant_id" })]
     [Index("avatar_tenant_extuser", Fields = new[] { "owner_tenant_id", "external_user_id" }, Unique = true)]
+    [Index("avatar_auth_wallet", Fields = new[] { "auth_wallet_address", "auth_wallet_chain_type" }, Unique = true)]
     public partial class Avatar : ISurrealRecord
     {
         public const string SchemaNameConst = "avatar";
@@ -60,5 +61,19 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         public string? ExternalUserId { get; set; }
 
         public string? ExternalRef { get; set; }
+
+        // ── user-sovereign-identity ────────────────────────────────────────────
+        // AC2 wallet-challenge auth binding. The composite (auth_wallet_address,
+        // auth_wallet_chain_type) is UNIQUE only for rows where BOTH are non-NONE
+        // (same NULL-equals-NULL caveat as owner_tenant_id/external_user_id above):
+        // an avatar with no wallet auth leaves both NONE and never collides. Login
+        // matches this pair EXACTLY — never email/username/external_user_id.
+        public string? AuthWalletAddress { get; set; }
+
+        public string? AuthWalletChainType { get; set; }
+
+        // AC3b/H2 post-claim custody-window cut. Tenant-driven tokens (child JWT /
+        // claim token) minted before this instant are rejected at the signing seam.
+        public DateTimeOffset? AuthNotBefore { get; set; }
     }
 }

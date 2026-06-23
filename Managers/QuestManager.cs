@@ -1,16 +1,16 @@
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
-using OASIS.WebAPI.Models.Sagas;
-using OASIS.WebAPI.Sagas;
-using OASIS.WebAPI.Services.Quest;
-using OASIS.WebAPI.Services.Quest.Workflow;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Sagas;
+using AZOA.WebAPI.Sagas;
+using AZOA.WebAPI.Services.Quest;
+using AZOA.WebAPI.Services.Quest.Workflow;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 /// <summary>
 /// Orchestrates quest execution against the per-run / per-(run,node) runtime
@@ -53,13 +53,13 @@ public class QuestManager : IQuestManager
     /// Loads a quest and rejects when it is owned by a different avatar. Returns
     /// the loaded quest on success, or an error result to surface verbatim.
     /// </summary>
-    private async Task<OASISResult<Quest>> LoadOwnedQuestAsync(Guid questId, Guid avatarId)
+    private async Task<AZOAResult<Quest>> LoadOwnedQuestAsync(Guid questId, Guid avatarId)
     {
         var questResult = await _questStore.GetQuestAsync(questId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<Quest> { IsError = true, Message = questResult.Message ?? "Quest not found." };
+            return new AZOAResult<Quest> { IsError = true, Message = questResult.Message ?? "Quest not found." };
         if (questResult.Result.AvatarId != avatarId)
-            return new OASISResult<Quest> { IsError = true, Message = "Quest is owned by a different avatar." };
+            return new AZOAResult<Quest> { IsError = true, Message = "Quest is owned by a different avatar." };
         return questResult;
     }
 
@@ -67,13 +67,13 @@ public class QuestManager : IQuestManager
     /// Loads a run and rejects when it is owned by a different avatar. Returns
     /// the loaded run on success, or an error result to surface verbatim.
     /// </summary>
-    private async Task<OASISResult<QuestRun>> LoadOwnedRunAsync(Guid runId, Guid avatarId)
+    private async Task<AZOAResult<QuestRun>> LoadOwnedRunAsync(Guid runId, Guid avatarId)
     {
         var runResult = await _runStore.GetByIdAsync(runId);
         if (runResult.IsError || runResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message ?? "Quest run not found." };
+            return new AZOAResult<QuestRun> { IsError = true, Message = runResult.Message ?? "Quest run not found." };
         if (runResult.Result.AvatarId != avatarId)
-            return new OASISResult<QuestRun> { IsError = true, Message = "Quest run is owned by a different avatar." };
+            return new AZOAResult<QuestRun> { IsError = true, Message = "Quest run is owned by a different avatar." };
         return runResult;
     }
 
@@ -81,7 +81,7 @@ public class QuestManager : IQuestManager
     // QUEST CRUD
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<Quest>> CreateAsync(QuestCreateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<Quest>> CreateAsync(QuestCreateModel model, Guid avatarId, AZOARequest? request = null)
     {
         var quest = new Quest
         {
@@ -117,7 +117,7 @@ public class QuestManager : IQuestManager
             if (edgeModel.SourceNodeId < 0 || edgeModel.SourceNodeId >= nodeIds.Count ||
                 edgeModel.TargetNodeId < 0 || edgeModel.TargetNodeId >= nodeIds.Count)
             {
-                return new OASISResult<Quest> { IsError = true, Message = $"Edge index out of range. Source={edgeModel.SourceNodeId}, Target={edgeModel.TargetNodeId}, NodeCount={nodeIds.Count}." };
+                return new AZOAResult<Quest> { IsError = true, Message = $"Edge index out of range. Source={edgeModel.SourceNodeId}, Target={edgeModel.TargetNodeId}, NodeCount={nodeIds.Count}." };
             }
 
             var edge = new QuestEdge
@@ -135,17 +135,17 @@ public class QuestManager : IQuestManager
         return await _questStore.UpsertQuestAsync(quest);
     }
 
-    public async Task<OASISResult<Quest>> GetAsync(Guid id, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<Quest>> GetAsync(Guid id, Guid avatarId, AZOARequest? request = null)
     {
         return await LoadOwnedQuestAsync(id, avatarId);
     }
 
-    public async Task<OASISResult<IEnumerable<Quest>>> GetByAvatarAsync(Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<Quest>>> GetByAvatarAsync(Guid avatarId, AZOARequest? request = null)
     {
         return await _questStore.GetQuestsByAvatarAsync(avatarId);
     }
 
-    public async Task<OASISResult<Quest>> UpdateAsync(Guid id, QuestUpdateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<Quest>> UpdateAsync(Guid id, QuestUpdateModel model, Guid avatarId, AZOARequest? request = null)
     {
         var existing = await LoadOwnedQuestAsync(id, avatarId);
         if (existing.IsError || existing.Result == null) return existing;
@@ -160,11 +160,11 @@ public class QuestManager : IQuestManager
         return await _questStore.UpsertQuestAsync(quest);
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid avatarId, AZOARequest? request = null)
     {
         var owned = await LoadOwnedQuestAsync(id, avatarId);
         if (owned.IsError || owned.Result == null)
-            return new OASISResult<bool> { IsError = true, Message = owned.Message };
+            return new AZOAResult<bool> { IsError = true, Message = owned.Message };
 
         return await _questStore.DeleteQuestAsync(id);
     }
@@ -173,11 +173,11 @@ public class QuestManager : IQuestManager
     // DAG VALIDATION
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<bool>> ValidateDAGAsync(Guid questId, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> ValidateDAGAsync(Guid questId, AZOARequest? request = null)
     {
         var questResult = await _questStore.GetQuestAsync(questId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<bool> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<bool> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
 
@@ -187,7 +187,7 @@ public class QuestManager : IQuestManager
 
         if (!validation.IsValid)
         {
-            return new OASISResult<bool>
+            return new AZOAResult<bool>
             {
                 IsError = true,
                 Result = false,
@@ -197,27 +197,27 @@ public class QuestManager : IQuestManager
 
         await _questStore.UpsertQuestAsync(quest);
 
-        return new OASISResult<bool> { Result = true, Message = "DAG is valid." };
+        return new AZOAResult<bool> { Result = true, Message = "DAG is valid." };
     }
 
     // ═══════════════════════════════════════════════════════════════════
     // EXECUTION
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestRun>> ExecuteAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestRun>> ExecuteAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null)
     {
         var owned = await LoadOwnedQuestAsync(questId, avatarId);
         if (owned.IsError || owned.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = owned.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = owned.Message };
 
         // Validate DAG first (also assigns ExecutionOrder onto definition nodes).
         var validationResult = await ValidateDAGAsync(questId, request);
         if (validationResult.IsError)
-            return new OASISResult<QuestRun> { IsError = true, Message = validationResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = validationResult.Message };
 
         var questResult = await _questStore.GetQuestAsync(questId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
 
@@ -227,12 +227,15 @@ public class QuestManager : IQuestManager
             Id = Guid.NewGuid(),
             QuestId = quest.Id,
             AvatarId = quest.AvatarId,
+            // tenant-consent-delegation AC4: stamp the acting tenant from the
+            // activating principal so Tier-2 nodes carry it to the signing seam.
+            ActingTenantId = actingTenantId,
             Status = QuestRunStatus.Pending,
             StartedAt = DateTime.UtcNow
         };
         var createRun = await _runStore.CreateAsync(run);
         if (createRun.IsError || createRun.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = createRun.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = createRun.Message };
 
         // Pre-create one QuestNodeExecution(Pending) per quest node.
         foreach (var node in quest.Nodes)
@@ -247,7 +250,7 @@ public class QuestManager : IQuestManager
             };
             var createExec = await _executionStore.CreateAsync(exec);
             if (createExec.IsError)
-                return new OASISResult<QuestRun> { IsError = true, Message = createExec.Message };
+                return new AZOAResult<QuestRun> { IsError = true, Message = createExec.Message };
         }
 
         // Status: Pending → Running (first claim).
@@ -350,7 +353,7 @@ public class QuestManager : IQuestManager
             {
                 try
                 {
-                    var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstream);
+                    var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstream, run.ActingTenantId);
                     result = await handler.HandleAsync(ctx);
                 }
                 catch (Exception ex)
@@ -393,19 +396,19 @@ public class QuestManager : IQuestManager
         run.EndedAt = DateTime.UtcNow;
         var updated = await _runStore.UpdateAsync(run);
 
-        return new OASISResult<QuestRun> { Result = updated.Result, Message = $"Quest run {run.Status}." };
+        return new AZOAResult<QuestRun> { Result = updated.Result, Message = $"Quest run {run.Status}." };
     }
 
-    public async Task<OASISResult<QuestNodeExecution>> ExecuteNodeAsync(Guid questId, Guid nodeId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestNodeExecution>> ExecuteNodeAsync(Guid questId, Guid nodeId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestNodeExecution> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<QuestNodeExecution> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
         var node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null)
-            return new OASISResult<QuestNodeExecution> { IsError = true, Message = "Node not found." };
+            return new AZOAResult<QuestNodeExecution> { IsError = true, Message = "Node not found." };
 
         // Single-node execution creates an ad-hoc QuestRun that lives just long
         // enough to record this one node's outcome. This preserves the
@@ -417,6 +420,9 @@ public class QuestManager : IQuestManager
             Id = Guid.NewGuid(),
             QuestId = quest.Id,
             AvatarId = quest.AvatarId,
+            // tenant-consent-delegation AC4: carry the acting tenant onto the
+            // ad-hoc one-node run so the dispatched handler reaches the seam.
+            ActingTenantId = actingTenantId,
             Status = QuestRunStatus.Running,
             StartedAt = DateTime.UtcNow
         };
@@ -441,7 +447,7 @@ public class QuestManager : IQuestManager
         {
             try
             {
-                var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest);
+                var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstreamExecutions: null, run.ActingTenantId);
                 result = await handler.HandleAsync(ctx);
             }
             catch (Exception ex)
@@ -471,19 +477,19 @@ public class QuestManager : IQuestManager
         await _runStore.UpdateAsync(run);
 
         return result.IsError
-            ? new OASISResult<QuestNodeExecution> { IsError = true, Result = execution, Message = result.Message ?? string.Empty }
-            : new OASISResult<QuestNodeExecution> { Result = execution, Message = "Node executed successfully." };
+            ? new AZOAResult<QuestNodeExecution> { IsError = true, Result = execution, Message = result.Message ?? string.Empty }
+            : new AZOAResult<QuestNodeExecution> { Result = execution, Message = "Node executed successfully." };
     }
 
     // ═══════════════════════════════════════════════════════════════════
     // FORK
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestRun>> ForkAsync(Guid runId, Guid atNodeId, string reason, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestRun>> ForkAsync(Guid runId, Guid atNodeId, string reason, Guid avatarId, AZOARequest? request = null)
     {
         var parentResult = await LoadOwnedRunAsync(runId, avatarId);
         if (parentResult.IsError || parentResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = parentResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = parentResult.Message };
 
         var parent = parentResult.Result;
 
@@ -492,7 +498,7 @@ public class QuestManager : IQuestManager
         // are terminal. See ADR §2.3.
         if (parent.Status != QuestRunStatus.Running)
         {
-            return new OASISResult<QuestRun>
+            return new AZOAResult<QuestRun>
             {
                 IsError = true,
                 Message = $"Cannot fork run {runId}: status is {parent.Status} (only Running runs are forkable)."
@@ -501,13 +507,13 @@ public class QuestManager : IQuestManager
 
         var questResult = await _questStore.GetQuestAsync(parent.QuestId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
         var forkPointNode = quest.Nodes.FirstOrDefault(n => n.Id == atNodeId);
         if (forkPointNode == null)
         {
-            return new OASISResult<QuestRun>
+            return new AZOAResult<QuestRun>
             {
                 IsError = true,
                 Message = $"Cannot fork at node {atNodeId}: not present in quest {parent.QuestId} definition."
@@ -521,6 +527,10 @@ public class QuestManager : IQuestManager
             Id = Guid.NewGuid(),
             QuestId = parent.QuestId,
             AvatarId = parent.AvatarId,
+            // tenant-consent-delegation AC4: a tenant-driven run stays tenant-driven
+            // across forks — inherit the parent run's acting tenant (null = user-driven)
+            // rather than re-reading a principal, since the fork has no fresh JWT context.
+            ActingTenantId = parent.ActingTenantId,
             Status = QuestRunStatus.Pending,
             StartedAt = DateTime.UtcNow,
             ParentRunId = parent.Id,
@@ -529,7 +539,7 @@ public class QuestManager : IQuestManager
         };
         var createChild = await _runStore.CreateAsync(child);
         if (createChild.IsError || createChild.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = createChild.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = createChild.Message };
 
         // Copy-by-reference: for nodes with ExecutionOrder < forkPoint, the
         // parent's execution row is shared with the child. The InMemory
@@ -582,23 +592,23 @@ public class QuestManager : IQuestManager
         parent.EndedAt = DateTime.UtcNow;
         await _runStore.UpdateAsync(parent);
 
-        return new OASISResult<QuestRun> { Result = child, Message = "Fork created." };
+        return new AZOAResult<QuestRun> { Result = child, Message = "Fork created." };
     }
 
     // ═══════════════════════════════════════════════════════════════════
     // SUPERVISOR-DRIVEN FAIL
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestRun>> MarkRunFailedAsync(Guid runId, string reason, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestRun>> MarkRunFailedAsync(Guid runId, string reason, Guid avatarId, AZOARequest? request = null)
     {
         var runResult = await LoadOwnedRunAsync(runId, avatarId);
         if (runResult.IsError || runResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = runResult.Message };
 
         var run = runResult.Result;
         if (run.Status != QuestRunStatus.Running)
         {
-            return new OASISResult<QuestRun>
+            return new AZOAResult<QuestRun>
             {
                 IsError = true,
                 Message = $"Cannot mark run {runId} failed: status is {run.Status} (only Running runs accept supervisor fail)."
@@ -623,14 +633,14 @@ public class QuestManager : IQuestManager
         run.EndedAt = DateTime.UtcNow;
         var updated = await _runStore.UpdateAsync(run);
 
-        return new OASISResult<QuestRun> { Result = updated.Result, Message = $"Run marked failed: {reason}" };
+        return new AZOAResult<QuestRun> { Result = updated.Result, Message = $"Run marked failed: {reason}" };
     }
 
     // ═══════════════════════════════════════════════════════════════════
     // TEMPLATES
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestTemplate>> CreateTemplateAsync(QuestTemplateCreateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestTemplate>> CreateTemplateAsync(QuestTemplateCreateModel model, Guid avatarId, AZOARequest? request = null)
     {
         var template = new QuestTemplate
         {
@@ -669,7 +679,7 @@ public class QuestManager : IQuestManager
             if (edgeModel.SourceNodeId < 0 || edgeModel.SourceNodeId >= slotIds.Count ||
                 edgeModel.TargetNodeId < 0 || edgeModel.TargetNodeId >= slotIds.Count)
             {
-                return new OASISResult<QuestTemplate> { IsError = true, Message = "Edge index out of range." };
+                return new AZOAResult<QuestTemplate> { IsError = true, Message = "Edge index out of range." };
             }
 
             template.Edges.Add(new QuestTemplateEdge
@@ -685,21 +695,21 @@ public class QuestManager : IQuestManager
         return await _questStore.UpsertQuestTemplateAsync(template);
     }
 
-    public async Task<OASISResult<QuestTemplate>> GetTemplateAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestTemplate>> GetTemplateAsync(Guid id, AZOARequest? request = null)
     {
         return await _questStore.GetQuestTemplateAsync(id);
     }
 
-    public async Task<OASISResult<IEnumerable<QuestTemplate>>> ListTemplatesAsync(OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<QuestTemplate>>> ListTemplatesAsync(AZOARequest? request = null)
     {
         return await _questStore.GetAllQuestTemplatesAsync();
     }
 
-    public async Task<OASISResult<Quest>> InstantiateTemplateAsync(Guid templateId, Guid avatarId, Dictionary<string, string>? parameters = null, OASISRequest? request = null)
+    public async Task<AZOAResult<Quest>> InstantiateTemplateAsync(Guid templateId, Guid avatarId, Dictionary<string, string>? parameters = null, AZOARequest? request = null)
     {
         var templateResult = await _questStore.GetQuestTemplateAsync(templateId);
         if (templateResult.IsError || templateResult.Result == null)
-            return new OASISResult<Quest> { IsError = true, Message = templateResult.Message };
+            return new AZOAResult<Quest> { IsError = true, Message = templateResult.Message };
 
         var template = templateResult.Result;
 
@@ -780,7 +790,7 @@ public class QuestManager : IQuestManager
     // NODE TEMPLATES
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestNodeTemplate>> CreateNodeTemplateAsync(QuestNodeTemplateCreateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestNodeTemplate>> CreateNodeTemplateAsync(QuestNodeTemplateCreateModel model, Guid avatarId, AZOARequest? request = null)
     {
         var template = new QuestNodeTemplate
         {
@@ -801,7 +811,7 @@ public class QuestManager : IQuestManager
         return await _questStore.UpsertQuestNodeTemplateAsync(template);
     }
 
-    public async Task<OASISResult<IEnumerable<QuestNodeTemplate>>> ListNodeTemplatesAsync(OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<QuestNodeTemplate>>> ListNodeTemplatesAsync(AZOARequest? request = null)
     {
         return await _questStore.GetAllQuestNodeTemplatesAsync();
     }
@@ -810,24 +820,24 @@ public class QuestManager : IQuestManager
     // QUEST NODES SUB-RESOURCE (post-hoc edits on a persisted Quest)
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<IEnumerable<QuestNode>>> ListNodesAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<QuestNode>>> ListNodesAsync(Guid questId, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<IEnumerable<QuestNode>> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<IEnumerable<QuestNode>> { IsError = true, Message = questResult.Message };
 
-        return new OASISResult<IEnumerable<QuestNode>>
+        return new AZOAResult<IEnumerable<QuestNode>>
         {
             Result = questResult.Result.Nodes,
             Message = "Success"
         };
     }
 
-    public async Task<OASISResult<QuestNode>> AddNodeAsync(Guid questId, QuestNodeCreateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestNode>> AddNodeAsync(Guid questId, QuestNodeCreateModel model, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestNode> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<QuestNode> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
 
@@ -846,21 +856,21 @@ public class QuestManager : IQuestManager
 
         var upsert = await _questStore.UpsertQuestAsync(quest);
         if (upsert.IsError)
-            return new OASISResult<QuestNode> { IsError = true, Message = upsert.Message };
+            return new AZOAResult<QuestNode> { IsError = true, Message = upsert.Message };
 
-        return new OASISResult<QuestNode> { Result = node, Message = "Node added." };
+        return new AZOAResult<QuestNode> { Result = node, Message = "Node added." };
     }
 
-    public async Task<OASISResult<QuestNode>> UpdateNodeAsync(Guid questId, Guid nodeId, QuestNodeUpdateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestNode>> UpdateNodeAsync(Guid questId, Guid nodeId, QuestNodeUpdateModel model, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestNode> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<QuestNode> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
         var node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null)
-            return new OASISResult<QuestNode> { IsError = true, Message = $"Node {nodeId} not found in quest {questId}." };
+            return new AZOAResult<QuestNode> { IsError = true, Message = $"Node {nodeId} not found in quest {questId}." };
 
         // Patch semantics: only non-null fields are applied.
         if (model.Name != null) node.Name = model.Name;
@@ -870,21 +880,21 @@ public class QuestManager : IQuestManager
 
         var upsert = await _questStore.UpsertQuestAsync(quest);
         if (upsert.IsError)
-            return new OASISResult<QuestNode> { IsError = true, Message = upsert.Message };
+            return new AZOAResult<QuestNode> { IsError = true, Message = upsert.Message };
 
-        return new OASISResult<QuestNode> { Result = node, Message = "Node updated." };
+        return new AZOAResult<QuestNode> { Result = node, Message = "Node updated." };
     }
 
-    public async Task<OASISResult<bool>> DeleteNodeAsync(Guid questId, Guid nodeId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> DeleteNodeAsync(Guid questId, Guid nodeId, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<bool> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<bool> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
         var node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null)
-            return new OASISResult<bool> { IsError = true, Message = $"Node {nodeId} not found in quest {questId}." };
+            return new AZOAResult<bool> { IsError = true, Message = $"Node {nodeId} not found in quest {questId}." };
 
         // Reject if node has any edges referencing it — orphaning edges would
         // produce an invalid DAG. Callers must clear edges first via
@@ -895,7 +905,7 @@ public class QuestManager : IQuestManager
             .ToList();
         if (referencingEdges.Count > 0)
         {
-            return new OASISResult<bool>
+            return new AZOAResult<bool>
             {
                 IsError = true,
                 Result = false,
@@ -906,20 +916,20 @@ public class QuestManager : IQuestManager
         quest.Nodes.Remove(node);
         var upsert = await _questStore.UpsertQuestAsync(quest);
         if (upsert.IsError)
-            return new OASISResult<bool> { IsError = true, Message = upsert.Message };
+            return new AZOAResult<bool> { IsError = true, Message = upsert.Message };
 
-        return new OASISResult<bool> { Result = true, Message = "Node deleted." };
+        return new AZOAResult<bool> { Result = true, Message = "Node deleted." };
     }
 
     // ═══════════════════════════════════════════════════════════════════
     // QUEST EDGES SUB-RESOURCE
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestEdge>> AddEdgeAsync(Guid questId, QuestEdgeAddModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestEdge>> AddEdgeAsync(Guid questId, QuestEdgeAddModel model, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestEdge> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<QuestEdge> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
 
@@ -927,11 +937,11 @@ public class QuestManager : IQuestManager
         // the quest. Without this an invalid graph can be persisted and only
         // discovered at validate/execute time.
         if (quest.Nodes.All(n => n.Id != model.SourceNodeId))
-            return new OASISResult<QuestEdge> { IsError = true, Message = $"SourceNodeId {model.SourceNodeId} is not present in quest {questId}." };
+            return new AZOAResult<QuestEdge> { IsError = true, Message = $"SourceNodeId {model.SourceNodeId} is not present in quest {questId}." };
         if (quest.Nodes.All(n => n.Id != model.TargetNodeId))
-            return new OASISResult<QuestEdge> { IsError = true, Message = $"TargetNodeId {model.TargetNodeId} is not present in quest {questId}." };
+            return new AZOAResult<QuestEdge> { IsError = true, Message = $"TargetNodeId {model.TargetNodeId} is not present in quest {questId}." };
         if (model.SourceNodeId == model.TargetNodeId)
-            return new OASISResult<QuestEdge> { IsError = true, Message = "SourceNodeId and TargetNodeId must not be the same node (self-loops not allowed)." };
+            return new AZOAResult<QuestEdge> { IsError = true, Message = "SourceNodeId and TargetNodeId must not be the same node (self-loops not allowed)." };
 
         var edge = new QuestEdge
         {
@@ -958,7 +968,7 @@ public class QuestManager : IQuestManager
         if (cycleErrors.Count > 0)
         {
             quest.Edges.Remove(edge);
-            return new OASISResult<QuestEdge>
+            return new AZOAResult<QuestEdge>
             {
                 IsError = true,
                 Message = $"Edge would invalidate DAG: {string.Join("; ", cycleErrors)}"
@@ -967,35 +977,35 @@ public class QuestManager : IQuestManager
 
         var upsert = await _questStore.UpsertQuestAsync(quest);
         if (upsert.IsError)
-            return new OASISResult<QuestEdge> { IsError = true, Message = upsert.Message };
+            return new AZOAResult<QuestEdge> { IsError = true, Message = upsert.Message };
 
-        return new OASISResult<QuestEdge> { Result = edge, Message = "Edge added." };
+        return new AZOAResult<QuestEdge> { Result = edge, Message = "Edge added." };
     }
 
-    public async Task<OASISResult<bool>> RemoveEdgeAsync(Guid questId, Guid edgeId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> RemoveEdgeAsync(Guid questId, Guid edgeId, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<bool> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<bool> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
         var edge = quest.Edges.FirstOrDefault(e => e.Id == edgeId);
         if (edge == null)
-            return new OASISResult<bool> { IsError = true, Message = $"Edge {edgeId} not found in quest {questId}." };
+            return new AZOAResult<bool> { IsError = true, Message = $"Edge {edgeId} not found in quest {questId}." };
 
         quest.Edges.Remove(edge);
         var upsert = await _questStore.UpsertQuestAsync(quest);
         if (upsert.IsError)
-            return new OASISResult<bool> { IsError = true, Message = upsert.Message };
+            return new AZOAResult<bool> { IsError = true, Message = upsert.Message };
 
-        return new OASISResult<bool> { Result = true, Message = "Edge removed." };
+        return new AZOAResult<bool> { Result = true, Message = "Edge removed." };
     }
 
-    public async Task<OASISResult<IEnumerable<Guid>>> GetTopologicalOrderAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<Guid>>> GetTopologicalOrderAsync(Guid questId, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<IEnumerable<Guid>> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<IEnumerable<Guid>> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
 
@@ -1005,7 +1015,7 @@ public class QuestManager : IQuestManager
         var validation = _dagValidator.Validate(quest);
         if (!validation.IsValid)
         {
-            return new OASISResult<IEnumerable<Guid>>
+            return new AZOAResult<IEnumerable<Guid>>
             {
                 IsError = true,
                 Message = $"DAG validation failed: {string.Join("; ", validation.Errors)}"
@@ -1019,25 +1029,25 @@ public class QuestManager : IQuestManager
             .Select(n => n.Id)
             .ToList();
 
-        return new OASISResult<IEnumerable<Guid>> { Result = ordered, Message = "Success" };
+        return new AZOAResult<IEnumerable<Guid>> { Result = ordered, Message = "Success" };
     }
 
     // ═══════════════════════════════════════════════════════════════════
     // QUEST DEPENDENCIES SUB-RESOURCE
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestDependency>> AddDependencyAsync(Guid questId, QuestDependencyCreateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestDependency>> AddDependencyAsync(Guid questId, QuestDependencyCreateModel model, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestDependency> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<QuestDependency> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
 
         if (model.DependsOnQuestId == Guid.Empty)
-            return new OASISResult<QuestDependency> { IsError = true, Message = "DependsOnQuestId must not be an empty GUID." };
+            return new AZOAResult<QuestDependency> { IsError = true, Message = "DependsOnQuestId must not be an empty GUID." };
         if (model.DependsOnQuestId == questId)
-            return new OASISResult<QuestDependency> { IsError = true, Message = "A quest may not depend on itself." };
+            return new AZOAResult<QuestDependency> { IsError = true, Message = "A quest may not depend on itself." };
 
         var dependency = new QuestDependency
         {
@@ -1051,35 +1061,35 @@ public class QuestManager : IQuestManager
 
         var upsert = await _questStore.UpsertQuestAsync(quest);
         if (upsert.IsError)
-            return new OASISResult<QuestDependency> { IsError = true, Message = upsert.Message };
+            return new AZOAResult<QuestDependency> { IsError = true, Message = upsert.Message };
 
-        return new OASISResult<QuestDependency> { Result = dependency, Message = "Dependency added." };
+        return new AZOAResult<QuestDependency> { Result = dependency, Message = "Dependency added." };
     }
 
-    public async Task<OASISResult<bool>> RemoveDependencyAsync(Guid questId, Guid depId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> RemoveDependencyAsync(Guid questId, Guid depId, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<bool> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<bool> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
         var dep = quest.Dependencies.FirstOrDefault(d => d.Id == depId);
         if (dep == null)
-            return new OASISResult<bool> { IsError = true, Message = $"Dependency {depId} not found in quest {questId}." };
+            return new AZOAResult<bool> { IsError = true, Message = $"Dependency {depId} not found in quest {questId}." };
 
         quest.Dependencies.Remove(dep);
         var upsert = await _questStore.UpsertQuestAsync(quest);
         if (upsert.IsError)
-            return new OASISResult<bool> { IsError = true, Message = upsert.Message };
+            return new AZOAResult<bool> { IsError = true, Message = upsert.Message };
 
-        return new OASISResult<bool> { Result = true, Message = "Dependency removed." };
+        return new AZOAResult<bool> { Result = true, Message = "Dependency removed." };
     }
 
-    public async Task<OASISResult<DependencyCheckResult>> CheckDependenciesAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<DependencyCheckResult>> CheckDependenciesAsync(Guid questId, Guid avatarId, AZOARequest? request = null)
     {
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<DependencyCheckResult> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<DependencyCheckResult> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
         var unsatisfied = new List<Guid>();
@@ -1101,32 +1111,32 @@ public class QuestManager : IQuestManager
                 : $"{unsatisfied.Count} dependency(ies) not yet satisfied."
         };
 
-        return new OASISResult<DependencyCheckResult> { Result = check, Message = "Success" };
+        return new AZOAResult<DependencyCheckResult> { Result = check, Message = "Success" };
     }
 
     // ═══════════════════════════════════════════════════════════════════
     // QUESTRUN READ SURFACE
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<QuestRun>> GetRunAsync(Guid runId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestRun>> GetRunAsync(Guid runId, Guid avatarId, AZOARequest? request = null)
     {
         return await LoadOwnedRunAsync(runId, avatarId);
     }
 
-    public async Task<OASISResult<IEnumerable<QuestRun>>> ListRunsByQuestAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<QuestRun>>> ListRunsByQuestAsync(Guid questId, Guid avatarId, AZOARequest? request = null)
     {
         var owned = await LoadOwnedQuestAsync(questId, avatarId);
         if (owned.IsError || owned.Result == null)
-            return new OASISResult<IEnumerable<QuestRun>> { IsError = true, Message = owned.Message };
+            return new AZOAResult<IEnumerable<QuestRun>> { IsError = true, Message = owned.Message };
 
         return await _runStore.GetByQuestIdAsync(questId);
     }
 
-    public async Task<OASISResult<QuestExecutionState>> GetExecutionStateAsync(Guid runId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestExecutionState>> GetExecutionStateAsync(Guid runId, Guid avatarId, AZOARequest? request = null)
     {
         var runResult = await LoadOwnedRunAsync(runId, avatarId);
         if (runResult.IsError || runResult.Result == null)
-            return new OASISResult<QuestExecutionState> { IsError = true, Message = runResult.Message };
+            return new AZOAResult<QuestExecutionState> { IsError = true, Message = runResult.Message };
 
         var run = runResult.Result;
         var execsResult = await _executionStore.GetByRunIdAsync(runId);
@@ -1149,14 +1159,14 @@ public class QuestManager : IQuestManager
             NodeExecutions = execs
         };
 
-        return new OASISResult<QuestExecutionState> { Result = state, Message = "Success" };
+        return new AZOAResult<QuestExecutionState> { Result = state, Message = "Success" };
     }
 
-    public async Task<OASISResult<QuestRun>> MarkRunCompletedAsync(Guid runId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestRun>> MarkRunCompletedAsync(Guid runId, Guid avatarId, AZOARequest? request = null)
     {
         var runResult = await LoadOwnedRunAsync(runId, avatarId);
         if (runResult.IsError || runResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = runResult.Message };
 
         var run = runResult.Result;
 
@@ -1164,7 +1174,7 @@ public class QuestManager : IQuestManager
         // runs may be transitioned to Succeeded/Failed by this supervisor path.
         if (run.Status != QuestRunStatus.Running)
         {
-            return new OASISResult<QuestRun>
+            return new AZOAResult<QuestRun>
             {
                 IsError = true,
                 Message = $"Cannot mark run {runId} completed: status is {run.Status} (only Running runs accept supervisor complete)."
@@ -1182,7 +1192,7 @@ public class QuestManager : IQuestManager
             .ToList();
         if (inFlight.Count > 0)
         {
-            return new OASISResult<QuestRun>
+            return new AZOAResult<QuestRun>
             {
                 IsError = true,
                 Message = $"Cannot mark run {runId} completed: {inFlight.Count} node execution(s) still in flight (Pending/Running)."
@@ -1199,7 +1209,7 @@ public class QuestManager : IQuestManager
         run.EndedAt = DateTime.UtcNow;
         var updated = await _runStore.UpdateAsync(run);
 
-        return new OASISResult<QuestRun> { Result = updated.Result, Message = $"Run marked {run.Status}." };
+        return new AZOAResult<QuestRun> { Result = updated.Result, Message = $"Run marked {run.Status}." };
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -1214,24 +1224,24 @@ public class QuestManager : IQuestManager
     /// saga processor advances the DAG asynchronously, suspending at
     /// manual/gate/timer nodes (durable-workflow-engine D1, Phase 2).
     /// </summary>
-    public async Task<OASISResult<QuestRun>> StartWorkflowRunAsync(Guid questId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestRun>> StartWorkflowRunAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null)
     {
         var owned = await LoadOwnedQuestAsync(questId, avatarId);
         if (owned.IsError || owned.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = owned.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = owned.Message };
 
         var validationResult = await ValidateDAGAsync(questId, request);
         if (validationResult.IsError)
-            return new OASISResult<QuestRun> { IsError = true, Message = validationResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = validationResult.Message };
 
         var questResult = await _questStore.GetQuestAsync(questId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = questResult.Message };
         var quest = questResult.Result;
 
         var entry = ResolveEntryNode(quest);
         if (entry is null)
-            return new OASISResult<QuestRun> { IsError = true, Message = "Quest has no entry node to start the workflow run." };
+            return new AZOAResult<QuestRun> { IsError = true, Message = "Quest has no entry node to start the workflow run." };
 
         // Create the run + one Pending QuestNodeExecution per node — identical to
         // ExecuteAsync so the per-node claim/idempotency surface is shared.
@@ -1240,12 +1250,18 @@ public class QuestManager : IQuestManager
             Id = Guid.NewGuid(),
             QuestId = quest.Id,
             AvatarId = quest.AvatarId,
+            // tenant-consent-delegation AC4: persist the acting tenant on the
+            // durable run so it survives the async saga-worker hop and reaches the
+            // Tier-2 node handlers via the QuestNodeExecutionContext. This is the
+            // keystone — the durable path is where the acting tenant would otherwise
+            // be lost (no ambient principal on the saga worker).
+            ActingTenantId = actingTenantId,
             Status = QuestRunStatus.Pending,
             StartedAt = DateTime.UtcNow
         };
         var createRun = await _runStore.CreateAsync(run);
         if (createRun.IsError || createRun.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = createRun.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = createRun.Message };
 
         foreach (var node in quest.Nodes)
         {
@@ -1259,7 +1275,7 @@ public class QuestManager : IQuestManager
             };
             var createExec = await _executionStore.CreateAsync(exec);
             if (createExec.IsError)
-                return new OASISResult<QuestRun> { IsError = true, Message = createExec.Message };
+                return new AZOAResult<QuestRun> { IsError = true, Message = createExec.Message };
         }
 
         // Enqueue the entry node as the first saga step (step name = node id).
@@ -1269,7 +1285,7 @@ public class QuestManager : IQuestManager
 
         run.Status = QuestRunStatus.Running;
         var updated = await _runStore.UpdateAsync(run);
-        return new OASISResult<QuestRun> { Result = updated.Result ?? run, Message = "Workflow run started." };
+        return new AZOAResult<QuestRun> { Result = updated.Result ?? run, Message = "Workflow run started." };
     }
 
     /// <summary>
@@ -1279,15 +1295,15 @@ public class QuestManager : IQuestManager
     /// Suspended runs accept advance (mirrors the <see cref="MarkRunCompletedAsync"/>
     /// state-machine guard).
     /// </summary>
-    public async Task<OASISResult<QuestRun>> AdvanceAsync(Guid runId, Guid fromNodeId, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestRun>> AdvanceAsync(Guid runId, Guid fromNodeId, Guid avatarId, AZOARequest? request = null)
     {
         var runResult = await LoadOwnedRunAsync(runId, avatarId);
         if (runResult.IsError || runResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = runResult.Message };
         var run = runResult.Result;
 
         if (run.Status is not (QuestRunStatus.Suspended or QuestRunStatus.AwaitingSignal))
-            return new OASISResult<QuestRun>
+            return new AZOAResult<QuestRun>
             {
                 IsError = true,
                 Message = $"Cannot advance run {runId}: status is {run.Status} (only Suspended/AwaitingSignal runs accept advance)."
@@ -1295,7 +1311,7 @@ public class QuestManager : IQuestManager
 
         var questResult = await _questStore.GetQuestAsync(run.QuestId);
         if (questResult.IsError || questResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = questResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = questResult.Message };
         var quest = questResult.Result;
 
         // Resolve the next hop through the SAME authority the engine's
@@ -1309,10 +1325,10 @@ public class QuestManager : IQuestManager
                 run.Status = QuestRunStatus.Succeeded;
                 run.EndedAt = DateTime.UtcNow;
                 var done = await _runStore.UpdateAsync(run);
-                return new OASISResult<QuestRun> { Result = done.Result ?? run, Message = "Workflow run completed (advanced past terminal node)." };
+                return new AZOAResult<QuestRun> { Result = done.Result ?? run, Message = "Workflow run completed (advanced past terminal node)." };
 
             case SuccessorKind.FanOut:
-                return new OASISResult<QuestRun>
+                return new AZOAResult<QuestRun>
                 {
                     IsError = true,
                     Message = $"Cannot advance: node {fromNodeId} has {hop.Count} Control successors (fan-out is out of scope)."
@@ -1322,7 +1338,7 @@ public class QuestManager : IQuestManager
                 await EnqueueWorkflowNodeAsync(run.Id, run.QuestId, run.AvatarId, hop.NodeId!.Value, signalPayload: null);
                 run.Status = QuestRunStatus.Running;
                 var updated = await _runStore.UpdateAsync(run);
-                return new OASISResult<QuestRun> { Result = updated.Result ?? run, Message = "Workflow run advanced." };
+                return new AZOAResult<QuestRun> { Result = updated.Result ?? run, Message = "Workflow run advanced." };
         }
     }
 
@@ -1332,18 +1348,18 @@ public class QuestManager : IQuestManager
     /// processor resumes the gate node, carrying <paramref name="payload"/> into
     /// it. Avatar-scoped; idempotent — a duplicate signal un-parks at most once.
     /// </summary>
-    public async Task<OASISResult<QuestRun>> SignalAsync(Guid runId, string gateId, string? payload, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<QuestRun>> SignalAsync(Guid runId, string gateId, string? payload, Guid avatarId, AZOARequest? request = null)
     {
         if (string.IsNullOrWhiteSpace(gateId))
-            return new OASISResult<QuestRun> { IsError = true, Message = "Signal requires a non-empty gateId." };
+            return new AZOAResult<QuestRun> { IsError = true, Message = "Signal requires a non-empty gateId." };
 
         var runResult = await LoadOwnedRunAsync(runId, avatarId);
         if (runResult.IsError || runResult.Result == null)
-            return new OASISResult<QuestRun> { IsError = true, Message = runResult.Message };
+            return new AZOAResult<QuestRun> { IsError = true, Message = runResult.Message };
         var run = runResult.Result;
 
         if (run.Status is not (QuestRunStatus.AwaitingSignal or QuestRunStatus.AwaitingTimer or QuestRunStatus.Suspended))
-            return new OASISResult<QuestRun>
+            return new AZOAResult<QuestRun>
             {
                 IsError = true,
                 Message = $"Cannot signal run {runId}: status is {run.Status} (only a parked/suspended run accepts a signal)."
@@ -1362,7 +1378,7 @@ public class QuestManager : IQuestManager
         var unparked = await _sagaStore.TrySignalAsync(
             run.Id.ToString(), gateId, stampedPayloadJson, CancellationToken.None);
         if (unparked is null)
-            return new OASISResult<QuestRun>
+            return new AZOAResult<QuestRun>
             {
                 IsError = true,
                 Message = $"No node in run {runId} is parked on gate '{gateId}' (already signalled, or wrong gate)."
@@ -1370,7 +1386,7 @@ public class QuestManager : IQuestManager
 
         run.Status = QuestRunStatus.Running;
         var updated = await _runStore.UpdateAsync(run);
-        return new OASISResult<QuestRun> { Result = updated.Result ?? run, Message = "Signal delivered; workflow run resuming." };
+        return new AZOAResult<QuestRun> { Result = updated.Result ?? run, Message = "Signal delivered; workflow run resuming." };
     }
 
     // ── Workflow helpers ───────────────────────────────────────────────────

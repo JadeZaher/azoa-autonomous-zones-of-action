@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Stores;
+namespace AZOA.WebAPI.Providers.Stores;
 
 /// <summary>
 /// Thread-safe in-memory <see cref="IQuestNodeExecutionStore"/>.
@@ -42,7 +42,7 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
     // Secondary index: (RunId, NodeId) -> execution Id
     private readonly ConcurrentDictionary<(Guid RunId, Guid NodeId), Guid> _byNaturalKey = new();
 
-    public Task<OASISResult<QuestNodeExecution>> CreateAsync(QuestNodeExecution execution, CancellationToken ct = default)
+    public Task<AZOAResult<QuestNodeExecution>> CreateAsync(QuestNodeExecution execution, CancellationToken ct = default)
     {
         // Store our own copy so a later caller-side mutation can't reach the
         // store's internal value. Symmetric with the defensive read-side
@@ -51,7 +51,7 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
 
         if (!_byId.TryAdd(stored.Id, stored))
         {
-            return Task.FromResult(new OASISResult<QuestNodeExecution>
+            return Task.FromResult(new AZOAResult<QuestNodeExecution>
             {
                 IsError = true,
                 Message = $"QuestNodeExecution {execution.Id} already exists.",
@@ -63,7 +63,7 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
         {
             // Roll back the primary insert to keep both indexes consistent.
             _byId.TryRemove(stored.Id, out _);
-            return Task.FromResult(new OASISResult<QuestNodeExecution>
+            return Task.FromResult(new AZOAResult<QuestNodeExecution>
             {
                 IsError = true,
                 Message = $"QuestNodeExecution already exists for (run={execution.RunId}, node={execution.NodeId}).",
@@ -71,15 +71,15 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
             });
         }
 
-        return Task.FromResult(new OASISResult<QuestNodeExecution> { Result = stored.Clone(), Message = "Created." });
+        return Task.FromResult(new AZOAResult<QuestNodeExecution> { Result = stored.Clone(), Message = "Created." });
     }
 
-    public Task<OASISResult<QuestNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public Task<AZOAResult<QuestNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         if (_byId.TryGetValue(id, out var exec))
-            return Task.FromResult(new OASISResult<QuestNodeExecution> { Result = exec.Clone(), Message = "Success" });
+            return Task.FromResult(new AZOAResult<QuestNodeExecution> { Result = exec.Clone(), Message = "Success" });
 
-        return Task.FromResult(new OASISResult<QuestNodeExecution>
+        return Task.FromResult(new AZOAResult<QuestNodeExecution>
         {
             IsError = true,
             Message = $"QuestNodeExecution {id} not found.",
@@ -87,14 +87,14 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
         });
     }
 
-    public Task<OASISResult<QuestNodeExecution>> UpdateAsync(
+    public Task<AZOAResult<QuestNodeExecution>> UpdateAsync(
         QuestNodeExecution execution,
         QuestNodeState? expectedState = null,
         CancellationToken ct = default)
     {
         if (!_byId.TryGetValue(execution.Id, out var current))
         {
-            return Task.FromResult(new OASISResult<QuestNodeExecution>
+            return Task.FromResult(new AZOAResult<QuestNodeExecution>
             {
                 IsError = true,
                 Message = $"QuestNodeExecution {execution.Id} not found.",
@@ -111,7 +111,7 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
         // race scenario.
         if (expectedState.HasValue && current.State != expectedState.Value)
         {
-            return Task.FromResult(new OASISResult<QuestNodeExecution>
+            return Task.FromResult(new AZOAResult<QuestNodeExecution>
             {
                 IsError = true,
                 Message =
@@ -122,10 +122,10 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
 
         var stored = execution.Clone();
         _byId[execution.Id] = stored;
-        return Task.FromResult(new OASISResult<QuestNodeExecution> { Result = stored.Clone(), Message = "Updated." });
+        return Task.FromResult(new AZOAResult<QuestNodeExecution> { Result = stored.Clone(), Message = "Updated." });
     }
 
-    public Task<OASISResult<IEnumerable<QuestNodeExecution>>> GetByRunIdAsync(Guid runId, CancellationToken ct = default)
+    public Task<AZOAResult<IEnumerable<QuestNodeExecution>>> GetByRunIdAsync(Guid runId, CancellationToken ct = default)
     {
         // Hand each row out as a defensive clone — callers iterating the
         // returned sequence cannot mutate the store via the returned
@@ -135,18 +135,18 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
             .OrderBy(e => e.StartedAt)
             .Select(e => e.Clone())
             .ToList();
-        return Task.FromResult(new OASISResult<IEnumerable<QuestNodeExecution>> { Result = matches, Message = "Success" });
+        return Task.FromResult(new AZOAResult<IEnumerable<QuestNodeExecution>> { Result = matches, Message = "Success" });
     }
 
-    public Task<OASISResult<QuestNodeExecution>> GetByRunAndNodeAsync(Guid runId, Guid nodeId, CancellationToken ct = default)
+    public Task<AZOAResult<QuestNodeExecution>> GetByRunAndNodeAsync(Guid runId, Guid nodeId, CancellationToken ct = default)
     {
         if (_byNaturalKey.TryGetValue((runId, nodeId), out var execId) &&
             _byId.TryGetValue(execId, out var exec))
         {
-            return Task.FromResult(new OASISResult<QuestNodeExecution> { Result = exec.Clone(), Message = "Success" });
+            return Task.FromResult(new AZOAResult<QuestNodeExecution> { Result = exec.Clone(), Message = "Success" });
         }
 
-        return Task.FromResult(new OASISResult<QuestNodeExecution>
+        return Task.FromResult(new AZOAResult<QuestNodeExecution>
         {
             IsError = true,
             Message = $"No QuestNodeExecution for (run={runId}, node={nodeId}).",
@@ -154,12 +154,12 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
         });
     }
 
-    public Task<OASISResult<QuestNodeExecution?>> TryClaimPendingAsync(Guid runId, Guid nodeId, CancellationToken ct = default)
+    public Task<AZOAResult<QuestNodeExecution?>> TryClaimPendingAsync(Guid runId, Guid nodeId, CancellationToken ct = default)
     {
         if (!_byNaturalKey.TryGetValue((runId, nodeId), out var execId) ||
             !_byId.TryGetValue(execId, out var current))
         {
-            return Task.FromResult(new OASISResult<QuestNodeExecution?>
+            return Task.FromResult(new AZOAResult<QuestNodeExecution?>
             {
                 IsError = true,
                 Message = $"No QuestNodeExecution for (run={runId}, node={nodeId}).",
@@ -170,7 +170,7 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
         if (current.State != QuestNodeState.Pending)
         {
             // Row exists but not Pending — caller lost the race. Not an error.
-            return Task.FromResult(new OASISResult<QuestNodeExecution?>
+            return Task.FromResult(new AZOAResult<QuestNodeExecution?>
             {
                 Result = null,
                 Message = $"QuestNodeExecution (run={runId}, node={nodeId}) is not Pending (current: {current.State})."
@@ -193,7 +193,7 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
         // Mirrors the SurrealDB UPDATE … WHERE state='Pending' RETURN AFTER semantic.
         if (_byId.TryUpdate(current.Id, claimed, current))
         {
-            return Task.FromResult(new OASISResult<QuestNodeExecution?>
+            return Task.FromResult(new AZOAResult<QuestNodeExecution?>
             {
                 Result = claimed.Clone(),
                 Message = "Claimed."
@@ -201,7 +201,7 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
         }
 
         // Lost the race — another caller updated this row between our read and our CAS.
-        return Task.FromResult(new OASISResult<QuestNodeExecution?>
+        return Task.FromResult(new AZOAResult<QuestNodeExecution?>
         {
             Result = null,
             Message = $"QuestNodeExecution (run={runId}, node={nodeId}) was concurrently modified."

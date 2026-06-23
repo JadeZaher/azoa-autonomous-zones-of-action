@@ -3,8 +3,8 @@
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { useOasisAuth } from '@/lib/oasis-auth'
-import { useChainInfo } from '@/lib/oasis-hooks'
+import { useAzoaAuth } from '@/lib/azoa-auth'
+import { useChainInfo } from '@/lib/azoa-hooks'
 import { ChainBadge } from '@/components/shared/chain-badge'
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton'
 import { ErrorBanner } from '@/components/shared/error-banner'
@@ -44,7 +44,7 @@ function ChainInfoCard({ chain }: { chain: string }) {
 }
 
 export default function OverviewPage() {
-  const { avatarId, isAuthenticated, user } = useOasisAuth()
+  const { avatarId, isAuthenticated, user } = useAzoaAuth()
 
   return (
     <div className="space-y-6">

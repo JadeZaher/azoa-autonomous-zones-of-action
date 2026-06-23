@@ -33,7 +33,7 @@ State at hand-off: **706/706 unit tests green, `dotnet build` 0 errors / 0 new w
 
 ## 2. The workflow-engine initiative (the spine of "what's next")
 
-The vision (confirmed with the user): make OASIS a **durable, consumer-driven workflow
+The vision (confirmed with the user): make AZOA a **durable, consumer-driven workflow
 engine**. An external app (ArdaNova, via the TS SDK) DESIGNS a multi-phase process as a
 quest template and PUSHES an actor (player/user/tenant) through it phase-by-phase —
 `quest(holonStep1).step(holonStep2B)`. The DAG suspends between phases (hybrid: explicit
@@ -41,7 +41,7 @@ quest template and PUSHES an actor (player/user/tenant) through it phase-by-phas
 timer), survives restart, and runs first-class compensation on cancel.
 
 **Two locked boundary decisions (do not re-litigate):**
-- **OASIS = generic primitives only.** All economic semantics (swap rates, what a project
+- **AZOA = generic primitives only.** All economic semantics (swap rates, what a project
   token is, cancel conditions, vesting math) stay in ArdaNova.
 - **Holonic transformations are the BASE; chain/economic actions are OPT-IN.** Via a
   **capability flag**: one generic node SPI where each node declares `RequiresChainCapability`
@@ -57,7 +57,7 @@ timer), survives restart, and runs first-class compensation on cancel.
 | 1 | **value-path-wiring** | `[x]` **SHIPPED** this session | Custody-routed signing + real broadcast + ulong amounts + KYC choke point. |
 | 2 | **durable-workflow-engine** | `[ ]` spec ready | **Centerpiece.** Suspendable, step-addressable Quest runs built ON the existing saga layer (`Services/Sagas/*` is already implemented + DI-wired). The ONE new capability needed: suspend-on-signal (a `Parked` step status + `SignalAsync`/timer un-park). New `QuestRunStatus` Suspended/AwaitingSignal/AwaitingTimer; advancement API (`advance(runId,nodeId)`, `signal(runId,gateId,payload)`). |
 | 3 | **economic-primitive-nodes** (Holon-Transformation Nodes) | `[ ]` spec ready | One node SPI + `RequiresChainCapability`. Tier-1 holonic transforms (mostly already exist as `Holon*` handlers) + new `GateCheck` (real predicate eval, replaces the no-op `ConditionNodeHandler` + dead `QuestEdge.Condition`) + `Emit`. Tier-2 opt-in chain actions: `Swap`/`Grant`/`Transfer`/`Refund`. Plus the Holon↔on-chain-asset typed link. |
-| 4 | **workflow-sdk** | `[ ]` spec ready | TS `@oasis/wallet-sdk` fluent run driver `quest(id).start({actor}).step(nodeId)` / `.signal()` / `.forActor(childAvatarId)`. |
+| 4 | **workflow-sdk** | `[ ]` spec ready | TS `@azoa/wallet-sdk` fluent run driver `quest(id).start({actor}).step(nodeId)` / `.signal()` / `.forActor(childAvatarId)`. |
 
 **Recommended next build: track 2 (durable-workflow-engine).** It's the centerpiece and
 unblocks 3 + 4. Verified de-risk: the saga foundation (`SurrealSagaStore`, `SagaProcessor`,
@@ -73,7 +73,7 @@ suspend-on-signal. Read `conductor/tracks/durable-workflow-engine/spec.md` + `pl
 ### R1 — Reusable Asset model (bytes-in-DB now, bucket later)
 > "store images and documents as bytes in the db in an asset model that we can shift out
 > to a bucket later (stub s3 url and other needed metadata). asset should be mostly reusable
-> for any assets that oasis will serve with an appendable mime-type related table or maybe
+> for any assets that azoa will serve with an appendable mime-type related table or maybe
 > relationship property to itself."
 
 **State:** does NOT exist — no `Asset*.cs` model anywhere in the repo. This is net-new.
@@ -90,8 +90,8 @@ suspend-on-signal. Read `conductor/tracks/durable-workflow-engine/spec.md` + `pl
   free `mime_type` string + an allow-list config (lean: free string + config allow-list,
   mirroring the KYC MIME allow-list already in `ManualKycProviderService`).
 - Manager + Avatar-scoped controller (IDOR pattern: owner = authenticated avatar, body
-  owner ignored — STARODK precedent), `OASISResult<T>`, IKycGate optional.
-- **Bucket-later stub:** record `OASIS_ASSET_STORAGE_BACKEND` + a future S3 bucket as a
+  owner ignored — STARODK precedent), `AZOAResult<T>`, IKycGate optional.
+- **Bucket-later stub:** record `AZOA_ASSET_STORAGE_BACKEND` + a future S3 bucket as a
   `DEPLOY-STEPS-TODO.md` entry; the `storage_url` is null/db-backed until then.
 - Tie-in: this is the natural home for the **Holon↔asset metadata** and could back the
   `Emit`/document-output nodes in the workflow engine.
@@ -109,9 +109,9 @@ So "full tests package to run locally" = **stand up a frontend test harness from
   app. Add `"test"`, `"test:watch"`, `"test:ui"` scripts.
 - **Honor the project rule:** `memory/no-frontend-typecheck.md` — do NOT run `frontend/`
   `tsc`; it's pre-existing noise. Tests, not typecheck.
-- Coverage target: the SDK-integration surface (`frontend/src/lib/oasis*.ts` — the SDK
+- Coverage target: the SDK-integration surface (`frontend/src/lib/azoa*.ts` — the SDK
   singleton, auth context, the `useBalance/usePortfolio/useHolons/...` hooks) + the page
-  flows. Mock the OASIS API at the SDK boundary.
+  flows. Mock the AZOA API at the SDK boundary.
 - Local run = `cd frontend && npm test` green with the podman SurrealDB / mocked API.
 
 Both R1 and R2 should be **scoped as their own tracks** before building (the user's working
@@ -153,12 +153,12 @@ See `conductor/DEPLOY-STEPS-TODO.md` status board for the authoritative open/clo
   the end of a multi-fix pass, not after each fix.
 - SurrealDB is the SOLE engine — new entities = decorated POCOs in
   `Persistence/SurrealDb/Models/` (pattern: `Holon.cs`); regen goldens via
-  `OASIS_REGENERATE_GOLDENS=1` (never hand-edit `Generated/Schemas/*.surql`).
+  `AZOA_REGENERATE_GOLDENS=1` (never hand-edit `Generated/Schemas/*.surql`).
 - Keep authoring and review separate — do NOT self-approve crypto/value-path; use a
   `code-reviewer` lane. (This session's review caught a real Critical defect — worth it.)
 - IDOR pattern: owned-resource lookups scoped by route id + authenticated avatar; body
   owner ids ignored (STARODK precedent).
 - Avoid casts where possible (user's explicit bar — it surfaced the C-1 idempotency bug).
 - Skip `frontend/` typecheck (`no-frontend-typecheck`); SDK `tsc` + vitest only.
-- No brand leak: nothing ArdaNova-branded in OASIS code/config.
+- No brand leak: nothing ArdaNova-branded in AZOA code/config.
 - Commit per track: `[<track>] <imperative verb> <subject>`.

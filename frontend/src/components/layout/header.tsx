@@ -1,6 +1,6 @@
 'use client'
 
-import { useOasis } from '@/lib/oasis-context'
+import { useAzoa } from '@/lib/azoa-context'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -18,7 +18,7 @@ import { DebugSwitcher } from '@/components/debug-switcher'
 interface HeaderProps {}
 
 export function Header() {
-  const { user, logout, defaultWallet } = useOasis()
+  const { user, logout, defaultWallet } = useAzoa()
 
   const initials = user?.username
     ? user.username.slice(0, 2).toUpperCase()

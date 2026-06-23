@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Core.Blockchain;
+namespace AZOA.WebAPI.Core.Blockchain;
 
 /// <summary>
 /// Configuration for Jupiter DEX aggregator API on Solana.

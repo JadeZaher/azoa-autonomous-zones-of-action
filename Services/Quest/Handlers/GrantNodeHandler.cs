@@ -1,11 +1,11 @@
 using System.Text.Json;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Services.Quest.Handlers;
+namespace AZOA.WebAPI.Services.Quest.Handlers;
 
 /// <summary>
 /// Handles <see cref="QuestNodeType.Grant"/> — Tier-2 chain action (mint-to-actor).
@@ -35,7 +35,10 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
         var cfg = JsonSerializer.Deserialize<GrantNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
 
         // Actor is ALWAYS the run-context avatar; the config body avatar is ignored.
-        var r = await _nftManager.MintAsync(cfg.Request, context.Quest.AvatarId);
+        // tenant-consent-delegation AC4: forward the run's acting tenant so a
+        // tenant-driven grant stamps it on the op and the signing seam's consent
+        // gate fires (null = user-driven → unchanged).
+        var r = await _nftManager.MintAsync(cfg.Request, context.Quest.AvatarId, actingTenantId: context.ActingTenantId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
 

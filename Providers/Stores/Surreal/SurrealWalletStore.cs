@@ -1,13 +1,13 @@
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Responses;
-using GeneratedWallet = OASIS.WebAPI.Persistence.SurrealDb.Models.Wallet;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Responses;
+using GeneratedWallet = AZOA.WebAPI.Persistence.SurrealDb.Models.Wallet;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="IWalletStore"/>. Maps between the legacy
@@ -28,13 +28,13 @@ public sealed class SurrealWalletStore : IWalletStore
 
     // ── IWalletStore ──────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IWallet>> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<IWallet>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery.SelectById(GeneratedWallet.SchemaNameConst, ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<GeneratedWallet>(q, ct);
-            return new OASISResult<IWallet>
+            return new AZOAResult<IWallet>
             {
                 IsError = row == null,
                 Message = row == null ? "Wallet not found." : "Success",
@@ -43,17 +43,17 @@ public sealed class SurrealWalletStore : IWalletStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IWallet>().CaptureException(ex, $"SurrealWalletStore.GetByIdAsync failed: {ex.Message}");
+            return new AZOAResult<IWallet>().CaptureException(ex, $"SurrealWalletStore.GetByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<IWallet>>> GetAllAsync(CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<IWallet>>> GetAllAsync(CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery.SelectAll(GeneratedWallet.SchemaNameConst);
             var rows = await _executor.QueryAsync<GeneratedWallet>(q, ct);
-            return new OASISResult<IEnumerable<IWallet>>
+            return new AZOAResult<IEnumerable<IWallet>>
             {
                 Result  = rows.Select(FromPoco).ToList(),
                 Message = "Success"
@@ -61,18 +61,18 @@ public sealed class SurrealWalletStore : IWalletStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<IWallet>>().CaptureException(ex, $"SurrealWalletStore.GetAllAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<IWallet>>().CaptureException(ex, $"SurrealWalletStore.GetAllAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<IWallet>>> GetByAvatarAsync(Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<IWallet>>> GetByAvatarAsync(Guid avatarId, CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery<GeneratedWallet>.From()
                 .Where(w => w.AvatarId == SurrealLink.ToLink("avatar", avatarId.ToString("N").ToLowerInvariant()));
             var rows = await _executor.QueryAsync<GeneratedWallet>(q, ct);
-            return new OASISResult<IEnumerable<IWallet>>
+            return new AZOAResult<IEnumerable<IWallet>>
             {
                 Result  = rows.Select(FromPoco).ToList(),
                 Message = "Success"
@@ -80,11 +80,11 @@ public sealed class SurrealWalletStore : IWalletStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<IWallet>>().CaptureException(ex, $"SurrealWalletStore.GetByAvatarAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<IWallet>>().CaptureException(ex, $"SurrealWalletStore.GetByAvatarAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IWallet>> UpsertAsync(IWallet wallet, CancellationToken ct = default)
+    public async Task<AZOAResult<IWallet>> UpsertAsync(IWallet wallet, CancellationToken ct = default)
     {
         try
         {
@@ -100,15 +100,15 @@ public sealed class SurrealWalletStore : IWalletStore
             var saved = resp.GetValues<GeneratedWallet>(0).FirstOrDefault();
             var result = saved is not null ? FromPoco(saved) : wallet;
 
-            return new OASISResult<IWallet> { Result = result, Message = "Saved." };
+            return new AZOAResult<IWallet> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<IWallet>().CaptureException(ex, $"SurrealWalletStore.UpsertAsync failed: {ex.Message}");
+            return new AZOAResult<IWallet>().CaptureException(ex, $"SurrealWalletStore.UpsertAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -116,16 +116,16 @@ public sealed class SurrealWalletStore : IWalletStore
             var checkQ = SurrealQuery.SelectById(GeneratedWallet.SchemaNameConst, ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<GeneratedWallet>(checkQ, ct);
             if (existing == null)
-                return new OASISResult<bool> { IsError = true, Message = "Wallet not found.", Result = false };
+                return new AZOAResult<bool> { IsError = true, Message = "Wallet not found.", Result = false };
 
             var q = SurrealQuery.DeleteById(GeneratedWallet.SchemaNameConst, ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
-            return new OASISResult<bool> { Result = true, Message = "Deleted." };
+            return new AZOAResult<bool> { Result = true, Message = "Deleted." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool>().CaptureException(ex, $"SurrealWalletStore.DeleteAsync failed: {ex.Message}");
+            return new AZOAResult<bool>().CaptureException(ex, $"SurrealWalletStore.DeleteAsync failed: {ex.Message}");
         }
     }
 

@@ -1,0 +1,33 @@
+# Normalize line endings so files that run inside Linux containers are never
+# rewritten to CRLF by a Windows checkout (core.autocrlf=true). A CRLF shebang
+# (`#!/usr/bin/env sh\r`) makes the container fail with
+# "/usr/bin/env: 'sh\r': No such file or directory".
+
+# Default: let git decide text vs binary, normalizing committed text to LF.
+* text=auto
+
+# Files executed inside Linux containers / by POSIX sh — MUST be LF.
+*.sh            text eol=lf
+*.bash          text eol=lf
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+docker-entrypoint.sh text eol=lf
+.dockerignore   text eol=lf
+
+# Container-adjacent config commonly read by Linux tooling — keep LF.
+*.yml           text eol=lf
+*.yaml          text eol=lf
+
+# Windows-only scripts stay CRLF.
+*.ps1           text eol=crlf
+*.cmd           text eol=crlf
+*.bat           text eol=crlf
+
+# Binaries — never touch.
+*.png           binary
+*.jpg           binary
+*.gif           binary
+*.ico           binary
+*.dll           binary
+*.so            binary
+*.surql         text

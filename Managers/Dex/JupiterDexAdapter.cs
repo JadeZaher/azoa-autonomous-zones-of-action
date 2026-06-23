@@ -3,16 +3,16 @@ using System.Net.Http.Json;
 using System.Numerics;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
-using OASIS.WebAPI.Core.Blockchain;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Blockchain;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers.Dex;
+namespace AZOA.WebAPI.Managers.Dex;
 
 /// <summary>
 /// Jupiter v2 (Solana) DEX adapter. Mirrors the SDK's <c>JupiterAdapter</c>
-/// (<c>sdk/oasis-wallet/src/dex/jupiter.ts</c>).
+/// (<c>sdk/azoa-wallet/src/dex/jupiter.ts</c>).
 ///
 /// Quoting calls Jupiter's <c>/quote</c>; execution calls <c>/swap</c>
 /// with the cached raw quote body. The <see cref="HttpClient"/> is injected as
@@ -41,7 +41,7 @@ public class JupiterDexAdapter : IDexAdapter
         _baseUrl = string.IsNullOrWhiteSpace(cfg.BaseUrl) ? "https://api.jup.ag/swap/v2" : cfg.BaseUrl;
     }
 
-    public async Task<OASISResult<DexQuote>> GetQuoteAsync(SwapQuoteRequest req)
+    public async Task<AZOAResult<DexQuote>> GetQuoteAsync(SwapQuoteRequest req)
     {
         var url = $"{_baseUrl}/quote?" +
                   $"inputMint={Uri.EscapeDataString(req.TokenIn)}" +
@@ -123,7 +123,7 @@ public class JupiterDexAdapter : IDexAdapter
         }
     }
 
-    public async Task<OASISResult<SwapQuoteResponse>> BuildSwapTransactionAsync(
+    public async Task<AZOAResult<SwapQuoteResponse>> BuildSwapTransactionAsync(
         SwapExecuteRequest req, string cachedQuotePayload)
     {
         // SwapManager has already validated the request and resolved the cached
@@ -223,9 +223,9 @@ public class JupiterDexAdapter : IDexAdapter
 
     // ─── Result helpers ───
 
-    private static OASISResult<T> Ok<T>(T result, string message = "")
+    private static AZOAResult<T> Ok<T>(T result, string message = "")
         => new() { IsError = false, Result = result, Message = message };
 
-    private static OASISResult<T> Error<T>(string message, Exception? ex = null)
+    private static AZOAResult<T> Error<T>(string message, Exception? ex = null)
         => new() { IsError = true, Message = message, Exception = ex };
 }

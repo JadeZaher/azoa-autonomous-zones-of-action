@@ -1,11 +1,11 @@
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 public class SearchManager : ISearchManager
 {
@@ -29,7 +29,7 @@ public class SearchManager : ISearchManager
         _starStore = starStore;
     }
 
-    public async Task<OASISResult<SearchResult>> SearchAsync(SearchRequest request, OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<SearchResult>> SearchAsync(SearchRequest request, AZOARequest? providerRequest = null)
     {
         // Clamp page size
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
@@ -205,7 +205,7 @@ public class SearchManager : ISearchManager
         var skip = (request.Page - 1) * pageSize;
         var pageHits = hits.Skip(skip).Take(pageSize).ToList();
 
-        return new OASISResult<SearchResult>
+        return new AZOAResult<SearchResult>
         {
             Result = new SearchResult
             {
@@ -220,7 +220,7 @@ public class SearchManager : ISearchManager
         };
     }
 
-    public async Task<OASISResult<List<SearchFacet>>> GetFacetsAsync(OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<List<SearchFacet>>> GetFacetsAsync(AZOARequest? providerRequest = null)
     {
         var facets = new List<SearchFacet>();
 
@@ -240,7 +240,7 @@ public class SearchManager : ISearchManager
         if (!stars.IsError && stars.Result != null)
             facets.Add(new SearchFacet { EntityType = SearchableEntityType.STARODK, Count = stars.Result.Count(), Label = "STAR ODKs" });
 
-        return new OASISResult<List<SearchFacet>> { Result = facets, Message = "Facets computed." };
+        return new AZOAResult<List<SearchFacet>> { Result = facets, Message = "Facets computed." };
     }
 
     // ─── Matching helpers ───

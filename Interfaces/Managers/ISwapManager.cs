@@ -1,11 +1,11 @@
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 public interface ISwapManager
 {
-    Task<OASISResult<SwapQuoteResponse>> GetQuoteAsync(SwapQuoteRequest request);
+    Task<AZOAResult<SwapQuoteResponse>> GetQuoteAsync(SwapQuoteRequest request);
 
     /// <summary>
     /// Build a transaction for executing a swap (Jupiter v2 /swap or Tinyman).
@@ -19,5 +19,5 @@ public interface ISwapManager
     /// is plumbed through additively (default null) so a future server-broadcast
     /// swap path can dedupe on it without an interface change.
     /// </param>
-    Task<OASISResult<SwapQuoteResponse>> GetSwapTransactionAsync(SwapExecuteRequest request, string? clientIdempotencyKey = null);
+    Task<AZOAResult<SwapQuoteResponse>> GetSwapTransactionAsync(SwapExecuteRequest request, string? clientIdempotencyKey = null);
 }

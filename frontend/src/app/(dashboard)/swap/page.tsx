@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { ChainSwitcher } from '@/components/shared/chain-switcher'
 import { JsonViewer } from '@/components/shared/json-viewer'
 import { ResultDisplay } from '@/components/shared/result-display'
-import { oasis, isOk } from '@/lib/oasis'
+import { azoa, isOk } from '@/lib/azoa'
 
 const SLIPPAGE_PRESETS = [
   { label: '0.1%', bps: 10 },
@@ -66,7 +66,7 @@ function SwapChainForm({ chain }: { chain: string }) {
     setUnsignedTx(null)
     setLoadingQuote(true)
     try {
-      const result = await oasis.api.getSwapQuote({
+      const result = await azoa.api.getSwapQuote({
         chain,
         tokenIn: form.tokenIn,
         tokenOut: form.tokenOut,
@@ -100,7 +100,7 @@ function SwapChainForm({ chain }: { chain: string }) {
     setError(null)
     setLoadingBuild(true)
     try {
-      const result = await oasis.api.executeSwap({
+      const result = await azoa.api.executeSwap({
         chain,
         quoteId: quote.quoteId,
         walletAddress: form.sender,

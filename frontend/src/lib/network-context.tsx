@@ -3,7 +3,7 @@
 /**
  * NetworkProvider — global, app-wide network state (devnet / testnet / mainnet).
  *
- * Source of truth is the SDK client (`oasis.network` / `oasis.setNetwork`).
+ * Source of truth is the SDK client (`azoa.network` / `azoa.setNetwork`).
  * RPC endpoints are owned by the backend: on mount this fetches GET /api/network
  * and merges those URLs over the shipped public fallbacks, then rebuilds the
  * SDK providers. A network switch repoints every operation with no page reload
@@ -22,7 +22,7 @@ import {
   useMemo,
   type ReactNode,
 } from 'react'
-import { oasis, isOk } from './oasis'
+import { azoa, isOk } from './azoa'
 import {
   type NetworkEnv,
   NETWORK_META,
@@ -60,7 +60,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   const setNetwork = useCallback(
     (env: NetworkEnv) => {
       if (env === network) return
-      oasis.setNetwork(env) // rebuilds providers for `env` (only its providers exist)
+      azoa.setNetwork(env) // rebuilds providers for `env` (only its providers exist)
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(NETWORK_STORAGE_KEY, env)
       }
@@ -73,11 +73,11 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const res = await oasis.api.request<NetworkConfigResponse>('GET', '/api/network')
+      const res = await azoa.api.request<NetworkConfigResponse>('GET', '/api/network')
       if (cancelled || !isOk(res)) return // keep public fallbacks on failure
       const backendDefault = applyBackendNetworkConfig(res.value)
       // Rebuild providers for the CURRENT network with backend URLs.
-      oasis.refreshChains()
+      azoa.refreshChains()
       setRevision((r) => r + 1)
       // Adopt the backend's default only if the user hasn't chosen one.
       if (
@@ -85,7 +85,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
         isNetworkEnv(backendDefault) &&
         backendDefault !== network
       ) {
-        oasis.setNetwork(backendDefault)
+        azoa.setNetwork(backendDefault)
         setNetworkState(backendDefault)
       }
     })()

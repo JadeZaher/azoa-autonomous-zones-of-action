@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Models;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Models;
 
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 public class BlockchainOperationBuilder
 {

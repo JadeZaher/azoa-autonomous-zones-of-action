@@ -1,13 +1,13 @@
 using System.Text.Json;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 public class STARManager : ISTARManager
 {
@@ -18,21 +18,21 @@ public class STARManager : ISTARManager
         _starStore = starStore;
     }
 
-    public async Task<OASISResult<ISTARODK>> GetAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<ISTARODK>> GetAsync(Guid id, AZOARequest? request = null)
     {
         return await _starStore.GetByIdAsync(id, default);
     }
 
-    public async Task<OASISResult<IEnumerable<ISTARODK>>> GetAllAsync(OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(AZOARequest? request = null)
     {
         return await _starStore.GetAllAsync(default);
     }
 
-    public async Task<OASISResult<ISTARODK>> CreateOrUpdateAsync(
+    public async Task<AZOAResult<ISTARODK>> CreateOrUpdateAsync(
         STARODKCreateModel model,
         Guid avatarId,
         Guid? routeId = null,
-        OASISRequest? request = null)
+        AZOARequest? request = null)
     {
         // IDOR-safe upsert:
         //   - PUT (routeId != null): load by id, then require IsOwnedBy(record, avatarId)
@@ -71,24 +71,24 @@ public class STARManager : ISTARManager
     private static bool IsOwnedBy(ISTARODK record, Guid avatarId) =>
         record.AvatarId.HasValue && record.AvatarId.Value == avatarId;
 
-    private static OASISResult<ISTARODK> Fail(string message) =>
+    private static AZOAResult<ISTARODK> Fail(string message) =>
         new() { IsError = true, Message = message };
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, AZOARequest? request = null)
     {
         if (avatarId.HasValue)
         {
             var loaded = await _starStore.GetByIdAsync(id, default);
             if (loaded.IsError || loaded.Result == null)
-                return new OASISResult<bool> { IsError = true, Message = "STAR ODK not found." };
+                return new AZOAResult<bool> { IsError = true, Message = "STAR ODK not found." };
             if (!IsOwnedBy(loaded.Result, avatarId.Value))
-                return new OASISResult<bool> { IsError = true, Message = "STAR ODK is owned by a different avatar." };
+                return new AZOAResult<bool> { IsError = true, Message = "STAR ODK is owned by a different avatar." };
         }
 
         return await _starStore.DeleteAsync(id, default);
     }
 
-    public async Task<OASISResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, Guid? avatarId = null, OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null)
     {
         var existing = await _starStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
@@ -104,7 +104,7 @@ public class STARManager : ISTARManager
         return await _starStore.UpsertAsync(odk, default);
     }
 
-    public async Task<OASISResult<ISTARODK>> DeployAsync(Guid id, Guid? avatarId = null, OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<ISTARODK>> DeployAsync(Guid id, Guid? avatarId = null, AZOARequest? providerRequest = null)
     {
         var existing = await _starStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
@@ -113,7 +113,7 @@ public class STARManager : ISTARManager
 
         var odk = (STARODK)existing.Result;
         if (string.IsNullOrEmpty(odk.GeneratedCode))
-            return new OASISResult<ISTARODK> { IsError = true, Message = "Dapp must be generated before deployment." };
+            return new AZOAResult<ISTARODK> { IsError = true, Message = "Dapp must be generated before deployment." };
 
         odk.DeploymentConfig = JsonSerializer.Serialize(new
         {

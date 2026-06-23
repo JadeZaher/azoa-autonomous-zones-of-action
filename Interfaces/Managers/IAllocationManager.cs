@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 /// <summary>
-/// The thin OASIS-side seam a fiat-settlement tenant calls AFTER money has
+/// The thin AZOA-side seam a fiat-settlement tenant calls AFTER money has
 /// already cleared on its own platform: "provision a custodial wallet for
 /// avatar X if absent, and allocate an already-decided amount of asset A into
 /// it." This composes three existing primitives behind one idempotent,
@@ -17,11 +17,11 @@ namespace OASIS.WebAPI.Interfaces.Managers;
 ///   <item>Provision-if-absent (<c>IWalletManager.GenerateWalletAsync</c> /
 ///   <c>IWalletStore.GetByAvatarAsync</c>) — never duplicates a wallet.</item>
 ///   <item>Allocation (<c>INftManager.MintAsync</c> / <c>TransferAsync</c>)
-///   deduped via <see cref="OASIS.WebAPI.Interfaces.IIdempotencyStore"/>.</item>
+///   deduped via <see cref="AZOA.WebAPI.Interfaces.IIdempotencyStore"/>.</item>
 /// </list>
 ///
-/// OASIS holds NO payment-provider secret, runs NO checkout, NO webhook handler,
-/// and NO token economics — those stay in the tenant. OASIS receives an
+/// AZOA holds NO payment-provider secret, runs NO checkout, NO webhook handler,
+/// and NO token economics — those stay in the tenant. AZOA receives an
 /// already-decided amount and the tenant's idempotency key.
 /// </summary>
 public interface IAllocationManager
@@ -59,10 +59,18 @@ public interface IAllocationManager
     /// <param name="apiKeyId">
     /// The <c>ApiKeyId</c> claim — the idempotency partition.
     /// </param>
-    Task<OASISResult<AllocationResult>> AllocateAsync(
+    /// <param name="actingTenantId">
+    /// tenant-consent-delegation AC4: when this allocation is DRIVEN by a tenant via
+    /// a child credential (the controller reads the <c>act_as_tenant</c> claim), the
+    /// acting tenant id is stamped onto the blockchain op so the signing seam runs
+    /// the live consent check before key decrypt. Null = user-driven (no grant
+    /// required).
+    /// </param>
+    Task<AZOAResult<AllocationResult>> AllocateAsync(
         Guid avatarId,
         AllocationRequest request,
         Guid callerAvatarId,
         string? clientIdempotencyKey,
-        string apiKeyId);
+        string apiKeyId,
+        Guid? actingTenantId = null);
 }

@@ -2,7 +2,7 @@
 
 **Purpose.** This is the canonical, single-source list of every stub, placeholder,
 deferred primitive, and operational pre-requisite that must be remediated before
-OASIS can act as a **production custodial blockchain provider** that moves real
+AZOA can act as a **production custodial blockchain provider** that moves real
 value. It exists because the ardanova-provider-port initiative deliberately ships
 the *architecture* (signing seam, custody policy, KYC, fiat, multi-tenancy) ahead
 of the *production-grade primitives* — and that gap must never be invisible.
@@ -33,7 +33,7 @@ track and the file:line evidence where the stub lives.
 - **Owner:** `signing-core-keystone` (Phase 1).
 - **Done when:** ✅ round-trip tests green — seed/private-key → address matches
   `Algorand2`-derived; mnemonic re-imports to the same address
-  (`tests/OASIS.WebAPI.Tests/Signing/AlgorandKeygenAndSignerTests.cs`).
+  (`tests/AZOA.WebAPI.Tests/Signing/AlgorandKeygenAndSignerTests.cs`).
 - **Remaining before mainnet:** B3 custody + B6 gate (this only made addresses spendable).
 
 ### B2. Real server-side signing for Algorand — ✅ DONE (signing-core-keystone Phases 2–3)
@@ -50,16 +50,16 @@ track and the file:line evidence where the stub lives.
 - **Owner:** `signing-core-keystone` (Phases 2–3).
 - **Done when:** ✅ known-vector sign test byte-matches `Algorand2`; provider
   transact tests (in-process Algod stub) green for create/mint/soulbound/transfer +
-  broadcast-no-retry (`tests/OASIS.WebAPI.Tests/Signing/`). Live testnet smoke +
+  broadcast-no-retry (`tests/AZOA.WebAPI.Tests/Signing/`). Live testnet smoke +
   platform fee-funding (P3) still owed before real value flow.
 - **Interim custody caveat:** the provider's signing key is resolved by an INTERIM
-  resolver that decrypts `OASIS:Algorand:PlatformMnemonic` from config (no per-user
+  resolver that decrypts `AZOA:Algorand:PlatformMnemonic` from config (no per-user
   ownership check). The real ownership-checked, KMS-backed, byte[]-zeroing resolver
   is B3/P1 (`custody-key-management`).
 
 ### B3. KMS/HSM-backed custody (replace config-secret key derivation) — STILL OPEN (mainnet gate)
 - **Stub:** `Core/WalletKeyService.cs:15-20` derives the data-encryption key from
-  `SHA-256(config "OASIS:WalletEncryptionKey")`. A config secret in appsettings/env is
+  `SHA-256(config "AZOA:WalletEncryptionKey")`. A config secret in appsettings/env is
   **not** production-grade custody for value-bearing keys.
 - **Owner:** `custody-key-management`.
 - **Swap seam landed (custody-key-management):** `IKeyCustodyService`
@@ -91,7 +91,7 @@ track and the file:line evidence where the stub lives.
 > + `TxHash` (M1) so reconciliation settles from chain truth, never re-broadcasts.
 
 
-- **Was:** fiat settles on the tenant and triggers an OASIS wallet/asset
+- **Was:** fiat settles on the tenant and triggers an AZOA wallet/asset
   allocation. Without idempotency a webhook replay double-allocates. The bridge
   already shipped this mistake once (`bridge-unsafe-pre-launch`).
 - **Now:** `IAllocationManager.AllocateAsync` (`Managers/AllocationManager.cs`)
@@ -105,10 +105,10 @@ track and the file:line evidence where the stub lives.
   KYC is fail-closed (`IKycGateService.RequireVerifiedAsync` before any value
   side effect, per D3). Proven by `AllocationManagerTests` (duplicate-key
   exactly-once mint, KYC fail-closed never-mints, provision-if-absent, IDOR).
-- **Deploy-stub (NEVER committed):** the tenant authenticates with its OASIS API
-  key. Provision it at deploy time as `OASIS_TENANT_API_KEY` (the SHA-256-hashed
+- **Deploy-stub (NEVER committed):** the tenant authenticates with its AZOA API
+  key. Provision it at deploy time as `AZOA_TENANT_API_KEY` (the SHA-256-hashed
   ApiKey record carries the `nft:mint` / `wallet:manage` scope that authorises
-  allocation). OASIS holds **no** Stripe secret — no `Stripe:SecretKey`, no
+  allocation). AZOA holds **no** Stripe secret — no `Stripe:SecretKey`, no
   `Stripe:WebhookSecret`, no webhook handler. See
   `conductor/tracks/fiat-stripe-bridge/docs/INTEGRATION-CONTRACT.md`.
 
@@ -126,7 +126,7 @@ track and the file:line evidence where the stub lives.
 - **Owner:** `tenant-onboarding`.
 - **Done when:** ✅ cross-tenant rejection (404, "not found, not forbidden") +
   scope-ceiling proven by 15 green unit tests
-  (`tests/OASIS.WebAPI.Tests/Managers/TenantManagerTests.cs` —
+  (`tests/AZOA.WebAPI.Tests/Managers/TenantManagerTests.cs` —
   `IssueChildCredential_OtherTenantsChild_ReturnsNotFound_Not403`,
   `_UnownedAvatar_ReturnsNotFound`, `_CannotExceedTenantScopes`). Store-layer
   isolation tests authored in `SurrealAvatarStoreTests` (round-trip + owner-scoped
@@ -169,7 +169,7 @@ track and the file:line evidence where the stub lives.
   owner (byte[] overload, follow-up).
 
 ### P2. Key rotation / re-encryption — ✅ DONE (design + stub + unit test); live orchestration is the follow-up
-- **Gap:** no path to re-wrap stored keys under a new `OASIS:WalletEncryptionKey`.
+- **Gap:** no path to re-wrap stored keys under a new `AZOA:WalletEncryptionKey`.
 - **Now:** `IKeyCustodyService.RewrapAsync(wallet, oldKeyService, newKeyService)`
   (`Managers/KeyCustodyService.cs`) is the per-wallet re-wrap primitive — decrypt
   `EncryptedPrivateKey` (+ `EncryptedSeedPhrase`) under the OLD data-key, re-encrypt
@@ -293,7 +293,7 @@ track and the file:line evidence where the stub lives.
 | B1 | 🔴 | Real Algorand keygen | signing-core-keystone | ✅ done |
 | B2 | 🔴 | Real Algorand signing | signing-core-keystone | ✅ done |
 | B3 | 🔴 | KMS/HSM custody | custody-key-management | open (swap seam landed; KMS store owed) |
-| B4 | 🔴 | Fiat-allocation idempotency | fiat-stripe-bridge | ✅ done (dedupe proven by test; `OASIS_TENANT_API_KEY` deploy-stub) |
+| B4 | 🔴 | Fiat-allocation idempotency | fiat-stripe-bridge | ✅ done (dedupe proven by test; `AZOA_TENANT_API_KEY` deploy-stub) |
 | B5 | 🔴 | Cross-tenant isolation | tenant-onboarding | ✅ done |
 | B6 | 🔴 | Mainnet enablement gate | ops + signing-core-keystone | open |
 | P1 | 🟠 | Key zeroing (byte[]) | custody-key-management | ✅ boundary done; byte[] overload follow-up |

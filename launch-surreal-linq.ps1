@@ -4,7 +4,7 @@
     LINQ / graph / live-query package work (PowerShell).
 
 .DESCRIPTION
-    Iterate on the typed query layer (Oasis.SurrealDb.Client / .Schema /
+    Iterate on the typed query layer (Azoa.SurrealDb.Client / .Schema /
     .Analyzer) WITHOUT spinning the full docker dev stack. Builds the three
     packages, runs their unit-test projects, and optionally brings up a
     SurrealDB so the live-query (LIVE SELECT over WebSocket) and graph
@@ -36,7 +36,7 @@
     The tightest TDD loop for Phase 1-4 translator/provider work.
 
 .PARAMETER IntegrationOnly
-    Run ONLY the integration test project (Oasis.SurrealDb.Client.IntegrationTests).
+    Run ONLY the integration test project (Azoa.SurrealDb.Client.IntegrationTests).
     Implies -Live unless a SurrealDB is already reachable on :8000.
 
 .EXAMPLE
@@ -62,22 +62,22 @@ Push-Location $ScriptDir
 
 # Package projects (the surface this track extends).
 $Packages = @(
-    'packages/Oasis.SurrealDb.Client/Oasis.SurrealDb.Client.csproj',
-    'packages/Oasis.SurrealDb.Schema/Oasis.SurrealDb.Schema.csproj',
-    'packages/Oasis.SurrealDb.Analyzer/Oasis.SurrealDb.Analyzer.csproj'
+    'packages/Azoa.SurrealDb.Client/Azoa.SurrealDb.Client.csproj',
+    'packages/Azoa.SurrealDb.Schema/Azoa.SurrealDb.Schema.csproj',
+    'packages/Azoa.SurrealDb.Analyzer/Azoa.SurrealDb.Analyzer.csproj'
 )
 
 # Unit-test projects exercised on every run (fast, no DB needed).
 $UnitTestProjects = @(
-    'tests/Oasis.SurrealDb.Client.Tests/Oasis.SurrealDb.Client.Tests.csproj',
-    'tests/Oasis.SurrealDb.Schema.Tests/Oasis.SurrealDb.Schema.Tests.csproj',
-    'tests/Oasis.SurrealDb.Analyzer.Tests/Oasis.SurrealDb.Analyzer.Tests.csproj'
+    'tests/Azoa.SurrealDb.Client.Tests/Azoa.SurrealDb.Client.Tests.csproj',
+    'tests/Azoa.SurrealDb.Schema.Tests/Azoa.SurrealDb.Schema.Tests.csproj',
+    'tests/Azoa.SurrealDb.Analyzer.Tests/Azoa.SurrealDb.Analyzer.Tests.csproj'
 )
 
 # Integration project (needs a live SurrealDB for graph/live coverage).
-$IntegrationProject = 'tests/Oasis.SurrealDb.Client.IntegrationTests/Oasis.SurrealDb.Client.IntegrationTests.csproj'
+$IntegrationProject = 'tests/Azoa.SurrealDb.Client.IntegrationTests/Azoa.SurrealDb.Client.IntegrationTests.csproj'
 
-$ClientTestProject = 'tests/Oasis.SurrealDb.Client.Tests/Oasis.SurrealDb.Client.Tests.csproj'
+$ClientTestProject = 'tests/Azoa.SurrealDb.Client.Tests/Azoa.SurrealDb.Client.Tests.csproj'
 
 function Find-ContainerRuntime {
     foreach ($rt in @('docker', 'podman')) {

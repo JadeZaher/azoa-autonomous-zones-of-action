@@ -3,7 +3,7 @@
 # surreal-linq-graph-query -- focused build + test loop for the SurrealDB
 # LINQ / graph / live-query package work (bash twin of launch-surreal-linq.ps1).
 #
-# Iterate on the typed query layer (Oasis.SurrealDb.Client / .Schema /
+# Iterate on the typed query layer (Azoa.SurrealDb.Client / .Schema /
 # .Analyzer) WITHOUT spinning the full docker dev stack. Builds the three
 # packages, runs their unit-test projects, and optionally brings up a
 # SurrealDB so the live-query (LIVE SELECT over WebSocket) and graph
@@ -46,17 +46,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 PACKAGES=(
-  "packages/Oasis.SurrealDb.Client/Oasis.SurrealDb.Client.csproj"
-  "packages/Oasis.SurrealDb.Schema/Oasis.SurrealDb.Schema.csproj"
-  "packages/Oasis.SurrealDb.Analyzer/Oasis.SurrealDb.Analyzer.csproj"
+  "packages/Azoa.SurrealDb.Client/Azoa.SurrealDb.Client.csproj"
+  "packages/Azoa.SurrealDb.Schema/Azoa.SurrealDb.Schema.csproj"
+  "packages/Azoa.SurrealDb.Analyzer/Azoa.SurrealDb.Analyzer.csproj"
 )
 UNIT_TEST_PROJECTS=(
-  "tests/Oasis.SurrealDb.Client.Tests/Oasis.SurrealDb.Client.Tests.csproj"
-  "tests/Oasis.SurrealDb.Schema.Tests/Oasis.SurrealDb.Schema.Tests.csproj"
-  "tests/Oasis.SurrealDb.Analyzer.Tests/Oasis.SurrealDb.Analyzer.Tests.csproj"
+  "tests/Azoa.SurrealDb.Client.Tests/Azoa.SurrealDb.Client.Tests.csproj"
+  "tests/Azoa.SurrealDb.Schema.Tests/Azoa.SurrealDb.Schema.Tests.csproj"
+  "tests/Azoa.SurrealDb.Analyzer.Tests/Azoa.SurrealDb.Analyzer.Tests.csproj"
 )
-INTEGRATION_PROJECT="tests/Oasis.SurrealDb.Client.IntegrationTests/Oasis.SurrealDb.Client.IntegrationTests.csproj"
-CLIENT_TEST_PROJECT="tests/Oasis.SurrealDb.Client.Tests/Oasis.SurrealDb.Client.Tests.csproj"
+INTEGRATION_PROJECT="tests/Azoa.SurrealDb.Client.IntegrationTests/Azoa.SurrealDb.Client.IntegrationTests.csproj"
+CLIENT_TEST_PROJECT="tests/Azoa.SurrealDb.Client.Tests/Azoa.SurrealDb.Client.Tests.csproj"
 
 SURREAL_CONTAINER="surreal-linq-devdb"
 STARTED_DB=0

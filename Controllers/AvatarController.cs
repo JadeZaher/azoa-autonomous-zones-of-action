@@ -1,12 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -21,7 +21,7 @@ public class AvatarController : ControllerBase
 
     [HttpPost("register")]
     [AllowAnonymous]
-    public async Task<ActionResult<OASISResult<IAvatar>>> Register([FromBody] AvatarRegisterModel model, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IAvatar>>> Register([FromBody] AvatarRegisterModel model, [FromQuery] AZOARequest? request)
     {
         var result = await _manager.RegisterAsync(model, request);
         if (result.IsError) return BadRequest(result);
@@ -30,7 +30,7 @@ public class AvatarController : ControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
-    public async Task<ActionResult<OASISResult<string>>> Login([FromBody] AvatarLoginModel model, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<string>>> Login([FromBody] AvatarLoginModel model, [FromQuery] AZOARequest? request)
     {
         var result = await _manager.LoginAsync(model, request);
         if (result.IsError) return Unauthorized(result);
@@ -39,7 +39,7 @@ public class AvatarController : ControllerBase
 
     [HttpGet("{id:guid}")]
     [Authorize]
-    public async Task<ActionResult<OASISResult<IAvatar>>> Get(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IAvatar>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _manager.GetAsync(id, request);
         if (result.IsError || result.Result == null) return NotFound(result);
@@ -48,7 +48,7 @@ public class AvatarController : ControllerBase
 
     [HttpGet]
     [Authorize]
-    public async Task<ActionResult<OASISResult<IEnumerable<IAvatar>>>> GetAll([FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<IAvatar>>>> GetAll([FromQuery] AZOARequest? request)
     {
         var result = await _manager.GetAllAsync(request);
         return Ok(result);
@@ -56,7 +56,7 @@ public class AvatarController : ControllerBase
 
     [HttpPut("{id:guid}")]
     [Authorize]
-    public async Task<ActionResult<OASISResult<IAvatar>>> Update(Guid id, [FromBody] AvatarUpdateModel model, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IAvatar>>> Update(Guid id, [FromBody] AvatarUpdateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -68,14 +68,14 @@ public class AvatarController : ControllerBase
 
     [HttpDelete("{id:guid}")]
     [Authorize]
-    public async Task<ActionResult<OASISResponse>> Delete(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
 
         var result = await _manager.DeleteAsync(id, avatarId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
-        return Ok(new OASISResponse { Message = "Avatar deleted." });
+        return Ok(new AZOAResponse { Message = "Avatar deleted." });
     }
 
     private Guid? GetAvatarIdFromClaims()

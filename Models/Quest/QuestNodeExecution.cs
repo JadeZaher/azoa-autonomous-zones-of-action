@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
 /// <summary>
 /// Per-(run, node) execution record. Replaces the in-place mutation of
@@ -14,7 +14,7 @@ namespace OASIS.WebAPI.Models.Quest;
 /// </para>
 /// <para>
 /// The conditional-update primitive <c>TryClaimPendingAsync</c> on
-/// <see cref="OASIS.WebAPI.Interfaces.Stores.IQuestNodeExecutionStore"/>
+/// <see cref="AZOA.WebAPI.Interfaces.Stores.IQuestNodeExecutionStore"/>
 /// preserves the [api-safety-hardening] G2 exactly-once semantic: it only
 /// succeeds when current <see cref="State"/> equals <see cref="QuestNodeState.Pending"/>.
 /// </para>
@@ -34,7 +34,7 @@ public class QuestNodeExecution
     public QuestNodeState State { get; set; } = QuestNodeState.Pending;
 
     /// <summary>
-    /// Serialized <c>OASISResult&lt;T&gt;</c> from the handler call. Null until
+    /// Serialized <c>AZOAResult&lt;T&gt;</c> from the handler call. Null until
     /// the node reaches <see cref="QuestNodeState.Succeeded"/>.
     /// </summary>
     public string? Output { get; set; }

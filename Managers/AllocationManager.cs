@@ -3,22 +3,23 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Idempotency;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Idempotency;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 /// <summary>
 /// Composes the existing KYC gate, wallet provisioning, and mint/transfer
 /// primitives into one idempotent, KYC-gated, tenant-callable allocation seam
 /// (see <see cref="IAllocationManager"/>). Holds no payment-provider secret and
 /// runs no economics — the fiat-settlement tenant decides the amount, supplies the
-/// idempotency key; OASIS materialises the wallet and moves the asset exactly
+/// idempotency key; AZOA materialises the wallet and moves the asset exactly
 /// once.
 /// </summary>
 public sealed class AllocationManager : IAllocationManager
@@ -49,12 +50,13 @@ public sealed class AllocationManager : IAllocationManager
     }
 
     /// <inheritdoc />
-    public async Task<OASISResult<AllocationResult>> AllocateAsync(
+    public async Task<AZOAResult<AllocationResult>> AllocateAsync(
         Guid avatarId,
         AllocationRequest request,
         Guid callerAvatarId,
         string? clientIdempotencyKey,
-        string apiKeyId)
+        string apiKeyId,
+        Guid? actingTenantId = null)
     {
         if (request is null)
             return Fail("Allocation request is required.");
@@ -116,8 +118,8 @@ public sealed class AllocationManager : IAllocationManager
             // claim is recoverable by reconciliation.
             var opResult = request.Kind switch
             {
-                AllocationKind.Mint => await MintAsync(avatarId, wallet, request, amount, idempotencyKey),
-                AllocationKind.Transfer => await TransferAsync(avatarId, wallet, request, amount, idempotencyKey),
+                AllocationKind.Mint => await MintAsync(avatarId, wallet, request, amount, idempotencyKey, actingTenantId),
+                AllocationKind.Transfer => await TransferAsync(avatarId, wallet, request, amount, idempotencyKey, actingTenantId),
                 _ => Operation.Invalid($"Unsupported allocation kind: {request.Kind}.")
             };
 
@@ -160,14 +162,14 @@ public sealed class AllocationManager : IAllocationManager
             await _idempotencyStore.CompleteAsync(
                 idempotencyKey, SerializeForReplay(result), CancellationToken.None);
 
-            return new OASISResult<AllocationResult> { Result = result, Message = "Allocation completed." };
+            return new AZOAResult<AllocationResult> { Result = result, Message = "Allocation completed." };
         }
         catch (Exception ex)
         {
             // The claim is owned; mark it failed so a retry with the same key is
             // not stuck as a perpetual in-progress duplicate.
             await _idempotencyStore.FailAsync(idempotencyKey, ex.Message, CancellationToken.None);
-            return new OASISResult<AllocationResult>().CaptureException(ex, "Allocation failed.");
+            return new AZOAResult<AllocationResult>().CaptureException(ex, "Allocation failed.");
         }
     }
 
@@ -199,8 +201,9 @@ public sealed class AllocationManager : IAllocationManager
 
     // ── Allocation execution (consumes existing surface verbatim) ──────────────
 
-    private async Task<OASISResult<IBlockchainOperation>> MintAsync(
-        Guid avatarId, IWallet wallet, AllocationRequest request, ulong amount, string idempotencyKey)
+    private async Task<AZOAResult<IBlockchainOperation>> MintAsync(
+        Guid avatarId, IWallet wallet, AllocationRequest request, ulong amount, string idempotencyKey,
+        Guid? actingTenantId = null)
     {
         // Step A: record the Holon + KYC gate via NftManager (D2/D3). NftManager
         // owns the metadata Holon upsert and the single-choke-point KYC gate; it is
@@ -234,14 +237,19 @@ public sealed class AllocationManager : IAllocationManager
             // value — it drives both the idempotency-key derivation and the provider
             // call. No int clamp, no Parameters["Amount"] side-channel for mint.
             Amount = amount,
+            // AC4: stamp the acting tenant + signing scope when tenant-driven so the
+            // custody seam runs the live consent check before key decrypt.
+            ActingTenantId = actingTenantId,
+            SigningScope = actingTenantId.HasValue ? AzoaScopes.NftMint : null,
             Parameters = BuildOpParameters(wallet, request, amount, idempotencyKey, holonResult.Result)
         };
 
         return await _blockchainOps.ExecuteAsync(op);
     }
 
-    private async Task<OASISResult<IBlockchainOperation>> TransferAsync(
-        Guid avatarId, IWallet wallet, AllocationRequest request, ulong amount, string idempotencyKey)
+    private async Task<AZOAResult<IBlockchainOperation>> TransferAsync(
+        Guid avatarId, IWallet wallet, AllocationRequest request, ulong amount, string idempotencyKey,
+        Guid? actingTenantId = null)
     {
         if (request.AssetRecordId is null || request.AssetRecordId == Guid.Empty)
             return Operation.Invalid("Transfer allocation requires AssetRecordId.");
@@ -268,6 +276,9 @@ public sealed class AllocationManager : IAllocationManager
             Status = OperationStatus.Pending,
             SourceHolonId = request.AssetRecordId,
             RecipientAddress = wallet.Address,
+            // AC4: tenant-driven transfer signs with the USER's key — gate it.
+            ActingTenantId = actingTenantId,
+            SigningScope = actingTenantId.HasValue ? AzoaScopes.TransferSign : null,
             Parameters = BuildOpParameters(wallet, request, amount, idempotencyKey, holonResult.Result)
         };
         if (!string.IsNullOrWhiteSpace(request.AssetId))
@@ -308,7 +319,7 @@ public sealed class AllocationManager : IAllocationManager
 
     /// <summary>
     /// Folds the already-decided amount into the asset metadata so it is recorded
-    /// against the operation. OASIS treats the amount as opaque/authoritative.
+    /// against the operation. AZOA treats the amount as opaque/authoritative.
     /// </summary>
     private static Dictionary<string, string> MergeAmount(AllocationRequest request)
     {
@@ -389,7 +400,7 @@ public sealed class AllocationManager : IAllocationManager
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private static OASISResult<AllocationResult> ReplayFromRecord(
+    private static AZOAResult<AllocationResult> ReplayFromRecord(
         IdempotencyRecord record, string idempotencyKey)
     {
         switch (record.State)
@@ -399,7 +410,7 @@ public sealed class AllocationManager : IAllocationManager
                 if (replayed is not null)
                 {
                     replayed.Replayed = true;
-                    return new OASISResult<AllocationResult>
+                    return new AZOAResult<AllocationResult>
                     {
                         Result = replayed,
                         Message = "Duplicate request: returning the result of the original allocation (not re-executed)."
@@ -433,13 +444,13 @@ public sealed class AllocationManager : IAllocationManager
         catch (JsonException) { return null; }
     }
 
-    private static OASISResult<AllocationResult> Fail(string message)
+    private static AZOAResult<AllocationResult> Fail(string message)
         => new() { IsError = true, Message = message };
 
     /// <summary>Local helper for synthesising an error operation result.</summary>
     private static class Operation
     {
-        public static OASISResult<IBlockchainOperation> Invalid(string message)
+        public static AZOAResult<IBlockchainOperation> Invalid(string message)
             => new() { IsError = true, Message = message };
     }
 }

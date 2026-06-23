@@ -1,8 +1,8 @@
 using FluentValidation;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Models.Requests;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Models.Requests;
 
-namespace OASIS.WebAPI.Validators;
+namespace AZOA.WebAPI.Validators;
 
 public class WalletCreateModelValidator : AbstractValidator<WalletCreateModel>
 {

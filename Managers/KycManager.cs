@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Providers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Kyc;
-using OASIS.WebAPI.Models.Responses;
-using OASIS.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Providers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Kyc;
+using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 /// <summary>
 /// Provider-agnostic KYC manager. Avatar-scoped, returns
-/// <see cref="OASISResult{T}"/>, and flags authorisation failures with the
+/// <see cref="AZOAResult{T}"/>, and flags authorisation failures with the
 /// <see cref="KycAuthorizationError"/> message-prefix discriminator so the
 /// controller can translate to 403/404. On approval the owning avatar's
 /// <c>IsVerified</c> flips true; the gate reads submission status, so no
@@ -30,7 +30,7 @@ public sealed class KycManager : IKycManager
         _avatarStore = avatarStore;
     }
 
-    public async Task<OASISResult<KycSubmissionModel>> SubmitAsync(SubmitKycModel model, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmissionModel>> SubmitAsync(SubmitKycModel model, Guid avatarId, CancellationToken ct = default)
     {
         // Reject when an active submission already exists for this avatar.
         var active = await _store.GetActiveSubmissionByAvatarAsync(avatarId, ct);
@@ -101,7 +101,7 @@ public sealed class KycManager : IKycManager
         return Ok(result);
     }
 
-    public async Task<OASISResult<KycSubmissionModel>> GetStatusAsync(Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmissionModel>> GetStatusAsync(Guid avatarId, CancellationToken ct = default)
     {
         var latest = await _store.GetLatestSubmissionByAvatarAsync(avatarId, ct);
         if (latest.IsError)
@@ -112,7 +112,7 @@ public sealed class KycManager : IKycManager
         return await WithDocuments(latest.Result, ct);
     }
 
-    public async Task<OASISResult<KycSubmissionModel>> GetByIdAsync(Guid submissionId, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmissionModel>> GetByIdAsync(Guid submissionId, Guid avatarId, CancellationToken ct = default)
     {
         var loaded = await LoadOwned(submissionId, avatarId, ct);
         if (loaded.IsError || loaded.Result is null)
@@ -121,7 +121,7 @@ public sealed class KycManager : IKycManager
         return await WithDocuments(loaded.Result, ct);
     }
 
-    public async Task<OASISResult<IEnumerable<KycDocumentModel>>> ListDocumentsAsync(Guid submissionId, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<KycDocumentModel>>> ListDocumentsAsync(Guid submissionId, Guid avatarId, CancellationToken ct = default)
     {
         var loaded = await LoadOwned(submissionId, avatarId, ct);
         if (loaded.IsError || loaded.Result is null)
@@ -137,7 +137,7 @@ public sealed class KycManager : IKycManager
 
     // ── Admin surface ─────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IEnumerable<KycSubmissionModel>>> GetPendingAsync(CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<KycSubmissionModel>>> GetPendingAsync(CancellationToken ct = default)
     {
         var pending = await _store.GetPendingAsync(ct);
         if (pending.IsError)
@@ -155,7 +155,7 @@ public sealed class KycManager : IKycManager
         return Ok<IEnumerable<KycSubmissionModel>>(models);
     }
 
-    public async Task<OASISResult<KycSubmissionModel>> ApproveAsync(Guid submissionId, Guid reviewerAvatarId, string? notes, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmissionModel>> ApproveAsync(Guid submissionId, Guid reviewerAvatarId, string? notes, CancellationToken ct = default)
     {
         var loaded = await _store.GetSubmissionByIdAsync(submissionId, ct);
         if (loaded.IsError)
@@ -187,7 +187,7 @@ public sealed class KycManager : IKycManager
         return await WithDocuments(saved.Result, ct);
     }
 
-    public async Task<OASISResult<KycSubmissionModel>> RejectAsync(Guid submissionId, Guid reviewerAvatarId, string? notes, string? rejectionReason, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmissionModel>> RejectAsync(Guid submissionId, Guid reviewerAvatarId, string? notes, string? rejectionReason, CancellationToken ct = default)
     {
         var loaded = await _store.GetSubmissionByIdAsync(submissionId, ct);
         if (loaded.IsError)
@@ -223,7 +223,7 @@ public sealed class KycManager : IKycManager
     /// and <see cref="KycAuthorizationError.Forbidden"/> when it is owned by a
     /// different avatar (the IDOR hardening vs the unscoped source).
     /// </summary>
-    private async Task<OASISResult<KycSubmission>> LoadOwned(Guid submissionId, Guid avatarId, CancellationToken ct)
+    private async Task<AZOAResult<KycSubmission>> LoadOwned(Guid submissionId, Guid avatarId, CancellationToken ct)
     {
         var loaded = await _store.GetSubmissionByIdAsync(submissionId, ct);
         if (loaded.IsError)
@@ -241,7 +241,7 @@ public sealed class KycManager : IKycManager
         => Guid.TryParse(submission.AvatarId, out var owner)
            && owner == avatarId;
 
-    private async Task<OASISResult<KycSubmissionModel>> WithDocuments(KycSubmission submission, CancellationToken ct)
+    private async Task<AZOAResult<KycSubmissionModel>> WithDocuments(KycSubmission submission, CancellationToken ct)
     {
         if (!Guid.TryParse(submission.Id, out var submissionId))
             return Error<KycSubmissionModel>("KYC submission has an unparseable id.");
@@ -255,7 +255,7 @@ public sealed class KycManager : IKycManager
         return Ok(model);
     }
 
-    private async Task<OASISResult<bool>> SetAvatarVerified(string? avatarHexId, CancellationToken ct)
+    private async Task<AZOAResult<bool>> SetAvatarVerified(string? avatarHexId, CancellationToken ct)
     {
         if (!Guid.TryParse(avatarHexId, out var avatarId))
             return Error<bool>("KYC submission has no owning avatar to verify.");
@@ -310,11 +310,11 @@ public sealed class KycManager : IKycManager
         ModifiedDate      = s.ModifiedDate?.UtcDateTime
     };
 
-    private static OASISResult<T> Ok<T>(T result) => new() { Result = result, Message = "Success" };
+    private static AZOAResult<T> Ok<T>(T result) => new() { Result = result, Message = "Success" };
 
-    private static OASISResult<T> Error<T>(string message, Exception? ex = null)
+    private static AZOAResult<T> Error<T>(string message, Exception? ex = null)
     {
-        var r = new OASISResult<T> { IsError = true, Message = message };
+        var r = new AZOAResult<T> { IsError = true, Message = message };
         if (ex is not null) r.Exception = ex;
         return r;
     }

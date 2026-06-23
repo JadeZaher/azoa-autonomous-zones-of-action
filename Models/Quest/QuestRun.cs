@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
 /// <summary>
 /// One execution attempt of a <see cref="Quest"/> definition. Carries runtime
@@ -29,6 +29,18 @@ public class QuestRun
 
     /// <summary>Avatar that initiated this run (denormalized for query convenience).</summary>
     public Guid AvatarId { get; set; }
+
+    /// <summary>
+    /// The tenant that DROVE this run via a tenant-driven child credential, or
+    /// null when the run is user-driven (tenant-consent-delegation AC4/AC4b).
+    /// Persisted on the run — NOT ambient — so it survives the async saga-worker
+    /// hop and reaches the durable Tier-2 economic node handlers, which stamp it
+    /// onto the produced <c>BlockchainOperation</c> so the custody signing seam
+    /// can run its live consent gate (fail-closed without a grant). A tenant-driven
+    /// run stays tenant-driven across forks/children (inherited from the parent
+    /// run), mirroring the synchronous Allocation/FungibleToken value paths.
+    /// </summary>
+    public Guid? ActingTenantId { get; set; }
 
     /// <summary>Current lifecycle position. See <see cref="QuestRunStatus"/>.</summary>
     public QuestRunStatus Status { get; set; } = QuestRunStatus.Pending;

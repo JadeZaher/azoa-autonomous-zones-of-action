@@ -1,9 +1,9 @@
-namespace OASIS.WebAPI.Models.Requests;
+namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
 /// Caller-facing request DTOs and composed artifacts for the
 /// <c>dapp-composition</c> track. The persisted entities live as generated
-/// POCOs in <c>OASIS.WebAPI.Persistence.SurrealDb.Models.{DappSeries,DappSeriesQuest}</c>;
+/// POCOs in <c>AZOA.WebAPI.Persistence.SurrealDb.Models.{DappSeries,DappSeriesQuest}</c>;
 /// these DTOs are the API surface that converts to/from those POCOs at the
 /// manager seam.
 /// </summary>

@@ -1,7 +1,7 @@
 # STAR API — Specification
 
 ## Goal
-Expose the STAR dapp-generator API. STAR is not just an ODK key manager; it scaffolds, configures, and orchestrates dapps that operate on the OASIS holon universe. Generated dapps can query holons, trigger cross-chain interactions, and manage assets on behalf of an avatar.
+Expose the STAR dapp-generator API. STAR is not just an ODK key manager; it scaffolds, configures, and orchestrates dapps that operate on the AZOA holon universe. Generated dapps can query holons, trigger cross-chain interactions, and manage assets on behalf of an avatar.
 
 ## Endpoints
 
@@ -23,7 +23,7 @@ Expose the STAR dapp-generator API. STAR is not just an ODK key manager; it scaf
 - `STARDappGenerationRequest` — params for dapp scaffolding (target chain, holons to bind, etc.)
 
 ## Provider Overrides
-- Same pattern as Avatar API: optional `OASISRequest` switches provider via `ProviderContext`
+- Same pattern as Avatar API: optional `AZOARequest` switches provider via `ProviderContext`
 
 ## Dapp Generation
 - STAR templates define holon-interaction graphs (which holons to query, which operations to expose)
@@ -31,8 +31,8 @@ Expose the STAR dapp-generator API. STAR is not just an ODK key manager; it scaf
 - Deployment targets a specific chain/provider via `ProviderContext`
 
 ## Acceptance Criteria
-- [ ] All 6 endpoints return `OASISResult<T>` or `OASISResponse`
+- [ ] All 6 endpoints return `AZOAResult<T>` or `AZOAResponse`
 - [ ] Only authenticated users can access
-- [ ] Provider switching works via `OASISRequest` in body
+- [ ] Provider switching works via `AZOARequest` in body
 - [ ] Dapp generation endpoint produces a runnable/configured dapp artifact
 - [ ] Deploy endpoint can push dapp config to at least one chain provider

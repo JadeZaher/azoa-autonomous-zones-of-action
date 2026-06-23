@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces;
+namespace AZOA.WebAPI.Interfaces;
 
 /// <summary>
 /// Extension module pattern for chain-specific features that are not part of the standard cross-chain interface.
@@ -18,27 +18,39 @@ public interface IBlockchainProviderModule
 
 public interface IAlgorandASAModule : IBlockchainProviderModule
 {
-    Task<OASISResult<string>> CreateASAAsync(
+    Task<AZOAResult<string>> CreateASAAsync(
         string name, string unitName, int total, int decimals,
         string managerAddress, string reserveAddress, string freezeAddress, string clawbackAddress,
         string walletAddress, CancellationToken ct = default);
 
-    Task<OASISResult<bool>> OptInAsync(string assetId, string walletAddress, CancellationToken ct = default);
-    Task<OASISResult<string>> GetAssetHoldingAsync(string assetId, string address, CancellationToken ct = default);
+    /// <summary>
+    /// tenant-consent-delegation AC4b: ASA-create with an explicit
+    /// <see cref="SigningContext"/> so a tenant-DRIVEN fungible-token launch (which
+    /// is platform-SIGNED) carries the acting tenant + scope to the custody seam for
+    /// the live consent check. Pass <see cref="SigningContext.Platform"/> for an
+    /// ungated platform-internal create.
+    /// </summary>
+    Task<AZOAResult<string>> CreateASAAsync(
+        string name, string unitName, int total, int decimals,
+        string managerAddress, string reserveAddress, string freezeAddress, string clawbackAddress,
+        string walletAddress, SigningContext signingContext, CancellationToken ct = default);
+
+    Task<AZOAResult<bool>> OptInAsync(string assetId, string walletAddress, CancellationToken ct = default);
+    Task<AZOAResult<string>> GetAssetHoldingAsync(string assetId, string address, CancellationToken ct = default);
 }
 
 public interface ISolanaMetaplexModule : IBlockchainProviderModule
 {
-    Task<OASISResult<string>> CreateMetadataAccountAsync(
+    Task<AZOAResult<string>> CreateMetadataAccountAsync(
         string mint, string name, string symbol, string uri,
         int sellerFeeBasisPoints, string walletAddress, CancellationToken ct = default);
 
-    Task<OASISResult<bool>> UpdateMetadataAsync(
+    Task<AZOAResult<bool>> UpdateMetadataAsync(
         string mint, string? newUri, string? newName, string walletAddress, CancellationToken ct = default);
 }
 
 public interface ISolanaSPLModule : IBlockchainProviderModule
 {
-    Task<OASISResult<string>> CreateTokenAccountAsync(string mint, string owner, CancellationToken ct = default);
-    Task<OASISResult<string>> CloseTokenAccountAsync(string tokenAccount, string owner, CancellationToken ct = default);
+    Task<AZOAResult<string>> CreateTokenAccountAsync(string mint, string owner, CancellationToken ct = default);
+    Task<AZOAResult<string>> CloseTokenAccountAsync(string tokenAccount, string owner, CancellationToken ct = default);
 }

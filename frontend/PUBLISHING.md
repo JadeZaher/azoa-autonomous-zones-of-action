@@ -1,8 +1,8 @@
-# OASIS Sleek Frontend - Publishing Guide
+# AZOA Sleek Frontend - Publishing Guide
 
 ## 🎯 **Ready for Production**
 
-The OASIS Sleek frontend is now **complete and ready for production deployment**. All major components have been implemented and tested.
+The AZOA Sleek frontend is now **complete and ready for production deployment**. All major components have been implemented and tested.
 
 ## ✅ **Authentication System Verification**
 
@@ -226,7 +226,7 @@ pm2 start ecosystem.config.js
 
 ## 🚀 **Ready to Publish!**
 
-The OASIS Sleek frontend is **production-ready** with:
+The AZOA Sleek frontend is **production-ready** with:
 - Complete authentication system
 - Full blockchain integration
 - Comprehensive testing

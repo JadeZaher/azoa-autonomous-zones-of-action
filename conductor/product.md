@@ -1,10 +1,10 @@
-# Product: OASIS WebAPI — Lightweight
+# Product: AZOA WebAPI — Lightweight
 
 ## Vision
-A clean, minimal ASP.NET Core WebAPI that exposes the OASIS Avatar API, Holon API, and STAR Dapp-Generator API without the legacy Karma module. OASIS acts as an **OAuth-like cross-chain user registration and asset exchange tool**, enabling avatars to own, query, and orchestrate interactions across a universe of assets stored on-chain (including NFTs as storage holons). The API should be easy to reason about, fast to bootstrap, and built around a single unified provider pattern.
+A clean, minimal ASP.NET Core WebAPI that exposes the AZOA Avatar API, Holon API, and STAR Dapp-Generator API without the legacy Karma module. AZOA acts as an **OAuth-like cross-chain user registration and asset exchange tool**, enabling avatars to own, query, and orchestrate interactions across a universe of assets stored on-chain (including NFTs as storage holons). The API should be easy to reason about, fast to bootstrap, and built around a single unified provider pattern.
 
 ## Target Users
-- Developers integrating OASIS Avatar / cross-chain identity services
+- Developers integrating AZOA Avatar / cross-chain identity services
 - Teams that need a lean, provider-swappable backend for multi-chain asset management
 - Dapp creators using STAR to generate and deploy applications that orchestrate holonic assets
 

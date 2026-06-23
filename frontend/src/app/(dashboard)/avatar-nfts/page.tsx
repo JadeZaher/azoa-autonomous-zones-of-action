@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { oasis, isOk } from '@/lib/oasis'
-import { useOasisAuth } from '@/lib/oasis-auth'
+import { azoa, isOk } from '@/lib/azoa'
+import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -82,7 +82,7 @@ function MintAvatarNftForm({ onMinted }: { onMinted: () => void }) {
       imageUri: imageUri || undefined,
     }
 
-    const res = await oasis.api.request('POST', '/api/avatarnft/mint', body)
+    const res = await azoa.api.request('POST', '/api/avatarnft/mint', body)
     if (isOk(res)) {
       setResult(res.value)
       setIsError(false)
@@ -198,7 +198,7 @@ function BindHolonDialog({ avatarNftId, onBound }: { avatarNftId: string; onBoun
   const handleBind = async () => {
     setLoading(true)
     setResult(null)
-    const res = await oasis.api.request(
+    const res = await azoa.api.request(
       'POST',
       `/api/avatarnft/${avatarNftId}/holons/${holonId}/bind`,
       { permission }
@@ -271,7 +271,7 @@ function BindWalletDialog({ avatarNftId, onBound }: { avatarNftId: string; onBou
   const handleBind = async () => {
     setLoading(true)
     setResult(null)
-    const res = await oasis.api.request(
+    const res = await azoa.api.request(
       'POST',
       `/api/avatarnft/${avatarNftId}/wallets/${walletId}/bind`
     )
@@ -335,7 +335,7 @@ function VerifyOwnershipPanel() {
     setLoading(true)
     setResult(null)
     setPassed(null)
-    const res = await oasis.api.request('POST', '/api/avatarnft/verify-ownership', {
+    const res = await azoa.api.request('POST', '/api/avatarnft/verify-ownership', {
       avatarId,
       chainType,
       contractAddress,
@@ -439,7 +439,7 @@ function VerifyHolonAccessPanel() {
     setLoading(true)
     setResult(null)
     setPassed(null)
-    const res = await oasis.api.request('POST', '/api/avatarnft/verify-holon-access', {
+    const res = await azoa.api.request('POST', '/api/avatarnft/verify-holon-access', {
       avatarNftId,
       holonId,
       permission,
@@ -529,8 +529,8 @@ function AvatarNftDetail({ nft }: { nft: AvatarNft }) {
 
   const fetchBindings = useCallback(async () => {
     const [holonRes, walletRes] = await Promise.all([
-      oasis.api.request('GET', `/api/avatarnft/${nft.id}/holons`),
-      oasis.api.request('GET', `/api/avatarnft/${nft.id}/wallets`),
+      azoa.api.request('GET', `/api/avatarnft/${nft.id}/holons`),
+      azoa.api.request('GET', `/api/avatarnft/${nft.id}/wallets`),
     ])
     if (isOk(holonRes)) setHolons(holonRes.value)
     if (isOk(walletRes)) setWallets(walletRes.value)
@@ -539,19 +539,19 @@ function AvatarNftDetail({ nft }: { nft: AvatarNft }) {
   useEffect(() => { fetchBindings() }, [fetchBindings])
 
   const handleUnbindHolon = async (holonId: string) => {
-    await oasis.api.request('DELETE', `/api/avatarnft/${nft.id}/holons/${holonId}/unbind`)
+    await azoa.api.request('DELETE', `/api/avatarnft/${nft.id}/holons/${holonId}/unbind`)
     fetchBindings()
   }
 
   const handleUnbindWallet = async (walletId: string) => {
-    await oasis.api.request('DELETE', `/api/avatarnft/${nft.id}/wallets/${walletId}/unbind`)
+    await azoa.api.request('DELETE', `/api/avatarnft/${nft.id}/wallets/${walletId}/unbind`)
     fetchBindings()
   }
 
   const fetchComposite = async () => {
     setCompositeLoading(true)
     setComposite(null)
-    const res = await oasis.api.request('GET', `/api/avatarnft/${nft.id}/composite`)
+    const res = await azoa.api.request('GET', `/api/avatarnft/${nft.id}/composite`)
     if (isOk(res)) {
       setComposite(res.value)
       setCompositeError(false)
@@ -682,7 +682,7 @@ function AvatarNftList({ avatarId }: { avatarId: string }) {
   const fetchNfts = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const res = await oasis.api.request('GET', `/api/avatarnft/avatar/${avatarId}`)
+    const res = await azoa.api.request('GET', `/api/avatarnft/avatar/${avatarId}`)
     if (isOk(res)) {
       setNfts(res.value)
     } else {
@@ -756,7 +756,7 @@ function AvatarNftList({ avatarId }: { avatarId: string }) {
 // ─── Page ───
 
 export default function AvatarNftsPage() {
-  const { avatarId } = useOasisAuth()
+  const { avatarId } = useAzoaAuth()
   const [refreshKey, setRefreshKey] = useState(0)
 
   return (

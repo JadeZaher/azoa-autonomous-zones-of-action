@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
 /// <summary>
 /// Per-invocation context handed to an <c>IQuestNodeHandler</c>. Replaces the
@@ -30,12 +30,14 @@ public sealed class QuestNodeExecutionContext
         Guid runId,
         Guid nodeId,
         Quest quest,
-        IReadOnlyDictionary<Guid, QuestNodeExecution>? upstreamExecutions = null)
+        IReadOnlyDictionary<Guid, QuestNodeExecution>? upstreamExecutions = null,
+        Guid? actingTenantId = null)
     {
         RunId = runId;
         NodeId = nodeId;
         Quest = quest ?? throw new ArgumentNullException(nameof(quest));
         UpstreamExecutions = upstreamExecutions ?? new Dictionary<Guid, QuestNodeExecution>();
+        ActingTenantId = actingTenantId;
         Node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId)
             ?? throw new ArgumentException(
                 $"Node {nodeId} not found in quest {quest.Id}.", nameof(nodeId));
@@ -58,12 +60,23 @@ public sealed class QuestNodeExecutionContext
     /// node id. Empty when no upstream nodes have completed (e.g. entry nodes).
     /// </summary>
     public IReadOnlyDictionary<Guid, QuestNodeExecution> UpstreamExecutions { get; }
+
+    /// <summary>
+    /// The tenant that drove the owning <see cref="QuestRun"/> via a tenant-driven
+    /// child credential, or null when the run is user-driven
+    /// (tenant-consent-delegation AC4/AC4b). Read from <c>QuestRun.ActingTenantId</c>
+    /// at dispatch so it survives the async saga-worker hop. Tier-2 economic node
+    /// handlers (Grant / Transfer / Refund / FungibleTokenCreate) pass it to the
+    /// manager so the produced <c>BlockchainOperation</c> (or platform ASA create)
+    /// carries it to the custody signing seam's live consent gate.
+    /// </summary>
+    public Guid? ActingTenantId { get; }
 }
 
 /// <summary>
 /// Outcome of <c>IQuestNodeHandler.HandleAsync</c>. Decouples handler return
 /// shape from the in-place <see cref="QuestNode"/> mutation that the previous
-/// <c>OASISResult&lt;QuestNode&gt;</c> contract implied. The manager translates
+/// <c>AZOAResult&lt;QuestNode&gt;</c> contract implied. The manager translates
 /// this into a <see cref="QuestNodeExecution"/> state transition.
 /// </summary>
 public sealed class QuestNodeHandlerResult

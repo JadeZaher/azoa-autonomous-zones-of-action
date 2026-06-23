@@ -1,13 +1,13 @@
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Idempotency;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Idempotency;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 public class BlockchainOperationManager : IBlockchainOperationManager
 {
@@ -25,7 +25,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         _idempotencyStore = idempotencyStore;
     }
 
-    public async Task<OASISResult<IBlockchainOperation>> ExecuteAsync(IBlockchainOperation operation, OASISRequest? request = null)
+    public async Task<AZOAResult<IBlockchainOperation>> ExecuteAsync(IBlockchainOperation operation, AZOARequest? request = null)
     {
         var chainType = operation.Parameters.GetValueOrDefault("ChainType", _chainFactory.GetDefaultProvider().ChainType);
         var networkStr = operation.Parameters.GetValueOrDefault("ChainNetwork", "Devnet");
@@ -195,7 +195,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// Reconstruct the prior outcome for a duplicate/concurrent request without
     /// re-performing the irreversible effect.
     /// </summary>
-    private static OASISResult<IBlockchainOperation> ReplayFromRecord(
+    private static AZOAResult<IBlockchainOperation> ReplayFromRecord(
         IBlockchainOperation operation, IdempotencyRecord record)
     {
         switch (record.State)
@@ -206,7 +206,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 operation.CompletedDate = record.UpdatedAt;
                 if (!string.IsNullOrEmpty(record.ResultPayload))
                     operation.Parameters["TxHash"] = record.ResultPayload!;
-                return new OASISResult<IBlockchainOperation>
+                return new AZOAResult<IBlockchainOperation>
                 {
                     IsError = false,
                     Result = operation,
@@ -217,7 +217,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 operation.Status = OperationStatus.Failed;
                 if (!string.IsNullOrEmpty(record.Error))
                     operation.Parameters["Error"] = record.Error!;
-                return new OASISResult<IBlockchainOperation>
+                return new AZOAResult<IBlockchainOperation>
                 {
                     IsError = true,
                     Result = operation,
@@ -230,7 +230,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 // NOT re-broadcast. Surface a non-terminal "duplicate/pending"
                 // status so the caller can poll/reconcile rather than re-send.
                 operation.Status = OperationStatus.Pending;
-                return new OASISResult<IBlockchainOperation>
+                return new AZOAResult<IBlockchainOperation>
                 {
                     IsError = false,
                     Result = operation,
@@ -251,7 +251,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// </list>
     /// </summary>
     private async Task SettleIdempotencyAsync(
-        string idempotencyKey, IBlockchainOperation operation, OASISResult<IBlockchainOperation> saved)
+        string idempotencyKey, IBlockchainOperation operation, AZOAResult<IBlockchainOperation> saved)
     {
         if (saved.IsError || operation.Status == OperationStatus.Failed)
         {
@@ -298,23 +298,23 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         await _idempotencyStore.CompleteAsync(idempotencyKey, txHash, CancellationToken.None);
     }
 
-    public async Task<OASISResult<IBlockchainOperation>> BuildAndExecuteAsync(Func<BlockchainOperationBuilder, IBlockchainOperation> build, OASISRequest? request = null)
+    public async Task<AZOAResult<IBlockchainOperation>> BuildAndExecuteAsync(Func<BlockchainOperationBuilder, IBlockchainOperation> build, AZOARequest? request = null)
     {
         var builder = new BlockchainOperationBuilder();
         var operation = build(builder);
         return await ExecuteAsync(operation, request);
     }
 
-    public async Task<OASISResult<IBlockchainOperation>> GetAsync(Guid id, Guid? avatarId = null, OASISRequest? request = null)
+    public async Task<AZOAResult<IBlockchainOperation>> GetAsync(Guid id, Guid? avatarId = null, AZOARequest? request = null)
     {
         var result = await _blockchainOperationStore.GetByIdAsync(id, default);
         if (result.IsError || result.Result == null) return result;
         if (avatarId.HasValue && result.Result.AvatarId != avatarId.Value)
-            return new OASISResult<IBlockchainOperation> { IsError = true, Message = "Operation is owned by a different avatar." };
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Operation is owned by a different avatar." };
         return result;
     }
 
-    public async Task<OASISResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(Guid avatarId, AZOARequest? request = null)
     {
         return await _blockchainOperationStore.GetByAvatarAsync(avatarId, default);
     }
@@ -328,10 +328,12 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         // Parameters["Amount"] side-channel, no int clamp.
         var amount = mint.Amount;
         // Mint = ASA-create — a platform/ASA-admin op (the platform is the asset
-        // manager/reserve/freeze/clawback).
+        // manager/reserve/freeze/clawback). tenant-consent-delegation AC4b: a Grant /
+        // FungibleTokenCreate mint is platform-SIGNED yet tenant-DRIVEN — stamp the
+        // acting tenant so the seam runs the live consent check before decrypt.
         var result = await chainProvider.MintAsync(
             mint.TokenUri ?? string.Empty, amount, mint.AssetType ?? string.Empty, walletAddress,
-            SigningContext.Platform);
+            BuildSigningContext(operation, platformOp: true));
         ApplyChainResult(operation, result, OperationStatus.Minted);
     }
 
@@ -341,7 +343,8 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         var amount = ReadUlongAmount(operation, fallback: 0UL);
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
         // Burn = AssetDestroy — a platform/ASA-admin op signed by the asset manager.
-        var result = await chainProvider.BurnAsync(tokenId, amount, walletAddress, SigningContext.Platform);
+        var result = await chainProvider.BurnAsync(tokenId, amount, walletAddress,
+            BuildSigningContext(operation, platformOp: true));
         ApplyChainResult(operation, result, OperationStatus.Burned);
     }
 
@@ -389,15 +392,51 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// row. When the op carries an owning avatar + wallet, the move is a per-user
     /// custodial op and must sign with that user's key (custody IDOR-guarded);
     /// otherwise it is a platform-authority move signed by the platform key.
+    /// <para>
+    /// tenant-consent-delegation AC4/AC4b: when the op carries an
+    /// <see cref="IBlockchainOperation.ActingTenantId"/> (a tenant drove this value
+    /// op via a child credential), stamp the acting tenant + signing scope + grantor
+    /// onto the context so the custody seam runs the LIVE consent check before any
+    /// decrypt — on BOTH the platform and the user signing path. The grantor is the
+    /// op's owning avatar (the on-whose-behalf user); for a platform op with no
+    /// owning avatar a tenant-driven sign with no resolvable grantor is denied at the
+    /// gate (fail-closed).
+    /// </para>
     /// </summary>
-    private static SigningContext BuildSigningContext(IBlockchainOperation operation)
+    /// <param name="platformOp">When true, the base context is the platform key
+    /// (Mint/Burn = ASA-admin) rather than a per-user resolve.</param>
+    private static SigningContext BuildSigningContext(IBlockchainOperation operation, bool platformOp = false)
     {
-        if (operation.AvatarId is { } avatarId && avatarId != Guid.Empty &&
-            operation.WalletId is { } walletId && walletId != Guid.Empty)
+        SigningContext baseCtx;
+        if (!platformOp
+            && operation.AvatarId is { } avatarId && avatarId != Guid.Empty
+            && operation.WalletId is { } walletId && walletId != Guid.Empty)
         {
-            return SigningContext.ForUser(avatarId, walletId);
+            baseCtx = SigningContext.ForUser(avatarId, walletId);
         }
-        return SigningContext.Platform;
+        else
+        {
+            baseCtx = SigningContext.Platform;
+        }
+
+        // No acting tenant ⇒ user-driven / platform-internal; no grant required.
+        if (operation.ActingTenantId is not { } tenantId || tenantId == Guid.Empty)
+            return baseCtx;
+
+        // S6 guardrail: the declared signing scope MUST be a legitimate scope for this
+        // operation type. A mislabelled op (e.g. a Transfer stamped nft:mint) would let
+        // the gate check the wrong capability — deny it before it can reach a decrypt.
+        // Throwing here is caught by ExecuteAsync and marks the op Failed (fail-closed).
+        if (!AzoaScopes.IsScopeValidForOperation(operation.OperationType, operation.SigningScope))
+            throw new InvalidOperationException(
+                $"Signing scope '{operation.SigningScope}' is not valid for operation type " +
+                $"'{operation.OperationType}'; refusing to build a tenant-driven signing context.");
+
+        // Tenant-driven: thread the acting tenant + scope + grantor to the seam.
+        // The grantor is the op's owning avatar (the user on whose behalf the tenant
+        // acts) — present on both user-key and platform-signed-on-behalf ops.
+        var grantor = operation.AvatarId is { } a && a != Guid.Empty ? a : Guid.Empty;
+        return baseCtx.ActingAs(tenantId, operation.SigningScope ?? string.Empty, grantor);
     }
 
     /// <summary>
@@ -433,7 +472,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         ApplyChainResult(operation, result, OperationStatus.Called);
     }
 
-    private static void ApplyChainResult<T>(IBlockchainOperation operation, OASISResult<T> chainResult, string successStatus)
+    private static void ApplyChainResult<T>(IBlockchainOperation operation, AZOAResult<T> chainResult, string successStatus)
     {
         if (chainResult.IsError)
         {

@@ -5,10 +5,10 @@
 
 using System;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Schema;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Schema;
 
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("quest_node_execution",
         Aggregate = "QuestNodeExecution (Models/Quest/QuestNodeExecution.cs)",
@@ -16,7 +16,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("Per-(run, node) execution row. Replaces the in-place mutation of QuestNode.State/Output/Error which prevented re-runs from preserving prior attempt's outputs.")]
     [SurrealNote("On a fork, the same execution row can be referenced by both parent and child run via the `executes` RELATE edge for nodes whose execution_order < forkPoint (copy-by-reference, no duplication). Scalar run_id is the originating run; cross-run reference happens through the RELATE edge defined separately in surrealdb-migration §6.2.")]
     [SurrealNote("The G2 claim primitive (TryClaimPendingAsync) is a conditional UPDATE that only succeeds when current state == 'Pending'. Empty-result case = lost race (already claimed by another worker). The (run_id, node_id) UNIQUE index is what makes the claim atomically safe.")]
-    [SurrealNote("output stores the JSON-serialized OASISResult<T> from the handler call. error carries the failure message when state = Failed. Both are null in non-terminal states.")]
+    [SurrealNote("output stores the JSON-serialized AZOAResult<T> from the handler call. error carries the failure message when state = Failed. Both are null in non-terminal states.")]
     [Slice("quest")]
     [Index("quest_node_execution_run_node", Fields = new[] { "run_id", "node_id" }, Unique = true)]
     [Index("quest_node_execution_by_run", Fields = new[] { "run_id" })]
@@ -56,7 +56,7 @@ namespace OASIS.WebAPI.Persistence.SurrealDb.Models
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public QuestNodeState State { get; set; }
 
-        [FieldGroup("Serialized OASISResult<T> from the handler call (null until Succeeded)")]
+        [FieldGroup("Serialized AZOAResult<T> from the handler call (null until Succeeded)")]
         public string? Output { get; set; }
 
         [FieldGroup("Failure message when state is Failed")]

@@ -32,7 +32,7 @@ This track exists because three workstreams collided on the same day
    we must upgrade.
 
 2. **The .NET SDK is two majors behind the server.** `surrealdb.net`
-   (which `Oasis.SurrealDb.Client` wraps) historically trails server
+   (which `Azoa.SurrealDb.Client` wraps) historically trails server
    majors. Today we are pinned to a `1.5.x`-compatible client because
    the server is 1.5.4. Bumping the server without coordinating the
    SDK breaks the wire layer.
@@ -69,7 +69,7 @@ for another year.
 
 3. **.NET SDK bump.** Update `surrealdb.net` package reference and any
    transitive constraint in [Directory.Build.props](../../../Directory.Build.props).
-   Re-validate `Oasis.SurrealDb.Client` against the new SDK — wire
+   Re-validate `Azoa.SurrealDb.Client` against the new SDK — wire
    format, statement-result shape, error envelope, and connection
    pool semantics may have shifted.
 
@@ -94,8 +94,8 @@ for another year.
    engine actually fsyncs per commit on the new major.
 
 7. **Integration test harness.** Re-run every
-   `tests/OASIS.WebAPI.IntegrationTests/Persistence/Surreal/*` and
-   `tests/Oasis.SurrealDb.Schema.Tests/*` suite against the new major.
+   `tests/AZOA.WebAPI.IntegrationTests/Persistence/Surreal/*` and
+   `tests/Azoa.SurrealDb.Schema.Tests/*` suite against the new major.
    The G1 crash-durability test is the highest-risk surface — engine
    behavior under `kill -9` is the exact thing 3.0.1's
    RecordId-data-loss bug would expose.
@@ -111,7 +111,7 @@ for another year.
   to rewrite. The first real `data-backfill-migrations` consumer is
   F6 FK rewrite (separate track), which is post-server-upgrade by
   default.
-- **`oasis-surreal` CLI surface changes.** The schema-apply CLI
+- **`azoa-surreal` CLI surface changes.** The schema-apply CLI
   contract (`up`, `reset`, `migrate`) stays identical — this is an
   engine-version bump, not a tooling redesign.
 - **Embedding / HNSW behavior change.** If the new major changes
@@ -136,7 +136,7 @@ makes the version decision deliberate instead of letting the pin rot.
   wanted. RocksDB is what we ship today. Either works; decision
   should be in DECISION.md.
 - **Test-namespace isolation.** Per
-  [open-decisions-2026-06-12.md](../../../C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/open-decisions-2026-06-12.md)
+  [open-decisions-2026-06-12.md](../../../C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/open-decisions-2026-06-12.md)
   there is still an open per-test namespace isolation gap. Confirm
   whether the new major changes the namespace-create cost enough to
   unblock the STARODK IDOR tests.
@@ -144,7 +144,7 @@ makes the version decision deliberate instead of letting the pin rot.
 ## Acceptance criteria
 - [ ] `DECISION.md` lands target major + patch with rationale.
 - [ ] `docker-compose.dev.yml` + `podman-compose.yml` images bumped.
-- [ ] `surrealdb.net` SDK bumped + `Oasis.SurrealDb.Client` re-validated.
+- [ ] `surrealdb.net` SDK bumped + `Azoa.SurrealDb.Client` re-validated.
 - [ ] All integration tests green against new major.
 - [ ] G1 crash-durability test still passes (or replaced if engine
       semantics changed).
@@ -153,7 +153,7 @@ makes the version decision deliberate instead of letting the pin rot.
 - [ ] `./dev-up.ps1` (default flags) brings the new stack up green.
 
 ## Related
-- Memory: [data-engine-decision](../../../C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/data-engine-decision.md) — SurrealDB sole engine; durability guardrails.
-- Memory: [surrealdb-fsync-mode-not-introspectable](../../../C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/surrealdb-fsync-mode-not-introspectable.md) — why G1 is a deploy-time review, not a runtime probe.
+- Memory: [data-engine-decision](../../../C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/data-engine-decision.md) — SurrealDB sole engine; durability guardrails.
+- Memory: [surrealdb-fsync-mode-not-introspectable](../../../C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/surrealdb-fsync-mode-not-introspectable.md) — why G1 is a deploy-time review, not a runtime probe.
 - Research: [.omc/research/surrealdb-migration-wave1/](../../../.omc/research/surrealdb-migration-wave1/) — five-persona deep-dive on the SDK + image surface at 1.5.4 freeze.
 - Adjacent track: [data-backfill-migrations](../data-backfill-migrations/spec.md) — F6 FK rewrite consumes the post-upgrade schema shape.

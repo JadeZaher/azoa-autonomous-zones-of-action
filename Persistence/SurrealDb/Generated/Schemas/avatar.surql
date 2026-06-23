@@ -28,6 +28,9 @@ DEFINE FIELD IF NOT EXISTS is_verified ON TABLE avatar TYPE bool
 DEFINE FIELD IF NOT EXISTS owner_tenant_id ON TABLE avatar TYPE option<record<avatar>>;
 DEFINE FIELD IF NOT EXISTS external_user_id ON TABLE avatar TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS external_ref ON TABLE avatar TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS auth_wallet_address ON TABLE avatar TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS auth_wallet_chain_type ON TABLE avatar TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS auth_not_before ON TABLE avatar TYPE option<datetime>;
 
 -- ── Indexes ──────────────────────────────────────────────────
 
@@ -48,4 +51,9 @@ DEFINE INDEX IF NOT EXISTS avatar_owner_tenant
 DEFINE INDEX IF NOT EXISTS avatar_tenant_extuser
     ON TABLE avatar
     FIELDS owner_tenant_id, external_user_id
+    UNIQUE;
+
+DEFINE INDEX IF NOT EXISTS avatar_auth_wallet
+    ON TABLE avatar
+    FIELDS auth_wallet_address, auth_wallet_chain_type
     UNIQUE;

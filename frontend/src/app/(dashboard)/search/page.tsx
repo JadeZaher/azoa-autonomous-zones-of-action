@@ -16,7 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { JsonViewer } from '@/components/shared/json-viewer'
-import { oasis, isOk } from '@/lib/oasis'
+import { azoa, isOk } from '@/lib/azoa'
 
 // ─── Types ───
 
@@ -107,7 +107,7 @@ export default function SearchPage() {
       setLoading(true)
       setError(null)
       try {
-        const res = await oasis.api.search({
+        const res = await azoa.api.search({
           query,
           entityTypes: buildEntityTypes(),
           chainId: chainId || undefined,
@@ -137,7 +137,7 @@ export default function SearchPage() {
   const loadFacets = async () => {
     setFacetsLoading(true)
     try {
-      const res = await oasis.api.getSearchFacets()
+      const res = await azoa.api.getSearchFacets()
       if (isOk(res)) {
         setFacets(res.value as unknown as FacetData)
       }

@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -20,7 +20,7 @@ public class BlockchainOperationController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<OASISResult<IBlockchainOperation>>> Get(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
@@ -31,7 +31,7 @@ public class BlockchainOperationController : ControllerBase
     }
 
     [HttpGet("avatar/{avatarId:guid}")]
-    public async Task<ActionResult<OASISResult<IEnumerable<IBlockchainOperation>>>> GetByAvatar(Guid avatarId, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<IBlockchainOperation>>>> GetByAvatar(Guid avatarId, [FromQuery] AZOARequest? request)
     {
         var callerId = GetAvatarIdFromClaims();
         if (callerId == null) return Unauthorized();

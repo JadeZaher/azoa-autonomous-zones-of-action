@@ -1,8 +1,8 @@
 {
   "stryker-config": {
-    "project": "OASIS.WebAPI.csproj",
+    "project": "AZOA.WebAPI.csproj",
     "test-projects": [
-      "tests/OASIS.WebAPI.Tests/OASIS.WebAPI.Tests.csproj"
+      "tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj"
     ],
     "reporters": ["html", "progress", "cleartext"],
     "mutation-level": "Standard",

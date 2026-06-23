@@ -23,7 +23,7 @@ const nextConfig = {
     domains: ['localhost'],
   },
   // Transpile the local SDK package for Next.js bundling
-  transpilePackages: ['@oasis/wallet-sdk'],
+  transpilePackages: ['@azoa/wallet-sdk'],
   webpack: (config) => {
     // Ensure the SDK's dependencies resolve from the frontend's node_modules
     // so that @noble/curves/ed25519 subpath imports work correctly

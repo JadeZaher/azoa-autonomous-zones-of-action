@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Kyc;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Kyc;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 /// <summary>
 /// Reads the KYC ledger (<see cref="IKycStore"/>) to answer the gate questions.
@@ -22,17 +22,17 @@ public sealed class KycGateService : IKycGateService
         _store = store;
     }
 
-    public async Task<OASISResult<bool>> RequireVerifiedAsync(Guid avatarId)
+    public async Task<AZOAResult<bool>> RequireVerifiedAsync(Guid avatarId)
     {
         var latest = await _store.GetLatestSubmissionByAvatarAsync(avatarId);
         if (latest.IsError)
-            return new OASISResult<bool> { IsError = true, Result = false, Message = latest.Message, Exception = latest.Exception };
+            return new AZOAResult<bool> { IsError = true, Result = false, Message = latest.Message, Exception = latest.Exception };
 
         if (latest.Result is { Status: KycStatus.APPROVED })
-            return new OASISResult<bool> { Result = true, Message = "Success" };
+            return new AZOAResult<bool> { Result = true, Message = "Success" };
 
         // No submission, or the latest is not APPROVED — gate closed.
-        return new OASISResult<bool>
+        return new AZOAResult<bool>
         {
             IsError = true,
             Result  = false,
@@ -40,19 +40,19 @@ public sealed class KycGateService : IKycGateService
         };
     }
 
-    public async Task<OASISResult<KycStatus>> GetKycStatusAsync(Guid avatarId)
+    public async Task<AZOAResult<KycStatus>> GetKycStatusAsync(Guid avatarId)
     {
         var latest = await _store.GetLatestSubmissionByAvatarAsync(avatarId);
         if (latest.IsError)
-            return new OASISResult<KycStatus> { IsError = true, Message = latest.Message, Exception = latest.Exception };
+            return new AZOAResult<KycStatus> { IsError = true, Message = latest.Message, Exception = latest.Exception };
 
         if (latest.Result is null)
-            return new OASISResult<KycStatus>
+            return new AZOAResult<KycStatus>
             {
                 IsError = true,
                 Message = $"{KycAuthorizationError.NotFound}No KYC submission found for this avatar."
             };
 
-        return new OASISResult<KycStatus> { Result = latest.Result.Status, Message = "Success" };
+        return new AZOAResult<KycStatus> { Result = latest.Result.Status, Message = "Success" };
     }
 }

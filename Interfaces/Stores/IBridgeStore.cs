@@ -1,8 +1,8 @@
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Bridge;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Bridge;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Stores;
+namespace AZOA.WebAPI.Interfaces.Stores;
 
 /// <summary>
 /// Persistence boundary for cross-chain bridge transactions and the

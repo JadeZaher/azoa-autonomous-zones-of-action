@@ -1,8 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using OASIS.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Core.Blockchain.Wormhole;
 
-namespace OASIS.WebAPI.Models.Responses;
+namespace AZOA.WebAPI.Models.Responses;
 
 /// <summary>
 /// Represents a cross-chain bridge transaction, persisted via EF Core.

@@ -2,11 +2,11 @@
 
 ## Tasks
 
-1. [x] ~~Create `Models/Quest/DappSeries.cs`~~ — superseded: entity is source-gen'd into `OASIS.WebAPI.Generated.SurrealDb.DappSeries` from `Persistence/SurrealDb/Schemas/source/210_dapp_series.mermaid`. No hand-written model per the "POCOs from surreal package" directive.
+1. [x] ~~Create `Models/Quest/DappSeries.cs`~~ — superseded: entity is source-gen'd into `AZOA.WebAPI.Generated.SurrealDb.DappSeries` from `Persistence/SurrealDb/Schemas/source/210_dapp_series.mermaid`. No hand-written model per the "POCOs from surreal package" directive.
 2. [x] ~~Create `Models/Quest/DappSeriesQuest.cs`~~ — superseded: source-gen'd from `Persistence/SurrealDb/Schemas/source/220_dapp_series_quest.mermaid`.
 3. [x] Create `DappManifest` — `Models/Requests/DappCompositionRequests.cs` (in-memory artifact, persisted as JSON string on `dapp_series.manifest`; not a separate aggregate).
 4. [x] ~~EF Core configurations~~ — DEFERRED to surrealdb-migration wave-2 per the in-flight surrealdb cutover. New entities are POCO-only behind the `I*Store` seam; no EF Core involvement.
-5. [x] ~~Add DbSets to `OASISDbContext`~~ — DEFERRED (same reason as task 4).
+5. [x] ~~Add DbSets to `AZOADbContext`~~ — DEFERRED (same reason as task 4).
 6. [x] Create `Interfaces/Managers/IDappCompositionManager.cs`.
 7. [x] Create `Managers/DappCompositionManager.cs` with series CRUD, quest management, composition.
 8. [x] Implement `ComposeAsync` with 5 validation rules (AllQuestsCompleted, ChainCompleteness, InputMappingConsistency, NoCircularDependencies, HolonBindingsResolved) + DappManifest emission.
@@ -16,8 +16,8 @@
 12. [x] Create `Controllers/DappSeriesController.cs` with series CRUD + quest management endpoints (`/api/dapp-series/...`).
 13. [x] Create `Controllers/DappCompositionController.cs` with compose, validate, manifest, generate, deploy, status endpoints (`/api/dapp-series/{id}/...`).
 14. [x] ~~EF Core migration~~ — DEFERRED to surrealdb-migration wave-2.
-15. [x] Unit tests for composition validation rules — `tests/OASIS.WebAPI.Tests/DappCompositionManagerTests.cs` covers all 5 rules + status-machine guardrails + avatar scoping. 12 tests, all green.
-16. [x] Integration tests for full pipeline (series → compose → generate → deploy) — `tests/OASIS.WebAPI.IntegrationTests/Controllers/DappSeriesControllerIntegrationTests.cs`, 18 tests covering series CRUD, quest management, compose/validate/manifest/generate/deploy/status endpoints, auth probes (401 paths), and the Swagger smoke. `ISTARManager` is not mocked; generate/deploy are exercised through their BadRequest paths (Draft → not-Ready), which proves the wiring end-to-end without requiring a real STAR backend. The success-path generate/deploy assertions are covered by `DappCompositionManagerTests` with Moq.
+15. [x] Unit tests for composition validation rules — `tests/AZOA.WebAPI.Tests/DappCompositionManagerTests.cs` covers all 5 rules + status-machine guardrails + avatar scoping. 12 tests, all green.
+16. [x] Integration tests for full pipeline (series → compose → generate → deploy) — `tests/AZOA.WebAPI.IntegrationTests/Controllers/DappSeriesControllerIntegrationTests.cs`, 18 tests covering series CRUD, quest management, compose/validate/manifest/generate/deploy/status endpoints, auth probes (401 paths), and the Swagger smoke. `ISTARManager` is not mocked; generate/deploy are exercised through their BadRequest paths (Draft → not-Ready), which proves the wiring end-to-end without requiring a real STAR backend. The success-path generate/deploy assertions are covered by `DappCompositionManagerTests` with Moq.
 17. [x] `dotnet build` — zero warnings.
 18. [x] Tests — **567 unit + 18 integration = 585 passing** (567/567 unit, 18/18 integration via filter).
 19. [x] Verify Swagger UI lists all dApp composition endpoints — automated via `SwaggerJson_ShouldListAllDappCompositionEndpoints` integration test (asserts all 12 routes present in `/swagger/v1/swagger.json`). Required broadening `Program.cs:527` Swagger gate to `Development` OR `IntegrationTest` env.
@@ -25,7 +25,7 @@
 ## Closeout harness fixes (2026-06-11)
 Two pre-existing infra issues blocked the integration test fleet (not just dapp-composition):
 
-1. **Factory env name mismatch.** `OASISTestWebApplicationFactory.cs:34` and `McpAuthScopingIntegrationTests.cs:88` set `UseEnvironment("Testing")`, but `Program.cs:549` skips the SurrealDB boot probe only when env is `"IntegrationTest"`. Switched both factory call sites to `"IntegrationTest"` — unblocks the entire integration test fleet (STARODK, Holon, Avatar, ...), not just dApp tests.
+1. **Factory env name mismatch.** `AZOATestWebApplicationFactory.cs:34` and `McpAuthScopingIntegrationTests.cs:88` set `UseEnvironment("Testing")`, but `Program.cs:549` skips the SurrealDB boot probe only when env is `"IntegrationTest"`. Switched both factory call sites to `"IntegrationTest"` — unblocks the entire integration test fleet (STARODK, Holon, Avatar, ...), not just dApp tests.
 
 2. **Swagger middleware gate.** `Program.cs:527` only mounted Swagger in `Development` env; the integration host (now `IntegrationTest`) got 404 on `/swagger/v1/swagger.json`. Broadened to `IsDevelopment() || IsEnvironment("IntegrationTest")`. Production/Staging behavior unchanged.
 

@@ -1,37 +1,37 @@
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 public interface IAvatarNFTService
 {
     // Avatar NFT Management
-    Task<OASISResult<IAvatarNFT>> MintAvatarNFTAsync(Guid avatarId, AvatarNFTMintModel model, OASISRequest? request = null);
-    Task<OASISResult<IAvatarNFT>> GetAvatarNFTAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IAvatarNFT>> GetAvatarNFTByTokenIdAsync(string chainType, string nftContractAddress, string tokenId, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IAvatarNFT>>> GetAvatarNFTsByAvatarAsync(Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<bool>> TransferAvatarNFTAsync(Guid id, string recipientAddress, Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<bool>> BurnAvatarNFTAsync(Guid id, Guid avatarId, OASISRequest? request = null);
+    Task<AZOAResult<IAvatarNFT>> MintAvatarNFTAsync(Guid avatarId, AvatarNFTMintModel model, AZOARequest? request = null);
+    Task<AZOAResult<IAvatarNFT>> GetAvatarNFTAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IAvatarNFT>> GetAvatarNFTByTokenIdAsync(string chainType, string nftContractAddress, string tokenId, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IAvatarNFT>>> GetAvatarNFTsByAvatarAsync(Guid avatarId, AZOARequest? request = null);
+    Task<AZOAResult<bool>> TransferAvatarNFTAsync(Guid id, string recipientAddress, Guid avatarId, AZOARequest? request = null);
+    Task<AZOAResult<bool>> BurnAvatarNFTAsync(Guid id, Guid avatarId, AZOARequest? request = null);
 
     // Holon NFT Binding Management
-    Task<OASISResult<IHolonNFTBinding>> BindHolonToAvatarNFTAsync(Guid holonId, Guid avatarNFTId, HolonNFTBindingModel model, Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IHolonNFTBinding>>> GetHolonBindingsAsync(Guid avatarNFTId, OASISRequest? request = null);
-    Task<OASISResult<bool>> UpdateHolonBindingAsync(Guid id, HolonNFTBindingUpdateModel model, Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<bool>> RemoveHolonBindingAsync(Guid id, Guid avatarId, OASISRequest? request = null);
+    Task<AZOAResult<IHolonNFTBinding>> BindHolonToAvatarNFTAsync(Guid holonId, Guid avatarNFTId, HolonNFTBindingModel model, Guid avatarId, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IHolonNFTBinding>>> GetHolonBindingsAsync(Guid avatarNFTId, AZOARequest? request = null);
+    Task<AZOAResult<bool>> UpdateHolonBindingAsync(Guid id, HolonNFTBindingUpdateModel model, Guid avatarId, AZOARequest? request = null);
+    Task<AZOAResult<bool>> RemoveHolonBindingAsync(Guid id, Guid avatarId, AZOARequest? request = null);
 
     // Wallet NFT Binding Management
-    Task<OASISResult<IWalletNFTBinding>> BindWalletToAvatarNFTAsync(Guid walletId, Guid avatarNFTId, WalletNFTBindingModel model, Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IWalletNFTBinding>>> GetWalletBindingsAsync(Guid avatarNFTId, OASISRequest? request = null);
-    Task<OASISResult<bool>> UpdateWalletBindingAsync(Guid id, WalletNFTBindingUpdateModel model, Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<bool>> RemoveWalletBindingAsync(Guid id, Guid avatarId, OASISRequest? request = null);
+    Task<AZOAResult<IWalletNFTBinding>> BindWalletToAvatarNFTAsync(Guid walletId, Guid avatarNFTId, WalletNFTBindingModel model, Guid avatarId, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IWalletNFTBinding>>> GetWalletBindingsAsync(Guid avatarNFTId, AZOARequest? request = null);
+    Task<AZOAResult<bool>> UpdateWalletBindingAsync(Guid id, WalletNFTBindingUpdateModel model, Guid avatarId, AZOARequest? request = null);
+    Task<AZOAResult<bool>> RemoveWalletBindingAsync(Guid id, Guid avatarId, AZOARequest? request = null);
     
     // Composite Operations
-    Task<OASISResult<AvatarNFTCompositeResult>> GetAvatarNFTCompositeAsync(Guid avatarNFTId, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<AvatarNFTCompositeResult>>> GetAvatarNFTCompositesByAvatarAsync(Guid avatarId, OASISRequest? request = null);
+    Task<AZOAResult<AvatarNFTCompositeResult>> GetAvatarNFTCompositeAsync(Guid avatarNFTId, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<AvatarNFTCompositeResult>>> GetAvatarNFTCompositesByAvatarAsync(Guid avatarId, AZOARequest? request = null);
     
     // Verification and Authorization
-    Task<OASISResult<bool>> VerifyAvatarNFTOwnershipAsync(Guid avatarId, string chainType, string nftContractAddress, string tokenId, OASISRequest? request = null);
-    Task<OASISResult<bool>> VerifyHolonAccessAsync(Guid avatarNFTId, Guid holonId, string requiredPermission, OASISRequest? request = null);
-    Task<OASISResult<bool>> VerifyWalletAccessAsync(Guid avatarNFTId, Guid walletId, string requiredAccess, OASISRequest? request = null);
+    Task<AZOAResult<bool>> VerifyAvatarNFTOwnershipAsync(Guid avatarId, string chainType, string nftContractAddress, string tokenId, AZOARequest? request = null);
+    Task<AZOAResult<bool>> VerifyHolonAccessAsync(Guid avatarNFTId, Guid holonId, string requiredPermission, AZOARequest? request = null);
+    Task<AZOAResult<bool>> VerifyWalletAccessAsync(Guid avatarNFTId, Guid walletId, string requiredAccess, AZOARequest? request = null);
 }

@@ -1,0 +1,39 @@
+# ═══════════════════════════════════════════════════════════════
+# BlockchainOperationController Malicious Tests
+# Attack payloads against operation query endpoints
+# ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"blockchainoperationcontroller_malicious"}}
+
+# ─── Seed Avatar ───
+{"id":"seed_avatar","description":"Register avatar for blockchain malicious tests","method":"POST","path":"/api/avatar/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_bcmal","email":"{{suitePrefix}}_bcmal@mal.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"bcMalAvatar"}
+{"id":"login_avatar","description":"Login as blockchain test avatar","method":"POST","path":"/api/avatar/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_bcmal@mal.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"bcMalAuth"}
+
+# ─── Path / ID Attacks ───
+{"id":"get_op_sqli_guid","description":"SQLi attempt in operation GUID","method":"GET","path":"/api/blockchainoperation/' OR '1'='1","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":404}
+{"id":"get_op_path_traversal","description":"Path traversal in operation endpoint","method":"GET","path":"/api/blockchainoperation/../../../etc/passwd","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":404}
+{"id":"get_op_null_byte","description":"Null byte in operation ID","method":"GET","path":"/api/blockchainoperation/550e8400-e29b-41d4-a716-446655440000%00","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":404}
+{"id":"get_op_negative_numbers","description":"Negative numbers in GUID","method":"GET","path":"/api/blockchainoperation/-50e8400-e29b-41d4-a716-446655440000","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":404}
+
+# ─── Avatar ID Attacks in GetByAvatar ───
+{"id":"get_by_avatar_sqli","description":"SQLi in avatar ID path param","method":"GET","path":"/api/blockchainoperation/avatar/' UNION SELECT * FROM avatars--","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":404}
+{"id":"get_by_avatar_path_traversal","description":"Path traversal in getByAvatar","method":"GET","path":"/api/blockchainoperation/avatar/../../../etc/passwd","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":404}
+{"id":"get_by_avatar_xss","description":"XSS payload in avatar ID","method":"GET","path":"/api/blockchainoperation/avatar/<script>alert(1)</script>","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":404}
+{"id":"get_by_avatar_very_long","description":"Very long string as avatar ID","method":"GET","path":"/api/blockchainoperation/avatar/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":404}
+
+# ─── Auth Bypass Attempts ───
+{"id":"get_op_no_auth","description":"Get operation without auth","method":"GET","path":"/api/blockchainoperation/00000000-0000-0000-0000-000000000000","headers":{},"expectedStatus":401}
+{"id":"get_by_avatar_no_auth","description":"Get by avatar without auth","method":"GET","path":"/api/blockchainoperation/avatar/{{bcMalAvatar.id}}","headers":{},"expectedStatus":401}
+{"id":"get_op_empty_auth","description":"Empty authorization header","method":"GET","path":"/api/blockchainoperation/00000000-0000-0000-0000-000000000000","headers":{"Authorization":""},"expectedStatus":401}
+{"id":"get_op_bearer_only","description":"Bearer keyword only no token","method":"GET","path":"/api/blockchainoperation/00000000-0000-0000-0000-000000000000","headers":{"Authorization":"Bearer "},"expectedStatus":401}
+{"id":"get_op_tampered_token","description":"Tampered JWT token","method":"GET","path":"/api/blockchainoperation/avatar/{{bcMalAvatar.id}}","headers":{"Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"},"expectedStatus":401}
+
+# ─── Header Injection ───
+{"id":"header_injection_op","description":"Header injection via auth header","method":"GET","path":"/api/blockchainoperation/avatar/{{bcMalAvatar.id}}","headers":{"Authorization":"Bearer {{bcMalAuth.token}}\r\nX-Injected: malicious"},"expectedStatus":401}
+
+# ─── Query Parameter Attacks (AZOARequest) ───
+{"id":"get_op_sqli_provider_type","description":"SQLi in providerType query param","method":"GET","path":"/api/blockchainoperation/avatar/{{bcMalAvatar.id}}?providerType=' OR '1'='1","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatusRange":"2xx"}
+{"id":"get_op_xss_provider_type","description":"XSS in providerType query param","method":"GET","path":"/api/blockchainoperation/avatar/{{bcMalAvatar.id}}?providerType=<script>alert(1)</script>","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatusRange":"2xx"}
+{"id":"get_op_very_long_query","description":"Very long query string","method":"GET","path":"/api/blockchainoperation/avatar/{{bcMalAvatar.id}}?customProviderKeys=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatusRange":"2xx"}
+
+# ─── Cleanup ───
+{"id":"cleanup_avatar","description":"Delete test avatar","method":"DELETE","path":"/api/avatar/{{bcMalAvatar.id}}","headers":{"Authorization":"Bearer {{bcMalAuth.token}}"},"expectedStatus":200}

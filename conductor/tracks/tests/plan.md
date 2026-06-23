@@ -2,7 +2,7 @@
 
 ## Tasks
 
-1. `[x]` Create test project `OASIS.WebAPI.Tests`
+1. `[x]` Create test project `AZOA.WebAPI.Tests`
 2. `[x]` Add xUnit, Moq, FluentAssertions packages
 3. `[x]` Install Stryker.NET for mutation testing
 4. `[x]` Write `ProviderContext` unit tests

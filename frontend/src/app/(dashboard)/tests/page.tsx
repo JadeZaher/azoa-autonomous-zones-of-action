@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { oasis, isOk } from '@/lib/oasis'
-import { useOasisAuth } from '@/lib/oasis-auth'
+import { azoa, isOk } from '@/lib/azoa'
+import { useAzoaAuth } from '@/lib/azoa-auth'
 import { useDebug } from '@/lib/debug-context'
 import { ChainBadge } from '@/components/shared/chain-badge'
 import { JsonViewer } from '@/components/shared/json-viewer'
@@ -52,7 +52,7 @@ interface SavedRun {
   }>
 }
 
-const STORAGE_KEY = 'oasis_test_results_latest'
+const STORAGE_KEY = 'azoa_test_results_latest'
 
 // ─── Test definitions ─────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ function buildTestCases(
       name: 'Get current profile',
       category: 'auth',
       fn: async () => {
-        const result = await oasis.auth.getProfile()
+        const result = await azoa.auth.getProfile()
         if (isOk(result)) {
           return { passed: true, detail: `Profile loaded: ${result.value.username ?? result.value.email ?? 'ok'}`, raw: result.value }
         }
@@ -80,7 +80,7 @@ function buildTestCases(
       name: 'Algorand chain info',
       category: 'blockchain',
       fn: async () => {
-        const result = await oasis.wallet.getChainInfo('algorand')
+        const result = await azoa.wallet.getChainInfo('algorand')
         if (isOk(result)) return { passed: true, detail: 'Chain info retrieved', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -89,7 +89,7 @@ function buildTestCases(
       name: 'Solana chain info',
       category: 'blockchain',
       fn: async () => {
-        const result = await oasis.wallet.getChainInfo('solana')
+        const result = await azoa.wallet.getChainInfo('solana')
         if (isOk(result)) return { passed: true, detail: 'Chain info retrieved', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -98,7 +98,7 @@ function buildTestCases(
       name: 'Algorand validate address',
       category: 'blockchain',
       fn: async () => {
-        const result = await oasis.wallet.validateAddress(
+        const result = await azoa.wallet.validateAddress(
           'algorand',
           'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ',
         )
@@ -110,7 +110,7 @@ function buildTestCases(
       name: 'Solana validate address',
       category: 'blockchain',
       fn: async () => {
-        const result = await oasis.wallet.validateAddress(
+        const result = await azoa.wallet.validateAddress(
           'solana',
           'So11111111111111111111111111111111111111112',
         )
@@ -124,7 +124,7 @@ function buildTestCases(
       name: 'Create holon',
       category: 'holons',
       fn: async () => {
-        const result = await oasis.holons.create({
+        const result = await azoa.holons.create({
           name: 'Test Holon ' + Date.now(),
           description: 'Functional test',
           providerName: 'InMemory',
@@ -142,7 +142,7 @@ function buildTestCases(
       name: 'Query holons',
       category: 'holons',
       fn: async () => {
-        const result = await oasis.holons.where({ name: 'Test' }).execute()
+        const result = await azoa.holons.where({ name: 'Test' }).execute()
         if (isOk(result)) {
           return { passed: true, detail: `Found ${result.value.length} holons`, raw: result.value }
         }
@@ -155,7 +155,7 @@ function buildTestCases(
       fn: async () => {
         const id = holonIdRef.current
         if (!id) return { passed: false, detail: 'Skipped — no holon ID from create step', raw: null }
-        const result = await oasis.holons.get(id)
+        const result = await azoa.holons.get(id)
         if (isOk(result)) return { passed: true, detail: 'Holon fetched', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -166,7 +166,7 @@ function buildTestCases(
       fn: async () => {
         const id = holonIdRef.current
         if (!id) return { passed: false, detail: 'Skipped — no holon ID from create step', raw: null }
-        const result = await oasis.holons.update(id, { description: 'Updated description' })
+        const result = await azoa.holons.update(id, { description: 'Updated description' })
         if (isOk(result)) return { passed: true, detail: 'Holon updated', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -177,7 +177,7 @@ function buildTestCases(
       fn: async () => {
         const id = holonIdRef.current
         if (!id) return { passed: false, detail: 'Skipped — no holon ID from create step', raw: null }
-        const result = await oasis.holons.delete(id)
+        const result = await azoa.holons.delete(id)
         if (isOk(result)) {
           holonIdRef.current = null
           return { passed: true, detail: 'Holon deleted', raw: result.value }
@@ -191,7 +191,7 @@ function buildTestCases(
       name: 'List wallets',
       category: 'wallets',
       fn: async () => {
-        const result = await oasis.api.request<Array<{ id: string }>>('GET', '/api/wallet')
+        const result = await azoa.api.request<Array<{ id: string }>>('GET', '/api/wallet')
         if (isOk(result)) {
           const firstId = result.value[0]?.id ?? null
           walletIdRef.current = firstId
@@ -206,7 +206,7 @@ function buildTestCases(
       fn: async () => {
         const id = walletIdRef.current
         if (!id) return { passed: true, detail: 'Skipped — no wallets available', raw: null }
-        const result = await oasis.api.request('GET', `/api/wallet/${id}/portfolio`)
+        const result = await azoa.api.request('GET', `/api/wallet/${id}/portfolio`)
         if (isOk(result)) return { passed: true, detail: 'Portfolio retrieved', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -217,7 +217,7 @@ function buildTestCases(
       name: 'Query NFTs',
       category: 'nfts',
       fn: async () => {
-        const result = await oasis.api.request<Array<{ id: string }>>('GET', '/api/nft')
+        const result = await azoa.api.request<Array<{ id: string }>>('GET', '/api/nft')
         if (isOk(result)) {
           const firstId = result.value[0]?.id ?? null
           nftIdRef.current = firstId
@@ -233,7 +233,7 @@ function buildTestCases(
         const id = nftIdRef.current
         if (!id) return { passed: true, detail: 'Skipped — no NFTs available', raw: null }
         try {
-          const result = await oasis.api.getNftMetadata(id)
+          const result = await azoa.api.getNftMetadata(id)
           if (isOk(result)) return { passed: true, detail: 'NFT metadata retrieved', raw: result.value }
           return { passed: false, detail: result.error.message, raw: result.error }
         } catch (err) {
@@ -247,7 +247,7 @@ function buildTestCases(
       name: 'Get bridge routes',
       category: 'bridge',
       fn: async () => {
-        const result = await oasis.api.getBridgeRoutes()
+        const result = await azoa.api.getBridgeRoutes()
         if (isOk(result)) return { passed: true, detail: 'Bridge routes retrieved', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -256,7 +256,7 @@ function buildTestCases(
       name: 'Get bridge history',
       category: 'bridge',
       fn: async () => {
-        const result = await oasis.api.getBridgeHistory()
+        const result = await azoa.api.getBridgeHistory()
         if (isOk(result)) return { passed: true, detail: 'Bridge history retrieved', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -267,7 +267,7 @@ function buildTestCases(
       name: 'Search all',
       category: 'search',
       fn: async () => {
-        const result = await oasis.api.search({ query: 'test', page: 1, pageSize: 10 })
+        const result = await azoa.api.search({ query: 'test', page: 1, pageSize: 10 })
         if (isOk(result)) return { passed: true, detail: 'Search returned results', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -276,7 +276,7 @@ function buildTestCases(
       name: 'Get search facets',
       category: 'search',
       fn: async () => {
-        const result = await oasis.api.getSearchFacets()
+        const result = await azoa.api.getSearchFacets()
         if (isOk(result)) return { passed: true, detail: 'Facets retrieved', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -287,7 +287,7 @@ function buildTestCases(
       name: 'List ODKs',
       category: 'starodk',
       fn: async () => {
-        const result = await oasis.api.request('GET', '/api/starodk')
+        const result = await azoa.api.request('GET', '/api/starodk')
         if (isOk(result)) return { passed: true, detail: 'ODK list retrieved', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
@@ -300,7 +300,7 @@ function buildTestCases(
       fn: async () => {
         try {
           // Testnet USDC = 10458941 (mainnet USDC 31566704 doesn't exist on testnet).
-          const backendResp = await oasis.api.request('GET', `/api/swap/quote?chain=algorand&tokenIn=0&tokenOut=10458941&amountIn=1000000&slippageBps=50`);
+          const backendResp = await azoa.api.request('GET', `/api/swap/quote?chain=algorand&tokenIn=0&tokenOut=10458941&amountIn=1000000&slippageBps=50`);
           if (!isOk(backendResp)) {
             return { passed: false, detail: `DEX error: ${backendResp.error?.message ?? 'Unknown'}`, raw: backendResp.error };
           }
@@ -326,7 +326,7 @@ function buildTestCases(
       category: 'dex',
       fn: async () => {
         try {
-          const backendResp = await oasis.api.request('GET', `/api/swap/quote?chain=solana&tokenIn=So11111111111111111111111111111111111111112&tokenOut=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amountIn=1000000000&slippageBps=50`);
+          const backendResp = await azoa.api.request('GET', `/api/swap/quote?chain=solana&tokenIn=So11111111111111111111111111111111111111112&tokenOut=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amountIn=1000000000&slippageBps=50`);
           if (!isOk(backendResp)) {
             return { passed: false, detail: `DEX: ${backendResp.error?.message ?? 'Unknown'}`, raw: backendResp.error };
           }
@@ -404,20 +404,20 @@ RAW: ${verbose}
     })
     .join('\n\n')
 
-  return `### BEGIN OASIS ERROR DUMP ###
+  return `### BEGIN AZOA ERROR DUMP ###
 Timestamp: ${new Date().toISOString()}
 Environment: ${process.env.NODE_ENV}
 Debug Mode: ${debug ? 'on (verbose — includes server-side exception chain)' : 'OFF — enable Debug in the top nav for server stack traces'}
 Total Failed: ${failed}
 
 ${section}
-### END OASIS ERROR DUMP ###`
+### END AZOA ERROR DUMP ###`
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function TestsPage() {
-  useOasisAuth() // ensure we're in auth context; dashboard layout handles redirect
+  useAzoaAuth() // ensure we're in auth context; dashboard layout handles redirect
   const { debug } = useDebug()
 
   const holonIdRef = useRef<string | null>(null)

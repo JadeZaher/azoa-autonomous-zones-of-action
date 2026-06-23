@@ -1,9 +1,11 @@
 using System.Net.Sockets;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Blockchain;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Models.Blockchain;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Blockchain.Base;
+namespace AZOA.WebAPI.Providers.Blockchain.Base;
 
 /// <summary>
 /// Controls how <see cref="BaseBlockchainProvider.ExecuteWithRetryAsync{T}"/>
@@ -73,16 +75,16 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
 
     // ─── IBlockchainProvider virtual implementations (override in derived) ───
 
-    public virtual Task<OASISResult<string>> GetBalanceAsync(
+    public virtual Task<AZOAResult<string>> GetBalanceAsync(
         string address, string? tokenId = null, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} GetBalanceAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<bool>> ValidateAddressAsync(
+    public virtual Task<AZOAResult<bool>> ValidateAddressAsync(
         string address, CancellationToken ct = default)
     {
-        return Task.FromResult(new OASISResult<bool>
+        return Task.FromResult(new AZOAResult<bool>
         {
             IsError = true,
             Result = false,
@@ -90,104 +92,122 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
         });
     }
 
-    public virtual Task<OASISResult<string>> MintAsync(
+    public virtual Task<AZOAResult<string>> MintAsync(
         string tokenUri, ulong amount, string assetType, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} MintAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<string>> BurnAsync(
+    public virtual Task<AZOAResult<string>> BurnAsync(
         string tokenId, ulong amount, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} BurnAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<string>> TransferAsync(
+    public virtual Task<AZOAResult<string>> TransferAsync(
         string tokenId, string fromAddress, string toAddress, ulong amount,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} TransferAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<string>> ExchangeAsync(
+    public virtual Task<AZOAResult<string>> ExchangeAsync(
         string sourceTokenId, string targetTokenId, string exchangeRate,
         string walletAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} ExchangeAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<string>> SwapAsync(
+    public virtual Task<AZOAResult<string>> SwapAsync(
         string tokenIn, string tokenOut, decimal amountIn, decimal minAmountOut,
         string walletAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} SwapAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<Dictionary<string, object>>> GetTokenMetadataAsync(
+    public virtual Task<AZOAResult<Dictionary<string, object>>> GetTokenMetadataAsync(
         string tokenId, CancellationToken ct = default)
     {
         return Task.FromResult(Error<Dictionary<string, object>>($"{ChainType} GetTokenMetadataAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<List<Dictionary<string, object>>>> GetTokensByOwnerAsync(
+    public virtual Task<AZOAResult<List<Dictionary<string, object>>>> GetTokensByOwnerAsync(
         string ownerAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<List<Dictionary<string, object>>>($"{ChainType} GetTokensByOwnerAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<Dictionary<string, object>>> GetTransactionStatusAsync(
+    public virtual Task<AZOAResult<Dictionary<string, object>>> GetTransactionStatusAsync(
         string txHash, CancellationToken ct = default)
     {
         return Task.FromResult(Error<Dictionary<string, object>>($"{ChainType} GetTransactionStatusAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<string>> DeployContractAsync(
+    /// <summary>
+    /// Conservative base default (blockchain-recovery-and-portable-wallets §1.2):
+    /// derive the confirmation verdict from <see cref="GetTransactionStatusAsync"/>
+    /// via <see cref="ChainTxClassifier"/>. A status probe that itself errors maps
+    /// to <see cref="ChainConfirmation.Unknown"/> — never a false negative — so a
+    /// flaky RPC can never cause a re-broadcast. Providers that can do a precise
+    /// mempool lookup should override to sharpen Pending vs Unknown.
+    /// </summary>
+    public virtual async Task<AZOAResult<ChainConfirmation>> GetTransactionConfirmationAsync(
+        string txHash, CancellationToken ct = default)
+    {
+        var status = await GetTransactionStatusAsync(txHash, ct);
+        // Never propagate IsError outward as a hard failure: the classifier folds
+        // an errored/absent probe into ChainConfirmation.Unknown, which the
+        // reconcile-before-retry caller treats as "park, do not act".
+        return new AZOAResult<ChainConfirmation> { Result = ChainTxClassifier.Classify(status) };
+    }
+
+    public virtual Task<AZOAResult<string>> DeployContractAsync(
         byte[] contractCode, string walletAddress,
         Dictionary<string, object>? args = null, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} DeployContractAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<object>> CallContractAsync(
+    public virtual Task<AZOAResult<object>> CallContractAsync(
         string contractAddress, string method, Dictionary<string, object> args,
         string walletAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<object>($"{ChainType} CallContractAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<Dictionary<string, object>>> GetChainInfoAsync(
+    public virtual Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(
         CancellationToken ct = default)
     {
         return Task.FromResult(Error<Dictionary<string, object>>($"{ChainType} GetChainInfoAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<string>> LockForBridgeAsync(
+    public virtual Task<AZOAResult<string>> LockForBridgeAsync(
         string tokenId, string vaultAddress, int amount,
         string targetChain, string targetRecipient, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} LockForBridgeAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<string>> MintWrappedAsync(
+    public virtual Task<AZOAResult<string>> MintWrappedAsync(
         string sourceChain, string sourceTokenId, string tokenUri,
         int amount, string recipientAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} MintWrappedAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<string>> BurnWrappedAsync(
+    public virtual Task<AZOAResult<string>> BurnWrappedAsync(
         string tokenId, int amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} BurnWrappedAsync not implemented"));
     }
 
-    public virtual Task<OASISResult<bool>> VerifyBridgeProofAsync(
+    public virtual Task<AZOAResult<bool>> VerifyBridgeProofAsync(
         string proofData, string sourceChain, string targetChainId, CancellationToken ct = default)
     {
-        return Task.FromResult(new OASISResult<bool>
+        return Task.FromResult(new AZOAResult<bool>
         {
             IsError = false,
             Result = false,
@@ -319,10 +339,10 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
         return false;
     }
 
-    protected OASISResult<T> Error<T>(string message, Exception? ex = null)
+    protected AZOAResult<T> Error<T>(string message, Exception? ex = null)
     {
         _logger.LogError(ex, "{ChainType} error: {Message}", ChainType, message);
-        return new OASISResult<T>
+        return new AZOAResult<T>
         {
             IsError = true,
             Message = message,
@@ -330,9 +350,9 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
         };
     }
 
-    protected OASISResult<T> Ok<T>(T result, string message = "")
+    protected AZOAResult<T> Ok<T>(T result, string message = "")
     {
-        return new OASISResult<T>
+        return new AZOAResult<T>
         {
             IsError = false,
             Result = result,

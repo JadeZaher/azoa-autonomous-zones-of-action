@@ -1,13 +1,13 @@
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Responses;
-using GeneratedAvatar = OASIS.WebAPI.Persistence.SurrealDb.Models.Avatar;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Responses;
+using GeneratedAvatar = AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="IAvatarStore"/>. Maps between the legacy
@@ -30,7 +30,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
 
     // ── IAvatarStore ──────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IAvatar>> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<IAvatar>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -39,7 +39,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
                 .WithParam("_t",  AvatarTable)
                 .WithParam("_id", ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<GeneratedAvatar>(q, ct);
-            return new OASISResult<IAvatar>
+            return new AZOAResult<IAvatar>
             {
                 IsError = row == null,
                 Message = row == null
@@ -50,17 +50,17 @@ public sealed class SurrealAvatarStore : IAvatarStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IAvatar>().CaptureException(ex, $"SurrealAvatarStore.GetByIdAsync failed: {ex.Message}");
+            return new AZOAResult<IAvatar>().CaptureException(ex, $"SurrealAvatarStore.GetByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<IAvatar>>> GetAllAsync(CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<IAvatar>>> GetAllAsync(CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery.SelectAll(AvatarTable);
             var rows = await _executor.QueryAsync<GeneratedAvatar>(q, ct);
-            return new OASISResult<IEnumerable<IAvatar>>
+            return new AZOAResult<IEnumerable<IAvatar>>
             {
                 Result  = rows.Select(FromPoco).ToList(),
                 Message = "Success"
@@ -68,11 +68,11 @@ public sealed class SurrealAvatarStore : IAvatarStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<IAvatar>>().CaptureException(ex, $"SurrealAvatarStore.GetAllAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<IAvatar>>().CaptureException(ex, $"SurrealAvatarStore.GetAllAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IAvatar>> UpsertAsync(IAvatar avatar, CancellationToken ct = default)
+    public async Task<AZOAResult<IAvatar>> UpsertAsync(IAvatar avatar, CancellationToken ct = default)
     {
         try
         {
@@ -88,15 +88,15 @@ public sealed class SurrealAvatarStore : IAvatarStore
             var saved = resp.GetValues<GeneratedAvatar>(0).FirstOrDefault();
             var result = saved is not null ? FromPoco(saved) : avatar;
 
-            return new OASISResult<IAvatar> { Result = result, Message = "Saved." };
+            return new AZOAResult<IAvatar> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<IAvatar>().CaptureException(ex, $"SurrealAvatarStore.UpsertAsync failed: {ex.Message}");
+            return new AZOAResult<IAvatar>().CaptureException(ex, $"SurrealAvatarStore.UpsertAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -107,7 +107,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
                 .WithParam("_id", ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<GeneratedAvatar>(checkQ, ct);
             if (existing == null)
-                return new OASISResult<bool> { IsError = true, Message = "Avatar not found.", Result = false };
+                return new AZOAResult<bool> { IsError = true, Message = "Avatar not found.", Result = false };
 
             var q = SurrealQuery
                 .Of("DELETE type::record($_t, $_id)")
@@ -115,15 +115,15 @@ public sealed class SurrealAvatarStore : IAvatarStore
                 .WithParam("_id", ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
-            return new OASISResult<bool> { Result = true, Message = "Deleted." };
+            return new AZOAResult<bool> { Result = true, Message = "Deleted." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool>().CaptureException(ex, $"SurrealAvatarStore.DeleteAsync failed: {ex.Message}");
+            return new AZOAResult<bool>().CaptureException(ex, $"SurrealAvatarStore.DeleteAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<IAvatar>>> ListByOwnerTenantAsync(Guid tenantId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<IAvatar>>> ListByOwnerTenantAsync(Guid tenantId, CancellationToken ct = default)
     {
         try
         {
@@ -134,7 +134,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
                 .Of("SELECT * FROM avatar WHERE owner_tenant_id = $_tenant ORDER BY created_date DESC")
                 .WithParam("_tenant", SurrealLink.ToLink(AvatarTable, ToSurrealId(tenantId)));
             var rows = await _executor.QueryAsync<GeneratedAvatar>(q, ct);
-            return new OASISResult<IEnumerable<IAvatar>>
+            return new AZOAResult<IEnumerable<IAvatar>>
             {
                 Result  = rows.Select(FromPoco).ToList(),
                 Message = "Success"
@@ -142,11 +142,11 @@ public sealed class SurrealAvatarStore : IAvatarStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<IAvatar>>().CaptureException(ex, $"SurrealAvatarStore.ListByOwnerTenantAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<IAvatar>>().CaptureException(ex, $"SurrealAvatarStore.ListByOwnerTenantAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IAvatar>> GetByTenantAndExternalUserAsync(Guid tenantId, string externalUserId, CancellationToken ct = default)
+    public async Task<AZOAResult<IAvatar>> GetByTenantAndExternalUserAsync(Guid tenantId, string externalUserId, CancellationToken ct = default)
     {
         try
         {
@@ -158,7 +158,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
                 .WithParam("_tenant", SurrealLink.ToLink(AvatarTable, ToSurrealId(tenantId)))
                 .WithParam("_ext", externalUserId);
             var row = await _executor.QuerySingleAsync<GeneratedAvatar>(q, ct);
-            return new OASISResult<IAvatar>
+            return new AZOAResult<IAvatar>
             {
                 Result  = row == null ? null : FromPoco(row),
                 Message = "Success"
@@ -166,7 +166,32 @@ public sealed class SurrealAvatarStore : IAvatarStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IAvatar>().CaptureException(ex, $"SurrealAvatarStore.GetByTenantAndExternalUserAsync failed: {ex.Message}");
+            return new AZOAResult<IAvatar>().CaptureException(ex, $"SurrealAvatarStore.GetByTenantAndExternalUserAsync failed: {ex.Message}");
+        }
+    }
+
+    public async Task<AZOAResult<IAvatar>> GetByAuthWalletAsync(string address, string chainType, CancellationToken ct = default)
+    {
+        try
+        {
+            // user-sovereign-identity AC2: resolve the avatar bound to EXACTLY this
+            // (address, chainType) wallet-auth pair. A miss returns Result == null
+            // with NO error so the manager treats it as "create new self-owned
+            // avatar". Matching is on the wallet binding ONLY — never email/username.
+            var q = SurrealQuery
+                .Of("SELECT * FROM avatar WHERE auth_wallet_address = $_addr AND auth_wallet_chain_type = $_chain LIMIT 1")
+                .WithParam("_addr", address)
+                .WithParam("_chain", chainType);
+            var row = await _executor.QuerySingleAsync<GeneratedAvatar>(q, ct);
+            return new AZOAResult<IAvatar>
+            {
+                Result  = row == null ? null : FromPoco(row),
+                Message = "Success"
+            };
+        }
+        catch (Exception ex)
+        {
+            return new AZOAResult<IAvatar>().CaptureException(ex, $"SurrealAvatarStore.GetByAuthWalletAsync failed: {ex.Message}");
         }
     }
 
@@ -201,7 +226,13 @@ public sealed class SurrealAvatarStore : IAvatarStore
                                ? SurrealLink.ToLink(AvatarTable, ToSurrealId(a.OwnerTenantId.Value))
                                : null,
         ExternalUserId   = a.ExternalUserId,
-        ExternalRef      = a.ExternalRef
+        ExternalRef      = a.ExternalRef,
+        AuthWalletAddress   = a.AuthWalletAddress,
+        AuthWalletChainType = a.AuthWalletChainType,
+        AuthNotBefore    = a.AuthNotBefore.HasValue
+                               ? new DateTimeOffset(
+                                     DateTime.SpecifyKind(a.AuthNotBefore.Value, DateTimeKind.Utc))
+                               : null
     };
 
     private static Avatar FromPoco(GeneratedAvatar p) => new()
@@ -221,7 +252,10 @@ public sealed class SurrealAvatarStore : IAvatarStore
                                ? null
                                : Guid.ParseExact(SurrealLink.FromLink(p.OwnerTenantId)!, "N"),
         ExternalUserId   = p.ExternalUserId,
-        ExternalRef      = p.ExternalRef
+        ExternalRef      = p.ExternalRef,
+        AuthWalletAddress   = p.AuthWalletAddress,
+        AuthWalletChainType = p.AuthWalletChainType,
+        AuthNotBefore    = p.AuthNotBefore?.UtcDateTime
     };
 
 }

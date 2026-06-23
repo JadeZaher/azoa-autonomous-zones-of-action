@@ -2,12 +2,12 @@
 
 ## Goal
 
-Give OASIS a **real, server-side transaction-signing primitive** for Algorand,
+Give AZOA a **real, server-side transaction-signing primitive** for Algorand,
 exposed behind a **chain-agnostic `ITransactionSigner` abstraction**, and replace
 the placeholder keypair generation so platform-custodied wallets are actually
 spendable. This is the keystone that unblocks every other track in the
-ardanova-provider-port initiative: until OASIS can custody a key and sign with
-it, OASIS is a metadata store, not a "blockchain provider," and the brand promise
+ardanova-provider-port initiative: until AZOA can custody a key and sign with
+it, AZOA is a metadata store, not a "blockchain provider," and the brand promise
 ("abstract away the chain — user never sees a key or a signing prompt") cannot be
 honored.
 
@@ -65,16 +65,16 @@ The ASA capability module (`OptInAsync`, `CreateASAAsync`) follows the same
 
 ### What is already in place (and is good)
 
-- **The SDKs are already referenced.** `OASIS.WebAPI.csproj:35`
+- **The SDKs are already referenced.** `AZOA.WebAPI.csproj:35`
   `Algorand2 2.0.0.2024051911` (real `Algorand.Account(mnemonic)` + canonical
   msgpack), and `:34` `BouncyCastle.Cryptography 2.6.2` aliased `BCCrypto2`. The
   hard part — resolving the legacy BouncyCastle 1.8.8 collision the Algorand2/Solana
   SDKs transitively bundle — is **already solved** via the `extern alias` precedent
   established for `Services/Wormhole/Secp256k1VaaSignatureVerifier.cs`
-  (`OASIS.WebAPI.csproj:25-34`). No new dependency is required.
+  (`AZOA.WebAPI.csproj:25-34`). No new dependency is required.
 - **AES-256-GCM key encryption at rest is real** — `Core/WalletKeyService.cs`
   `EncryptPrivateKey`/`DecryptPrivateKey`/`EncryptSeedPhrase`/`DecryptSeedPhrase`,
-  keyed by `SHA-256(config "OASIS:WalletEncryptionKey")`. This track does not touch
+  keyed by `SHA-256(config "AZOA:WalletEncryptionKey")`. This track does not touch
   the encryption envelope; it fixes what gets *put inside* it.
 - **A confirmation-polling orchestration shape exists to mirror.** ArdaNova's
   `AlgorandService` (`C:\Users\atooz\Documents\Escherbridge\ardanova\ardanova-backend-api-mcp\api-server\src\ArdaNova.Infrastructure\Algorand\AlgorandService.cs`)
@@ -96,7 +96,7 @@ public interface ITransactionSigner
     string ChainType { get; }
     // Sign canonical chain-native transaction bytes with the key material the
     // custody layer hands in; return the submittable signed envelope bytes.
-    OASISResult<byte[]> Sign(byte[] canonicalTxn, SigningKeyMaterial key);
+    AZOAResult<byte[]> Sign(byte[] canonicalTxn, SigningKeyMaterial key);
 }
 ```
 
@@ -151,7 +151,7 @@ stubs with a real params→build→sign→submit→confirm flow (mirroring ArdaN
 - A **soulbound-mint** code path (total=1, decimals=0, defaultFrozen=true,
   manager/freeze/clawback = platform) so the NFT-membership-credential use case is
   served by a real on-chain ASA. (The *credential domain semantics* stay in the
-  caller/ArdaNova; OASIS provides the soulbound-ASA primitive.)
+  caller/ArdaNova; AZOA provides the soulbound-ASA primitive.)
 - Each value-moving call must respect the existing `RetrySafety.Broadcast`
   contract (`Core/Blockchain/Base/BaseBlockchainProvider.cs`) — never retry a
   post-broadcast transaction.
@@ -192,7 +192,7 @@ stubs with a real params→build→sign→submit→confirm flow (mirroring ArdaN
 - [ ] `dotnet build` green, **zero warnings** (nullable enabled).
 - [ ] `dotnet test` green; new unit tests cover keygen round-trip, msgpack/sign
       vector, and provider transact paths (mock Algod/Indexer HTTP).
-- [ ] Grep: no `ArdaNova`/`ardanova.com` strings introduced into OASIS source.
+- [ ] Grep: no `ArdaNova`/`ardanova.com` strings introduced into AZOA source.
 - [ ] `conductor/DEPLOY-STEPS-TODO.md` updated with every stub this track leaves
       (Solana/Ethereum real keygen, KMS custody handoff, soulbound clawback-revoke
       path if deferred, mainnet enablement gate).
@@ -209,7 +209,7 @@ stubs with a real params→build→sign→submit→confirm flow (mirroring ArdaN
   separate DEX scope.
 - **Smart-contract / AVM** deploy + call.
 - **The economic/token domain** (dual-gate, allocation, treasury) — stays in
-  ArdaNova; OASIS exposes the create/transfer/soulbound primitives only.
+  ArdaNova; AZOA exposes the create/transfer/soulbound primitives only.
 - **Mainnet enablement** — real value flow is gated behind custody KMS work; this
   track is correct on testnet/devnet and leaves a mainnet gate on the deploy-stub
   list.

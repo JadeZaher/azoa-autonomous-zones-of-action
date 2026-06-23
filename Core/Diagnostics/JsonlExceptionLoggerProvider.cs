@@ -1,7 +1,7 @@
 using System;
 using Microsoft.Extensions.Logging;
 
-namespace OASIS.WebAPI.Core.Diagnostics;
+namespace AZOA.WebAPI.Core.Diagnostics;
 
 /// <summary>
 /// <see cref="ILoggerProvider"/> that returns a shared <see cref="JsonlExceptionLogger"/>

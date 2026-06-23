@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Services.Quest;
+namespace AZOA.WebAPI.Services.Quest;
 
 /// <summary>
 /// Builds a <see cref="QuestNodeType"/> → <see cref="IQuestNodeHandler"/> map

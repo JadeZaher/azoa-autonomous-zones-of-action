@@ -1,16 +1,16 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Json;
-using Oasis.SurrealDb.Client.Query;
-using Oasis.SurrealDb.Client.Schema;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Json;
+using Azoa.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client.Schema;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="IHolonStore"/>. Maps between the legacy
@@ -33,7 +33,7 @@ public sealed class SurrealHolonStore : IHolonStore
 
     // ── IHolonStore ───────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IHolon>> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<IHolon>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -42,7 +42,7 @@ public sealed class SurrealHolonStore : IHolonStore
                 .WithParam("_t",  HolonPoco.HolonTable)
                 .WithParam("_id", ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<HolonPoco>(q, ct);
-            return new OASISResult<IHolon>
+            return new AZOAResult<IHolon>
             {
                 IsError = row == null,
                 Message = row == null ? "Holon not found." : "Success",
@@ -51,12 +51,12 @@ public sealed class SurrealHolonStore : IHolonStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IHolon>().CaptureException(ex,
+            return new AZOAResult<IHolon>().CaptureException(ex,
                 $"SurrealHolonStore.GetByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<IHolon>>> QueryAsync(
+    public async Task<AZOAResult<IEnumerable<IHolon>>> QueryAsync(
         HolonQueryRequest? query = null, CancellationToken ct = default)
     {
         try
@@ -143,7 +143,7 @@ public sealed class SurrealHolonStore : IHolonStore
                 }
             }
 
-            return new OASISResult<IEnumerable<IHolon>>
+            return new AZOAResult<IEnumerable<IHolon>>
             {
                 Result  = rows.Select(FromPoco).ToList<IHolon>(),
                 Message = "Success"
@@ -151,12 +151,12 @@ public sealed class SurrealHolonStore : IHolonStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<IHolon>>().CaptureException(ex,
+            return new AZOAResult<IEnumerable<IHolon>>().CaptureException(ex,
                 $"SurrealHolonStore.QueryAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IHolon>> UpsertAsync(IHolon holon, CancellationToken ct = default)
+    public async Task<AZOAResult<IHolon>> UpsertAsync(IHolon holon, CancellationToken ct = default)
     {
         try
         {
@@ -176,16 +176,16 @@ public sealed class SurrealHolonStore : IHolonStore
             var saved  = resp.GetValues<HolonPoco>(0).FirstOrDefault();
             var result = saved is not null ? FromPoco(saved) : holon;
 
-            return new OASISResult<IHolon> { Result = result, Message = "Saved." };
+            return new AZOAResult<IHolon> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<IHolon>().CaptureException(ex,
+            return new AZOAResult<IHolon>().CaptureException(ex,
                 $"SurrealHolonStore.UpsertAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -195,7 +195,7 @@ public sealed class SurrealHolonStore : IHolonStore
                 .WithParam("_id", ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<HolonPoco>(checkQ, ct);
             if (existing == null)
-                return new OASISResult<bool> { IsError = true, Message = "Holon not found.", Result = false };
+                return new AZOAResult<bool> { IsError = true, Message = "Holon not found.", Result = false };
 
             var q = SurrealQuery
                 .Of("DELETE type::record($_t, $_id)")
@@ -203,11 +203,11 @@ public sealed class SurrealHolonStore : IHolonStore
                 .WithParam("_id", ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
-            return new OASISResult<bool> { Result = true, Message = "Deleted." };
+            return new AZOAResult<bool> { Result = true, Message = "Deleted." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool>().CaptureException(ex,
+            return new AZOAResult<bool>().CaptureException(ex,
                 $"SurrealHolonStore.DeleteAsync failed: {ex.Message}");
         }
     }

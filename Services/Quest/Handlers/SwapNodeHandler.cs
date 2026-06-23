@@ -1,15 +1,15 @@
 using System.Text.Json;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Services.Quest.Handlers;
+namespace AZOA.WebAPI.Services.Quest.Handlers;
 
 /// <summary>
 /// Handles <see cref="QuestNodeType.Swap"/> — Tier-2 chain action. Mechanism
 /// only: the tenant-supplied <c>SwapExecuteRequest</c> is passed straight through
 /// to <see cref="ISwapManager.GetSwapTransactionAsync"/>; the DEX computes the
-/// rate, OASIS never does. Requires a chain capability (a wallet bound to the
+/// rate, AZOA never does. Requires a chain capability (a wallet bound to the
 /// run); the engine refuses this node pre-execution when none is bound.
 /// </summary>
 public sealed class SwapNodeHandler : IQuestNodeHandler

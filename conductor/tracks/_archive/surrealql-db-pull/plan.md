@@ -7,7 +7,7 @@ To be filled in when Wave 2 of [[surrealql-toolkit]] starts. Skeleton:
 2. [ ] Round-trip test scaffolding (pull → regen → apply → pull).
 
 ## Phase 2 — CLI + diff mode
-3. [ ] `oasis-surreal db pull` subcommand.
+3. [ ] `azoa-surreal db pull` subcommand.
 4. [ ] `--diff` mode integration with drift detection.
 
 ## Phase 3 — RELATE edge support + index preservation

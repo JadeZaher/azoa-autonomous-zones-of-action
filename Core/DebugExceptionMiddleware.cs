@@ -1,11 +1,11 @@
 using System.Text.Json;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 /// <summary>
 /// Converts an unhandled exception into a structured JSON response that mirrors
-/// the <see cref="OASISResult{T}"/> error shape, so the SDK can parse it like
+/// the <see cref="AZOAResult{T}"/> error shape, so the SDK can parse it like
 /// any other error. When debug mode is on the response carries the full
 /// exception chain; otherwise only a generic message is returned.
 ///
@@ -48,12 +48,12 @@ public sealed class DebugExceptionMiddleware
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             context.Response.ContentType = "application/json";
 
-            var result = new OASISResult<object>();
+            var result = new AZOAResult<object>();
             result.CaptureException(
                 ex,
-                OASISResultDebug.Enabled
+                AZOAResultDebug.Enabled
                     ? ex.Message
-                    : "An unexpected error occurred. Enable debug mode (OASIS:DebugErrors) for details.");
+                    : "An unexpected error occurred. Enable debug mode (AZOA:DebugErrors) for details.");
 
             var json = JsonSerializer.Serialize(result.ToErrorPayload(), JsonOptions);
             await context.Response.WriteAsync(json);
