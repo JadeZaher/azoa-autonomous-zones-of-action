@@ -962,6 +962,27 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     private async Task<AZOAResult<byte[]>> SignWithFallbackPlatformKeyAsync(
         string opLabel, Func<byte[], Task<AZOAResult<byte[]>>> sign)
     {
+        // Fail-closed backstop (security review): the ungated platform-key fallback (no
+        // custody service ⇒ no consent gate) must NEVER run in a real deployment. A
+        // deployed app always sets ASPNETCORE_ENVIRONMENT explicitly (Production /
+        // Staging), so we DENY there — a missing custody service in those environments
+        // is a DI regression and silently signing ungated would defeat the whole consent
+        // chokepoint. Everywhere else (Development, IntegrationTest, or an UNSET env as
+        // in unit tests) the fallback is permitted: those contexts have no real value at
+        // stake and exercise the signing path directly. Deny-list, not allow-list, so an
+        // unrecognised future test env still works while production stays closed.
+        var aspnetEnv = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? string.Empty;
+        var isProtectedEnv = aspnetEnv.Equals("Production", StringComparison.OrdinalIgnoreCase)
+            || aspnetEnv.Equals("Staging", StringComparison.OrdinalIgnoreCase);
+        if (isProtectedEnv)
+            return new AZOAResult<byte[]>
+            {
+                IsError = true,
+                Message =
+                    $"Cannot {opLabel}: platform signing fallback is disabled in {aspnetEnv}; " +
+                    "the custody service must be wired."
+            };
+
         if (_keyService is null)
             return new AZOAResult<byte[]>
             {

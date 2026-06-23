@@ -14,9 +14,9 @@ The holon primitive is modeled as a **self-similar, autonomous agent**:
 1. `[x]` Design `IHolon` interface — holon primitive contract
 2. `[x]` Create `Holon` model — EF-mapped entity with self-referencing relationship
 3. `[x]` Create request/response DTOs (`HolonCreateModel`, `HolonUpdateModel`, `HolonQueryRequest`, `HolonInteractionRequest`)
-4. `[x]` Extend `IOASISStorageProvider` with holon CRUD methods
+4. `[x]` Extend `IAZOAStorageProvider` with holon CRUD methods
 5. `[x]` Implement holon storage in `InMemoryStorageProvider`
-6. `[x]` Implement holon storage in `EfStorageProvider` + update `OASISDbContext`
+6. `[x]` Implement holon storage in `EfStorageProvider` + update `AZOADbContext`
 7. `[x]` Create `HolonController` with 5+ endpoints (GET, GET query, POST, DELETE, POST interact, POST mint, POST exchange)
 8. `[x]` Cross-universe query aggregation across all active providers
 9. `[x]` Owner-based access control (JWT avatar scoping)

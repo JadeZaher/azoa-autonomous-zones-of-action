@@ -2,29 +2,29 @@
 
 ## Overview
 
-Rebuild the Next.js frontend with shadcn/ui as a full-featured demo harness that exercises every capability of the OASIS ecosystem — the .NET API, the @oasis/sdk, and the OasisClient. The primary goal is functional testing: every API endpoint, every wallet operation, and every integration path should be demonstrable and verifiable from the UI.
+Rebuild the Next.js frontend with shadcn/ui as a full-featured demo harness that exercises every capability of the AZOA ecosystem — the .NET API, the @azoa/sdk, and the AzoaClient. The primary goal is functional testing: every API endpoint, every wallet operation, and every integration path should be demonstrable and verifiable from the UI.
 
 ## Goals
 
 1. **Functional test coverage** — every completed backend endpoint and SDK feature has a corresponding UI panel that exercises it
 2. **Developer experience** — a single app where a developer can verify the entire stack works end-to-end
-3. **Demo-ready** — presentable to stakeholders showing the full OASIS capability set
+3. **Demo-ready** — presentable to stakeholders showing the full AZOA capability set
 4. **Regression surface** — if a backend change breaks an SDK contract, the demo harness surfaces it immediately
 
 ## Tech Stack
 
 - Next.js 14 (App Router, existing setup)
 - shadcn/ui (Radix primitives + Tailwind)
-- @oasis/sdk (local link, already configured; package renamed 2026-06-18, directory remains `sdk/oasis-wallet/`)
-- OasisClient, OasisAuthProvider, hooks from `frontend/src/lib/oasis-*`
-- `oasis.workflow` (WorkflowClient + QuestFactory, composed on the OasisClient facade alongside wallet/holons/portfolio/auth)
+- @azoa/sdk (local link, already configured; package renamed 2026-06-18, directory remains `sdk/azoa-wallet/`)
+- AzoaClient, AzoaAuthProvider, hooks from `frontend/src/lib/azoa-*`
+- `azoa.workflow` (WorkflowClient + QuestFactory, composed on the AzoaClient facade alongside wallet/holons/portfolio/auth)
 
 ## Architecture
 
 ```
 frontend/src/
   app/
-    layout.tsx              -- Root layout with OasisAuthProvider + ThemeProvider
+    layout.tsx              -- Root layout with AzoaAuthProvider + ThemeProvider
     page.tsx                -- Dashboard landing (auth gate)
     (auth)/
       login/page.tsx        -- Login form
@@ -50,15 +50,15 @@ frontend/src/
       sidebar.tsx           -- Navigation sidebar
       header.tsx            -- Top bar with auth status + chain selector
     shared/
-      result-display.tsx    -- Generic OASISResult<T> renderer
+      result-display.tsx    -- Generic AZOAResult<T> renderer
       json-viewer.tsx       -- Collapsible JSON tree for raw responses
       chain-badge.tsx       -- Chain indicator (Algorand/Solana/etc.)
       loading-skeleton.tsx  -- Consistent loading states
       error-banner.tsx      -- Error display with retry
   lib/
-    oasis.ts                -- SDK singleton (existing)
-    oasis-auth.tsx          -- Auth context (existing)
-    oasis-hooks.ts          -- React hooks (existing)
+    azoa.ts                -- SDK singleton (existing)
+    azoa-auth.tsx          -- Auth context (existing)
+    azoa-hooks.ts          -- React hooks (existing)
 ```
 
 ## Phases
@@ -71,10 +71,10 @@ frontend/src/
 - [ ] 1.2: Install core components: button, card, input, label, dialog, table, tabs, badge, toast, separator, skeleton, dropdown-menu, sheet, command, avatar
 - [ ] 1.3: Build sidebar layout with nav links for all pages
 - [ ] 1.4: Build header with auth status, chain selector dropdown, theme toggle
-- [ ] 1.5: Build login page with real OasisAuthProvider
+- [ ] 1.5: Build login page with real AzoaAuthProvider
 - [ ] 1.6: Build register page
 - [ ] 1.7: Add auth gate (redirect to login if not authenticated)
-- [ ] 1.8: Build ResultDisplay component (renders OASISResult with success/error states)
+- [ ] 1.8: Build ResultDisplay component (renders AZOAResult with success/error states)
 - [ ] 1.9: Build JsonViewer component (collapsible raw response viewer)
 
 ### Phase 2: Core Entity Pages (Avatar, Holon, Wallet)
@@ -102,10 +102,10 @@ frontend/src/
 
 - [ ] 4.1: **Search page** — search input with entity type filters (checkboxes for Avatars, Holons, Wallets, etc.), faceted results, pagination. Tests: POST /api/search with all SearchRequest fields
 - [ ] 4.2: **STAR ODK page** — list ODKs, create form, generate dApp (shows generated code), deploy stub. Tests: all 6 STARODK endpoints
-- [ ] 4.3: **Settings page** — current session info (JWT claims, expiry), provider selection (OASISRequest.providerName), network config display, SDK version info
-- [ ] 4.4: **Workflow page** — end-to-end exercise of the durable workflow engine via `oasis.workflow` (`WorkflowClient` + `quest()` factory). Covers:
-  - **Template authoring panel**: create a quest template (small DAG of generic nodes using `nodeConfig` builders — `gateCheck`, `emit`; optionally `swap`/`grant`/`transfer`/`refund`), list templates, get a template, instantiate with `{{param}}` values. SDK: `oasis.workflow.createTemplate()`, `.listTemplates()`, `.getTemplate(templateId)`, `.instantiate(templateId, params)`.
-  - **Fluent run driver panel — phase-by-phase**: drive a run step-by-step via `oasis.workflow.quest(questId).start({ params }).step(nodeId)` chains. Each `.step(nodeId)` issues `POST /api/quest/runs/{runId}/advance {fromNodeId}`.
+- [ ] 4.3: **Settings page** — current session info (JWT claims, expiry), provider selection (AZOARequest.providerName), network config display, SDK version info
+- [ ] 4.4: **Workflow page** — end-to-end exercise of the durable workflow engine via `azoa.workflow` (`WorkflowClient` + `quest()` factory). Covers:
+  - **Template authoring panel**: create a quest template (small DAG of generic nodes using `nodeConfig` builders — `gateCheck`, `emit`; optionally `swap`/`grant`/`transfer`/`refund`), list templates, get a template, instantiate with `{{param}}` values. SDK: `azoa.workflow.createTemplate()`, `.listTemplates()`, `.getTemplate(templateId)`, `.instantiate(templateId, params)`.
+  - **Fluent run driver panel — phase-by-phase**: drive a run step-by-step via `azoa.workflow.quest(questId).start({ params }).step(nodeId)` chains. Each `.step(nodeId)` issues `POST /api/quest/runs/{runId}/advance {fromNodeId}`.
   - **Fluent run driver panel — start-and-signal-at-gates**: start a run then un-park a GATE node via `.signal(gateId, payload)` (`POST /api/quest/runs/{runId}/signal {gateId, payload}`). Demonstrates the hybrid model: both paths compose on the same `WorkflowRunHandle`.
   - **Live run state visualizer**: poll `.status()` (`GET /api/quest/runs/{runId}`) and `.getExecutionState()` (`GET /api/quest/runs/{runId}/execution-state`) to display `WorkflowRunStatus` (`Pending` / `Running` / `Suspended` / `AwaitingSignal` / `AwaitingTimer` / `Succeeded` / `Failed` / `Cancelled`) and per-node `WorkflowNodeExecution` state. Use `.onSuspend(cb)` to surface when a run parks at a gate.
   - **Pure-metadata demo flow** (Tier-1, chain-free): a `HolonCreate → GateCheck → Emit` quest run that completes without any wallet bound — the end-to-end proof that the durable engine + economic-primitive-nodes + workflow SDK all work together on the chain-free path.
@@ -185,15 +185,15 @@ Every row must pass for the harness to be "green":
 | Search Facets | GET /api/search/facets | api.getSearchFacets() | /search | [ ] |
 | Create STARODK | POST /api/starodk | api.request() | /star-odk | [ ] |
 | Generate dApp | POST /api/starodk/{id}/generate | api.request() | /star-odk | [ ] |
-| Create Template | POST /api/quest/templates | oasis.workflow.createTemplate() | /workflow | [ ] |
-| List Templates | GET /api/quest/templates | oasis.workflow.listTemplates() | /workflow | [ ] |
-| Get Template | GET /api/quest/templates/{id} | oasis.workflow.getTemplate(id) | /workflow | [ ] |
-| Instantiate Template | POST /api/quest/templates/{id}/instantiate | oasis.workflow.instantiate(id, params) | /workflow | [ ] |
+| Create Template | POST /api/quest/templates | azoa.workflow.createTemplate() | /workflow | [ ] |
+| List Templates | GET /api/quest/templates | azoa.workflow.listTemplates() | /workflow | [ ] |
+| Get Template | GET /api/quest/templates/{id} | azoa.workflow.getTemplate(id) | /workflow | [ ] |
+| Instantiate Template | POST /api/quest/templates/{id}/instantiate | azoa.workflow.instantiate(id, params) | /workflow | [ ] |
 | Start Run | POST /api/quest/{id}/start-workflow | quest(id).start({ params }) | /workflow | [ ] |
 | Advance (step) | POST /api/quest/runs/{id}/advance | .step(nodeId) | /workflow | [ ] |
 | Signal Gate | POST /api/quest/runs/{id}/signal | .signal(gateId, payload) | /workflow | [ ] |
 | Run Status | GET /api/quest/runs/{id} | .status() | /workflow | [ ] |
-| Run Execution State | GET /api/quest/runs/{id}/execution-state | oasis.workflow.getExecutionState(id) | /workflow | [ ] |
+| Run Execution State | GET /api/quest/runs/{id}/execution-state | azoa.workflow.getExecutionState(id) | /workflow | [ ] |
 | Pure-metadata run E2E | HolonCreate→GateCheck→Emit (no wallet) | quest(id).start().step()... | /workflow | [ ] |
 | Capability gate (Tier-2 no wallet) | Transfer node rejected when no wallet bound | quest(id).step() → fails closed | /workflow | [ ] |
 
@@ -210,10 +210,10 @@ Every row must pass for the harness to be "green":
 ## Dependencies
 
 - Requires .NET backend running (`dotnet run` or Docker)
-- Requires SDK built (`cd sdk/oasis-wallet && npm run build`)
+- Requires SDK built (`cd sdk/azoa-wallet && npm run build`)
 - Requires blockchain nodes accessible (testnet/devnet RPCs)
 - For bridge testing: Wormhole Guardian network access (testnet)
 - **Workflow page** requires the following tracks (all SHIPPED 2026-06-17):
   - `durable-workflow-engine` — provides `POST /api/quest/{id}/start-workflow`, `POST /api/quest/runs/{id}/advance`, `POST /api/quest/runs/{id}/signal`, `GET /api/quest/runs/{id}`, `GET /api/quest/runs/{id}/execution-state`, and the `Suspended` / `AwaitingSignal` / `AwaitingTimer` run states
   - `economic-primitive-nodes` — provides the generic `GateCheck` / `Emit` / `Swap` / `Grant` / `Transfer` / `Refund` node types whose configs the `nodeConfig` builders serialize
-  - `workflow-sdk` — provides `oasis.workflow` (`WorkflowClient` + `quest()` factory) on the OasisClient facade
+  - `workflow-sdk` — provides `azoa.workflow` (`WorkflowClient` + `quest()` factory) on the AzoaClient facade

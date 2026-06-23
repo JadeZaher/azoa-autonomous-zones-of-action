@@ -423,6 +423,15 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         if (operation.ActingTenantId is not { } tenantId || tenantId == Guid.Empty)
             return baseCtx;
 
+        // S6 guardrail: the declared signing scope MUST be a legitimate scope for this
+        // operation type. A mislabelled op (e.g. a Transfer stamped nft:mint) would let
+        // the gate check the wrong capability — deny it before it can reach a decrypt.
+        // Throwing here is caught by ExecuteAsync and marks the op Failed (fail-closed).
+        if (!AzoaScopes.IsScopeValidForOperation(operation.OperationType, operation.SigningScope))
+            throw new InvalidOperationException(
+                $"Signing scope '{operation.SigningScope}' is not valid for operation type " +
+                $"'{operation.OperationType}'; refusing to build a tenant-driven signing context.");
+
         // Tenant-driven: thread the acting tenant + scope + grantor to the seam.
         // The grantor is the op's owning avatar (the user on whose behalf the tenant
         // acts) — present on both user-key and platform-signed-on-behalf ops.

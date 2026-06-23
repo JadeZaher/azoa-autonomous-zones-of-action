@@ -21,6 +21,7 @@ public class WalletAuthManagerTests
     private readonly Mock<IWalletAuthClaimTokenStore> _claimTokens = new();
     private readonly Mock<IAvatarStore> _avatars = new();
     private readonly Mock<IWalletSignatureVerifier> _verifier = new();
+    private readonly Mock<IConsentGrantStore> _consentGrants = new();
     private readonly WalletAuthManager _mgr;
 
     private const string Addr = "ALGOADDRESSXYZ";
@@ -34,7 +35,11 @@ public class WalletAuthManagerTests
             ["Jwt:Issuer"] = "test",
             ["Jwt:Audience"] = "test",
         }).Build();
-        _mgr = new WalletAuthManager(_challenges.Object, _claimTokens.Object, _avatars.Object, _verifier.Object, config);
+        // Default: revoke-all-on-claim succeeds (AC3b). Individual tests override to
+        // assert the call happens / fails gracefully.
+        _consentGrants.Setup(c => c.RevokeAllByGrantorAsync(It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<int> { Result = 0 });
+        _mgr = new WalletAuthManager(_challenges.Object, _claimTokens.Object, _avatars.Object, _verifier.Object, _consentGrants.Object, config);
     }
 
     private void GivenLiveChallengeAndValidSignature()
@@ -150,5 +155,81 @@ public class WalletAuthManagerTests
         var r = await _mgr.VerifyAsync(Addr, Chain, "c2ln", message: "TAMPERED-MESSAGE");
 
         r.IsError.Should().BeTrue();
+    }
+
+    // ── AC3b: revoke-all-grants-on-claim (the residual-child-JWT cut) ──────────
+
+    /// <summary>
+    /// Wires the claim-token happy path: a single-use token resolves the target
+    /// avatar, the avatar loads + echoes back on upsert. The user-side credential is
+    /// a password (the simplest legal "exactly one of {password,wallet}" choice — it
+    /// avoids the challenge/verify pipeline entirely so the test isolates the
+    /// revoke-on-claim behaviour). Returns the claimed avatar id.
+    /// </summary>
+    private Guid GivenClaimTokenHappyPath()
+    {
+        var token = "claim-token-abc";
+        var targetId = Guid.NewGuid();
+        _claimTokens.Setup(t => t.GetByTokenAsync(token, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<WalletAuthClaimToken>
+            {
+                Result = new WalletAuthClaimToken { Token = token, TargetAvatarId = targetId }
+            });
+        // Atomic single-use redeem wins.
+        _claimTokens.Setup(t => t.TryConsumeAsync(token, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<bool> { Result = true });
+        // The tenant-provisioned avatar still has a tenant owner pre-claim.
+        _avatars.Setup(a => a.GetByIdAsync(targetId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar>
+            {
+                Result = new Avatar { Id = targetId, OwnerTenantId = Guid.NewGuid() }
+            });
+        _avatars.Setup(a => a.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IAvatar a, CancellationToken _) => new AZOAResult<IAvatar> { Result = a });
+        return targetId;
+    }
+
+    [Fact]
+    public async Task Claim_RevokesAllOutstandingGrants_AC3b()
+    {
+        var targetId = GivenClaimTokenHappyPath();
+
+        // Claim with a password user-side credential (no wallet fields).
+        var r = await _mgr.ClaimAsync(
+            authedAvatarId: null,
+            claimToken: "claim-token-abc",
+            newPassword: "a-strong-new-password",
+            address: null, chainType: null, signature: null, message: null);
+
+        r.IsError.Should().BeFalse();
+        // THE attack closed: a tenant's still-live consent grant is revoked the moment
+        // the user claims, so a residual child JWT can no longer drive the signing seam.
+        // Revocation is keyed by the CLAIMED avatar id (the grantor), exactly once.
+        _consentGrants.Verify(c => c.RevokeAllByGrantorAsync(
+            targetId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Claim_GrantRevokeFails_StillSucceeds_ButWarns_AC3b()
+    {
+        GivenClaimTokenHappyPath();
+        // The grant-revoke backstop FAILS (store error). The watermark (AuthNotBefore)
+        // already cut the residual-token window, so the claim itself must NOT fail.
+        _consentGrants.Setup(c => c.RevokeAllByGrantorAsync(
+                It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<int> { IsError = true, Message = "store unavailable" });
+
+        var r = await _mgr.ClaimAsync(
+            authedAvatarId: null,
+            claimToken: "claim-token-abc",
+            newPassword: "a-strong-new-password",
+            address: null, chainType: null, signature: null, message: null);
+
+        // Claim still succeeds — the watermark is the primary cut; revoke is belt-and-
+        // suspenders. But the failure IS surfaced in the message.
+        r.IsError.Should().BeFalse();
+        r.Result!.Token.Should().NotBeNullOrEmpty();
+        (r.Message ?? string.Empty).ToLowerInvariant()
+            .Should().Match(m => m.Contains("revoke") || m.Contains("watermark"));
     }
 }

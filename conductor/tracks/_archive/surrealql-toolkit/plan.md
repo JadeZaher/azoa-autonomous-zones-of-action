@@ -8,7 +8,7 @@ the vision (see [spec.md](spec.md)).
 ## Wave 0 (already shipped — foundation, retroactively named)
 - ✅ `surrealdb-client-package` — runtime + parser + analyzer
 - ✅ `surrealdb-schema-source-gen` Phase 1-6 — Roslyn POCO + query builder
-- ✅ `oasis-surreal` CLI (migrate / generate / validate)
+- ✅ `azoa-surreal` CLI (migrate / generate / validate)
 - ✅ Aggregate slice diagrams (RUNBOOK §4 Phase B, `137992c`)
 
 ## Wave 1 — Close the schema → row gap (current)
@@ -29,12 +29,12 @@ Tracks that make iterating on a schema feel like Prisma — drift
 detection + db-pull + watch mode.
 
 4. [ ] **[surrealql-drift-detection](../surrealql-drift-detection/spec.md)** —
-   diff deployed namespace vs local `.surql`. `oasis-surreal drift`.
+   diff deployed namespace vs local `.surql`. `azoa-surreal drift`.
 5. [ ] **[surrealql-db-pull](../surrealql-db-pull/spec.md)** —
    reverse-engineer `.mermaid` from a running namespace.
-   `oasis-surreal db pull`.
+   `azoa-surreal db pull`.
 6. [ ] **Watch mode** (folded into `surrealdb-schema-source-gen` or
-   its own slice) — `oasis-surreal watch` regen's POCOs + slice
+   its own slice) — `azoa-surreal watch` regen's POCOs + slice
    diagrams on file change.
 
 ## Wave 3 — Observability + studio
@@ -49,7 +49,7 @@ agents via MCP) interact with the data without writing SurrealQL.
    list, schema describe) leveraging studio's metadata layer.
 
 ## Wave 4 — Public packaging
-Only meaningful once Waves 1-3 stabilize + OASIS dogfoods the surface
+Only meaningful once Waves 1-3 stabilize + AZOA dogfoods the surface
 in prod for ≥3 months.
 
 9. [ ] **[surrealql-toolkit-packaging](../surrealql-toolkit-packaging/spec.md)** —
@@ -57,7 +57,7 @@ in prod for ≥3 months.
    policy + breaking-change SLA.
 
 ## Cross-wave concerns (tracked here, not in constituent tracks)
-- **Versioning** — `oasis-surreal` follows semver; pre-1.0 while OASIS
+- **Versioning** — `azoa-surreal` follows semver; pre-1.0 while AZOA
   is the only consumer; 1.0 lands with Wave 4.
 - **Telemetry** — every CLI invocation emits an OpenTelemetry span so
   dogfooding produces real usage data. Telemetry sink is opt-in for
@@ -72,6 +72,6 @@ in prod for ≥3 months.
 - **Don't grow the dependency surface gratuitously.** Each new
   external package needs an ADR-style "why not homebake?" answer in
   the constituent track's spec.
-- **Don't fork OASIS resourcing.** When a wave would compete with an
-  OASIS-customer-facing slice, OASIS wins. Toolkit is a
+- **Don't fork AZOA resourcing.** When a wave would compete with an
+  AZOA-customer-facing slice, AZOA wins. Toolkit is a
   by-product, not a primary product.

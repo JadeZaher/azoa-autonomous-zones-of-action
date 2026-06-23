@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 
-namespace OASIS.WebAPI.Observability;
+namespace AZOA.WebAPI.Observability;
 
 /// <summary>
 /// Registers health checks and maps the /health endpoint with a JSON response writer.
@@ -16,10 +16,10 @@ namespace OASIS.WebAPI.Observability;
 public static class HealthCheckExtensions
 {
     /// <summary>
-    /// Registers AddHealthChecks() with the OASIS storage and provider-monitor checks.
-    /// Call from Program.cs: builder.Services.AddOasisHealthChecks();
+    /// Registers AddHealthChecks() with the AZOA storage and provider-monitor checks.
+    /// Call from Program.cs: builder.Services.AddAzoaHealthChecks();
     /// </summary>
-    public static IServiceCollection AddOasisHealthChecks(this IServiceCollection services)
+    public static IServiceCollection AddAzoaHealthChecks(this IServiceCollection services)
     {
         services
             .AddHealthChecks()
@@ -37,9 +37,9 @@ public static class HealthCheckExtensions
 
     /// <summary>
     /// Maps GET /health returning a JSON payload listing each check's name, status, and description.
-    /// Call from Program.cs: app.MapOasisHealth(app.Environment);
+    /// Call from Program.cs: app.MapAzoaHealth(app.Environment);
     /// </summary>
-    public static void MapOasisHealth(this IEndpointRouteBuilder app, IHostEnvironment environment)
+    public static void MapAzoaHealth(this IEndpointRouteBuilder app, IHostEnvironment environment)
     {
         // Exception messages can leak internals (connection strings, host names)
         // so they are only included in Development; the bare probe stays minimal.

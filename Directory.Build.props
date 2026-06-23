@@ -2,18 +2,18 @@
   <!-- ═══════════════════════════════════════════════════════════════════════
        Repo-wide MSBuild properties.
 
-       <OasisSurrealDbVersion> is the single source of truth for the version
-       of the homebake SurrealDB package suite (Oasis.SurrealDb.Client /
+       <AzoaSurrealDbVersion> is the single source of truth for the version
+       of the homebake SurrealDB package suite (Azoa.SurrealDb.Client /
        .Schema / .Analyzer). Consumers reference packages via
-         <PackageReference Include="Oasis.SurrealDb.Client"
-                            Version="$(OasisSurrealDbVersion)" />
+         <PackageReference Include="Azoa.SurrealDb.Client"
+                            Version="$(AzoaSurrealDbVersion)" />
        Project references inside this repo do not need the version (they
        resolve directly), but version-pin assertions (Directory.Build.props
        drift gate, scripts/passoff-surrealdb-wave1.ps1) read this property.
        Bump in lockstep with the package csproj <Version> elements.
        ═══════════════════════════════════════════════════════════════════════ -->
   <PropertyGroup>
-    <OasisSurrealDbVersion>0.1.0</OasisSurrealDbVersion>
+    <AzoaSurrealDbVersion>0.1.0</AzoaSurrealDbVersion>
   </PropertyGroup>
   <!-- The root-project glob exclusion for packages/** lives in
        Directory.Build.targets (imported AFTER the SDK glob has run) so the

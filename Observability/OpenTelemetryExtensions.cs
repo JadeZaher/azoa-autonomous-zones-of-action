@@ -6,18 +6,18 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
-namespace OASIS.WebAPI.Observability;
+namespace AZOA.WebAPI.Observability;
 
 /// <summary>
-/// Configures OpenTelemetry tracing, metrics, and W3C request correlation for OASIS WebAPI.
+/// Configures OpenTelemetry tracing, metrics, and W3C request correlation for AZOA WebAPI.
 /// </summary>
 public static class OpenTelemetryExtensions
 {
     /// <summary>
-    /// Activity source for custom instrumentation across OASIS managers and controllers.
+    /// Activity source for custom instrumentation across AZOA managers and controllers.
     /// Use this to create spans for domain-significant operations.
     /// </summary>
-    public const string ActivitySourceName = "OASIS.WebAPI";
+    public const string ActivitySourceName = "AZOA.WebAPI";
 
     /// <summary>
     /// Shared ActivitySource instance for use by controllers and managers.
@@ -27,13 +27,13 @@ public static class OpenTelemetryExtensions
     /// <summary>
     /// Registers OpenTelemetry tracing and metrics.
     /// Config keys consumed:
-    ///   OpenTelemetry:ServiceName       — resource service.name (default: "OASIS.WebAPI")
+    ///   OpenTelemetry:ServiceName       — resource service.name (default: "AZOA.WebAPI")
     ///   OpenTelemetry:Otlp:Endpoint     — OTLP exporter endpoint URI (optional; omit = exporter still registered but uses SDK default / env override)
     ///   OpenTelemetry:Otlp:Protocol     — "grpc" | "http/protobuf" (optional; default: "grpc")
     /// </summary>
-    public static IServiceCollection AddOasisObservability(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddAzoaObservability(this IServiceCollection services, IConfiguration config)
     {
-        var serviceName = config["OpenTelemetry:ServiceName"] ?? "OASIS.WebAPI";
+        var serviceName = config["OpenTelemetry:ServiceName"] ?? "AZOA.WebAPI";
 
         var otlpEndpoint = config["OpenTelemetry:Otlp:Endpoint"];
         var otlpProtocolRaw = config["OpenTelemetry:Otlp:Protocol"];
@@ -51,7 +51,7 @@ public static class OpenTelemetryExtensions
             {
                 tracing
                     .AddSource(ActivitySourceName)
-                    .AddSource("OASIS.SurrealDb")
+                    .AddSource("AZOA.SurrealDb")
                     .AddAspNetCoreInstrumentation(opts =>
                     {
                         // Enrich spans with request correlation attributes
@@ -84,7 +84,7 @@ public static class OpenTelemetryExtensions
                 metrics
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddMeter("OASIS.SurrealDb");
+                    .AddMeter("AZOA.SurrealDb");
 
                 if (!string.IsNullOrWhiteSpace(otlpEndpoint))
                 {
@@ -111,7 +111,7 @@ public static class OpenTelemetryExtensions
     /// for every request, so all log entries carry the correlation identifiers.
     /// Call this after UseRouting() and before UseEndpoints()/MapControllers().
     /// </summary>
-    public static IApplicationBuilder UseOasisRequestCorrelation(this IApplicationBuilder app)
+    public static IApplicationBuilder UseAzoaRequestCorrelation(this IApplicationBuilder app)
     {
         app.Use(async (context, next) =>
         {
@@ -121,7 +121,7 @@ public static class OpenTelemetryExtensions
                 // Expose trace/span ids as structured log scope so ILogger sinks pick them up
                 using var logScope = context.RequestServices
                     .GetRequiredService<ILoggerFactory>()
-                    .CreateLogger("OASIS.RequestCorrelation")
+                    .CreateLogger("AZOA.RequestCorrelation")
                     .BeginScope(new Dictionary<string, object>
                     {
                         ["TraceId"] = activity.TraceId.ToString(),

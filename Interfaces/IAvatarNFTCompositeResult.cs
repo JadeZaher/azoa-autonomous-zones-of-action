@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models;
+using AZOA.WebAPI.Models;
 
-namespace OASIS.WebAPI.Interfaces;
+namespace AZOA.WebAPI.Interfaces;
 
 public interface IAvatarNFTCompositeResult
 {

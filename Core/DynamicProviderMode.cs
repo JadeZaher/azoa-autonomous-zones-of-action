@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 /// <summary>
 /// Strategy for dynamic provider selection.

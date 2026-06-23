@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Interfaces.Signing;
+using AZOA.WebAPI.Interfaces.Signing;
 
-namespace OASIS.WebAPI.Core.Signing;
+namespace AZOA.WebAPI.Core.Signing;
 
 /// <summary>
 /// Resolves <see cref="ITransactionSigner"/> instances by chain type, mirroring

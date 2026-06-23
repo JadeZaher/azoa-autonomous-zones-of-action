@@ -8,17 +8,17 @@ program. Constituent tracks ship as discrete units; this track is the
 north star they ladder into.
 
 ## Decision
-Build `oasis-surreal` into a **Prisma-CLI-like developer experience
+Build `azoa-surreal` into a **Prisma-CLI-like developer experience
 focused on SurrealQL / graph databases**. The pieces already in the
 codebase — Mermaid-source schema authoring, Roslyn-emitted typed
 POCOs, the `MigrationRunner`, the typed `SurrealQuery<T>` builder,
 the `aggregates` slice emitter — are not coincidentally Prisma-shaped.
-They were assembled to solve OASIS's needs but together they cover
+They were assembled to solve AZOA's needs but together they cover
 ~40% of what Prisma offers. The strategic call: invest in turning
 them into a coherent toolkit because (a) the missing 60% is
-infrastructure OASIS needs anyway, (b) Prisma has no first-class graph
+infrastructure AZOA needs anyway, (b) Prisma has no first-class graph
 story so there is a real niche, (c) public packaging of the toolkit is
-a credible side-product even if OASIS is the only consumer for now.
+a credible side-product even if AZOA is the only consumer for now.
 
 ## Vision
 **"Prisma for SurrealQL with first-class graph semantics."**
@@ -46,8 +46,8 @@ A developer using SurrealDB should be able to:
 7. **Iterate** with a fast feedback loop (watch mode, dev seed data,
    isolated namespaces per test)
 
-…all with a single `oasis-surreal` CLI and the toolkit packaged as
-public NuGet (timeline gated on stability + OASIS dogfooding —
+…all with a single `azoa-surreal` CLI and the toolkit packaged as
+public NuGet (timeline gated on stability + AZOA dogfooding —
 nominally 3-6 months post-launch).
 
 ## Why now
@@ -97,7 +97,7 @@ Three signals motivate codifying now:
    the G2 idempotency contract relies on.
 6. **Homebake, minimize deps.** No new external NuGet packages
    gratuitously. The toolkit ships with the same dependency tree as
-   the rest of the OASIS surface.
+   the rest of the AZOA surface.
 7. **Graph-native by default.** RELATE-edge tables, recursive `->`
    traversals, and HNSW vector indexes are first-class — not bolted on
    to a table-relational mental model. This is the differentiator vs
@@ -106,7 +106,7 @@ Three signals motivate codifying now:
 ## Constituent tracks
 
 ### Shipped (Tier 1-2 foundation, retroactively part of the program)
-- **`surrealdb-client-package`** (`[x]`) — homebake `Oasis.SurrealDb.Client` /
+- **`surrealdb-client-package`** (`[x]`) — homebake `Azoa.SurrealDb.Client` /
   `.Schema` / `.Analyzer`. The toolkit's runtime + parser + safety
   layers.
 - **`surrealdb-schema-source-gen`** (`[~]`) — Roslyn generator emitting
@@ -119,7 +119,7 @@ Three signals motivate codifying now:
 
 ### Pending — discrete deliverables, each shippable on its own
 - **[`data-backfill-migrations`](../data-backfill-migrations/spec.md)** —
-  C# backfill modules registered with `oasis-surreal backfill apply`.
+  C# backfill modules registered with `azoa-surreal backfill apply`.
   First concrete consumer = F6 FK rewrite (Phase 2 of that track).
 - **[`surrealql-drift-detection`](../surrealql-drift-detection/spec.md)** —
   diff a deployed namespace against the local Mermaid sources;
@@ -134,7 +134,7 @@ Three signals motivate codifying now:
   toolkit via an existing DB rather than a clean slate.
 - **[`surrealql-toolkit-packaging`](../surrealql-toolkit-packaging/spec.md)** —
   public NuGet packaging + docs site + samples. Gates on the other
-  tracks stabilizing. Nominal timeline: 3-6 months post-OASIS-launch.
+  tracks stabilizing. Nominal timeline: 3-6 months post-AZOA-launch.
 
 ## Out of scope (intentionally)
 - **Multi-language client codegen** (TS / Rust / Go). Possible future
@@ -146,13 +146,13 @@ Three signals motivate codifying now:
   Speculative.
 
 ## Success criteria
-1. A new developer joining OASIS can set up a local SurrealDB +
+1. A new developer joining AZOA can set up a local SurrealDB +
    apply schema + run drift check + browse data in ≤10 minutes using
-   only `oasis-surreal` subcommands. No README hand-holding beyond
+   only `azoa-surreal` subcommands. No README hand-holding beyond
    one-liner installs.
 2. A schema change that adds a column emits the new POCO + the new
    `.surql` + an updated slice diagram + a runnable backfill stub —
-   in one `oasis-surreal regen` invocation.
+   in one `azoa-surreal regen` invocation.
 3. Drift detection catches any divergence between
    `Persistence/SurrealDb/Schemas/*.surql` and the deployed namespace
    before deploy.
@@ -168,8 +168,8 @@ backfills next (the F6 hard requirement), then drift detection
 db-pull, then public packaging.
 
 ## Related work
-- **OASIS product** ([product.md](../../product.md)) — the toolkit is
-  a by-product; OASIS remains the primary product. If toolkit-shaped
-  investment ever forks OASIS's roadmap, OASIS wins.
+- **AZOA product** ([product.md](../../product.md)) — the toolkit is
+  a by-product; AZOA remains the primary product. If toolkit-shaped
+  investment ever forks AZOA's roadmap, AZOA wins.
 - **RUNBOOK §4 Phase C** — the generator FK emission feeds the
   toolkit's "schema → record-typed everything" promise.

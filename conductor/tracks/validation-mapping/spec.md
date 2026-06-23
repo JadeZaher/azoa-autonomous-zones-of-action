@@ -20,7 +20,7 @@ HTTP Request → FluentValidation pipeline → AutoMapper (RequestModel → Enti
 ### New / Modified Files
 | Layer | File | Action |
 |---|---|---|
-| Project | `OASIS.WebAPI.csproj` | Add `FluentValidation.AspNetCore`, `AutoMapper.Extensions.Microsoft.DependencyInjection` |
+| Project | `AZOA.WebAPI.csproj` | Add `FluentValidation.AspNetCore`, `AutoMapper.Extensions.Microsoft.DependencyInjection` |
 | Program | `Program.cs` | Register `FluentValidation`, `AutoMapper` |
 | Validation | `Validation/AvatarRegisterValidator.cs` | New |
 | Validation | `Validation/AvatarLoginValidator.cs` | New |
@@ -31,7 +31,7 @@ HTTP Request → FluentValidation pipeline → AutoMapper (RequestModel → Enti
 | Validation | `Validation/WalletUpdateValidator.cs` | New |
 | Validation | `Validation/NftMintValidator.cs` | New |
 | Validation | `Validation/SearchRequestValidator.cs` | New |
-| Mapping | `Mapping/OASISMappingProfile.cs` | New |
+| Mapping | `Mapping/AZOAMappingProfile.cs` | New |
 | Mapping | `Mapping/MappingExtensions.cs` | New (optional lightweight helpers) |
 
 ## Validation Layer (FluentValidation)
@@ -160,9 +160,9 @@ builder.Services.AddAutoMapper(typeof(Program).Assembly);
 
 ### Mapping Profile
 ```csharp
-public class OASISMappingProfile : Profile
+public class AZOAMappingProfile : Profile
 {
-    public OASISMappingProfile()
+    public AZOAMappingProfile()
     {
         // Avatar mappings
         CreateMap<AvatarRegisterModel, Avatar>();
@@ -222,7 +222,7 @@ _mapper.Map(model, existing.Result);  // Null-conditional mapping handled in pro
 
 ## Rollout Plan
 1. Add packages and register in `Program.cs`
-2. Create `OASISMappingProfile` with existing entity mappings
+2. Create `AZOAMappingProfile` with existing entity mappings
 3. Create validators for **existing** request models first (Avatar, Holon)
 4. Refactor existing managers to use `_mapper.Map`
 5. Ensure all existing tests still pass
@@ -232,7 +232,7 @@ _mapper.Map(model, existing.Result);  // Null-conditional mapping handled in pro
 - [ ] `FluentValidation.AspNetCore` and `AutoMapper` packages added
 - [ ] `Program.cs` registers both services
 - [ ] Validators exist for all current request models (AvatarRegister, AvatarLogin, AvatarUpdate, HolonCreate, HolonUpdate)
-- [ ] `OASISMappingProfile` maps all existing entity ↔ model pairs
+- [ ] `AZOAMappingProfile` maps all existing entity ↔ model pairs
 - [ ] At least one manager refactored to use AutoMapper (prove pattern)
 - [ ] Invalid requests return 400 with structured error messages
 - [ ] All existing tests pass (no regressions)

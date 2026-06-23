@@ -9,28 +9,28 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Reflection;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Core.Blockchain;
-using OASIS.WebAPI.Extensions;
-using OASIS.WebAPI.Core.Blockchain.Wormhole;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Managers;
-using OASIS.WebAPI.Managers.Dex;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Blockchain;
+using AZOA.WebAPI.Extensions;
+using AZOA.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Managers.Dex;
+using AZOA.WebAPI.Models.Responses;
 using FluentValidation;
 using FluentValidation.AspNetCore;
-using OASIS.WebAPI.Observability;
-using OASIS.WebAPI.Providers.Blockchain.Algorand;
-using OASIS.WebAPI.Providers.Blockchain.Solana;
-using OASIS.WebAPI.Providers.Stores;
-using OASIS.WebAPI.Services;
-using OASIS.WebAPI.Services.Quest;
-using OASIS.WebAPI.Mcp;
-using OASIS.WebAPI.Services.Quest.Handlers;
-using OASIS.WebAPI.Services.Wormhole;
+using AZOA.WebAPI.Observability;
+using AZOA.WebAPI.Providers.Blockchain.Algorand;
+using AZOA.WebAPI.Providers.Blockchain.Solana;
+using AZOA.WebAPI.Providers.Stores;
+using AZOA.WebAPI.Services;
+using AZOA.WebAPI.Services.Quest;
+using AZOA.WebAPI.Mcp;
+using AZOA.WebAPI.Services.Quest.Handlers;
+using AZOA.WebAPI.Services.Wormhole;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,7 +48,7 @@ builder.Services.AddAutoMapper(typeof(Program).Assembly);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "OASIS WebAPI", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "AZOA WebAPI", Version = "v1" });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -63,7 +63,7 @@ builder.Services.AddSwaggerGen(c =>
         Name = "X-Api-Key",
         Type = SecuritySchemeType.ApiKey,
         In = ParameterLocation.Header,
-        Description = "API Key authentication. Example: \"oasis_abc123...\""
+        Description = "API Key authentication. Example: \"azoa_abc123...\""
     });
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
@@ -91,7 +91,7 @@ builder.Services.AddSwaggerGen(c =>
 if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("IntegrationTest"))
 {
     const string jwtPlaceholder = "your-super-secret-key-min-32-chars!!";
-    const string walletPlaceholder = "oasis-sleek-wallet-encryption-key-change-in-production!";
+    const string walletPlaceholder = "azoa-wallet-encryption-key-change-in-production!";
 
     var jwtKey = builder.Configuration.GetValue<string>("Jwt:Key");
     if (string.IsNullOrEmpty(jwtKey) || jwtKey == jwtPlaceholder)
@@ -100,11 +100,11 @@ if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("
             "(>=32 char) secret via the Jwt__Key environment variable before starting " +
             "outside Development.");
 
-    var walletKey = builder.Configuration.GetValue<string>("OASIS:WalletEncryptionKey");
+    var walletKey = builder.Configuration.GetValue<string>("AZOA:WalletEncryptionKey");
     if (string.IsNullOrEmpty(walletKey) || walletKey == walletPlaceholder)
         throw new InvalidOperationException(
-            "OASIS:WalletEncryptionKey is missing or set to the committed placeholder. " +
-            "Set a strong secret via the OASIS__WalletEncryptionKey environment variable " +
+            "AZOA:WalletEncryptionKey is missing or set to the committed placeholder. " +
+            "Set a strong secret via the AZOA__WalletEncryptionKey environment variable " +
             "before starting outside Development.");
 }
 
@@ -126,6 +126,58 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key))
     };
+
+    // user-sovereign-identity AC3b (security-review fix): the per-avatar
+    // AuthNotBefore watermark MUST be re-checked on EVERY request, not only when a
+    // child credential is minted. ValidateLifetime alone checks the token's OWN nbf
+    // against now — it has no knowledge of the avatar's watermark. Without this, a
+    // tenant child JWT minted seconds before the user claims their avatar stays valid
+    // to its natural exp (up to 15 min) AFTER the user severed custody. This event
+    // loads the subject avatar and FAILS the token when it was issued before the
+    // current watermark. Fail-closed: a lookup error rejects the token.
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var principal = context.Principal;
+            var sub = principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                      ?? principal?.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(sub, out var avatarId))
+            {
+                // No resolvable subject — nothing avatar-scoped to enforce; the rest
+                // of validation already passed. (Non-avatar principals are rare here.)
+                return;
+            }
+
+            var avatarStore = context.HttpContext.RequestServices
+                .GetRequiredService<AZOA.WebAPI.Interfaces.Stores.IAvatarStore>();
+            var loaded = await avatarStore.GetByIdAsync(avatarId, context.HttpContext.RequestAborted);
+            if (loaded.IsError || loaded.Result is null)
+            {
+                // Fail-closed: a token whose subject avatar cannot be loaded is rejected.
+                context.Fail("Subject avatar could not be verified.");
+                return;
+            }
+
+            var watermark = loaded.Result.AuthNotBefore;
+            if (watermark is null)
+                return; // never claimed / no watermark — nothing to enforce.
+
+            // The token's issued-at / not-before must be at/after the watermark. A
+            // token minted before the avatar's last claim is stale and rejected,
+            // closing the post-claim residual-credential window. ValidFrom surfaces the
+            // token's nbf (falling back to iat) as a UTC DateTime; if neither is present
+            // ValidFrom is DateTime.MinValue, which is always stale against a watermark.
+            var jwt = context.SecurityToken as System.IdentityModel.Tokens.Jwt.JwtSecurityToken;
+            var iatClaim = jwt?.Payload?.Iat;
+            var tokenInstant = iatClaim is int iat
+                ? DateTimeOffset.FromUnixTimeSeconds(iat).UtcDateTime
+                : (jwt?.ValidFrom ?? DateTime.MinValue);
+
+            if (AZOA.WebAPI.Core.AuthWatermark.IsTokenStale(tokenInstant, watermark))
+                context.Fail("Token was issued before the avatar's authentication watermark (post-claim cut).");
+        }
+    };
 })
 .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
     ApiKeyAuthenticationHandler.SchemeName, _ => { })
@@ -144,7 +196,7 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization(o =>
     o.AddPolicy("TenantScope", p =>
         p.RequireAssertion(ctx =>
-            ctx.User.HasScope(OASIS.WebAPI.Core.OasisScopes.TenantProvision))));
+            ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision))));
 
 // ─── Rate limiting + per-API-key metering (api-safety-hardening task 18) ───
 // Built-in ASP.NET Core 8 rate limiting (Microsoft.AspNetCore.RateLimiting —
@@ -285,18 +337,18 @@ builder.Services.AddSingleton<IProviderHealthMonitor, ProviderHealthMonitor>();
 // adapters have landed. Only Quest remains on EF, gated on
 // quest-temporal-fork-model. Scoped lifetime in both cases.
 builder.Services.AddScoped<IAvatarStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealAvatarStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealAvatarStore>();
 builder.Services.AddScoped<IWalletStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealWalletStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletStore>();
 builder.Services.AddScoped<IHolonStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealHolonStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore>();
 builder.Services.AddScoped<IBlockchainOperationStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealBlockchainOperationStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealBlockchainOperationStore>();
 builder.Services.AddScoped<ISTARStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealStarStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealStarStore>();
 // kyc-module: KYC submission/document persistence (SurrealDB).
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Stores.IKycStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealKycStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKycStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealKycStore>();
 // surrealdb-migration wave-2 round-3 close (residual task 9): IQuestStore
 // flips to the SurrealDB-backed adapter now that the definition-side
 // schema files (150_quest / 160_quest_node / 170_quest_edge) and the
@@ -308,11 +360,11 @@ builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Stores.IKycStore,
 // IQuestTemplateStore interface (CLOSEOUT Stream C2) — both shapes
 // share the underlying quest_template row format.
 builder.Services.AddScoped<IQuestStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealQuestStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealQuestStore>();
 builder.Services.AddScoped<INftStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealNftStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftStore>();
 builder.Services.AddScoped<IBridgeStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealBridgeStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealBridgeStore>();
 // surrealdb-migration CLOSEOUT Stream C2 (pre-D gap closure): ApiKey + Quest
 // template catalog flipped to per-aggregate Surreal stores. ApiKey: backs
 // ApiKeyAuthenticationHandler + ApiKeyController. QuestTemplate: backs
@@ -320,10 +372,10 @@ builder.Services.AddScoped<IBridgeStore,
 // quest_run / quest_node_execution tables are owned by
 // quest-temporal-fork-model and remain on the InMemory adapter until that
 // track lands).
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Stores.IApiKeyStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealApiKeyStore>();
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Stores.IQuestTemplateStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealQuestTemplateStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IApiKeyStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealApiKeyStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IQuestTemplateStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealQuestTemplateStore>();
 
 // <quest-temporal-fork-model>
 // Per-attempt runtime stores for QuestRun + QuestNodeExecution. As of
@@ -336,10 +388,27 @@ builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Stores.IQuestTemplateStore,
 // InMemory* class files remain on disk so a future revert is a one-line
 // DI swap.
 builder.Services.AddScoped<IQuestRunStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealQuestRunStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealQuestRunStore>();
 builder.Services.AddScoped<IQuestNodeExecutionStore,
-    OASIS.WebAPI.Providers.Stores.Surreal.SurrealQuestNodeExecutionStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealQuestNodeExecutionStore>();
 // </quest-temporal-fork-model>
+
+// ─── user-self-sovereignty: consent + wallet-auth + webhook stores ───────────
+// user-sovereign-identity: wallet-challenge auth nonce + tenant claim-invite token.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthChallengeStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthChallengeStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthClaimTokenStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthClaimTokenStore>();
+// tenant-consent-delegation: the live grant store (the seam's source of truth),
+// the immutable audit trail (AC10), and the webhook outbox + registration (AC7).
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IConsentGrantStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealConsentGrantStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IConsentAuditStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealConsentAuditStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IConsentWebhookOutboxStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealConsentWebhookOutboxStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWebhookRegistrationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealWebhookRegistrationStore>();
 
 // <surrealdb-client-package>
 // Homebake SurrealDB client (Phase 6, sub-wave 1.5a). Replaces direct
@@ -349,22 +418,22 @@ builder.Services.AddScoped<IQuestNodeExecutionStore,
 // SurrealDB-backed *Store adapters land in surrealdb-migration wave-2 tasks
 // 5-8; until then this registration just makes the client available for
 // any code that wants to use it (integration tests, future adapters).
-builder.Services.AddOasisSurrealDb(builder.Configuration);
+builder.Services.AddAzoaSurrealDb(builder.Configuration);
 // Decorate ISurrealExecutor with OTEL instrumentation (spans + SurrealMetrics).
-// The decorator is in OASIS.WebAPI so the homebake package stays observability-agnostic.
+// The decorator is in AZOA.WebAPI so the homebake package stays observability-agnostic.
 // Remove the package's DefaultSurrealExecutor descriptor and re-register the same
 // implementation via ActivatorUtilities so the InstrumentedSurrealExecutor wraps it
 // without leaving a dangling registration in DI (GetServices<ISurrealExecutor>()
 // would otherwise return two entries; the runbook's M1 finding).
 {
     var defaultExecutorDescriptor = builder.Services.Single(d =>
-        d.ServiceType == typeof(Oasis.SurrealDb.Client.Query.ISurrealExecutor));
+        d.ServiceType == typeof(Azoa.SurrealDb.Client.Query.ISurrealExecutor));
     builder.Services.Remove(defaultExecutorDescriptor);
-    builder.Services.AddScoped<Oasis.SurrealDb.Client.Query.ISurrealExecutor>(sp =>
+    builder.Services.AddScoped<Azoa.SurrealDb.Client.Query.ISurrealExecutor>(sp =>
     {
-        var inner = (Oasis.SurrealDb.Client.Query.ISurrealExecutor)
+        var inner = (Azoa.SurrealDb.Client.Query.ISurrealExecutor)
             ActivatorUtilities.CreateInstance(sp, defaultExecutorDescriptor.ImplementationType!);
-        return new OASIS.WebAPI.Observability.InstrumentedSurrealExecutor(inner);
+        return new AZOA.WebAPI.Observability.InstrumentedSurrealExecutor(inner);
     });
 }
 // </surrealdb-client-package>
@@ -383,34 +452,68 @@ builder.Services.AddScoped<IHolonManager, HolonManager>();
 // ─── Custodial-provider initiative: custody / tenant / kyc / allocation managers ───
 // custody-key-management: decrypt→sign→zero resolver (the only signer-facing
 // key path besides WalletManager.ExportWalletAsync). Scoped to match IWalletStore.
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IKeyCustodyService,
-    OASIS.WebAPI.Managers.KeyCustodyService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKeyCustodyService,
+    AZOA.WebAPI.Managers.KeyCustodyService>();
 // tenant-onboarding: tenant principal provisioning + cross-tenant isolation.
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.ITenantManager,
-    OASIS.WebAPI.Managers.TenantManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ITenantManager,
+    AZOA.WebAPI.Managers.TenantManager>();
+
+// ─── user-self-sovereignty: consent gate + managers + webhook delivery ───────
+// tenant-consent-delegation C1/AC4: the LIVE consent check the custody seam calls
+// before any tenant-driven key decrypt. KeyCustodyService depends on this — it is
+// the single chokepoint's fail-closed authority.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ITenantConsentGate,
+    AZOA.WebAPI.Managers.TenantConsentGate>();
+// The consent authority (grant/revoke/list) + the thin outbox emitter it calls.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentManager,
+    AZOA.WebAPI.Managers.ConsentManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentWebhookEmitter,
+    AZOA.WebAPI.Managers.ConsentWebhookEmitter>();
+// user-sovereign-identity: wallet-challenge auth + claim flow.
+builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.IWalletSignatureVerifier,
+    AZOA.WebAPI.Core.Ed25519SignatureVerifier>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IWalletAuthManager,
+    AZOA.WebAPI.Managers.WalletAuthManager>();
+// Webhook bridge (AC7/AC8): SSRF guard + timestamped HMAC signer (singletons) +
+// the polling delivery worker (hosted). Config-driven via the "Webhooks" section;
+// Enabled defaults to false until a tenant endpoint is registered.
+builder.Services.AddSingleton<AZOA.WebAPI.Core.Webhooks.WebhookSsrfGuard>();
+builder.Services.AddSingleton<AZOA.WebAPI.Core.Webhooks.WebhookHmacSigner>();
+builder.Services.AddOptions<AZOA.WebAPI.Services.Webhooks.WebhookOptions>()
+    .Bind(builder.Configuration.GetSection(AZOA.WebAPI.Services.Webhooks.WebhookOptions.SectionName));
+builder.Services.AddHttpClient(AZOA.WebAPI.Services.Webhooks.WebhookOptions.HttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        ConnectCallback = AZOA.WebAPI.Core.Webhooks.WebhookSsrfGuard.CreateGuardedConnectCallback(),
+    });
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Webhooks.ConsentWebhookDeliveryWorker>();
 // kyc-module: KycSettings bound from the "Kyc" section; the provider is selected
 // by Kyc:Provider (manual default; veriff = config-gated deploy-stub, throws).
-builder.Services.Configure<OASIS.WebAPI.Settings.KycSettings>(
-    builder.Configuration.GetSection(OASIS.WebAPI.Settings.KycSettings.SectionName));
+builder.Services.Configure<AZOA.WebAPI.Settings.KycSettings>(
+    builder.Configuration.GetSection(AZOA.WebAPI.Settings.KycSettings.SectionName));
 if (string.Equals(
-        builder.Configuration[$"{OASIS.WebAPI.Settings.KycSettings.SectionName}:Provider"],
+        builder.Configuration[$"{AZOA.WebAPI.Settings.KycSettings.SectionName}:Provider"],
         "veriff", StringComparison.OrdinalIgnoreCase))
 {
-    builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Providers.IKycProviderService,
-        OASIS.WebAPI.Providers.Kyc.VeriffKycProviderService>();
+    builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
+        AZOA.WebAPI.Providers.Kyc.VeriffKycProviderService>();
 }
 else
 {
-    builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Providers.IKycProviderService,
-        OASIS.WebAPI.Providers.Kyc.ManualKycProviderService>();
+    builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
+        AZOA.WebAPI.Providers.Kyc.ManualKycProviderService>();
 }
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IKycManager,
-    OASIS.WebAPI.Managers.KycManager>();
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IKycGateService,
-    OASIS.WebAPI.Managers.KycGateService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycManager,
+    AZOA.WebAPI.Managers.KycManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycGateService,
+    AZOA.WebAPI.Managers.KycGateService>();
 // fiat-stripe-bridge: idempotent, KYC-gated, tenant-callable allocation primitive.
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IAllocationManager,
-    OASIS.WebAPI.Managers.AllocationManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationManager,
+    AZOA.WebAPI.Managers.AllocationManager>();
+// fungible-token-node: idempotent, KYC-gated fungible-token (ASA) launch seam.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleTokenManager,
+    AZOA.WebAPI.Managers.FungibleTokenManager>();
 // Bind Jupiter DEX configuration
 builder.Services.Configure<JupiterConfig>(
     builder.Configuration.GetSection(JupiterConfig.SectionName));
@@ -423,7 +526,7 @@ builder.Services.Configure<JupiterConfig>(
 builder.Services.AddHttpClient<JupiterDexAdapter>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
-    client.DefaultRequestHeaders.Add("User-Agent", "OASIS-SwapManager/1.0");
+    client.DefaultRequestHeaders.Add("User-Agent", "AZOA-SwapManager/1.0");
 });
 builder.Services.AddScoped<IDexAdapter>(sp => sp.GetRequiredService<JupiterDexAdapter>());
 // Tinyman creates its own short-lived Algod HttpClient internally (no typed client needed).
@@ -439,30 +542,30 @@ builder.Services.AddScoped<IQuestManager, QuestManager>();
 // <dapp-composition>
 // IDappSeriesStore + IDappCompositionManager are the dapp-composition track's
 // surfaces. The store operates on source-gen'd DappSeries + DappSeriesQuest
-// POCOs (OASIS.WebAPI.Persistence.SurrealDb.Models) -- no hand-written entity types
+// POCOs (AZOA.WebAPI.Persistence.SurrealDb.Models) -- no hand-written entity types
 // for this aggregate. InMemory is the default until surrealdb-migration
 // wave-2 lands the Surreal-backed adapter; the Singleton lifetime matches
 // the existing InMemory store pattern (process-lifetime state).
-builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Stores.IDappSeriesStore,
-    OASIS.WebAPI.Providers.Stores.InMemoryDappSeriesStore>();
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.Managers.IDappCompositionManager,
-    OASIS.WebAPI.Managers.DappCompositionManager>();
+builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Stores.IDappSeriesStore,
+    AZOA.WebAPI.Providers.Stores.InMemoryDappSeriesStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IDappCompositionManager,
+    AZOA.WebAPI.Managers.DappCompositionManager>();
 // </dapp-composition>
 
 // ─── Transaction signing seam (signing-core-keystone) ───
 // Real server-side signing behind a chain-agnostic ITransactionSigner, selected
 // by ChainType via TransactionSignerFactory (mirrors BlockchainProviderFactory).
 // Adding a chain is one new ITransactionSigner registration here.
-builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Signing.ITransactionSigner,
-    OASIS.WebAPI.Providers.Blockchain.Algorand.AlgorandTransactionSigner>();
+builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner,
+    AZOA.WebAPI.Providers.Blockchain.Algorand.AlgorandTransactionSigner>();
 // Solana signer is a fail-closed stub (deploy-stub H1): GetSigner("Solana")
 // resolves so the seam is probeable, but Sign returns an error (no silent no-op).
 // Real Solana Ed25519 signing replaces only the stub body; the seam is unchanged.
-builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Signing.ITransactionSigner,
-    OASIS.WebAPI.Providers.Blockchain.Solana.SolanaTransactionSigner>();
-builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(sp =>
-    new OASIS.WebAPI.Core.Signing.TransactionSignerFactory(
-        sp.GetServices<OASIS.WebAPI.Interfaces.Signing.ITransactionSigner>()));
+builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner,
+    AZOA.WebAPI.Providers.Blockchain.Solana.SolanaTransactionSigner>();
+builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(sp =>
+    new AZOA.WebAPI.Core.Signing.TransactionSignerFactory(
+        sp.GetServices<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner>()));
 
 // ─── Blockchain providers & factory ───
 // AlgorandProvider is constructed explicitly so it receives the signer factory +
@@ -470,7 +573,7 @@ builder.Services.AddSingleton<OASIS.WebAPI.Interfaces.Signing.ITransactionSigner
 builder.Services.AddSingleton<IBlockchainProvider>(sp => new AlgorandProvider(
     sp.GetRequiredService<IConfiguration>(),
     sp.GetRequiredService<ILogger<AlgorandProvider>>(),
-    sp.GetRequiredService<OASIS.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(),
+    sp.GetRequiredService<AZOA.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(),
     sp.GetRequiredService<WalletKeyService>(),
     // value-path-wiring C1: route signing through the audited custody choke point.
     // IKeyCustodyService is scoped and the provider is a singleton, so it is
@@ -485,7 +588,7 @@ builder.Services.AddSingleton<IBlockchainProvider, SolanaProvider>();
 // reachable as the "Simulated" ChainType. Registered before the factory so the
 // factory's IEnumerable<IBlockchainProvider> sees it.
 builder.Services.AddSingleton<IBlockchainProvider,
-    OASIS.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>();
+    AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>();
 builder.Services.AddSingleton<IBlockchainProviderFactory>(sp =>
 {
     var registeredProviders = sp.GetRequiredService<IEnumerable<IBlockchainProvider>>();
@@ -515,12 +618,12 @@ builder.Services.AddScoped<IVaaSignatureVerifier, Secp256k1VaaSignatureVerifier>
 // REQUIRED: CrossChainBridgeService & BlockchainOperationManager take
 // IIdempotencyStore as a ctor dependency; AlgorandFaucet resolves it per-call
 // via IServiceScopeFactory. surrealdb-migration wave-2 task 7 flipped the
-// impl from EF (OASIS.WebAPI.Core.Idempotency.IdempotencyStore) to the
+// impl from EF (AZOA.WebAPI.Core.Idempotency.IdempotencyStore) to the
 // SurrealDB-backed SurrealIdempotencyStore, which closes the C5
 // multi-statement-swallow risk via per-statement SurrealResponse inspection
 // and writes through deterministic SHA-256(key) record ids.
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IIdempotencyStore,
-    OASIS.WebAPI.Core.Idempotency.SurrealIdempotencyStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IIdempotencyStore,
+    AZOA.WebAPI.Core.Idempotency.SurrealIdempotencyStore>();
 
 // ─── Cross-chain bridge (hybrid trusted + Wormhole) ───
 // surrealdb-migration wave-2 task 8: routes through IBridgeStore +
@@ -532,35 +635,35 @@ builder.Services.AddScoped<ICrossChainBridgeService, CrossChainBridgeService>();
 // drives a periodic sweep, creating a DI scope per tick. Routes all bridge +
 // operation reads/writes through IBridgeStore (surrealdb-migration wave-2
 // task 8 — completed).
-builder.Services.AddOptions<OASIS.WebAPI.Services.Reconciliation.ReconciliationOptions>()
+builder.Services.AddOptions<AZOA.WebAPI.Services.Reconciliation.ReconciliationOptions>()
     .Bind(builder.Configuration.GetSection(
-        OASIS.WebAPI.Services.Reconciliation.ReconciliationOptions.SectionName));
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IReconciliationService,
-    OASIS.WebAPI.Services.Reconciliation.ReconciliationService>();
-builder.Services.AddHostedService<OASIS.WebAPI.Services.Reconciliation.ReconciliationHostedService>();
+        AZOA.WebAPI.Services.Reconciliation.ReconciliationOptions.SectionName));
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IReconciliationService,
+    AZOA.WebAPI.Services.Reconciliation.ReconciliationService>();
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Reconciliation.ReconciliationHostedService>();
 
 // ─── Durable saga / transactional outbox (durable-saga-orchestration Phase 1) ───
 // Generic, reusable, bridge-agnostic. Mirrors the reconciliation registrations:
 // options-bound section, scoped store/processor (per-tick DI scope), a hosted
 // processor driven by a swappable polling trigger (SurrealDB LIVE-query later).
-builder.Services.AddOptions<OASIS.WebAPI.Sagas.SagaOptions>()
+builder.Services.AddOptions<AZOA.WebAPI.Sagas.SagaOptions>()
     .Bind(builder.Configuration.GetSection(
-        OASIS.WebAPI.Sagas.SagaOptions.SectionName));
+        AZOA.WebAPI.Sagas.SagaOptions.SectionName));
 // surrealdb-migration wave-2 task 8b: flip ISagaStore to the SurrealDB-backed
 // impl. The G2 single-winner claim now executes via a parameterized
 // UPDATE … WHERE id == $id AND status == 'Pending' AND next_run_at <= $now
 // against the new saga_steps table (Persistence/SurrealDb/Schemas/080_saga_steps.surql).
-builder.Services.AddScoped<OASIS.WebAPI.Sagas.ISagaStore,
-    OASIS.WebAPI.Sagas.SurrealSagaStore>();
-builder.Services.AddSingleton<OASIS.WebAPI.Sagas.ISagaRegistry,
-    OASIS.WebAPI.Sagas.SagaRegistry>();
-builder.Services.AddScoped<OASIS.WebAPI.Sagas.ISagaCoordinator,
-    OASIS.WebAPI.Sagas.SagaCoordinator>();
-builder.Services.AddScoped<OASIS.WebAPI.Sagas.ISagaProcessor,
-    OASIS.WebAPI.Sagas.SagaProcessor>();
-builder.Services.AddSingleton<OASIS.WebAPI.Sagas.ISagaTrigger,
-    OASIS.WebAPI.Sagas.PollingSagaTrigger>();
-builder.Services.AddHostedService<OASIS.WebAPI.Sagas.SagaProcessorHostedService>();
+builder.Services.AddScoped<AZOA.WebAPI.Sagas.ISagaStore,
+    AZOA.WebAPI.Sagas.SurrealSagaStore>();
+builder.Services.AddSingleton<AZOA.WebAPI.Sagas.ISagaRegistry,
+    AZOA.WebAPI.Sagas.SagaRegistry>();
+builder.Services.AddScoped<AZOA.WebAPI.Sagas.ISagaCoordinator,
+    AZOA.WebAPI.Sagas.SagaCoordinator>();
+builder.Services.AddScoped<AZOA.WebAPI.Sagas.ISagaProcessor,
+    AZOA.WebAPI.Sagas.SagaProcessor>();
+builder.Services.AddSingleton<AZOA.WebAPI.Sagas.ISagaTrigger,
+    AZOA.WebAPI.Sagas.PollingSagaTrigger>();
+builder.Services.AddHostedService<AZOA.WebAPI.Sagas.SagaProcessorHostedService>();
 
 // ─── Durable workflow engine (durable-workflow-engine) ───
 // The FIRST real saga consumer: a single "quest-workflow" ISagaDefinition whose
@@ -568,14 +671,14 @@ builder.Services.AddHostedService<OASIS.WebAPI.Sagas.SagaProcessorHostedService>
 // handler (Approach A). The definition is pure metadata (Singleton); the step
 // handlers wrap scoped quest stores (Scoped). The two handlers close over
 // DISTINCT payload types so GetRequiredService<IStepHandler<T>> is unambiguous.
-builder.Services.AddSingleton<OASIS.WebAPI.Sagas.ISagaDefinition,
-    OASIS.WebAPI.Services.Quest.Workflow.QuestWorkflowSagaDefinition>();
+builder.Services.AddSingleton<AZOA.WebAPI.Sagas.ISagaDefinition,
+    AZOA.WebAPI.Services.Quest.Workflow.QuestWorkflowSagaDefinition>();
 builder.Services.AddScoped<
-    OASIS.WebAPI.Sagas.IStepHandler<OASIS.WebAPI.Services.Quest.Workflow.QuestStepPayload>,
-    OASIS.WebAPI.Services.Quest.Workflow.QuestNodeStepHandler>();
+    AZOA.WebAPI.Sagas.IStepHandler<AZOA.WebAPI.Services.Quest.Workflow.QuestStepPayload>,
+    AZOA.WebAPI.Services.Quest.Workflow.QuestNodeStepHandler>();
 builder.Services.AddScoped<
-    OASIS.WebAPI.Sagas.IStepHandler<OASIS.WebAPI.Services.Quest.Workflow.QuestCompensatePayload>,
-    OASIS.WebAPI.Services.Quest.Workflow.QuestCompensateStepHandler>();
+    AZOA.WebAPI.Sagas.IStepHandler<AZOA.WebAPI.Services.Quest.Workflow.QuestCompensatePayload>,
+    AZOA.WebAPI.Services.Quest.Workflow.QuestCompensateStepHandler>();
 
 // ─── MCP surface (mcp-surface track Phase 1) ───
 // Registers McpToolRegistry (singleton) + the SDK's Streamable HTTP transport
@@ -584,8 +687,8 @@ builder.Services.AddScoped<
 builder.Services.AddMcpSurface();
 
 // ─── Quest DAG system ───
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IQuestDagValidator, OASIS.WebAPI.Services.QuestDagValidator>();
-builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IQuestInstantiator, OASIS.WebAPI.Services.Quest.QuestInstantiator>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IQuestDagValidator, AZOA.WebAPI.Services.QuestDagValidator>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IQuestInstantiator, AZOA.WebAPI.Services.Quest.QuestInstantiator>();
 
 // Quest node handlers — exactly one per QuestNodeType. Registered Scoped: each
 // handler wraps scoped managers, so Singleton would capture a disposed scope
@@ -595,7 +698,7 @@ builder.Services.AddScoped<OASIS.WebAPI.Interfaces.IQuestInstantiator, OASIS.Web
 foreach (var handlerType in typeof(QuestNodeHandlerRegistry).Assembly
              .GetTypes()
              .Where(t => t is { IsClass: true, IsAbstract: false }
-                         && t.Namespace == "OASIS.WebAPI.Services.Quest.Handlers"
+                         && t.Namespace == "AZOA.WebAPI.Services.Quest.Handlers"
                          && typeof(IQuestNodeHandler).IsAssignableFrom(t)))
 {
     builder.Services.AddScoped(typeof(IQuestNodeHandler), handlerType);
@@ -603,8 +706,8 @@ foreach (var handlerType in typeof(QuestNodeHandlerRegistry).Assembly
 builder.Services.AddScoped<IQuestNodeHandlerRegistry, QuestNodeHandlerRegistry>();
 
 // ─── Observability (W5): OpenTelemetry tracing/metrics + /health ───
-builder.Services.AddOasisObservability(builder.Configuration);
-builder.Services.AddOasisHealthChecks();
+builder.Services.AddAzoaObservability(builder.Configuration);
+builder.Services.AddAzoaHealthChecks();
 
 builder.Services.AddCors(options =>
 {
@@ -632,23 +735,23 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // Verbose error reporting.
-//   • Opt-in via OASIS:DebugErrors (env: OASIS__DebugErrors); defaults on in Development.
+//   • Opt-in via AZOA:DebugErrors (env: AZOA__DebugErrors); defaults on in Development.
 //   • HARD GUARDRAIL: Production can NEVER emit verbose debug, no matter what
 //     config or environment variables say. Only platform devs running a
 //     non-Production environment can turn this on — so stack traces and other
 //     internals can never leak from a production deployment.
-var debugRequested = builder.Configuration.GetValue<bool?>("OASIS:DebugErrors")
+var debugRequested = builder.Configuration.GetValue<bool?>("AZOA:DebugErrors")
     ?? app.Environment.IsDevelopment();
-OASISResultDebug.Enabled = debugRequested && !app.Environment.IsProduction();
+AZOAResultDebug.Enabled = debugRequested && !app.Environment.IsProduction();
 
 app.Logger.LogInformation(
     "Verbose error debug is {State} (environment={Environment}, requested={Requested}).",
-    OASISResultDebug.Enabled ? "ENABLED" : "disabled",
+    AZOAResultDebug.Enabled ? "ENABLED" : "disabled",
     app.Environment.EnvironmentName,
     debugRequested);
 if (debugRequested && app.Environment.IsProduction())
     app.Logger.LogWarning(
-        "OASIS:DebugErrors was requested but is FORCE-DISABLED in Production.");
+        "AZOA:DebugErrors was requested but is FORCE-DISABLED in Production.");
 
 // Forwarded headers FIRST so every downstream component (https redirect, rate
 // limiter partitioned by client IP, auth) sees the real client scheme/IP from
@@ -698,7 +801,7 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
         throw new InvalidOperationException(
             "SurrealDB G1 durability acknowledgement is missing. Confirm that " +
             "docker-compose.surrealdb.yml (or your deploy manifest) passes " +
-            "`rocksdb:///data/oasis.db` to `surreal start` (RocksDB syncs its " +
+            "`rocksdb:///data/azoa.db` to `surreal start` (RocksDB syncs its " +
             "WAL on every commit by default — equivalent to the original " +
             "`surrealkv://...?sync=every` we used before the prebuilt 1.5.4 " +
             "image was confirmed to ship WITHOUT the surrealkv feature flag), " +
@@ -707,14 +810,14 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
 
     using var scope = app.Services.CreateScope();
     var executor = scope.ServiceProvider.GetRequiredService<
-        Oasis.SurrealDb.Client.Query.ISurrealExecutor>();
+        Azoa.SurrealDb.Client.Query.ISurrealExecutor>();
     try
     {
         // RETURN 1; is the idiomatic SurrealQL no-op probe -- SELECT
         // requires FROM in 1.5+ and was being rejected with a parse
         // error here, masking the real "server reachable" intent.
         await executor.ExecuteAsync(
-            Oasis.SurrealDb.Client.Query.SurrealQuery.Of("RETURN 1"));
+            Azoa.SurrealDb.Client.Query.SurrealQuery.Of("RETURN 1"));
     }
     catch (Exception ex)
     {
@@ -734,7 +837,7 @@ app.UseCors("Default");
 // W1-A1: Observer middleware — captures 401/429/5xx and unhandled exceptions into JSONL logs.
 // Placed after UseRouting (so TraceIdentifier is stable) and before UseAuthentication so
 // that downstream 401 and 429 status codes are also captured.
-app.UseMiddleware<OASIS.WebAPI.Core.Diagnostics.JsonlExceptionMiddleware>();
+app.UseMiddleware<AZOA.WebAPI.Core.Diagnostics.JsonlExceptionMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 // Rate limiter AFTER auth so the partition key can fall back to the
@@ -742,7 +845,7 @@ app.UseAuthorization();
 app.UseRateLimiter();
 // W5 request correlation: after UseRouting, before MapControllers — attaches
 // the W3C TraceId/SpanId as a structured log scope for every request.
-app.UseOasisRequestCorrelation();
+app.UseAzoaRequestCorrelation();
 // MCP surface (mcp-surface track): /mcp endpoint protected by the existing
 // JWT+ApiKey multi-scheme via RequireAuthorization() inside MapMcp().
 // UseMcpAuth (Phase 2 W4) extracts the AvatarId claim into ctx.Items so the
@@ -753,7 +856,7 @@ app.UseMcpAuth();
 app.MapMcp();
 // ISwapManager + IDexAdapter registrations are above (DEX adapters block)
 app.MapControllers();
-app.MapOasisHealth(app.Environment);
+app.MapAzoaHealth(app.Environment);
 await app.RunAsync();
 
 public partial class Program { }

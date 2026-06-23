@@ -129,7 +129,7 @@ This document tracks drift between backend endpoints and SDK method coverage. Us
 
 **When adding/changing a controller endpoint:**
 1. Implement the backend endpoint
-2. Add or update the corresponding SDK method in `sdk/oasis-wallet/src/api/client.ts`
+2. Add or update the corresponding SDK method in `sdk/azoa-wallet/src/api/client.ts`
 3. Update the row in the mapping table above (add row if new endpoint, update Status column if changing)
 4. Mark the status: `OK` (both exist), `SDK gap` (endpoint exists, no SDK method), `Backend gap` (SDK method exists, no endpoint), or `Path mismatch` (different routes)
 

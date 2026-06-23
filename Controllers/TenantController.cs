@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
 /// Tenant provisioning surface (tenant-onboarding). Every action requires the
@@ -28,7 +28,7 @@ public class TenantController : ControllerBase
 
     /// <summary>Provision a new child avatar under the authenticated tenant.</summary>
     [HttpPost("avatars")]
-    public async Task<ActionResult<OASISResult<ChildAvatarResponse>>> ProvisionChild([FromBody] ProvisionChildModel model)
+    public async Task<ActionResult<AZOAResult<ChildAvatarResponse>>> ProvisionChild([FromBody] ProvisionChildModel model)
     {
         var tenantId = GetTenantIdFromClaims();
         if (tenantId is null) return Unauthorized();
@@ -39,7 +39,7 @@ public class TenantController : ControllerBase
 
     /// <summary>List the tenant's child avatars (optionally filtered by external user id).</summary>
     [HttpGet("avatars")]
-    public async Task<ActionResult<OASISResult<IEnumerable<ChildAvatarResponse>>>> ListChildren([FromQuery] string? externalUserId)
+    public async Task<ActionResult<AZOAResult<IEnumerable<ChildAvatarResponse>>>> ListChildren([FromQuery] string? externalUserId)
     {
         var tenantId = GetTenantIdFromClaims();
         if (tenantId is null) return Unauthorized();
@@ -51,7 +51,7 @@ public class TenantController : ControllerBase
 
     /// <summary>Resolve one child by the tenant's own external user id.</summary>
     [HttpGet("avatars/{externalUserId}")]
-    public async Task<ActionResult<OASISResult<ChildAvatarResponse>>> ResolveChild(string externalUserId)
+    public async Task<ActionResult<AZOAResult<ChildAvatarResponse>>> ResolveChild(string externalUserId)
     {
         var tenantId = GetTenantIdFromClaims();
         if (tenantId is null) return Unauthorized();
@@ -62,7 +62,7 @@ public class TenantController : ControllerBase
 
     /// <summary>Issue a short-lived child-scoped credential to act as that child.</summary>
     [HttpPost("avatars/{id:guid}/credential")]
-    public async Task<ActionResult<OASISResult<ChildCredentialResponse>>> IssueChildCredential(Guid id, [FromBody] IssueChildCredentialModel? model)
+    public async Task<ActionResult<AZOAResult<ChildCredentialResponse>>> IssueChildCredential(Guid id, [FromBody] IssueChildCredentialModel? model)
     {
         var tenantId = GetTenantIdFromClaims();
         if (tenantId is null) return Unauthorized();
@@ -84,7 +84,7 @@ public class TenantController : ControllerBase
     /// any other error → 400. Cross-tenant / unowned targets are NOT_FOUND by
     /// construction (the manager never emits FORBIDDEN for them), so they 404.
     /// </summary>
-    private ActionResult<OASISResult<T>> TranslateResult<T>(OASISResult<T> result)
+    private ActionResult<AZOAResult<T>> TranslateResult<T>(AZOAResult<T> result)
     {
         if (!result.IsError) return Ok(result);
 

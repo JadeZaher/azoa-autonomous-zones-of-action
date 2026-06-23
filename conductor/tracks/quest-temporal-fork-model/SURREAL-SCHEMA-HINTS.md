@@ -199,7 +199,7 @@ DEFINE FIELD node_id       ON TABLE quest_node_execution TYPE record<quest_node>
 DEFINE FIELD state         ON TABLE quest_node_execution TYPE string
     ASSERT $value INSIDE ['Pending','Running','Succeeded','Failed','Skipped','Cancelled'];
 
-DEFINE FIELD output        ON TABLE quest_node_execution TYPE option<string>;  -- JSON-serialized OASISResult<T>
+DEFINE FIELD output        ON TABLE quest_node_execution TYPE option<string>;  -- JSON-serialized AZOAResult<T>
 DEFINE FIELD error         ON TABLE quest_node_execution TYPE option<string>;
 
 DEFINE FIELD started_at    ON TABLE quest_node_execution TYPE datetime;

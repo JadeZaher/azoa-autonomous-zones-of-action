@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
-namespace OASIS.WebAPI.Services.Quest.Predicates;
+namespace AZOA.WebAPI.Services.Quest.Predicates;
 
 /// <summary>
 /// Thrown for any predicate that cannot be parsed, references an unknown path,

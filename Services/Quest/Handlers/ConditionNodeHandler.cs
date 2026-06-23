@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Services.Quest.Handlers;
+namespace AZOA.WebAPI.Services.Quest.Handlers;
 
 /// <summary>
 /// Handles <see cref="QuestNodeType.Condition"/> — relocated verbatim from QuestManager.

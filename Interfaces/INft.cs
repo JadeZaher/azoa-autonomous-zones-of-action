@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Interfaces;
+namespace AZOA.WebAPI.Interfaces;
 
 /// <summary>
 /// INft is a view interface over IHolon.

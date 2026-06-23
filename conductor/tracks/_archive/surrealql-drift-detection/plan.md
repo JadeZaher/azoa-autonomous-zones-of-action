@@ -10,7 +10,7 @@ To be filled in when Wave 1 of [[surrealql-toolkit]] lands. Skeleton:
 3. [ ] `SchemaDiffer` — produce a tree of drift entries.
 
 ## Phase 2 — CLI + output
-4. [ ] `oasis-surreal drift` subcommand wiring.
+4. [ ] `azoa-surreal drift` subcommand wiring.
 5. [ ] Text renderer + JSON renderer.
 6. [ ] `.surrealignore` honoring.
 

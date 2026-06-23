@@ -12,7 +12,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { useOasis } from '@/lib/oasis-context'
+import { useAzoa } from '@/lib/azoa-context'
 
 interface BrowserWalletConnectDialogProps {
   open: boolean
@@ -29,7 +29,7 @@ const CHAINS = [
 ]
 
 export function BrowserWalletConnectDialog({ open, onOpenChange, defaultChain, allowedChains }: BrowserWalletConnectDialogProps) {
-  const { connectExternalWallet, connectBrowserWallet, browserWalletAvailable } = useOasis()
+  const { connectExternalWallet, connectBrowserWallet, browserWalletAvailable } = useAzoa()
 
   const visibleChains = allowedChains
     ? CHAINS.filter(c => allowedChains.includes(c.value))

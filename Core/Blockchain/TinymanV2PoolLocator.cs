@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace OASIS.WebAPI.Core.Blockchain;
+namespace AZOA.WebAPI.Core.Blockchain;
 
 /// <summary>
 /// Deterministic Tinyman V2 pool discovery.

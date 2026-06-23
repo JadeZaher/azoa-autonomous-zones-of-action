@@ -151,6 +151,32 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
         }
     }
 
+    public async Task<AZOAResult<int>> RevokeAllByGrantorAsync(Guid grantorAvatarId, DateTime now, CancellationToken ct = default)
+    {
+        try
+        {
+            // AC3b: stamp revoked_at = $_now on EVERY currently-live grant this user made
+            // (not already revoked). Scoped to the grantor's own grants only. Returning
+            // the BEFORE set lets us count what was actually revoked. Idempotent: a
+            // second call finds nothing live and revokes nothing.
+            var nowUtc = DateTime.SpecifyKind(now, DateTimeKind.Utc);
+            var q = SurrealQuery
+                .Of(@"UPDATE consent_grant
+                      SET revoked_at = $_now
+                      WHERE grantor_avatar_id = $_grantor
+                        AND revoked_at = NONE
+                      RETURN BEFORE")
+                .WithParam("_grantor", SurrealLink.ToLink("avatar", ToSurrealId(grantorAvatarId)))
+                .WithParam("_now", nowUtc);
+            var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
+            return new AZOAResult<int> { Result = rows.Count, Message = "Revoked." };
+        }
+        catch (Exception ex)
+        {
+            return new AZOAResult<int>().CaptureException(ex, $"SurrealConsentGrantStore.RevokeAllByGrantorAsync failed: {ex.Message}");
+        }
+    }
+
     // ── Mapping ───────────────────────────────────────────────────────────────
 
     private static AZOAResult<IEnumerable<ConsentGrant>> Ok(IReadOnlyList<ConsentGrantPoco> rows)

@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace OASIS.WebAPI.Core.Signing;
+namespace AZOA.WebAPI.Core.Signing;
 
 /// <summary>
 /// Carries a decrypted private key as a <see cref="byte"/> array so the custody

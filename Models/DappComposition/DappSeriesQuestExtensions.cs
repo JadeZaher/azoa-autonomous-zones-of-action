@@ -1,6 +1,6 @@
-using Oasis.SurrealDb.Client.Schema;
+using Azoa.SurrealDb.Client.Schema;
 
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models;
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models;
 
 /// <summary>
 /// Partial-class accessors for the source-gen'd <see cref="DappSeriesQuest"/>

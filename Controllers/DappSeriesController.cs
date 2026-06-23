@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Persistence.SurrealDb.Models;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/dapp-series")]
@@ -19,7 +19,7 @@ public class DappSeriesController : ControllerBase
     // ── Series CRUD ──────────────────────────────────────────────────────────
 
     [HttpGet]
-    public async Task<ActionResult<OASISResult<IEnumerable<DappSeries>>>> List(
+    public async Task<ActionResult<AZOAResult<IEnumerable<DappSeries>>>> List(
         [FromQuery] DappSeries.StatusKind? status, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -29,7 +29,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<OASISResult<DappSeries>>> Get(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<DappSeries>>> Get(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId is null) return Unauthorized(Fail<DappSeries>("Invalid token."));
@@ -39,7 +39,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<OASISResult<DappSeries>>> Create(
+    public async Task<ActionResult<AZOAResult<DappSeries>>> Create(
         [FromBody] DappSeriesCreateModel model, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -50,7 +50,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<ActionResult<OASISResult<DappSeries>>> Update(
+    public async Task<ActionResult<AZOAResult<DappSeries>>> Update(
         Guid id, [FromBody] DappSeriesUpdateModel model, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -61,19 +61,19 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    public async Task<ActionResult<OASISResponse>> Delete(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResponse>> Delete(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(new OASISResponse { IsError = true, Message = "Invalid token." });
+        if (avatarId is null) return Unauthorized(new AZOAResponse { IsError = true, Message = "Invalid token." });
         var result = await _manager.DeleteAsync(id, avatarId.Value, ct);
-        if (result.IsError || !result.Result) return BadRequest(new OASISResponse { IsError = true, Message = result.Message });
-        return Ok(new OASISResponse { Message = "DappSeries deleted." });
+        if (result.IsError || !result.Result) return BadRequest(new AZOAResponse { IsError = true, Message = result.Message });
+        return Ok(new AZOAResponse { Message = "DappSeries deleted." });
     }
 
     // ── Series Quest Management ──────────────────────────────────────────────
 
     [HttpGet("{seriesId:guid}/quests")]
-    public async Task<ActionResult<OASISResult<IEnumerable<DappSeriesQuest>>>> ListQuests(
+    public async Task<ActionResult<AZOAResult<IEnumerable<DappSeriesQuest>>>> ListQuests(
         Guid seriesId, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -84,7 +84,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpPost("{seriesId:guid}/quests")]
-    public async Task<ActionResult<OASISResult<DappSeriesQuest>>> AddQuest(
+    public async Task<ActionResult<AZOAResult<DappSeriesQuest>>> AddQuest(
         Guid seriesId, [FromBody] DappSeriesAddQuestModel model, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -95,17 +95,17 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpDelete("{seriesId:guid}/quests/{questId:guid}")]
-    public async Task<ActionResult<OASISResponse>> RemoveQuest(Guid seriesId, Guid questId, CancellationToken ct)
+    public async Task<ActionResult<AZOAResponse>> RemoveQuest(Guid seriesId, Guid questId, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(new OASISResponse { IsError = true, Message = "Invalid token." });
+        if (avatarId is null) return Unauthorized(new AZOAResponse { IsError = true, Message = "Invalid token." });
         var result = await _manager.RemoveQuestAsync(seriesId, avatarId.Value, questId, ct);
-        if (result.IsError || !result.Result) return BadRequest(new OASISResponse { IsError = true, Message = result.Message });
-        return Ok(new OASISResponse { Message = "Quest removed from series." });
+        if (result.IsError || !result.Result) return BadRequest(new AZOAResponse { IsError = true, Message = result.Message });
+        return Ok(new AZOAResponse { Message = "Quest removed from series." });
     }
 
     [HttpPut("{seriesId:guid}/quests/{questId:guid}/order")]
-    public async Task<ActionResult<OASISResult<DappSeriesQuest>>> ReorderQuest(
+    public async Task<ActionResult<AZOAResult<DappSeriesQuest>>> ReorderQuest(
         Guid seriesId, Guid questId, [FromBody] DappSeriesReorderQuestModel model, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -116,7 +116,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpPut("{seriesId:guid}/quests/{questId:guid}/mappings")]
-    public async Task<ActionResult<OASISResult<DappSeriesQuest>>> UpdateMappings(
+    public async Task<ActionResult<AZOAResult<DappSeriesQuest>>> UpdateMappings(
         Guid seriesId, Guid questId, [FromBody] DappSeriesUpdateMappingsModel model, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -133,6 +133,6 @@ public class DappSeriesController : ControllerBase
         return Guid.TryParse(sub, out var id) ? id : null;
     }
 
-    private static OASISResult<T> Fail<T>(string message) =>
+    private static AZOAResult<T> Fail<T>(string message) =>
         new() { IsError = true, Message = message };
 }

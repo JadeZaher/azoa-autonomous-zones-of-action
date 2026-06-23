@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// Configuration for the durable saga processor. Bind from the

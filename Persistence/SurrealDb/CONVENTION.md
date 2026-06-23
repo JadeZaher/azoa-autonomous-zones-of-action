@@ -11,20 +11,20 @@ convention that landed 2026-05-22.
 
 Every SurrealDB-backed table lives as a hand-authored `partial class` in
 [Persistence/SurrealDb/Models/<Name>.cs](Models/) under the namespace
-`OASIS.WebAPI.Persistence.SurrealDb.Models`.
+`AZOA.WebAPI.Persistence.SurrealDb.Models`.
 
 The class carries two layers of attributes:
 
 - **Schema-emit metadata** — `[SurrealTable]`, `[Column]`, `[Assert]`,
   `[Inside]`, `[Default]`, `[Index]`, `[FieldGroup]`, etc., declared
-  in [Oasis.SurrealDb.Client.Schema](../../packages/Oasis.SurrealDb.Client/Schema/).
+  in [Azoa.SurrealDb.Client.Schema](../../packages/Azoa.SurrealDb.Client/Schema/).
   These drive the `.surql` DDL emit, the flowchart visualization, and
   (eventually) the DBML diff manifest.
 - **Wire shape** — `[JsonPropertyName]` for the wire-format column
   name, `[JsonConverter(typeof(JsonStringEnumConverter))]` for
   closed-set enum-typed properties.
 
-The class implements `Oasis.SurrealDb.Client.ISurrealRecord` (carrying
+The class implements `Azoa.SurrealDb.Client.ISurrealRecord` (carrying
 `SchemaNameConst` + `SchemaName`) so the typed query builder + JSON
 serializer round-trip rows correctly.
 
@@ -40,7 +40,7 @@ partial in the same namespace:
 
 ```csharp
 // File: Models/Wallet.Extensions.cs
-namespace OASIS.WebAPI.Persistence.SurrealDb.Models;
+namespace AZOA.WebAPI.Persistence.SurrealDb.Models;
 
 public partial class Wallet
 {
@@ -73,13 +73,13 @@ public partial class Wallet
 
 Types that are never persisted (execution context, per-node config
 unions, in-flight state machines) live as plain C# classes in
-`Models/<Aggregate>/<Type>.cs` under the **app's** `OASIS.WebAPI.Models.*`
+`Models/<Aggregate>/<Type>.cs` under the **app's** `AZOA.WebAPI.Models.*`
 namespace (NOT the persistence namespace):
 
 ```csharp
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
-using OASIS.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
 public sealed record QuestNodeExecutionContext(
     QuestRun Run,
@@ -95,7 +95,7 @@ Caller-facing inputs and outputs live as plain classes in
 not leak storage-side concerns (enum nesting, JsonElement fields, etc.):
 
 ```csharp
-namespace OASIS.WebAPI.Models.Requests;
+namespace AZOA.WebAPI.Models.Requests;
 
 public class DappSeriesUpdateModel
 {
@@ -113,10 +113,10 @@ public class DappSeriesUpdateModel
 |---|---|
 | "Where do I add a new persisted column?" | Add a `[Column(Order = N, Type = "...")]`-decorated property to the POCO in [Models/](Models/). Build → `.surql` regenerates. |
 | "Where do I add `Guid IdGuid { get; set; }`?" | A sibling partial-class file under [Models/](Models/), same namespace. |
-| "Where do I add a `QuestStartedNotification` DTO?" | `Models/Requests/QuestRequests.cs`. References `OASIS.WebAPI.Persistence.SurrealDb.Models.Quest` by type if it needs to. |
+| "Where do I add a `QuestStartedNotification` DTO?" | `Models/Requests/QuestRequests.cs`. References `AZOA.WebAPI.Persistence.SurrealDb.Models.Quest` by type if it needs to. |
 | "Where do I write `ComposeAsync(...)` validation logic?" | The manager (`Managers/DappCompositionManager.cs`). Never on the entity. |
 | "What about a *computed* `IsActive` from latest QuestRun?" | Manager-level method, not a partial. The entity doesn't get to query a different aggregate. |
-| "How do I regenerate the `.surql` files?" | `oasis-surreal generate-from-assembly bin/Debug/net8.0/OASIS.WebAPI.dll`. Or just run the byte-equivalence test — failures point at drift. |
+| "How do I regenerate the `.surql` files?" | `azoa-surreal generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll`. Or just run the byte-equivalence test — failures point at drift. |
 
 ---
 
@@ -172,8 +172,8 @@ The build must succeed before the generator can reflect over the assembly.
 **Step 3 — Regenerate `.surql` and flowchart artifacts**
 
 ```
-oasis-surreal generate-from-assembly bin/Debug/net8.0/OASIS.WebAPI.dll
-oasis-surreal flowcharts-from-assembly bin/Debug/net8.0/OASIS.WebAPI.dll
+azoa-surreal generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
+azoa-surreal flowcharts-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
 ```
 
 The first command runs `AttributeSchemaScanner` → `SurqlEmitter` and overwrites
@@ -299,17 +299,17 @@ Persistence/SurrealDb/
             wallet_nft.flowchart.mermaid
             domain.flowchart.mermaid
         Dbml/
-            schema.dbml        # opt-in via OasisSurrealDbOptions
+            schema.dbml        # opt-in via AzoaSurrealDbOptions
 ```
 
 Regenerate via:
 
 ```
-oasis-surreal generate-from-assembly bin/Debug/net8.0/OASIS.WebAPI.dll
-oasis-surreal flowcharts-from-assembly bin/Debug/net8.0/OASIS.WebAPI.dll
+azoa-surreal generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
+azoa-surreal flowcharts-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
 ```
 
-The output paths can be overridden via `OasisSurrealDbOptions.Generation.GeneratedPath`
+The output paths can be overridden via `AzoaSurrealDbOptions.Generation.GeneratedPath`
 in `appsettings.json`.
 
 ---
@@ -367,16 +367,16 @@ gap surfaces only at integration-test time. The flowchart + legend +
 DDL emission work shipped on 2026-06-05 do NOT depend on this
 migration completing.
 
-## 10. Applying schemas to a live SurrealDB (`oasis-surreal up`)
+## 10. Applying schemas to a live SurrealDB (`azoa-surreal up`)
 
 The canonical entry point for "bring the deployed DB in sync with the
 schema" is:
 
 ```
-oasis-surreal up \
+azoa-surreal up \
     --connection http://127.0.0.1:8000 \
     --user root --pass root \
-    --namespace oasis --database oasis
+    --namespace azoa --database azoa
 ```
 
 Two-phase apply:
@@ -407,7 +407,7 @@ DEFINE DATABASE IF NOT EXISTS <db>;
 ```
 
 The `--namespace` / `--database` CLI flags (or the
-`OASIS_SURREAL_NS` / `OASIS_SURREAL_DB` env vars) supply the names. No
+`AZOA_SURREAL_NS` / `AZOA_SURREAL_DB` env vars) supply the names. No
 out-of-band setup step is required on a fresh SurrealDB server.
 
 ### Flags
@@ -418,7 +418,7 @@ out-of-band setup step is required on a fresh SurrealDB server.
 | `--migrations-dir <path>` | `Persistence/SurrealDb/Migrations` | Phase-2 source |
 | `--dry-run` | (off) | Plan without writing |
 | `--force` | (off) | Overwrite recorded checksum on mismatch (use sparingly; see migrations README) |
-| `--applied-by <s>` | `oasis-surreal/cli` | Identity recorded in each `schema_migration.applied_by` row |
+| `--applied-by <s>` | `azoa-surreal/cli` | Identity recorded in each `schema_migration.applied_by` row |
 | `--connection <url>` | (required) | SurrealDB HTTP endpoint, e.g. `http://127.0.0.1:8000` |
 | `--user <s>` / `--pass <s>` | (required) | Basic-auth credentials |
 | `--namespace <s>` / `--database <s>` | (required) | Target scope. Created automatically if missing. |
@@ -427,19 +427,19 @@ out-of-band setup step is required on a fresh SurrealDB server.
 
 | Command | Status |
 |---|---|
-| `oasis-surreal migrate up` | Implemented (also: `oasis-surreal up` — the two-phase apply documented above) |
-| `oasis-surreal migrate status` | Implemented |
-| `oasis-surreal migrate dry-run` | Implemented |
-| `oasis-surreal migrate reset` | Implemented |
-| `oasis-surreal migrate down` | Stubbed — manual rollback only (intentional pre-launch) |
+| `azoa-surreal migrate up` | Implemented (also: `azoa-surreal up` — the two-phase apply documented above) |
+| `azoa-surreal migrate status` | Implemented |
+| `azoa-surreal migrate dry-run` | Implemented |
+| `azoa-surreal migrate reset` | Implemented |
+| `azoa-surreal migrate down` | Stubbed — manual rollback only (intentional pre-launch) |
 
 ### Status check
 
 ```
-oasis-surreal migrate status \
+azoa-surreal migrate status \
     --connection http://127.0.0.1:8000 \
     --user root --pass root \
-    --namespace oasis --database oasis
+    --namespace azoa --database azoa
 ```
 
 Lists every applied file with checksum + apply timestamp from the
@@ -448,7 +448,7 @@ deployed `schema_migration` ledger.
 ### Idempotent contract verification
 
 The integration test
-[`MigrationRunnerLiveTests`](../../tests/Oasis.SurrealDb.Schema.Tests/Migration/MigrationRunnerLiveTests.cs)
+[`MigrationRunnerLiveTests`](../../tests/Azoa.SurrealDb.Schema.Tests/Migration/MigrationRunnerLiveTests.cs)
 applies every committed `.surql` against a live SurrealDB instance,
 asserts the ledger lands one row per file, then re-runs the same set
 and asserts every plan item classifies as `Skip` (the canonical
@@ -457,11 +457,11 @@ without SurrealDB can opt out via `--filter "Category!=Live"`.
 
 ## 11. References
 
-- Attribute layer: [`packages/Oasis.SurrealDb.Client/Schema/SurrealAttributes.cs`](../../packages/Oasis.SurrealDb.Client/Schema/SurrealAttributes.cs)
-- Annotation reference: [`packages/Oasis.SurrealDb.Client/Schema/ANNOTATIONS.md`](../../packages/Oasis.SurrealDb.Client/Schema/ANNOTATIONS.md)
-- Configuration shape: [`packages/Oasis.SurrealDb.Client/Schema/OasisSurrealDbOptions.cs`](../../packages/Oasis.SurrealDb.Client/Schema/OasisSurrealDbOptions.cs)
-- Schema scanner: [`packages/Oasis.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs`](../../packages/Oasis.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs)
-- `.surql` emitter: [`packages/Oasis.SurrealDb.Schema/Generator/SurqlEmitter.cs`](../../packages/Oasis.SurrealDb.Schema/Generator/SurqlEmitter.cs)
-- Flowchart emitter: [`packages/Oasis.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs`](../../packages/Oasis.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs)
-- Byte-equivalence test: [`tests/OASIS.WebAPI.Tests/Persistence/SurrealDb/AttributePocoByteEquivalenceTests.cs`](../../tests/OASIS.WebAPI.Tests/Persistence/SurrealDb/AttributePocoByteEquivalenceTests.cs)
+- Attribute layer: [`packages/Azoa.SurrealDb.Client/Schema/SurrealAttributes.cs`](../../packages/Azoa.SurrealDb.Client/Schema/SurrealAttributes.cs)
+- Annotation reference: [`packages/Azoa.SurrealDb.Client/Schema/ANNOTATIONS.md`](../../packages/Azoa.SurrealDb.Client/Schema/ANNOTATIONS.md)
+- Configuration shape: [`packages/Azoa.SurrealDb.Client/Schema/AzoaSurrealDbOptions.cs`](../../packages/Azoa.SurrealDb.Client/Schema/AzoaSurrealDbOptions.cs)
+- Schema scanner: [`packages/Azoa.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs`](../../packages/Azoa.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs)
+- `.surql` emitter: [`packages/Azoa.SurrealDb.Schema/Generator/SurqlEmitter.cs`](../../packages/Azoa.SurrealDb.Schema/Generator/SurqlEmitter.cs)
+- Flowchart emitter: [`packages/Azoa.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs`](../../packages/Azoa.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs)
+- Byte-equivalence test: [`tests/AZOA.WebAPI.Tests/Persistence/SurrealDb/AttributePocoByteEquivalenceTests.cs`](../../tests/AZOA.WebAPI.Tests/Persistence/SurrealDb/AttributePocoByteEquivalenceTests.cs)
 - Originating ADR: [`conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md`](../../conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md)

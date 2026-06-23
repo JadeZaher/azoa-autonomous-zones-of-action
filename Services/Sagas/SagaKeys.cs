@@ -1,10 +1,10 @@
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// Deterministic derivation of the stable per-step idempotency key from the
 /// saga-instance correlation key + step name. Reusing the api-safety-hardening
 /// key convention (a single opaque string the
-/// <see cref="OASIS.WebAPI.Interfaces.IIdempotencyStore"/> treats as the
+/// <see cref="AZOA.WebAPI.Interfaces.IIdempotencyStore"/> treats as the
 /// uniqueness primitive) — the saga layer does NOT invent a second idempotency
 /// mechanism, it only derives a STABLE key so:
 /// <list type="bullet">

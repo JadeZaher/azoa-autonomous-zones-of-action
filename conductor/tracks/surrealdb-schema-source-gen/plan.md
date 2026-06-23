@@ -1,26 +1,26 @@
 # SurrealDB Schema Source Generator — Plan
 
-Single owner, ~1 week. New package `Oasis.SurrealDb.SourceGen` plus
+Single owner, ~1 week. New package `Azoa.SurrealDb.SourceGen` plus
 typed-builder companion `SurrealQuery<T>` in the existing `Client`
 package. No multi-wave structure — small enough for one track.
 
 ## Phase 1 — Bootstrap
 
-1. [ ] Create `packages/Oasis.SurrealDb.SourceGen/` with
-       `Oasis.SurrealDb.SourceGen.csproj` (`netstandard2.0` only — source
+1. [ ] Create `packages/Azoa.SurrealDb.SourceGen/` with
+       `Azoa.SurrealDb.SourceGen.csproj` (`netstandard2.0` only — source
        generators must); version 0.1.0; `IsRoslynComponent=true`;
        package metadata mirrors the other three packages.
-2. [ ] Create `tests/Oasis.SurrealDb.SourceGen.Tests/` (xunit +
+2. [ ] Create `tests/Azoa.SurrealDb.SourceGen.Tests/` (xunit +
        FluentAssertions + `Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit`,
        same version as existing analyzer tests).
-3. [ ] Wire both projects into `oasis-sleek.sln`.
-4. [ ] Add `ProjectReference` from `Oasis.SurrealDb.SourceGen.csproj` to
-       `Oasis.SurrealDb.Schema.csproj` (re-uses the existing Mermaid
+3. [ ] Wire both projects into `azoa.sln`.
+4. [ ] Add `ProjectReference` from `Azoa.SurrealDb.SourceGen.csproj` to
+       `Azoa.SurrealDb.Schema.csproj` (re-uses the existing Mermaid
        parser; no duplicate parser implementation).
 
 ## Phase 2 — `IIncrementalGenerator` core
 
-5. [ ] `OasisSurrealDbSchemaGenerator : IIncrementalGenerator`. Wires:
+5. [ ] `AzoaSurrealDbSchemaGenerator : IIncrementalGenerator`. Wires:
        - `context.AdditionalTextsProvider.Where(file => file.Path.EndsWith(".mermaid"))`
        - `Select` reads + parses via `MermaidParser` from the Schema
          package, produces a `(filePath, MermaidSchemaModel)` tuple
@@ -55,7 +55,7 @@ package. No multi-wave structure — small enough for one track.
          layer)
        - `@surreal.csharp.namespace <ns>` — entity-level override of the
          per-assembly namespace
-9. [ ] Unit tests in `tests/Oasis.SurrealDb.SourceGen.Tests/`:
+9. [ ] Unit tests in `tests/Azoa.SurrealDb.SourceGen.Tests/`:
        - Type-mapping table (one test per SurrealType row)
        - `Generator_emits_partial_class_per_entity` (single-entity input)
        - `Generator_emits_one_file_per_mermaid_source` (multi-entity)
@@ -67,7 +67,7 @@ package. No multi-wave structure — small enough for one track.
 
 ## Phase 3 — `RecordId<T>` typed companion
 
-10. [ ] Add `packages/Oasis.SurrealDb.Client/RecordId{T}.cs` — generic
+10. [ ] Add `packages/Azoa.SurrealDb.Client/RecordId{T}.cs` — generic
         struct wrapping `RecordId`. `T` is a phantom type parameter (no
         runtime presence beyond a marker; `T` must implement a marker
         interface `ISurrealRecord` that the source generator adds to
@@ -78,7 +78,7 @@ package. No multi-wave structure — small enough for one track.
         underlying table-string doesn't match `T.SchemaName`).
 12. [ ] JSON converter inherits from existing `RecordIdJsonConverter`;
         round-trip semantics identical.
-13. [ ] Unit tests in `tests/Oasis.SurrealDb.Client.Tests/RecordIdGenericTests.cs`:
+13. [ ] Unit tests in `tests/Azoa.SurrealDb.Client.Tests/RecordIdGenericTests.cs`:
         - Implicit conversion preserves data
         - Explicit conversion with matching schema succeeds
         - Explicit conversion with mismatched schema throws
@@ -86,7 +86,7 @@ package. No multi-wave structure — small enough for one track.
 
 ## Phase 4 — `SurrealQuery<T>` typed builder
 
-14. [ ] Add `packages/Oasis.SurrealDb.Client/Query/SurrealQuery{T}.cs`.
+14. [ ] Add `packages/Azoa.SurrealDb.Client/Query/SurrealQuery{T}.cs`.
         Static `SurrealQuery<T>.From()` returns the typed builder.
         Reads `T.SchemaName` to know the SurrealDB table.
 15. [ ] `ExpressionTranslator` — visits `Expression<Func<T, bool>>` and
@@ -109,7 +109,7 @@ package. No multi-wave structure — small enough for one track.
 17. [ ] `SurrealQuery<T>` is **convertible to `SurrealQuery`** so the
         existing executor path consumes typed queries without surface
         widening. Implicit operator + explicit `.AsUntyped()` method.
-18. [ ] Unit tests in `tests/Oasis.SurrealDb.Client.Tests/Query/SurrealQueryTypedTests.cs`:
+18. [ ] Unit tests in `tests/Azoa.SurrealDb.Client.Tests/Query/SurrealQueryTypedTests.cs`:
         - `From_emits_SELECT_star_FROM_table_per_SchemaName`
         - `Where_equality_emits_correct_SurrealQL_and_parameter`
         - `Where_compound_AND_chains_AND` (regression for the M3 clause
@@ -119,13 +119,13 @@ package. No multi-wave structure — small enough for one track.
         - `Unsupported_method_call_throws_with_fallback_recipe`
         - Byte-identical to untyped equivalent (golden-file)
 
-## Phase 5 — OASIS integration
+## Phase 5 — AZOA integration
 
 19. [ ] Add `<PackageReference>` (initially `<ProjectReference>`) from
-        `OASIS.WebAPI.csproj` to `Oasis.SurrealDb.SourceGen.csproj` with
+        `AZOA.WebAPI.csproj` to `Azoa.SurrealDb.SourceGen.csproj` with
         the analyzer asset declarations (`OutputItemType="Analyzer"
         ReferenceOutputAssembly="false"`).
-20. [ ] Add the `<AdditionalFiles>` wiring to `OASIS.WebAPI.csproj`:
+20. [ ] Add the `<AdditionalFiles>` wiring to `AZOA.WebAPI.csproj`:
         ```xml
         <ItemGroup>
           <AdditionalFiles Include="Persistence/SurrealDb/Schemas/source/*.mermaid" />
@@ -135,10 +135,10 @@ package. No multi-wave structure — small enough for one track.
         `Models/SwapState.cs`, `Models/NftOwnership.cs`,
         `Models/OperationLog.cs`, `Models/ConsumedVaaLedger.cs`,
         `Models/IdempotencyKeyStore.cs` — replaced by the 7 generated
-        classes. Update every reference (`using OASIS.WebAPI.Models;` →
-        `using OASIS.WebAPI.Generated.SurrealDb;` or whatever namespace
+        classes. Update every reference (`using AZOA.WebAPI.Models;` →
+        `using AZOA.WebAPI.Generated.SurrealDb;` or whatever namespace
         the source-gen produces; configurable via
-        `OasisSurrealDbModelsNamespace`).
+        `AzoaSurrealDbModelsNamespace`).
 22. [ ] Verify integration-test factory + IntegrationTestBase pick up
         the new generated namespace correctly. No behavior change
         expected; tests stay green.
@@ -148,7 +148,7 @@ package. No multi-wave structure — small enough for one track.
 23. [ ] Add a new pass-off section (`12-Generated-POCOs-match-schemas`)
         that asserts every `.mermaid` source under
         `Persistence/SurrealDb/Schemas/source/` has a corresponding
-        generated POCO in the OASIS.WebAPI output (read the generated
+        generated POCO in the AZOA.WebAPI output (read the generated
         files via `dotnet build` output path; compare `SchemaName` static
         property to the `.mermaid` table declaration). Section gracefully
         skips if the output path isn't materialized (similar to section
@@ -159,12 +159,12 @@ package. No multi-wave structure — small enough for one track.
         0 (12/12 sections).
 25. [ ] Commit checkpoint: `feat(surrealdb-schema-source-gen): Phase 1-6
         — Roslyn source gen for Mermaid→POCO + SurrealQuery<T> typed
-        builder + OASIS integration`.
+        builder + AZOA integration`.
 26. [ ] Tag `surrealdb-schema-source-gen-complete` at the checkpoint
         commit (local tag only).
 27. [ ] Update `.omc/ultrapilot-state.json` reflecting the new track at
         `complete` status with evidence block.
-28. [ ] Author `packages/Oasis.SurrealDb.SourceGen/README.md`
+28. [ ] Author `packages/Azoa.SurrealDb.SourceGen/README.md`
         documenting: package boundary, `AdditionalFiles` wiring,
         annotation directives, `SurrealQuery<T>` usage.
 

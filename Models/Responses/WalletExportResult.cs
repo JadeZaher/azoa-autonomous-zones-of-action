@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Responses;
+namespace AZOA.WebAPI.Models.Responses;
 
 /// <summary>
 /// Result of exporting a platform-generated wallet.

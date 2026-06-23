@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Runs the OASIS.WebAPI .NET test suites.
+    Runs the AZOA.WebAPI .NET test suites.
 
 .DESCRIPTION
     Single entry point for the xUnit unit + integration suites. Integration
@@ -13,7 +13,7 @@
     Build configuration. Default: Debug.
 
 .PARAMETER Live
-    Also run the live HTTP harness (OASIS.WebAPI.LiveTests).
+    Also run the live HTTP harness (AZOA.WebAPI.LiveTests).
 
 .PARAMETER LiveUrl
     Base URL for the live harness. Default: https://localhost:5001.
@@ -99,8 +99,8 @@ try {
     if (-not $NoDb) { Initialize-IntegrationSurrealDb }
 
     $testProjects = @(
-        "tests/OASIS.WebAPI.Tests/OASIS.WebAPI.Tests.csproj",
-        "tests/OASIS.WebAPI.IntegrationTests/OASIS.WebAPI.IntegrationTests.csproj"
+        "tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj",
+        "tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj"
     )
 
     foreach ($proj in $testProjects) {
@@ -111,7 +111,7 @@ try {
 
     if ($Live) {
         Write-Host "==> Live HTTP harness against $LiveUrl" -ForegroundColor Cyan
-        dotnet run --project tests/OASIS.WebAPI.LiveTests --configuration $Configuration -- --url $LiveUrl
+        dotnet run --project tests/AZOA.WebAPI.LiveTests --configuration $Configuration -- --url $LiveUrl
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 

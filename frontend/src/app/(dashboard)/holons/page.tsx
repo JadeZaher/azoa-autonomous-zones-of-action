@@ -2,9 +2,9 @@
 
 import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
-import { oasis, isOk } from '@/lib/oasis'
-import type { HolonResult } from '@/lib/oasis'
-import { useOasisAuth } from '@/lib/oasis-auth'
+import { azoa, isOk } from '@/lib/azoa'
+import type { HolonResult } from '@/lib/azoa'
+import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -82,7 +82,7 @@ function CreateHolonDialog({ onCreated }: { onCreated: () => void }) {
   const handleSubmit = async () => {
     if (!form.name.trim()) { toast.error('Name required'); return }
     setLoading(true)
-    const result = await oasis.holons.create({ name: form.name, description: form.description, providerName: form.providerName, chainId: form.chainId, assetType: form.assetType, metadata: buildMetadata(form.metadataKeys, form.metadataValues) })
+    const result = await azoa.holons.create({ name: form.name, description: form.description, providerName: form.providerName, chainId: form.chainId, assetType: form.assetType, metadata: buildMetadata(form.metadataKeys, form.metadataValues) })
     setLoading(false)
     if (isOk(result)) { toast.success('Created'); setOpen(false); setForm(DEFAULT_FORM); onCreated() }
     else toast.error(result.error.message)
@@ -106,7 +106,7 @@ function EditHolonDialog({ holon, onUpdated }: { holon: HolonResult; onUpdated: 
   const handleSubmit = async () => {
     if (!form.name.trim()) { toast.error('Name required'); return }
     setLoading(true)
-    const result = await oasis.holons.update(holon.id, { name: form.name, description: form.description, providerName: form.providerName, chainId: form.chainId, assetType: form.assetType, metadata: buildMetadata(form.metadataKeys, form.metadataValues) })
+    const result = await azoa.holons.update(holon.id, { name: form.name, description: form.description, providerName: form.providerName, chainId: form.chainId, assetType: form.assetType, metadata: buildMetadata(form.metadataKeys, form.metadataValues) })
     setLoading(false)
     if (isOk(result)) { toast.success('Updated'); setOpen(false); onUpdated() } else toast.error(result.error.message)
   }
@@ -125,7 +125,7 @@ function DeleteHolonDialog({ holon, onDeleted }: { holon: HolonResult; onDeleted
   const [loading, setLoading] = useState(false)
   const handleDelete = async () => {
     setLoading(true)
-    const result = await oasis.holons.delete(holon.id)
+    const result = await azoa.holons.delete(holon.id)
     setLoading(false)
     if (isOk(result)) { toast.success('Deleted'); setOpen(false); onDeleted() } else toast.error(result.error.message)
   }
@@ -148,7 +148,7 @@ function DetailPanel({ holon, onUpdated, onDeleted }: { holon: HolonResult; onUp
 
   const load = async (type: 'children' | 'peers') => {
     setLoadingKey(type)
-    const result = type === 'children' ? await oasis.holons.getChildren(holon.id) : await oasis.holons.getPeers(holon.id)
+    const result = type === 'children' ? await azoa.holons.getChildren(holon.id) : await azoa.holons.getPeers(holon.id)
     if (isOk(result)) { type === 'children' ? setChildren(result.value) : setPeers(result.value) } else toast.error(result.error.message)
     setLoadingKey(null)
   }
@@ -194,7 +194,7 @@ function DetailPanel({ holon, onUpdated, onDeleted }: { holon: HolonResult; onUp
             <EditHolonDialog holon={holon} onUpdated={onUpdated} />
             <DeleteHolonDialog holon={holon} onDeleted={onDeleted} />
             <Button variant="outline" size="sm" onClick={async () => {
-              const r = await oasis.holons.create({ name: `${holon.name} (clone)`, chainId: holon.chainId, assetType: holon.assetType, metadata: holon.metadata as Record<string, string> })
+              const r = await azoa.holons.create({ name: `${holon.name} (clone)`, chainId: holon.chainId, assetType: holon.assetType, metadata: holon.metadata as Record<string, string> })
               if (isOk(r)) { toast.success('Cloned'); onUpdated() } else toast.error(r.error.message)
             }}>Clone</Button>
           </TabsContent>
@@ -205,7 +205,7 @@ function DetailPanel({ holon, onUpdated, onDeleted }: { holon: HolonResult; onUp
 }
 
 export default function HolonsPage() {
-  useOasisAuth()
+  useAzoaAuth()
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [holons, setHolons] = useState<HolonResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -220,7 +220,7 @@ export default function HolonsPage() {
     if (filters.chainId !== 'any') q.chainId = filters.chainId
     if (filters.assetType) q.assetType = filters.assetType
     if (filters.isActive !== undefined) q.isActive = filters.isActive
-    const result = await oasis.holons.where(q).execute()
+    const result = await azoa.holons.where(q).execute()
     setLoading(false); setSearched(true)
     if (isOk(result)) setHolons(result.value); else setError(result.error.message)
   }, [filters])

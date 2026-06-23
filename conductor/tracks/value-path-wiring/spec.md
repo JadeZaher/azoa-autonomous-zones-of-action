@@ -1,6 +1,6 @@
 # Value-Path Wiring — Specification
 
-> Track 1 of the **workflow-engine** initiative (OASIS as a durable,
+> Track 1 of the **workflow-engine** initiative (AZOA as a durable,
 > consumer-driven workflow engine for ArdaNova via SDK). Source gap analysis:
 > [`conductor/REVIEW-economic-substrate-2026-06-16.md`](../../REVIEW-economic-substrate-2026-06-16.md)
 > Part A. Read that first — it carries the full file:line evidence this spec
@@ -8,7 +8,7 @@
 
 ## Goal
 
-Make the OASIS **value path correct end-to-end** so that a Swap / Transfer /
+Make the AZOA **value path correct end-to-end** so that a Swap / Transfer /
 Grant primitive actually **broadcasts, signs with the right key, and settles
 exactly once**. Today the allocation seam reports success without putting
 anything on-chain, and every signed Algorand op is signed with the **platform**
@@ -40,7 +40,7 @@ cluster around the same seam.
 `ResolveInterimKeyMaterial(signerAddress)`
 (`Providers/Blockchain/Algorand/AlgorandProvider.cs:654`, body at `:785-800`).
 That resolver **ignores `signerAddress`** and unconditionally loads
-`OASIS:Algorand:PlatformMnemonic`:
+`AZOA:Algorand:PlatformMnemonic`:
 
 ```csharp
 // AlgorandProvider.cs:785-800
@@ -49,7 +49,7 @@ private SigningKeyMaterial? ResolveInterimKeyMaterial(string signerAddress)
     if (_keyService is null) return null;
     // The signer address is currently informational — per-address resolution is
     // the custody track's job.
-    var mnemonic = _config.GetValue<string>("OASIS:Algorand:PlatformMnemonic");
+    var mnemonic = _config.GetValue<string>("AZOA:Algorand:PlatformMnemonic");
     ...
     var account = new AlgoAccount(mnemonic.Trim());
     return new SigningKeyMaterial(account.KeyPair.ClearTextPrivateKey);
@@ -310,16 +310,16 @@ exactly-once. None can be made real until this track ships.
 - [ ] **Regression gate — the api-safety-hardening exactly-once / replay /
   reconciliation tests stay green.** This track edits the exact value path those
   tests guard, so they are the regression gate:
-  `tests/OASIS.WebAPI.Tests/Managers/AllocationManagerTests.cs`,
-  `tests/OASIS.WebAPI.Tests/Services/Reconciliation/ReconciliationServiceTests.cs`,
-  `tests/OASIS.WebAPI.IntegrationTests/Gates/G2_IdempotencyTocTouTest.cs`,
-  `tests/OASIS.WebAPI.IntegrationTests/Gates/G7_ReconciliationDrillTest.cs`,
-  `tests/OASIS.WebAPI.Tests/Core/AlgorandFaucetIdempotencyTests.cs` — all remain
+  `tests/AZOA.WebAPI.Tests/Managers/AllocationManagerTests.cs`,
+  `tests/AZOA.WebAPI.Tests/Services/Reconciliation/ReconciliationServiceTests.cs`,
+  `tests/AZOA.WebAPI.IntegrationTests/Gates/G2_IdempotencyTocTouTest.cs`,
+  `tests/AZOA.WebAPI.IntegrationTests/Gates/G7_ReconciliationDrillTest.cs`,
+  `tests/AZOA.WebAPI.Tests/Core/AlgorandFaucetIdempotencyTests.cs` — all remain
   green. Any required edit to these is a deliberate, reviewed change, not a
   silent break.
 - [ ] **`dotnet build` green, zero warnings** (nullable enabled).
 - [ ] **`dotnet test` green**, including the new C1/C2/H1/H3/H4/M1 tests.
-- [ ] **No brand leak** — grep the OASIS solution for the tenant brand name: zero
+- [ ] **No brand leak** — grep the AZOA solution for the tenant brand name: zero
   hits in code, config, comments, docs.
 - [ ] **SurrealDB sole engine** — no EF/Postgres/InMemory storage path
   introduced; persistence stays through the existing stores.
@@ -336,8 +336,8 @@ exactly-once. None can be made real until this track ships.
 - No saga/compensation (M2 → `durable-workflow-engine`).
 - No KMS/HSM (B3), no mainnet flip (B6) — DEPLOY-STEPS-TODO only.
 - No Solana/Ethereum value path (fail-closed until separately wired).
-- No new storage engine; no economic logic in OASIS (amounts stay
-  tenant-decided, opaque to OASIS).
+- No new storage engine; no economic logic in AZOA (amounts stay
+  tenant-decided, opaque to AZOA).
 
 ## Tier
 

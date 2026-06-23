@@ -1,11 +1,11 @@
 using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
-using OASIS.WebAPI.Core.Signing;
-using OASIS.WebAPI.Interfaces.Signing;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Signing;
+using AZOA.WebAPI.Interfaces.Signing;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Blockchain.Algorand;
+namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
 /// <summary>
 /// Real Ed25519 Algorand transaction signer (signing-core-keystone Phase 2).
@@ -28,7 +28,7 @@ public sealed class AlgorandTransactionSigner : ITransactionSigner
 {
     public string ChainType => "Algorand";
 
-    public OASISResult<byte[]> Sign(byte[] canonicalTxn, SigningKeyMaterial key)
+    public AZOAResult<byte[]> Sign(byte[] canonicalTxn, SigningKeyMaterial key)
     {
         if (canonicalTxn is null || canonicalTxn.Length == 0)
             return Fail("Canonical transaction bytes are required for signing.");
@@ -54,7 +54,7 @@ public sealed class AlgorandTransactionSigner : ITransactionSigner
             if (submittable is null || submittable.Length == 0)
                 return Fail("Signed transaction encoded to empty bytes.");
 
-            return new OASISResult<byte[]>
+            return new AZOAResult<byte[]>
             {
                 IsError = false,
                 Result = submittable,
@@ -67,6 +67,6 @@ public sealed class AlgorandTransactionSigner : ITransactionSigner
         }
     }
 
-    private static OASISResult<byte[]> Fail(string message, Exception? ex = null) =>
+    private static AZOAResult<byte[]> Fail(string message, Exception? ex = null) =>
         new() { IsError = true, Message = message, Exception = ex };
 }

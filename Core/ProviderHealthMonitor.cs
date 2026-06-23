@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
-using OASIS.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces;
 
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 // Mission B: the provider-selection layer was deleted (single-provider reality).
 // This monitor is retained ONLY to feed /health (ProviderHealthMonitorHealthCheck

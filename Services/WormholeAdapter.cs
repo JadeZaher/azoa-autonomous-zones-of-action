@@ -1,11 +1,11 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Core.Blockchain.Wormhole;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Services;
+namespace AZOA.WebAPI.Services;
 
 /// <summary>
 /// Wormhole bridge adapter — integrates with the Guardian network REST API
@@ -46,7 +46,7 @@ public class WormholeAdapter : IWormholeAdapter
         _signatureVerifier = signatureVerifier;
     }
 
-    public async Task<OASISResult<WormholeTransferInitiation>> InitiateTransferAsync(
+    public async Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
         string sourceChain, string targetChain,
         string tokenId, string senderAddress, string recipientAddress,
         int amount, CancellationToken ct = default)
@@ -89,7 +89,7 @@ public class WormholeAdapter : IWormholeAdapter
         return Ok(initiation);
     }
 
-    public async Task<OASISResult<WormholeVAA>> FetchVAAAsync(
+    public async Task<AZOAResult<WormholeVAA>> FetchVAAAsync(
         int emitterChainId, string emitterAddress, long sequence,
         CancellationToken ct = default)
     {
@@ -142,7 +142,7 @@ public class WormholeAdapter : IWormholeAdapter
             $"VAA fetch timed out after {_config.VaaTimeoutSeconds}s for seq={sequence}");
     }
 
-    public async Task<OASISResult<bool>> VerifyVAAAsync(WormholeVAA vaa, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> VerifyVAAAsync(WormholeVAA vaa, CancellationToken ct = default)
     {
         // ─── 1. Basic presence / version ───
         if (string.IsNullOrWhiteSpace(vaa.VaaBytes))
@@ -325,7 +325,7 @@ public class WormholeAdapter : IWormholeAdapter
         return Convert.ToHexString(sha).ToLowerInvariant();
     }
 
-    public async Task<OASISResult<WormholeRedemptionResult>> RedeemTransferAsync(
+    public async Task<AZOAResult<WormholeRedemptionResult>> RedeemTransferAsync(
         string targetChain, WormholeVAA vaa, string recipientAddress,
         CancellationToken ct = default)
     {
@@ -368,9 +368,9 @@ public class WormholeAdapter : IWormholeAdapter
             : Error<WormholeRedemptionResult>($"Redemption failed: {redemption.ErrorMessage}");
     }
 
-    public int? GetWormholeChainId(string oasisChainName)
+    public int? GetWormholeChainId(string azoaChainName)
     {
-        return _config.ChainMappings.TryGetValue(oasisChainName, out var mapping)
+        return _config.ChainMappings.TryGetValue(azoaChainName, out var mapping)
             ? mapping.WormholeChainId
             : null;
     }
@@ -535,12 +535,12 @@ public class WormholeAdapter : IWormholeAdapter
         return Math.Abs((long)hash);
     }
 
-    private OASISResult<T> Ok<T>(T result, string message = "")
+    private AZOAResult<T> Ok<T>(T result, string message = "")
         => new() { IsError = false, Result = result, Message = message };
 
-    private OASISResult<T> Error<T>(string message, Exception? ex = null)
+    private AZOAResult<T> Error<T>(string message, Exception? ex = null)
     {
         _logger.LogError(ex, "Wormhole error: {Message}", message);
-        return new OASISResult<T> { IsError = true, Message = message, Exception = ex };
+        return new AZOAResult<T> { IsError = true, Message = message, Exception = ex };
     }
 }

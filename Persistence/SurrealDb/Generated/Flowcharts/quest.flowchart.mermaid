@@ -1,7 +1,7 @@
 graph LR
     %% Slice: quest
     %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
-    %% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- flowcharts
+    %% Regenerate with: dotnet run --project packages/Azoa.SurrealDb.Schema -- flowcharts
 
     %% Nodes in this slice
     executes["executes: Node"]:::nodeClass
@@ -33,6 +33,7 @@ graph LR
     quest_node -- "node_template_id [N:0..1]" --> quest_node_template
     quest_node_execution -- "node_id [N:1]" --> quest_node
     quest_node_execution -- "run_id [N:1]" --> quest_run
+    quest_run -- "acting_tenant_id [N:0..1]" --> avatar
     quest_run -- "avatar_id [N:1]" --> avatar
     quest_run -- "quest_id [N:1]" --> quest
     quest_run -- "forked_at_node_id [N:0..1]" --> quest_node

@@ -4,17 +4,17 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Query;
 
-namespace OASIS.WebAPI.Observability;
+namespace AZOA.WebAPI.Observability;
 
 // Decorator that wraps ISurrealExecutor with OTEL Activity spans and SurrealMetrics.
-// Lives in OASIS.WebAPI so the homebake package stays observability-agnostic.
+// Lives in AZOA.WebAPI so the homebake package stays observability-agnostic.
 sealed class InstrumentedSurrealExecutor : ISurrealExecutor
 {
-    static readonly ActivitySource _activitySource = new("Oasis.SurrealDb");
-    static readonly Meter          _meter          = new("Oasis.SurrealDb", "1.0.0");
+    static readonly ActivitySource _activitySource = new("Azoa.SurrealDb");
+    static readonly Meter          _meter          = new("Azoa.SurrealDb", "1.0.0");
 
     static readonly Counter<long>      _queryCounter = _meter.CreateCounter<long>(
         "surrealdb.queries",

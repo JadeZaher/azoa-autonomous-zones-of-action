@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,14 +14,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -33,7 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { JsonViewer } from '@/components/shared/json-viewer'
 import { ResultDisplay } from '@/components/shared/result-display'
-import { oasis, isOk } from '@/lib/oasis'
+import { azoa, isOk } from '@/lib/azoa'
 
 // ─── Types ───
 
@@ -48,66 +40,51 @@ interface OdkItem {
   [key: string]: unknown
 }
 
-// ─── ODK List ───
+// ─── ODK List Row ───
 
-function OdkTable({
-  items,
-  selected,
-  onSelect,
+function OdkRow({
+  item,
+  open,
+  onToggle,
+  onDeleted,
 }: {
-  items: OdkItem[]
-  selected: OdkItem | null
-  onSelect: (item: OdkItem) => void
+  item: OdkItem
+  open: boolean
+  onToggle: () => void
+  onDeleted: () => void
 }) {
-  if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground">No ODKs found.</p>
-  }
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead>Chain</TableHead>
-            <TableHead>Active</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {items.map((item) => (
-            <TableRow
-              key={item.id}
-              className={`cursor-pointer ${selected?.id === item.id ? 'bg-muted' : ''}`}
-              onClick={() => onSelect(item)}
-            >
-              <TableCell className="font-medium">{item.name}</TableCell>
-              <TableCell className="text-muted-foreground max-w-[200px] truncate">
-                {item.description ?? '—'}
-              </TableCell>
-              <TableCell>
-                {item.targetChain ? (
-                  <Badge variant="outline" className="text-xs">
-                    {item.targetChain}
-                  </Badge>
-                ) : (
-                  '—'
-                )}
-              </TableCell>
-              <TableCell>
-                <Badge
-                  className={`text-xs ${
-                    item.isActive
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                      : 'bg-muted text-muted-foreground'
-                  }`}
-                >
-                  {item.isActive ? 'Active' : 'Inactive'}
-                </Badge>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50 ${open ? 'bg-accent/40' : ''}`}
+      >
+        <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+        <span className="flex-1 truncate text-sm font-medium">{item.name}</span>
+        {item.description && (
+          <span className="hidden max-w-[260px] truncate text-xs text-muted-foreground md:inline">
+            {item.description}
+          </span>
+        )}
+        {item.targetChain && (
+          <Badge variant="outline" className="text-xs">{item.targetChain}</Badge>
+        )}
+        <Badge
+          className={`text-xs ${
+            item.isActive
+              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+              : 'bg-muted text-muted-foreground'
+          }`}
+        >
+          {item.isActive ? 'Active' : 'Inactive'}
+        </Badge>
+      </button>
+      {open && (
+        <div className="border-t bg-background px-4 py-4">
+          <OdkDetail odk={item} onDeleted={onDeleted} />
+        </div>
+      )}
     </div>
   )
 }
@@ -138,7 +115,7 @@ function CreateOdkDialog({ onCreated }: { onCreated: () => void }) {
       if (form.publicKey) body.publicKey = form.publicKey
       if (form.avatarId) body.avatarId = form.avatarId
 
-      const result = await oasis.api.request('POST', '/api/starodk', body)
+      const result = await azoa.api.request('POST', '/api/starodk', body)
       if (isOk(result)) {
         setOpen(false)
         setForm({ name: '', description: '', publicKey: '', avatarId: '' })
@@ -239,7 +216,7 @@ function GenerateDAppDialog({ odkId }: { odkId: string }) {
           body.config = configJson
         }
       }
-      const result = await oasis.api.request<{ code?: string; generatedCode?: string }>(
+      const result = await azoa.api.request<{ code?: string; generatedCode?: string }>(
         'POST',
         `/api/starodk/${odkId}/generate`,
         body
@@ -342,7 +319,7 @@ function OdkDetail({
     setError(null)
     setDeployResult(null)
     try {
-      const result = await oasis.api.request('POST', `/api/starodk/${odk.id}/deploy`)
+      const result = await azoa.api.request('POST', `/api/starodk/${odk.id}/deploy`)
       if (isOk(result)) {
         setDeployResult(result.value)
       } else {
@@ -359,7 +336,7 @@ function OdkDetail({
     setDeleteLoading(true)
     setError(null)
     try {
-      const result = await oasis.api.request('DELETE', `/api/starodk/${odk.id}`)
+      const result = await azoa.api.request('DELETE', `/api/starodk/${odk.id}`)
       if (isOk(result)) {
         onDeleted()
       } else {
@@ -374,68 +351,63 @@ function OdkDetail({
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-sm">{odk.name}</CardTitle>
-          <div className="flex flex-wrap gap-2">
-            <GenerateDAppDialog odkId={odk.id} />
+    <div className="space-y-4">
+      {/* Action buttons row */}
+      <div className="flex flex-wrap gap-2">
+        <GenerateDAppDialog odkId={odk.id} />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleDeploy}
+          disabled={deployLoading}
+        >
+          {deployLoading ? 'Deploying...' : 'Deploy'}
+        </Button>
+        {!confirmDelete ? (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete
+          </Button>
+        ) : (
+          <div className="flex gap-1">
             <Button
               size="sm"
-              variant="outline"
-              onClick={handleDeploy}
-              disabled={deployLoading}
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteLoading}
             >
-              {deployLoading ? 'Deploying...' : 'Deploy'}
+              {deleteLoading ? 'Deleting...' : 'Confirm'}
             </Button>
-            {!confirmDelete ? (
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => setConfirmDelete(true)}
-              >
-                Delete
-              </Button>
-            ) : (
-              <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={handleDelete}
-                  disabled={deleteLoading}
-                >
-                  {deleteLoading ? 'Deleting...' : 'Confirm'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setConfirmDelete(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmDelete(false)}
+            >
+              Cancel
+            </Button>
           </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        <div className="rounded-md bg-muted p-3 text-xs">
-          <JsonViewer data={odk} />
-        </div>
-
-        {deployResult !== null && deployResult !== undefined && (
-          <>
-            <Separator />
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">Deploy Result</p>
-              <ResultDisplay result={deployResult} />
-            </div>
-          </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <div className="rounded-md bg-muted p-3 text-xs">
+        <JsonViewer data={odk} />
+      </div>
+
+      {deployResult !== null && deployResult !== undefined && (
+        <>
+          <Separator />
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">Deploy Result</p>
+            <ResultDisplay result={deployResult} />
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -451,7 +423,7 @@ export default function StarOdkPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await oasis.api.request<OdkItem[]>('GET', '/api/starodk')
+      const result = await azoa.api.request<OdkItem[]>('GET', '/api/starodk')
       if (isOk(result)) {
         setOdks(result.value)
       } else {
@@ -474,56 +446,42 @@ export default function StarOdkPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight tracking-tight">STAR ODK</h1>
+        <h1 className="text-lg font-semibold tracking-tight">STAR ODK</h1>
         <p className="text-sm text-muted-foreground">
           Manage on-chain development kits and generate dApp scaffolding
         </p>
       </div>
 
-      {/* ODK List Card */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-sm">
-            ODK List
-            {odks.length > 0 && (
-              <span className="ml-2 text-sm font-normal text-muted-foreground">
-                ({odks.length})
-              </span>
-            )}
-          </CardTitle>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={loadOdks}
-              disabled={loading}
-            >
-              {loading ? 'Refreshing...' : 'Refresh'}
-            </Button>
-            <CreateOdkDialog onCreated={loadOdks} />
-          </div>
-        </CardHeader>
-        <CardContent>
-          {error && <p className="text-sm text-destructive mb-3">{error}</p>}
-          <OdkTable
-            items={odks}
-            selected={selected}
-            onSelect={(item) =>
-              setSelected(selected?.id === item.id ? null : item)
-            }
-          />
-        </CardContent>
-      </Card>
+      {/* Action row on top */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" onClick={loadOdks} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </Button>
+        <CreateOdkDialog onCreated={loadOdks} />
+        <span className="text-sm text-muted-foreground">{odks.length} ODKs</span>
+      </div>
 
-      {/* Selected ODK Detail */}
-      {selected && (
-        <OdkDetail
-          odk={selected}
-          onDeleted={handleDeleted}
-        />
-      )}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {/* Full-width list with inline-expanding detail */}
+      <div className="divide-y rounded-md border">
+        {odks.map((item) => (
+          <OdkRow
+            key={item.id}
+            item={item}
+            open={selected?.id === item.id}
+            onToggle={() => setSelected(selected?.id === item.id ? null : item)}
+            onDeleted={handleDeleted}
+          />
+        ))}
+        {odks.length === 0 && !loading && (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            No ODKs found. Create one above.
+          </p>
+        )}
+      </div>
     </div>
   )
 }

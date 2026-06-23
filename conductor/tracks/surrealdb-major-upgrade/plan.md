@@ -46,24 +46,24 @@ B6. Run `./dev-up.ps1 -ResetDb` — server should come up healthy, but
 **Exit criterion:** surrealdb container reaches `Up (healthy)` on the
 new image. API failure is expected and triages to Phase C.
 
-## Phase C — .NET SDK + Oasis.SurrealDb.Client (1-2 days, highest risk)
+## Phase C — .NET SDK + Azoa.SurrealDb.Client (1-2 days, highest risk)
 
 C1. Update the `surrealdb.net` package reference in
     [Directory.Build.props](../../../Directory.Build.props) (and any
     transitive constraint).
-C2. Build `Oasis.SurrealDb.Client` — fix compile errors. Likely
+C2. Build `Azoa.SurrealDb.Client` — fix compile errors. Likely
     surfaces: rename of `SurrealResponse` shape, change in
     `JsonElement` vs typed result, change in connection-pool init.
-C3. Re-run `Oasis.SurrealDb.Client.Tests` suite. Patch wire-format
+C3. Re-run `Azoa.SurrealDb.Client.Tests` suite. Patch wire-format
     discrepancies (statement-result envelope, error detail extraction
     — `SurrealResponse.ExtractErrorText` has been hardened recently
     and may need a third extension if the new major changes the
     shape).
 C4. Run integration tests against the new image. Focus areas in order
     of risk:
-    a. `tests/Oasis.SurrealDb.Schema.Tests/Migration/MigrationRunnerLiveTests.cs` — schema apply.
-    b. `tests/OASIS.WebAPI.IntegrationTests/Persistence/Surreal/Surreal*StoreTests.cs` — read/write roundtrip per store.
-    c. `tests/OASIS.WebAPI.IntegrationTests/Gates/G1_CrashDurabilityTest.cs` — engine durability under kill -9.
+    a. `tests/Azoa.SurrealDb.Schema.Tests/Migration/MigrationRunnerLiveTests.cs` — schema apply.
+    b. `tests/AZOA.WebAPI.IntegrationTests/Persistence/Surreal/Surreal*StoreTests.cs` — read/write roundtrip per store.
+    c. `tests/AZOA.WebAPI.IntegrationTests/Gates/G1_CrashDurabilityTest.cs` — engine durability under kill -9.
     d. Everything else (Mcp tests are SkippableFact-guarded; will
        light up automatically if the underlying executor is sound).
 C5. Audit the `SELECT * FROM type::record($_t, $_id)` workaround
@@ -93,7 +93,7 @@ D3. If 3.x was chosen, add an explicit assertion that the RecordId
     issue does not affect our schema shapes (we use `ToString("N")`
     32-char hex IDs, not raw record-id literals — likely unaffected
     but verify).
-D4. Update [data-engine-decision](../../../C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/data-engine-decision.md)
+D4. Update [data-engine-decision](../../../C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/data-engine-decision.md)
     memory if any of the 7 guardrails shift.
 
 **Exit criterion:** G1 test passes 10/10. Program.cs error message
@@ -102,8 +102,8 @@ matches reality. Memory updated if needed.
 ## Phase E — Docs + closeout (½ day)
 
 E1. Sweep `README.md`, `DEVELOPMENT.md`, `RUNBOOK.md`, `PROVIDERS.md`,
-    `API_SYNC.md`, `packages/Oasis.SurrealDb.Schema/DESIGN.md`,
-    `packages/Oasis.SurrealDb.Schema/RUNBOOK.md`. Update every `1.5.4`
+    `API_SYNC.md`, `packages/Azoa.SurrealDb.Schema/DESIGN.md`,
+    `packages/Azoa.SurrealDb.Schema/RUNBOOK.md`. Update every `1.5.4`
     reference. Verify no doc still claims `surrealkv` if we landed on
     `rocksdb`, or vice versa.
 E2. Write `SIGN-OFF.md` with: chosen version, what changed, what was
@@ -128,5 +128,5 @@ E4. Wave-1 research notes under `.omc/research/surrealdb-migration-wave1/`
 
 ## Out of scope (explicit, repeated from spec)
 - Data backfill / migration (no production data; greenfield repo).
-- `oasis-surreal` CLI surface changes (engine bump, not tooling redesign).
+- `azoa-surreal` CLI surface changes (engine bump, not tooling redesign).
 - HNSW / embedding behavior re-engineering (audit yes, redesign no).

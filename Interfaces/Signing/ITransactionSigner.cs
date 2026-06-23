@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Core.Signing;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Signing;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Signing;
+namespace AZOA.WebAPI.Interfaces.Signing;
 
 /// <summary>
 /// Chain-agnostic server-side transaction signer (signing-core-keystone D2/D3).
@@ -29,5 +29,5 @@ public interface ITransactionSigner
     /// msgpack-ordered encoding of the transaction, i.e. <c>BytesToSign</c> input).
     /// </param>
     /// <param name="key">Decrypted key material; the caller owns its lifetime/zeroing.</param>
-    OASISResult<byte[]> Sign(byte[] canonicalTxn, SigningKeyMaterial key);
+    AZOAResult<byte[]> Sign(byte[] canonicalTxn, SigningKeyMaterial key);
 }

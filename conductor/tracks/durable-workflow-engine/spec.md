@@ -83,7 +83,7 @@ A workflow author picks, **per-edge / per-node**, whether the next hop is
 run.
 
 The worked example this engine must support **generically** (the economics stay
-in ArdaNova; OASIS supplies only the mechanism):
+in ArdaNova; AZOA supplies only the mechanism):
 
 > platform-token → project-token swap → **HOLD until** (phase-met │
 > project-cancelled) → **on-cancel** refund platform tokens (compensation) →
@@ -273,7 +273,7 @@ adoption / generalization) to land.
   buildable and testable *before* value-path lands (using mechanism-only / mock
   nodes), but a *real* economic run requires Track 1.
 - **The ArdaNova economic semantics** (what a project-token is, vesting math,
-  equity rules) stay entirely in ArdaNova. OASIS supplies mechanism only.
+  equity rules) stay entirely in ArdaNova. AZOA supplies mechanism only.
 - **No broker / external infra.** Same homebake stance as
   `durable-saga-orchestration` (poll now → SurrealDB LIVE later).
 - **No fork-merge, no inter-iteration cycles** — inherited non-goals from

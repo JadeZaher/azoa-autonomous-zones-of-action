@@ -9,10 +9,10 @@ a contained change rather than a rewrite.
 
 ### Thin persistence seam (the key enabler)
 Today there are **two overlapping storage abstractions**: the god interface
-`IOASISStorageProvider` (41 methods, 11 entities — `IOASISStorageProvider.cs` +
-`IOASISStorageProviderNFTExtensions.cs`) and a redundant `IQuestRepository`
+`IAZOAStorageProvider` (41 methods, 11 entities — `IAZOAStorageProvider.cs` +
+`IAZOAStorageProviderNFTExtensions.cs`) and a redundant `IQuestRepository`
 (`Interfaces/IQuestRepository.cs` + `Services/Quest/QuestRepository.cs`), both
-wrapping `OASISDbContext`. Collapse both into **one coherent set of
+wrapping `AZOADbContext`. Collapse both into **one coherent set of
 per-aggregate, graph-aware interfaces** (Avatar/Wallet/Holon/Quest/NFT/Bridge).
 This single seam is what isolates the later SurrealDB SDK behind one file.
 **Not** a generic `IRepository<T>` — that is an anti-pattern over a graph DB.

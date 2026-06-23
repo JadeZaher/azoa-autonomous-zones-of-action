@@ -14,7 +14,7 @@ phase.
 | Topic | Decision required |
 |-------|-------------------|
 | Resolver shape | **DECIDED: higher-order `WithSigningKeyAsync<T>(walletId, avatarId, Func<byte[],Task<T>>)`** — the key never leaves the resolver's `finally`, so "zero after use" is structurally enforced. This matches the spec's decrypt→sign→zero contract; the signer (`signing-core-keystone`) passes a `sign` delegate and receives only its result. The disposable-lease alternative was rejected because it relies on the caller disposing. |
-| Platform pseudo-wallet identity | **DECIDED: reserved sentinel `walletId` (fixed `Guid` constant `KeyCustodyService.PlatformWalletId`) special-cased in `KeyCustodyService`.** Keeps the platform key out of the per-user wallet table; resolved from config (`OASIS:Algorand:PlatformMnemonic`), not from a persisted row. A persisted system-Avatar row was rejected as heavier and as putting a value-bearing platform key into the per-user store. |
+| Platform pseudo-wallet identity | **DECIDED: reserved sentinel `walletId` (fixed `Guid` constant `KeyCustodyService.PlatformWalletId`) special-cased in `KeyCustodyService`.** Keeps the platform key out of the per-user wallet table; resolved from config (`AZOA:Algorand:PlatformMnemonic`), not from a persisted row. A persisted system-Avatar row was rejected as heavier and as putting a value-bearing platform key into the per-user store. |
 | Platform-authority guard | **DECIDED: (c) restrict platform resolution to internal manager callers; never expose on a controller.** Modeled as a separate `WithPlatformSigningKeyAsync<T>(bool isPlatformContext, ...)` method that takes an explicit caller-asserted platform-authority flag. Only platform-authority managers may call it; a `false` (non-platform) assertion returns an error and performs no decrypt. There is deliberately no controller surface for platform-key resolution — smallest attack surface. |
 | Rotation delivery | **DECIDED: `RewrapAsync` method stub on `IKeyCustodyService`.** Spec requires *design + stub + unit test* only. The stub accepts an explicit old/new `WalletKeyService` pair so the unit test can prove a value encrypted under key A decrypts after re-wrap under key B. Dual-key window / batch re-wrap / rollback orchestration is documented as the follow-up (not shipped). |
 
@@ -34,8 +34,8 @@ phase.
 
 - [ ] Define `IKeyCustodyService` (new file under `Interfaces/` or
   `Interfaces/Services/`, matching repo convention):
-  - `Task<OASISResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)`
-  - `Task<OASISResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)`
+  - `Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)`
+  - `Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)`
   - (rotation stub added in Phase 4 — see decisions table)
 - [ ] Implement `KeyCustodyService` composing `IWalletStore` +
   `WalletKeyService`. Resolve flow (mirror `ExportWalletAsync`,
@@ -91,7 +91,7 @@ phase.
     one, zeroing the transient cleartext buffer.
   - body is a documented stub (XML doc describing dual-key window / batch /
     rollback as the follow-up), wired enough to be unit-testable.
-- [ ] Document that the data-key source is `OASIS:WalletEncryptionKey`
+- [ ] Document that the data-key source is `AZOA:WalletEncryptionKey`
   (`Core/WalletKeyService.cs:15-20`) and that rotation = rotate-secret +
   re-wrap-all.
 

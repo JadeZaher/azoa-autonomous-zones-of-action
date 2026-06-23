@@ -1,16 +1,16 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Json;
-using Oasis.SurrealDb.Client.Query;
-using Oasis.SurrealDb.Client.Schema;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Responses;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Json;
+using Azoa.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client.Schema;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="ISTARStore"/>. Maps between the legacy
@@ -32,13 +32,13 @@ public sealed class SurrealStarStore : ISTARStore
 
     // ── ISTARStore ────────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<ISTARODK>> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<ISTARODK>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery.SelectById(StarRecord.StarTable, ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<StarRecord>(q, ct);
-            return new OASISResult<ISTARODK>
+            return new AZOAResult<ISTARODK>
             {
                 IsError = row == null,
                 Message = row == null ? "STAR ODK not found." : "Success",
@@ -47,11 +47,11 @@ public sealed class SurrealStarStore : ISTARStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.GetByIdAsync failed: {ex.Message}");
+            return new AZOAResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.GetByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<ISTARODK>> GetByNameAndAvatarAsync(string name, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<ISTARODK>> GetByNameAndAvatarAsync(string name, Guid avatarId, CancellationToken ct = default)
     {
         try
         {
@@ -66,7 +66,7 @@ public sealed class SurrealStarStore : ISTARStore
                 .WithParam("_avatar", SurrealLink.ToLink("avatar", ToSurrealId(avatarId)));
 
             var row = await _executor.QuerySingleAsync<StarRecord>(q, ct);
-            return new OASISResult<ISTARODK>
+            return new AZOAResult<ISTARODK>
             {
                 IsError = false,
                 Message = row == null ? "No matching STAR ODK." : "Success",
@@ -75,17 +75,17 @@ public sealed class SurrealStarStore : ISTARStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.GetByNameAndAvatarAsync failed: {ex.Message}");
+            return new AZOAResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.GetByNameAndAvatarAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<ISTARODK>>> GetAllAsync(CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery.SelectAll(StarRecord.StarTable);
             var rows = await _executor.QueryAsync<StarRecord>(q, ct);
-            return new OASISResult<IEnumerable<ISTARODK>>
+            return new AZOAResult<IEnumerable<ISTARODK>>
             {
                 Result  = rows.Select(FromPoco).ToList(),
                 Message = "Success"
@@ -93,11 +93,11 @@ public sealed class SurrealStarStore : ISTARStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<ISTARODK>>().CaptureException(ex, $"SurrealStarStore.GetAllAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<ISTARODK>>().CaptureException(ex, $"SurrealStarStore.GetAllAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<ISTARODK>> UpsertAsync(ISTARODK odk, CancellationToken ct = default)
+    public async Task<AZOAResult<ISTARODK>> UpsertAsync(ISTARODK odk, CancellationToken ct = default)
     {
         try
         {
@@ -113,15 +113,15 @@ public sealed class SurrealStarStore : ISTARStore
             var saved  = resp.GetValues<StarRecord>(0).FirstOrDefault();
             var result = saved is not null ? FromPoco(saved) : odk;
 
-            return new OASISResult<ISTARODK> { Result = result, Message = "Saved." };
+            return new AZOAResult<ISTARODK> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.UpsertAsync failed: {ex.Message}");
+            return new AZOAResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.UpsertAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -129,16 +129,16 @@ public sealed class SurrealStarStore : ISTARStore
             var checkQ   = SurrealQuery.SelectById(StarRecord.StarTable, ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<StarRecord>(checkQ, ct);
             if (existing == null)
-                return new OASISResult<bool> { IsError = true, Message = "STAR ODK not found.", Result = false };
+                return new AZOAResult<bool> { IsError = true, Message = "STAR ODK not found.", Result = false };
 
             var q = SurrealQuery.DeleteById(StarRecord.StarTable, ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
-            return new OASISResult<bool> { Result = true, Message = "Deleted." };
+            return new AZOAResult<bool> { Result = true, Message = "Deleted." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool>().CaptureException(ex, $"SurrealStarStore.DeleteAsync failed: {ex.Message}");
+            return new AZOAResult<bool>().CaptureException(ex, $"SurrealStarStore.DeleteAsync failed: {ex.Message}");
         }
     }
 
@@ -220,7 +220,7 @@ public sealed class SurrealStarStore : ISTARStore
 
     // ── Inline SurrealDB record type ──────────────────────────────────────────
 
-    private sealed class StarRecord : Oasis.SurrealDb.Client.ISurrealRecord
+    private sealed class StarRecord : Azoa.SurrealDb.Client.ISurrealRecord
     {
         public const string StarTable = "star_odk";
 

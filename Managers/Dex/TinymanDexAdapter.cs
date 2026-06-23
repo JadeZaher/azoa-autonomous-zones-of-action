@@ -1,17 +1,17 @@
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Core.Blockchain;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Blockchain;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers.Dex;
+namespace AZOA.WebAPI.Managers.Dex;
 
 /// <summary>
 /// Tinyman V2 (Algorand) DEX adapter. Mirrors the SDK's
-/// <c>TinymanAdapter</c> (<c>sdk/oasis-wallet/src/dex/tinyman.ts</c>).
+/// <c>TinymanAdapter</c> (<c>sdk/azoa-wallet/src/dex/tinyman.ts</c>).
 ///
 /// Quoting uses the constant-product AMM against real pool reserves read from
 /// Algod; the pool account is derived deterministically via
@@ -31,7 +31,7 @@ public class TinymanDexAdapter : IDexAdapter
         _logger = logger;
     }
 
-    public async Task<OASISResult<DexQuote>> GetQuoteAsync(SwapQuoteRequest req)
+    public async Task<AZOAResult<DexQuote>> GetQuoteAsync(SwapQuoteRequest req)
     {
         var feeBps = 30; // Tinyman V2 0.3%
 
@@ -153,7 +153,7 @@ public class TinymanDexAdapter : IDexAdapter
         }
     }
 
-    public Task<OASISResult<SwapQuoteResponse>> BuildSwapTransactionAsync(
+    public Task<AZOAResult<SwapQuoteResponse>> BuildSwapTransactionAsync(
         SwapExecuteRequest req, string cachedQuotePayload)
     {
         // Tinyman V2 requires client-side application call transactions (app opt-in + swap).
@@ -191,7 +191,7 @@ public class TinymanDexAdapter : IDexAdapter
         var poolAddress = TinymanV2PoolLocator.GetPoolAddress(validatorAppId, assetInId, assetOutId);
 
         using var client = new HttpClient { BaseAddress = new Uri(algodUrl), Timeout = TimeSpan.FromSeconds(10) };
-        client.DefaultRequestHeaders.Add("User-Agent", "OASIS-SwapManager/1.0");
+        client.DefaultRequestHeaders.Add("User-Agent", "AZOA-SwapManager/1.0");
 
         string response;
         try
@@ -296,9 +296,9 @@ public class TinymanDexAdapter : IDexAdapter
 
     // ─── Result helpers ───
 
-    private static OASISResult<T> Ok<T>(T result, string message = "")
+    private static AZOAResult<T> Ok<T>(T result, string message = "")
         => new() { IsError = false, Result = result, Message = message };
 
-    private static OASISResult<T> Error<T>(string message, Exception? ex = null)
+    private static AZOAResult<T> Error<T>(string message, Exception? ex = null)
         => new() { IsError = true, Message = message, Exception = ex };
 }

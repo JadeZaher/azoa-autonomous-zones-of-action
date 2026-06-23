@@ -1,14 +1,14 @@
-namespace OASIS.WebAPI.Models;
+namespace AZOA.WebAPI.Models;
 
 /// <summary>
 /// The closed set of <see cref="BlockchainOperation.Status"/> values. Every
-/// producer (<see cref="OASIS.WebAPI.Managers.BlockchainOperationManager"/>)
-/// and consumer (<see cref="OASIS.WebAPI.Services.Reconciliation.ReconciliationService"/>)
+/// producer (<see cref="AZOA.WebAPI.Managers.BlockchainOperationManager"/>)
+/// and consumer (<see cref="AZOA.WebAPI.Services.Reconciliation.ReconciliationService"/>)
 /// references these constants instead of bare string literals, so a typo or a
 /// new state is a compile-time concern, not a silent runtime divergence.
 ///
 /// <para>Kept as <c>const string</c> (not an <c>enum</c>) on purpose:
-/// <see cref="OASIS.WebAPI.Interfaces.IBlockchainOperation.Status"/> is a
+/// <see cref="AZOA.WebAPI.Interfaces.IBlockchainOperation.Status"/> is a
 /// public string contract and <c>BlockchainOperationBuilder.WithStatus</c>
 /// accepts free-form values — an enum would break that contract and force
 /// churn across the interface, builder, and both storage providers. The column

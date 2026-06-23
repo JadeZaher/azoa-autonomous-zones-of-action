@@ -1,8 +1,8 @@
-# AGENTS.md — oasis-sleek repeated-ops context
+# AGENTS.md — azoa repeated-ops context
 
-.NET 8 WebAPI (`OASIS.WebAPI.csproj` at root) + Next.js frontend + `@oasis/wallet-sdk`.
+.NET 8 WebAPI (`AZOA.WebAPI.csproj` at root) + Next.js frontend + `@azoa/wallet-sdk`.
 **Sole datastore is SurrealDB** (Postgres + EF Core were removed in
-`surrealdb-migration`; no more `oasis-postgres`, no more `start.ps1`).
+`surrealdb-migration`; no more `azoa-postgres`, no more `start.ps1`).
 This file is the operational cheat-sheet for build / test / local stack.
 Keep it accurate; it is read on every session.
 
@@ -10,7 +10,7 @@ Keep it accurate; it is read on every session.
 
 This machine has **podman** (no docker). All commands below use `podman`;
 substitute `docker` if present. The compose stack defines three
-containers: `oasis-dev-surrealdb`, `oasis-dev-api`, `oasis-dev-frontend`.
+containers: `azoa-dev-surrealdb`, `azoa-dev-api`, `azoa-dev-frontend`.
 The bundled SurrealDB image is `surrealdb/surrealdb:v1.5.4`.
 
 ## Local stack — `dev-up.ps1` / `dev-up.sh`
@@ -36,7 +36,7 @@ names with `--kebab-case` (e.g. `--reset-db`, `--no-build`).
 - Rebuild is on by default — `-NoBuild` skips.
 - Old `-Rebuild` / `-Clean` / `-Preserve` flags are kept as no-op /
   alias forms so older muscle memory doesn't error.
-- `dev-up` also rebuilds `sdk/oasis-wallet/dist` on the host so a
+- `dev-up` also rebuilds `sdk/azoa-wallet/dist` on the host so a
   host-mode frontend (rare) sees the same SDK the container does.
 
 ## Database — SurrealDB
@@ -48,14 +48,14 @@ names with `--kebab-case` (e.g. `--reset-db`, `--no-build`).
   major upgrade tracked separately at
   [`surrealdb-major-upgrade`](conductor/tracks/surrealdb-major-upgrade/spec.md).
 - Connection: `SurrealDb:Endpoint=http://surrealdb:8000` (from-API),
-  or `http://localhost:8000` (from host). Namespace `oasis`, database
-  `oasis`, user `root`, password `root` — single-underscore env-var
-  aliases `OASIS_SURREAL_NS` / `_DB` / `_USER` / `_PASS` get the same
+  or `http://localhost:8000` (from host). Namespace `azoa`, database
+  `azoa`, user `root`, password `root` — single-underscore env-var
+  aliases `AZOA_SURREAL_NS` / `_DB` / `_USER` / `_PASS` get the same
   values via the compose file.
 - Schema lives in [Persistence/SurrealDb/Generated/Schemas/](Persistence/SurrealDb/Generated/Schemas/)
   (26 `.surql` files, emitted from decorated POCOs by
-  [packages/Oasis.SurrealDb.Schema](packages/Oasis.SurrealDb.Schema/)).
-- Schema sync is **idempotent** — `oasis-surreal up` runs from the API
+  [packages/Azoa.SurrealDb.Schema](packages/Azoa.SurrealDb.Schema/)).
+- Schema sync is **idempotent** — `azoa-surreal up` runs from the API
   container's entrypoint on every boot AND from the host as the last
   dev-up step. The `schema_migration` ledger skips already-applied
   files. `-Reset` / `--reset` wipes the namespace and re-applies.
@@ -66,14 +66,14 @@ names with `--kebab-case` (e.g. `--reset-db`, `--no-build`).
   bundled service, and points the API at the host via
   `host.containers.internal:8000` (podman) / `host.docker.internal`
   (docker).
-- `podman exec -it oasis-dev-surrealdb /surreal sql --conn http://localhost:8000 --user root --pass root --ns oasis --db oasis`
+- `podman exec -it azoa-dev-surrealdb /surreal sql --conn http://localhost:8000 --user root --pass root --ns azoa --db azoa`
   to drop into a REPL.
 
 ## Build
 
 ```powershell
-dotnet build OASIS.WebAPI.csproj -c Debug          # production API only (fast gate)
-dotnet build oasis-sleek.sln    -c Debug           # whole solution (incl. test projects)
+dotnet build AZOA.WebAPI.csproj -c Debug          # production API only (fast gate)
+dotnet build azoa.sln    -c Debug           # whole solution (incl. test projects)
 ```
 
 - Green = **0 errors**. There are ~18 pre-existing baseline warnings
@@ -81,27 +81,27 @@ dotnet build oasis-sleek.sln    -c Debug           # whole solution (incl. test 
   regressions; do not chase them. Adding NEW warnings is a regression.
 - Do **not** run the frontend typecheck — it is known pre-existing
   noise. The gates are `dotnet build` + SDK `tsc` only. See memory:
-  [`no-frontend-typecheck`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/no-frontend-typecheck.md).
+  [`no-frontend-typecheck`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/no-frontend-typecheck.md).
 - No `dotnet ef` migrations on new work — EF was removed in
   surrealdb-migration. Schema changes are now decorated-POCO edits +
   re-emitting `Persistence/SurrealDb/Generated/Schemas/*.surql` via
-  [Oasis.SurrealDb.Schema](packages/Oasis.SurrealDb.Schema/).
+  [Azoa.SurrealDb.Schema](packages/Azoa.SurrealDb.Schema/).
 
 ## Test
 
 ```powershell
 # Unit suite (fast gate, no external deps): ~500 tests, ~10s
-dotnet test tests/OASIS.WebAPI.Tests/OASIS.WebAPI.Tests.csproj -c Debug
+dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj -c Debug
 
 # One class / filter
-dotnet test tests/OASIS.WebAPI.Tests/OASIS.WebAPI.Tests.csproj -c Debug `
+dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj -c Debug `
   --filter "FullyQualifiedName~CrossChainBridgeServiceTests"
 
 # Integration tests (need SurrealDB up)
-dotnet test tests/OASIS.WebAPI.IntegrationTests/OASIS.WebAPI.IntegrationTests.csproj -c Debug
+dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj -c Debug
 
 # Schema package
-dotnet test tests/Oasis.SurrealDb.Schema.Tests/Oasis.SurrealDb.Schema.Tests.csproj -c Debug
+dotnet test tests/Azoa.SurrealDb.Schema.Tests/Azoa.SurrealDb.Schema.Tests.csproj -c Debug
 ```
 
 - Integration tests use the persistent SurrealDB instance the
@@ -117,12 +117,12 @@ dotnet test tests/Oasis.SurrealDb.Schema.Tests/Oasis.SurrealDb.Schema.Tests.cspr
 ## Conventions for agents
 
 - **Config-driven over hardcoded.** Tests load real
-  `appsettings.json`. See memory: [`config-driven-calls`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/config-driven-calls.md).
+  `appsettings.json`. See memory: [`config-driven-calls`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/config-driven-calls.md).
 - **SurrealDB sole storage engine, chain = source of truth for balances.**
-  See memory: [`data-engine-decision`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/data-engine-decision.md).
+  See memory: [`data-engine-decision`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/data-engine-decision.md).
 - **Greenfield, pre-launch.** No customers, no production data. Prefer
   clean re-architecture over compat/migration shims. Memory:
-  [`greenfield-prelaunch-no-compat`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-oasis-sleek/memory/greenfield-prelaunch-no-compat.md).
+  [`greenfield-prelaunch-no-compat`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/greenfield-prelaunch-no-compat.md).
 - **SurrealDB record lookups** use `SELECT * FROM type::record($_t, $_id)`,
   NOT `WHERE id = $id` (Thing vs string equality fails silently in
   1.5.x). See [SurrealApiKeyStore](Providers/Stores/Surreal/SurrealApiKeyStore.cs)

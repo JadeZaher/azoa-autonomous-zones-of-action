@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { oasis, isOk } from '@/lib/oasis'
-import { useOasisAuth } from '@/lib/oasis-auth'
+import { azoa, isOk } from '@/lib/azoa'
+import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -114,7 +114,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
     if (expiresInDays.trim()) body.expiresInDays = parseInt(expiresInDays, 10)
     if (scopes.trim()) body.scopes = scopes.split(',').map((s) => s.trim()).filter(Boolean)
 
-    const res = await oasis.api.request('POST', '/api/apikey', body)
+    const res = await azoa.api.request('POST', '/api/apikey', body)
 
     if (isOk(res)) {
       onCreated(res.value)
@@ -262,7 +262,7 @@ function KeyList({ keys, onRefresh }: { keys: ApiKeyInfo[]; loading: boolean; on
 
   const handleRevoke = async (id: string) => {
     setError(null)
-    const res = await oasis.api.request('POST', `/api/apikey/${id}/revoke`)
+    const res = await azoa.api.request('POST', `/api/apikey/${id}/revoke`)
     if (isOk(res)) {
       onRefresh()
     } else {
@@ -272,7 +272,7 @@ function KeyList({ keys, onRefresh }: { keys: ApiKeyInfo[]; loading: boolean; on
 
   const handleDelete = async (id: string) => {
     setError(null)
-    const res = await oasis.api.request('DELETE', `/api/apikey/${id}`)
+    const res = await azoa.api.request('DELETE', `/api/apikey/${id}`)
     if (isOk(res)) {
       onRefresh()
     } else {
@@ -376,7 +376,7 @@ function KeyList({ keys, onRefresh }: { keys: ApiKeyInfo[]; loading: boolean; on
 // ─── Page ───
 
 export default function ApiKeysPage() {
-  const { isAuthenticated } = useOasisAuth()
+  const { isAuthenticated } = useAzoaAuth()
   const [keys, setKeys] = useState<ApiKeyInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -385,7 +385,7 @@ export default function ApiKeysPage() {
   const fetchKeys = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const res = await oasis.api.request('GET', '/api/apikey')
+    const res = await azoa.api.request('GET', '/api/apikey')
     if (isOk(res)) {
       setKeys(res.value)
     } else {
@@ -408,7 +408,7 @@ export default function ApiKeysPage() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight tracking-tight">API Keys</h1>
         <p className="text-sm text-muted-foreground">
-          Create and manage API keys for programmatic access to the OASIS API
+          Create and manage API keys for programmatic access to the AZOA API
         </p>
       </div>
 

@@ -3,7 +3,7 @@
 ## Tasks
 
 ### Bridge correctness
-1. [ ] Add unique constraint/index on bridge source dedupe key: `LockTxHash` and the Wormhole `(EmitterChainId, EmitterAddress, Sequence)` tuple (`OASISDbContext` entity config)
+1. [ ] Add unique constraint/index on bridge source dedupe key: `LockTxHash` and the Wormhole `(EmitterChainId, EmitterAddress, Sequence)` tuple (`AZOADbContext` entity config)
 2. [ ] Add a consumed-VAA ledger (unique on VAA digest); reject redeem if the VAA digest is already consumed
 3. [ ] Make `RedeemWithVAAAsync` atomic: conditional state transition `UPDATE … SET status=Redeeming WHERE status=VAAReady`, assert exactly one row affected, persist **before** the on-chain call (`CrossChainBridgeService.cs:129-163`)
 4. [ ] Add partial-failure compensation: on post-broadcast failure, mark `Failed`/`Refunded` with a real on-chain reversal path; fix `ReverseBridgeAsync` (`:189-205`) to actually reverse or clearly mark manual-intervention

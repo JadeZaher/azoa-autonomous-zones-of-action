@@ -292,6 +292,9 @@ public class TenantManager : ITenantManager
             // C1/AC4: marks the token as tenant-driven; the signing seam reads this
             // to require a live consent grant before any key decrypt.
             new(ActAsTenantClaim, tenantId.ToString()),
+            // token-type segregation (security-review S5): explicitly classes this as a
+            // scoped tenant child credential, not a full-authority user login.
+            new(AzoaClaims.TokenUse, AzoaClaims.TokenUseChild),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 

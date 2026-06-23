@@ -16,10 +16,10 @@ This track is documentation-only. No builds, no tests, no code changes.
 - [ ] Create or extend `CONVENTION.md` to include an **As-built schema pipeline**
   section covering:
   - The three attribute types in
-    `packages/Oasis.SurrealDb.Client/Schema/SurrealAttributes.cs`:
+    `packages/Azoa.SurrealDb.Client/Schema/SurrealAttributes.cs`:
     `[SurrealTable]`, `[SurrealIndex]`, `[SurrealRelation]`.
   - A POCO authoring walkthrough: decorating a new C# class, running
-    `oasis-surreal generate-from-assembly <path/to/OasisWebAPI.dll>`, and
+    `azoa-surreal generate-from-assembly <path/to/AzoaWebAPI.dll>`, and
     confirming the output `.surql` appears in
     `Persistence/SurrealDb/Generated/Schemas/`.
   - The 26 canonical POCOs in `Persistence/SurrealDb/Models/` as the source
@@ -37,11 +37,11 @@ This track is documentation-only. No builds, no tests, no code changes.
 
 - [ ] Read `RUNBOOK.md` §4 in full; identify all references to:
   - `Persistence/SurrealDb/Schemas/source/` (deleted Mermaid source dir)
-  - `Oasis.SurrealDb.SourceGen` (removed package)
+  - `Azoa.SurrealDb.SourceGen` (removed package)
 - [ ] Read `RUNBOOK.md` §8 in full; identify the same stale references.
 - [ ] Update §4: replace each stale reference with the C#-first equivalent
-  (`Persistence/SurrealDb/Models/`, `oasis-surreal generate-from-assembly`,
-  `Oasis.SurrealDb.Schema`).
+  (`Persistence/SurrealDb/Models/`, `azoa-surreal generate-from-assembly`,
+  `Azoa.SurrealDb.Schema`).
 - [ ] Update §8: same replacements.
 - [ ] Do not touch any other RUNBOOK section.
 
@@ -60,7 +60,7 @@ This track is documentation-only. No builds, no tests, no code changes.
 - [ ] Grep the repo (excluding `conductor/tracks/surrealdb-schema-source-gen/`
   and this retro spec) for:
   - `Schemas/source` — should return zero hits outside historical docs.
-  - `Oasis.SurrealDb.SourceGen` — should return zero hits outside historical docs.
+  - `Azoa.SurrealDb.SourceGen` — should return zero hits outside historical docs.
   - Resolve any live hits or add a comment explaining why the reference is
     intentionally retained.
 - [ ] Move `tracks.md` row for `surreal-schema-package-retro` to `[x]` Shipped.

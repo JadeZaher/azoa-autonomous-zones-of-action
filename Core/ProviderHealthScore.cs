@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 /// <summary>
 /// Health and performance score for a storage provider.

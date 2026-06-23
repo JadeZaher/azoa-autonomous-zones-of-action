@@ -38,12 +38,26 @@ public sealed class WebhookRegistration
     /// SUBSEQUENT deliveries; in-flight retries pick up the new secret on their next
     /// attempt).
     ///
-    /// <para><b>FOLLOW-UP (v1 limitation):</b> stored as-is (plaintext at rest) for v1.
-    /// This SHOULD be encrypted-at-rest — mirror the custody-key pattern where
-    /// <c>Wallet.EncryptedPrivateKey</c> is held encrypted + JsonIgnored. A
-    /// per-tenant-secret-at-rest-encryption pass is a deliberate follow-up; flagged here
-    /// so it is not forgotten.</para>
+    /// <para><b>Never serialized to an API response.</b> This property is
+    /// <see cref="System.Text.Json.Serialization.JsonIgnoreAttribute">[JsonIgnore]</see>'d
+    /// (mirroring <c>Wallet.EncryptedPrivateKey</c>): the shared HMAC secret is the
+    /// receiver-side verification key and must NEVER leak back out of a GET / list /
+    /// rotate response. A tenant proves a rotation took effect via
+    /// <see cref="SecretRotatedAt"/>, not by reading the secret back.</para>
+    ///
+    /// <para><b>REQUIRED — encrypt at rest (TODO, owed to the not-yet-built registration
+    /// endpoint).</b> The value is still persisted as-supplied (plaintext at rest) because
+    /// no write path / registration controller exists yet. When that endpoint is built it
+    /// MUST encrypt the secret before it reaches the store — mirror the custody pattern
+    /// exactly: <c>Wallet.EncryptedPrivateKey</c> holds an AES-256-GCM ciphertext produced
+    /// by <c>WalletKeyService.EncryptPrivateKey</c> and is decrypted (
+    /// <c>WalletKeyService.DecryptPrivateKey</c>) only at the point of use. The webhook
+    /// secret should follow suit: store an <c>EncryptedSecret</c> and decrypt it at read
+    /// time inside the delivery worker (or in the store mapping). This is a hard
+    /// requirement before webhooks are enabled with a real tenant secret, not an optional
+    /// hardening — recorded here so the write-path author cannot miss it.</para>
     /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public string Secret { get; set; } = string.Empty;
 
     /// <summary>When the secret was last rotated (UTC); null if never rotated since

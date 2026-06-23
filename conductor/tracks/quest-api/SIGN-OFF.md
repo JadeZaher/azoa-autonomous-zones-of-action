@@ -17,7 +17,7 @@ onto the runtime aggregate. See `## Reconciliation` below.
 
 | Spec criterion | Status | Evidence | Residual |
 |---|---|---|---|
-| 1. All endpoints return `OASISResult<T>` or `OASISResponse` | PASS | `Controllers/QuestController.cs` -- all 30 actions return `ActionResult<OASISResult<T>>`; `Delete` returns `ActionResult<OASISResponse>` (line 60); new endpoints lines 180-296 follow the same shape | None |
+| 1. All endpoints return `AZOAResult<T>` or `AZOAResponse` | PASS | `Controllers/QuestController.cs` -- all 30 actions return `ActionResult<AZOAResult<T>>`; `Delete` returns `ActionResult<AZOAResponse>` (line 60); new endpoints lines 180-296 follow the same shape | None |
 | 2. `[Authorize]` + `GetAvatarIdFromClaims()` via `ClaimTypes.NameIdentifier` / `"sub"` | PASS | `Controllers/QuestController.cs:12` controller-level `[Authorize]`; `GetAvatarIdFromClaims` at lines 304-309 unchanged from pre-existing surface | None |
 | 3. Avatar-scoped access control | PARTIAL-BY-DESIGN | Avatar id is required on `Create`-class paths (Create, CreateTemplate, CreateNodeTemplate, InstantiateTemplate). The 14 new sub-resource endpoints operate on already-owned quests and follow the existing repo convention of NOT re-checking avatar id on GET/Update/Delete sub-resource paths | Matches the existing 16-endpoint behavior. Cross-tenant access protection lives in the store layer (per-aggregate `IQuestStore` seam). |
 | 4. DAG validation on edge add, quest activate | RECONCILED | `Managers/QuestManager.cs:865-919` (`AddEdgeAsync` runs `_dagValidator.Validate` after mutation; cycle-detected errors reject) -- see F1 below. "Quest activate" is N/A under the fork-model; DAG validation runs unconditionally inside `ExecuteAsync` at line 169 (pre-existing) | None |
@@ -32,15 +32,15 @@ onto the runtime aggregate. See `## Reconciliation` below.
 ### 1. Endpoint shape uniformity
 
 All 14 new endpoints follow the existing pattern verbatim: `[FromQuery]
-OASISRequest? request`, `ActionResult<OASISResult<T>>` return, `BadRequest`
+AZOARequest? request`, `ActionResult<AZOAResult<T>>` return, `BadRequest`
 on `IsError`, `NotFound` on null `Result`, `Ok(result)` on success. The
 deletion endpoints (`DELETE /nodes/{nodeId}`, `DELETE /edges/{edgeId}`,
 `DELETE /dependencies/{depId}`) use the `bool` return convention of the
 pre-existing `Delete` action at `Controllers/QuestController.cs:59-65`
-rather than `OASISResponse` -- this matches the manager surface
-(`Task<OASISResult<bool>>`) and lets callers distinguish "not found" from
+rather than `AZOAResponse` -- this matches the manager surface
+(`Task<AZOAResult<bool>>`) and lets callers distinguish "not found" from
 "server error". The intent-level difference (`Delete quest` returns
-`OASISResponse`; sub-resource deletes return `OASISResult<bool>`) is a
+`AZOAResponse`; sub-resource deletes return `AZOAResult<bool>`) is a
 spec ambiguity resolved in favor of consistency with the manager
 contract.
 
@@ -54,7 +54,7 @@ errors fire on any partial graph mid-wiring). The full check still runs
 at `ExecuteAsync` (line 169) before any node is dispatched, so the
 invariant the spec cares about -- "no execution on an invalid DAG" --
 holds end-to-end. Tested at
-`tests/OASIS.WebAPI.Tests/Quest/QuestManagerSubResourceTests.cs` --
+`tests/AZOA.WebAPI.Tests/Quest/QuestManagerSubResourceTests.cs` --
 `AddEdgeAsync_CreatesCycle_RejectsWithCycleMessage` and
 `AddEdgeAsync_PartialGraph_DoesNotRejectOnOrphan`.
 
@@ -167,7 +167,7 @@ F4 -- Phase E unblocked but not landed -- quest stores still consume hand-writte
   exist (one per quest entity) but no partial-class extensions exist
   for the Quest aggregate (grep `partial class Quest|QuestNode|QuestRun`
   returns zero source files). Quest stores still import the hand-written
-  `OASIS.WebAPI.Models.Quest` namespace. This 14-endpoint landing did
+  `AZOA.WebAPI.Models.Quest` namespace. This 14-endpoint landing did
   NOT change that -- the new endpoints sit on top of the same hand-written
   models the pre-existing 16 endpoints used.
 - Why this is non-blocking for THIS track: the new endpoints will move
@@ -188,11 +188,11 @@ F5 -- `DependencyCheckResult.UnsatisfiedDependencyIds` carries `QuestDependency.
   on the dep row if needed.
 - Action: none; documented inline.
 
-F6 -- Sub-resource deletes return `OASISResult<bool>` while top-level `Delete` returns `OASISResponse`
+F6 -- Sub-resource deletes return `AZOAResult<bool>` while top-level `Delete` returns `AZOAResponse`
 - Files: `Controllers/QuestController.cs:59-65` (pre-existing pattern) vs.
   `:196-211` (new pattern)
 - Rationale: spec ambiguous; sub-resource deletes pass through the
-  manager `OASISResult<bool>` contract verbatim, letting callers
+  manager `AZOAResult<bool>` contract verbatim, letting callers
   distinguish "not found" from "server error" without losing the result
   envelope.
 - Action: none.

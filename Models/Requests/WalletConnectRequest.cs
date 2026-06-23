@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Core;
+using AZOA.WebAPI.Core;
 
-namespace OASIS.WebAPI.Models.Requests;
+namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
 /// Request to connect an external wallet (e.g., MetaMask, Ghost, Pera).

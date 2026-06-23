@@ -45,4 +45,14 @@ public interface IConsentGrantStore
     /// </summary>
     Task<AZOAResult<IEnumerable<ConsentGrant>>> ListByTenantAndParticipationRefAsync(
         Guid tenantId, string participationRef, CancellationToken ct = default);
+
+    /// <summary>
+    /// user-sovereign-identity AC3b (security-review fix): revoke EVERY live grant this
+    /// user made, stamping <c>RevokedAt = now</c> on each. Called when a user CLAIMS
+    /// their avatar — the residual tenant authority over a now-self-sovereign user must
+    /// die the instant custody is severed, so a stale child JWT (whose nbf may predate
+    /// the claim watermark) finds no covering live grant at the signing seam. Scoped to
+    /// the grantor's OWN grants only. Returns the count revoked.
+    /// </summary>
+    Task<AZOAResult<int>> RevokeAllByGrantorAsync(Guid grantorAvatarId, DateTime now, CancellationToken ct = default);
 }

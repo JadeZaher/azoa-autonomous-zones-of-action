@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
-import { useOasis, type WalletEntry, type WalletExportData } from '@/lib/oasis-context'
+import { useAzoa, type WalletEntry, type WalletExportData } from '@/lib/azoa-context'
 import { AlertTriangle, Eye, EyeOff, Copy, Check } from 'lucide-react'
 
 interface WalletExportDialogProps {
@@ -18,7 +18,7 @@ interface WalletExportDialogProps {
 }
 
 export function WalletExportDialog({ wallet, open, onOpenChange }: WalletExportDialogProps) {
-  const { exportWallet } = useOasis()
+  const { exportWallet } = useAzoa()
   const [loading, setLoading] = useState(false)
   const [exportData, setExportData] = useState<WalletExportData | null>(null)
   const [showPrivateKey, setShowPrivateKey] = useState(false)

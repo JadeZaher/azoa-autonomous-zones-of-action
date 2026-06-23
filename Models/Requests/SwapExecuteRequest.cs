@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace OASIS.WebAPI.Models.Requests;
+namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
 /// Request to execute a swap using a previously obtained quote.

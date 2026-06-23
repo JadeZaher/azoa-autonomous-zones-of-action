@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OASIS.WebAPI.Services.Quest;
+namespace AZOA.WebAPI.Services.Quest;
 
 /// <summary>
 /// Shared <see cref="JsonSerializerOptions"/> for quest node config

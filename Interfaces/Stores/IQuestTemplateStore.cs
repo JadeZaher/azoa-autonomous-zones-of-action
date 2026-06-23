@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Interfaces.Stores;
+namespace AZOA.WebAPI.Interfaces.Stores;
 
 /// <summary>
 /// Per-aggregate storage seam for definition-side quest catalog data

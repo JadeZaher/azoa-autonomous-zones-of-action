@@ -57,4 +57,47 @@ public static class AzoaScopes
         {
             SwapSign, TransferSign, GrantSign, TokenCreateSign,
         };
+
+    // ── security-review S6: scope ↔ operation-type consistency ─────────────────
+    // The signing scope a tenant-driven op declares is a constant chosen by each
+    // op-builder. If a builder MISLABELS a value-moving op (e.g. stamps a transfer
+    // with nft:mint because it reused a Mint code path), the consent gate would check
+    // the wrong capability — a user who granted only nft:mint could be made to sign a
+    // transfer. This central map is the single source of truth for which scope(s) a
+    // given operation type may legitimately sign under; the dispatch seam asserts the
+    // declared scope is in the allowed set BEFORE the gate runs (fail-closed: a
+    // mismatch is a programming error and must never reach a key decrypt).
+
+    /// <summary>
+    /// The scopes each blockchain operation type may legitimately sign under. Keyed by
+    /// <c>IBlockchainOperation.OperationType</c> (ordinal). An operation type absent
+    /// from this map has no permitted tenant-driven signing scope (deny).
+    /// </summary>
+    private static readonly System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IReadOnlySet<string>> OperationScopeMap =
+        new System.Collections.Generic.Dictionary<string, System.Collections.Generic.IReadOnlySet<string>>(StringComparer.Ordinal)
+        {
+            ["Mint"]                  = Set(NftMint, GrantSign),
+            ["Burn"]                  = Set(NftMint),
+            ["Transfer"]              = Set(TransferSign),
+            ["Swap"]                  = Set(SwapSign),
+            ["Exchange"]              = Set(SwapSign),
+            ["fungible_token_create"] = Set(TokenCreateSign),
+        };
+
+    private static System.Collections.Generic.IReadOnlySet<string> Set(params string[] scopes)
+        => new System.Collections.Generic.HashSet<string>(scopes, StringComparer.Ordinal);
+
+    /// <summary>
+    /// S6 guardrail: true iff <paramref name="scope"/> is a legitimate signing scope
+    /// for <paramref name="operationType"/>. A null/blank scope is never valid (a
+    /// tenant-driven sign must name a concrete scope). An unknown operation type, or a
+    /// scope not in that type's allowed set, returns false — the caller fails closed.
+    /// </summary>
+    public static bool IsScopeValidForOperation(string? operationType, string? scope)
+    {
+        if (string.IsNullOrWhiteSpace(operationType) || string.IsNullOrWhiteSpace(scope))
+            return false;
+        return OperationScopeMap.TryGetValue(operationType, out var allowed)
+               && allowed.Contains(scope);
+    }
 }

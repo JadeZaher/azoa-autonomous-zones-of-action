@@ -94,34 +94,34 @@ The composed artifact used to build an `STARDappGenerationRequest`.
 
 ```csharp
 // Series CRUD
-Task<OASISResult<DappSeries>> CreateAsync(Guid avatarId, string name, string? description = null);
-Task<OASISResult<DappSeries>> GetAsync(Guid seriesId, Guid avatarId);
-Task<OASISResult<IEnumerable<DappSeries>>> ListAsync(Guid avatarId, DappSeriesStatus? status = null);
-Task<OASISResult<DappSeries>> UpdateAsync(Guid seriesId, Guid avatarId, DappSeriesUpdateModel model);
-Task<OASISResult<bool>> DeleteAsync(Guid seriesId, Guid avatarId);
+Task<AZOAResult<DappSeries>> CreateAsync(Guid avatarId, string name, string? description = null);
+Task<AZOAResult<DappSeries>> GetAsync(Guid seriesId, Guid avatarId);
+Task<AZOAResult<IEnumerable<DappSeries>>> ListAsync(Guid avatarId, DappSeriesStatus? status = null);
+Task<AZOAResult<DappSeries>> UpdateAsync(Guid seriesId, Guid avatarId, DappSeriesUpdateModel model);
+Task<AZOAResult<bool>> DeleteAsync(Guid seriesId, Guid avatarId);
 
 // Quest Management within Series
-Task<OASISResult<DappSeriesQuest>> AddQuestAsync(Guid seriesId, Guid avatarId, Guid questId, int order, string? inputMappings = null);
-Task<OASISResult<DappSeriesQuest>> RemoveQuestAsync(Guid seriesId, Guid avatarId, Guid questId);
-Task<OASISResult<DappSeriesQuest>> ReorderQuestAsync(Guid seriesId, Guid avatarId, Guid questId, int newOrder);
-Task<OASISResult<IEnumerable<DappSeriesQuest>>> ListQuestsAsync(Guid seriesId, Guid avatarId);
+Task<AZOAResult<DappSeriesQuest>> AddQuestAsync(Guid seriesId, Guid avatarId, Guid questId, int order, string? inputMappings = null);
+Task<AZOAResult<DappSeriesQuest>> RemoveQuestAsync(Guid seriesId, Guid avatarId, Guid questId);
+Task<AZOAResult<DappSeriesQuest>> ReorderQuestAsync(Guid seriesId, Guid avatarId, Guid questId, int newOrder);
+Task<AZOAResult<IEnumerable<DappSeriesQuest>>> ListQuestsAsync(Guid seriesId, Guid avatarId);
 
 // Composition
-Task<OASISResult<DappManifest>> ComposeAsync(Guid seriesId, Guid avatarId);
+Task<AZOAResult<DappManifest>> ComposeAsync(Guid seriesId, Guid avatarId);
 // Validates: all quests in series are Completed, dependency chain intact, holon bindings resolved
 // Produces: DappManifest with BoundHolonIds, QuestGraph, TargetChain, Config
 
 // Generation & Deployment (delegates to ISTARManager)
-Task<OASISResult<ISTARODK>> GenerateAsync(Guid seriesId, Guid avatarId);
+Task<AZOAResult<ISTARODK>> GenerateAsync(Guid seriesId, Guid avatarId);
 // 1. Calls ComposeAsync to get DappManifest
 // 2. Creates a STARODK record with BoundHolonIds, TargetChain
 // 3. Builds STARDappGenerationRequest { TargetChain, BoundHolonIds, Config }
 // 4. Calls _starManager.GenerateAsync(starOdk.Id, request)
 // 5. Stores StarOdkId on DappSeries, status → Ready
 
-Task<OASISResult<ISTARODK>> DeployAsync(Guid seriesId, Guid avatarId, string? targetOverride = null);
+Task<AZOAResult<ISTARODK>> DeployAsync(Guid seriesId, Guid avatarId, string? targetOverride = null);
 // 1. Verifies series is Ready and has a StarOdkId
-// 2. Calls _starManager.DeployAsync(starOdkId, oasisRequest)
+// 2. Calls _starManager.DeployAsync(starOdkId, azoaRequest)
 // 3. Updates status → Deployed, sets DeployedDate
 ```
 
@@ -193,13 +193,13 @@ series.Status = DappSeriesStatus.Ready;
 `DeployAsync` delegates to `ISTARManager.DeployAsync`:
 
 ```csharp
-var deployed = await _starManager.DeployAsync(series.StarOdkId.Value, oasisRequest);
+var deployed = await _starManager.DeployAsync(series.StarOdkId.Value, azoaRequest);
 series.Status = DappSeriesStatus.Deployed;
 series.DeployedDate = DateTime.UtcNow;
 ```
 
 ## Acceptance Criteria
-- [x] All endpoints return `OASISResult<T>` or `OASISResponse`
+- [x] All endpoints return `AZOAResult<T>` or `AZOAResponse`
 - [x] `[Authorize]` on all controllers; avatar-scoped access
 - [x] Composition validates all rules before producing manifest
 - [x] `GenerateAsync` correctly builds `STARDappGenerationRequest` and delegates to `ISTARManager`
@@ -208,11 +208,11 @@ series.DeployedDate = DateTime.UtcNow;
 - [x] Series status machine enforced (Draft → Building → Ready → Deployed)
 - [x] `DateTime` used throughout (not `DateTimeOffset`)
 - [x] Swagger UI documents all dApp composition endpoints — verified by `SwaggerJson_ShouldListAllDappCompositionEndpoints` integration test (asserts all 12 route paths present in `/swagger/v1/swagger.json`)
-- [x] Builds cleanly with `dotnet build` — 0 warnings / 0 errors on both `OASIS.WebAPI.csproj` and the integration test project
+- [x] Builds cleanly with `dotnet build` — 0 warnings / 0 errors on both `AZOA.WebAPI.csproj` and the integration test project
 
 ## Phase-G verification (closeout)
-- Unit tests: **567 / 567 passing** (`OASIS.WebAPI.Tests`, includes 12 manager tests in `DappCompositionManagerTests`).
+- Unit tests: **567 / 567 passing** (`AZOA.WebAPI.Tests`, includes 12 manager tests in `DappCompositionManagerTests`).
 - Integration tests: **18 / 18 passing** (`DappSeriesControllerIntegrationTests` — series CRUD, quest management, compose/validate/manifest/generate/deploy/status, auth probes, Swagger smoke).
 - Two test-harness fixes applied during closeout (pre-existing baseline issues, not dapp-composition bugs):
-  1. `OASISTestWebApplicationFactory` + `McpAuthScopingIntegrationTests`: env name changed from `"Testing"` → `"IntegrationTest"` to match the boot-probe skip gate in `Program.cs:549`.
+  1. `AZOATestWebApplicationFactory` + `McpAuthScopingIntegrationTests`: env name changed from `"Testing"` → `"IntegrationTest"` to match the boot-probe skip gate in `Program.cs:549`.
   2. `Program.cs:527`: Swagger middleware now mounts in `IntegrationTest` env too (not just `Development`), so the smoke test can hit `/swagger/v1/swagger.json` against the test host.

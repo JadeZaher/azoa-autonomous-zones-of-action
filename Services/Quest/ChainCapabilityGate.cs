@@ -1,13 +1,13 @@
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
 
-namespace OASIS.WebAPI.Services.Quest;
+namespace AZOA.WebAPI.Services.Quest;
 
 /// <summary>
 /// The pre-execution chain-capability gate (economic-primitive-nodes D1).
 ///
 /// <para>A node handler that declares
-/// <see cref="OASIS.WebAPI.Interfaces.Quest.IQuestNodeHandler.RequiresChainCapability"/>
+/// <see cref="AZOA.WebAPI.Interfaces.Quest.IQuestNodeHandler.RequiresChainCapability"/>
 /// <c>== true</c> (the Tier-2 chain actions: Swap/Grant/Transfer/Refund) may only
 /// run when the run's actor avatar has a wallet bound. Both dispatch seams — the
 /// legacy synchronous <c>QuestManager</c> executor and the durable

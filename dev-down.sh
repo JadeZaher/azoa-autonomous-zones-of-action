@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OASIS Sleek -- full-stack dev teardown (bash).
+# AZOA Sleek -- full-stack dev teardown (bash).
 #
 # Usage:
 #   ./dev-down.sh             # stop all services (keeps the surrealdb_data volume)

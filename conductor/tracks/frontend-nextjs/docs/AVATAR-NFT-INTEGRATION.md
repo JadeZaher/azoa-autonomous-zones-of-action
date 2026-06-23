@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the integration of the Avatar NFT Service into the OASIS Sleek frontend application. The integration provides a complete user interface for managing avatar NFTs, authentication, and blockchain interactions.
+This document describes the integration of the Avatar NFT Service into the AZOA Sleek frontend application. The integration provides a complete user interface for managing avatar NFTs, authentication, and blockchain interactions.
 
 ## 🎯 **Integration Components**
 
@@ -130,13 +130,13 @@ npm run dev
 ### **3. Backend Integration**
 Ensure the backend is running with the Avatar NFT Service:
 ```bash
-cd OASIS.WebAPI
+cd AZOA.WebAPI
 dotnet run
 ```
 
 ### **4. Database Migration**
 ```bash
-cd OASIS.WebAPI
+cd AZOA.WebAPI
 dotnet ef database update
 ```
 

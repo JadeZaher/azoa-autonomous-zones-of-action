@@ -7,7 +7,7 @@ Pending. Created 2026-05-27. **Tier 3.** Constituent track of the
 seven principles all constituent tracks share.
 
 ## Goal
-A `oasis-surreal drift` subcommand that diffs the **deployed schema**
+A `azoa-surreal drift` subcommand that diffs the **deployed schema**
 of a SurrealDB namespace against the **locally-authored**
 `.surql` sources, producing a human-readable + machine-parsable drift
 report. Mirrors Prisma `migrate diff`.
@@ -20,7 +20,7 @@ not drift from out-of-band SurrealQL run against the namespace).
 Drift detection closes that loop.
 
 ## Acceptance
-1. `oasis-surreal drift` returns exit 0 when zero drift, exit 1 when
+1. `azoa-surreal drift` returns exit 0 when zero drift, exit 1 when
    drift detected. Suitable for CI.
 2. Detects: missing fields, added fields, type changes, missing
    indexes, ASSERT changes, missing tables.
@@ -36,7 +36,7 @@ Drift detection closes that loop.
    `ISurrealConnection` returning canned `INFO FOR DB` payloads.
 
 ## Approach
-- Reuse `ISurrealConnection` from `Oasis.SurrealDb.Schema`; query
+- Reuse `ISurrealConnection` from `Azoa.SurrealDb.Schema`; query
   `INFO FOR DB; INFO FOR TABLE *` to materialize the deployed schema.
 - Parse local `.surql` files into a normalized `SchemaModel` (the
   existing `SurqlEmitter` output shape is the canonical form).

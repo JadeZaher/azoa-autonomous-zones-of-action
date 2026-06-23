@@ -2,23 +2,23 @@
 
 ## Goal
 
-Expose the **thin OASIS-side seam** that a fiat-settlement tenant calls *after*
+Expose the **thin AZOA-side seam** that a fiat-settlement tenant calls *after*
 money has already cleared on its own platform: "provision a custodial wallet for
 avatar X if one is absent, and/or allocate N units of asset A into avatar X's
-custodial wallet." OASIS contributes the **idempotent, KYC-gated,
+custodial wallet." AZOA contributes the **idempotent, KYC-gated,
 tenant-callable wallet-provisioning + asset-allocation primitive** and a
-**documented call contract**. OASIS does not run the fiat checkout, the token
+**documented call contract**. AZOA does not run the fiat checkout, the token
 economics, or the payout flow.
 
 This is a blockchain-primitives track, not a payments track. The word "Stripe"
 appears here only to name where the trigger comes *from*; no Stripe SDK, no
-Stripe secret, and no Stripe webhook handler is added to OASIS by this track
+Stripe secret, and no Stripe webhook handler is added to AZOA by this track
 (see §Stripe boundary).
 
 ## Background
 
 The fiat economic flow lives entirely in the tenant platform. For evidence of
-the shape of that flow (read-only reference — **do not port these into OASIS**):
+the shape of that flow (read-only reference — **do not port these into AZOA**):
 
 - `IStripeService.CreateCheckoutSessionAsync` / `HandlePaymentSucceededAsync`
   (`…/Application/Services/Interfaces/IStripeService.cs:16,26`) — checkout +
@@ -43,15 +43,15 @@ dual-gate token model, project-token allocation, treasury, Gate-1/Gate-2
 evaluation, ARDA, Stripe Checkout, Stripe Connect, and all Stripe webhook
 handling **stay in the tenant platform**. The tenant's
 `HandlePaymentSucceededAsync` — *after* it has created its own investment record
-and decided the allocation amount — makes one or two HTTP calls into OASIS to
+and decided the allocation amount — makes one or two HTTP calls into AZOA to
 materialise the wallet and move the on-chain/custodial asset. That cross-system
 call is the entire surface of this track.
 
-OASIS already has every primitive this needs; the work is to make them safely
+AZOA already has every primitive this needs; the work is to make them safely
 **tenant-callable**, **idempotent**, and **KYC-gated**, and to write the
 contract down.
 
-### Existing OASIS primitives this track binds together (file:line evidence)
+### Existing AZOA primitives this track binds together (file:line evidence)
 
 - **Tenant identity via API key.** `ApiKeyAuthenticationHandler`
   (`Core/ApiKeyAuthenticationHandler.cs:28-94`) validates `X-Api-Key`
@@ -88,30 +88,30 @@ value-flow on a webhook-driven trigger — exactly the failure surface that bit
 the bridge. Stripe (and any at-least-once webhook source) **will** redeliver
 `payment_intent.succeeded`; the tenant's `HandlePaymentSucceededAsync`
 (`StripeService.cs:145`) can itself be retried by the tenant's own webhook
-controller (`StripeWebhookController.cs:73`). Therefore the OASIS allocation
+controller (`StripeWebhookController.cs:73`). Therefore the AZOA allocation
 primitive **must** dedupe on the tenant's idempotency key so a redelivered
 webhook never double-mints / double-transfers. This is a correctness
 requirement, not a nicety. We do not repeat the bridge's mistake.
 
-## Stripe boundary (no OASIS-side Stripe secrets)
+## Stripe boundary (no AZOA-side Stripe secrets)
 
-Because the economic flow stays in the tenant platform, **OASIS holds no Stripe
+Because the economic flow stays in the tenant platform, **AZOA holds no Stripe
 secrets.** Specifically:
 
-- OASIS does **not** add `Stripe:SecretKey` (cf. tenant
+- AZOA does **not** add `Stripe:SecretKey` (cf. tenant
   `StripeService.cs:67`).
-- OASIS does **not** add `Stripe:WebhookSecret` or a webhook controller (cf.
+- AZOA does **not** add `Stripe:WebhookSecret` or a webhook controller (cf.
   tenant `StripeWebhookController.cs:44-62`). Webhook signature verification is
-  the tenant's job; OASIS trusts the tenant via the API key, not via a Stripe
+  the tenant's job; AZOA trusts the tenant via the API key, not via a Stripe
   signature.
-- The only credential OASIS introduces is the **tenant's OASIS API key**, which
+- The only credential AZOA introduces is the **tenant's AZOA API key**, which
   is a deploy-time secret already modelled by the API-key infrastructure
   (`Models/ApiKey.cs`, SHA-256 hashed at rest). Its provisioning is a
   deploy-stub: record it in `conductor/DEPLOY-STEPS-TODO.md` (create this file
   as the canonical deploy-stub registry if absent) as
-  `OASIS_TENANT_API_KEY` — never committed.
+  `AZOA_TENANT_API_KEY` — never committed.
 
-If a later track genuinely needs an OASIS-side Stripe touchpoint (none is in
+If a later track genuinely needs an AZOA-side Stripe touchpoint (none is in
 scope here), its secret must be flagged as a deploy-stub in the same registry,
 never inlined.
 
@@ -138,11 +138,11 @@ never inlined.
    balance may be permitted pre-KYC if `kyc-module` allows it; the
    value-bearing allocation must not.)
 3. **A documented integration contract** (`docs/INTEGRATION-CONTRACT.md` under
-   this track): the exact ordered OASIS API calls the tenant's
+   this track): the exact ordered AZOA API calls the tenant's
    `HandlePaymentSucceededAsync` (`StripeService.cs:145`) should make *after*
    creating its `ProjectInvestment` (`StripeService.cs:235-249`), including the
    `X-Api-Key` and `Idempotency-Key` headers, request/response shapes, and the
-   prose sequence diagram (fiat-settles-on-tenant → wallet/asset-on-OASIS).
+   prose sequence diagram (fiat-settles-on-tenant → wallet/asset-on-AZOA).
 4. **Replay-safety unit tests** proving the primitive is idempotent under a
    duplicate idempotency key and rejected when KYC is not approved.
 
@@ -152,10 +152,10 @@ never inlined.
   metadata parsing — all stay in the tenant (`StripeService.cs:145-268`,
   `StripeWebhookController.cs:34-132`).
 - Token economics: allocation math, balance credit, treasury split, Gate-1/2
-  (`StripeService.cs:181-258`). OASIS receives an *already-decided* amount.
+  (`StripeService.cs:181-258`). AZOA receives an *already-decided* amount.
 - Stripe Connect / payout / `CreateConnectedAccountAsync` /
   `CreatePayoutTransferAsync` / `HandlePayout*` (`StripeService.cs:294-490`).
-- Any Stripe SDK dependency or Stripe secret in OASIS (see §Stripe boundary).
+- Any Stripe SDK dependency or Stripe secret in AZOA (see §Stripe boundary).
 - The frontend — no UI is added by this track.
 - Real signing / submission semantics beyond what `signing-core-keystone`
   provides (this track consumes that primitive; it does not build it).
@@ -178,15 +178,15 @@ never inlined.
   avatar than the route/contract specifies (IDOR-resistant, mirroring the
   STARODK precedent in project memory) — caller-supplied owner ids on the body
   are ignored.
-- [ ] `docs/INTEGRATION-CONTRACT.md` documents the ordered OASIS calls the
+- [ ] `docs/INTEGRATION-CONTRACT.md` documents the ordered AZOA calls the
   tenant's `HandlePaymentSucceededAsync` makes after creating its
   `ProjectInvestment`, with headers, request/response shapes, and a prose
   sequence diagram.
 - [ ] No Stripe secret (`Stripe:SecretKey`, `Stripe:WebhookSecret`) and no
-  Stripe SDK reference is introduced into the OASIS solution. The only new
-  deploy-stub is the tenant OASIS API key, recorded in
+  Stripe SDK reference is introduced into the AZOA solution. The only new
+  deploy-stub is the tenant AZOA API key, recorded in
   `conductor/DEPLOY-STEPS-TODO.md`, never committed.
-- [ ] No brand leak: grep the OASIS solution for the tenant brand name — zero
+- [ ] No brand leak: grep the AZOA solution for the tenant brand name — zero
   hits in code, config, comments, or docs (the contract doc refers to "the
   fiat-settlement tenant," never the brand).
 - [ ] `dotnet build` passes with **zero warnings** (nullable enabled).

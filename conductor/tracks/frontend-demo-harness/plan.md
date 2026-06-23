@@ -17,17 +17,17 @@
   Create `app/(dashboard)/layout.tsx` with collapsible sidebar (`components/layout/sidebar.tsx`) and header (`components/layout/header.tsx`). Sidebar nav items map to all pages in the spec. Header shows: auth status (avatar name), chain selector dropdown (Algorand/Solana), theme toggle (dark/light). Nav list: /overview, /avatars, /holons, /wallets, /nfts, /avatar-nfts, /blockchain, /swap, /bridge, /search, /star-odk, /workflow, /settings.
 
 - [ ] Task 1.3: Build auth pages
-  Create `app/(auth)/login/page.tsx` and `app/(auth)/register/page.tsx` using shadcn form components. Wire to `useOasisAuth()`. Redirect to dashboard on success. Show validation errors from API.
+  Create `app/(auth)/login/page.tsx` and `app/(auth)/register/page.tsx` using shadcn form components. Wire to `useAzoaAuth()`. Redirect to dashboard on success. Show validation errors from API.
 
 - [ ] Task 1.4: Build shared components
-  - `components/shared/result-display.tsx` — renders any OASISResult with success (green card) or error (red card with message)
+  - `components/shared/result-display.tsx` — renders any AZOAResult with success (green card) or error (red card with message)
   - `components/shared/json-viewer.tsx` — collapsible tree view for raw API responses (recursive key/value renderer)
   - `components/shared/chain-badge.tsx` — colored badge showing chain name (blue=Algorand, purple=Solana)
   - `components/shared/loading-skeleton.tsx` — card-sized skeleton matching the page layout
   - `components/shared/error-banner.tsx` — dismissible error with retry button
 
 - [ ] Task 1.5: Auth gate middleware
-  Create wrapper in `app/(dashboard)/layout.tsx` that checks `useOasisAuth().isAuthenticated` and redirects to `/login` if false. Show loading skeleton while session restores.
+  Create wrapper in `app/(dashboard)/layout.tsx` that checks `useAzoaAuth().isAuthenticated` and redirects to `/login` if false. Show loading skeleton while session restores.
 
 - [ ] Verification: Can register, login, see dashboard with sidebar. Logout works. Auth persists on refresh.
 
@@ -41,7 +41,7 @@
   Two chain info cards (Algorand + Solana) using `useChainInfo()`. System stats: number of wallets, holons, NFTs (fetched from respective list endpoints). Session info card showing JWT claims.
 
 - [ ] Task 2.2: Avatar page
-  Profile card showing current user info from `useOasisAuth()`. Edit form (username, email, title, firstName, lastName) with save button calling `api.updateAvatar()`. Delete account with confirmation dialog.
+  Profile card showing current user info from `useAzoaAuth()`. Edit form (username, email, title, firstName, lastName) with save button calling `api.updateAvatar()`. Delete account with confirmation dialog.
 
 - [ ] Task 2.3: Holon explorer
   **This is the most complex page.**
@@ -132,26 +132,26 @@
 
 - [ ] Task 4.3: Settings page
   - Session info: JWT token (masked), expiry, avatar ID, claims.
-  - Provider selection: dropdown to set OASISRequest.providerName for subsequent calls.
+  - Provider selection: dropdown to set AZOARequest.providerName for subsequent calls.
   - Network config: display current RPC URLs for each chain.
   - SDK version info.
   - "Clear session" button.
 
 - [ ] Task 4.4: Workflow page
-  Create `app/(dashboard)/workflow/page.tsx`. This page exercises the durable workflow engine + economic-primitive-nodes + workflow-sdk end-to-end via `oasis.workflow` (the `WorkflowClient` and `quest()` factory composed on the OasisClient facade).
+  Create `app/(dashboard)/workflow/page.tsx`. This page exercises the durable workflow engine + economic-primitive-nodes + workflow-sdk end-to-end via `azoa.workflow` (the `WorkflowClient` and `quest()` factory composed on the AzoaClient facade).
 
   **Template authoring panel**
-  - Form to compose a quest template: name, description, and a small node DAG. Use the `nodeConfig` builders from `@oasis/sdk` to construct node config strings:
+  - Form to compose a quest template: name, description, and a small node DAG. Use the `nodeConfig` builders from `@azoa/sdk` to construct node config strings:
     - `nodeConfig.gateCheck({ predicate, reads? })` for gate nodes
     - `nodeConfig.emit({ payload })` for emit nodes
     - `nodeConfig.swap/grant/transfer/refund` for chain nodes (optional, Tier-2)
-  - SDK calls: `oasis.workflow.createTemplate(params)` → `POST /api/quest/templates`
-  - Template list table: `oasis.workflow.listTemplates()` → `GET /api/quest/templates`
-  - Template detail viewer: `oasis.workflow.getTemplate(templateId)` → `GET /api/quest/templates/{id}`
-  - Instantiate dialog: param key/value inputs → `oasis.workflow.instantiate(templateId, params)` → `POST /api/quest/templates/{id}/instantiate`
+  - SDK calls: `azoa.workflow.createTemplate(params)` → `POST /api/quest/templates`
+  - Template list table: `azoa.workflow.listTemplates()` → `GET /api/quest/templates`
+  - Template detail viewer: `azoa.workflow.getTemplate(templateId)` → `GET /api/quest/templates/{id}`
+  - Instantiate dialog: param key/value inputs → `azoa.workflow.instantiate(templateId, params)` → `POST /api/quest/templates/{id}/instantiate`
 
   **Phase-by-phase run driver panel**
-  - "Start run" button: calls `oasis.workflow.quest(questId).start({ params })` → `POST /api/quest/{questId}/start-workflow`; binds the handle to the returned `runId`.
+  - "Start run" button: calls `azoa.workflow.quest(questId).start({ params })` → `POST /api/quest/{questId}/start-workflow`; binds the handle to the returned `runId`.
   - Node advance controls: for each node in the quest DAG, a "Step" button calls `.step(nodeId)` → `POST /api/quest/runs/{runId}/advance { fromNodeId }`. Steps chain on the same `WorkflowRunHandle` in order.
   - Optional idempotency key input (passed as `.step(nodeId, { idempotencyKey })`) — sets `Idempotency-Key` header.
 
@@ -163,7 +163,7 @@
   - Run status card: poll `.status()` → `GET /api/quest/runs/{runId}`. Display `WorkflowRunStatus` with color coding:
     - Active: `Pending` (grey), `Running` (blue), `Suspended` (amber), `AwaitingSignal` (amber), `AwaitingTimer` (amber)
     - Terminal: `Succeeded` (green), `Failed` (red), `Cancelled` (muted)
-  - Per-node execution table: `oasis.workflow.getExecutionState(runId)` → `GET /api/quest/runs/{runId}/execution-state`. Columns: nodeId, state, startedAt, endedAt, error.
+  - Per-node execution table: `azoa.workflow.getExecutionState(runId)` → `GET /api/quest/runs/{runId}/execution-state`. Columns: nodeId, state, startedAt, endedAt, error.
   - `.onSuspend(cb)` callback wired to surface a dismissible banner "Run parked at gate — signal to resume" when the run enters an awaiting state.
 
   **Demo flows (built-in)**

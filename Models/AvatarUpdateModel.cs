@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models;
+namespace AZOA.WebAPI.Models;
 
 public class AvatarUpdateModel
 {

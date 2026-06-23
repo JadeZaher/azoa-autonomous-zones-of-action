@@ -1,6 +1,6 @@
 # API Safety Hardening — Residual Risk & Operations Runbook
 
-**Audience:** Operators/SREs running the OASIS cross-chain bridge API pre-launch.  
+**Audience:** Operators/SREs running the AZOA cross-chain bridge API pre-launch.  
 **Scope:** Stuck/failed bridge transactions, idempotency record interpretation, reconciliation.  
 **Last updated:** 2026-05-16 (api-safety-hardening track, Wave 1–3 consolidated)
 
@@ -61,7 +61,7 @@
 - Partitioning: `apikey:{sha256(X-Api-Key)}` (hashed so the secret never lands in state) → `avatar:{sub}` → `ip:{remoteIp}`.
 
 ### InMemoryStorageProvider Removed from Production
-**Status:** Deleted from DI registration (`Program.cs`). `EfStorageProvider` is now the sole `IOASISStorageProvider`. InMemoryStorageProvider class still exists for integration tests to register explicitly; never used in production.
+**Status:** Deleted from DI registration (`Program.cs`). `EfStorageProvider` is now the sole `IAZOAStorageProvider`. InMemoryStorageProvider class still exists for integration tests to register explicitly; never used in production.
 
 ---
 
@@ -279,7 +279,7 @@ Then re-apply with `dotnet ef database update`.
 
 ### Risk: Integration Test Harness Uses Destructive Teardown on Persistent DB
 
-**Scenario:** `OASIS.WebAPI.IntegrationTests` was built for ephemeral EF-InMemory DBs. It now points at the persistent Postgres (`tests/run-tests.ps1` auto-spins `oasis-postgres` container) but still calls `EnsureDeleted()` in teardown and runs tests in parallel.
+**Scenario:** `AZOA.WebAPI.IntegrationTests` was built for ephemeral EF-InMemory DBs. It now points at the persistent Postgres (`tests/run-tests.ps1` auto-spins `azoa-postgres` container) but still calls `EnsureDeleted()` in teardown and runs tests in parallel.
 
 **Impact:** Tests race a shared database. A parallel test teardown may delete data while another test is reading, causing spurious failures.
 
@@ -601,7 +601,7 @@ SELECT Id, ErrorMessage FROM BridgeTransactions WHERE Status = 'Failed' AND Erro
 | ✓ Reconciliation service + hosted sweep | DONE | Wave 3 | `ReconciliationService.cs`, background interval |
 | ✓ FluentValidation for all financial models | DONE | Wave 3 | 33 validators, DI auto-registered |
 | ✓ Rate limiting + per-API-key metering | DONE | Wave 3 | In-memory fixed-window; partitioned by API key hash |
-| ✓ InMemoryStorageProvider removed from production DI | DONE | Wave 3 | `EfStorageProvider` sole IOASISStorageProvider |
+| ✓ InMemoryStorageProvider removed from production DI | DONE | Wave 3 | `EfStorageProvider` sole IAZOAStorageProvider |
 | ✓ secp256k1 ecrecover in IVaaSignatureVerifier | DONE (code) | YOU | `Services/Wormhole/Secp256k1VaaSignatureVerifier.cs` — SEC1 §4.1.6 recovery on secp256k1 via vetted Bouncy Castle 2.6.2 (`BouncyCastle.Cryptography`, alias `BCCrypto2`); reuses existing managed `Keccak256`. Crypto path proven by 17 unit tests (synthetic Guardian set, real keypair, double-keccak digest). |
 | ✓ Implement + register IVaaSignatureVerifier | DONE (code) | YOU | Registered `AddScoped<IVaaSignatureVerifier, Secp256k1VaaSignatureVerifier>()` in `Program.cs`. Guardian sets are config-driven (`Blockchain:Wormhole:GuardianSets`, per-network). `RequireFullSignatureVerification` default stays `true`; fail-closed-without-verifier path unchanged & still tested. **Pending ops gate (a):** populate + independently verify real mainnet/testnet Guardian sets per **`GUARDIAN-SET-SETUP.md`** (this track) + validate against the live Wormhole Guardian network (config/ops, not a code gap). Base `appsettings.json` ships NO testnet/mainnet set (absent ⇒ fail-closed; placeholder removed — do not re-add). **Code sign-off gate: `scripts/passoff.ps1`** (build 0 errors + full unit suite + safety-critical assertions; prints "OPS SIGN-OFF REQUIRED" for ops gates a–c). |
 | **VERIFY** | **MANUAL** | **QA/Ops** | **EF migration baseline: no pre-existing BridgeTransactions table** |
@@ -765,7 +765,7 @@ above. Re-classification of §2 / §4:
 **Collapse to NON-ISSUES pre-launch (do not treat as blockers):**
 - **§2 / §4 EF migration baseline (`BridgeTransactions` pre-existence).** Moot —
   there is no data to preserve. Just reset: drop the dev DB (or recreate the
-  `oasis` podman container) and `Database.Migrate()` from empty. Do **not** add
+  `azoa` podman container) and `Database.Migrate()` from empty. Do **not** add
   `CREATE TABLE IF NOT EXISTS` / split-migration compat shims. (Note: there is
   now an additional stacked migration `20260518003457_AddSagaOutbox` — same
   reset-from-empty answer.)
@@ -852,7 +852,7 @@ safety spine — not low-risk; non-launch-blocking).
 8 per-aggregate `I*Store` interfaces (EF adapters interim; SurrealDB swaps them
 behind this one seam). **Exactly-once safety surface is UNCHANGED:**
 `CrossChainBridgeService` and `ReconciliationService` were deliberately kept on
-direct `OASISDbContext` (frozen, byte-identical to `1b25f50`); `IBridgeStore`
+direct `AZOADbContext` (frozen, byte-identical to `1b25f50`); `IBridgeStore`
 ships as a contract-only seam (`EfBridgeStore` thin pass-through, raw affected-
 row count, never asserts/retries/RMW/auto-advances) for the SurrealDB
 precondition but is NOT yet consumed by the value path. `scripts/passoff.ps1`

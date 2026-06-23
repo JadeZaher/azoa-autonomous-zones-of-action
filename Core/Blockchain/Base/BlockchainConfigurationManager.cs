@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Core;
+using AZOA.WebAPI.Core;
 
-namespace OASIS.WebAPI.Providers.Blockchain.Base;
+namespace AZOA.WebAPI.Providers.Blockchain.Base;
 
 /// <summary>
 /// Resolves blockchain network configuration from appsettings.

@@ -6,7 +6,7 @@ tests → pack + README.** Every phase keeps `dotnet build` at **zero warnings**
 (Nullable enabled). Tests run **ONCE at the end** (`dotnet build` + `dotnet test`
 sweep, per the test-once policy). The whole track is a **new, additive** C#
 project — it touches no existing source and does NOT reference
-`OASIS.WebAPI.csproj` (standalone client, NFR-1).
+`AZOA.WebAPI.csproj` (standalone client, NFR-1).
 
 The SDK mirrors the TS SDK's **95-row parity matrix across 13 facades**
 (spec.md "TS → C# parity matrix"). Where a wire shape is read from the shipped
@@ -17,27 +17,27 @@ calls them today).
 
 | # | Decision | Choice (recommended) | Rationale / evidence |
 |---|----------|----------------------|----------------------|
-| **DP1** | Package identity + layout. | **`PackageId = Oasis.Sdk`**, project at **`sdk/Oasis.Sdk/`** (mirrors `sdk/oasis-wallet/` being the TS SDK home — `sdk/` is the SDK directory; `packages/` is infra libs). `<Version>0.1.0</Version>`, `<Authors>OASIS</Authors>`, `<Company>OASIS</Company>`, `IsPackable=true`, `IsPublishable=false` (publish deferred). | Keeps both SDKs under `sdk/` — discoverable as siblings. `packages/` is the SurrealDb-infra home (`packages/Oasis.SurrealDb.Client/`), a different concern. Metadata block copies `Oasis.SurrealDb.Client.csproj:19-32` verbatim in shape. `IsPublishable=false` matches the repo's "internal-feed, publish-decision-deferred" convention (`Oasis.SurrealDb.Client.csproj:16-18,31`). |
-| **DP2** | Error model. | **A no-throw `OasisResult<T>` in the SDK** mirroring the TS `Result<T, SdkError>` discipline (`core/result.ts:1-19`, `errors.ts:40-121`), NOT idiomatic throwing and NOT the WebAPI's `OASISResult<T>` type-by-reference. The SDK hand-mirrors a `OasisError` (code + message with `method + path` + status + optional server `detail`). | (a) Referencing the WebAPI's `OASISResult<T>` violates NFR-1 (no `OASIS.WebAPI.csproj` dependency). (b) Throwing breaks parity with the TS no-throw contract and forces consumers into try/catch for routine API errors. (c) A struct-based `OasisResult<T>` (`IsOk` / `Value` / `Error`) gives the same ergonomics the TS SDK proved (`result.ts`). The wire envelope `OASISResult<T>` is still unwrapped at the transport boundary (success ⇒ `result`, `isError` ⇒ error — `client.ts:1134-1144`). **Contracts sub-decision: DEFER** a shared `Oasis.Contracts` package; v1 hand-mirrors types (see DP3). |
-| **DP3** | DTO source. | **Hand-write DTOs as `record` types for v1**; record OpenAPI-as-single-source as an explicit follow-up. The single biggest lever on maintenance cost — flagged, not solved here. | The WebAPI has Swagger wired (`Program.cs` `AddSwaggerGen`), so NSwag/openapi-gen is *possible*, but (a) generated clients impose their own transport/result shape, fighting the no-throw `OasisResult<T>` + auth-handler design (DP2/DP4); (b) the TS SDK hand-mirrors its DTOs and that is the proven, reviewed shape this track copies field-for-field (`api/client.ts` DTOs `:382-533`, `holon-query.ts:10-35`, `workflow/types.ts`). Hand-writing keeps v1 self-contained and lets the result/auth design lead. **The clean long-term answer is a generated/shared contract** (`OpenAPI-as-contract` or `Oasis.Contracts`) — recorded as a follow-up, scoped OUT of this track. |
-| **DP4** | Auth threading. | **`HttpClient` + a `DelegatingHandler` (`OasisAuthHandler`)**: attaches `Authorization: Bearer` when a token is present else `X-Api-Key`; on 401 does a **single-flight** token refresh (`SemaphoreSlim`-guarded, the analog of `_refreshInFlight`) + one retry; honors per-call `Idempotency-Key` and per-call `Authorization` overrides via `HttpRequestMessage` headers/`Options`. `IHttpClientFactory`-friendly (consumers can inject their own `HttpClient`). | Mirrors the TS auth path 1:1: Bearer-wins-else-X-Api-Key (`client.ts:1265-1269`), deduped refresh (`client.ts:1291-1306`), `extraHeaders` override (`client.ts:1270-1274`). A `DelegatingHandler` is the idiomatic C# seam for cross-cutting auth and keeps the per-facade methods transport-free. Per-call overrides ride `HttpRequestMessage.Options` (net8.0) / a header the handler reads, the analog of the TS `extraHeaders` bag. |
-| **DP5** | Workflow run-driver ergonomics. | **An explicit `await`-per-call async handle**, NOT a forced thenable chain. `Workflow.Quest(id)` returns a `WorkflowRunHandle`; the consumer writes `await h.StartAsync(...); await h.StepAsync(b); await h.StepAsync(c);`. `ForActor` / `OnSuspend` are non-async configurators returning the handle (mild fluent), but each wire op is its own awaited call. | C# fluent-chaining across `await`s is awkward — the TS thenable trick (`run.ts:233-252`, a queued `then`) has no clean C# equivalent and would mean either blocking joins or a custom awaiter, both surprising. Explicit `await …Async` is the **more idiomatic** C# shape, is trivially ordered (sequential awaits), maps 1:1 onto the endpoints, and preserves the `OasisResult<T>` no-throw return on each call. The handle still carries run state (`runId`, `lastStatus`, cached child token) exactly like `WorkflowRunHandle` (`run.ts:54-85`). **Surfaced for the user:** if a fluent `Start().Step().Step()` *look* is wanted, a `Task`-returning fluent wrapper can be added later; default is explicit await. |
-| **DP6** | Client-side signing scope. | **Scope signing OUT of v1.** "Full parity" = **HTTP-API + auth + workflow** parity, NOT browser-signing parity. The TS `Signer` / `ChainProvider` / `DexAdapter` / `algorand` / `solana` client surface (`core/types.ts:7,68,179`) is NOT ported. A .NET consumer calls the API; signing, if needed, goes through OASIS's existing **server-side** signing core (project memory `ardanova-provider-port`). | Porting client-side chain providers + DEX adapters + tx-building to C# is large AND the **wrong layer** for a server SDK — a .NET backend consumer does not hold browser wallet keys; it calls the API and lets OASIS sign server-side. Recorded as an explicit non-goal (spec Out of Scope). **Surfaced as a user decision** because "full parity" was stated — the recommendation is to redefine parity as the HTTP/auth/workflow surface and treat signing as server-side. |
-| **DP7** | Cross-platform conventions. | **`<TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>`**, `<Nullable>enable</Nullable>`, `<LangVersion>latest</LangVersion>`, `System.Text.Json` only (no Newtonsoft), **amounts as strings** on the wire. `System.Text.Json` 8.0.5 + `Microsoft.Bcl.AsyncInterfaces` 8.0.0 referenced only for the `netstandard2.0` target. | Maximises reach (Unity, .NET Framework, older tooling) the same way the SurrealDb packages do (`Oasis.SurrealDb.Client.csproj:7,34-39`). The C# analog of the TS no-Buffer rule is "no platform-specific API + netstandard2.0 reach". Amounts-as-strings carries the TS arbitrary-precision rule forward (`core/types.ts:166`; project memory). The recommendation is `netstandard2.0;net8.0` over net8.0-only because ArdaNova/Unity reach is cheap to keep and matches house convention. |
+| **DP1** | Package identity + layout. | **`PackageId = Azoa.Sdk`**, project at **`sdk/Azoa.Sdk/`** (mirrors `sdk/azoa-wallet/` being the TS SDK home — `sdk/` is the SDK directory; `packages/` is infra libs). `<Version>0.1.0</Version>`, `<Authors>AZOA</Authors>`, `<Company>AZOA</Company>`, `IsPackable=true`, `IsPublishable=false` (publish deferred). | Keeps both SDKs under `sdk/` — discoverable as siblings. `packages/` is the SurrealDb-infra home (`packages/Azoa.SurrealDb.Client/`), a different concern. Metadata block copies `Azoa.SurrealDb.Client.csproj:19-32` verbatim in shape. `IsPublishable=false` matches the repo's "internal-feed, publish-decision-deferred" convention (`Azoa.SurrealDb.Client.csproj:16-18,31`). |
+| **DP2** | Error model. | **A no-throw `AzoaResult<T>` in the SDK** mirroring the TS `Result<T, SdkError>` discipline (`core/result.ts:1-19`, `errors.ts:40-121`), NOT idiomatic throwing and NOT the WebAPI's `AZOAResult<T>` type-by-reference. The SDK hand-mirrors a `AzoaError` (code + message with `method + path` + status + optional server `detail`). | (a) Referencing the WebAPI's `AZOAResult<T>` violates NFR-1 (no `AZOA.WebAPI.csproj` dependency). (b) Throwing breaks parity with the TS no-throw contract and forces consumers into try/catch for routine API errors. (c) A struct-based `AzoaResult<T>` (`IsOk` / `Value` / `Error`) gives the same ergonomics the TS SDK proved (`result.ts`). The wire envelope `AZOAResult<T>` is still unwrapped at the transport boundary (success ⇒ `result`, `isError` ⇒ error — `client.ts:1134-1144`). **Contracts sub-decision: DEFER** a shared `Azoa.Contracts` package; v1 hand-mirrors types (see DP3). |
+| **DP3** | DTO source. | **Hand-write DTOs as `record` types for v1**; record OpenAPI-as-single-source as an explicit follow-up. The single biggest lever on maintenance cost — flagged, not solved here. | The WebAPI has Swagger wired (`Program.cs` `AddSwaggerGen`), so NSwag/openapi-gen is *possible*, but (a) generated clients impose their own transport/result shape, fighting the no-throw `AzoaResult<T>` + auth-handler design (DP2/DP4); (b) the TS SDK hand-mirrors its DTOs and that is the proven, reviewed shape this track copies field-for-field (`api/client.ts` DTOs `:382-533`, `holon-query.ts:10-35`, `workflow/types.ts`). Hand-writing keeps v1 self-contained and lets the result/auth design lead. **The clean long-term answer is a generated/shared contract** (`OpenAPI-as-contract` or `Azoa.Contracts`) — recorded as a follow-up, scoped OUT of this track. |
+| **DP4** | Auth threading. | **`HttpClient` + a `DelegatingHandler` (`AzoaAuthHandler`)**: attaches `Authorization: Bearer` when a token is present else `X-Api-Key`; on 401 does a **single-flight** token refresh (`SemaphoreSlim`-guarded, the analog of `_refreshInFlight`) + one retry; honors per-call `Idempotency-Key` and per-call `Authorization` overrides via `HttpRequestMessage` headers/`Options`. `IHttpClientFactory`-friendly (consumers can inject their own `HttpClient`). | Mirrors the TS auth path 1:1: Bearer-wins-else-X-Api-Key (`client.ts:1265-1269`), deduped refresh (`client.ts:1291-1306`), `extraHeaders` override (`client.ts:1270-1274`). A `DelegatingHandler` is the idiomatic C# seam for cross-cutting auth and keeps the per-facade methods transport-free. Per-call overrides ride `HttpRequestMessage.Options` (net8.0) / a header the handler reads, the analog of the TS `extraHeaders` bag. |
+| **DP5** | Workflow run-driver ergonomics. | **An explicit `await`-per-call async handle**, NOT a forced thenable chain. `Workflow.Quest(id)` returns a `WorkflowRunHandle`; the consumer writes `await h.StartAsync(...); await h.StepAsync(b); await h.StepAsync(c);`. `ForActor` / `OnSuspend` are non-async configurators returning the handle (mild fluent), but each wire op is its own awaited call. | C# fluent-chaining across `await`s is awkward — the TS thenable trick (`run.ts:233-252`, a queued `then`) has no clean C# equivalent and would mean either blocking joins or a custom awaiter, both surprising. Explicit `await …Async` is the **more idiomatic** C# shape, is trivially ordered (sequential awaits), maps 1:1 onto the endpoints, and preserves the `AzoaResult<T>` no-throw return on each call. The handle still carries run state (`runId`, `lastStatus`, cached child token) exactly like `WorkflowRunHandle` (`run.ts:54-85`). **Surfaced for the user:** if a fluent `Start().Step().Step()` *look* is wanted, a `Task`-returning fluent wrapper can be added later; default is explicit await. |
+| **DP6** | Client-side signing scope. | **Scope signing OUT of v1.** "Full parity" = **HTTP-API + auth + workflow** parity, NOT browser-signing parity. The TS `Signer` / `ChainProvider` / `DexAdapter` / `algorand` / `solana` client surface (`core/types.ts:7,68,179`) is NOT ported. A .NET consumer calls the API; signing, if needed, goes through AZOA's existing **server-side** signing core (project memory `ardanova-provider-port`). | Porting client-side chain providers + DEX adapters + tx-building to C# is large AND the **wrong layer** for a server SDK — a .NET backend consumer does not hold browser wallet keys; it calls the API and lets AZOA sign server-side. Recorded as an explicit non-goal (spec Out of Scope). **Surfaced as a user decision** because "full parity" was stated — the recommendation is to redefine parity as the HTTP/auth/workflow surface and treat signing as server-side. |
+| **DP7** | Cross-platform conventions. | **`<TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>`**, `<Nullable>enable</Nullable>`, `<LangVersion>latest</LangVersion>`, `System.Text.Json` only (no Newtonsoft), **amounts as strings** on the wire. `System.Text.Json` 8.0.5 + `Microsoft.Bcl.AsyncInterfaces` 8.0.0 referenced only for the `netstandard2.0` target. | Maximises reach (Unity, .NET Framework, older tooling) the same way the SurrealDb packages do (`Azoa.SurrealDb.Client.csproj:7,34-39`). The C# analog of the TS no-Buffer rule is "no platform-specific API + netstandard2.0 reach". Amounts-as-strings carries the TS arbitrary-precision rule forward (`core/types.ts:166`; project memory). The recommendation is `netstandard2.0;net8.0` over net8.0-only because ArdaNova/Unity reach is cheap to keep and matches house convention. |
 
 ## Phase 1 — Transport foundation (csproj + result/error + auth handler)
-1. `[ ]` **`sdk/Oasis.Sdk/Oasis.Sdk.csproj`** (DP1, DP7): `TargetFrameworks
+1. `[ ]` **`sdk/Azoa.Sdk/Azoa.Sdk.csproj`** (DP1, DP7): `TargetFrameworks
    netstandard2.0;net8.0`, `Nullable enable`, `LangVersion latest`,
-   `GenerateDocumentationFile`, package metadata (`PackageId Oasis.Sdk`, `Version
-   0.1.0`, `Authors/Company OASIS`, `IsPackable=true`, `IsPublishable=false`),
+   `GenerateDocumentationFile`, package metadata (`PackageId Azoa.Sdk`, `Version
+   0.1.0`, `Authors/Company AZOA`, `IsPackable=true`, `IsPublishable=false`),
    conditional `System.Text.Json 8.0.5` + `Microsoft.Bcl.AsyncInterfaces 8.0.0`
    for netstandard2.0 (copy the shape of
-   `packages/Oasis.SurrealDb.Client/Oasis.SurrealDb.Client.csproj:1-41`). **No**
-   `ProjectReference` to `OASIS.WebAPI.csproj` (NFR-1).
+   `packages/Azoa.SurrealDb.Client/Azoa.SurrealDb.Client.csproj:1-41`). **No**
+   `ProjectReference` to `AZOA.WebAPI.csproj` (NFR-1).
    **Acceptance:** `dotnet build` clean, both TFMs restore.
-2. `[ ]` **`OasisResult<T>` + `OasisError` + `OasisErrorCode`** (DP2) mirroring
-   `core/result.ts:1-19` + `errors.ts:1-121`: a readonly struct `OasisResult<T>`
-   (`IsOk`, `Value`, `Error`, `Ok(...)`, `Fail(...)`), an `OasisError` (Code,
+2. `[ ]` **`AzoaResult<T>` + `AzoaError` + `AzoaErrorCode`** (DP2) mirroring
+   `core/result.ts:1-19` + `errors.ts:1-121`: a readonly struct `AzoaResult<T>`
+   (`IsOk`, `Value`, `Error`, `Ok(...)`, `Fail(...)`), an `AzoaError` (Code,
    Message with `method + path`, Status, optional server `Detail` chain). The only
    throw anywhere in the SDK is the synchronous input guard.
    **Acceptance:** unit-constructible; `Fail` carries method + path.
@@ -46,7 +46,7 @@ calls them today).
    `AssertNonEmptyString(value, name)` for `gateId` (free-string contract,
    `workflow/types.ts:147-161`).
    **Acceptance:** non-UUID throws before any HTTP; empty `gateId` throws.
-4. `[ ]` **`OasisAuthHandler : DelegatingHandler`** (DP4): Bearer-else-`X-Api-Key`
+4. `[ ]` **`AzoaAuthHandler : DelegatingHandler`** (DP4): Bearer-else-`X-Api-Key`
    (`client.ts:1265-1269`); 401 → single-flight `SemaphoreSlim`-guarded refresh +
    one retry (`client.ts:1291-1306`); honor per-call `Idempotency-Key` +
    `Authorization` override read from `HttpRequestMessage`
@@ -54,14 +54,14 @@ calls them today).
    `session.ts:14-26`) + token holder feed the handler.
    **Acceptance:** Bearer wins; one 401 ⇒ one refresh+retry; concurrent calls
    share one refresh; per-call override beats the default header.
-5. `[ ]` **`OasisHttpTransport`**: the `request`/`requestBare` analog
+5. `[ ]` **`AzoaHttpTransport`**: the `request`/`requestBare` analog
    (`client.ts:1105-1180`) — builds `HttpRequestMessage`, sends via the
-   `HttpClient` (auth handler in the pipeline), unwraps `OASISResult<T>` (success
-   ⇒ `result`, `isError` ⇒ `OasisError` with method+path+status+detail,
+   `HttpClient` (auth handler in the pipeline), unwraps `AZOAResult<T>` (success
+   ⇒ `result`, `isError` ⇒ `AzoaError` with method+path+status+detail,
    `client.ts:1134-1144`, `:1202-1217`) OR the bare-object path
    (`client.ts:1150-1180`). One shared `JsonSerializerOptions` (camelCase,
    ignore-null).
-   **Acceptance:** OASISResult success + error + bare-object paths covered.
+   **Acceptance:** AZOAResult success + error + bare-object paths covered.
 
 ## Phase 2 — DTOs (DP3, hand-written records)
 6. `[ ]` **`Models/` DTOs as `record` types**, decorated for `System.Text.Json`,
@@ -77,7 +77,7 @@ calls them today).
    **Acceptance:** each DTO round-trips the corresponding `result` payload;
    amounts are strings.
 7. `[ ]` **`ApiPaths` static class** mirroring
-   `sdk/oasis-wallet/src/api/api-version.ts:60-130` (avatar/holon/wallet/nft/
+   `sdk/azoa-wallet/src/api/api-version.ts:60-130` (avatar/holon/wallet/nft/
    bridge/search/swap/quest + `QUEST_START_WORKFLOW` / `QUEST_RUN_ADVANCE` /
    `QUEST_RUN_SIGNAL` / `QUEST_RUN_STATUS` / `QUEST_RUN_EXECUTION_STATE` /
    `TENANT_CHILD_CREDENTIAL`). Path builders take ids the facades have already
@@ -85,11 +85,11 @@ calls them today).
    **Acceptance:** every matrix path present and matches the TS constant.
 
 ## Phase 3 — Per-facade endpoint methods (FR-1..FR-5)
-8. `[ ]` **`OasisClient` facade + config** (`OasisClientConfig`: `ApiUrl`,
+8. `[ ]` **`AzoaClient` facade + config** (`AzoaClientConfig`: `ApiUrl`,
    `Token?`, `ApiKey?`, `TimeoutMs?`, optional injected `HttpClient`), composing
-   the facade properties exactly as the TS `OasisClient` composes `auth` /
+   the facade properties exactly as the TS `AzoaClient` composes `auth` /
    `wallet` / `holons` / `portfolio` / `workflow`
-   (`client/oasis-client.ts:85-156`).
+   (`client/azoa-client.ts:85-156`).
 9. `[ ]` **Auth/session facade** (FR-1): `Auth.LoginAsync` / `RegisterAsync` /
    `GetProfileAsync` / `LogoutAsync` (`auth-provider.ts:60-127`); `Session` +
    `ISessionStore` (`session.ts`); JWT subject decode for the avatar id
@@ -141,7 +141,7 @@ calls them today).
       (`run.ts:168-182`).
     - `await StatusAsync()` → `GetRunStatusAsync`; fires `OnSuspend` when the run
       is awaiting (`run.ts:191-209`, `types.ts:59-67`).
-    Each method returns `Task<OasisResult<WorkflowRunResult>>`; ids guarded.
+    Each method returns `Task<AzoaResult<WorkflowRunResult>>`; ids guarded.
 16. `[ ]` **Lazy child-credential acquisition** (`run.ts:305-339`): on the first
     advancement when `ForActor` is set, `IssueChildCredentialAsync` with the
     tenant `X-Api-Key`; cache `{token, expiresAt}` for the handle; re-acquire near
@@ -151,13 +151,13 @@ calls them today).
     credential call. **No brand leak**: `ForActor` takes a plain avatar id.
 
 ## Phase 5 — Tests (FR-10, mirror the TS vitest harness)
-17. `[ ]` **`tests/Oasis.Sdk.Tests/`** (xUnit + FluentAssertions) with a
+17. `[ ]` **`tests/Azoa.Sdk.Tests/`** (xUnit + FluentAssertions) with a
     **`RecordingHttpMessageHandler`** — the C# analog of
     `vi.stubGlobal("fetch", mockFetch)`
-    (`sdk/oasis-wallet/tests/workflow/run-driver.test.ts:18-67`) — that records
+    (`sdk/azoa-wallet/tests/workflow/run-driver.test.ts:18-67`) — that records
     each `HttpRequestMessage` (method, URI, headers, body) and returns queued
-    canned `OASISResult<T>` responses. Mirror the fixture style
-    (stable UUIDs, `oasisResponse<T>` helper, `runResult` builder,
+    canned `AZOAResult<T>` responses. Mirror the fixture style
+    (stable UUIDs, `azoaResponse<T>` helper, `runResult` builder,
     `run-driver.test.ts:23-63`).
 18. `[ ]` **Run-driver ordered-call test** (`run-driver.test.ts:83-90`):
     `Quest(a).StartAsync(); StepAsync(b); StepAsync(c)` ⇒ recorded calls are
@@ -168,7 +168,7 @@ calls them today).
     send; `ForActor(childId).StartAsync()` issues the credential POST first (tenant
     `X-Api-Key`) then uses the child JWT as `Authorization: Bearer` on
     advance/signal (`run-driver.test.ts` forActor pattern).
-20. `[ ]` **Transport tests**: `OASISResult{isError:true}` ⇒ `OasisError` with
+20. `[ ]` **Transport tests**: `AZOAResult{isError:true}` ⇒ `AzoaError` with
     method + path + status; bare-object endpoint round-trips; auth handler does
     Bearer-else-`X-Api-Key`, one 401 ⇒ one refresh+retry, concurrent calls share
     one refresh.
@@ -177,23 +177,23 @@ calls them today).
     rows without one-test-per-method bloat.
 
 ## Phase 6 — Pack + README + final sweep (house rules)
-22. `[ ]` **`sdk/Oasis.Sdk/README.md`**: quick-start (`new OasisClient(new
-    OasisClientConfig{ ApiUrl=…, ApiKey=… })`), the `Quest(...).StartAsync()
+22. `[ ]` **`sdk/Azoa.Sdk/README.md`**: quick-start (`new AzoaClient(new
+    AzoaClientConfig{ ApiUrl=…, ApiKey=… })`), the `Quest(...).StartAsync()
     .StepAsync()` example, the `ForActor` example, and the amounts-as-strings +
-    no-throw `OasisResult<T>` conventions. Mirror the shape of
-    `sdk/oasis-wallet/README.md`.
-23. `[ ]` **`dotnet pack`** produces a valid `Oasis.Sdk.0.1.0.nupkg`
+    no-throw `AzoaResult<T>` conventions. Mirror the shape of
+    `sdk/azoa-wallet/README.md`.
+23. `[ ]` **`dotnet pack`** produces a valid `Azoa.Sdk.0.1.0.nupkg`
     (`IsPackable=true`); confirm the `.nupkg` contains both TFM assemblies + the
     XML doc.
 24. `[ ]` **Final sweep (ONCE)**: `dotnet build` **zero warnings** + `dotnet test`
     green; grep the SDK source for `ArdaNova` / brand / economic terms → **zero**
-    hits (NFR-5); confirm no `ProjectReference` to `OASIS.WebAPI.csproj` (NFR-1);
+    hits (NFR-5); confirm no `ProjectReference` to `AZOA.WebAPI.csproj` (NFR-1);
     confirm no `Newtonsoft` reference (NFR-3); confirm no `decimal`/`long` typed
     wire amount (NFR-4).
 
 ## Task flow and dependencies
 ```
-Phase 1 (csproj + OasisResult/OasisError + Guards + OasisAuthHandler + transport)
+Phase 1 (csproj + AzoaResult/AzoaError + Guards + AzoaAuthHandler + transport)
  └─ Phase 2 (DTO records + ApiPaths)
      └─ Phase 3 (facades: auth/session, avatar/wallet/portfolio, holons,
         │         nft/avatarnft, swap/bridge/search/ops/starodk/quests/apikeys,
@@ -207,10 +207,10 @@ Phase 1 (csproj + OasisResult/OasisError + Guards + OasisAuthHandler + transport
 ## Commit strategy
 One commit per logical unit, message form **`[dotnet-client-sdk] <verb>
 <subject>`**, e.g.:
-- `[dotnet-client-sdk] add Oasis.Sdk csproj (netstandard2.0;net8.0, no WebAPI ref)`
-- `[dotnet-client-sdk] add OasisResult/OasisError no-throw result model + Guards`
-- `[dotnet-client-sdk] add OasisAuthHandler (Bearer-or-ApiKey + single-flight refresh)`
-- `[dotnet-client-sdk] add OASISResult/bare-object transport + JSON options`
+- `[dotnet-client-sdk] add Azoa.Sdk csproj (netstandard2.0;net8.0, no WebAPI ref)`
+- `[dotnet-client-sdk] add AzoaResult/AzoaError no-throw result model + Guards`
+- `[dotnet-client-sdk] add AzoaAuthHandler (Bearer-or-ApiKey + single-flight refresh)`
+- `[dotnet-client-sdk] add AZOAResult/bare-object transport + JSON options`
 - `[dotnet-client-sdk] add hand-mirrored DTO records + ApiPaths constants`
 - `[dotnet-client-sdk] add auth/session + avatar/wallet/portfolio facades`
 - `[dotnet-client-sdk] add fluent Holons builder + NFT/AvatarNFT facades`
@@ -229,18 +229,18 @@ Add a **pending** row `[ ]` under the **workflow-engine initiative** table
 this SDK is the .NET-side consumer serving ArdaNova alongside the TS
 `workflow-sdk`:
 ```
-| [dotnet-client-sdk](tracks/dotnet-client-sdk/spec.md) | `[ ]` | **Tier 1 — .NET consumer surface.** First-class C# client SDK (NuGet `Oasis.Sdk`) at parity with the TS `@oasis/sdk` HTTP/auth/workflow surface; standalone (no WebAPI ref), System.Text.Json, no-throw `OasisResult<T>`, idiomatic async run driver. Signing scoped OUT (server-side). |
+| [dotnet-client-sdk](tracks/dotnet-client-sdk/spec.md) | `[ ]` | **Tier 1 — .NET consumer surface.** First-class C# client SDK (NuGet `Azoa.Sdk`) at parity with the TS `@azoa/sdk` HTTP/auth/workflow surface; standalone (no WebAPI ref), System.Text.Json, no-throw `AzoaResult<T>`, idiomatic async run driver. Signing scoped OUT (server-side). |
 ```
 
 ## Success criteria
-- `sdk/Oasis.Sdk/` C# project builds with **zero warnings** (Nullable enabled),
+- `sdk/Azoa.Sdk/` C# project builds with **zero warnings** (Nullable enabled),
   both TFMs (`netstandard2.0;net8.0`); `dotnet test` green; `dotnet pack` emits a
-  valid `Oasis.Sdk.0.1.0.nupkg`.
-- The SDK does **NOT** reference `OASIS.WebAPI.csproj` and uses **System.Text.Json
+  valid `Azoa.Sdk.0.1.0.nupkg`.
+- The SDK does **NOT** reference `AZOA.WebAPI.csproj` and uses **System.Text.Json
   only** (no Newtonsoft).
 - All **95 parity-matrix rows across 13 facades** present, each mapping to the TS
   path + method + body; amounts on the wire are **strings**.
-- No-throw `OasisResult<T>` everywhere; the only throw is the synchronous UUID /
+- No-throw `AzoaResult<T>` everywhere; the only throw is the synchronous UUID /
   non-empty-string input guard; errors carry `method + path` + status.
 - The fluent run driver (`Quest(...).StartAsync().StepAsync()` explicit-await
   shape, DP5) issues ordered `start-workflow → advance → advance`; the hybrid
@@ -249,6 +249,6 @@ this SDK is the .NET-side consumer serving ArdaNova alongside the TS
 - Tests mirror the TS harness (mocked `HttpMessageHandler`, ordered-call +
   hybrid + idempotency + UUID-guard + forActor + transport assertions).
 - **No brand leak** (zero ArdaNova/economic terms); signing scoped OUT (DP6);
-  Node binding NOT built (LOCKED rejection); contract-gen + `Oasis.Contracts`
+  Node binding NOT built (LOCKED rejection); contract-gen + `Azoa.Contracts`
   recorded as follow-ups, not built.
 - `tracks.md` row added by the orchestrator under the workflow-engine initiative.

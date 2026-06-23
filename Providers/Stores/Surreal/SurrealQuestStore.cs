@@ -1,12 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Responses;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="IQuestStore"/>. Materialises the Quest aggregate
@@ -20,7 +20,7 @@ namespace OASIS.WebAPI.Providers.Stores.Surreal;
 /// <b>Pattern</b> mirrors <see cref="SurrealApiKeyStore"/> /
 /// <see cref="SurrealQuestTemplateStore"/>: Guid('N') lowercase-hex record ids,
 /// inline POCOs (replace with generated POCO when source-gen catches up — see
-/// <c>OASIS.WebAPI.Persistence.SurrealDb.Models.Quest</c>), parameter-bound SurrealQL
+/// <c>AZOA.WebAPI.Persistence.SurrealDb.Models.Quest</c>), parameter-bound SurrealQL
 /// only (G3 / SRDB0001 — no string interpolation of values).
 /// </para>
 ///
@@ -70,7 +70,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     // ── Quest CRUD ────────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<Quest>> GetQuestAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<Quest>> GetQuestAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -95,7 +95,7 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
-    public async Task<OASISResult<IEnumerable<Quest>>> GetQuestsByAvatarAsync(
+    public async Task<AZOAResult<IEnumerable<Quest>>> GetQuestsByAvatarAsync(
         Guid avatarId, CancellationToken ct = default)
     {
         try
@@ -113,7 +113,7 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
-    public async Task<OASISResult<IEnumerable<Quest>>> GetQuestsByDappSeriesAsync(
+    public async Task<AZOAResult<IEnumerable<Quest>>> GetQuestsByDappSeriesAsync(
         Guid dappSeriesId, CancellationToken ct = default)
     {
         try
@@ -131,7 +131,7 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
-    public async Task<OASISResult<Quest>> UpsertQuestAsync(Quest quest, CancellationToken ct = default)
+    public async Task<AZOAResult<Quest>> UpsertQuestAsync(Quest quest, CancellationToken ct = default)
     {
         if (quest is null)
             return Err<Quest>("UpsertQuestAsync: quest must not be null.");
@@ -216,7 +216,7 @@ public sealed class SurrealQuestStore : IQuestStore
             // doc "Dependencies persistence gap" section. Round-trip them as
             // empty.
 
-            return new OASISResult<Quest> { Result = quest, Message = "Upserted." };
+            return new AZOAResult<Quest> { Result = quest, Message = "Upserted." };
         }
         catch (Exception ex)
         {
@@ -224,7 +224,7 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
-    public async Task<OASISResult<bool>> DeleteQuestAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> DeleteQuestAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -240,7 +240,7 @@ public sealed class SurrealQuestStore : IQuestStore
                 .WithParam("_id", surrealId);
             var existing = await _executor.QueryAsync<QuestIdProjection>(existsQ, ct);
             if (existing.Count == 0)
-                return new OASISResult<bool>
+                return new AZOAResult<bool>
                 {
                     Result = false, IsError = true, Message = $"Quest {id} not found.",
                 };
@@ -275,7 +275,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var rows = await _executor.QueryAsync<QuestIdProjection>(verify, ct);
             var deleted = rows.Count == 0;
 
-            return new OASISResult<bool>
+            return new AZOAResult<bool>
             {
                 Result  = deleted,
                 Message = deleted ? "Deleted." : $"Quest {id} not found.",
@@ -290,7 +290,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     // ── QuestTemplate CRUD ────────────────────────────────────────────────────
 
-    public async Task<OASISResult<QuestTemplate>> GetQuestTemplateAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<QuestTemplate>> GetQuestTemplateAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -310,7 +310,7 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
-    public async Task<OASISResult<IEnumerable<QuestTemplate>>> GetAllQuestTemplatesAsync(
+    public async Task<AZOAResult<IEnumerable<QuestTemplate>>> GetAllQuestTemplatesAsync(
         CancellationToken ct = default)
     {
         try
@@ -318,7 +318,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var q = SurrealQuery.Of("SELECT * FROM quest_template");
             var rows = await _executor.QueryAsync<QuestTemplatePoco>(q, ct);
             IEnumerable<QuestTemplate> result = rows.Select(ToDomain).ToList();
-            return new OASISResult<IEnumerable<QuestTemplate>> { Result = result, Message = "Success" };
+            return new AZOAResult<IEnumerable<QuestTemplate>> { Result = result, Message = "Success" };
         }
         catch (Exception ex)
         {
@@ -326,7 +326,7 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
-    public async Task<OASISResult<QuestTemplate>> UpsertQuestTemplateAsync(
+    public async Task<AZOAResult<QuestTemplate>> UpsertQuestTemplateAsync(
         QuestTemplate template, CancellationToken ct = default)
     {
         if (template is null)
@@ -346,7 +346,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var resp = await _executor.ExecuteAsync(q, ct);
             resp.EnsureAllOk();
 
-            return new OASISResult<QuestTemplate> { Result = template, Message = "Upserted." };
+            return new AZOAResult<QuestTemplate> { Result = template, Message = "Upserted." };
         }
         catch (Exception ex)
         {
@@ -354,7 +354,7 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
-    public async Task<OASISResult<bool>> DeleteQuestTemplateAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> DeleteQuestTemplateAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
@@ -376,7 +376,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var rows = await _executor.QueryAsync<QuestIdProjection>(verify, ct);
             var deleted = rows.Count == 0;
 
-            return new OASISResult<bool>
+            return new AZOAResult<bool>
             {
                 Result  = deleted,
                 Message = deleted ? "Deleted." : $"QuestTemplate {id} not found.",
@@ -391,7 +391,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     // ── QuestNodeTemplate CRUD ────────────────────────────────────────────────
 
-    public async Task<OASISResult<QuestNodeTemplate>> UpsertQuestNodeTemplateAsync(
+    public async Task<AZOAResult<QuestNodeTemplate>> UpsertQuestNodeTemplateAsync(
         QuestNodeTemplate template, CancellationToken ct = default)
     {
         if (template is null)
@@ -411,7 +411,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var resp = await _executor.ExecuteAsync(q, ct);
             resp.EnsureAllOk();
 
-            return new OASISResult<QuestNodeTemplate> { Result = template, Message = "Upserted." };
+            return new AZOAResult<QuestNodeTemplate> { Result = template, Message = "Upserted." };
         }
         catch (Exception ex)
         {
@@ -420,7 +420,7 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
-    public async Task<OASISResult<IEnumerable<QuestNodeTemplate>>> GetAllQuestNodeTemplatesAsync(
+    public async Task<AZOAResult<IEnumerable<QuestNodeTemplate>>> GetAllQuestNodeTemplatesAsync(
         CancellationToken ct = default)
     {
         try
@@ -428,7 +428,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var q = SurrealQuery.Of("SELECT * FROM quest_node_template");
             var rows = await _executor.QueryAsync<QuestNodeTemplatePoco>(q, ct);
             IEnumerable<QuestNodeTemplate> result = rows.Select(ToDomain).ToList();
-            return new OASISResult<IEnumerable<QuestNodeTemplate>> { Result = result, Message = "Success" };
+            return new AZOAResult<IEnumerable<QuestNodeTemplate>> { Result = result, Message = "Success" };
         }
         catch (Exception ex)
         {
@@ -471,7 +471,7 @@ public sealed class SurrealQuestStore : IQuestStore
         quest.Dependencies = new List<QuestDependency>();
     }
 
-    private async Task<OASISResult<IEnumerable<Quest>>> HydrateManyAsync(
+    private async Task<AZOAResult<IEnumerable<Quest>>> HydrateManyAsync(
         IReadOnlyList<QuestPoco> rows, CancellationToken ct)
     {
         var result = new List<Quest>(rows.Count);
@@ -481,7 +481,7 @@ public sealed class SurrealQuestStore : IQuestStore
             await HydrateChildrenAsync(quest, ct);
             result.Add(quest);
         }
-        return new OASISResult<IEnumerable<Quest>> { Result = result, Message = "Success" };
+        return new AZOAResult<IEnumerable<Quest>> { Result = result, Message = "Success" };
     }
 
     // ── Mapping: Quest ↔ QuestPoco ────────────────────────────────────────────
@@ -742,15 +742,15 @@ public sealed class SurrealQuestStore : IQuestStore
             ? v
             : QuestEdgeType.Control;
 
-    // ── OASISResult helpers ───────────────────────────────────────────────────
+    // ── AZOAResult helpers ───────────────────────────────────────────────────
 
-    private static OASISResult<T> Ok<T>(T value, string msg = "Success") =>
+    private static AZOAResult<T> Ok<T>(T value, string msg = "Success") =>
         new() { Result = value, Message = msg };
 
-    private static OASISResult<T> Missing<T>(string msg) =>
+    private static AZOAResult<T> Missing<T>(string msg) =>
         new() { IsError = true, Message = msg, Result = default };
 
-    private static OASISResult<T> Err<T>(string msg) =>
+    private static AZOAResult<T> Err<T>(string msg) =>
         new() { IsError = true, Message = msg, Result = default };
 
     // ── POCOs (private — replace with generated POCO when source-gen catches up) ──

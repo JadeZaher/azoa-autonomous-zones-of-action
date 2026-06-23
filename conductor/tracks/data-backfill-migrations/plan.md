@@ -10,15 +10,15 @@ schema-migration runner / `.surql` emit untouched.
    rows_rewritten, result_json). Insert-wins UNIQUE on name. NOT
    itself backfilled by the runner (bootstrap concern).
 2. [ ] `IBackfill` + `BackfillContext` + `BackfillResult` abstractions
-   in `packages/Oasis.SurrealDb.Schema/Backfill/`. Pure C#; reuses
+   in `packages/Azoa.SurrealDb.Schema/Backfill/`. Pure C#; reuses
    `ISurrealConnection`, `SurrealQuery<T>`, `SurrealIdentifier`.
 3. [ ] `BackfillRunner` — discovery (by `IBackfill` assembly scan +
    explicit registration list), ledger writes via insert-wins, batch
    loop driving `RunAsync` until source query returns zero rows.
    Mirrors `MigrationRunner` pattern.
 4. [ ] CLI subcommand wiring in
-   `packages/Oasis.SurrealDb.Schema/Program.cs`:
-   `oasis-surreal backfill list|apply|apply-all` with the existing
+   `packages/Azoa.SurrealDb.Schema/Program.cs`:
+   `azoa-surreal backfill list|apply|apply-all` with the existing
    connection-config resolution order (`--flag` > env var).
 5. [ ] OpenTelemetry + structured logging hooks; each batch emits a
    span with `backfill.name`, `backfill.batch_index`, `rows_rewritten`,
@@ -40,7 +40,7 @@ schema-migration runner / `.surql` emit untouched.
 Pre-req: RUNBOOK §4.3 Phase C ships (generator emits FK columns as
 `record<table>` not `string`).
 
-8. [ ] `OASIS.WebAPI/Persistence/SurrealDb/Backfills/001_quest_fk_to_record.cs` —
+8. [ ] `AZOA.WebAPI/Persistence/SurrealDb/Backfills/001_quest_fk_to_record.cs` —
    walk `quest`, `quest_node`, `quest_edge`, `quest_dependency`,
    `quest_run`, `quest_node_execution` and rewrite FK columns
    (avatar_id, quest_id, source_node_id, etc.) from

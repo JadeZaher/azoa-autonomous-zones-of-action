@@ -1,15 +1,15 @@
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 public interface IAvatarManager
 {
-    Task<OASISResult<IAvatar>> RegisterAsync(AvatarRegisterModel model, OASISRequest? request = null);
-    Task<OASISResult<string>> LoginAsync(AvatarLoginModel model, OASISRequest? request = null);
-    Task<OASISResult<IAvatar>> GetAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<IAvatar>>> GetAllAsync(OASISRequest? request = null);
-    Task<OASISResult<IAvatar>> UpdateAsync(Guid id, AvatarUpdateModel model, Guid avatarId, OASISRequest? request = null);
-    Task<OASISResult<bool>> DeleteAsync(Guid id, Guid avatarId, OASISRequest? request = null);
+    Task<AZOAResult<IAvatar>> RegisterAsync(AvatarRegisterModel model, AZOARequest? request = null);
+    Task<AZOAResult<string>> LoginAsync(AvatarLoginModel model, AZOARequest? request = null);
+    Task<AZOAResult<IAvatar>> GetAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<IAvatar>>> GetAllAsync(AZOARequest? request = null);
+    Task<AZOAResult<IAvatar>> UpdateAsync(Guid id, AvatarUpdateModel model, Guid avatarId, AZOARequest? request = null);
+    Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid avatarId, AZOARequest? request = null);
 }

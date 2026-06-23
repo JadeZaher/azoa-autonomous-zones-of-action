@@ -2,10 +2,10 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useOasisAuth } from '@/lib/oasis-auth'
+import { useAzoaAuth } from '@/lib/azoa-auth'
 
 export default function Home() {
-  const { isAuthenticated, loading } = useOasisAuth()
+  const { isAuthenticated, loading } = useAzoaAuth()
   const router = useRouter()
 
   useEffect(() => {

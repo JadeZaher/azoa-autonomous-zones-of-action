@@ -1,12 +1,12 @@
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Managers;
+namespace AZOA.WebAPI.Managers;
 
 public class HolonManager : IHolonManager
 {
@@ -19,17 +19,17 @@ public class HolonManager : IHolonManager
 
     private static bool IsOwnedBy(IHolon holon, Guid avatarId) => holon.AvatarId == avatarId;
 
-    public async Task<OASISResult<IHolon>> GetAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<IHolon>> GetAsync(Guid id, AZOARequest? request = null)
     {
         return await _holonStore.GetByIdAsync(id, default);
     }
 
-    public async Task<OASISResult<IEnumerable<IHolon>>> GetAllAsync(OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetAllAsync(AZOARequest? request = null)
     {
         return await _holonStore.QueryAsync(null, default);
     }
 
-    public async Task<OASISResult<IHolon>> CreateAsync(HolonCreateModel model, Guid avatarId, OASISRequest? request = null)
+    public async Task<AZOAResult<IHolon>> CreateAsync(HolonCreateModel model, Guid avatarId, AZOARequest? request = null)
     {
         var holon = new Holon
         {
@@ -48,12 +48,12 @@ public class HolonManager : IHolonManager
         return await _holonStore.UpsertAsync(holon, default);
     }
 
-    public async Task<OASISResult<IHolon>> UpdateAsync(Guid id, HolonUpdateModel model, Guid? avatarId = null, OASISRequest? request = null)
+    public async Task<AZOAResult<IHolon>> UpdateAsync(Guid id, HolonUpdateModel model, Guid? avatarId = null, AZOARequest? request = null)
     {
         var existing = await _holonStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
         if (avatarId.HasValue && !IsOwnedBy(existing.Result, avatarId.Value))
-            return new OASISResult<IHolon> { IsError = true, Message = "Holon is owned by a different avatar." };
+            return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different avatar." };
 
         var holon = (Holon)existing.Result;
         if (model.Name != null) holon.Name = model.Name;
@@ -75,29 +75,29 @@ public class HolonManager : IHolonManager
         return await _holonStore.UpsertAsync(holon, default);
     }
 
-    public async Task<OASISResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, AZOARequest? request = null)
     {
         var existing = await _holonStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null)
-            return new OASISResult<bool> { IsError = true, Message = existing.Message ?? "Holon not found." };
+            return new AZOAResult<bool> { IsError = true, Message = existing.Message ?? "Holon not found." };
         if (avatarId.HasValue && !IsOwnedBy(existing.Result, avatarId.Value))
-            return new OASISResult<bool> { IsError = true, Message = "Holon is owned by a different avatar." };
+            return new AZOAResult<bool> { IsError = true, Message = "Holon is owned by a different avatar." };
 
         return await _holonStore.DeleteAsync(id, default);
     }
 
-    public async Task<OASISResult<IEnumerable<IHolon>>> QueryAsync(HolonQueryRequest query, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> QueryAsync(HolonQueryRequest query, AZOARequest? request = null)
     {
         var result = await _holonStore.QueryAsync(query, default);
         return result;
     }
 
-    public async Task<OASISResult<IHolon>> InteractAsync(Guid id, HolonInteractionRequest request, Guid? avatarId = null, OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<IHolon>> InteractAsync(Guid id, HolonInteractionRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null)
     {
         var existing = await _holonStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
         if (avatarId.HasValue && !IsOwnedBy(existing.Result, avatarId.Value))
-            return new OASISResult<IHolon> { IsError = true, Message = "Holon is owned by a different avatar." };
+            return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different avatar." };
 
         var holon = (Holon)existing.Result;
 
@@ -131,27 +131,27 @@ public class HolonManager : IHolonManager
         return await _holonStore.UpsertAsync(holon, default);
     }
 
-    public async Task<OASISResult<IEnumerable<IHolon>>> GetChildrenAsync(Guid parentId, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetChildrenAsync(Guid parentId, AZOARequest? request = null)
     {
         var query = new HolonQueryRequest { ParentHolonId = parentId };
         return await _holonStore.QueryAsync(query, default);
     }
 
-    public async Task<OASISResult<IEnumerable<IHolon>>> GetPeersAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetPeersAsync(Guid id, AZOARequest? request = null)
     {
         var existing = await _holonStore.GetByIdAsync(id, default);
-        if (existing.IsError || existing.Result == null) return new OASISResult<IEnumerable<IHolon>> { IsError = true, Message = existing.Message };
+        if (existing.IsError || existing.Result == null) return new AZOAResult<IEnumerable<IHolon>> { IsError = true, Message = existing.Message };
 
         var peerIds = existing.Result.PeerHolonIds;
-        if (!peerIds.Any()) return new OASISResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>(), Message = "No peers." };
+        if (!peerIds.Any()) return new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>(), Message = "No peers." };
 
         var all = await _holonStore.QueryAsync(null, default);
         var peers = all.Result?.Where(h => peerIds.Contains(h.Id)).ToList() ?? new List<IHolon>();
 
-        return new OASISResult<IEnumerable<IHolon>> { Result = peers, Message = $"Found {peers.Count} peers." };
+        return new AZOAResult<IEnumerable<IHolon>> { Result = peers, Message = $"Found {peers.Count} peers." };
     }
 
-    public async Task<OASISResult<IEnumerable<IHolon>>> GetAncestorsAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetAncestorsAsync(Guid id, AZOARequest? request = null)
     {
         var ancestors = new List<IHolon>();
         var currentId = id;
@@ -173,10 +173,10 @@ public class HolonManager : IHolonManager
             currentId = parentId.Value;
         }
 
-        return new OASISResult<IEnumerable<IHolon>> { Result = ancestors, Message = $"Found {ancestors.Count} ancestors." };
+        return new AZOAResult<IEnumerable<IHolon>> { Result = ancestors, Message = $"Found {ancestors.Count} ancestors." };
     }
 
-    public async Task<OASISResult<IEnumerable<IHolon>>> GetDescendantsAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetDescendantsAsync(Guid id, AZOARequest? request = null)
     {
         var descendants = new List<IHolon>();
         var queue = new Queue<Guid>();
@@ -199,20 +199,20 @@ public class HolonManager : IHolonManager
             }
         }
 
-        return new OASISResult<IEnumerable<IHolon>> { Result = descendants, Message = $"Found {descendants.Count} descendants." };
+        return new AZOAResult<IEnumerable<IHolon>> { Result = descendants, Message = $"Found {descendants.Count} descendants." };
     }
 
     // ═══════════════════════════════════════════════════════════════════
     // HOLONIC FUNCTIONALITY
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<OASISResult<int>> PropagateAsync(Guid id, HolonPropagateRequest request, Guid? avatarId = null, OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<int>> PropagateAsync(Guid id, HolonPropagateRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null)
     {
         var rootResult = await _holonStore.GetByIdAsync(id, default);
         if (rootResult.IsError || rootResult.Result == null)
-            return new OASISResult<int> { IsError = true, Message = rootResult.Message ?? "Holon not found." };
+            return new AZOAResult<int> { IsError = true, Message = rootResult.Message ?? "Holon not found." };
         if (avatarId.HasValue && !IsOwnedBy(rootResult.Result, avatarId.Value))
-            return new OASISResult<int> { IsError = true, Message = "Holon is owned by a different avatar." };
+            return new AZOAResult<int> { IsError = true, Message = "Holon is owned by a different avatar." };
 
         var count = 0;
         var queue = new Queue<Guid>();
@@ -259,14 +259,14 @@ public class HolonManager : IHolonManager
             }
         }
 
-        return new OASISResult<int> { Result = count, Message = $"Propagated to {count} holons." };
+        return new AZOAResult<int> { Result = count, Message = $"Propagated to {count} holons." };
     }
 
-    public async Task<OASISResult<HolonComposition>> ComposeAsync(Guid id, OASISRequest? request = null)
+    public async Task<AZOAResult<HolonComposition>> ComposeAsync(Guid id, AZOARequest? request = null)
     {
         var rootResult = await _holonStore.GetByIdAsync(id, default);
         if (rootResult.IsError || rootResult.Result == null)
-            return new OASISResult<HolonComposition> { IsError = true, Message = "Holon not found." };
+            return new AZOAResult<HolonComposition> { IsError = true, Message = "Holon not found." };
 
         var root = rootResult.Result;
         var allDescendants = new List<IHolon>();
@@ -315,14 +315,14 @@ public class HolonManager : IHolonManager
             LatestModified = allInSubtree.Max(h => h.ModifiedDate)
         };
 
-        return new OASISResult<HolonComposition> { Result = composition, Message = "Composition computed." };
+        return new AZOAResult<HolonComposition> { Result = composition, Message = "Composition computed." };
     }
 
-    public async Task<OASISResult<IHolon>> CloneAsync(Guid id, HolonCloneRequest request, Guid avatarId, OASISRequest? providerRequest = null)
+    public async Task<AZOAResult<IHolon>> CloneAsync(Guid id, HolonCloneRequest request, Guid avatarId, AZOARequest? providerRequest = null)
     {
         var originalResult = await _holonStore.GetByIdAsync(id, default);
         if (originalResult.IsError || originalResult.Result == null)
-            return new OASISResult<IHolon> { IsError = true, Message = "Holon not found." };
+            return new AZOAResult<IHolon> { IsError = true, Message = "Holon not found." };
 
         var original = (Holon)originalResult.Result;
         var idMap = new Dictionary<Guid, Guid>();
@@ -387,21 +387,21 @@ public class HolonManager : IHolonManager
             }
         }
 
-        return new OASISResult<IHolon> { Result = clone, Message = "Holon cloned." };
+        return new AZOAResult<IHolon> { Result = clone, Message = "Holon cloned." };
     }
 
-    public async Task<OASISResult<bool>> MoveSubtreeAsync(Guid id, Guid newParentId, Guid? avatarId = null, OASISRequest? request = null)
+    public async Task<AZOAResult<bool>> MoveSubtreeAsync(Guid id, Guid newParentId, Guid? avatarId = null, AZOARequest? request = null)
     {
         // Prevent moving a holon under its own descendant (would create a cycle)
         var descendantsResult = await GetDescendantsAsync(id, request);
         if (descendantsResult.Result?.Any(d => d.Id == newParentId) == true)
-            return new OASISResult<bool> { IsError = true, Message = "Cannot move a holon under its own descendant." };
+            return new AZOAResult<bool> { IsError = true, Message = "Cannot move a holon under its own descendant." };
 
         var holonResult = await _holonStore.GetByIdAsync(id, default);
         if (holonResult.IsError || holonResult.Result == null)
-            return new OASISResult<bool> { IsError = true, Message = "Holon not found." };
+            return new AZOAResult<bool> { IsError = true, Message = "Holon not found." };
         if (avatarId.HasValue && !IsOwnedBy(holonResult.Result, avatarId.Value))
-            return new OASISResult<bool> { IsError = true, Message = "Holon is owned by a different avatar." };
+            return new AZOAResult<bool> { IsError = true, Message = "Holon is owned by a different avatar." };
 
         var holon = (Holon)holonResult.Result;
         holon.ParentHolonId = newParentId;
@@ -409,8 +409,8 @@ public class HolonManager : IHolonManager
 
         var saveResult = await _holonStore.UpsertAsync(holon, default);
         if (saveResult.IsError)
-            return new OASISResult<bool> { IsError = true, Message = saveResult.Message };
+            return new AZOAResult<bool> { IsError = true, Message = saveResult.Message };
 
-        return new OASISResult<bool> { Result = true, Message = "Subtree moved." };
+        return new AZOAResult<bool> { Result = true, Message = "Subtree moved." };
     }
 }

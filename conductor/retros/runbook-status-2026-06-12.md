@@ -20,9 +20,9 @@
   - `docker-compose.dev.yml` — SurrealDB + WebAPI + Frontend with
     healthcheck-gated dependency order. WebAPI container's
     `docker-entrypoint.sh` waits for SurrealDB to be reachable then runs
-    `oasis-surreal up` (apply every committed schema + every Migrations/
+    `azoa-surreal up` (apply every committed schema + every Migrations/
     file) before launching the host. Schema CLI is now shipped in the
-    same image alongside `OASIS.WebAPI.dll`.
+    same image alongside `AZOA.WebAPI.dll`.
   - `dev-up.sh` + `dev-up.ps1` — root-level orchestrators that
     auto-detect docker compose v2, docker-compose v1, podman-compose, or
     `podman compose` and bring the stack up. `--logs` tails combined
@@ -50,13 +50,13 @@
   at `127.0.0.1:8000`, `/health` returns 200 with `storage-db: Healthy`,
   swagger.json serves at /swagger/v1/swagger.json.
 - **`HEAD-1`** (2026-06-05 PM) — **Migration `up` CLI + live integration
-  test.** New `oasis-surreal up` subcommand applies `Generated/Schemas/`
+  test.** New `azoa-surreal up` subcommand applies `Generated/Schemas/`
   then `Migrations/` (lexical order in each, both funnel through the
   `schema_migration` ledger). The runner now bootstraps the configured
   namespace + database on first apply (`DEFINE NAMESPACE IF NOT EXISTS` +
   `DEFINE DATABASE IF NOT EXISTS`) so a fresh SurrealDB server needs no
   out-of-band setup. New `MigrationRunnerLiveTests` integration test (in
-  `Oasis.SurrealDb.Schema.Tests`, tagged `Category=Live`) applies all 26
+  `Azoa.SurrealDb.Schema.Tests`, tagged `Category=Live`) applies all 26
   schemas to a live SurrealDB at `localhost:8000` then re-runs to prove
   idempotency. The live test caught **5 real SurrealDB syntax errors in
   the emitter** that the byte-equivalence tests missed:
@@ -89,11 +89,11 @@
 - **`HEAD-1`** (2026-06-03) — **C#-first SurrealDB authoring lands
   end-to-end.** 24 attributed POCOs in `Persistence/SurrealDb/Models/`
   replace the entire Mermaid → POCO source-gen path. New
-  `OasisSurrealDbOptions` (Connection + Generation sections) consolidates
+  `AzoaSurrealDbOptions` (Connection + Generation sections) consolidates
   connection + generator-output configuration. Schema/flowchart/DBML
   artifacts emit to `Persistence/SurrealDb/Generated/`. `MermaidParser`,
   `MermaidSchemaModel`, `MermaidParseException`, `AggregateEmitter`, the
-  entire `Oasis.SurrealDb.SourceGen` package, and the 24 `.mermaid` source
+  entire `Azoa.SurrealDb.SourceGen` package, and the 24 `.mermaid` source
   files are deleted. Byte-equivalence test
   (`AttributePocoByteEquivalenceTests`) discovers every
   `[SurrealTable]`-decorated POCO at runtime and asserts byte-identical
@@ -144,7 +144,7 @@ ignored in commits). Nothing else in flight.
 in this session before settling. The Mermaid-portfolio direction
 (multi-diagram authoring across `schema/*.mermaid`) was the right
 *response* to the original Phase C scope but solved the wrong layer. The
-user steer that resolved it: ".NET-first, OASIS-internal, no
+user steer that resolved it: ".NET-first, AZOA-internal, no
 public-toolkit framing, source of truth = decorated C# POCOs."
 
 Short version: schema source = **decorated C# POCOs in this repo**.
@@ -157,7 +157,7 @@ runbook. See
 `conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md` (filename
 retained for git history; contents now describe the C#-first model).
 
-The pivot is OASIS-internal in scope. The `surrealql-toolkit` umbrella + 4
+The pivot is AZOA-internal in scope. The `surrealql-toolkit` umbrella + 4
 sibling tracks (drift, db-pull, studio, packaging) are stale-but-in-tree
 pending a clean-up decision next session; the `data-backfill-migrations`
 track stays valid (F6 still has to happen).
@@ -186,12 +186,12 @@ byte-equivalent `.surql` output before mechanically migrating the rest.
 **What shipped:** the visualization restructure completed via the C#-first
 pivot (2026-06-03). The old Mermaid-source pipeline (`source/*.mermaid` →
 Roslyn source-gen → POCOs) was inverted: the 24 hand-authored `.mermaid`
-source files and the `Oasis.SurrealDb.SourceGen` package were deleted, and
+source files and the `Azoa.SurrealDb.SourceGen` package were deleted, and
 the schema source of truth became decorated C# POCOs in
 `Persistence/SurrealDb/Models/`.
 
 Flowchart generation now runs the other way — the `AttributeSchemaScanner`
-in `Oasis.SurrealDb.Schema` reads the POCO attribute surface and emits
+in `Azoa.SurrealDb.Schema` reads the POCO attribute surface and emits
 `graph LR` diagrams via `MermaidFlowchartEmitter`. The as-built outputs
 live at:
 
@@ -200,7 +200,7 @@ live at:
 - `Persistence/SurrealDb/Generated/Schemas/` — the `.surql` DDL files
   emitted from the same scan
 - `Persistence/SurrealDb/Generated/Dbml/` — `schema.dbml` (opt-in via
-  `OasisSurrealDbOptions.Generation.EmitDbml`)
+  `AzoaSurrealDbOptions.Generation.EmitDbml`)
 
 ### 4.1 Slice membership (as generated)
 
@@ -220,8 +220,8 @@ master diagram.
 ### 4.2 Regenerating the flowcharts and schemas
 
 ```
-oasis-surreal generate-from-assembly bin/Debug/net8.0/OASIS.WebAPI.dll
-oasis-surreal flowcharts-from-assembly bin/Debug/net8.0/OASIS.WebAPI.dll
+azoa-surreal generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
+azoa-surreal flowcharts-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
 ```
 
 The first command scans every `[SurrealTable]`-decorated POCO, reruns
@@ -235,15 +235,15 @@ suite catches schema drift in CI without needing a live database.
 
 | Emitter | File |
 |---|---|
-| Schema scanner | `packages/Oasis.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs` |
-| `.surql` emitter | `packages/Oasis.SurrealDb.Schema/Generator/SurqlEmitter.cs` |
-| Flowchart emitter | `packages/Oasis.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs` |
-| CLI entry point | `packages/Oasis.SurrealDb.Schema/Program.cs` (`generate-from-assembly` subcommand) |
+| Schema scanner | `packages/Azoa.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs` |
+| `.surql` emitter | `packages/Azoa.SurrealDb.Schema/Generator/SurqlEmitter.cs` |
+| Flowchart emitter | `packages/Azoa.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs` |
+| CLI entry point | `packages/Azoa.SurrealDb.Schema/Program.cs` (`generate-from-assembly` subcommand) |
 
 ### 4.4 Historical note
 
 Phases B and C as originally drafted (slice annotations on `.mermaid` files,
-`AggregateEmitter`, `oasis-surreal aggregates` subcommand, Roslyn
+`AggregateEmitter`, `azoa-surreal aggregates` subcommand, Roslyn
 `IIncrementalGenerator` updates) were superseded by the C#-first pivot
 before Phase C code was written. The old approach is preserved in git
 history at `137992c` (Phase B shipped) and the pivot rationale at commit
@@ -258,7 +258,7 @@ original goal of showing relationship arrows across the full domain model.
         ┌─────────────────────────────────────────────┐
         │   Phase B (HERE) — Mermaid aggregate slices  │
         │   @surreal.slice + relation lines on 24       │
-        │   source files. `oasis-surreal aggregates`    │
+        │   source files. `azoa-surreal aggregates`    │
         │   emits 6 docs/aggregates/*.mermaid + master  │
         │   docs/domain.generated.mermaid. Generator    │
         │   POCO/.surql output unchanged.               │
@@ -335,7 +335,7 @@ original goal of showing relationship arrows across the full domain model.
 | Phase | Work | Effort | Status |
 |---|---|---|---|
 | A. Runbook + tracks consolidation | RUNBOOK.md, tracks.md prune | 1-2h | ✓ Shipped 2026-05-23 (`8f1eee1`) |
-| B. Mermaid aggregate slices (visualization-only) | Annotate 24 source `.mermaid` files with `@surreal.slice` + Mermaid relationship lines. Add `oasis-surreal aggregates` subcommand that emits 6 `docs/aggregates/*.mermaid` + `docs/domain.generated.mermaid`. Generator POCO/.surql output unchanged. | 2-3h | ✓ Shipped 2026-05-27 (`137992c`) |
+| B. Mermaid aggregate slices (visualization-only) | Annotate 24 source `.mermaid` files with `@surreal.slice` + Mermaid relationship lines. Add `azoa-surreal aggregates` subcommand that emits 6 `docs/aggregates/*.mermaid` + `docs/domain.generated.mermaid`. Generator POCO/.surql output unchanged. | 2-3h | ✓ Shipped 2026-05-27 (`137992c`) |
 | C. C#-first schema authoring (redesigned again) | Invert the Roslyn source-gen: schema source = decorated C# POCOs (attributes for shape, partial classes for validation). Generator emits `.surql` + `docs/schema.dbml` + state-machine code + guardrail runbook. Mermaid sources retire once byte-equivalent `.surql` is proven on the prototype slice. | TBD — sized after prototype slice | **NEXT (prototype `wallet_nft` slice first)** |
 | D. Wave-2 commit + integration | Commit the 3 SurrealQuest stores + tests + `230_quest_graph_edges.*`. | 1h | ✓ Shipped 2026-05-27 (`24a7403`) |
 | E. Quest aggregate cutover to generated POCOs | Partial-class extensions + delete hand-written + rewire wave-2 stores + 34 handlers + QuestManager + tests. Aliases vanish. | 7-9h | **READY 2026-06-11** — runtime stable post-quest-api; partial-class swap is now a focused refactor (no longer gating Phases F/G) |
@@ -373,8 +373,8 @@ original goal of showing relationship arrows across the full domain model.
 | Question | Document |
 |---|---|
 | "What's the right C# pattern for a new SurrealDB entity?" | `Persistence/SurrealDb/CONVENTION.md` |
-| "How do I add a new field to an existing entity?" | Edit the relevant POCO in `Persistence/SurrealDb/Models/`, then run `oasis-surreal generate-from-assembly` to regenerate `Persistence/SurrealDb/Generated/Schemas/` |
-| "Where is the schema package / emitters?" | `packages/Oasis.SurrealDb.Schema/` — `Generator/AttributeSchemaScanner.cs`, `Generator/SurqlEmitter.cs`, `Generator/MermaidFlowchartEmitter.cs` |
+| "How do I add a new field to an existing entity?" | Edit the relevant POCO in `Persistence/SurrealDb/Models/`, then run `azoa-surreal generate-from-assembly` to regenerate `Persistence/SurrealDb/Generated/Schemas/` |
+| "Where is the schema package / emitters?" | `packages/Azoa.SurrealDb.Schema/` — `Generator/AttributeSchemaScanner.cs`, `Generator/SurqlEmitter.cs`, `Generator/MermaidFlowchartEmitter.cs` |
 | "What does the API surface look like?" | `PROVIDERS.md` (root) |
 | "What invariants does the bridge enforce?" | `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md` |
 | "What's the quest temporal model?" | `conductor/tracks/quest-temporal-fork-model/ADR.md` |

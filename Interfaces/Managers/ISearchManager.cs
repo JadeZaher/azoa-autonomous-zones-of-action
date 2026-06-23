@@ -1,10 +1,10 @@
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 public interface ISearchManager
 {
-    Task<OASISResult<SearchResult>> SearchAsync(SearchRequest request, OASISRequest? providerRequest = null);
-    Task<OASISResult<List<SearchFacet>>> GetFacetsAsync(OASISRequest? providerRequest = null);
+    Task<AZOAResult<SearchResult>> SearchAsync(SearchRequest request, AZOARequest? providerRequest = null);
+    Task<AZOAResult<List<SearchFacet>>> GetFacetsAsync(AZOARequest? providerRequest = null);
 }

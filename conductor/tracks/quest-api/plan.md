@@ -8,10 +8,10 @@
 4. [ ] Create `Models/Quest/DTOs/QuestDependencyCreateModel.cs`
 5. [ ] Create `Models/Quest/DTOs/QuestExecutionModels.cs` — ExecutionResult, DependencyCheckResult, QuestExecutionState
 6. [ ] Create `Models/Quest/DTOs/QuestTemplateModels.cs` — template CRUD and instantiation DTOs
-7. [ ] Create `Interfaces/Managers/IQuestManager.cs` — returns `OASISResult<T>` matching existing manager pattern
+7. [ ] Create `Interfaces/Managers/IQuestManager.cs` — returns `AZOAResult<T>` matching existing manager pattern
 8. [ ] Create `Managers/QuestManager.cs` — quest CRUD with avatar scoping, node/edge/dependency management
 9. [ ] Implement `ActivateAsync` — DAG validation + dependency check → Draft → Active
-10. [ ] Implement `ExecuteNodeAsync` — node dispatch: deserialize Config to correct request model, call matching manager method, serialize OASISResult to Output
+10. [ ] Implement `ExecuteNodeAsync` — node dispatch: deserialize Config to correct request model, call matching manager method, serialize AZOAResult to Output
 11. [ ] Implement `ExecuteNextAsync` — topological order, find next ready node(s), dispatch
 12. [ ] Implement `InstantiateFromTemplateAsync` — parameterized quest creation
 13. [ ] Implement `CreateNodeTemplateAsync` / `CreateQuestTemplateAsync`

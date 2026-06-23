@@ -4,8 +4,8 @@
 Validate the lightweight API with integration tests covering the full request/response cycle and unit tests for `ProviderContext` logic.
 
 ## Test Projects
-- `OASIS.WebAPI.Tests` — xUnit
-- `OASIS.WebAPI.IntegrationTests` — xUnit + `WebApplicationFactory`
+- `AZOA.WebAPI.Tests` — xUnit
+- `AZOA.WebAPI.IntegrationTests` — xUnit + `WebApplicationFactory`
 
 ## Coverage Targets
 - Manager / Provider logic: > 70%
@@ -18,7 +18,7 @@ Validate the lightweight API with integration tests covering the full request/re
 
 ## Unit Tests
 - `ProviderContext` activation logic
-- `OASISResult<T>` serialization edge cases
+- `AZOAResult<T>` serialization edge cases
 
 ## Exclusions
 - No Karma tests

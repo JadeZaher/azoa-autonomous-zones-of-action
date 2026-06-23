@@ -69,7 +69,7 @@ hard-deleted. `Managers/QuestManager.cs` (B2's track territory, tasks
 10–13 of plan.md) still reads and writes them during this window. The
 fields will be physically removed in B2's pass once the
 `(runId, nodeId)`-keyed execution path replaces every consumer. The
-`<NoWarn>CS0618</NoWarn>` in `OASIS.WebAPI.csproj` is scoped to this
+`<NoWarn>CS0618</NoWarn>` in `AZOA.WebAPI.csproj` is scoped to this
 window and disappears in the same commit B2 deletes the fields.
 
 `Quest.CreatedDate` **stays** — it is the definition's birthdate, not a

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-// OASIS-side KYC DTOs. Ownership is keyed to Avatar (Guid) throughout — the
+// AZOA-side KYC DTOs. Ownership is keyed to Avatar (Guid) throughout — the
 // authenticated avatar is authoritative; any AvatarId on a request body is
 // ignored by the manager (IDOR defence-in-depth, the STARODK precedent).
 
@@ -8,7 +8,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace OASIS.WebAPI.Models.Kyc;
+namespace AZOA.WebAPI.Models.Kyc;
 
 /// <summary>
 /// A single document supplied as part of a KYC submission request. Validated

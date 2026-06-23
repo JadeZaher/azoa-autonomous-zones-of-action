@@ -30,7 +30,7 @@ export default function AuthLayout({
                 <path d="M2 12l10 5 10-5" />
               </svg>
             </div>
-            <span className="text-xl font-bold tracking-tight text-white">OASIS</span>
+            <span className="text-xl font-bold tracking-tight text-white">AZOA</span>
           </div>
         </div>
 
@@ -42,7 +42,7 @@ export default function AuthLayout({
               chain. One avatar, infinite possibilities.&rdquo;
             </p>
             <footer className="text-sm text-white/50">
-              — The OASIS Protocol
+              — The AZOA Protocol
             </footer>
           </blockquote>
         </div>

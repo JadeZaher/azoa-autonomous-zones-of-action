@@ -2,10 +2,10 @@
 
 ## Goal
 
-Make OASIS multi-tenant so that an external application — **ArdaNova** first, any
+Make AZOA multi-tenant so that an external application — **ArdaNova** first, any
 future app after — can act as a **tenant** that provisions and manages a fleet of
-OASIS Avatars on behalf of *its own* users. Each ArdaNova user maps 1:1 to an
-OASIS Avatar; ArdaNova authenticates to OASIS as a tenant principal via an API
+AZOA Avatars on behalf of *its own* users. Each ArdaNova user maps 1:1 to an
+AZOA Avatar; ArdaNova authenticates to AZOA as a tenant principal via an API
 key, never as the end user. The tenant can create child avatars, look them up by
 its own user id, and act on each child's wallets/NFTs — but **only** its own
 children, never another tenant's.
@@ -76,7 +76,7 @@ the *minimal* one that reuses the existing ApiKey + Avatar infrastructure:
    tenant-managed avatar" (every avatar that exists today).
 3. **External mapping = `ExternalUserId` (+ `ExternalRef`) on Avatar.** The
    tenant's *own* user id for this child, stored so ArdaNova can resolve
-   `ArdaNova userId → OASIS AvatarId` by querying its own identifier. Unique
+   `ArdaNova userId → AZOA AvatarId` by querying its own identifier. Unique
    **per tenant**, not globally (two tenants may each have a user `"42"`).
 4. **Tenant-scoped surface = a new `TenantController`** under `api/tenant`,
    authorized by the `tenant:provision` scope, exposing provision / list /
@@ -179,7 +179,7 @@ change to the scope storage, only a defined vocabulary and an enforcement point.
 ### 5. Onboarding runbook (prose doc)
 
 - [ ] Author `conductor/tracks/tenant-onboarding/ONBOARDING.md` — "How ArdaNova
-      becomes an OASIS tenant", a step-by-step prose runbook:
+      becomes an AZOA tenant", a step-by-step prose runbook:
   1. Register the tenant avatar (`POST /api/avatar/register`).
   2. Log in, mint a tenant API key with `Scopes="tenant:provision,wallet:manage,nft:mint"`
      via `POST /api/apikey` (`ApiKeyController.cs:33`).
@@ -188,7 +188,7 @@ change to the scope storage, only a defined vocabulary and an enforcement point.
   4. To act for a user: `POST /api/tenant/avatars/{id}/credential`, then call
      wallet/NFT endpoints with the child credential.
   5. Lookup path: `GET /api/tenant/avatars/{externalUserId}` resolves
-     `ArdaNova userId → OASIS AvatarId` without storing the mapping client-side.
+     `ArdaNova userId → AZOA AvatarId` without storing the mapping client-side.
 
 ## Acceptance criteria
 

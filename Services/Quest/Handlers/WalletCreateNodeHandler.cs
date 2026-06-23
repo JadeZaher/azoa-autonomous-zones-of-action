@@ -1,11 +1,11 @@
 using System.Text.Json;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Services.Quest.Handlers;
+namespace AZOA.WebAPI.Services.Quest.Handlers;
 
 /// <summary>Handles <see cref="QuestNodeType.WalletCreate"/> — relocated verbatim from QuestManager.</summary>
 public sealed class WalletCreateNodeHandler : IQuestNodeHandler

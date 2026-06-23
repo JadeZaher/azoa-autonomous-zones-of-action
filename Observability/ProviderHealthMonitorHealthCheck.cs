@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
 
-namespace OASIS.WebAPI.Observability;
+namespace AZOA.WebAPI.Observability;
 
 /// <summary>
 /// Health check derived from IProviderHealthMonitor scores.

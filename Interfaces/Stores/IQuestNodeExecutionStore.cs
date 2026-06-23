@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Stores;
+namespace AZOA.WebAPI.Interfaces.Stores;
 
 /// <summary>
 /// Persistence boundary for <see cref="QuestNodeExecution"/> — the per-(run,
@@ -17,10 +17,10 @@ namespace OASIS.WebAPI.Interfaces.Stores;
 public interface IQuestNodeExecutionStore
 {
     /// <summary>Inserts a new per-(run, node) execution row.</summary>
-    Task<OASISResult<QuestNodeExecution>> CreateAsync(QuestNodeExecution execution, CancellationToken ct = default);
+    Task<AZOAResult<QuestNodeExecution>> CreateAsync(QuestNodeExecution execution, CancellationToken ct = default);
 
     /// <summary>Loads an execution by its own id.</summary>
-    Task<OASISResult<QuestNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<AZOAResult<QuestNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>
     /// Updates an existing execution (state transition, output/error capture, ended_at).
@@ -29,7 +29,7 @@ public interface IQuestNodeExecutionStore
     /// When <paramref name="expectedState"/> is non-null the update only
     /// succeeds if the currently-stored execution's
     /// <see cref="QuestNodeExecution.State"/> equals the supplied value —
-    /// otherwise an error <see cref="OASISResult{T}"/> is returned describing
+    /// otherwise an error <see cref="AZOAResult{T}"/> is returned describing
     /// the drift. This is the G2 state-machine guard used by
     /// <c>QuestManager</c>'s execute and fork-cancel paths to prevent a
     /// late-arriving in-flight transition from overwriting a concurrent
@@ -42,19 +42,19 @@ public interface IQuestNodeExecutionStore
     /// genuinely don't care about the prior state.
     /// </para>
     /// </summary>
-    Task<OASISResult<QuestNodeExecution>> UpdateAsync(
+    Task<AZOAResult<QuestNodeExecution>> UpdateAsync(
         QuestNodeExecution execution,
         QuestNodeState? expectedState = null,
         CancellationToken ct = default);
 
     /// <summary>All executions for a single run, ordered by <see cref="QuestNodeExecution.StartedAt"/>.</summary>
-    Task<OASISResult<IEnumerable<QuestNodeExecution>>> GetByRunIdAsync(Guid runId, CancellationToken ct = default);
+    Task<AZOAResult<IEnumerable<QuestNodeExecution>>> GetByRunIdAsync(Guid runId, CancellationToken ct = default);
 
     /// <summary>
     /// Exact-match lookup by the natural key <c>(runId, nodeId)</c>.
     /// <c>IsError</c> when no row exists.
     /// </summary>
-    Task<OASISResult<QuestNodeExecution>> GetByRunAndNodeAsync(Guid runId, Guid nodeId, CancellationToken ct = default);
+    Task<AZOAResult<QuestNodeExecution>> GetByRunAndNodeAsync(Guid runId, Guid nodeId, CancellationToken ct = default);
 
     /// <summary>
     /// G2 claim primitive: conditional update that only succeeds when current
@@ -69,5 +69,5 @@ public interface IQuestNodeExecutionStore
     /// race — another worker already claimed it). <c>IsError == true</c>
     /// when the row does not exist at all.
     /// </returns>
-    Task<OASISResult<QuestNodeExecution?>> TryClaimPendingAsync(Guid runId, Guid nodeId, CancellationToken ct = default);
+    Task<AZOAResult<QuestNodeExecution?>> TryClaimPendingAsync(Guid runId, Guid nodeId, CancellationToken ct = default);
 }

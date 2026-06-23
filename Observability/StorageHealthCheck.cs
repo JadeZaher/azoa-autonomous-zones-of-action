@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Oasis.SurrealDb.Client.Query;
+using Azoa.SurrealDb.Client.Query;
 
-namespace OASIS.WebAPI.Observability;
+namespace AZOA.WebAPI.Observability;
 
 /// <summary>
 /// Health check that verifies the primary storage backend (SurrealDB) is

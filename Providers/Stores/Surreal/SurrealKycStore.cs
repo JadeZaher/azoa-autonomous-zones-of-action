@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using Oasis.SurrealDb.Client;
-using Oasis.SurrealDb.Client.Query;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models.Kyc;
-using OASIS.WebAPI.Models.Responses;
-using OASIS.WebAPI.Persistence.SurrealDb.Models;
+using Azoa.SurrealDb.Client;
+using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Kyc;
+using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
-namespace OASIS.WebAPI.Providers.Stores.Surreal;
+namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="IKycStore"/>.
@@ -35,13 +35,13 @@ public sealed class SurrealKycStore : IKycStore
 
     // ── Submissions ─────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<KycSubmission>> GetSubmissionByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmission>> GetSubmissionByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery.SelectById(KycSubmission.SchemaNameConst, ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
-            return new OASISResult<KycSubmission>
+            return new AZOAResult<KycSubmission>
             {
                 Message = row == null ? "No KYC submission found." : "Success",
                 Result  = row == null ? null : FromStorage(row)
@@ -49,11 +49,11 @@ public sealed class SurrealKycStore : IKycStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<KycSubmission>().CaptureException(ex, $"SurrealKycStore.GetSubmissionByIdAsync failed: {ex.Message}");
+            return new AZOAResult<KycSubmission>().CaptureException(ex, $"SurrealKycStore.GetSubmissionByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<KycSubmission>> GetLatestSubmissionByAvatarAsync(Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmission>> GetLatestSubmissionByAvatarAsync(Guid avatarId, CancellationToken ct = default)
     {
         try
         {
@@ -63,7 +63,7 @@ public sealed class SurrealKycStore : IKycStore
                 .WithParam("_avatar", SurrealLink.ToLink("avatar", ToSurrealId(avatarId)));
 
             var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
-            return new OASISResult<KycSubmission>
+            return new AZOAResult<KycSubmission>
             {
                 Message = row == null ? "No KYC submission found for avatar." : "Success",
                 Result  = row == null ? null : FromStorage(row)
@@ -71,11 +71,11 @@ public sealed class SurrealKycStore : IKycStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<KycSubmission>().CaptureException(ex, $"SurrealKycStore.GetLatestSubmissionByAvatarAsync failed: {ex.Message}");
+            return new AZOAResult<KycSubmission>().CaptureException(ex, $"SurrealKycStore.GetLatestSubmissionByAvatarAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<KycSubmission>> GetActiveSubmissionByAvatarAsync(Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmission>> GetActiveSubmissionByAvatarAsync(Guid avatarId, CancellationToken ct = default)
     {
         try
         {
@@ -86,7 +86,7 @@ public sealed class SurrealKycStore : IKycStore
                 .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
 
             var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
-            return new OASISResult<KycSubmission>
+            return new AZOAResult<KycSubmission>
             {
                 Message = row == null ? "No active KYC submission." : "Success",
                 Result  = row == null ? null : FromStorage(row)
@@ -94,11 +94,11 @@ public sealed class SurrealKycStore : IKycStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<KycSubmission>().CaptureException(ex, $"SurrealKycStore.GetActiveSubmissionByAvatarAsync failed: {ex.Message}");
+            return new AZOAResult<KycSubmission>().CaptureException(ex, $"SurrealKycStore.GetActiveSubmissionByAvatarAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<IEnumerable<KycSubmission>>> GetPendingAsync(CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<KycSubmission>>> GetPendingAsync(CancellationToken ct = default)
     {
         try
         {
@@ -108,7 +108,7 @@ public sealed class SurrealKycStore : IKycStore
                 .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
 
             var rows = await _executor.QueryAsync<KycSubmission>(q, ct);
-            return new OASISResult<IEnumerable<KycSubmission>>
+            return new AZOAResult<IEnumerable<KycSubmission>>
             {
                 Result  = rows.Select(FromStorage).ToList(),
                 Message = "Success"
@@ -116,11 +116,11 @@ public sealed class SurrealKycStore : IKycStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<KycSubmission>>().CaptureException(ex, $"SurrealKycStore.GetPendingAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<KycSubmission>>().CaptureException(ex, $"SurrealKycStore.GetPendingAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<KycSubmission>> UpsertSubmissionAsync(KycSubmission submission, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmission>> UpsertSubmissionAsync(KycSubmission submission, CancellationToken ct = default)
     {
         try
         {
@@ -137,17 +137,17 @@ public sealed class SurrealKycStore : IKycStore
             var saved  = resp.GetValues<KycSubmission>(0).FirstOrDefault();
             var result = saved is not null ? FromStorage(saved) : submission;
 
-            return new OASISResult<KycSubmission> { Result = result, Message = "Saved." };
+            return new AZOAResult<KycSubmission> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<KycSubmission>().CaptureException(ex, $"SurrealKycStore.UpsertSubmissionAsync failed: {ex.Message}");
+            return new AZOAResult<KycSubmission>().CaptureException(ex, $"SurrealKycStore.UpsertSubmissionAsync failed: {ex.Message}");
         }
     }
 
     // ── Documents ───────────────────────────────────────────────────────────
 
-    public async Task<OASISResult<IEnumerable<KycDocument>>> GetDocumentsBySubmissionAsync(Guid submissionId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<KycDocument>>> GetDocumentsBySubmissionAsync(Guid submissionId, CancellationToken ct = default)
     {
         try
         {
@@ -157,7 +157,7 @@ public sealed class SurrealKycStore : IKycStore
                 .WithParam("_submission", SurrealLink.ToLink(KycSubmission.SchemaNameConst, ToSurrealId(submissionId)));
 
             var rows = await _executor.QueryAsync<KycDocument>(q, ct);
-            return new OASISResult<IEnumerable<KycDocument>>
+            return new AZOAResult<IEnumerable<KycDocument>>
             {
                 Result  = rows.Select(FromStorage).ToList(),
                 Message = "Success"
@@ -165,11 +165,11 @@ public sealed class SurrealKycStore : IKycStore
         }
         catch (Exception ex)
         {
-            return new OASISResult<IEnumerable<KycDocument>>().CaptureException(ex, $"SurrealKycStore.GetDocumentsBySubmissionAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<KycDocument>>().CaptureException(ex, $"SurrealKycStore.GetDocumentsBySubmissionAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<OASISResult<bool>> AddDocumentsAsync(IEnumerable<KycDocument> documents, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> AddDocumentsAsync(IEnumerable<KycDocument> documents, CancellationToken ct = default)
     {
         try
         {
@@ -186,11 +186,11 @@ public sealed class SurrealKycStore : IKycStore
                 resp.EnsureAllOk();
             }
 
-            return new OASISResult<bool> { Result = true, Message = "Saved." };
+            return new AZOAResult<bool> { Result = true, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new OASISResult<bool>().CaptureException(ex, $"SurrealKycStore.AddDocumentsAsync failed: {ex.Message}");
+            return new AZOAResult<bool>().CaptureException(ex, $"SurrealKycStore.AddDocumentsAsync failed: {ex.Message}");
         }
     }
 

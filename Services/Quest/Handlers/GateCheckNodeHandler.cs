@@ -1,9 +1,9 @@
 using System.Text.Json;
-using OASIS.WebAPI.Interfaces.QuestExecution;
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Services.Quest.Predicates;
+using AZOA.WebAPI.Interfaces.QuestExecution;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Services.Quest.Predicates;
 
-namespace OASIS.WebAPI.Services.Quest.Handlers;
+namespace AZOA.WebAPI.Services.Quest.Handlers;
 
 /// <summary>
 /// Handles <see cref="QuestNodeType.GateCheck"/>. Evaluates a tenant-supplied,

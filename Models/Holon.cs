@@ -1,7 +1,7 @@
 using System.Text.Json;
-using OASIS.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces;
 
-namespace OASIS.WebAPI.Models;
+namespace AZOA.WebAPI.Models;
 
 public class Holon : IHolon, INft
 {

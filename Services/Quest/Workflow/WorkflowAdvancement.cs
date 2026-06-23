@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace OASIS.WebAPI.Services.Quest.Workflow;
+namespace AZOA.WebAPI.Services.Quest.Workflow;
 
 /// <summary>
 /// How a node hands off to its successor(s) once its work is done

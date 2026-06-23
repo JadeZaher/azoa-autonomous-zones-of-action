@@ -1,13 +1,13 @@
 using Microsoft.Extensions.Options;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Bridge;
-using OASIS.WebAPI.Models.Idempotency;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Bridge;
+using AZOA.WebAPI.Models.Idempotency;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Services.Reconciliation;
+namespace AZOA.WebAPI.Services.Reconciliation;
 
 /// <summary>
 /// Re-derives true bridge/operation status from on-chain confirmations.
@@ -15,11 +15,11 @@ namespace OASIS.WebAPI.Services.Reconciliation;
 /// <para><b>Chain-truth source.</b> The only confirmation-lookup capability on
 /// <see cref="IBlockchainProvider"/> is
 /// <c>GetTransactionStatusAsync(txHash, ct)</c> →
-/// <c>OASISResult&lt;Dictionary&lt;string,object&gt;&gt;</c>. The dictionary
+/// <c>AZOAResult&lt;Dictionary&lt;string,object&gt;&gt;</c>. The dictionary
 /// shape is provider-inconsistent (Algorand emits <c>confirmed</c>/
 /// <c>confirmedRound</c>; Solana emits <c>success</c>). There is NO provider
 /// method that distinguishes "definitively dropped/failed" from "not yet
-/// found": a not-found tx surfaces as <c>OASISResult.IsError == true</c> on
+/// found": a not-found tx surfaces as <c>AZOAResult.IsError == true</c> on
 /// both providers, which is ambiguous (mempool vs. dropped vs. never
 /// broadcast). This is the documented residual gap — see
 /// <see cref="ClassifyTx"/>. We therefore only ever:
@@ -676,14 +676,14 @@ public sealed class ReconciliationService : IReconciliationService
     /// <para><b>RESIDUAL GAP (documented, not invented):</b> there is no
     /// provider capability that cleanly distinguishes "dropped/failed" from
     /// "not yet observed". A not-found tx surfaces as
-    /// <c>OASISResult.IsError == true</c> on both Algorand and Solana, so it is
+    /// <c>AZOAResult.IsError == true</c> on both Algorand and Solana, so it is
     /// treated as <see cref="ChainVerdict.Unknown"/> (never auto-failed). A
     /// dedicated provider method (e.g. <c>GetTransactionConfirmationAsync</c>
     /// returning an explicit Confirmed/Dropped/Pending tri-state) would let
     /// reconciliation also auto-fail genuinely-dropped txs; until then those
     /// remain operator-resolved via the hard-stuck flag.</para>
     /// </summary>
-    private static ChainVerdict ClassifyTx(OASISResult<Dictionary<string, object>> result)
+    private static ChainVerdict ClassifyTx(AZOAResult<Dictionary<string, object>> result)
     {
         // IsError ⇒ tx not found / RPC error / not-yet-mined. Ambiguous by
         // construction. NEVER treat as failure.

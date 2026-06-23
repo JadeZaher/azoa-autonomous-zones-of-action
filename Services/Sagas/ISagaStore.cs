@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models.Sagas;
+using AZOA.WebAPI.Models.Sagas;
 
-namespace OASIS.WebAPI.Sagas;
+namespace AZOA.WebAPI.Sagas;
 
 /// <summary>
 /// The durable persistence seam for the saga/outbox. Storage specifics

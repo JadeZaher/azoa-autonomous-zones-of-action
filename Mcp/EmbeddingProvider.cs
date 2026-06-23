@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Mcp;
+namespace AZOA.WebAPI.Mcp;
 
 /// <summary>
 /// Abstraction over an embedding model.

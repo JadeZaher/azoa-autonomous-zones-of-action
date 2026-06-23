@@ -334,7 +334,7 @@ dotnet ef database update
 Run the integration tests to verify the service functionality:
 
 ```bash
-dotnet test OASIS.WebAPI.IntegrationTests/Controllers/AvatarNFTControllerIntegrationTests.cs
+dotnet test AZOA.WebAPI.IntegrationTests/Controllers/AvatarNFTControllerIntegrationTests.cs
 ```
 
 ## Security Considerations
@@ -371,7 +371,7 @@ Enable debug logging for detailed troubleshooting:
 {
   "Logging": {
     "LogLevel": {
-      "OASIS.WebAPI.Managers.AvatarNFTService": "Debug"
+      "AZOA.WebAPI.Managers.AvatarNFTService": "Debug"
     }
   }
 }

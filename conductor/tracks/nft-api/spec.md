@@ -4,7 +4,7 @@
 Provide a semantic NFT layer on top of the existing Holon infrastructure, enabling mint, transfer, burn, and metadata operations without duplicating the Holon data model.
 
 ## Motivation
-The OASIS reference ecosystem treats NFTs as first-class assets. Our `IHolon` already carries `AssetType`, `TokenId`, `ChainId`, `Metadata`, and `AvatarId` — the raw data shape of an NFT. However, consumers need NFT-specific semantics (ERC-721/ERC-1155 style metadata, ownership transfers, provenance) rather than generic Holon CRUD.
+The AZOA reference ecosystem treats NFTs as first-class assets. Our `IHolon` already carries `AssetType`, `TokenId`, `ChainId`, `Metadata`, and `AvatarId` — the raw data shape of an NFT. However, consumers need NFT-specific semantics (ERC-721/ERC-1155 style metadata, ownership transfers, provenance) rather than generic Holon CRUD.
 
 ## Design Principle: **Composition over Duplication**
 `INFT` is a **view interface** over `IHolon`. The `NftManager` internally delegates to `IHolonManager` and `IBlockchainOperationManager`, ensuring:
@@ -49,20 +49,20 @@ public interface INft : IHolon
 ```csharp
 public interface INftManager
 {
-    Task<OASISResult<INft>> GetAsync(Guid id, OASISRequest? request = null);
-    Task<OASISResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, OASISRequest? request = null);
+    Task<AZOAResult<INft>> GetAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, AZOARequest? request = null);
 
     // Creates a Holon with AssetType = "NFT", triggers blockchain mint operation
-    Task<OASISResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid avatarId, OASISRequest? providerRequest = null);
+    Task<AZOAResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid avatarId, AZOARequest? providerRequest = null);
 
     // Updates Holon AvatarId (ownership), triggers blockchain transfer operation
-    Task<OASISResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid avatarId, OASISRequest? providerRequest = null);
+    Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid avatarId, AZOARequest? providerRequest = null);
 
     // Sets Holon IsActive = false, triggers blockchain burn operation
-    Task<OASISResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid avatarId, OASISRequest? providerRequest = null);
+    Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid avatarId, AZOARequest? providerRequest = null);
 
     // Returns standardized metadata object (ERC-721 compatible JSON shape)
-    Task<OASISResult<NftMetadata>> GetMetadataAsync(Guid id, OASISRequest? request = null);
+    Task<AZOAResult<NftMetadata>> GetMetadataAsync(Guid id, AZOARequest? request = null);
 }
 ```
 

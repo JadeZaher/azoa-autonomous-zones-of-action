@@ -4,9 +4,9 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
-using OASIS.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Interfaces.Stores;
 
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
@@ -102,6 +102,6 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
     public static string GenerateRawKey()
     {
         var bytes = RandomNumberGenerator.GetBytes(32);
-        return $"oasis_{Convert.ToHexString(bytes).ToLowerInvariant()}";
+        return $"azoa_{Convert.ToHexString(bytes).ToLowerInvariant()}";
     }
 }

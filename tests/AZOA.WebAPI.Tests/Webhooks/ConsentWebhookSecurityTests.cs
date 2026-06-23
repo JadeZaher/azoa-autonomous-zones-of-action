@@ -27,7 +27,7 @@ public class ConsentWebhookSecurityTests
     [Theory]
     [InlineData("8.8.8.8")]
     [InlineData("1.1.1.1")]
-    [InlineData("203.0.113.10")]
+    [InlineData("93.184.216.34")] // example.com — a genuinely routable public address
     public void IsBlockedIp_AllowsPublicRanges(string ip)
         => WebhookSsrfGuard.IsBlockedIp(IPAddress.Parse(ip)).Should().BeFalse();
 
@@ -63,7 +63,7 @@ public class ConsentWebhookSecurityTests
     public void IsAllowed_AllowsHttpsResolvingToPublic()
     {
         var guard = new WebhookSsrfGuard();
-        guard.UseResolver(_ => new[] { IPAddress.Parse("203.0.113.10") });
+        guard.UseResolver(_ => new[] { IPAddress.Parse("93.184.216.34") });
         guard.IsAllowed("https://tenant.example.com/hook", out _).Should().BeTrue();
     }
 

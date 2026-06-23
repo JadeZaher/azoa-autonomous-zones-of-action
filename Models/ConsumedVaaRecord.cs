@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace OASIS.WebAPI.Models;
+namespace AZOA.WebAPI.Models;
 
 /// <summary>
 /// Append-only ledger of Wormhole VAAs that have already been consumed

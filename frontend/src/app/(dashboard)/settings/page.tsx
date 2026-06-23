@@ -6,11 +6,11 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { useOasisAuth } from '@/lib/oasis-auth'
-import { oasis } from '@/lib/oasis'
+import { useAzoaAuth } from '@/lib/azoa-auth'
+import { azoa } from '@/lib/azoa'
 import { JsonViewer } from '@/components/shared/json-viewer'
 
-const PROVIDER_KEY = 'oasis_provider_name'
+const PROVIDER_KEY = 'azoa_provider_name'
 
 function maskToken(token: string | null): string {
   if (!token) return '—'
@@ -19,14 +19,14 @@ function maskToken(token: string | null): string {
 }
 
 export default function SettingsPage() {
-  const { avatarId, isAuthenticated, user, logout } = useOasisAuth()
+  const { avatarId, isAuthenticated, user, logout } = useAzoaAuth()
   const [token, setToken] = useState<string | null>(null)
   const [providerName, setProviderName] = useState('')
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setToken(localStorage.getItem('oasis_token') ?? localStorage.getItem('token'))
+      setToken(localStorage.getItem('azoa_token') ?? localStorage.getItem('token'))
       setProviderName(localStorage.getItem(PROVIDER_KEY) ?? '')
     }
   }, [])
@@ -37,11 +37,11 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const handleClearSession = async () => { await oasis.auth.logout(); await logout() }
+  const handleClearSession = async () => { await azoa.auth.logout(); await logout() }
 
-  const chainNames = oasis.wallet.chains
+  const chainNames = azoa.wallet.chains
   const sessionState = { avatarId, isAuthenticated, user, tokenMasked: maskToken(token) }
-  const apiBaseUrl = oasis.getApiUrl()
+  const apiBaseUrl = azoa.getApiUrl()
   const rpcUrls: Record<string, string> = {
     algorand: process.env.NEXT_PUBLIC_ALGO_RPC ?? 'https://testnet-api.algonode.cloud',
     solana: process.env.NEXT_PUBLIC_SOL_RPC ?? 'https://api.devnet.solana.com',
@@ -88,10 +88,10 @@ export default function SettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-sm">Provider Override</CardTitle><CardDescription>Set a provider name for OASIS requests. Informational only.</CardDescription></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="text-sm">Provider Override</CardTitle><CardDescription>Set a provider name for AZOA requests. Informational only.</CardDescription></CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-2">
-            <Input value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="e.g. MongoOASIS" className="max-w-xs" />
+            <Input value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="e.g. MongoAZOA" className="max-w-xs" />
             <Button onClick={handleSaveProvider} variant="secondary" size="sm">{saved ? 'Saved' : 'Save'}</Button>
           </div>
         </CardContent>

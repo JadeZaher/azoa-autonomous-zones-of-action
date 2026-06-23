@@ -6,10 +6,10 @@ Pending. Created 2026-05-27. **Tier 4.** Constituent track of the
 [ADR](../surrealql-toolkit/spec.md) for the strategic framing.
 
 ## Goal
-Publish the `oasis-surreal` toolkit (and its supporting packages —
-`Oasis.SurrealDb.Client`, `.Schema`, `.Analyzer`, `.SourceGen`) to a
+Publish the `azoa-surreal` toolkit (and its supporting packages —
+`Azoa.SurrealDb.Client`, `.Schema`, `.Analyzer`, `.SourceGen`) to a
 public NuGet feed as a coherent product. Gated on Waves 1-3
-stabilizing + OASIS dogfooding the toolkit in prod for ≥3 months.
+stabilizing + AZOA dogfooding the toolkit in prod for ≥3 months.
 
 ## Why
 The toolkit's strategic value (per the umbrella ADR) is realized only
@@ -18,8 +18,8 @@ the toolkit becomes a product. Until then it's a private utility set.
 
 ## Acceptance
 1. All five packages published to NuGet under the same version line:
-   `Oasis.SurrealDb.Client`, `.Schema`, `.Analyzer`, `.SourceGen`,
-   and the `oasis-surreal` `dotnet tool` global package.
+   `Azoa.SurrealDb.Client`, `.Schema`, `.Analyzer`, `.SourceGen`,
+   and the `azoa-surreal` `dotnet tool` global package.
 2. Docs site (mkdocs or similar) hosted with:
    - Quickstart (5-minute "hello SurrealDB" walkthrough)
    - CLI reference (every subcommand documented)
@@ -41,14 +41,14 @@ the toolkit becomes a product. Until then it's a private utility set.
 ## Approach
 - Authoritative package metadata in each `.csproj` (Authors, License,
   Description, PackageProjectUrl, RepositoryUrl, Tags).
-- Public repo (forked / separate from oasis-sleek) so external users
-  don't see OASIS-internal noise.
+- Public repo (forked / separate from azoa) so external users
+  don't see AZOA-internal noise.
 - Sample repos hosted under the same org.
 
 ## Dependencies
 - All Waves 1-3 constituent tracks stable (no breaking changes in
   ≥3 months).
-- OASIS dogfooding signal: public packaging is a no-op if OASIS itself
+- AZOA dogfooding signal: public packaging is a no-op if AZOA itself
   isn't running the toolkit in prod.
 
 ## Out of scope

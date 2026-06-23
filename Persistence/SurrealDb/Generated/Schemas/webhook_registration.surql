@@ -4,7 +4,7 @@
 -- Guardrail: G6 SCHEMAFULL, one active registration per tenant (unique tenant_id)
 -- Note: A tenant's outbound consent-webhook config (tenant-consent-delegation §4, AC7): receiver url + per-tenant HMAC secret. ONE active registration per tenant for v1, enforced by the unique tenant_id index. Registration is scoped to the authenticated API-key principal — a tenant only ever reads/writes its OWN row (H5).
 -- Note: url is https-only + public-IP-allowlisted, re-validated by WebhookSsrfGuard at DELIVERY time (not just registration) so a DNS rebind to a private address between register and deliver is still caught. secret is the per-tenant HMAC key (rotatable); each tenant's events are signed with ONLY its own secret — no shared secret.
--- Note: FOLLOW-UP: secret is stored plaintext at rest for v1. It SHOULD be encrypted-at-rest (mirror Wallet.EncryptedPrivateKey). A per-tenant-secret encryption pass is a deliberate follow-up, flagged here so it is not forgotten.
+-- Note: REQUIRED before real use: secret MUST be encrypted-at-rest (AES-256-GCM via WalletKeyService, mirroring Wallet.EncryptedPrivateKey) — the not-yet-built registration write-path encrypts before persisting and the delivery worker decrypts at read time. It is still persisted as-supplied today only because no write path exists yet. The API-facing model's Secret is [JsonIgnore]'d so it never leaves in an HTTP response; this storage column intentionally is not, since it must serialize to/from the DB.
 -- ============================================================
 
 DEFINE TABLE IF NOT EXISTS webhook_registration SCHEMAFULL;
@@ -20,7 +20,7 @@ DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE webhook_registration TYPE record<a
 DEFINE FIELD IF NOT EXISTS url ON TABLE webhook_registration TYPE string
     ASSERT $value != NONE AND $value != "";
 
--- Per-tenant HMAC secret (rotatable). FOLLOW-UP: encrypt-at-rest like Wallet.EncryptedPrivateKey.
+-- Per-tenant HMAC secret (rotatable). REQUIRED: encrypt-at-rest like Wallet.EncryptedPrivateKey before real use.
 DEFINE FIELD IF NOT EXISTS secret ON TABLE webhook_registration TYPE string
     ASSERT $value != NONE AND $value != "";
 

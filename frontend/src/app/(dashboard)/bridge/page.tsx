@@ -25,7 +25,7 @@ import {
 import { JsonViewer } from '@/components/shared/json-viewer'
 import { ResultDisplay } from '@/components/shared/result-display'
 import { ChainBadge } from '@/components/shared/chain-badge'
-import { oasis, isOk } from '@/lib/oasis'
+import { azoa, isOk } from '@/lib/azoa'
 
 // ─── Types ───
 
@@ -85,7 +85,7 @@ function RouteExplorer() {
     setLoading(true)
     setError(null)
     try {
-      const result = await oasis.api.getBridgeRoutes()
+      const result = await azoa.api.getBridgeRoutes()
       if (isOk(result)) {
         setRoutes(result.value as unknown as BridgeRoute[])
       } else {
@@ -192,7 +192,7 @@ function InitiateBridgeForm() {
     setError(null)
     setResult(null)
     try {
-      const res = await oasis.api.initiateBridge({
+      const res = await azoa.api.initiateBridge({
         sourceChain: form.sourceChain,
         targetChain: form.targetChain,
         tokenId: form.tokenId,
@@ -326,7 +326,7 @@ function BridgeStatusTracker() {
     setError(null)
     setStatus(null)
     try {
-      const result = await oasis.api.getBridgeStatus(bridgeId)
+      const result = await azoa.api.getBridgeStatus(bridgeId)
       if (isOk(result)) {
         setStatus(result.value as unknown as BridgeStatus)
       } else {
@@ -425,7 +425,7 @@ function BridgeStatusTracker() {
                   variant="outline"
                   disabled={actionLoading}
                   onClick={() =>
-                    runAction('vaa', () => oasis.api.fetchVAA(bridgeId))
+                    runAction('vaa', () => azoa.api.fetchVAA(bridgeId))
                   }
                 >
                   Fetch VAA
@@ -436,7 +436,7 @@ function BridgeStatusTracker() {
                 variant="outline"
                 disabled={actionLoading}
                 onClick={() =>
-                  runAction('redeem', () => oasis.api.redeemBridge(bridgeId))
+                  runAction('redeem', () => azoa.api.redeemBridge(bridgeId))
                 }
               >
                 Redeem
@@ -447,7 +447,7 @@ function BridgeStatusTracker() {
                   variant="outline"
                   disabled={actionLoading}
                   onClick={() =>
-                    runAction('complete', () => oasis.api.completeBridge(bridgeId))
+                    runAction('complete', () => azoa.api.completeBridge(bridgeId))
                   }
                 >
                   Complete
@@ -491,7 +491,7 @@ function BridgeHistory() {
     setLoading(true)
     setError(null)
     try {
-      const result = await oasis.api.getBridgeHistory()
+      const result = await azoa.api.getBridgeHistory()
       if (isOk(result)) {
         setHistory(result.value as BridgeHistoryItem[])
       } else {

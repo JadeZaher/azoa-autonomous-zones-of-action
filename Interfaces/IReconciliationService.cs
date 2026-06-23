@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Interfaces;
+namespace AZOA.WebAPI.Interfaces;
 
 /// <summary>
 /// Re-derives the TRUE status of non-terminal bridge transactions and

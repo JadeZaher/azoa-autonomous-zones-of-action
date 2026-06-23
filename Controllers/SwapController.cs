@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -20,7 +20,7 @@ public class SwapController : ControllerBase
     }
 
     [HttpGet("quote")]
-    public async Task<ActionResult<OASISResult<SwapQuoteResponse>>> GetQuote([FromQuery] SwapQuoteRequest request)
+    public async Task<ActionResult<AZOAResult<SwapQuoteResponse>>> GetQuote([FromQuery] SwapQuoteRequest request)
     {
         var result = await _swapManager.GetQuoteAsync(request);
         if (result.IsError) return BadRequest(result);
@@ -29,7 +29,7 @@ public class SwapController : ControllerBase
 
     [HttpPost("execute")]
     [EnableRateLimiting("financial")]
-    public async Task<ActionResult<OASISResult<SwapQuoteResponse>>> ExecuteSwap([FromBody] SwapExecuteRequest request)
+    public async Task<ActionResult<AZOAResult<SwapQuoteResponse>>> ExecuteSwap([FromBody] SwapExecuteRequest request)
     {
         // Optional client Idempotency-Key. Accepted + plumbed through; the swap
         // path returns an UNSIGNED tx (client signs + broadcasts) so there is no

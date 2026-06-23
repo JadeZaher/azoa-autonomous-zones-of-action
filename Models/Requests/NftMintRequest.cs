@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Requests;
+namespace AZOA.WebAPI.Models.Requests;
 
 public class NftMintRequest
 {

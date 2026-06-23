@@ -54,8 +54,9 @@ namespace AZOA.WebAPI.Services.Webhooks;
 /// registration is still caught).</para>
 ///
 /// <para><b>Replay-resistant signature (H5).</b> Each POST carries a timestamped
-/// HMAC over <c>"{timestamp}.{body}"</c> (<see cref="WebhookHmacSigner"/>), the signed
-/// timestamp, and the stable idempotency id.</para>
+/// HMAC over the length-prefixed <c>(be32(len(timestamp)) || timestamp || body)</c>
+/// preimage (<see cref="WebhookHmacSigner"/>), the signed timestamp, and the stable
+/// idempotency id.</para>
 ///
 /// <para><b>Observe-only boundary (AC8).</b> The worker NEVER writes back to
 /// <c>consent_grant</c> and never overrides a revocation — it only transitions the
@@ -252,6 +253,12 @@ public sealed class ConsentWebhookDeliveryWorker : BackgroundService
 
             using var response = await client.SendAsync(request, ct);
 
+            // Redirect following is DISABLED on the named client's primary handler
+            // (SocketsHttpHandler.AllowAutoRedirect=false, see Program.cs) so a 3xx is NOT
+            // transparently chased — it surfaces here as a non-success status. Combined
+            // with IsSuccessStatusCode (2xx only), a 302 to an internal address (the SSRF
+            // redirect-bypass) is treated as a DELIVERY FAILURE: it is rescheduled /
+            // dead-lettered rather than silently followed to a blocked host.
             if (response.IsSuccessStatusCode)
             {
                 var marked = await outbox.MarkDeliveredAsync(evt.Id, ct);

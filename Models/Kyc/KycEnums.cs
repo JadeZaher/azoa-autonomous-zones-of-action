@@ -2,7 +2,7 @@
 // Generic identity-verification (KYC) enums. Values mirror an industry-standard
 // KYC lifecycle; no vendor or tenant branding is encoded here.
 
-namespace OASIS.WebAPI.Models.Kyc;
+namespace AZOA.WebAPI.Models.Kyc;
 
 /// <summary>
 /// Lifecycle status of a single KYC submission.

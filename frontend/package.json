@@ -1,5 +1,5 @@
 {
-  "name": "oasis-sleek-frontend",
+  "name": "azoa-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -12,7 +12,7 @@
     "@base-ui/react": "^1.4.1",
     "@noble/curves": "^1.9.7",
     "@noble/hashes": "^1.8.0",
-    "@oasis/sdk": "file:../sdk/oasis-wallet",
+    "@azoa/sdk": "file:../sdk/azoa-wallet",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
     "@tinymanorg/tinyman-js-sdk": "^2.1.1",

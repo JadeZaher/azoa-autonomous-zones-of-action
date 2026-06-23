@@ -1,8 +1,8 @@
 using System.Text.Json;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Requests;
 
-namespace OASIS.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Quest;
 
 // ═══════════════════════════════════════════════════════════════════
 // Per-node-type config DTOs for quest node dispatch deserialization.
@@ -79,7 +79,7 @@ public class StarGenerateNodeConfig
 /// boolean expression over upstream outputs (referenced as
 /// <c>upstream.&lt;nodeName&gt;.&lt;jsonPath&gt;</c>) and injected reads
 /// (<c>reads.&lt;name&gt;</c>). <see cref="Reads"/> supplies tenant-injected
-/// read values by name. No economics: OASIS only compares.
+/// read values by name. No economics: AZOA only compares.
 /// </summary>
 public class GateCheckNodeConfig
 {
@@ -89,14 +89,14 @@ public class GateCheckNodeConfig
 
 /// <summary>
 /// Emit config: an opaque tenant-shaped payload serialized to the node's
-/// output. OASIS holds no settlement/fiat/payout state (tenant settles).
+/// output. AZOA holds no settlement/fiat/payout state (tenant settles).
 /// </summary>
 public class EmitNodeConfig
 {
     public JsonElement Payload { get; set; }
 }
 
-/// <summary>Swap config: tenant-supplied DEX swap params. Rate comes from the DEX, never OASIS.</summary>
+/// <summary>Swap config: tenant-supplied DEX swap params. Rate comes from the DEX, never AZOA.</summary>
 public class SwapNodeConfig
 {
     public SwapExecuteRequest Request { get; set; } = new();
@@ -122,4 +122,17 @@ public class RefundNodeConfig
 {
     public Guid NftId { get; set; }
     public NftTransferRequest Request { get; set; } = new();
+}
+
+/// <summary>FungibleTokenCreate config: launch a fungible token (ASA) optionally
+/// linked to a holon. Total supply + decimals are tenant-supplied and authoritative;
+/// AZOA derives no economic meaning (peg/valuation is tenant-side).</summary>
+public class FungibleTokenCreateNodeConfig
+{
+    public string ChainType { get; set; } = "Algorand";
+    public string Name { get; set; } = string.Empty;
+    public string UnitName { get; set; } = string.Empty;
+    public ulong Total { get; set; }
+    public int Decimals { get; set; }
+    public Guid? HolonId { get; set; }
 }

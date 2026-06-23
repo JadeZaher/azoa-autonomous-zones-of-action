@@ -3,7 +3,7 @@
 Source spec: [spec.md](spec.md)
 Port source (read-only reference): ArdaNova KYC subsystem
 (`...\ardanova-backend-api-mcp\api-server\src\`), offered as a gift. **No
-ArdaNova branding may leak into OASIS.**
+ArdaNova branding may leak into AZOA.**
 
 ## Decisions to record before starting
 
@@ -12,9 +12,9 @@ revisit only if a phase surfaces a blocker.
 
 | # | Decision | Resolution |
 |---|----------|------------|
-| **D1** | `Result<T>` → `OASISResult<T>` mapping. ArdaNova's `Result<T>` carries a `ResultType` discriminator (`KycController.cs:68-74`); `OASISResult<T>` (`Models/Responses/OASISResult.cs:38-85`) has only `IsError`/`Message`. How is Forbidden vs NotFound vs ValidationError preserved? | **Message-prefix discriminator**, exactly as STARODK does (`Interfaces/Managers/ISTARManager.cs:12-19`, `STARODKAuthorizationError`). Add `KycAuthorizationError { Forbidden = "KYC_FORBIDDEN: ", NotFound = "KYC_NOT_FOUND: " }`. The controller's `TranslateResult` maps the prefix to 403/404 (copy `STARODKController.cs:100-111`). No new result shape, no SDK churn. |
+| **D1** | `Result<T>` → `AZOAResult<T>` mapping. ArdaNova's `Result<T>` carries a `ResultType` discriminator (`KycController.cs:68-74`); `AZOAResult<T>` (`Models/Responses/AZOAResult.cs:38-85`) has only `IsError`/`Message`. How is Forbidden vs NotFound vs ValidationError preserved? | **Message-prefix discriminator**, exactly as STARODK does (`Interfaces/Managers/ISTARManager.cs:12-19`, `STARODKAuthorizationError`). Add `KycAuthorizationError { Forbidden = "KYC_FORBIDDEN: ", NotFound = "KYC_NOT_FOUND: " }`. The controller's `TranslateResult` maps the prefix to 403/404 (copy `STARODKController.cs:100-111`). No new result shape, no SDK churn. |
 | **D2** | Persistence seam. ArdaNova uses EF `IRepository<T>` + `IUnitOfWork` + AutoMapper (`KycService.cs:13-37`). | **Hand-authored SurrealDB store**, mirroring `SurrealStarStore` (`Providers/Stores/Surreal/SurrealStarStore.cs`). `IKycStore` is the seam; no AutoMapper (manual `ToPoco`/`FromPoco` like `SurrealStarStore.cs:161-227`). `avatar_id` stored as a SurrealDB record link via `SurrealLink.ToLink("avatar", …)` (`SurrealStarStore.cs:180`). Id encoding `Guid.ToString("N").ToLowerInvariant()` (`SurrealStarStore.cs:155-159`). |
-| **D3** | Approval side-effect + gate source of truth. ArdaNova upgrades `User.verificationLevel = PRO` on approval (`KycService.cs:184-186`) and the gate reads that enum (`KycGateService.cs:18-30`). OASIS `Avatar` has only `IsVerified` bool (`Avatar.cs:69-72`), no `VerificationLevel`. | **Do NOT add a `VerificationLevel` enum/column to the shared `avatar` table from inside a feature module.** On approval, set `Avatar.IsVerified = true`. The **gate reads KYC submission status** (most-recent APPROVED submission for the avatar) via `IKycStore`, not a denormalized level. This keeps the `avatar` schema untouched and the gate authoritative against the KYC ledger. (If a multi-tier level is later needed, it becomes its own track.) |
+| **D3** | Approval side-effect + gate source of truth. ArdaNova upgrades `User.verificationLevel = PRO` on approval (`KycService.cs:184-186`) and the gate reads that enum (`KycGateService.cs:18-30`). AZOA `Avatar` has only `IsVerified` bool (`Avatar.cs:69-72`), no `VerificationLevel`. | **Do NOT add a `VerificationLevel` enum/column to the shared `avatar` table from inside a feature module.** On approval, set `Avatar.IsVerified = true`. The **gate reads KYC submission status** (most-recent APPROVED submission for the avatar) via `IKycStore`, not a denormalized level. This keeps the `avatar` schema untouched and the gate authoritative against the KYC ledger. (If a multi-tier level is later needed, it becomes its own track.) |
 | **D4** | Enum persistence. | **Persist enums as their string names** (`JsonStringEnumConverter`) to match the readable, value-name posture of the ported enums and keep DB rows human-legible. Verify against `Persistence/SurrealDb/CONVENTION.md` during Phase 1; if the convention mandates ints, switch — record the override here. |
 | **D5** | Admin authorization for `pending`/`approve`/`reject`. ArdaNova's `KycController` is unauthenticated on these (`KycController.cs:42-61`). | **Require an admin policy/role** on the admin endpoints (`[Authorize(Policy = "Admin")]` or equivalent already in `Program.cs`). Confirm the existing admin policy name during Phase 5; if none exists, gate behind `[Authorize]` + a role claim check and note the gap as a follow-up. `reviewerAvatarId` always comes from the admin's token, never the body. |
 | **D6** | Veriff adapter. | **Port the stub only** (`VeriffKycProviderService.cs:13-37`) — all four methods throw `NotImplementedException` with a **generic** message. Registered only when `Kyc:Provider == "veriff"`. Secrets are a deploy-stub (Phase 6). Real Veriff integration is explicitly out of scope. |
@@ -23,7 +23,7 @@ revisit only if a phase surfaces a blocker.
 
 ## Phase 1 — Domain model + enums + store seam
 
-- [ ] **Enums** under `OASIS.WebAPI` namespace (values from `KycStatus.cs:3-10`,
+- [ ] **Enums** under `AZOA.WebAPI` namespace (values from `KycStatus.cs:3-10`,
   `KycProvider.cs:3-7`, `KycDocumentType.cs:3-10`): `KycStatus`, `KycProvider`,
   `KycDocumentType`. No `ArdaNova` namespace.
 - [ ] **`KycSubmission` POCO** — `Persistence/SurrealDb/Models/KycSubmission.cs`,
@@ -45,7 +45,7 @@ revisit only if a phase surfaces a blocker.
   `ISTARStore.cs:6-27` doc-comment style. Methods per spec Scope §1
   (`GetSubmissionByIdAsync`, `GetLatestSubmissionByAvatarAsync`,
   `GetActiveSubmissionByAvatarAsync`, `GetPendingAsync`, `UpsertSubmissionAsync`,
-  `GetDocumentsBySubmissionAsync`, `AddDocumentsAsync`), all `OASISResult<T>`.
+  `GetDocumentsBySubmissionAsync`, `AddDocumentsAsync`), all `AZOAResult<T>`.
 - [ ] **`SurrealKycStore`** — `Providers/Stores/Surreal/SurrealKycStore.cs`,
   mirroring `SurrealStarStore.cs`: `ISurrealExecutor` ctor, `try/catch` +
   `CaptureException` per method (`SurrealStarStore.cs:47-50`), `ToSurrealId`/
@@ -58,11 +58,11 @@ revisit only if a phase surfaces a blocker.
 
 - [ ] **Models** for the seam (`Models/` or `Models/Requests/`):
   `SubmitKycModel`, `SubmitKycDocumentModel`, `KycDocumentModel`,
-  `KycSubmissionModel` (the OASIS-side DTOs replacing ArdaNova's
+  `KycSubmissionModel` (the AZOA-side DTOs replacing ArdaNova's
   `SubmitKycDto`/`KycDocumentDto`/`KycSubmissionDto`). `AvatarId` (Guid)
   replaces `UserId` (string) throughout.
 - [ ] **`IKycProviderService`** — `Interfaces/Providers/IKycProviderService.cs`,
-  genericized port of `IKycProviderService.cs:7-13` → `OASISResult<T>`:
+  genericized port of `IKycProviderService.cs:7-13` → `AZOAResult<T>`:
   `CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel>)`,
   `GetSessionStatusAsync(string providerSessionId)`,
   `HandleWebhookAsync(string payload)`,
@@ -82,7 +82,7 @@ revisit only if a phase surfaces a blocker.
 - [ ] **`KycAuthorizationError`** static (Forbidden/NotFound prefixes) — colocate
   with `IKycManager` like `STARODKAuthorizationError` in `ISTARManager.cs:12-19`.
 - [ ] **`IKycManager`** — `Interfaces/Managers/IKycManager.cs`. Methods per spec
-  Scope §3, all `OASISResult<T>`, Avatar-scoped.
+  Scope §3, all `AZOAResult<T>`, Avatar-scoped.
 - [ ] **`KycManager`** — `Managers/KycManager.cs`, depending on `IKycStore`,
   `IKycProviderService`, `IAvatarStore` (for the `IsVerified` flip on approval).
   Port behaviour from `KycService.cs`:
@@ -104,8 +104,8 @@ revisit only if a phase surfaces a blocker.
 ## Phase 4 — KYC gate
 
 - [ ] **`IKycGateService`** — `Interfaces/Managers/IKycGateService.cs`,
-  genericized port of `IKycGateService.cs:6-11` → `OASISResult<bool>` /
-  `OASISResult<KycStatus>`: `RequireVerifiedAsync(Guid avatarId)`,
+  genericized port of `IKycGateService.cs:6-11` → `AZOAResult<bool>` /
+  `AZOAResult<KycStatus>`: `RequireVerifiedAsync(Guid avatarId)`,
   `GetKycStatusAsync(Guid avatarId)`. (ArdaNova's `RequireProAsync` collapses to
   `RequireVerifiedAsync` under **D3** — single APPROVED gate, no PRO tier.)
 - [ ] **`KycGateService`** — `Managers/KycGateService.cs`, reads `IKycStore`.

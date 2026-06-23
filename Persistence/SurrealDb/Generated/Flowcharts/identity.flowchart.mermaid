@@ -1,23 +1,33 @@
 graph LR
     %% Slice: identity
     %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
-    %% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- flowcharts
+    %% Regenerate with: dotnet run --project packages/Azoa.SurrealDb.Schema -- flowcharts
 
     %% Nodes in this slice
     api_key["api_key: Node"]:::nodeClass
     avatar["avatar: Node"]:::nodeClass
+    consent_audit["consent_audit: Node"]:::nodeClass
+    consent_grant["consent_grant: Node"]:::nodeClass
     holon["holon: Node"]:::nodeClass
     kyc_document["kyc_document: Node"]:::nodeClass
     kyc_submission["kyc_submission: Node"]:::nodeClass
     star_odk["star_odk: Node"]:::nodeClass
+    wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
+    wallet_auth_claim_token["wallet_auth_claim_token: Node"]:::nodeClass
 
     %% Edges (outbound from this slice)
     api_key -- "avatar_id [N:1]" --> avatar
     avatar -- "owner_tenant_id [N:0..1]" --> avatar
+    consent_audit -- "avatar_id [N:0..1]" --> avatar
+    consent_audit -- "tenant_id [N:1]" --> avatar
+    consent_grant -- "grantor_avatar_id [N:1]" --> avatar
+    consent_grant -- "tenant_id [N:1]" --> avatar
     holon -- "avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
     star_odk -- "avatar_id [N:0..1]" --> avatar
+    wallet_auth_claim_token -- "target_avatar_id [N:1]" --> avatar
+    wallet_auth_claim_token -- "tenant_id [N:1]" --> avatar
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;

@@ -66,7 +66,7 @@
 - Create consistent design system
 - Implement responsive breakpoints
 - Add dark mode support
-- Match oasisweb4.com color scheme and typography
+- Match azoaweb4.com color scheme and typography
 
 ### Testing Strategy
 - Test all API integrations

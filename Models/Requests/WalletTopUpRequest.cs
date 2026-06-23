@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Requests;
+namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
 /// Request to top-up (faucet-fund) a platform wallet with test tokens.

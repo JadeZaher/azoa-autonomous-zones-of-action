@@ -1,12 +1,12 @@
 graph LR
-    %% OASIS Sleek -- domain data model (master flowchart)
+    %% AZOA Sleek -- domain data model (master flowchart)
     %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
-    %% Regenerate with: dotnet run --project packages/Oasis.SurrealDb.Schema -- flowcharts
+    %% Regenerate with: dotnet run --project packages/Azoa.SurrealDb.Schema -- flowcharts
     %% 
     %% Slices in this diagram:
-    %%   bridge: bridge_tx, consumed_vaa_ledger, idempotency_key_store, operation_log, saga_steps
+    %%   bridge: bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, operation_log, saga_steps, webhook_registration
     %%   dapp_composition: dapp_series, dapp_series_quest
-    %%   identity: api_key, avatar, holon, kyc_document, kyc_submission, star_odk
+    %%   identity: api_key, avatar, consent_audit, consent_grant, holon, kyc_document, kyc_submission, star_odk, wallet_auth_challenge, wallet_auth_claim_token
     %%   quest: executes, forked_from, quest, quest_dependency, quest_edge, quest_node, quest_node_execution, quest_run
     %%   quest_templates: quest_node_template, quest_template
     %%   wallet_nft: nft_ownership, swap_state, wallet
@@ -14,6 +14,10 @@ graph LR
     %% Enums:
     %%   bridge_tx.mode: Trusted, Wormhole  (BridgeTx.ModeKind)
     %%   bridge_tx.status: Initiated, Locked, AwaitingVAA, VAAReady, Redeeming, Completed, Failed, Refunded, Reversing  (BridgeTx.StatusKind)
+    %%   consent_audit.action: Granted, Revoked, Expired, TenantSignAllowed, TenantSignDenied
+    %%   consent_grant.origin: UserExplicit, Participation
+    %%   consent_webhook_event.event_type: Granted, Revoked, Expired  (ConsentWebhookEvent.WebhookEventType)
+    %%   consent_webhook_event.status: Pending, Delivered, DeadLettered  (ConsentWebhookEvent.DeliveryStatus)
     %%   dapp_series.status: Draft, Building, Ready, Deployed, Archived  (DappSeries.StatusKind)
     %%   idempotency_key_store.state: InProgress, Completed, Failed  (IdempotencyKeyStore.StateKind)
     %%   kyc_document.type: GOVERNMENT_ID, PASSPORT, DRIVERS_LICENSE, SELFIE, PROOF_OF_ADDRESS  (KycDocument.KycDocumentType)
@@ -32,10 +36,12 @@ graph LR
 
     subgraph slice_bridge ["bridge"]
         bridge_tx["bridge_tx: Node"]:::nodeClass
+        consent_webhook_event["consent_webhook_event: Node"]:::nodeClass
         consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
         idempotency_key_store["idempotency_key_store: Node"]:::nodeClass
         operation_log["operation_log: Node"]:::nodeClass
         saga_steps["saga_steps: Node"]:::nodeClass
+        webhook_registration["webhook_registration: Node"]:::nodeClass
     end
 
     subgraph slice_dapp_composition ["dapp_composition"]
@@ -46,10 +52,14 @@ graph LR
     subgraph slice_identity ["identity"]
         api_key["api_key: Node"]:::nodeClass
         avatar["avatar: Node"]:::nodeClass
+        consent_audit["consent_audit: Node"]:::nodeClass
+        consent_grant["consent_grant: Node"]:::nodeClass
         holon["holon: Node"]:::nodeClass
         kyc_document["kyc_document: Node"]:::nodeClass
         kyc_submission["kyc_submission: Node"]:::nodeClass
         star_odk["star_odk: Node"]:::nodeClass
+        wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
+        wallet_auth_claim_token["wallet_auth_claim_token: Node"]:::nodeClass
     end
 
     subgraph slice_quest ["quest"]
@@ -78,6 +88,13 @@ graph LR
     api_key -- "avatar_id [N:1]" --> avatar
     avatar -- "owner_tenant_id [N:0..1]" --> avatar
     bridge_tx -- "avatar_id [N:1]" --> avatar
+    consent_audit -- "avatar_id [N:0..1]" --> avatar
+    consent_audit -- "tenant_id [N:1]" --> avatar
+    consent_grant -- "grantor_avatar_id [N:1]" --> avatar
+    consent_grant -- "tenant_id [N:1]" --> avatar
+    consent_webhook_event -- "avatar_id [N:1]" --> avatar
+    consent_webhook_event -- "tenant_id [N:1]" --> avatar
+    consent_webhook_event -- "grant_id [N:1]" --> consent_grant
     consumed_vaa_ledger -- "bridge_transaction_id [N:0..1]" --> bridge_tx
     dapp_series -- "avatar_id [N:1]" --> avatar
     dapp_series -- "star_odk_id [N:0..1]" --> star_odk
@@ -88,6 +105,7 @@ graph LR
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
     nft_ownership -- "avatar_id [N:1]" --> avatar
+    operation_log -- "acting_tenant_id [N:0..1]" --> avatar
     operation_log -- "avatar_id [N:0..1]" --> avatar
     operation_log -- "holon_id [N:0..1]" --> holon
     operation_log -- "source_holon_id [N:0..1]" --> holon
@@ -106,6 +124,7 @@ graph LR
     quest_node -- "node_template_id [N:0..1]" --> quest_node_template
     quest_node_execution -- "node_id [N:1]" --> quest_node
     quest_node_execution -- "run_id [N:1]" --> quest_run
+    quest_run -- "acting_tenant_id [N:0..1]" --> avatar
     quest_run -- "avatar_id [N:1]" --> avatar
     quest_run -- "quest_id [N:1]" --> quest
     quest_run -- "forked_at_node_id [N:0..1]" --> quest_node
@@ -115,5 +134,8 @@ graph LR
     star_odk -- "avatar_id [N:0..1]" --> avatar
     swap_state -- "avatar_id [N:1]" --> avatar
     wallet -- "avatar_id [N:1]" --> avatar
+    wallet_auth_claim_token -- "target_avatar_id [N:1]" --> avatar
+    wallet_auth_claim_token -- "tenant_id [N:1]" --> avatar
+    webhook_registration -- "tenant_id [N:1]" --> avatar
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;

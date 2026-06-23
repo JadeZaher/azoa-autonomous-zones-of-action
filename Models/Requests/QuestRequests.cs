@@ -1,6 +1,6 @@
-using OASIS.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Quest;
 
-namespace OASIS.WebAPI.Models.Requests;
+namespace AZOA.WebAPI.Models.Requests;
 
 public class QuestCreateModel
 {
@@ -125,7 +125,7 @@ public class QuestEdgeAddModel
     public Guid SourceNodeId { get; set; }
     public Guid TargetNodeId { get; set; }
     public string? Condition { get; set; }
-    public OASIS.WebAPI.Models.Quest.QuestEdgeType EdgeType { get; set; } = OASIS.WebAPI.Models.Quest.QuestEdgeType.Control;
+    public AZOA.WebAPI.Models.Quest.QuestEdgeType EdgeType { get; set; } = AZOA.WebAPI.Models.Quest.QuestEdgeType.Control;
 }
 
 /// <summary>
@@ -138,12 +138,12 @@ public class QuestDependencyCreateModel
 
     /// <summary>
     /// Optional: depend on a specific node output rather than full quest completion.
-    /// Mirrors <see cref="OASIS.WebAPI.Models.Quest.QuestDependency.DependsOnNodeId"/>.
+    /// Mirrors <see cref="AZOA.WebAPI.Models.Quest.QuestDependency.DependsOnNodeId"/>.
     /// </summary>
     public Guid? DependsOnNodeId { get; set; }
 
-    public OASIS.WebAPI.Models.Quest.QuestDependencyType DependencyType { get; set; }
-        = OASIS.WebAPI.Models.Quest.QuestDependencyType.Required;
+    public AZOA.WebAPI.Models.Quest.QuestDependencyType DependencyType { get; set; }
+        = AZOA.WebAPI.Models.Quest.QuestDependencyType.Required;
 
     /// <summary>Optional audit description; ignored by the manager today, reserved for future use.</summary>
     public string? Description { get; set; }

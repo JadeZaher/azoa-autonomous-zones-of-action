@@ -16,7 +16,7 @@ zeroing a placeholder key has no security value.
 
 ## Background
 
-OASIS already has a working **encryption-at-rest** primitive. `WalletKeyService`
+AZOA already has a working **encryption-at-rest** primitive. `WalletKeyService`
 (`Core/WalletKeyService.cs`) performs AES-256-GCM encrypt/decrypt of private
 keys and seed phrases:
 
@@ -25,7 +25,7 @@ keys and seed phrases:
 - `AesGcmEncrypt` / `AesGcmDecrypt` (`Core/WalletKeyService.cs:178-213`) — packs
   `nonce(12) + tag(16) + ciphertext`, 96-bit nonce, 128-bit tag.
 
-The data-key is derived as `SHA-256(config "OASIS:WalletEncryptionKey")`
+The data-key is derived as `SHA-256(config "AZOA:WalletEncryptionKey")`
 (`Core/WalletKeyService.cs:15-20`). The service is registered as a singleton
 (`Program.cs:370`). **This encryption layer is real and good and is NOT in
 scope to replace** — only to wrap.
@@ -120,10 +120,10 @@ custody contract — the key never escapes the resolver's `finally`.
 A new interface the signer depends on instead of `IWalletStore` +
 `WalletKeyService` directly:
 
-- `Task<OASISResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)`
+- `Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)`
   — the decrypt→sign→zero higher-order path above. Returns the signer's result,
   never the key.
-- `Task<OASISResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)` — the
+- `Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)` — the
   ownership/eligibility predicate (no decrypt), so callers can pre-flight without
   touching key material.
 
@@ -155,7 +155,7 @@ in `plan.md`.
 
 ## Key rotation / re-encryption
 
-Rotating `OASIS:WalletEncryptionKey` (the source secret at
+Rotating `AZOA:WalletEncryptionKey` (the source secret at
 `Core/WalletKeyService.cs:15-20`) must **re-wrap** every stored ciphertext under
 the new data-key without ever exposing cleartext beyond a transient in-process
 buffer. The operation is:

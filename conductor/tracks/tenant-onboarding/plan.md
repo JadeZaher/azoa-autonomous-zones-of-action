@@ -62,9 +62,9 @@ beyond what a keyed side-record cleanly holds.
 - [ ] **Store mapping** — extend the avatar SurrealDB store's `FromDomain`/`ToDomain`
       to round-trip the three new fields (`owner_tenant_id` via
       `SurrealLink.ToLink("avatar", …)` like `SurrealApiKeyStore.cs:179`).
-- [ ] **`IAvatarStore`** — add `Task<OASISResult<IEnumerable<IAvatar>>>
+- [ ] **`IAvatarStore`** — add `Task<AZOAResult<IEnumerable<IAvatar>>>
       ListByOwnerTenantAsync(Guid tenantId, CancellationToken ct)` and
-      `Task<OASISResult<IAvatar>> GetByTenantAndExternalUserAsync(Guid tenantId,
+      `Task<AZOAResult<IAvatar>> GetByTenantAndExternalUserAsync(Guid tenantId,
       string externalUserId, CancellationToken ct)` to
       `Interfaces/Stores/IAvatarStore.cs:6-19`, scoped queries that return the
       owner's rows only (mirror `SurrealApiKeyStore.ListByAvatarAsync:59-69`).
@@ -77,7 +77,7 @@ beyond what a keyed side-record cleanly holds.
 - [ ] **`TenantScope` policy** — register an authorization policy in `Program.cs`
       requiring `tenant:provision`; apply `[Authorize(Policy="TenantScope")]` on
       `TenantController`.
-- [ ] **Scope constants** — central `static class OasisScopes` with
+- [ ] **Scope constants** — central `static class AzoaScopes` with
       `TenantProvision`, `WalletManage`, `NftMint` (no magic strings).
 - [ ] **Delegation rule** — child-credential issuance intersects requested scopes
       with the tenant key's own scopes (no escalation); covered by unit test.
@@ -110,10 +110,10 @@ beyond what a keyed side-record cleanly holds.
 
 ## Phase 4 — Tests
 
-- [ ] **Unit** (`tests/OASIS.WebAPI.Tests/Managers/TenantManagerTests.cs`):
+- [ ] **Unit** (`tests/AZOA.WebAPI.Tests/Managers/TenantManagerTests.cs`):
       ownership guard (own vs. other vs. null `OwnerTenantId`), claim-sourced tenant
       id ignores body, scope-delegation intersection, provision idempotency.
-- [ ] **Integration** (`tests/OASIS.WebAPI.IntegrationTests/...`): acceptance (a)
+- [ ] **Integration** (`tests/AZOA.WebAPI.IntegrationTests/...`): acceptance (a)
       provision, (b) child wallet manage, (c) **cross-tenant rejection → 404**,
       (d) missing-scope → 403 + child-scope ceiling, (e) external-user resolve +
       duplicate-provision idempotency.

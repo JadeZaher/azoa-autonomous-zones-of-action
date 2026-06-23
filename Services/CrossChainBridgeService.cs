@@ -1,19 +1,19 @@
 using Microsoft.Extensions.Options;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Core.Blockchain.Wormhole;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Bridge;
-using OASIS.WebAPI.Models.Idempotency;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Bridge;
+using AZOA.WebAPI.Models.Idempotency;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Services;
+namespace AZOA.WebAPI.Services;
 
 /// <summary>
 /// Hybrid cross-chain bridge orchestrator.
 ///
-/// Trusted mode: OASIS server coordinates lock→mint (fast, custodial).
+/// Trusted mode: AZOA server coordinates lock→mint (fast, custodial).
 /// Wormhole mode: Guardian network produces VAAs for trustless proof verification.
 ///
 /// Bridge transactions are persisted via IBridgeStore. Service is Scoped
@@ -44,7 +44,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         _logger = logger;
     }
 
-    public async Task<OASISResult<BridgeTransactionResult>> InitiateBridgeAsync(
+    public async Task<AZOAResult<BridgeTransactionResult>> InitiateBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
         string recipientAddress, Guid avatarId, int amount = 1,
         BridgeMode? mode = null, CancellationToken ct = default,
@@ -79,7 +79,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         }
     }
 
-    public async Task<OASISResult<BridgeTransactionResult>> FetchVAAAsync(
+    public async Task<AZOAResult<BridgeTransactionResult>> FetchVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
@@ -123,7 +123,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         return Ok(tx, "VAA fetched — ready for redemption");
     }
 
-    public async Task<OASISResult<BridgeTransactionResult>> RedeemWithVAAAsync(
+    public async Task<AZOAResult<BridgeTransactionResult>> RedeemWithVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
         string? clientIdempotencyKey = null)
     {
@@ -148,7 +148,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         string vaaDigest;
         try
         {
-            vaaDigest = OASIS.WebAPI.Services.WormholeAdapter.ComputeVaaDigest(tx.VaaBytes);
+            vaaDigest = AZOA.WebAPI.Services.WormholeAdapter.ComputeVaaDigest(tx.VaaBytes);
         }
         catch (Exception ex) when (ex is FormatException or ArgumentException)
         {
@@ -387,7 +387,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         }
     }
 
-    public async Task<OASISResult<BridgeTransactionResult>> CompleteBridgeAsync(
+    public async Task<AZOAResult<BridgeTransactionResult>> CompleteBridgeAsync(
         string bridgeTransactionId, CancellationToken ct = default)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
@@ -411,7 +411,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         return Ok(tx!, "Bridge marked as completed");
     }
 
-    public async Task<OASISResult<BridgeTransactionResult>> ReverseBridgeAsync(
+    public async Task<AZOAResult<BridgeTransactionResult>> ReverseBridgeAsync(
         string bridgeTransactionId, string sourceRecipientAddress, CancellationToken ct = default,
         string? clientIdempotencyKey = null)
     {
@@ -472,7 +472,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
         // Attempt a real on-chain reversal: burn the wrapped asset on the target
         // chain to release the original on the source chain.
-        OASISResult<string>? burnResult = null;
+        AZOAResult<string>? burnResult = null;
         string? burnError = null;
         try
         {
@@ -536,7 +536,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         return Error<BridgeTransactionResult>(manualMsg);
     }
 
-    public async Task<OASISResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
+    public async Task<AZOAResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
         Guid avatarId, CancellationToken ct = default)
     {
         var history = await _bridgeStore.GetBridgeHistoryAsync(avatarId, descending: true, ct);
@@ -545,7 +545,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             history, $"Retrieved {history.Count} bridge transactions");
     }
 
-    public async Task<OASISResult<IEnumerable<BridgeRouteInfo>>> GetSupportedRoutesAsync(
+    public async Task<AZOAResult<IEnumerable<BridgeRouteInfo>>> GetSupportedRoutesAsync(
         CancellationToken ct = default)
     {
         var providers = _factory.GetAllEnabledProviders().ToList();
@@ -586,7 +586,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         return Ok<IEnumerable<BridgeRouteInfo>>(routes, $"Retrieved {routes.Count} bridge routes");
     }
 
-    public async Task<OASISResult<BridgeTransactionResult>> GetBridgeStatusAsync(
+    public async Task<AZOAResult<BridgeTransactionResult>> GetBridgeStatusAsync(
         string bridgeTransactionId, CancellationToken ct = default)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
@@ -598,7 +598,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     // ─── Private: Wormhole (trustless) flow ───
 
-    private async Task<OASISResult<BridgeTransactionResult>> InitiateWormholeBridgeAsync(
+    private async Task<AZOAResult<BridgeTransactionResult>> InitiateWormholeBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
         string recipientAddress, Guid avatarId, int amount,
         CancellationToken ct, string? clientIdempotencyKey = null)
@@ -673,7 +673,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     // ─── Private: Trusted (custodial) flow ───
 
-    private async Task<OASISResult<BridgeTransactionResult>> InitiateTrustedBridgeAsync(
+    private async Task<AZOAResult<BridgeTransactionResult>> InitiateTrustedBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
         string recipientAddress, Guid avatarId, int amount,
         CancellationToken ct, string? clientIdempotencyKey = null)
@@ -818,12 +818,12 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         return $"{sourceChain.ToLowerInvariant()}_bridge_vault_for_{targetChain.ToLowerInvariant()}";
     }
 
-    private OASISResult<T> Ok<T>(T result, string message = "")
+    private AZOAResult<T> Ok<T>(T result, string message = "")
         => new() { IsError = false, Result = result, Message = message };
 
-    private OASISResult<T> Error<T>(string message, Exception? ex = null)
+    private AZOAResult<T> Error<T>(string message, Exception? ex = null)
     {
         _logger.LogError(ex, "Bridge error: {Message}", message);
-        return new OASISResult<T> { IsError = true, Message = message, Exception = ex };
+        return new AZOAResult<T> { IsError = true, Message = message, Exception = ex };
     }
 }

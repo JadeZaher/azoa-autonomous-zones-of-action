@@ -1,20 +1,20 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ChevronRight } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { JsonViewer } from '@/components/shared/json-viewer'
 import { ResultDisplay } from '@/components/shared/result-display'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton'
-import { oasis, isOk } from '@/lib/oasis'
-import { useOasis } from '@/lib/oasis-context'
+import { azoa, isOk } from '@/lib/azoa'
+import { useAzoa } from '@/lib/azoa-context'
 import { DagFlow } from '@/components/quest-builder/dag-flow'
 import { QuestCanvas, type BuiltGraph, type NodeTemplateMeta } from '@/components/quest-builder/quest-canvas'
 import { NodeTemplateCreator } from '@/components/quest-builder/node-template-creator'
@@ -61,7 +61,7 @@ function useNodeTemplates() {
   const [templates, setTemplates] = useState<NodeTemplateMeta[]>([])
 
   const reload = useCallback(async () => {
-    const res = await oasis.api.request<Array<{ id: string; name: string; nodeType: string; description?: string; defaultConfig?: string }>>(
+    const res = await azoa.api.request<Array<{ id: string; name: string; nodeType: string; description?: string; defaultConfig?: string }>>(
       'GET',
       '/api/quest/node-templates',
     )
@@ -88,20 +88,21 @@ function useNodeTemplates() {
 // ─── My Quests ───
 
 function QuestList() {
-  const { avatarId } = useOasis()
+  const { avatarId } = useAzoa()
   const [quests, setQuests] = useState<Quest[]>([])
   const [selected, setSelected] = useState<Quest | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionResult, setActionResult] = useState<unknown>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [detailTab, setDetailTab] = useState<'dag' | 'actions' | 'raw'>('dag')
 
   const loadQuests = useCallback(async () => {
     if (!avatarId) return
     setLoading(true)
     setError(null)
     try {
-      const result = await oasis.api.request<Quest[]>('GET', `/api/quest/avatar/${avatarId}`)
+      const result = await azoa.api.request<Quest[]>('GET', `/api/quest/avatar/${avatarId}`)
       if (isOk(result)) setQuests(result.value)
       else setError(result.error.message)
     } catch (e) {
@@ -112,7 +113,7 @@ function QuestList() {
   }, [avatarId])
 
   const loadQuest = async (id: string) => {
-    const result = await oasis.api.request<Quest>('GET', `/api/quest/${id}`)
+    const result = await azoa.api.request<Quest>('GET', `/api/quest/${id}`)
     if (isOk(result)) setSelected(result.value)
   }
 
@@ -134,9 +135,18 @@ function QuestList() {
     }
   }
 
+  const toggle = (q: Quest) => {
+    if (selected?.id === q.id) {
+      setSelected(null)
+    } else {
+      void loadQuest(q.id)
+    }
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
+    <div className="space-y-3">
+      {/* Action row */}
+      <div className="flex flex-wrap items-center gap-2">
         <Button onClick={loadQuests} disabled={loading}>
           {loading ? 'Loading...' : 'Load My Quests'}
         </Button>
@@ -146,102 +156,105 @@ function QuestList() {
       {error ? <ErrorBanner message={error} onRetry={loadQuests} /> : null}
       {loading ? <LoadingSkeleton /> : null}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Quest list */}
-        <div className="space-y-2 lg:col-span-1">
-          {quests.map((q) => (
-            <Card
-              key={q.id}
-              className={`cursor-pointer transition-colors hover:border-primary ${selected?.id === q.id ? 'border-primary bg-accent/50' : ''}`}
-              onClick={() => loadQuest(q.id)}
-            >
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between">
-                  <span className="truncate text-sm font-medium">{q.name}</span>
-                  {statusBadge(q.status)}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {q.nodes?.length ?? 0} nodes, {q.edges?.length ?? 0} edges
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-          {quests.length === 0 && !loading && (
-            <p className="text-sm text-muted-foreground">No quests found. Build one in the Builder tab.</p>
-          )}
-        </div>
+      {/* Full-width list with inline-expanding detail */}
+      <div className="divide-y rounded-md border">
+        {quests.map((q) => {
+          const open = selected?.id === q.id
+          return (
+            <div key={q.id}>
+              <button
+                type="button"
+                onClick={() => toggle(q)}
+                className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50 ${open ? 'bg-accent/40' : ''}`}
+              >
+                <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
+                <span className="flex-1 truncate text-sm font-medium">{q.name}</span>
+                <span className="hidden text-xs text-muted-foreground sm:inline">
+                  {q.nodes?.length ?? 0} nodes · {q.edges?.length ?? 0} edges
+                </span>
+                {statusBadge(q.status)}
+              </button>
 
-        {/* Detail */}
-        <div className="lg:col-span-2">
-          {selected !== null ? (
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">{selected.name}</CardTitle>
-                  {statusBadge(selected.status)}
-                </div>
-                {selected.description && <p className="text-sm text-muted-foreground">{selected.description}</p>}
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Tabs defaultValue="dag">
-                  <TabsList>
-                    <TabsTrigger value="dag">DAG View</TabsTrigger>
-                    <TabsTrigger value="actions">Actions</TabsTrigger>
-                    <TabsTrigger value="raw">Raw JSON</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="dag" className="mt-3">
-                    <DagFlow nodes={selected.nodes} edges={selected.edges} />
-                  </TabsContent>
-
-                  <TabsContent value="actions" className="mt-3 space-y-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={actionLoading}
-                        onClick={() => runAction('Validate', () => oasis.api.request('POST', `/api/quest/${selected.id}/validate`))}
-                      >
-                        Validate DAG
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={actionLoading || selected.status === 'Completed'}
-                        onClick={() => runAction('Execute', () => oasis.api.request('POST', `/api/quest/${selected.id}/execute`))}
-                      >
-                        Execute Quest
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={actionLoading}
-                        onClick={() => runAction('Delete', () => oasis.api.request('DELETE', `/api/quest/${selected.id}`))}
-                      >
-                        Delete
-                      </Button>
+              {open && selected && (
+                <div className="border-t bg-background px-4 py-4">
+                  {selected.description && (
+                    <p className="mb-3 text-sm text-muted-foreground">{selected.description}</p>
+                  )}
+                  <div className="flex flex-col gap-3">
+                    {/* Detail tab switcher — plain buttons */}
+                    <div className="flex gap-2 border-b pb-px">
+                      {([
+                        { id: 'dag', label: 'DAG View' },
+                        { id: 'actions', label: 'Actions' },
+                        { id: 'raw', label: 'Raw JSON' },
+                      ] as const).map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setDetailTab(t.id)}
+                          className={`-mb-px border-b-2 px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                            detailTab === t.id
+                              ? 'border-primary text-foreground'
+                              : 'border-transparent text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
                     </div>
-                    {actionResult !== null && actionResult !== undefined && (
-                      <div>
-                        <Separator />
-                        <ResultDisplay result={actionResult} />
+
+                    {detailTab === 'dag' && (
+                      <DagFlow nodes={selected.nodes} edges={selected.edges} />
+                    )}
+
+                    {detailTab === 'actions' && (
+                      <div className="flex flex-col gap-3">
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={actionLoading}
+                            onClick={() => runAction('Validate', () => azoa.api.request('POST', `/api/quest/${selected.id}/validate`))}
+                          >
+                            Validate DAG
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={actionLoading || selected.status === 'Completed'}
+                            onClick={() => runAction('Execute', () => azoa.api.request('POST', `/api/quest/${selected.id}/execute`))}
+                          >
+                            Execute Quest
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={actionLoading}
+                            onClick={() => runAction('Delete', () => azoa.api.request('DELETE', `/api/quest/${selected.id}`))}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                        {actionResult !== null && actionResult !== undefined && (
+                          <div>
+                            <Separator />
+                            <ResultDisplay result={actionResult} />
+                          </div>
+                        )}
                       </div>
                     )}
-                  </TabsContent>
 
-                  <TabsContent value="raw" className="mt-3">
-                    <JsonViewer data={selected} />
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="p-8 text-center text-muted-foreground">
-                Select a quest to view its DAG
-              </CardContent>
-            </Card>
-          )}
-        </div>
+                    {detailTab === 'raw' && <JsonViewer data={selected} />}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {quests.length === 0 && !loading && (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            No quests found. Build one in the Builder tab.
+          </p>
+        )}
       </div>
     </div>
   )
@@ -267,7 +280,7 @@ function QuestBuilder({ onCreated }: { onCreated: () => void }) {
       setError(null)
       setResult(null)
       try {
-        const res = await oasis.api.request('POST', '/api/quest', {
+        const res = await azoa.api.request('POST', '/api/quest', {
           name: name.trim(),
           description: description.trim() || undefined,
           nodes: graph.nodes,
@@ -289,33 +302,30 @@ function QuestBuilder({ onCreated }: { onCreated: () => void }) {
   )
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">Visual Quest Builder</CardTitle>
-          <Button size="sm" variant="ghost" onClick={reload}>
-            Refresh palette
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>Quest Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="My Quest" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional" />
-          </div>
-        </div>
+    <div className="flex flex-col gap-4 rounded-lg border bg-card p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Visual Quest Builder</h3>
+        <Button size="sm" variant="ghost" onClick={reload}>
+          Refresh palette
+        </Button>
+      </div>
 
-        <QuestCanvas nodeTemplates={templates} onSubmit={handleSubmit} submitting={submitting} submitLabel="Create Quest" />
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <div className="flex flex-1 flex-col gap-1.5">
+          <Label>Quest Name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="My Quest" />
+        </div>
+        <div className="flex flex-1 flex-col gap-1.5">
+          <Label>Description</Label>
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional" />
+        </div>
+      </div>
 
-        {error ? <ErrorBanner message={error} /> : null}
-        {result !== null && result !== undefined && <ResultDisplay result={result} />}
-      </CardContent>
-    </Card>
+      <QuestCanvas nodeTemplates={templates} onSubmit={handleSubmit} submitting={submitting} submitLabel="Create Quest" />
+
+      {error ? <ErrorBanner message={error} /> : null}
+      {result !== null && result !== undefined && <ResultDisplay result={result} />}
+    </div>
   )
 }
 
@@ -330,7 +340,7 @@ function QuestTemplates() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const result = await oasis.api.request<QuestTemplate[]>('GET', '/api/quest/templates')
+    const result = await azoa.api.request<QuestTemplate[]>('GET', '/api/quest/templates')
     if (isOk(result)) setTemplates(result.value)
     setLoading(false)
   }, [])
@@ -340,7 +350,7 @@ function QuestTemplates() {
   }, [load])
 
   const loadDetail = async (id: string) => {
-    const result = await oasis.api.request('GET', `/api/quest/templates/${id}`)
+    const result = await azoa.api.request('GET', `/api/quest/templates/${id}`)
     if (isOk(result)) setSelected(result.value)
   }
 
@@ -424,7 +434,7 @@ function QuestTemplateCreator({ nodeTemplates, onCreated }: { nodeTemplates: Nod
       setError(null)
       setResult(null)
       try {
-        const res = await oasis.api.request('POST', '/api/quest/templates', {
+        const res = await azoa.api.request('POST', '/api/quest/templates', {
           name: name.trim(),
           description: description.trim() || undefined,
           nodes: graph.nodes,
@@ -492,7 +502,7 @@ function NodeTemplates() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const result = await oasis.api.request<typeof nodeTemplates>('GET', '/api/quest/node-templates')
+    const result = await azoa.api.request<typeof nodeTemplates>('GET', '/api/quest/node-templates')
     if (isOk(result)) setNodeTemplates(result.value)
     setLoading(false)
   }, [])
@@ -557,39 +567,48 @@ export default function QuestsPage() {
     setTab('quests')
   }
 
+  const tabs = [
+    { id: 'quests', label: 'My Quests' },
+    { id: 'create', label: 'Builder' },
+    { id: 'templates', label: 'Quest Templates' },
+    { id: 'node-templates', label: 'Node Templates' },
+  ] as const
+
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="flex flex-col gap-6">
+      {/* Top bar — header stack */}
+      <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold tracking-tight">Quest DAG System</h2>
-        <p className="text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Build, validate, and execute directed acyclic graph workflows that orchestrate holons, NFTs, wallets, and blockchain operations.
         </p>
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="quests">My Quests</TabsTrigger>
-          <TabsTrigger value="create">Builder</TabsTrigger>
-          <TabsTrigger value="templates">Quest Templates</TabsTrigger>
-          <TabsTrigger value="node-templates">Node Templates</TabsTrigger>
-        </TabsList>
+      {/* Tab switcher — plain buttons, no primitive */}
+      <div className="flex flex-wrap gap-2 border-b pb-px">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+              tab === t.id
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        <TabsContent value="quests" className="mt-4">
-          <QuestList key={refreshKey} />
-        </TabsContent>
-
-        <TabsContent value="create" className="mt-4">
-          <QuestBuilder onCreated={onQuestCreated} />
-        </TabsContent>
-
-        <TabsContent value="templates" className="mt-4">
-          <QuestTemplates />
-        </TabsContent>
-
-        <TabsContent value="node-templates" className="mt-4">
-          <NodeTemplates />
-        </TabsContent>
-      </Tabs>
+      {/* Panel — only the active one renders */}
+      <div>
+        {tab === 'quests' && <QuestList key={refreshKey} />}
+        {tab === 'create' && <QuestBuilder onCreated={onQuestCreated} />}
+        {tab === 'templates' && <QuestTemplates />}
+        {tab === 'node-templates' && <NodeTemplates />}
+      </div>
     </div>
   )
 }

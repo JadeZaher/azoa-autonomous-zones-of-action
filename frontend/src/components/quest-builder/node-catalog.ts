@@ -92,6 +92,7 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   { type: 'Grant', category: 'Economic', label: 'Grant', description: 'Grant tokens / rights', defaultConfig: J({ to: '', amount: '' }), requiresChain: true },
   { type: 'Transfer', category: 'Economic', label: 'Transfer', description: 'Transfer value on-chain', defaultConfig: J({ to: '', amount: '' }), requiresChain: true },
   { type: 'Refund', category: 'Economic', label: 'Refund', description: 'Refund a prior transfer', defaultConfig: J({ ref: '' }), requiresChain: true },
+  { type: 'FungibleTokenCreate', category: 'Economic', label: 'Create Fungible Token', description: 'Launch a fungible token (ASA) backed/linked to an asset holon', defaultConfig: J({ chainType: 'Algorand', name: '', unitName: '', total: 1000000, decimals: 6, holonId: null }), requiresChain: true },
 ]
 
 export const NODE_CATALOG_BY_TYPE: Record<string, NodeTypeMeta> = Object.fromEntries(

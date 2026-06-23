@@ -4,7 +4,7 @@
 Provide a unified, cross-entity search endpoint that queries Avatars, Holons, Wallets, BlockchainOperations, and STARODKs through a single interface with pagination, filtering, and faceted results.
 
 ## Motivation
-As the OASIS ecosystem grows, consumers need to discover assets across entity boundaries:
+As the AZOA ecosystem grows, consumers need to discover assets across entity boundaries:
 - "Find all NFTs (Holons) owned by avatar X"
 - "Find wallets on Solana chain for avatar Y"
 - "Find blockchain operations of type 'Mint' in the last 24h"
@@ -15,11 +15,11 @@ Rather than exposing N separate query endpoints, a single `SearchManager` provid
 ## Architecture
 ```
 SearchController → ISearchManager → ProviderContext
-                                 → IOASISStorageProvider (queries each entity set)
+                                 → IAZOAStorageProvider (queries each entity set)
                                  → In-memory aggregation, filtering, pagination
 ```
 
-Because `IOASISStorageProvider` does not expose a native full-text search, the `SearchManager` will:
+Because `IAZOAStorageProvider` does not expose a native full-text search, the `SearchManager` will:
 1. Load relevant entity collections from the active provider
 2. Apply in-memory filtering (case-insensitive contains on Name/Description/Metadata)
 3. Apply entity-type filters
@@ -58,8 +58,8 @@ public enum SearchableEntityType
 ```csharp
 public interface ISearchManager
 {
-    Task<OASISResult<SearchResult>> SearchAsync(SearchRequest request, OASISRequest? providerRequest = null);
-    Task<OASISResult<List<SearchFacet>>> GetFacetsAsync(OASISRequest? providerRequest = null);
+    Task<AZOAResult<SearchResult>> SearchAsync(SearchRequest request, AZOARequest? providerRequest = null);
+    Task<AZOAResult<List<SearchFacet>>> GetFacetsAsync(AZOARequest? providerRequest = null);
 }
 ```
 
@@ -144,10 +144,10 @@ public class SearchFacet
 9. **Map** to `SearchHit` with `Highlight` set to the matching field value
 
 ## Provider Extensions
-To support search without loading *everything* into memory, add these methods to `IOASISStorageProvider`:
+To support search without loading *everything* into memory, add these methods to `IAZOAStorageProvider`:
 ```csharp
-Task<OASISResult<IEnumerable<IWallet>>> LoadAllWalletsAsync(CancellationToken ct = default);
-Task<OASISResult<IEnumerable<IBlockchainOperation>>> LoadAllBlockchainOperationsAsync(CancellationToken ct = default);
+Task<AZOAResult<IEnumerable<IWallet>>> LoadAllWalletsAsync(CancellationToken ct = default);
+Task<AZOAResult<IEnumerable<IBlockchainOperation>>> LoadAllBlockchainOperationsAsync(CancellationToken ct = default);
 ```
 > These are optional for v1; if not implemented, the SearchManager can skip those entity types or load via existing avatar-scoped methods when AvatarId is provided.
 

@@ -16,6 +16,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -74,6 +75,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
     private readonly IWalletAuthClaimTokenStore _claimTokens;
     private readonly IAvatarStore _avatarStore;
     private readonly IWalletSignatureVerifier _signatureVerifier;
+    private readonly IConsentGrantStore _consentGrants;
     private readonly IConfiguration _config;
 
     public WalletAuthManager(
@@ -81,12 +83,14 @@ public sealed class WalletAuthManager : IWalletAuthManager
         IWalletAuthClaimTokenStore claimTokens,
         IAvatarStore avatarStore,
         IWalletSignatureVerifier signatureVerifier,
+        IConsentGrantStore consentGrants,
         IConfiguration config)
     {
         _challenges = challenges ?? throw new ArgumentNullException(nameof(challenges));
         _claimTokens = claimTokens ?? throw new ArgumentNullException(nameof(claimTokens));
         _avatarStore = avatarStore ?? throw new ArgumentNullException(nameof(avatarStore));
         _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
+        _consentGrants = consentGrants ?? throw new ArgumentNullException(nameof(consentGrants));
         _config = config ?? throw new ArgumentNullException(nameof(config));
     }
 
@@ -464,12 +468,23 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
+        // ── 4b. Revoke ALL outstanding consent grants this user made (AC3b, security
+        // review). The AuthNotBefore watermark is the primary cut (the JWT validator
+        // rejects any pre-claim token), but a still-live grant + a stale child JWT is
+        // belt-and-suspenders risk: revoking grants makes the signing seam fail closed
+        // for ANY residual tenant credential, independent of the watermark check. This
+        // is the robust half of the defense-in-depth fix. A revoke failure does NOT
+        // fail the claim — the watermark already cut the window — but it IS surfaced.
+        var revoked = await _consentGrants.RevokeAllByGrantorAsync(saved.Result.Id, now, ct);
+
         result.Result = new WalletAuthTokenResponse
         {
             Token = GenerateLoginJwt(saved.Result),
             AvatarId = saved.Result.Id,
         };
-        result.Message = "Avatar claimed.";
+        result.Message = revoked.IsError
+            ? "Avatar claimed (warning: outstanding consent grants could not be auto-revoked; they remain subject to the post-claim watermark cut)."
+            : "Avatar claimed.";
         return result;
     }
 
@@ -703,6 +718,12 @@ public sealed class WalletAuthManager : IWalletAuthManager
             new Claim(JwtRegisteredClaimNames.Sub, avatar.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, avatar.Email),
             new Claim(ClaimTypes.Name, avatar.Username),
+            // token-type segregation (security-review S5): a login token and a tenant
+            // child credential share key/issuer/audience/alg — distinguishing them ONLY
+            // by act_as_tenant is fragile. The explicit token_use claim makes the class
+            // unambiguous (full-authority user login vs scoped tenant child). It never
+            // carries act_as_tenant, so it can never be mistaken for a tenant-driven token.
+            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 

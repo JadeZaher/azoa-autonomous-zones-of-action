@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 /// <summary>
 /// Generates <b>deterministic, content-addressed</b> operation IDs for

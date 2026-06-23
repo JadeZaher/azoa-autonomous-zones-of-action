@@ -2,7 +2,7 @@
 
 ## Overview
 
-OASIS is a .NET 8 WebAPI with 15 controllers backed by 10 managers. The sole storage engine is SurrealDB (via `Oasis.SurrealDb.*` packages). Two authentication schemes are supported: JWT (Bearer token) and X-Api-Key (auto-detected by header). Rate limiting is applied globally, with strict "financial" policies on value-moving endpoints.
+AZOA is a .NET 8 WebAPI with 15 controllers backed by 10 managers. The sole storage engine is SurrealDB (via `Azoa.SurrealDb.*` packages). Two authentication schemes are supported: JWT (Bearer token) and X-Api-Key (auto-detected by header). Rate limiting is applied globally, with strict "financial" policies on value-moving endpoints.
 
 _Last reconciled: 2026-06-11 (post quest-api phase-F + self-audit-one-fix)._
 
@@ -164,9 +164,9 @@ Swap routing is dispatched by `SwapManager` to chain-specific `IDexAdapter` impl
 | **BlockchainOperationManager** | 4 | Blockchain operation CRUD + status queries |
 | **SearchManager** | 2 | Full-text search dispatch |
 
-## SDK — OasisApiClient (84 Typed Methods)
+## SDK — AzoaApiClient (84 Typed Methods)
 
-The SDK provides a typed `OasisApiClient` wrapping all 15 controllers. All amounts are strings for arbitrary precision. Notable method families:
+The SDK provides a typed `AzoaApiClient` wrapping all 15 controllers. All amounts are strings for arbitrary precision. Notable method families:
 
 **Avatar:** `login`, `getAvatar`, `getAllAvatars`, `deleteAvatar`
 
@@ -220,7 +220,7 @@ uses the real SHA-512/256 checksum (`Algorand.Address.IsValid`).
 
 **Caveats:**
 - Custody is INTERIM: the signing key is resolved by decrypting
-  `OASIS:Algorand:PlatformMnemonic` from config (no per-user ownership check). The
+  `AZOA:Algorand:PlatformMnemonic` from config (no per-user ownership check). The
   production ownership-checked, KMS-backed, byte[]-zeroing resolver is the
   `custody-key-management` track (DEPLOY-STEPS-TODO B3/P1). Mainnet stays gated (B6).
 - Soulbound clawback-revoke is deferred (D4 → H2); the mint path sets the platform
@@ -283,7 +283,7 @@ See `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md` for full pr
 ## Removed Surfaces
 
 **EOL as of SurrealDB migration (2026-05-27):**
-- `IOASISStorageProvider` — EF + PostgreSQL + InMemory paths are deleted
+- `IAZOAStorageProvider` — EF + PostgreSQL + InMemory paths are deleted
 - No controllers or managers use EF code paths
 
 Old documentation mentioning "9 controllers / 7 managers / EF+InMemory" is obsolete.

@@ -9,15 +9,15 @@ import { Separator } from '@/components/ui/separator'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
-import { useOasis } from '@/lib/oasis-context'
-import { oasis, isOk } from '@/lib/oasis'
+import { useAzoa } from '@/lib/azoa-context'
+import { azoa, isOk } from '@/lib/azoa'
 import { ResultDisplay } from '@/components/shared/result-display'
 import { JsonViewer } from '@/components/shared/json-viewer'
 
 type ProfileFields = { username: string; email: string; firstName: string; lastName: string; title: string }
 
 export default function AvatarsPage() {
-  const { user, avatarId, logout, refreshProfile } = useOasis()
+  const { user, avatarId, logout, refreshProfile } = useAzoa()
 
   const [form, setForm] = useState<ProfileFields>({
     username: user?.username ?? '',
@@ -42,7 +42,7 @@ export default function AvatarsPage() {
     setSaving(true)
     setSaveResult(null)
     try {
-      const result = await oasis.api.updateAvatar(avatarId, form)
+      const result = await azoa.api.updateAvatar(avatarId, form)
       if (isOk(result)) {
         await refreshProfile()
         setSaveResult({ ok: true, data: result.value, message: 'Profile updated.' })
@@ -67,7 +67,7 @@ export default function AvatarsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Avatar Profile</h1>
-        <p className="text-sm text-muted-foreground">Manage your OASIS identity</p>
+        <p className="text-sm text-muted-foreground">Manage your AZOA identity</p>
       </div>
 
       <Card>
@@ -95,7 +95,7 @@ export default function AvatarsPage() {
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="title">Title</Label>
-              <Input id="title" value={form.title} onChange={handleChange('title')} placeholder="e.g. Guardian of the OASIS" />
+              <Input id="title" value={form.title} onChange={handleChange('title')} placeholder="e.g. Guardian of the AZOA" />
             </div>
           </div>
           <Button onClick={handleSave} disabled={saving || !avatarId} size="sm">

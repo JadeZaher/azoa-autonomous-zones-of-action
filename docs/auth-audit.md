@@ -617,7 +617,7 @@
 | HolonController_QA.jsonl | `isolation_unauth_create` | POST /api/holon | MultiScheme | INTENTIONAL — expects 401; do NOT add auth |
 | MaliciousPayloads.jsonl | `mal_mass_holon` | POST /api/holon | MultiScheme | Uses `{{malHAuth.token}}` which IS present; no fix needed if upstream login succeeded |
 
-> **Auth-not-set-up root cause** (spec's "401 auth-not-set-up ~155 cases"): The primary driver is cross-suite email collision. When `register_avatar` in one suite registers `live@test.oasis` and a second suite also registers `live@test.oasis`, the second gets 400 and the login token is never extracted — all downstream `{{auth1.token}}` substitutions remain as literal `{{...}}` strings. The per-suite `_suiteVars` + `{{suitePrefix}}` mechanism (W2-E1 + W3-E2) is the fix. Once each suite uses `{{suitePrefix}}_live@test.oasis`, collision is eliminated and all downstream auth headers resolve correctly.
+> **Auth-not-set-up root cause** (spec's "401 auth-not-set-up ~155 cases"): The primary driver is cross-suite email collision. When `register_avatar` in one suite registers `live@test.azoa` and a second suite also registers `live@test.azoa`, the second gets 400 and the login token is never extracted — all downstream `{{auth1.token}}` substitutions remain as literal `{{...}}` strings. The per-suite `_suiteVars` + `{{suitePrefix}}` mechanism (W2-E1 + W3-E2) is the fix. Once each suite uses `{{suitePrefix}}_live@test.azoa`, collision is eliminated and all downstream auth headers resolve correctly.
 
 ---
 
@@ -663,7 +663,7 @@ These cases exist to verify rejection. E2 MUST NOT add `Authorization` headers t
 
 ## Cross-cutting Observations
 
-1. **`AvatarController.Login` is the unique auth-chain entry point**: every suite that calls any `[Authorize]` endpoint depends on `POST /api/avatar/login` returning `OASISResult<string>` with the JWT in `result` (not `result.token`). The extract `{"token":"result"}` is correct. Any upstream failure (e.g., duplicate email collision from missing `suitePrefix`) cascades to all downstream `{{...token}}` cases as Inconclusive/401.
+1. **`AvatarController.Login` is the unique auth-chain entry point**: every suite that calls any `[Authorize]` endpoint depends on `POST /api/avatar/login` returning `AZOAResult<string>` with the JWT in `result` (not `result.token`). The extract `{"token":"result"}` is correct. Any upstream failure (e.g., duplicate email collision from missing `suitePrefix`) cascades to all downstream `{{...token}}` cases as Inconclusive/401.
 
 2. **Missing route `/api/avatar/{id}/wallets`**: Approximately 37+ cases across 9 suites reference this route, which does not exist. This is the single largest structural issue beyond auth-header gaps. W4-F1 needs to add this route (either in AvatarController as nested methods delegating to WalletManager, or via a redirect to WalletController). E2 cannot address this.
 
@@ -671,7 +671,7 @@ These cases exist to verify rejection. E2 MUST NOT add `Authorization` headers t
 
 4. **NetworkController is class-`[AllowAnonymous]`**: Its single action also has `[AllowAnonymous]` — redundant but correct. No suite tests this controller directly.
 
-5. **Suite identity collision** (spec R-2): Every suite that registers an avatar uses hardcoded emails like `live@test.oasis`, `holon@test.oasis`, etc. Without `_suiteVars` + `{{suitePrefix}}` (W2-E1 + W3-E2), parallel runs collide. The `suitePrefix` fix in E2 is the correct mitigation.
+5. **Suite identity collision** (spec R-2): Every suite that registers an avatar uses hardcoded emails like `live@test.azoa`, `holon@test.azoa`, etc. Without `_suiteVars` + `{{suitePrefix}}` (W2-E1 + W3-E2), parallel runs collide. The `suitePrefix` fix in E2 is the correct mitigation.
 
 6. **QA/Malicious 401 case count**: Counting Table 4 entries across the 9 editable `_QA` and `_Malicious` suites gives ~30 explicit 401 cases. Together with ~155 spec-predicted auth-not-set-up cases (from suite collision), the total resolved 401 exposure is large. Post-E2, the 30 intentional 401s should remain; the ~155 collision-driven 401s should resolve to 200.
 

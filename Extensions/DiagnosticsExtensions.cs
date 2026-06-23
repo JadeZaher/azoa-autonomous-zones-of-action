@@ -2,9 +2,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OASIS.WebAPI.Core.Diagnostics;
+using AZOA.WebAPI.Core.Diagnostics;
 
-namespace OASIS.WebAPI.Extensions;
+namespace AZOA.WebAPI.Extensions;
 
 /// <summary>
 /// Registers the JSONL exception logger subsystem (development-only).

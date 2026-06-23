@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Models.Quest;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Stores;
+namespace AZOA.WebAPI.Interfaces.Stores;
 
 /// <summary>
 /// Persistence boundary for <see cref="QuestRun"/> — the per-attempt runtime
@@ -17,10 +17,10 @@ namespace OASIS.WebAPI.Interfaces.Stores;
 public interface IQuestRunStore
 {
     /// <summary>Inserts a new run row.</summary>
-    Task<OASISResult<QuestRun>> CreateAsync(QuestRun run, CancellationToken ct = default);
+    Task<AZOAResult<QuestRun>> CreateAsync(QuestRun run, CancellationToken ct = default);
 
     /// <summary>Loads a single run by id; <c>IsError</c> when not found.</summary>
-    Task<OASISResult<QuestRun>> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<AZOAResult<QuestRun>> GetByIdAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>
     /// Updates an existing run (status transition, ended_at, fork fields, etc.).
@@ -33,22 +33,22 @@ public interface IQuestRunStore
     /// regressed by a stale read-modify-write. <c>null</c> ⇒ unconditional
     /// update (back-compat for the existing supervisor/fork paths).
     /// </summary>
-    Task<OASISResult<QuestRun>> UpdateAsync(
+    Task<AZOAResult<QuestRun>> UpdateAsync(
         QuestRun run, QuestRunStatus? expectedStatus = null, CancellationToken ct = default);
 
     /// <summary>All runs for a single <see cref="Quest"/> definition.</summary>
-    Task<OASISResult<IEnumerable<QuestRun>>> GetByQuestIdAsync(Guid questId, CancellationToken ct = default);
+    Task<AZOAResult<IEnumerable<QuestRun>>> GetByQuestIdAsync(Guid questId, CancellationToken ct = default);
 
     /// <summary>All runs initiated by an avatar across any quest.</summary>
-    Task<OASISResult<IEnumerable<QuestRun>>> GetByAvatarIdAsync(Guid avatarId, CancellationToken ct = default);
+    Task<AZOAResult<IEnumerable<QuestRun>>> GetByAvatarIdAsync(Guid avatarId, CancellationToken ct = default);
 
     /// <summary>All runs currently in a given status (e.g. <see cref="QuestRunStatus.Running"/>).</summary>
-    Task<OASISResult<IEnumerable<QuestRun>>> GetByStatusAsync(QuestRunStatus status, CancellationToken ct = default);
+    Task<AZOAResult<IEnumerable<QuestRun>>> GetByStatusAsync(QuestRunStatus status, CancellationToken ct = default);
 
     /// <summary>
     /// Returns the ancestor chain of a run, starting with the run itself and
     /// walking <see cref="QuestRun.ParentRunId"/> until null. Child-to-root
     /// order. <c>IsError</c> if <paramref name="runId"/> does not exist.
     /// </summary>
-    Task<OASISResult<IEnumerable<QuestRun>>> GetLineageAsync(Guid runId, CancellationToken ct = default);
+    Task<AZOAResult<IEnumerable<QuestRun>>> GetLineageAsync(Guid runId, CancellationToken ct = default);
 }

@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces.Stores;
-using OASIS.WebAPI.Models;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -35,7 +35,7 @@ public class ApiKeyController : ControllerBase
     {
         var avatarId = GetAvatarId();
         if (avatarId == Guid.Empty)
-            return Unauthorized(new OASISResult<object> { IsError = true, Message = "Avatar not authenticated." });
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
 
         var rawKey = ApiKeyAuthenticationHandler.GenerateRawKey();
         var keyHash = ApiKeyAuthenticationHandler.HashKey(rawKey);
@@ -54,7 +54,7 @@ public class ApiKeyController : ControllerBase
 
         await _store.CreateAsync(apiKey, HttpContext.RequestAborted);
 
-        return Ok(new OASISResult<CreateApiKeyResponse>
+        return Ok(new AZOAResult<CreateApiKeyResponse>
         {
             IsError = false,
             Message = "API key created. Store the key securely — it will not be shown again.",
@@ -79,7 +79,7 @@ public class ApiKeyController : ControllerBase
     {
         var avatarId = GetAvatarId();
         if (avatarId == Guid.Empty)
-            return Unauthorized(new OASISResult<object> { IsError = true, Message = "Avatar not authenticated." });
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
 
         var owned = await _store.ListByAvatarAsync(avatarId, HttpContext.RequestAborted);
 
@@ -96,7 +96,7 @@ public class ApiKeyController : ControllerBase
             Scopes = k.Scopes,
         }).ToList();
 
-        return Ok(new OASISResult<List<ApiKeyInfo>> { IsError = false, Message = "OK", Result = keys });
+        return Ok(new AZOAResult<List<ApiKeyInfo>> { IsError = false, Message = "OK", Result = keys });
     }
 
     /// <summary>
@@ -107,13 +107,13 @@ public class ApiKeyController : ControllerBase
     {
         var avatarId = GetAvatarId();
         if (avatarId == Guid.Empty)
-            return Unauthorized(new OASISResult<object> { IsError = true, Message = "Avatar not authenticated." });
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
 
         var ok = await _store.RevokeAsync(id, avatarId, DateTime.UtcNow, HttpContext.RequestAborted);
         if (!ok)
-            return NotFound(new OASISResult<object> { IsError = true, Message = "API key not found." });
+            return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
 
-        return Ok(new OASISResult<object> { IsError = false, Message = "API key revoked." });
+        return Ok(new AZOAResult<object> { IsError = false, Message = "API key revoked." });
     }
 
     /// <summary>
@@ -124,13 +124,13 @@ public class ApiKeyController : ControllerBase
     {
         var avatarId = GetAvatarId();
         if (avatarId == Guid.Empty)
-            return Unauthorized(new OASISResult<object> { IsError = true, Message = "Avatar not authenticated." });
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
 
         var ok = await _store.DeleteAsync(id, avatarId, HttpContext.RequestAborted);
         if (!ok)
-            return NotFound(new OASISResult<object> { IsError = true, Message = "API key not found." });
+            return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
 
-        return Ok(new OASISResult<object> { IsError = false, Message = "API key deleted." });
+        return Ok(new AZOAResult<object> { IsError = false, Message = "API key deleted." });
     }
 }
 

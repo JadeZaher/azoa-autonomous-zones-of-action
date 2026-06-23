@@ -20,10 +20,10 @@ import { BrowserWalletConnectDialog } from '@/components/browser-wallet-connect'
 import { PlatformWalletGenerateDialog } from '@/components/platform-wallet-generate'
 import { WalletExportDialog } from '@/components/wallet-export-dialog'
 import { WalletFundDialog } from '@/components/wallet-fund-dialog'
-import { useOasis, type WalletEntry } from '@/lib/oasis-context'
-import { usePortfolio } from '@/lib/oasis-hooks'
+import { useAzoa, type WalletEntry } from '@/lib/azoa-context'
+import { usePortfolio } from '@/lib/azoa-hooks'
 import { useNetwork } from '@/lib/network-context'
-import type { ChainBalance } from '@/lib/oasis'
+import type { ChainBalance } from '@/lib/azoa'
 import { Wallet, ExternalLink, Key, Download, Trash2, Star, Coins, ShoppingCart } from 'lucide-react'
 
 function truncateAddress(addr: string, chars = 6): string {
@@ -182,7 +182,7 @@ export default function WalletsPage() {
   const {
     wallets, walletsLoading: loading, walletsError: error,
     refreshWallets: refresh, avatarId, setDefaultWallet, removeWallet,
-  } = useOasis()
+  } = useAzoa()
 
   const { isTestLike } = useNetwork()
   const [settingDefault, setSettingDefault] = useState<string | null>(null)

@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace OASIS.WebAPI.Core;
+namespace AZOA.WebAPI.Core;
 
 /// <summary>
 /// Generates cryptographic keypairs for supported chains and encrypts private keys
@@ -12,9 +12,9 @@ public class WalletKeyService
 
     public WalletKeyService(IConfiguration config)
     {
-        var secret = config.GetValue<string>("OASIS:WalletEncryptionKey")
+        var secret = config.GetValue<string>("AZOA:WalletEncryptionKey")
                      ?? throw new InvalidOperationException(
-                         "OASIS:WalletEncryptionKey is required for platform wallet generation.");
+                         "AZOA:WalletEncryptionKey is required for platform wallet generation.");
 
         // Derive a 256-bit key from the secret using SHA-256
         _encryptionKey = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret));

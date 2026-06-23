@@ -7,14 +7,14 @@ design rationale survives, but they are no longer part of the catalog
 ## 2026-06-10 — surrealql-toolkit family
 
 The public-toolkit framing ("Prisma for SurrealQL") was abandoned per
-RUNBOOK §1 (decided 2026-05-27). The OASIS-internal needs are met by
-the existing `Oasis.SurrealDb.Client/Schema/Analyzer` packages plus the
+RUNBOOK §1 (decided 2026-05-27). The AZOA-internal needs are met by
+the existing `Azoa.SurrealDb.Client/Schema/Analyzer` packages plus the
 C#-first attribute-driven schema authoring that landed 2026-06-03. The
 five tracks below were never started and are kept here as a record.
 
 - surrealql-toolkit/ — umbrella + DESIGN-mermaid-portfolio.md (historical)
-- surrealql-drift-detection/ — `oasis-surreal drift` design
-- surrealql-db-pull/ — `oasis-surreal db pull` design
+- surrealql-drift-detection/ — `azoa-surreal drift` design
+- surrealql-db-pull/ — `azoa-surreal db pull` design
 - surrealql-studio/ — `/studio` UI design
 - surrealql-toolkit-packaging/ — public NuGet packaging design
 

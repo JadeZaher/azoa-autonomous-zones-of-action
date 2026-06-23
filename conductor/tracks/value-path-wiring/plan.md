@@ -1,7 +1,7 @@
 # Value-Path Wiring — Plan
 
 Source spec: [spec.md](spec.md)
-Initiative: **workflow-engine** (OASIS as a durable, consumer-driven workflow
+Initiative: **workflow-engine** (AZOA as a durable, consumer-driven workflow
 engine for ArdaNova via SDK) — Track 1.
 Gap analysis: [`conductor/REVIEW-economic-substrate-2026-06-16.md`](../../REVIEW-economic-substrate-2026-06-16.md)
 Part A (C1, C2, H1–H4, M1).
@@ -108,7 +108,7 @@ C2's op-row write.
     platform-wallet-type guard (`:99-104`) now run on the real value path;
   - `ctx.IsPlatform` op → `WithPlatformSigningKeyAsync(true, sign)`
     (`KeyCustodyService.cs:118+`).
-  Delete the unconditional `OASIS:Algorand:PlatformMnemonic` load for user ops
+  Delete the unconditional `AZOA:Algorand:PlatformMnemonic` load for user ops
   (`:792-799`).
 - [ ] **Interim safety.** Any value-moving path that does **not** yet carry a
   resolvable `SigningContext` (e.g. a non-Algorand provider, or a user op with no
@@ -188,7 +188,7 @@ each fix.
 - [ ] `dotnet build` — 0 errors, **0 warnings** (nullable enabled).
 - [ ] `dotnet test` — green: all new C1/C2/H1/H3/H4/M1 tests **and** the five
   regression-gate suites above.
-- [ ] Grep the OASIS solution for the tenant brand name — **zero** hits (code,
+- [ ] Grep the AZOA solution for the tenant brand name — **zero** hits (code,
   config, comments, docs).
 - [ ] Grep for any new EF/Postgres/InMemory storage path — **zero**; SurrealDB
   stays the sole engine.

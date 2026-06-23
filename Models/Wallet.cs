@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Core;
-using OASIS.WebAPI.Interfaces;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
 
-namespace OASIS.WebAPI.Models;
+namespace AZOA.WebAPI.Models;
 
 public class Wallet : IWallet
 {

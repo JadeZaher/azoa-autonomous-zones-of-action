@@ -1,4 +1,4 @@
-# OASIS Sleek — Runbook
+# AZOA Sleek — Runbook
 
 Operational reference: how to start, stop, reset, deploy, and diagnose the
 stack. For developer setup + conventions see [DEVELOPMENT.md](DEVELOPMENT.md);
@@ -29,7 +29,7 @@ idempotently. Flags:
 | `--reset-db` / `-ResetDb` | **DESTRUCTIVE.** Tear down + wipe the SurrealDB volume before bringing the stack up. (alias: `--clean` / `-Clean`) |
 | `--reset` / `-Reset` | Wipe + re-apply the SurrealDB schema/namespace WITHOUT touching the volume. Combine with `--reset-db` for a total reset. |
 | `--logs` / `-Logs` | Tail combined container logs after startup. |
-| `OASIS_SKIP_RESET=1` (env) | Skip the host-side schema sync entirely (the container entrypoint still applies `oasis-surreal up`). |
+| `AZOA_SKIP_RESET=1` (env) | Skip the host-side schema sync entirely (the container entrypoint still applies `azoa-surreal up`). |
 
 After ~30-60s (first run builds images):
 
@@ -42,7 +42,7 @@ After ~30-60s (first run builds images):
 **Custom host port:** set `SURREALDB_HOST_PORT` to remap the SurrealDB
 host-side port when 8000 is occupied (the detection probe + host-side
 schema sync honor it). The scripts also self-detect an already-running
-bundled `oasis-dev-surrealdb` container and take the normal full-stack
+bundled `azoa-dev-surrealdb` container and take the normal full-stack
 path; a non-bundled SurrealDB already answering on the host port is treated
 as external and the API is pointed at it via
 `host.docker.internal` / `host.containers.internal`.
@@ -66,8 +66,8 @@ Or, preserving the volume but re-applying the namespace:
 ```
 
 The host-side schema sync needs `dotnet` on the host (the schema CLI runs
-from source via `dotnet run`). Without it, set `OASIS_SKIP_RESET=1` — the
-WebAPI container's entrypoint applies `oasis-surreal up` on its own. See
+from source via `dotnet run`). Without it, set `AZOA_SKIP_RESET=1` — the
+WebAPI container's entrypoint applies `azoa-surreal up` on its own. See
 [DEVELOPMENT.md](DEVELOPMENT.md) for host-run and bring-your-own-SurrealDB
 variants.
 
@@ -76,7 +76,7 @@ variants.
 ## 2. Production deploy (Railway)
 
 The WebAPI ships as a single image (`Dockerfile`) bundling the
-`oasis-surreal` schema CLI alongside `OASIS.WebAPI.dll`. SurrealDB runs as a
+`azoa-surreal` schema CLI alongside `AZOA.WebAPI.dll`. SurrealDB runs as a
 separate Railway service.
 
 ### WebAPI service — required environment variables
@@ -85,11 +85,11 @@ separate Railway service.
 |---|---|---|
 | `ASPNETCORE_ENVIRONMENT` | yes | Set to `Production`. Gates Swagger off and enforces the G1 durability ack below. |
 | `Jwt__Key` | yes | JWT signing key, ≥32 chars. No default — boot fails without it. |
-| `Jwt__Issuer` / `Jwt__Audience` | optional | Default `OASIS.WebAPI` / `OASIS.Client`. |
-| `OASIS__WalletEncryptionKey` | yes | Symmetric key for platform wallet generation. No default — `WalletKeyService` throws without it. |
+| `Jwt__Issuer` / `Jwt__Audience` | optional | Default `AZOA.WebAPI` / `AZOA.Client`. |
+| `AZOA__WalletEncryptionKey` | yes | Symmetric key for platform wallet generation. No default — `WalletKeyService` throws without it. |
 | `SurrealDb__Endpoint` | yes | URL of the SurrealDB service (e.g. `http://surrealdb.railway.internal:8000`). |
-| `SurrealDb__Namespace` | yes | e.g. `oasis`. |
-| `SurrealDb__Database` | yes | e.g. `oasis`. |
+| `SurrealDb__Namespace` | yes | e.g. `azoa`. |
+| `SurrealDb__Database` | yes | e.g. `azoa`. |
 | `SurrealDb__User` | yes | SurrealDB root user. |
 | `SurrealDb__Password` | yes | SurrealDB root password. |
 | `SurrealDb__G1DurabilityAcknowledged` | yes | Must be `true`. Outside `IntegrationTest`, `Program.cs` refuses to boot unless this is set — it's the operator's acknowledgement that the SurrealDB storage URI runs with per-commit WAL sync (see §2 durability note). |
@@ -97,22 +97,22 @@ separate Railway service.
 
 The `SurrealDb__*` family is consumed by both the .NET host AND the
 entrypoint's migration pre-step; you only need to wire one family. The
-entrypoint also accepts the `OASIS_SURREAL_*` aliases
-(`OASIS_SURREAL_URL` / `_NS` / `_DB` / `_USER` / `_PASS`) if preferred.
+entrypoint also accepts the `AZOA_SURREAL_*` aliases
+(`AZOA_SURREAL_URL` / `_NS` / `_DB` / `_USER` / `_PASS`) if preferred.
 
 ### Entrypoint migration behavior
 
 On every boot, `docker-entrypoint.sh`:
 1. Waits up to ~2 min for SurrealDB to answer `/health`, then aborts if
    unreachable.
-2. Runs `oasis-surreal up` — applies `Generated/Schemas/` then
+2. Runs `azoa-surreal up` — applies `Generated/Schemas/` then
    `Migrations/` against the configured namespace/database. **Idempotent**:
    the `schema_migration` ledger skips already-applied files. A fresh
    SurrealDB needs no out-of-band setup (the runner bootstraps
    `DEFINE NAMESPACE/DATABASE IF NOT EXISTS`).
 3. Execs the WebAPI host.
 
-Skip the migration step with `OASIS_SKIP_MIGRATIONS=1` (e.g. when an earlier
+Skip the migration step with `AZOA_SKIP_MIGRATIONS=1` (e.g. when an earlier
 deploy step already applied them).
 
 ### SurrealDB service on Railway
@@ -135,12 +135,12 @@ script picks the first one it finds.
 **SurrealDB never became reachable at boot**
 1. Container running? `docker compose -f docker-compose.dev.yml ps`
 2. Host port (default 8000) free? Set `SURREALDB_HOST_PORT` to remap if not.
-3. On `--reset` failure the script dumps `oasis-dev-surrealdb` state + the
+3. On `--reset` failure the script dumps `azoa-dev-surrealdb` state + the
    last 50 log lines — common causes are a rejected storage URI, rootless
    podman volume-ownership (`permission denied` on `/data`), or the port
    already bound.
 
-**"checksum mismatch detected" re-running `oasis-surreal up`**
+**"checksum mismatch detected" re-running `azoa-surreal up`**
 A migration file drifted from its recorded `schema_migration` hash. Revert
 the edit, or rerun with `--force` (see the migrations README "Drift
 detection").
@@ -148,7 +148,7 @@ detection").
 **WebAPI boots but `/health` returns Unhealthy**
 The `storage-db` check failed. Confirm SurrealDB is reachable from the API's
 perspective:
-- compose: `docker exec oasis-dev-api curl -s http://surrealdb:8000/health`
+- compose: `docker exec azoa-dev-api curl -s http://surrealdb:8000/health`
 - host-run: `curl http://127.0.0.1:8000/health`
 
 **WebAPI refuses to boot citing G1 durability**
@@ -160,12 +160,12 @@ then set `SurrealDb__G1DurabilityAcknowledged=true`.
 `NEXT_PUBLIC_API_URL` is **baked in at Next.js build time** — editing it in
 compose alone does nothing. Update it AND rebuild the frontend image
 (`./dev-up.sh` rebuilds by default, or
-`docker compose -f docker-compose.dev.yml build oasis-frontend`). See the
+`docker compose -f docker-compose.dev.yml build azoa-frontend`). See the
 DEVELOPMENT.md troubleshooting note.
 
 **Which migrations are applied?**
 ```bash
-dotnet run --project packages/Oasis.SurrealDb.Schema -- migrate status
+dotnet run --project packages/Azoa.SurrealDb.Schema -- migrate status
 ```
 Reads the `schema_migration` ledger. `dev-up` does this implicitly on every
 run; repeat invocations are no-ops when the ledger matches the on-disk files.

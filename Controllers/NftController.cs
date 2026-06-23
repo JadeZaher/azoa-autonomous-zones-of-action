@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OASIS.WebAPI.Interfaces;
-using OASIS.WebAPI.Interfaces.Managers;
-using OASIS.WebAPI.Models.Requests;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Controllers;
+namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -20,31 +20,31 @@ public class NftController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<OASISResult<NftResult>>> Get(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<NftResult>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _nftManager.GetAsync(id, request);
         if (result.IsError || result.Result == null) return NotFound(result);
 
         var nftResult = MapToNftResult(result.Result);
-        return Ok(new OASISResult<NftResult> { Result = nftResult, Message = result.Message });
+        return Ok(new AZOAResult<NftResult> { Result = nftResult, Message = result.Message });
     }
 
     [HttpGet]
-    public async Task<ActionResult<OASISResult<IEnumerable<NftResult>>>> Query([FromQuery] NftQueryRequest query, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<NftResult>>>> Query([FromQuery] NftQueryRequest query, [FromQuery] AZOARequest? request)
     {
         var result = await _nftManager.QueryAsync(query, request);
-        if (result.IsError || result.Result == null) return Ok(new OASISResult<IEnumerable<NftResult>> { IsError = true, Message = result.Message });
+        if (result.IsError || result.Result == null) return Ok(new AZOAResult<IEnumerable<NftResult>> { IsError = true, Message = result.Message });
 
         var mapped = result.Result.Select(MapToNftResult).ToList();
-        return Ok(new OASISResult<IEnumerable<NftResult>> { Result = mapped, Message = "Success" });
+        return Ok(new AZOAResult<IEnumerable<NftResult>> { Result = mapped, Message = "Success" });
     }
 
     [HttpPost("mint")]
-    public async Task<ActionResult<OASISResult<IBlockchainOperation>>> Mint([FromBody] NftMintRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Mint([FromBody] NftMintRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
 
         var result = await _nftManager.MintAsync(request, avatarId.Value, providerRequest);
         if (!result.IsError) return Ok(result);
@@ -60,11 +60,11 @@ public class NftController : ControllerBase
     }
 
     [HttpPost("{id:guid}/transfer")]
-    public async Task<ActionResult<OASISResult<IBlockchainOperation>>> Transfer(Guid id, [FromBody] NftTransferRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Transfer(Guid id, [FromBody] NftTransferRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
 
         var result = await _nftManager.TransferAsync(id, request, avatarId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
@@ -72,11 +72,11 @@ public class NftController : ControllerBase
     }
 
     [HttpPost("{id:guid}/burn")]
-    public async Task<ActionResult<OASISResult<IBlockchainOperation>>> Burn(Guid id, [FromBody] NftBurnRequest request, [FromQuery] OASISRequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Burn(Guid id, [FromBody] NftBurnRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new OASISResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
 
         var result = await _nftManager.BurnAsync(id, request.WalletId, avatarId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
@@ -85,7 +85,7 @@ public class NftController : ControllerBase
 
     [HttpGet("{id:guid}/metadata")]
     [AllowAnonymous]
-    public async Task<ActionResult<OASISResult<NftMetadata>>> GetMetadata(Guid id, [FromQuery] OASISRequest? request)
+    public async Task<ActionResult<AZOAResult<NftMetadata>>> GetMetadata(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _nftManager.GetMetadataAsync(id, request);
         if (result.IsError || result.Result == null) return NotFound(result);

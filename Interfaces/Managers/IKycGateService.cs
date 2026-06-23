@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using OASIS.WebAPI.Models.Kyc;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Kyc;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces.Managers;
+namespace AZOA.WebAPI.Interfaces.Managers;
 
 /// <summary>
 /// Reusable KYC access guard. Other managers inject this and call
@@ -23,11 +23,11 @@ public interface IKycGateService
     /// it to 403 — carrying the generic
     /// <see cref="KycAuthorizationError.VerificationRequiredMessage"/>.
     /// </summary>
-    Task<OASISResult<bool>> RequireVerifiedAsync(Guid avatarId);
+    Task<AZOAResult<bool>> RequireVerifiedAsync(Guid avatarId);
 
     /// <summary>
     /// The avatar's current effective KYC status (the most-recent submission's
     /// status). Returns an error when the avatar has no submission.
     /// </summary>
-    Task<OASISResult<KycStatus>> GetKycStatusAsync(Guid avatarId);
+    Task<AZOAResult<KycStatus>> GetKycStatusAsync(Guid avatarId);
 }

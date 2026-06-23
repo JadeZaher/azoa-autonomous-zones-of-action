@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace OASIS.WebAPI.Models.Idempotency;
+namespace AZOA.WebAPI.Models.Idempotency;
 
 /// <summary>
 /// Lifecycle state of an idempotent operation.

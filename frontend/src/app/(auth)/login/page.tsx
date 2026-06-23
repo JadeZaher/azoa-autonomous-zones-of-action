@@ -3,7 +3,7 @@
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useOasisAuth } from '@/lib/oasis-auth'
+import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
-  const { login } = useOasisAuth()
+  const { login } = useAzoaAuth()
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -37,7 +37,7 @@ export default function LoginPage() {
       <div className="space-y-2 text-center lg:text-left">
         <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
         <p className="text-sm text-muted-foreground">
-          Sign in to your OASIS account to continue
+          Sign in to your AZOA account to continue
         </p>
       </div>
 

@@ -1,7 +1,7 @@
 using FluentValidation;
-using OASIS.WebAPI.Controllers;
+using AZOA.WebAPI.Controllers;
 
-namespace OASIS.WebAPI.Validators;
+namespace AZOA.WebAPI.Validators;
 
 public class BridgeReverseRequestValidator : AbstractValidator<BridgeReverseRequest>
 {

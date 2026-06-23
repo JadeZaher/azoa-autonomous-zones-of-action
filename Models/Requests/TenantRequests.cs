@@ -1,4 +1,4 @@
-namespace OASIS.WebAPI.Models.Requests;
+namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
 /// Body for <c>POST /api/tenant/avatars</c>. Carries the tenant's own user id

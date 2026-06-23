@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide provides comprehensive instructions for deploying the integrated OASIS Sleek platform with Avatar NFT Service, frontend authentication, and blockchain connectivity.
+This guide provides comprehensive instructions for deploying the integrated AZOA Sleek platform with Avatar NFT Service, frontend authentication, and blockchain connectivity.
 
 ## 🎯 **Architecture Overview**
 
@@ -41,7 +41,7 @@ User → Frontend → Backend API → Blockchain Operations → Database
 #### **1.1 Clone and Setup Backend**
 ```bash
 git clone <repository-url>
-cd OASIS.WebAPI
+cd AZOA.WebAPI
 
 # Install dependencies
 dotnet restore
@@ -53,13 +53,13 @@ dotnet restore
 #### **1.2 Database Setup**
 ```bash
 # Create database
-createdb oasis_nft_db
+createdb azoa_nft_db
 
 # Run migrations
 dotnet ef database update
 
 # Verify database
-psql -d oasis_nft_db -c "\dt"
+psql -d azoa_nft_db -c "\dt"
 ```
 
 #### **1.3 Configure JWT Settings**
@@ -67,8 +67,8 @@ psql -d oasis_nft_db -c "\dt"
 {
   "Jwt": {
     "Key": "your-super-secret-jwt-key-min-32-characters-long",
-    "Issuer": "oasis-sleek-api",
-    "Audience": "oasis-sleek-client"
+    "Issuer": "azoa-api",
+    "Audience": "azoa-client"
   }
 }
 ```
@@ -76,7 +76,7 @@ psql -d oasis_nft_db -c "\dt"
 #### **1.4 Configure Blockchain Providers**
 ```json
 {
-  "OASIS": {
+  "AZOA": {
     "Blockchain": {
       "Algorand": {
         "BaseUrl": "https://testnet-algorand.api.purestake.io/ps2",
@@ -163,9 +163,9 @@ open http://localhost:3000
 sudo apt-get install postgresql postgresql-contrib
 
 # Create user and database
-sudo -u postgres createdb oasis_nft_db
-sudo -u postgres psql -c "CREATE USER oasis_user WITH PASSWORD 'your_password';"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE oasis_nft_db TO oasis_user;"
+sudo -u postgres createdb azoa_nft_db
+sudo -u postgres psql -c "CREATE USER azoa_user WITH PASSWORD 'your_password';"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE azoa_nft_db TO azoa_user;"
 ```
 
 #### **3.2 Run Migrations**
@@ -174,7 +174,7 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE oasis_nft_db TO oasis
 dotnet ef database update
 
 # Verify tables exist
-psql -d oasis_nft_db -c "\dt"
+psql -d azoa_nft_db -c "\dt"
 ```
 
 #### **3.3 Seed Initial Data**
@@ -182,7 +182,7 @@ psql -d oasis_nft_db -c "\dt"
 # Create admin user
 curl -X POST http://localhost:5000/api/admin/seed \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "email": "admin@oasis.local", "password": "admin123"}'
+  -d '{"username": "admin", "email": "admin@azoa.local", "password": "admin123"}'
 ```
 
 ### **4. Blockchain Integration**
@@ -197,7 +197,7 @@ npm install algorand-sdk
 
 # Configure provider
 {
-  "OASIS": {
+  "AZOA": {
     "Blockchain": {
       "Algorand": {
         "BaseUrl": "https://testnet-algorand.api.purestake.io/ps2",
@@ -219,7 +219,7 @@ npm install @solana/web3.js
 
 # Configure provider
 {
-  "OASIS": {
+  "AZOA": {
     "Blockchain": {
       "Solana": {
         "BaseUrl": "https://api.devnet.solana.com",
@@ -249,14 +249,14 @@ curl -X POST http://localhost:5000/api/blockchain/balance \
 ```json
 {
   "ConnectionStrings": {
-    "OASISDatabase": "Host=localhost;Database=oasis_nft_db;Username=oasis_user;Password=your_password"
+    "AZOADatabase": "Host=localhost;Database=azoa_nft_db;Username=azoa_user;Password=your_password"
   },
   "Jwt": {
     "Key": "your-super-secret-jwt-key-min-32-characters-long",
-    "Issuer": "oasis-sleek-api",
-    "Audience": "oasis-sleek-client"
+    "Issuer": "azoa-api",
+    "Audience": "azoa-client"
   },
-  "OASIS": {
+  "AZOA": {
     "CustomProviderStrategy": "health-score",
     "Blockchain": {
       "Algorand": {
@@ -286,7 +286,7 @@ NEXT_PUBLIC_SOLANA_NETWORK=devnet
 
 ### **1. Backend Tests**
 ```bash
-cd OASIS.WebAPI
+cd AZOA.WebAPI
 
 # Run unit tests
 dotnet test
@@ -338,20 +338,20 @@ EXPOSE 5000
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY ["OASIS.WebAPI.csproj", "."]
-RUN dotnet restore "OASIS.WebAPI.csproj"
+COPY ["AZOA.WebAPI.csproj", "."]
+RUN dotnet restore "AZOA.WebAPI.csproj"
 COPY . .
 WORKDIR "/src/."
-RUN dotnet build "OASIS.WebAPI.csproj" -c Release -o /app/build
+RUN dotnet build "AZOA.WebAPI.csproj" -c Release -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "OASIS.WebAPI.csproj" -c Release -o /app/publish
+RUN dotnet publish "AZOA.WebAPI.csproj" -c Release -o /app/publish
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 
-CMD ["dotnet", "OASIS.WebAPI.dll"]
+CMD ["dotnet", "AZOA.WebAPI.dll"]
 ```
 
 ### **2. Frontend Dockerfile**
@@ -375,11 +375,11 @@ CMD ["nginx", "-g", "daemon off;"]
 version: '3.8'
 services:
   backend:
-    build: ./OASIS.WebAPI
+    build: ./AZOA.WebAPI
     ports:
       - "5000:5000"
     environment:
-      - ConnectionStrings__OASISDatabase=Host=postgres;Database=oasis_nft_db;Username=postgres;Password=postgres
+      - ConnectionStrings__AZOADatabase=Host=postgres;Database=azoa_nft_db;Username=postgres;Password=postgres
     depends_on:
       - postgres
 
@@ -395,7 +395,7 @@ services:
   postgres:
     image: postgres:14-alpine
     environment:
-      - POSTGRES_DB=oasis_nft_db
+      - POSTGRES_DB=azoa_nft_db
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     volumes:
@@ -434,7 +434,7 @@ docker-compose ps
     "LogLevel": {
       "Default": "Information",
       "Microsoft.AspNetCore": "Warning",
-      "OASIS.WebAPI": "Debug"
+      "AZOA.WebAPI": "Debug"
     }
   }
 }
@@ -458,7 +458,7 @@ curl http://localhost:5000/health/blockchain/algorand
 curl -w "@curl-format.txt" -o /dev/null -s http://localhost:5000/api/health
 
 # Monitor database performance
-psql -d oasis_nft_db -c "SELECT * FROM pg_stat_activity;"
+psql -d azoa_nft_db -c "SELECT * FROM pg_stat_activity;"
 ```
 
 ## 🔒 **Security Configuration**
@@ -468,8 +468,8 @@ psql -d oasis_nft_db -c "SELECT * FROM pg_stat_activity;"
 {
   "Jwt": {
     "Key": "your-super-secret-jwt-key-min-32-characters-long",
-    "Issuer": "oasis-sleek-api",
-    "Audience": "oasis-sleek-client",
+    "Issuer": "azoa-api",
+    "Audience": "azoa-client",
     "ExpirationMinutes": 1440
   }
 }
@@ -492,7 +492,7 @@ psql -d oasis_nft_db -c "SELECT * FROM pg_stat_activity;"
 # Production environment
 ASPNETCORE_ENVIRONMENT=Production
 ASPNETCORE_URLS=https://+:5000
-ConnectionStrings__OASISDatabase=Host=prod-db;Database=oasis_nft_db;Username=prod_user;Password=prod_password
+ConnectionStrings__AZOADatabase=Host=prod-db;Database=azoa_nft_db;Username=prod_user;Password=prod_password
 JWT_KEY=your-super-secret-jwt-key-min-32-characters-long
 ```
 
@@ -504,11 +504,11 @@ JWT_KEY=your-super-secret-jwt-key-min-32-characters-long
 dotnet publish -c Release -o ./publish
 
 # Run with production settings
-ASPNETCORE_ENVIRONMENT=Production ./publish/OASIS.WebAPI.dll
+ASPNETCORE_ENVIRONMENT=Production ./publish/AZOA.WebAPI.dll
 
 # Or use systemd
-sudo systemctl enable oasis-sleek
-sudo systemctl start oasis-sleek
+sudo systemctl enable azoa
+sudo systemctl start azoa
 ```
 
 ### **2. Frontend Production Deployment**
@@ -517,11 +517,11 @@ sudo systemctl start oasis-sleek
 npm run build
 
 # Deploy to web server
-rsync -av --delete .next/ user@server:/var/www/oasis-sleek/
+rsync -av --delete .next/ user@server:/var/www/azoa/
 
 # Or use nginx
-sudo cp nginx.conf /etc/nginx/sites-available/oasis-sleek
-sudo ln -s /etc/nginx/sites-available/oasis-sleek /etc/nginx/sites-enabled/
+sudo cp nginx.conf /etc/nginx/sites-available/azoa
+sudo ln -s /etc/nginx/sites-available/azoa /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -529,13 +529,13 @@ sudo systemctl reload nginx
 ### **3. Database Production Deployment**
 ```bash
 # Backup production database
-pg_dump oasis_nft_db > backup.sql
+pg_dump azoa_nft_db > backup.sql
 
 # Restore to production
-psql -d oasis_nft_db < backup.sql
+psql -d azoa_nft_db < backup.sql
 
 # Monitor database performance
-psql -d oasis_nft_db -c "SELECT * FROM pg_stat_activity;"
+psql -d azoa_nft_db -c "SELECT * FROM pg_stat_activity;"
 ```
 
 ## 🔧 **Troubleshooting**
@@ -564,7 +564,7 @@ ASPNETCORE_ENVIRONMENT=Development dotnet run --verbose
 npm run dev -- --debug
 
 # Database debug
-psql -d oasis_nft_db -E
+psql -d azoa_nft_db -E
 ```
 
 ### **3. Performance Issues**
@@ -573,7 +573,7 @@ psql -d oasis_nft_db -E
 curl -w "Time: %{time_total}s\nSize: %{size_download} bytes\n" -o /dev/null -s http://localhost:5000/api/health
 
 # Monitor database performance
-psql -d oasis_nft_db -c "SELECT * FROM pg_stat_activity WHERE state = 'active';"
+psql -d azoa_nft_db -c "SELECT * FROM pg_stat_activity WHERE state = 'active';"
 
 # Monitor blockchain performance
 curl -w "Time: %{time_total}s\n" -o /dev/null -s http://localhost:5000/api/blockchain/chain-info/algorand
@@ -585,7 +585,7 @@ curl -w "Time: %{time_total}s\n" -o /dev/null -s http://localhost:5000/api/block
 ```bash
 # Load balancer configuration
 nginx.conf:
-upstream oasis_backend {
+upstream azoa_backend {
     server backend1:5000;
     server backend2:5000;
     server backend3:5000;
@@ -616,4 +616,4 @@ services.AddApplicationInsightsTelemetry();
 services.AddPrometheus();
 ```
 
-This comprehensive deployment guide ensures a smooth integration and deployment of the complete OASIS Sleek platform with Avatar NFT Service, providing a robust and scalable solution for blockchain-based digital identity management.
+This comprehensive deployment guide ensures a smooth integration and deployment of the complete AZOA Sleek platform with Avatar NFT Service, providing a robust and scalable solution for blockchain-based digital identity management.

@@ -1,7 +1,7 @@
-using OASIS.WebAPI.Core.Blockchain.Wormhole;
-using OASIS.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Models.Responses;
 
-namespace OASIS.WebAPI.Interfaces;
+namespace AZOA.WebAPI.Interfaces;
 
 /// <summary>
 /// Adapter for the Wormhole cross-chain messaging protocol.
@@ -14,7 +14,7 @@ public interface IWormholeAdapter
     /// Publishes a message through the Wormhole Core Bridge and returns
     /// the emitter/sequence info needed to fetch the VAA.
     /// </summary>
-    Task<OASISResult<WormholeTransferInitiation>> InitiateTransferAsync(
+    Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
         string sourceChain, string targetChain,
         string tokenId, string senderAddress, string recipientAddress,
         int amount, CancellationToken ct = default);
@@ -23,7 +23,7 @@ public interface IWormholeAdapter
     /// Poll the Guardian network for a signed VAA matching the given emitter/sequence.
     /// Retries until the VAA is available or timeout is reached.
     /// </summary>
-    Task<OASISResult<WormholeVAA>> FetchVAAAsync(
+    Task<AZOAResult<WormholeVAA>> FetchVAAAsync(
         int emitterChainId, string emitterAddress, long sequence,
         CancellationToken ct = default);
 
@@ -31,20 +31,20 @@ public interface IWormholeAdapter
     /// Verify a VAA's Guardian signatures and payload integrity.
     /// Returns true if the VAA has sufficient signatures and valid structure.
     /// </summary>
-    Task<OASISResult<bool>> VerifyVAAAsync(WormholeVAA vaa, CancellationToken ct = default);
+    Task<AZOAResult<bool>> VerifyVAAAsync(WormholeVAA vaa, CancellationToken ct = default);
 
     /// <summary>
     /// Redeem (complete) a Wormhole transfer on the target chain using a verified VAA.
     /// This submits the VAA to the target chain's Token Bridge for minting/releasing.
     /// </summary>
-    Task<OASISResult<WormholeRedemptionResult>> RedeemTransferAsync(
+    Task<AZOAResult<WormholeRedemptionResult>> RedeemTransferAsync(
         string targetChain, WormholeVAA vaa, string recipientAddress,
         CancellationToken ct = default);
 
     /// <summary>
-    /// Get the Wormhole chain ID for an OASIS chain name.
+    /// Get the Wormhole chain ID for an AZOA chain name.
     /// </summary>
-    int? GetWormholeChainId(string oasisChainName);
+    int? GetWormholeChainId(string azoaChainName);
 
     /// <summary>
     /// Check whether a route between two chains is supported via Wormhole.
