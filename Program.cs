@@ -37,7 +37,12 @@ var builder = WebApplication.CreateBuilder(args);
 // W1-A1: Dev-only JSONL exception logger (binds Diagnostics:JsonlExceptionLogger config).
 builder.AddJsonlExceptionLogging();
 
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+    {
+        // Fail closed on a missing/malformed [FromBody] payload with a uniform 400
+        // instead of letting the action dereference a null body (→ opaque 500).
+        options.Filters.Add<AZOA.WebAPI.Core.Filters.RequireRequestBodyFilter>();
+    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());

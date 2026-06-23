@@ -26,9 +26,9 @@ public static class ChainTxClassifier
     /// </summary>
     public static ChainConfirmation Classify(AZOAResult<Dictionary<string, object>> result)
     {
-        // IsError ⇒ tx not found / RPC error / not-yet-mined. Ambiguous by
-        // construction. NEVER treat as failure.
-        if (result.IsError || result.Result is null)
+        // A null result, IsError, or null payload ⇒ tx not found / RPC error /
+        // not-yet-mined. Ambiguous by construction. NEVER treat as failure.
+        if (result is null || result.IsError || result.Result is null)
             return ChainConfirmation.Unknown;
 
         var d = result.Result;

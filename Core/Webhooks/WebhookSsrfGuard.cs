@@ -317,22 +317,39 @@ public sealed class WebhookSsrfGuard
                         "reserved range). Connection aborted — closes the DNS-rebinding TOCTOU.");
             }
 
-            // Every candidate passed; connect to the first (already-validated) address.
-            var target = new IPEndPoint(candidates[0], port);
-            var socket = new Socket(target.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+            // Every candidate passed validation; try each in turn so a host with
+            // both an unreachable IPv6 and a reachable IPv4 (or vice-versa) still
+            // connects — restoring the multi-address fallback that pinning to
+            // candidates[0] would have lost.
+            Socket? socket = null;
+            foreach (var addr in candidates)
             {
-                NoDelay = true,
-            };
-            try
-            {
-                await socket.ConnectAsync(target, cancellationToken).ConfigureAwait(false);
-                return new NetworkStream(socket, ownsSocket: true);
+                socket = new Socket(addr.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+                {
+                    NoDelay = true,
+                };
+                try
+                {
+                    await socket.ConnectAsync(new IPEndPoint(addr, port), cancellationToken)
+                        .ConfigureAwait(false);
+                    return new NetworkStream(socket, ownsSocket: true);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Caller cancellation is terminal — don't fall through to the
+                    // next address or swallow it as a connect failure.
+                    socket.Dispose();
+                    throw;
+                }
+                catch
+                {
+                    socket.Dispose();
+                    socket = null;
+                }
             }
-            catch
-            {
-                socket.Dispose();
-                throw;
-            }
+
+            throw new IOException(
+                $"Webhook SSRF guard: failed to connect to any resolved address for host '{host}'.");
         };
     }
 }

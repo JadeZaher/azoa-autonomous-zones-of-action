@@ -156,11 +156,21 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
     public virtual async Task<AZOAResult<ChainConfirmation>> GetTransactionConfirmationAsync(
         string txHash, CancellationToken ct = default)
     {
-        var status = await GetTransactionStatusAsync(txHash, ct);
-        // Never propagate IsError outward as a hard failure: the classifier folds
-        // an errored/absent probe into ChainConfirmation.Unknown, which the
-        // reconcile-before-retry caller treats as "park, do not act".
-        return new AZOAResult<ChainConfirmation> { Result = ChainTxClassifier.Classify(status) };
+        try
+        {
+            var status = await GetTransactionStatusAsync(txHash, ct);
+            // Never propagate IsError outward as a hard failure: the classifier folds
+            // an errored/absent probe into ChainConfirmation.Unknown, which the
+            // reconcile-before-retry caller treats as "park, do not act".
+            return new AZOAResult<ChainConfirmation> { Result = ChainTxClassifier.Classify(status) };
+        }
+        catch (Exception ex)
+        {
+            // A thrown probe (network timeout, socket exception) is as ambiguous as
+            // an errored result: fold it into Unknown so a flaky RPC can never crash
+            // the reconciler or be mistaken for a confirmed failure.
+            return new AZOAResult<ChainConfirmation> { Result = ChainConfirmation.Unknown, Message = ex.Message };
+        }
     }
 
     public virtual Task<AZOAResult<string>> DeployContractAsync(

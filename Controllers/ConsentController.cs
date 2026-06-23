@@ -121,10 +121,10 @@ public class ConsentController : ControllerBase
     /// </summary>
     private ActionResult<AZOAResult<ConsentGrantResponse>> TranslateGrant(AZOAResult<ConsentGrant> result)
     {
-        if (result.IsError)
+        if (result.IsError || result.Result is null)
         {
-            var mapped = new AZOAResult<ConsentGrantResponse> { IsError = true, Message = result.Message, Exception = result.Exception };
-            return IsNotFound(result.Message) ? NotFound(mapped) : BadRequest(mapped);
+            var mapped = new AZOAResult<ConsentGrantResponse> { IsError = true, Message = result.Message ?? "Grant not found.", Exception = result.Exception };
+            return IsNotFound(result.Message) || result.Result is null ? NotFound(mapped) : BadRequest(mapped);
         }
 
         return Ok(new AZOAResult<ConsentGrantResponse>

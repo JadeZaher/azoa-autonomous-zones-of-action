@@ -187,7 +187,12 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         Guid avatarId, string chainType)
     {
         var existing = await _walletStore.GetByAvatarAsync(avatarId);
-        if (!existing.IsError && existing.Result is not null)
+        // Fail closed on a query error: silently provisioning a new wallet would
+        // risk a duplicate and mask the underlying database fault.
+        if (existing.IsError)
+            return (null, false, existing.Message ?? "Failed to query existing wallets.");
+
+        if (existing.Result is not null)
         {
             var match = existing.Result.FirstOrDefault(w =>
                 string.Equals(w.ChainType, chainType, StringComparison.OrdinalIgnoreCase));
