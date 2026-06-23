@@ -61,7 +61,13 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
             }
         }
 
-        return QuestNodeResults.Ok(outputJson);
+        // Stamp the broadcast tx hash + chain so the reconcile-before-retry engine
+        // can verify chain truth before any retry (blockchain-recovery-and-portable-wallets §1.3).
+        // Only when the mint produced an operation (r.Result non-null) — a Pending
+        // mint with no synchronous op carries no hash to reconcile against.
+        var txHash = r.Result is { } op ? ReadTxHash(op) : null;
+        var chainType = r.Result is { } chainOp ? ReadChainId(chainOp) : null;
+        return QuestNodeResults.Ok(outputJson, txHash: txHash, chainType: chainType ?? "Algorand");
     }
 
     // The IBlockchainOperation has no typed asset_id/tx_hash property — the minted
@@ -79,6 +85,17 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
     private static string? ReadChainId(IBlockchainOperation op)
     {
         foreach (var key in new[] { "chainId", "chain_id" })
+            if (op.Parameters.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
+                return v;
+        return null;
+    }
+
+    // The broadcast tx hash surfaces via the Parameters bag under a provider-
+    // dependent key. Read several candidates defensively; null means "no tx hash
+    // recorded" → the reconcile-before-retry engine parks rather than blind-retries.
+    private static string? ReadTxHash(IBlockchainOperation op)
+    {
+        foreach (var key in new[] { "txHash", "tx_hash", "txId", "tx_id" })
             if (op.Parameters.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
                 return v;
         return null;

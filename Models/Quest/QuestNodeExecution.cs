@@ -42,6 +42,17 @@ public class QuestNodeExecution
     /// <summary>Failure message when <see cref="State"/> is <see cref="QuestNodeState.Failed"/>.</summary>
     public string? Error { get; set; }
 
+    /// <summary>
+    /// The broadcast tx hash when this node put a tx on-chain. Carried so the
+    /// reconciliation sweep (or operator) can re-probe chain truth for a node
+    /// parked in <c>AwaitingReconciliation</c>, and so a reconciled-to-success
+    /// node records the hash that landed (blockchain-recovery-and-portable-wallets §1.3).
+    /// </summary>
+    public string? TxHash { get; set; }
+
+    /// <summary>The chain the tx was broadcast to (e.g. "Algorand"), for provider resolution during reconciliation.</summary>
+    public string? ChainType { get; set; }
+
     /// <summary>Wall-clock time at which the row entered <see cref="QuestNodeState.Running"/>.</summary>
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
 
@@ -61,6 +72,8 @@ public class QuestNodeExecution
         State     = State,
         Output    = Output,
         Error     = Error,
+        TxHash    = TxHash,
+        ChainType = ChainType,
         StartedAt = StartedAt,
         EndedAt   = EndedAt,
     };

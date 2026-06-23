@@ -67,6 +67,8 @@ public sealed class ChainCapabilityGateTests
             services.AddSingleton<IQuestNodeHandlerRegistry>(
                 new QuestNodeHandlerRegistry(new[] { NodeHandler }));
             services.AddSingleton<IWalletManager>(WalletManager);
+            // QuestNodeStepHandler resolves a provider factory for reconcile-before-retry.
+            services.AddSingleton(BlockchainProviderFactoryFakes.Returning());
             services.AddScoped<IStepHandler<QuestStepPayload>, QuestNodeStepHandler>();
             services.AddScoped<IStepHandler<QuestCompensatePayload>, QuestCompensateStepHandler>();
 

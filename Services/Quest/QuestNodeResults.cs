@@ -16,8 +16,9 @@ public static class QuestNodeResults
     /// manager will write this to <see cref="QuestNodeExecution.Output"/>
     /// and transition the row to <see cref="QuestNodeState.Succeeded"/>.
     /// </summary>
-    public static QuestNodeHandlerResult Ok(string? outputJson, string? message = null)
-        => QuestNodeHandlerResult.Ok(outputJson, message);
+    public static QuestNodeHandlerResult Ok(
+        string? outputJson, string? message = null, string? txHash = null, string? chainType = null)
+        => QuestNodeHandlerResult.Ok(outputJson, message, txHash, chainType);
 
     /// <summary>
     /// Failure result carrying <paramref name="message"/>. The manager will
@@ -26,4 +27,13 @@ public static class QuestNodeResults
     /// </summary>
     public static QuestNodeHandlerResult Fail(string message)
         => QuestNodeHandlerResult.Fail(message);
+
+    /// <summary>
+    /// Invalid-config failure that can never succeed on retry (nothing was
+    /// broadcast). The reconcile-before-retry engine fails such a node terminally
+    /// without a chain probe or retry budget
+    /// (blockchain-recovery-and-portable-wallets §1 invalid-mode handling).
+    /// </summary>
+    public static QuestNodeHandlerResult Invalid(string message)
+        => QuestNodeHandlerResult.Invalid(message);
 }

@@ -34,6 +34,15 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             Failed,
             Forked,
             Cancelled,
+            // Non-terminal park states (durable-workflow-engine): the run suspends
+            // here awaiting an external advance/signal/timer/reconciliation and
+            // resumes — they are NOT terminal. Mirror Models/Quest/QuestRunStatus.cs.
+            // (These were previously absent from the POCO + the DB ASSERT, so a
+            // durable park write would have been rejected by SCHEMAFULL.)
+            Suspended,
+            AwaitingSignal,
+            AwaitingTimer,
+            AwaitingReconciliation,
         }
 
         [Id]
@@ -54,7 +63,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? ActingTenantId { get; set; }
 
         [FieldGroup("QuestRunStatus enum name")]
-        [Inside("Pending", "Running", "Succeeded", "Failed", "Forked", "Cancelled")]
+        [Inside("Pending", "Running", "Succeeded", "Failed", "Forked", "Cancelled",
+                "Suspended", "AwaitingSignal", "AwaitingTimer", "AwaitingReconciliation")]
         [Default("\"Pending\"")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public QuestRunStatusKind Status { get; set; }

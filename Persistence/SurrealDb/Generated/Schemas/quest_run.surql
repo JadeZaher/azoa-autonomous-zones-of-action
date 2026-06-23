@@ -10,7 +10,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- QuestRun.QuestRunStatusKind
-DEFINE PARAM IF NOT EXISTS $quest_run_status VALUE ["Pending", "Running", "Succeeded", "Failed", "Forked", "Cancelled"];
+DEFINE PARAM IF NOT EXISTS $quest_run_status VALUE ["Pending", "Running", "Succeeded", "Failed", "Forked", "Cancelled", "Suspended", "AwaitingSignal", "AwaitingTimer", "AwaitingReconciliation"];
 
 DEFINE TABLE IF NOT EXISTS quest_run SCHEMAFULL;
 

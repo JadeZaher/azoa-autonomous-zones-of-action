@@ -89,9 +89,27 @@ public sealed class QuestNodeHandlerResult
     /// <summary>Serialized output (JSON). On success this becomes <see cref="QuestNodeExecution.Output"/>.</summary>
     public string? Output { get; init; }
 
-    public static QuestNodeHandlerResult Ok(string? output, string? message = null) =>
-        new() { IsError = false, Output = output, Message = message };
+    /// <summary>The broadcast tx hash, when this node put a tx on-chain. Lets the engine reconcile against chain truth before retrying (blockchain-recovery-and-portable-wallets §1.3).</summary>
+    public string? TxHash { get; init; }
+
+    /// <summary>The chain the tx was broadcast to (e.g. "Algorand"), for provider resolution during reconciliation.</summary>
+    public string? ChainType { get; init; }
+
+    /// <summary>False for an invalid-config failure that can never succeed on retry (nothing was broadcast). The engine fails such a node terminally without a chain probe or retry budget. Default true.</summary>
+    public bool Retriable { get; init; } = true;
+
+    public static QuestNodeHandlerResult Ok(string? output, string? message = null, string? txHash = null, string? chainType = null) =>
+        new() { IsError = false, Output = output, Message = message, TxHash = txHash, ChainType = chainType };
 
     public static QuestNodeHandlerResult Fail(string message) =>
         new() { IsError = true, Message = message };
+
+    /// <summary>
+    /// Invalid-config failure: nothing was broadcast and re-running can never
+    /// succeed. <see cref="Retriable"/> is false so the engine fails the node
+    /// terminally without a chain probe or retry budget
+    /// (blockchain-recovery-and-portable-wallets §1 invalid-mode handling).
+    /// </summary>
+    public static QuestNodeHandlerResult Invalid(string message) =>
+        new() { IsError = true, Message = message, Retriable = false };
 }

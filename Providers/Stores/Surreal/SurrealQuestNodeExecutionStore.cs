@@ -333,6 +333,8 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
         State      = e.State.ToString(),
         Output     = e.Output,
         Error      = e.Error,
+        TxHash     = e.TxHash,
+        ChainType  = e.ChainType,
         StartedAt  = ToUtcOffset(e.StartedAt),
         EndedAt    = e.EndedAt.HasValue ? ToUtcOffset(e.EndedAt.Value) : null,
     };
@@ -345,6 +347,8 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
         State      = ParseState(p.State),
         Output     = p.Output,
         Error      = p.Error,
+        TxHash     = p.TxHash,
+        ChainType  = p.ChainType,
         StartedAt  = p.StartedAt.UtcDateTime,
         EndedAt    = p.EndedAt?.UtcDateTime,
     };
@@ -404,6 +408,8 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
         [JsonPropertyName("state")]      public string? State { get; set; }
         [JsonPropertyName("output")]     public string? Output { get; set; }
         [JsonPropertyName("error")]      public string? Error { get; set; }
+        [JsonPropertyName("tx_hash")]    public string? TxHash { get; set; }
+        [JsonPropertyName("chain_type")] public string? ChainType { get; set; }
         [JsonPropertyName("started_at")] public DateTimeOffset StartedAt { get; set; }
         [JsonPropertyName("ended_at")]   public DateTimeOffset? EndedAt { get; set; }
     }

@@ -47,6 +47,17 @@ Decisions locked with the user (2026-06-21):
 - **Unblocks** the ArdaNova custodial-orchestrator integration (Grant-bounty flow
   becomes safe for real value).
 
+### Sequencing (decided 2026-06-21)
+
+- **Self-sovereignty first.** [[user-sovereign-identity]] + [[tenant-consent-delegation]]
+  land BEFORE ArdaNova integrates, so ArdaNova builds against the final consent-gated
+  identity model once (no rework). The `ActingTenantId` threading already present in
+  `QuestNodeExecutionContext` confirms that cutover is mid-flight.
+- **Part 1 (reconcile-before-retry) is identity-model-agnostic** — it verifies chain
+  truth in the saga, independent of who owns the avatar — so it is being wired NOW,
+  concurrent with the self-sovereignty work, without conflict. It is tracked as
+  deploy-stub **P7** (pre-prod gate before Grant-bounty automation on testnet-as-prod).
+
 ## Part 1 — Reconcile-before-retry (the prototype)
 
 ### The problem precisely

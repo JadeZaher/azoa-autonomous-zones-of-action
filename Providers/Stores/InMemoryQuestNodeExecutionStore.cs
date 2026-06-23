@@ -185,6 +185,8 @@ public sealed class InMemoryQuestNodeExecutionStore : IQuestNodeExecutionStore
             State = QuestNodeState.Running,
             Output = current.Output,
             Error = current.Error,
+            TxHash = current.TxHash,
+            ChainType = current.ChainType,
             StartedAt = DateTime.UtcNow,
             EndedAt = current.EndedAt
         };

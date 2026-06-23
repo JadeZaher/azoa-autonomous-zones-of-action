@@ -1,6 +1,9 @@
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Sagas;
 
@@ -43,6 +46,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
     private readonly IQuestNodeHandlerRegistry _registry;
     private readonly ISagaStore _sagaStore;
     private readonly IWalletManager _walletManager;
+    private readonly IBlockchainProviderFactory _chainFactory;
     private readonly ILogger<QuestNodeStepHandler> _logger;
 
     public QuestNodeStepHandler(
@@ -52,6 +56,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         IQuestNodeHandlerRegistry registry,
         ISagaStore sagaStore,
         IWalletManager walletManager,
+        IBlockchainProviderFactory chainFactory,
         ILogger<QuestNodeStepHandler> logger)
     {
         _questStore = questStore;
@@ -60,6 +65,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         _registry = registry;
         _sagaStore = sagaStore;
         _walletManager = walletManager;
+        _chainFactory = chainFactory;
         _logger = logger;
     }
 
@@ -133,11 +139,15 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         // ── 3. Dispatch the node handler ──────────────────────────────────────
         var upstream = await LoadUpstreamAsync(quest, p.NodeId, p.RunId, ct);
         QuestNodeHandlerResult result;
+        // Whether the dispatched node is a chain-action node: only such nodes go
+        // through reconcile-before-retry on failure (a non-chain node has no tx to
+        // reconcile, so it falls straight through to the saga retry/compensation).
+        var handlerRequiresChain = false;
         if (!_registry.TryGet(node.NodeType, out var handler))
         {
             result = QuestNodeHandlerResult.Fail($"Unsupported node type: {node.NodeType}");
         }
-        else if (handler.RequiresChainCapability
+        else if ((handlerRequiresChain = handler.RequiresChainCapability)
             && !await ChainCapabilityGate.HasWalletBoundAsync(_walletManager, quest.AvatarId, ct))
         {
             // D1 pre-execution capability gate — fails closed (no broadcast):
@@ -168,6 +178,25 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
             }
         }
 
+        // ── 3b. Reconcile-before-retry for chain-action nodes ─────────────────
+        // A chain-action node (Grant/Transfer/Swap/FungibleTokenCreate) that
+        // FAILED must NOT be blind-retried: attempt 1 may have broadcast and
+        // landed even though the handler reported an error (e.g. the confirmation
+        // read timed out). Re-running would double-mint/double-spend. Instead we
+        // verify the broadcast tx against chain truth and act on the verdict
+        // (blockchain-recovery-and-portable-wallets §1.4). Non-chain nodes and the
+        // success path skip this entirely.
+        if (result.IsError && handlerRequiresChain)
+        {
+            var reconciled = await ReconcileChainFailureAsync(
+                quest, node, p, advance, execution, result, ct);
+            if (reconciled is { } outcome)
+                return outcome;
+            // null ⇒ the verdict is Retry: the tx provably failed on-chain, so
+            // re-broadcast is safe — fall through to the normal record-Failed +
+            // StepResult.Fail path so the saga retry/compensation owns it.
+        }
+
         // ── 4. Record terminal execution state (guarded on Running) ───────────
         if (result.IsError)
         {
@@ -178,6 +207,11 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         {
             execution.State = QuestNodeState.Succeeded;
             execution.Output = result.Output;
+            // A successful chain-action node carries its broadcast hash too, so the
+            // execution row is a complete on-chain audit record (and a later sweep
+            // never mistakes a stamped-Succeeded node for one needing reconciliation).
+            execution.TxHash = result.TxHash;
+            execution.ChainType = result.ChainType;
         }
         execution.EndedAt = DateTime.UtcNow;
         var recorded = await _executionStore.UpdateAsync(
@@ -247,6 +281,175 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
                 await EnqueueNodeAsync(p, hop.NodeId!.Value, signalPayload: null, ct);
                 await ProjectRunStatusAsync(p.RunId, QuestRunStatus.Running, ct);
                 return StepResult.Ok(output);
+        }
+    }
+
+    /// <summary>
+    /// Reconcile-before-retry for a FAILED chain-action node
+    /// (blockchain-recovery-and-portable-wallets §1.4). Probes the broadcast tx
+    /// against chain truth and returns the saga outcome:
+    ///
+    /// <list type="bullet">
+    /// <item><b>Invalid config</b> (<c>Retriable == false</c>): nothing was
+    /// broadcast and re-running can never succeed — record Failed and surface a
+    /// <see cref="StepResult.Fail"/> with NO chain probe. (Fail, not a silent
+    /// drop, so the declared compensation still settles the run; because nothing
+    /// was on the wire a re-attempt is side-effect-free, so the retry budget
+    /// ticking is harmless.)</item>
+    /// <item><b>AdvanceReconciled</b> (Confirmed): the tx LANDED — treat as
+    /// success. Record the execution Succeeded with the handler's original output
+    /// and the tx hash stamped, then self-advance exactly as the success path.</item>
+    /// <item><b>ParkForReconciliation</b> (Pending/Unknown, or no tx hash):
+    /// re-broadcasting could double-spend. Project the run to
+    /// <see cref="QuestRunStatus.AwaitingReconciliation"/>, record the execution
+    /// Failed WITH the tx hash stamped (so the future sweep can find it), and PARK
+    /// the saga step. See the park-choice note below.</item>
+    /// </list>
+    ///
+    /// <para>Returns <c>null</c> for the <b>Retry</b> verdict (provably
+    /// FailedOnChain) so the caller falls through to the normal record-Failed +
+    /// <see cref="StepResult.Fail"/> path that hands the outcome to the saga's
+    /// retry/compensation budget.</para>
+    ///
+    /// <para><b>Park-choice justification — why this cannot double-broadcast.</b>
+    /// The park uses <c>resumeAt: null</c> (suspend until signalled, NO timer), so
+    /// the saga due-scan never auto-re-dispatches the step — the run sits in
+    /// AwaitingReconciliation for the dedicated reconciliation sweep / an operator
+    /// to resolve. Even if the step WERE re-dispatched (a future sweep signalling
+    /// the gate, or a lease reclaim), it re-enters <see cref="ExecuteAsync"/> at
+    /// the per-node exactly-once claim (<c>TryClaimPendingAsync</c>): the execution
+    /// row is already off <c>Pending</c> (we recorded it Failed here), so the claim
+    /// is lost and control routes to <see cref="ReplayAdvancementAsync"/> — the
+    /// broadcasting <c>handler.HandleAsync</c> is NEVER reached again for this
+    /// (run, node). The node claim is the structural backstop that makes a second
+    /// broadcast impossible; the <c>resumeAt: null</c> park is the policy choice
+    /// that also avoids even re-dispatching the step until truth is known.</para>
+    /// </summary>
+    private async Task<StepResult?> ReconcileChainFailureAsync(
+        Models.Quest.Quest quest, QuestNode node, QuestStepPayload p,
+        WorkflowAdvance advance, QuestNodeExecution execution,
+        QuestNodeHandlerResult result, CancellationToken ct)
+    {
+        // Invalid config — provably nothing broadcast; never probe, never park.
+        if (!result.Retriable)
+        {
+            _logger.LogWarning(
+                "Quest workflow: chain-action node {NodeId} (run {RunId}) failed with an " +
+                "INVALID-config result — terminal fail, no chain probe (nothing was broadcast).",
+                p.NodeId, p.RunId);
+            execution.State = QuestNodeState.Failed;
+            execution.Error = result.Message;
+            execution.EndedAt = DateTime.UtcNow;
+            var rec = await _executionStore.UpdateAsync(
+                execution, expectedState: QuestNodeState.Running, ct);
+            if (rec.IsError)
+                return await ReplayAdvancementAsync(quest, node, p, advance, ct);
+            return StepResult.Fail(result.Message ?? $"Node {p.NodeId} failed (invalid config).");
+        }
+
+        // Probe chain truth. A missing/errored probe folds to Unknown in the
+        // provider default — never a false negative — so a flaky RPC parks rather
+        // than triggering a re-broadcast.
+        var verdict = ChainConfirmation.Unknown;
+        if (!string.IsNullOrWhiteSpace(result.TxHash))
+        {
+            var provider = ResolveProvider(result.ChainType);
+            if (provider != null)
+            {
+                var conf = await provider.GetTransactionConfirmationAsync(result.TxHash!, ct);
+                // On a probe error keep the initialized Unknown ⇒ park. Only adopt
+                // the verdict from a non-errored result; the provider base default
+                // already folds an errored/absent status into Unknown internally,
+                // so this is belt-and-suspenders against a false Confirmed.
+                if (!conf.IsError)
+                    verdict = conf.Result;
+            }
+        }
+
+        var action = ChainActionRecovery.Decide(result.TxHash, verdict);
+        switch (action)
+        {
+            case ChainActionRecoveryAction.AdvanceReconciled:
+            {
+                // The tx LANDED (Confirmed). The effect is done — reconcile to
+                // success: record Succeeded with the original output + tx hash, then
+                // self-advance exactly as the success path would.
+                _logger.LogInformation(
+                    "Quest workflow: chain-action node {NodeId} (run {RunId}) reported failure but " +
+                    "tx {TxHash} is CONFIRMED on-chain — reconciled to SUCCESS (no retry).",
+                    p.NodeId, p.RunId, result.TxHash);
+                execution.State = QuestNodeState.Succeeded;
+                execution.Output = result.Output;
+                execution.TxHash = result.TxHash;
+                execution.ChainType = result.ChainType;
+                execution.EndedAt = DateTime.UtcNow;
+                var rec = await _executionStore.UpdateAsync(
+                    execution, expectedState: QuestNodeState.Running, ct);
+                if (rec.IsError)
+                    return await ReplayAdvancementAsync(quest, node, p, advance, ct);
+                return await AdvanceAsync(quest, node, p, advance, result.Output, ct);
+            }
+
+            case ChainActionRecoveryAction.ParkForReconciliation:
+            {
+                // Pending/Unknown (or no tx hash): re-broadcasting could
+                // double-spend. Stamp the tx hash on a Failed execution row so the
+                // future reconciliation sweep can locate it, project the run to
+                // AwaitingReconciliation, and PARK the step (resumeAt: null — see
+                // method-doc park-choice justification: this neither re-runs the
+                // broadcasting handler nor consumes a retry attempt).
+                _logger.LogWarning(
+                    "Quest workflow: chain-action node {NodeId} (run {RunId}) failed with an " +
+                    "INDETERMINATE on-chain verdict ({Verdict}, tx '{TxHash}') — PARKING in " +
+                    "AwaitingReconciliation (no retry, no re-broadcast).",
+                    p.NodeId, p.RunId, verdict, result.TxHash ?? "<none>");
+                execution.State = QuestNodeState.Failed;
+                execution.Error = result.Message;
+                execution.TxHash = result.TxHash;
+                execution.ChainType = result.ChainType;
+                execution.EndedAt = DateTime.UtcNow;
+                var rec = await _executionStore.UpdateAsync(
+                    execution, expectedState: QuestNodeState.Running, ct);
+                if (rec.IsError)
+                    return await ReplayAdvancementAsync(quest, node, p, advance, ct);
+
+                await ProjectRunStatusAsync(p.RunId, QuestRunStatus.AwaitingReconciliation, ct);
+                // Stable, node-scoped gate id so a future sweep can signal THIS
+                // parked step precisely. resumeAt null ⇒ no timer auto-resume.
+                var reconGateId = $"recon:{p.NodeId}";
+                return StepResult.Parked(reconGateId, resumeAt: null);
+            }
+
+            case ChainActionRecoveryAction.Retry:
+            default:
+                // Provably FailedOnChain — re-broadcast is safe. Fall through to the
+                // caller's normal record-Failed + StepResult.Fail path.
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Resolve the chain provider for reconciliation, mirroring
+    /// <c>ReconciliationService</c>: by chain type when known, else the configured
+    /// default. Network is not authoritatively carried on the execution row, so the
+    /// configured default network (Devnet) is used — the factory caches per
+    /// chain:network. A resolution failure returns null ⇒ the caller leaves the
+    /// verdict Unknown and parks (never a false "failed" that would re-broadcast).
+    /// </summary>
+    private IBlockchainProvider? ResolveProvider(string? chainType)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(chainType)
+                ? _chainFactory.GetDefaultProvider()
+                : _chainFactory.GetProvider(chainType, ChainNetwork.Devnet);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Quest workflow: reconciliation provider resolution failed for chain '{Chain}' — " +
+                "leaving verdict Unknown (will park).", chainType ?? "<default>");
+            return null;
         }
     }
 
