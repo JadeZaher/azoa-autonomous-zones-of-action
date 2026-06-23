@@ -59,7 +59,16 @@ public enum QuestRunStatus
     /// the parked step when its <c>NextRunAt</c> passes — no external call
     /// needed. Durable across restart.
     /// </summary>
-    AwaitingTimer
+    AwaitingTimer,
+
+    /// <summary>
+    /// Run is parked after a chain-action node failed with an indeterminate
+    /// (Pending/Unknown) on-chain confirmation. Non-terminal: a reconciliation
+    /// sweep (or operator) re-probes chain truth and resumes (Confirmed→advance)
+    /// or fails (FailedOnChain). NEVER auto-retried — that would risk a
+    /// double-broadcast.
+    /// </summary>
+    AwaitingReconciliation
 }
 
 /// <summary>

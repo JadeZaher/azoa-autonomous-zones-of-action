@@ -95,6 +95,10 @@ public sealed class DurableWorkflowEngineTests
             services.AddSingleton<IQuestNodeHandlerRegistry>(
                 new QuestNodeHandlerRegistry(new[] { NodeHandler }));
             services.AddSingleton<IWalletManager>(WalletManager);
+            // QuestNodeStepHandler resolves a provider factory for reconcile-before-retry;
+            // the default fake returns Unknown (conservative) and is never reached by
+            // these non-chain / Tier-1 runs.
+            services.AddSingleton(BlockchainProviderFactoryFakes.Returning());
 
             // The two typed step handlers the QuestWorkflow saga dispatches.
             services.AddScoped<IStepHandler<QuestStepPayload>, QuestNodeStepHandler>();

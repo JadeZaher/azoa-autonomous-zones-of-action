@@ -36,6 +36,12 @@ DEFINE FIELD IF NOT EXISTS output ON TABLE quest_node_execution TYPE option<stri
 -- Failure message when state is Failed
 DEFINE FIELD IF NOT EXISTS error ON TABLE quest_node_execution TYPE option<string>;
 
+-- Broadcast tx hash when this node put a tx on-chain (null otherwise). Carried so the reconciliation sweep can re-probe chain truth for a node parked in AwaitingReconciliation, and so a reconciled-to-success chain-action node records the hash that landed (blockchain-recovery-and-portable-wallets §1.3).
+DEFINE FIELD IF NOT EXISTS tx_hash ON TABLE quest_node_execution TYPE option<string>;
+
+-- Chain the tx was broadcast to (e.g. "Algorand"), for provider resolution during reconciliation (null when no tx broadcast)
+DEFINE FIELD IF NOT EXISTS chain_type ON TABLE quest_node_execution TYPE option<string>;
+
 -- Wall-clock time at which the row entered Running
 DEFINE FIELD IF NOT EXISTS started_at ON TABLE quest_node_execution TYPE datetime;
 

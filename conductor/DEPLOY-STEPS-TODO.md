@@ -219,6 +219,24 @@ track and the file:line evidence where the stub lives.
   pre-KYC is currently allowed per fiat D3 — confirm whether a zero-balance
   wallet may exist pre-KYC, or gate it too). Owner: wallet owners.
 
+### P7. Reconcile-before-retry wired into the quest engine — IN PROGRESS (blockchain-recovery-and-portable-wallets)
+- **Gap:** `QuestNodeStepHandler` blind-retries a failed Tier-2 chain-action node
+  (Grant/Transfer/Swap/FungibleTokenCreate) up to `RetryPolicy.MaxAttempts` (5).
+  A broadcast-then-confirmation-timeout surfaces as `IsError`, indistinguishable
+  from "never broadcast" — re-running re-mints (**double-mint** on the auto-bounty
+  path ArdaNova will drive).
+- **Foundation (shipped):** `ChainConfirmation` tri-state
+  (`Models/Blockchain/ChainConfirmation.cs`), the shared `ChainTxClassifier`,
+  `IBlockchainProvider.GetTransactionConfirmationAsync` + conservative base
+  default, and the pure `ChainActionRecovery` decision table
+  (`Services/Quest/Workflow/ChainActionRecovery.cs`) — all unit-tested.
+- **Owed (this wiring):** record the broadcast `TxHash` on `QuestNodeExecution`;
+  on chain-action node failure probe chain truth and branch
+  advance-reconciled / retry / park (`AwaitingReconciliation`); a quest-node
+  reconciliation sweep + manual re-probe endpoint.
+- **Owner:** `blockchain-recovery-and-portable-wallets`. **Pre-prod gate before
+  Grant-bounty automation runs on testnet-as-prod.**
+
 ### P6. Tenant onboarding runbook executed for the first tenant — ✅ runbook authored; execution owed
 - **Mechanism + runbook:** ✅ done. The provisioning surface (`api/tenant`) ships and
   the step-by-step runbook is authored at
@@ -302,6 +320,7 @@ track and the file:line evidence where the stub lives.
 | P4 | 🟠 | KYC provider secrets | kyc-module | open |
 | P5 | 🟠 | KYC gating wired | kyc-module + value-path-wiring + wallet owners | ✅ mint done (gate in NftManager choke point); wallet-generate owed |
 | P6 | 🟠 | First-tenant onboarding | tenant-onboarding + ops | runbook authored; execution owed |
+| P7 | 🟠 | Reconcile-before-retry wired into quest engine | blockchain-recovery-and-portable-wallets | in progress (foundation shipped + tested; saga wiring owed) |
 | H1 | 🟡 | Solana/Ethereum keygen+signing | future chain tracks | open |
 | H2 | 🟡 | Soulbound clawback-revoke | signing-core follow-up | deferred (D4); mint shipped |
 | H3 | 🟡 | Simulated-data distinguishability | db-only-null-provider | ✅ done |

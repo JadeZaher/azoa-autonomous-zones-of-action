@@ -62,6 +62,12 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Failure message when state is Failed")]
         public string? Error { get; set; }
 
+        [FieldGroup("Broadcast tx hash when this node put a tx on-chain (null otherwise). Carried so the reconciliation sweep can re-probe chain truth for a node parked in AwaitingReconciliation, and so a reconciled-to-success chain-action node records the hash that landed (blockchain-recovery-and-portable-wallets §1.3).")]
+        public string? TxHash { get; set; }
+
+        [FieldGroup("Chain the tx was broadcast to (e.g. \"Algorand\"), for provider resolution during reconciliation (null when no tx broadcast)")]
+        public string? ChainType { get; set; }
+
         [FieldGroup("Wall-clock time at which the row entered Running")]
         // NOT [ReadOnly]: started_at is set at the Pending->Running CLAIM
         // (TryClaimPendingAsync UPDATE ... SET started_at = $_now), not at row
