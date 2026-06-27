@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
@@ -298,53 +296,26 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             request.UnitName,
             request.Total.ToString(),
             request.Decimals.ToString());
-        var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        return IdempotencyReplay.ContentHash(canonical);
     }
 
     private static AZOAResult<FungibleTokenResult> ReplayFromRecord(
         IdempotencyRecord record, string idempotencyKey)
-    {
-        switch (record.State)
-        {
-            case IdempotencyState.Completed when !string.IsNullOrEmpty(record.ResultPayload):
-                var replayed = DeserializeForReplay(record.ResultPayload!);
-                if (replayed is not null)
-                {
-                    replayed.Replayed = true;
-                    return new AZOAResult<FungibleTokenResult>
-                    {
-                        Result = replayed,
-                        Message = "Duplicate request: returning the result of the original token launch (not re-executed)."
-                    };
-                }
-                return Fail("Duplicate request: original token launch result could not be replayed.");
-
-            case IdempotencyState.Failed:
-                return Fail(string.IsNullOrEmpty(record.Error)
-                    ? "Original token launch failed."
-                    : record.Error!);
-
-            default:
-                // InProgress (or Completed with no payload): the original effect is
-                // not yet known to have settled. Do NOT re-execute; surface a
-                // retryable in-progress state.
-                return Fail(
-                    $"Fungible token launch for key '{idempotencyKey}' is already in progress; " +
-                    "retry once the original request settles.");
-        }
-    }
-
-    private static readonly JsonSerializerOptions ReplayJson = new(JsonSerializerDefaults.Web);
+        => IdempotencyReplay.ReplayFromRecord<FungibleTokenResult>(
+            record,
+            DeserializeForReplay,
+            r => r.Replayed = true,
+            "Duplicate request: returning the result of the original token launch (not re-executed).",
+            "Duplicate request: original token launch result could not be replayed.",
+            "Original token launch failed.",
+            $"Fungible token launch for key '{idempotencyKey}' is already in progress; " +
+            "retry once the original request settles.");
 
     private static string SerializeForReplay(FungibleTokenResult result)
-        => JsonSerializer.Serialize(result, ReplayJson);
+        => IdempotencyReplay.SerializeForReplay(result);
 
     private static FungibleTokenResult? DeserializeForReplay(string payload)
-    {
-        try { return JsonSerializer.Deserialize<FungibleTokenResult>(payload, ReplayJson); }
-        catch (JsonException) { return null; }
-    }
+        => IdempotencyReplay.DeserializeForReplay<FungibleTokenResult>(payload);
 
     private static AZOAResult<FungibleTokenResult> Fail(string message)
         => new() { IsError = true, Message = message };
