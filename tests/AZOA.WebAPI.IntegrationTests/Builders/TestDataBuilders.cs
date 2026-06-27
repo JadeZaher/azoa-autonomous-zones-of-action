@@ -12,8 +12,15 @@ namespace AZOA.WebAPI.IntegrationTests.Builders;
 public class AvatarBuilder
 {
     private Guid _id = Guid.NewGuid();
-    private string _username = "testuser";
-    private string _email = "test@azoa.local";
+    // Username + email default to UNIQUE values per builder instance. Integration
+    // test classes share ONE SurrealDB namespace per class (the app's namespace is
+    // pinned per-factory), so methods run serially against the same data store.
+    // Constant "testuser"/"test@azoa.local" defaults caused the second seed in a
+    // class to fail with "An account with this email already exists." Unique
+    // defaults make each SeedAvatarAsync() independent; tests that need a specific
+    // email/username still call WithEmail/WithUsername explicitly.
+    private string _username = $"user{Guid.NewGuid():N}"[..16];
+    private string _email = $"test_{Guid.NewGuid():N}@azoa.local";
     private string _password = "Password123!";
     private string? _title;
     private string? _firstName;
@@ -74,7 +81,9 @@ public class WalletBuilder
     private Guid _id = Guid.NewGuid();
     private Guid _avatarId;
     private string _chainType = "Algorand";
-    private string _address = $"addr_{Guid.NewGuid():N}";
+    // Must satisfy WalletCreateModelValidator (^[a-zA-Z0-9]+$): no underscore or
+    // hyphen. Guid "N" format is pure hex, so "addr" + N passes the rule.
+    private string _address = $"addr{Guid.NewGuid():N}";
     private string? _label;
     private bool _isDefault;
 

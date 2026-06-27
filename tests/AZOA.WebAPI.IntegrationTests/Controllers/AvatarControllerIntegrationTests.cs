@@ -38,8 +38,10 @@ public class AvatarControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Login_WithValidCredentials_ShouldReturnToken()
     {
-        await SeedAvatarAsync(a => a.WithEmail("login@azoa.local").WithPassword("secret123"));
-        var model = new AvatarBuilder().WithEmail("login@azoa.local").WithPassword("secret123").BuildLoginModel();
+        // Password must satisfy AvatarRegisterValidator (>=8 chars, upper, lower,
+        // digit). "secret123" had no uppercase and was rejected at seed time.
+        await SeedAvatarAsync(a => a.WithEmail("login@azoa.local").WithPassword("Secret123"));
+        var model = new AvatarBuilder().WithEmail("login@azoa.local").WithPassword("Secret123").BuildLoginModel();
 
         var response = await Client.PostAsJsonAsync("api/avatar/login", model);
 
@@ -52,8 +54,12 @@ public class AvatarControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Login_WithInvalidCredentials_ShouldReturnUnauthorized()
     {
-        await SeedAvatarAsync(a => a.WithEmail("wrong@azoa.local").WithPassword("right"));
-        var model = new AvatarLoginModel { Email = "wrong@azoa.local", Password = "bad" };
+        // Seed a VALID avatar (password must satisfy the register validator),
+        // then attempt login with a deliberately wrong password. "right" was a
+        // 5-char no-upper-no-digit string rejected at seed time, so the seed —
+        // not the login — was failing.
+        await SeedAvatarAsync(a => a.WithEmail("wrong@azoa.local").WithPassword("Right123"));
+        var model = new AvatarLoginModel { Email = "wrong@azoa.local", Password = "WrongPass1" };
 
         var response = await Client.PostAsJsonAsync("api/avatar/login", model);
 
@@ -87,8 +93,10 @@ public class AvatarControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task GetAll_ShouldReturnList()
     {
-        await SeedAvatarAsync(a => a.WithUsername("a1"));
-        await SeedAvatarAsync(a => a.WithUsername("a2"));
+        // Username must be 3-50 chars (AvatarRegisterValidator); "a1"/"a2" were
+        // 2 chars and rejected at seed time.
+        await SeedAvatarAsync(a => a.WithUsername("auser1"));
+        await SeedAvatarAsync(a => a.WithUsername("auser2"));
 
         var response = await Client.GetAsync("api/avatar");
 

@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AZOA.WebAPI.IntegrationTests.Builders;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Models;
@@ -33,7 +34,15 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
 {
     protected readonly AZOATestWebApplicationFactory Factory;
     protected readonly HttpClient Client;
-    protected readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    // Mirror the SERVER's JSON config (Program.cs registers JsonStringEnumConverter
+    // on the MVC pipeline). Without the string-enum converter here, deserializing
+    // any response containing an enum (e.g. Wallet.WalletType = "Platform") throws
+    // "The JSON value could not be converted to ... WalletType". The test client
+    // must read responses with the same converter set the server writes them with.
+    protected readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
 
     /// Unique SurrealDB namespace for this test instance.
     /// Format: test_{guid_no_hyphens}  (SurrealDB identifiers can't contain hyphens).
@@ -70,7 +79,14 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
     {
         Factory = factory;
         Client = factory.CreateAuthenticatedClient();
-        TestNamespace = $"test{Guid.NewGuid():N}"; // no hyphens — SurrealDB identifier safe
+        // Use the FACTORY's namespace, not a fresh per-instance guid: the app
+        // host (built once per factory / test class) is pinned to
+        // factory.TestNamespace via SurrealDb:Namespace. The namespace this base
+        // CREATES + schemas must be the SAME one the app CONNECTS to, otherwise
+        // controller writes fault with "namespace does not exist". Per-class
+        // (not per-method) isolation is the correct granularity here because the
+        // factory — and thus the app's bound namespace — is an IClassFixture.
+        TestNamespace = factory.TestNamespace;
     }
 
     // ── IAsyncLifetime ────────────────────────────────────────────────────────
@@ -289,7 +305,7 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
 
         var model = builder.BuildRegisterModel();
         var response = await Client.PostAsJsonAsync("api/avatar/register", model, JsonOptions);
-        response.EnsureSuccessStatusCode();
+        await EnsureSeedSucceededAsync(response, "Avatar");
 
         var result = await response.Content.ReadFromJsonAsync<AZOAResult<Avatar>>(JsonOptions);
         return result?.Result ?? throw new InvalidOperationException(
@@ -303,7 +319,7 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
 
         var model = builder.BuildCreateModel();
         var response = await Client.PostAsJsonAsync("api/holon", model, JsonOptions);
-        response.EnsureSuccessStatusCode();
+        await EnsureSeedSucceededAsync(response, "Holon");
 
         var result = await response.Content.ReadFromJsonAsync<AZOAResult<Holon>>(JsonOptions);
         return result?.Result ?? throw new InvalidOperationException(
@@ -327,7 +343,7 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
         };
 
         var response = await Client.PostAsJsonAsync("api/wallet", model, JsonOptions);
-        response.EnsureSuccessStatusCode();
+        await EnsureSeedSucceededAsync(response, "Wallet");
 
         var result = await response.Content.ReadFromJsonAsync<AZOAResult<Wallet>>(JsonOptions);
         return result?.Result ?? throw new InvalidOperationException(
@@ -341,7 +357,7 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
 
         var model = builder.BuildCreateModel();
         var response = await Client.PostAsJsonAsync("api/starodk", model, JsonOptions);
-        response.EnsureSuccessStatusCode();
+        await EnsureSeedSucceededAsync(response, "STARODK");
 
         var result = await response.Content.ReadFromJsonAsync<AZOAResult<STARODK>>(JsonOptions);
         return result?.Result ?? throw new InvalidOperationException(
@@ -358,6 +374,22 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
         var builder = new BlockchainOperationBuilder();
         configure?.Invoke(builder);
         return await Task.FromResult(builder.Build());
+    }
+
+    /// <summary>
+    /// Assert a seed POST succeeded, surfacing the RESPONSE BODY in the failure
+    /// message. Plain <see cref="HttpResponseMessage.EnsureSuccessStatusCode"/>
+    /// throws "400 (Bad Request)" with no body, hiding the real server error
+    /// (e.g. a SurrealDB "namespace does not exist" or a FluentValidation
+    /// rejection). Reading the body here turns an opaque 400 into an actionable
+    /// diagnostic — kept deliberately as a harness improvement.
+    /// </summary>
+    private static async Task EnsureSeedSucceededAsync(HttpResponseMessage response, string what)
+    {
+        if (response.IsSuccessStatusCode) return;
+        var body = await response.Content.ReadAsStringAsync();
+        throw new InvalidOperationException(
+            $"{what} seed failed: HTTP {(int)response.StatusCode} {response.StatusCode}. Body: {body}");
     }
 
     // ── Response helpers ──────────────────────────────────────────────────────
