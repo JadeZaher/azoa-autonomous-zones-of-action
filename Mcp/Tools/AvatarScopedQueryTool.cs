@@ -132,7 +132,7 @@ public sealed class AvatarScopedQueryTool : IMcpTool
 
             // ── AvatarId comes exclusively from context ────────────────────
             // (privilege-escalation gate — line 134)
-            var avatarIdStr = ToSurrealId(context.AvatarId);
+            var avatarIdStr = SurrealId.ToSurrealId(context.AvatarId);
 
             // ── Build query ───────────────────────────────────────────────
             // Table name is from the allowlist — substituted via SurrealQuery.SelectAll
@@ -174,7 +174,6 @@ public sealed class AvatarScopedQueryTool : IMcpTool
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static JsonElement Error(string message, string? detail = null)
     {

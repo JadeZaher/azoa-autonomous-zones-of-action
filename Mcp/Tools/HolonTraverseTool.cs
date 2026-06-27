@@ -57,8 +57,8 @@ public sealed class HolonTraverseTool : IMcpTool
             }
 
             // AvatarId comes exclusively from context — privilege-escalation gate (line 58)
-            var avatarIdStr = ToSurrealId(context.AvatarId);
-            var holonIdStr  = ToSurrealId(holonId);
+            var avatarIdStr = SurrealId.ToSurrealId(context.AvatarId);
+            var holonIdStr  = SurrealId.ToSurrealId(holonId);
 
             // ── Fetch root holon ──────────────────────────────────────────
             var rootQ = SurrealQuery
@@ -160,7 +160,6 @@ public sealed class HolonTraverseTool : IMcpTool
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static Guid FromSurrealId(string raw)
     {

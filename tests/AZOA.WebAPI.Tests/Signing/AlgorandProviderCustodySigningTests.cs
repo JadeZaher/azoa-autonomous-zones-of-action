@@ -238,7 +238,7 @@ public class AlgorandProviderCustodySigningTests : IDisposable
     private static void WriteJson(HttpListenerContext ctx, Dictionary<string, object?> extra)
     {
         var json = JsonSerializer.Serialize(extra);
-        var bytes = Encoding.UTF8.GetBytes(json);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
         ctx.Response.ContentType = "application/json";
         ctx.Response.StatusCode = 200;
         ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);

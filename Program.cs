@@ -129,7 +129,7 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key))
+        IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key))
     };
 
     // user-sovereign-identity AC3b (security-review fix): the per-avatar
@@ -198,10 +198,20 @@ builder.Services.AddAuthentication(options =>
 
 // TenantScope policy (tenant-onboarding): a tenant-surface action requires the
 // tenant:provision scope claim (emitted per-CSV-entry by ApiKeyAuthenticationHandler).
+// Operator policy: an operator/admin-only surface (e.g. the cross-avatar
+// reconcile-sweep) requires an admin role/claim — mirrors the per-action admin
+// convention in KycController.IsAdmin (role "Admin" / role claim / is_admin=true).
 builder.Services.AddAuthorization(o =>
+{
     o.AddPolicy("TenantScope", p =>
         p.RequireAssertion(ctx =>
-            ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision))));
+            ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision)));
+    o.AddPolicy("Operator", p =>
+        p.RequireAssertion(ctx =>
+            ctx.User.IsInRole("Admin")
+            || string.Equals(ctx.User.FindFirst("role")?.Value, "Admin", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ctx.User.FindFirst("is_admin")?.Value, "true", StringComparison.OrdinalIgnoreCase)));
+});
 
 // ─── Rate limiting + per-API-key metering (api-safety-hardening task 18) ───
 // Built-in ASP.NET Core 8 rate limiting (Microsoft.AspNetCore.RateLimiting —
@@ -249,7 +259,7 @@ static string ResolveRateLimitPartitionKey(HttpContext httpContext)
             // the partition is still 1:1 with the key (per-API-key metering).
             var hash = Convert.ToHexString(
                 System.Security.Cryptography.SHA256.HashData(
-                    Encoding.UTF8.GetBytes(apiKey)));
+                    System.Text.Encoding.UTF8.GetBytes(apiKey)));
             return $"apikey:{hash}";
         }
     }

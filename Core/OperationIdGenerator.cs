@@ -72,7 +72,7 @@ public static class OperationIdGenerator
         var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(input));
         // Full 256-bit digest — a truncated prefix is collision-thin for a
         // lifetime idempotency key (a collision silently drops a distinct op).
-        var hashHex = Convert.ToHexString(hash).ToLowerInvariant();
+        var hashHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(hash);
 
         return $"op_{chain.ToLowerInvariant()}_{operationType.ToLowerInvariant()}_{hashHex}";
     }

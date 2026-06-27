@@ -45,7 +45,7 @@ public sealed class NftOwnershipGraphTool : IMcpTool
         try
         {
             // AvatarId comes exclusively from context — privilege-escalation gate (line 43)
-            var avatarIdStr = ToSurrealId(context.AvatarId);
+            var avatarIdStr = SurrealId.ToSurrealId(context.AvatarId);
 
             // Optional chain filter — null means "all chains"
             string? chainFilter = null;
@@ -108,7 +108,6 @@ public sealed class NftOwnershipGraphTool : IMcpTool
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static Guid FromSurrealId(string raw)
     {

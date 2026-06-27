@@ -34,7 +34,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
 
     public async Task<QuestTemplate?> GetTemplateAsync(Guid templateId, CancellationToken ct)
     {
-        var surrealId = ToSurrealId(templateId);
+        var surrealId = SurrealId.ToSurrealId(templateId);
 
         var q = SurrealQuery
             .Of("SELECT * FROM type::record($_t, $_id)")
@@ -47,7 +47,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
 
     public async Task<QuestNodeTemplate?> GetNodeTemplateAsync(Guid nodeTemplateId, CancellationToken ct)
     {
-        var surrealId = ToSurrealId(nodeTemplateId);
+        var surrealId = SurrealId.ToSurrealId(nodeTemplateId);
 
         var q = SurrealQuery
             .Of("SELECT * FROM type::record($_t, $_id)")
@@ -60,10 +60,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
 
     // ── Mapping helpers ───────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
-    private static Guid FromSurrealId(string id)
-        => Guid.ParseExact(id, "N");
 
     private static Guid FromSurrealIdStripped(string id)
     {
@@ -104,7 +101,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
                 {
                     Id             = string.IsNullOrEmpty(nodePoco.Id)
                                      ? Guid.NewGuid()
-                                     : FromSurrealId(nodePoco.Id),
+                                     : SurrealId.FromSurrealId(nodePoco.Id),
                     TemplateId     = template.Id,
                     SlotId         = nodePoco.SlotId ?? string.Empty,
                     NodeTemplateId = string.IsNullOrEmpty(nodePoco.NodeTemplateId)
@@ -127,7 +124,7 @@ public sealed class SurrealQuestTemplateStore : IQuestTemplateStore
                 {
                     Id            = string.IsNullOrEmpty(edgePoco.Id)
                                     ? Guid.NewGuid()
-                                    : FromSurrealId(edgePoco.Id),
+                                    : SurrealId.FromSurrealId(edgePoco.Id),
                     TemplateId    = template.Id,
                     SourceSlotId  = edgePoco.SourceSlotId ?? string.Empty,
                     TargetSlotId  = edgePoco.TargetSlotId ?? string.Empty,

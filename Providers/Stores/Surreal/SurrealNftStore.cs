@@ -75,7 +75,7 @@ public sealed class SurrealNftStore : INftStore
     {
         try
         {
-            var q = SurrealQuery.SelectById(GeneratedNft.SchemaNameConst, ToSurrealId(id));
+            var q = SurrealQuery.SelectById(GeneratedNft.SchemaNameConst, SurrealId.ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<GeneratedNft>(q, ct);
             return new AZOAResult<IAvatarNFT>
             {
@@ -126,7 +126,7 @@ public sealed class SurrealNftStore : INftStore
     {
         try
         {
-            var avatarLink = SurrealLink.ToLink("avatar", ToSurrealId(avatarId));
+            var avatarLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
             var q = SurrealQuery<GeneratedNft>.From()
                 .Where(n => n.AvatarId == avatarLink);
 
@@ -149,12 +149,12 @@ public sealed class SurrealNftStore : INftStore
     {
         try
         {
-            var checkQ   = SurrealQuery.SelectById(GeneratedNft.SchemaNameConst, ToSurrealId(id));
+            var checkQ   = SurrealQuery.SelectById(GeneratedNft.SchemaNameConst, SurrealId.ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<GeneratedNft>(checkQ, ct);
             if (existing == null)
                 return new AZOAResult<bool> { IsError = true, Message = "NFT not found.", Result = false };
 
-            var q = SurrealQuery.DeleteById(GeneratedNft.SchemaNameConst, ToSurrealId(id));
+            var q = SurrealQuery.DeleteById(GeneratedNft.SchemaNameConst, SurrealId.ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new AZOAResult<bool> { Result = true, Message = "Deleted." };
@@ -205,7 +205,7 @@ public sealed class SurrealNftStore : INftStore
     {
         try
         {
-            var q   = SurrealQuery.SelectById(HolonBindingTable, ToSurrealId(id));
+            var q   = SurrealQuery.SelectById(HolonBindingTable, SurrealId.ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<SurrealHolonBinding>(q, ct);
             return new AZOAResult<IHolonNFTBinding>
             {
@@ -230,7 +230,7 @@ public sealed class SurrealNftStore : INftStore
             // in the query but NOT the RPC vars key, so a mixed-case name binds to
             // NONE and the predicate silently matches nothing.
             var q = SurrealQuery.Of("SELECT * FROM holon_nft_binding WHERE avatar_nft_id = $avatar_nft_id")
-                .WithParam("avatar_nft_id", ToSurrealId(avatarNFTId));
+                .WithParam("avatar_nft_id", SurrealId.ToSurrealId(avatarNFTId));
 
             var rows = await _executor.QueryAsync<SurrealHolonBinding>(q, ct);
             return new AZOAResult<IEnumerable<IHolonNFTBinding>>
@@ -251,12 +251,12 @@ public sealed class SurrealNftStore : INftStore
     {
         try
         {
-            var checkQ   = SurrealQuery.SelectById(HolonBindingTable, ToSurrealId(id));
+            var checkQ   = SurrealQuery.SelectById(HolonBindingTable, SurrealId.ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<SurrealHolonBinding>(checkQ, ct);
             if (existing == null)
                 return new AZOAResult<bool> { IsError = true, Message = "Binding not found.", Result = false };
 
-            var q = SurrealQuery.DeleteById(HolonBindingTable, ToSurrealId(id));
+            var q = SurrealQuery.DeleteById(HolonBindingTable, SurrealId.ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new AZOAResult<bool> { Result = true, Message = "Deleted." };
@@ -307,7 +307,7 @@ public sealed class SurrealNftStore : INftStore
     {
         try
         {
-            var q   = SurrealQuery.SelectById(WalletBindingTable, ToSurrealId(id));
+            var q   = SurrealQuery.SelectById(WalletBindingTable, SurrealId.ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<SurrealWalletBinding>(q, ct);
             return new AZOAResult<IWalletNFTBinding>
             {
@@ -330,7 +330,7 @@ public sealed class SurrealNftStore : INftStore
         {
             // Lowercase param name — see GetHolonNFTBindingsByAvatarNFTAsync.
             var q = SurrealQuery.Of("SELECT * FROM wallet_nft_binding WHERE avatar_nft_id = $avatar_nft_id")
-                .WithParam("avatar_nft_id", ToSurrealId(avatarNFTId));
+                .WithParam("avatar_nft_id", SurrealId.ToSurrealId(avatarNFTId));
 
             var rows = await _executor.QueryAsync<SurrealWalletBinding>(q, ct);
             return new AZOAResult<IEnumerable<IWalletNFTBinding>>
@@ -351,12 +351,12 @@ public sealed class SurrealNftStore : INftStore
     {
         try
         {
-            var checkQ   = SurrealQuery.SelectById(WalletBindingTable, ToSurrealId(id));
+            var checkQ   = SurrealQuery.SelectById(WalletBindingTable, SurrealId.ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<SurrealWalletBinding>(checkQ, ct);
             if (existing == null)
                 return new AZOAResult<bool> { IsError = true, Message = "Binding not found.", Result = false };
 
-            var q = SurrealQuery.DeleteById(WalletBindingTable, ToSurrealId(id));
+            var q = SurrealQuery.DeleteById(WalletBindingTable, SurrealId.ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new AZOAResult<bool> { Result = true, Message = "Deleted." };
@@ -370,11 +370,7 @@ public sealed class SurrealNftStore : INftStore
 
     // ── Helpers — Id encoding ─────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id)
-        => id.ToString("N").ToLowerInvariant();
 
-    private static Guid FromSurrealId(string id)
-        => Guid.ParseExact(id, "N");
 
     // ── AvatarNFT mapping ─────────────────────────────────────────────────────
 
@@ -390,8 +386,8 @@ public sealed class SurrealNftStore : INftStore
 
         return new GeneratedNft
         {
-            Id                = ToSurrealId(n.Id),
-            AvatarId          = SurrealLink.ToLink("avatar", ToSurrealId(n.AvatarId))!,
+            Id                = SurrealId.ToSurrealId(n.Id),
+            AvatarId          = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(n.AvatarId))!,
             ChainType         = n.ChainType,
             ContractAddress   = n.NFTContractAddress,
             TokenId           = n.TokenId,
@@ -434,8 +430,8 @@ public sealed class SurrealNftStore : INftStore
 
         return new AvatarNFT
         {
-            Id                  = FromSurrealId(p.Id),
-            AvatarId            = FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+            Id                  = SurrealId.FromSurrealId(p.Id),
+            AvatarId            = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
             ChainType           = p.ChainType,
             NFTContractAddress  = p.ContractAddress,
             TokenId             = p.TokenId,
@@ -470,9 +466,9 @@ public sealed class SurrealNftStore : INftStore
 
         return new SurrealHolonBinding
         {
-            Id              = ToSurrealId(b.Id),
-            HolonId         = ToSurrealId(b.HolonId),
-            AvatarNftId     = ToSurrealId(b.AvatarNFTId),
+            Id              = SurrealId.ToSurrealId(b.Id),
+            HolonId         = SurrealId.ToSurrealId(b.HolonId),
+            AvatarNftId     = SurrealId.ToSurrealId(b.AvatarNFTId),
             Role            = b.Role,
             PermissionLevel = b.PermissionLevel,
             Permissions     = permissionsJson,
@@ -502,9 +498,9 @@ public sealed class SurrealNftStore : INftStore
 
         return new HolonNFTBinding
         {
-            Id              = FromSurrealId(s.Id),
-            HolonId         = FromSurrealId(s.HolonId),
-            AvatarNFTId     = FromSurrealId(s.AvatarNftId),
+            Id              = SurrealId.FromSurrealId(s.Id),
+            HolonId         = SurrealId.FromSurrealId(s.HolonId),
+            AvatarNFTId     = SurrealId.FromSurrealId(s.AvatarNftId),
             Role            = s.Role,
             PermissionLevel = s.PermissionLevel,
             Permissions     = perms,
@@ -528,9 +524,9 @@ public sealed class SurrealNftStore : INftStore
 
         return new SurrealWalletBinding
         {
-            Id                = ToSurrealId(b.Id),
-            WalletId          = ToSurrealId(b.WalletId),
-            AvatarNftId       = ToSurrealId(b.AvatarNFTId),
+            Id                = SurrealId.ToSurrealId(b.Id),
+            WalletId          = SurrealId.ToSurrealId(b.WalletId),
+            AvatarNftId       = SurrealId.ToSurrealId(b.AvatarNFTId),
             BindingType       = b.BindingType,
             AccessLevel       = b.AccessLevel,
             AccessPermissions = permissionsJson,
@@ -560,9 +556,9 @@ public sealed class SurrealNftStore : INftStore
 
         return new WalletNFTBinding
         {
-            Id                = FromSurrealId(s.Id),
-            WalletId          = FromSurrealId(s.WalletId),
-            AvatarNFTId       = FromSurrealId(s.AvatarNftId),
+            Id                = SurrealId.FromSurrealId(s.Id),
+            WalletId          = SurrealId.FromSurrealId(s.WalletId),
+            AvatarNFTId       = SurrealId.FromSurrealId(s.AvatarNftId),
             BindingType       = s.BindingType,
             AccessLevel       = s.AccessLevel,
             AccessPermissions = perms,

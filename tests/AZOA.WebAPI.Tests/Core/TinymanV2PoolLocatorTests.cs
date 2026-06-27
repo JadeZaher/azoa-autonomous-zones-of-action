@@ -23,7 +23,7 @@ public class TinymanV2PoolLocatorTests
     [Fact]
     public void Sha512_256_Abc_MatchesNistVector()
     {
-        Hex(TinymanV2PoolLocator.Sha512_256(Encoding.ASCII.GetBytes("abc")))
+        Hex(TinymanV2PoolLocator.Sha512_256(System.Text.Encoding.ASCII.GetBytes("abc")))
             .Should().Be("53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23");
     }
 

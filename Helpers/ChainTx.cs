@@ -1,7 +1,7 @@
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 
-namespace AZOA.WebAPI.Core.Blockchain;
+namespace AZOA.WebAPI.Helpers;
 
 /// <summary>
 /// Maps the provider-inconsistent <c>GetTransactionStatusAsync</c> dictionary to
@@ -50,7 +50,7 @@ public static class ChainTxClassifier
         return ChainConfirmation.Unknown;
     }
 
-    private static bool? ReadBool(IReadOnlyDictionary<string, object> d, string key)
+    public static bool? ReadBool(IReadOnlyDictionary<string, object> d, string key)
     {
         if (!d.TryGetValue(key, out var v) || v is null) return null;
         return v switch

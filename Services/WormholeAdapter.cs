@@ -261,7 +261,7 @@ public class WormholeAdapter : IWormholeAdapter
 
         // A real verifier is wired — every signature must independently verify
         // against the canonical digest. Any failure rejects the whole VAA.
-        byte[] digestBytes = HexToBytes(parsed.Digest!);
+        byte[] digestBytes = AZOA.WebAPI.Helpers.Encoding.HexToBytes(parsed.Digest!);
         int verified = 0;
         foreach (var s in parsed.Signatures)
         {
@@ -322,7 +322,7 @@ public class WormholeAdapter : IWormholeAdapter
 
         var raw = Convert.FromBase64String(vaaBase64);
         var sha = System.Security.Cryptography.SHA256.HashData(raw);
-        return Convert.ToHexString(sha).ToLowerInvariant();
+        return AZOA.WebAPI.Helpers.Encoding.ToLowerHex(sha);
     }
 
     public async Task<AZOAResult<WormholeRedemptionResult>> RedeemTransferAsync(
@@ -474,7 +474,7 @@ public class WormholeAdapter : IWormholeAdapter
 
         // Prefer the values actually inside the signed body over caller hints.
         vaa.EmitterChainId = bodyEmitterChain;
-        vaa.EmitterAddress = Convert.ToHexString(emitterBytes).ToLowerInvariant();
+        vaa.EmitterAddress = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(emitterBytes);
         vaa.Sequence = (long)bodySequence;
         vaa.Nonce = nonce;
         vaa.ConsistencyLevel = consistency;
@@ -488,7 +488,7 @@ public class WormholeAdapter : IWormholeAdapter
         var body = new byte[b.Length - bodyStart];
         System.Array.Copy(b, bodyStart, body, 0, body.Length);
         var digest = Keccak256.ComputeHash(Keccak256.ComputeHash(body));
-        vaa.Digest = Convert.ToHexString(digest).ToLowerInvariant();
+        vaa.Digest = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(digest);
 
         vaa.StructurallyParsed = true;
         return vaa;
@@ -509,13 +509,6 @@ public class WormholeAdapter : IWormholeAdapter
         foreach (var c in hex)
             if (c != '0' && c != 'x' && c != 'X') return false;
         return true;
-    }
-
-    private static byte[] HexToBytes(string hex)
-    {
-        if (hex.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-            hex = hex[2..];
-        return Convert.FromHexString(hex);
     }
 
     private static string NormalizeEmitterAddress(string address)

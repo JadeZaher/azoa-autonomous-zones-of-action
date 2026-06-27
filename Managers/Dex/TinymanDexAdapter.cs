@@ -225,14 +225,14 @@ public class TinymanDexAdapter : IDexAdapter
         ulong asset1Reserves = 0, asset2Reserves = 0;
         foreach (var kv in kvs.EnumerateArray())
         {
-            var keyName = Encoding.ASCII.GetString(
+            var keyName = System.Text.Encoding.ASCII.GetString(
                 Convert.FromBase64String(kv.GetProperty("key").GetString() ?? ""));
             if (keyName is not ("asset_1_reserves" or "asset_2_reserves"))
                 continue;
 
             var v = kv.GetProperty("value");
             ulong amount = v.GetProperty("type").GetInt32() == 1
-                ? ReadBigEndianU64Loose(Convert.FromBase64String(v.GetProperty("bytes").GetString() ?? ""))
+                ? AZOA.WebAPI.Helpers.Encoding.ReadBigEndianU64Loose(Convert.FromBase64String(v.GetProperty("bytes").GetString() ?? ""))
                 : v.GetProperty("uint").GetUInt64();
 
             if (keyName == "asset_1_reserves") asset1Reserves = amount;
@@ -253,13 +253,6 @@ public class TinymanDexAdapter : IDexAdapter
             : (asset2Reserves, asset1Reserves);
     }
 
-    /// <summary>Big-endian bytes → ulong (right-aligned; tolerant of fewer than 8 bytes).</summary>
-    private static ulong ReadBigEndianU64Loose(byte[] bytes)
-    {
-        ulong value = 0;
-        foreach (var b in bytes) value = (value << 8) | b;
-        return value;
-    }
 
     // ─── Configuration Helpers ───
 

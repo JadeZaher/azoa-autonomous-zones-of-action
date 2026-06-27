@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 
-namespace AZOA.WebAPI.Core.Blockchain;
+namespace AZOA.WebAPI.Helpers;
 
 /// <summary>
 /// Chain-agnostic amount conversions between a chain's native/asset base units
@@ -10,7 +10,7 @@ namespace AZOA.WebAPI.Core.Blockchain;
 /// portfolio / faucet / transfer caller shares ONE overflow-safe implementation
 /// instead of re-deriving the decimals math.
 /// </summary>
-public static class BlockchainAmounts
+public static class Amounts
 {
     /// <summary>The chain's native-coin decimal places (base units → whole coin).</summary>
     public static int NativeDecimalsFor(string chainType) => chainType.ToUpperInvariant() switch
@@ -84,5 +84,20 @@ public static class BlockchainAmounts
             .PadLeft(decimals, '0')
             .TrimEnd('0');
         return $"{whole.ToString(CultureInfo.InvariantCulture)}.{fracDigits}";
+    }
+
+    /// <summary>
+    /// Derive a slippage-adjusted output floor from a pre-slippage integer
+    /// base-unit amount: <c>out * (10000 - slippageBps) / 10000</c>. Uses
+    /// BigInteger so large base-unit amounts never overflow.
+    /// </summary>
+    public static string ComputeSlippageFloor(string expectedOut, int slippageBps)
+    {
+        if (!BigInteger.TryParse(expectedOut, out var outAmount) || outAmount <= 0)
+            return "0";
+
+        var bps = slippageBps < 0 ? 0 : slippageBps > 10000 ? 10000 : slippageBps;
+        var floor = outAmount * (10000 - bps) / 10000;
+        return floor.ToString(CultureInfo.InvariantCulture);
     }
 }

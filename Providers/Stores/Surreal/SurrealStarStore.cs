@@ -36,7 +36,7 @@ public sealed class SurrealStarStore : ISTARStore
     {
         try
         {
-            var q = SurrealQuery.SelectById(StarRecord.StarTable, ToSurrealId(id));
+            var q = SurrealQuery.SelectById(StarRecord.StarTable, SurrealId.ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<StarRecord>(q, ct);
             return new AZOAResult<ISTARODK>
             {
@@ -63,7 +63,7 @@ public sealed class SurrealStarStore : ISTARStore
                 .Of("SELECT * FROM type::table($_t) WHERE string::lowercase(name) = string::lowercase($_name) AND avatar_id = $_avatar LIMIT 1")
                 .WithParam("_t",      StarRecord.StarTable)
                 .WithParam("_name",   name)
-                .WithParam("_avatar", SurrealLink.ToLink("avatar", ToSurrealId(avatarId)));
+                .WithParam("_avatar", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)));
 
             var row = await _executor.QuerySingleAsync<StarRecord>(q, ct);
             return new AZOAResult<ISTARODK>
@@ -126,12 +126,12 @@ public sealed class SurrealStarStore : ISTARStore
         try
         {
             // Check existence first (matches the prior EF read-before-update contract).
-            var checkQ   = SurrealQuery.SelectById(StarRecord.StarTable, ToSurrealId(id));
+            var checkQ   = SurrealQuery.SelectById(StarRecord.StarTable, SurrealId.ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<StarRecord>(checkQ, ct);
             if (existing == null)
                 return new AZOAResult<bool> { IsError = true, Message = "STAR ODK not found.", Result = false };
 
-            var q = SurrealQuery.DeleteById(StarRecord.StarTable, ToSurrealId(id));
+            var q = SurrealQuery.DeleteById(StarRecord.StarTable, SurrealId.ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new AZOAResult<bool> { Result = true, Message = "Deleted." };
@@ -144,11 +144,7 @@ public sealed class SurrealStarStore : ISTARStore
 
     // ── Mapping ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id)
-        => id.ToString("N").ToLowerInvariant();
 
-    private static Guid FromSurrealId(string id)
-        => Guid.ParseExact(id, "N");
 
     private static StarRecord ToPoco(ISTARODK odk)
     {
@@ -156,7 +152,7 @@ public sealed class SurrealStarStore : ISTARStore
         JsonElement? boundHolonIdsJson = null;
         if (odk.BoundHolonIds.Count > 0)
         {
-            var idStrings = odk.BoundHolonIds.Select(ToSurrealId).ToList();
+            var idStrings = odk.BoundHolonIds.Select(SurrealId.ToSurrealId).ToList();
             var raw       = JsonSerializer.Serialize(idStrings, SurrealJsonOptions.Default);
             using var doc = JsonDocument.Parse(raw);
             boundHolonIdsJson = doc.RootElement.Clone();
@@ -164,12 +160,12 @@ public sealed class SurrealStarStore : ISTARStore
 
         return new StarRecord
         {
-            Id               = ToSurrealId(odk.Id),
+            Id               = SurrealId.ToSurrealId(odk.Id),
             Name             = odk.Name,
             Description      = odk.Description,
             PublicKey        = odk.PublicKey,
             PrivateKeyHash   = odk.PrivateKeyHash,
-            AvatarId         = odk.AvatarId.HasValue ? SurrealLink.ToLink("avatar", ToSurrealId(odk.AvatarId.Value)) : null,
+            AvatarId         = odk.AvatarId.HasValue ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(odk.AvatarId.Value)) : null,
             BoundHolonIds    = boundHolonIdsJson,
             TargetChain      = odk.TargetChain,
             GeneratedCode    = odk.GeneratedCode,
@@ -195,19 +191,19 @@ public sealed class SurrealStarStore : ISTARStore
                 var ids = JsonSerializer.Deserialize<List<string>>(
                     p.BoundHolonIds.Value.GetRawText(), SurrealJsonOptions.Default);
                 if (ids != null)
-                    boundHolonIds = ids.Select(FromSurrealId).ToList();
+                    boundHolonIds = ids.Select(SurrealId.FromSurrealId).ToList();
             }
             catch { /* best-effort — return empty list on malformed data */ }
         }
 
         return new STARODK
         {
-            Id               = FromSurrealId(p.Id),
+            Id               = SurrealId.FromSurrealId(p.Id),
             Name             = p.Name,
             Description      = p.Description,
             PublicKey        = p.PublicKey,
             PrivateKeyHash   = p.PrivateKeyHash,
-            AvatarId         = p.AvatarId is not null ? FromSurrealId(SurrealLink.FromLink(p.AvatarId)!) : null,
+            AvatarId         = p.AvatarId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!) : null,
             BoundHolonIds    = boundHolonIds,
             TargetChain      = p.TargetChain,
             GeneratedCode    = p.GeneratedCode,

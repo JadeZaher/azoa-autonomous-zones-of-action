@@ -698,7 +698,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             sb.Append(canonicalJson);
         }
 
-        var bytes  = Encoding.UTF8.GetBytes(sb.ToString());
+        var bytes  = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
         var hash   = SHA256.HashData(bytes);
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
@@ -714,7 +714,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         using var writer  = new Utf8JsonWriter(ms);
         WriteElementSorted(writer, element);
         writer.Flush();
-        return Encoding.UTF8.GetString(ms.ToArray());
+        return System.Text.Encoding.UTF8.GetString(ms.ToArray());
     }
 
     private static void WriteElementSorted(Utf8JsonWriter writer, JsonElement element)
@@ -787,7 +787,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         if (!await SkipIfSurrealDbUnavailableAsync()) return result;
 
         var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
 
         using var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         http.DefaultRequestHeaders.Authorization =
@@ -796,7 +796,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         http.DefaultRequestHeaders.Add("DB", "test");
         http.DefaultRequestHeaders.Add("Accept", "application/json");
 
-        var content  = new StringContent(sql, Encoding.UTF8, "text/plain");
+        var content  = new StringContent(sql, System.Text.Encoding.UTF8, "text/plain");
         var response = await http.PostAsync("/sql", content);
         response.EnsureSuccessStatusCode();
 
@@ -832,7 +832,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         if (!Directory.Exists(schemaDir)) return;
 
         var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
 
         foreach (var file in Directory.GetFiles(schemaDir, "*.surql").OrderBy(f => f))
         {
@@ -844,7 +844,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             ddlClient.DefaultRequestHeaders.Add("NS", TestNamespace);
             ddlClient.DefaultRequestHeaders.Add("DB", "test");
 
-            var content  = new StringContent(ddl, Encoding.UTF8, "text/plain");
+            var content  = new StringContent(ddl, System.Text.Encoding.UTF8, "text/plain");
             var response = await ddlClient.PostAsync("/sql", content);
             _ = response; // best-effort; schema may already be defined
         }
@@ -901,7 +901,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
     /// </summary>
     private static string MakeHex64(string seed)
     {
-        var data = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
+        var data = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(data).ToLowerInvariant(); // SHA256 = 32 bytes = 64 hex chars
     }
 
@@ -911,7 +911,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
     /// </summary>
     private static string MakeHex32(string seed)
     {
-        var data = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
+        var data = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(data).ToLowerInvariant();
     }
 }

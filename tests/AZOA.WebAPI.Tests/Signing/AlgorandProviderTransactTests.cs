@@ -265,7 +265,7 @@ public class AlgorandProviderTransactTests : IDisposable
             foreach (var kv in extra) dict[kv.Key] = kv.Value;
 
         var json = JsonSerializer.Serialize(dict);
-        var bytes = Encoding.UTF8.GetBytes(json);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
         ctx.Response.ContentType = "application/json";
         ctx.Response.StatusCode = 200;
         ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);

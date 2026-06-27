@@ -55,10 +55,10 @@ public sealed class QuestReachabilityTool : IMcpTool
                 !Guid.TryParse(fromNodeEl.GetString(), out var fromNodeId))
                 return Error("from_node_id is required and must be a valid UUID.");
 
-            var questIdStr   = ToSurrealId(questId);
-            var fromNodeStr  = ToSurrealId(fromNodeId);
+            var questIdStr   = SurrealId.ToSurrealId(questId);
+            var fromNodeStr  = SurrealId.ToSurrealId(fromNodeId);
             // AvatarId comes exclusively from context — privilege-escalation gate (line 62)
-            var avatarIdStr  = ToSurrealId(context.AvatarId);
+            var avatarIdStr  = SurrealId.ToSurrealId(context.AvatarId);
 
             // ── Ownership check: fetch quest head ─────────────────────────
             var questQ = SurrealQuery
@@ -144,7 +144,6 @@ public sealed class QuestReachabilityTool : IMcpTool
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static Guid FromSurrealId(string raw)
     {

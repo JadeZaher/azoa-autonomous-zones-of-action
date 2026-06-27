@@ -47,7 +47,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
     {
         try
         {
-            var surrealId = ToSurrealId(id);
+            var surrealId = SurrealId.ToSurrealId(id);
             var q = SurrealQuery.SelectById(TableName, surrealId);
             var row = await _executor.QuerySingleAsync<OperationLog>(q, ct);
 
@@ -80,7 +80,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
     {
         try
         {
-            var avatarSurrealId = SurrealLink.ToLink("avatar", ToSurrealId(avatarId));
+            var avatarSurrealId = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
 
             // SELECT * FROM operation_log WHERE avatar_id = $avatar_id
             var q = SurrealQuery<OperationLog>.From()
@@ -141,7 +141,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         try
         {
             // Probe for existence first so we can return the canonical "not found" result.
-            var surrealId = ToSurrealId(id);
+            var surrealId = SurrealId.ToSurrealId(id);
             var probeQ = SurrealQuery.SelectById(TableName, surrealId);
             var existing = await _executor.QuerySingleAsync<OperationLog>(probeQ, ct);
 
@@ -192,7 +192,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         CancellationToken ct = default)
     {
         var q = SurrealQuery
-            .UpdateOnly(TableName, ToSurrealId(id))
+            .UpdateOnly(TableName, SurrealId.ToSurrealId(id))
             .Where("status", expectedStatus)
             .Set("status", nextStatus);
 
@@ -208,14 +208,6 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
     }
 
     // ── Mapping helpers ───────────────────────────────────────────────────────
-
-    /// <summary>Converts a <see cref="Guid"/> to the SurrealDB string id convention.</summary>
-    private static string ToSurrealId(Guid id) =>
-        id.ToString("N").ToLowerInvariant();
-
-    /// <summary>Parses a SurrealDB string id back to a <see cref="Guid"/>.</summary>
-    private static Guid FromSurrealId(string id) =>
-        Guid.ParseExact(id, "N");
 
     /// <summary>
     /// Maps domain model → generated POCO for persistence.
@@ -239,9 +231,9 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
         return new OperationLog
         {
-            Id            = ToSurrealId(op.Id),
-            AvatarId      = op.AvatarId.HasValue  ? SurrealLink.ToLink("avatar", ToSurrealId(op.AvatarId.Value)) : null,
-            WalletId      = op.WalletId.HasValue   ? SurrealLink.ToLink("wallet", ToSurrealId(op.WalletId.Value)) : null,
+            Id            = SurrealId.ToSurrealId(op.Id),
+            AvatarId      = op.AvatarId.HasValue  ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(op.AvatarId.Value)) : null,
+            WalletId      = op.WalletId.HasValue   ? SurrealLink.ToLink("wallet", SurrealId.ToSurrealId(op.WalletId.Value)) : null,
             OperationType = op.OperationType,
             Status        = statusKind,
             Parameters    = parametersElement,
@@ -263,10 +255,10 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // IExchangeOperation
             SourceHolonId = concrete?.SourceHolonId.HasValue == true
-                            ? SurrealLink.ToLink("holon", ToSurrealId(concrete.SourceHolonId!.Value))
+                            ? SurrealLink.ToLink("holon", SurrealId.ToSurrealId(concrete.SourceHolonId!.Value))
                             : null,
             TargetHolonId = concrete?.TargetHolonId.HasValue == true
-                            ? SurrealLink.ToLink("holon", ToSurrealId(concrete.TargetHolonId!.Value))
+                            ? SurrealLink.ToLink("holon", SurrealId.ToSurrealId(concrete.TargetHolonId!.Value))
                             : null,
             ExchangeRate  = concrete?.ExchangeRate,
 
@@ -276,7 +268,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             // tenant-consent-delegation AC4: persist the acting tenant + signing
             // scope so the seam's live consent check survives the async saga hop.
             ActingTenantId = op.ActingTenantId.HasValue
-                             ? SurrealLink.ToLink("avatar", ToSurrealId(op.ActingTenantId.Value))
+                             ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(op.ActingTenantId.Value))
                              : null,
             SigningScope   = op.SigningScope,
 
@@ -304,9 +296,9 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
         return new BlockchainOperation
         {
-            Id            = FromSurrealId(poco.Id),
-            AvatarId      = poco.AvatarId  is not null ? FromSurrealId(SurrealLink.FromLink(poco.AvatarId)!) : null,
-            WalletId      = poco.WalletId  is not null ? FromSurrealId(SurrealLink.FromLink(poco.WalletId)!) : null,
+            Id            = SurrealId.FromSurrealId(poco.Id),
+            AvatarId      = poco.AvatarId  is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.AvatarId)!) : null,
+            WalletId      = poco.WalletId  is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.WalletId)!) : null,
             OperationType = poco.OperationType,
             Status        = poco.Status.ToString(), // enum.ToString() matches OperationStatus const names
             Parameters    = parameters,
@@ -320,8 +312,8 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             AssetType = poco.AssetType,
 
             // IExchangeOperation
-            SourceHolonId = poco.SourceHolonId is not null ? FromSurrealId(SurrealLink.FromLink(poco.SourceHolonId)!) : null,
-            TargetHolonId = poco.TargetHolonId is not null ? FromSurrealId(SurrealLink.FromLink(poco.TargetHolonId)!) : null,
+            SourceHolonId = poco.SourceHolonId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.SourceHolonId)!) : null,
+            TargetHolonId = poco.TargetHolonId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.TargetHolonId)!) : null,
             ExchangeRate  = poco.ExchangeRate,
 
             // ITransferOperation
@@ -329,7 +321,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // tenant-consent-delegation AC4
             ActingTenantId = poco.ActingTenantId is not null
-                             ? FromSurrealId(SurrealLink.FromLink(poco.ActingTenantId)!)
+                             ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.ActingTenantId)!)
                              : null,
             SigningScope   = poco.SigningScope,
 

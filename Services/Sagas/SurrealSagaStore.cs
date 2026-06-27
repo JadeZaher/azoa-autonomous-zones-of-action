@@ -120,7 +120,7 @@ public sealed class SurrealSagaStore : ISagaStore
         Guid id, string gateId, DateTime? resumeAt, CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
-        var surrealId = ToSurrealId(id);
+        var surrealId = SurrealId.ToSurrealId(id);
 
         // The park KIND is the single discriminator (no magic sentinel, no
         // empty-string overload — review finding):
@@ -291,7 +291,7 @@ public sealed class SurrealSagaStore : ISagaStore
         Guid id, DateTime now, CancellationToken ct)
     {
         var nowUtc = DateTime.SpecifyKind(now, DateTimeKind.Utc);
-        var surrealId = ToSurrealId(id);
+        var surrealId = SurrealId.ToSurrealId(id);
 
         // THE single-winner primitive. Atomic conditional UPDATE on a single
         // record; the predicate (status==Pending + still due) is the arbiter.
@@ -327,7 +327,7 @@ public sealed class SurrealSagaStore : ISagaStore
     public async Task<bool> CompleteStepAsync(Guid id, string? output, CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
-        var surrealId = ToSurrealId(id);
+        var surrealId = SurrealId.ToSurrealId(id);
         var truncatedOutput = Truncate(output, OutputMaxLength);
 
         var q = SurrealQuery
@@ -351,7 +351,7 @@ public sealed class SurrealSagaStore : ISagaStore
     {
         var nowUtc = DateTime.UtcNow;
         var nextRunUtc = DateTime.SpecifyKind(nextRunAt, DateTimeKind.Utc);
-        var surrealId = ToSurrealId(id);
+        var surrealId = SurrealId.ToSurrealId(id);
 
         var q = SurrealQuery
             .Of("UPDATE type::record($_t, $_id) SET status = $_pending, attempt_count = attempt_count + 1, next_run_at = $_next, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
@@ -382,7 +382,7 @@ public sealed class SurrealSagaStore : ISagaStore
         if (failing is null) return null;
 
         var nowUtc = DateTime.UtcNow;
-        var surrealId = ToSurrealId(id);
+        var surrealId = SurrealId.ToSurrealId(id);
 
         // Build the compensation row up-front so we can ship both statements
         // in a single multi-statement Combine. Statement [0] is the conditional
@@ -447,7 +447,7 @@ public sealed class SurrealSagaStore : ISagaStore
     public async Task<bool> DeadLetterStepAsync(Guid id, string error, CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
-        var surrealId = ToSurrealId(id);
+        var surrealId = SurrealId.ToSurrealId(id);
 
         var q = SurrealQuery
             .Of("UPDATE type::record($_t, $_id) SET status = $_dead, dead_lettered = true, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
@@ -496,7 +496,7 @@ public sealed class SurrealSagaStore : ISagaStore
 
     public async Task<SagaStepRecord?> GetAsync(Guid id, CancellationToken ct)
     {
-        var surrealId = ToSurrealId(id);
+        var surrealId = SurrealId.ToSurrealId(id);
         var q = SurrealQuery
             .Of("SELECT * FROM type::record($_t, $_id)")
             .WithParam("_t", TableName)
@@ -508,9 +508,7 @@ public sealed class SurrealSagaStore : ISagaStore
 
     // ── Mapping helpers ───────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
-    private static Guid FromSurrealId(string id) => Guid.ParseExact(id, "N");
 
     /// <summary>
     /// Extracts the trailing record-id suffix from a SurrealDB record id
@@ -527,7 +525,7 @@ public sealed class SurrealSagaStore : ISagaStore
 
     private static SagaStepPoco FromDomain(SagaStepRecord r) => new()
     {
-        Id                 = ToSurrealId(r.Id),
+        Id                 = SurrealId.ToSurrealId(r.Id),
         CorrelationKey     = r.CorrelationKey,
         SagaName           = r.SagaName,
         StepName           = r.StepName,
@@ -550,7 +548,7 @@ public sealed class SurrealSagaStore : ISagaStore
 
     private static SagaStepRecord ToDomain(SagaStepPoco p) => new()
     {
-        Id                 = FromSurrealId(StripIdPrefix(p.Id)),
+        Id                 = SurrealId.FromSurrealId(StripIdPrefix(p.Id)),
         CorrelationKey     = p.CorrelationKey ?? string.Empty,
         SagaName           = p.SagaName ?? string.Empty,
         StepName           = p.StepName ?? string.Empty,

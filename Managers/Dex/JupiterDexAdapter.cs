@@ -77,8 +77,8 @@ public class JupiterDexAdapter : IDexAdapter
             // returns the floor as otherAmountThreshold; if absent, derive it
             // from the requested slippage so both fields are always populated.
             var minAmountOut = root.TryGetProperty("otherAmountThreshold", out var oat)
-                ? oat.GetString() ?? ComputeSlippageFloor(outAmount, req.SlippageBps)
-                : ComputeSlippageFloor(outAmount, req.SlippageBps);
+                ? oat.GetString() ?? Amounts.ComputeSlippageFloor(outAmount, req.SlippageBps)
+                : Amounts.ComputeSlippageFloor(outAmount, req.SlippageBps);
 
             var quote = new SwapQuoteResponse
             {
@@ -204,21 +204,6 @@ public class JupiterDexAdapter : IDexAdapter
                 pip.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) => d,
             _ => 0
         };
-    }
-
-    /// <summary>
-    /// Derive a slippage-adjusted output floor from a pre-slippage integer
-    /// base-unit amount: <c>out * (10000 - slippageBps) / 10000</c>. Uses
-    /// BigInteger so large base-unit amounts never overflow.
-    /// </summary>
-    private static string ComputeSlippageFloor(string expectedOut, int slippageBps)
-    {
-        if (!BigInteger.TryParse(expectedOut, out var outAmount) || outAmount <= 0)
-            return "0";
-
-        var bps = slippageBps < 0 ? 0 : slippageBps > 10000 ? 10000 : slippageBps;
-        var floor = outAmount * (10000 - bps) / 10000;
-        return floor.ToString(CultureInfo.InvariantCulture);
     }
 
     // ─── Result helpers ───

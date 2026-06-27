@@ -80,9 +80,9 @@ public sealed class WebhookHmacSigner
         if (string.IsNullOrEmpty(secret))
             throw new ArgumentException("A per-tenant HMAC secret is required.", nameof(secret));
 
-        var keyBytes = Encoding.UTF8.GetBytes(secret);
-        var timestampBytes = Encoding.UTF8.GetBytes(timestampIso);
-        var bodyBytes = Encoding.UTF8.GetBytes(body);
+        var keyBytes = System.Text.Encoding.UTF8.GetBytes(secret);
+        var timestampBytes = System.Text.Encoding.UTF8.GetBytes(timestampIso);
+        var bodyBytes = System.Text.Encoding.UTF8.GetBytes(body);
 
         // Length-prefixed preimage: a 4-byte BIG-ENDIAN prefix pinning the UTF-8 length of
         // the timestamp, then the timestamp bytes, then the body bytes. The prefix makes
@@ -97,6 +97,6 @@ public sealed class WebhookHmacSigner
 
         using var hmac = new HMACSHA256(keyBytes);
         var hash = hmac.ComputeHash(preimage);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        return AZOA.WebAPI.Helpers.Encoding.ToLowerHex(hash);
     }
 }

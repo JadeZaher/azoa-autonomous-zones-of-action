@@ -37,7 +37,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
             var q = SurrealQuery
                 .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  AvatarTable)
-                .WithParam("_id", ToSurrealId(id));
+                .WithParam("_id", SurrealId.ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<GeneratedAvatar>(q, ct);
             return new AZOAResult<IAvatar>
             {
@@ -104,7 +104,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
             var checkQ = SurrealQuery
                 .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  AvatarTable)
-                .WithParam("_id", ToSurrealId(id));
+                .WithParam("_id", SurrealId.ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<GeneratedAvatar>(checkQ, ct);
             if (existing == null)
                 return new AZOAResult<bool> { IsError = true, Message = "Avatar not found.", Result = false };
@@ -112,7 +112,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
             var q = SurrealQuery
                 .Of("DELETE type::record($_t, $_id)")
                 .WithParam("_t",  AvatarTable)
-                .WithParam("_id", ToSurrealId(id));
+                .WithParam("_id", SurrealId.ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new AZOAResult<bool> { Result = true, Message = "Deleted." };
@@ -132,7 +132,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
             // SurrealApiKeyStore.ListByAvatarAsync matches avatar_id.
             var q = SurrealQuery
                 .Of("SELECT * FROM avatar WHERE owner_tenant_id = $_tenant ORDER BY created_date DESC")
-                .WithParam("_tenant", SurrealLink.ToLink(AvatarTable, ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealLink.ToLink(AvatarTable, SurrealId.ToSurrealId(tenantId)));
             var rows = await _executor.QueryAsync<GeneratedAvatar>(q, ct);
             return new AZOAResult<IEnumerable<IAvatar>>
             {
@@ -155,7 +155,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
             // ISTARStore.GetByNameAndAvatarAsync.
             var q = SurrealQuery
                 .Of("SELECT * FROM avatar WHERE owner_tenant_id = $_tenant AND external_user_id = $_ext LIMIT 1")
-                .WithParam("_tenant", SurrealLink.ToLink(AvatarTable, ToSurrealId(tenantId)))
+                .WithParam("_tenant", SurrealLink.ToLink(AvatarTable, SurrealId.ToSurrealId(tenantId)))
                 .WithParam("_ext", externalUserId);
             var row = await _executor.QuerySingleAsync<GeneratedAvatar>(q, ct);
             return new AZOAResult<IAvatar>
@@ -197,15 +197,11 @@ public sealed class SurrealAvatarStore : IAvatarStore
 
     // ── Mapping ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id)
-        => id.ToString("N").ToLowerInvariant();
 
-    private static Guid FromSurrealId(string id)
-        => Guid.ParseExact(id, "N");
 
     private static GeneratedAvatar ToPoco(IAvatar a) => new()
     {
-        Id               = ToSurrealId(a.Id),
+        Id               = SurrealId.ToSurrealId(a.Id),
         Username         = a.Username,
         Email            = a.Email,
         PasswordHash     = a.PasswordHash,
@@ -223,7 +219,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
         // owner_tenant_id is a record<avatar> link; encode the same way the
         // ApiKey store encodes avatar_id. null tenant => null link column.
         OwnerTenantId    = a.OwnerTenantId.HasValue
-                               ? SurrealLink.ToLink(AvatarTable, ToSurrealId(a.OwnerTenantId.Value))
+                               ? SurrealLink.ToLink(AvatarTable, SurrealId.ToSurrealId(a.OwnerTenantId.Value))
                                : null,
         ExternalUserId   = a.ExternalUserId,
         ExternalRef      = a.ExternalRef,
@@ -237,7 +233,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
 
     private static Avatar FromPoco(GeneratedAvatar p) => new()
     {
-        Id               = FromSurrealId(p.Id),
+        Id               = SurrealId.FromSurrealId(p.Id),
         Username         = p.Username,
         Email            = p.Email,
         PasswordHash     = p.PasswordHash,

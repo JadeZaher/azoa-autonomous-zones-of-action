@@ -693,26 +693,15 @@ public sealed class ReconciliationService : IReconciliationService
         var d = result.Result;
 
         // Positive confirmation signals (provider-specific keys).
-        if (ReadBool(d, "confirmed") == true) return ChainVerdict.Confirmed; // Algorand
-        if (ReadBool(d, "success") == true) return ChainVerdict.Confirmed;   // Solana
+        if (ChainTxClassifier.ReadBool(d, "confirmed") == true) return ChainVerdict.Confirmed; // Algorand
+        if (ChainTxClassifier.ReadBool(d, "success") == true) return ChainVerdict.Confirmed;   // Solana
 
         // Explicit on-chain negative: the tx exists on-chain but failed.
-        if (ReadBool(d, "success") == false) return ChainVerdict.FailedOnChain; // Solana revert
-        if (ReadBool(d, "confirmed") == false) return ChainVerdict.Unknown;     // Algorand: 0 rounds = not yet, NOT failed
+        if (ChainTxClassifier.ReadBool(d, "success") == false) return ChainVerdict.FailedOnChain; // Solana revert
+        if (ChainTxClassifier.ReadBool(d, "confirmed") == false) return ChainVerdict.Unknown;     // Algorand: 0 rounds = not yet, NOT failed
 
         // A non-error result with no recognizable signal: do not guess.
         return ChainVerdict.Unknown;
-    }
-
-    private static bool? ReadBool(IReadOnlyDictionary<string, object> d, string key)
-    {
-        if (!d.TryGetValue(key, out var v) || v is null) return null;
-        return v switch
-        {
-            bool b => b,
-            string s when bool.TryParse(s, out var p) => p,
-            _ => null,
-        };
     }
 
     // ───────────────────────── Provider resolution ──────────────────────────

@@ -87,14 +87,14 @@ public sealed class JsonlExceptionWriter : IHostedService, IDisposable
         var line = JsonSerializer.Serialize(entry, JsonOptions);
 
         // Enforce max size guard.
-        if (Encoding.UTF8.GetByteCount(line) > _options.MaxEntrySizeBytes)
+        if (System.Text.Encoding.UTF8.GetByteCount(line) > _options.MaxEntrySizeBytes)
         {
             line = line.Substring(0, Math.Min(line.Length, _options.MaxEntrySizeBytes / 2)) + "...[truncated]\"}}";
         }
 
         // FileShare.ReadWrite allows external log tailing without locking.
         await using var fs = new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-        await using var sw = new StreamWriter(fs, Encoding.UTF8, leaveOpen: true);
+        await using var sw = new StreamWriter(fs, System.Text.Encoding.UTF8, leaveOpen: true);
         await sw.WriteLineAsync(line).ConfigureAwait(false);
     }
 
