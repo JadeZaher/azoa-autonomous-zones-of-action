@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -16,7 +17,6 @@ public class WalletManager : IWalletManager
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly WalletKeyService _keyService;
     private readonly IConfiguration _config;
-    private readonly IAlgorandFaucet _algorandFaucet;
     private readonly BlockchainConfigurationManager _blockchainConfig;
 
     public WalletManager(
@@ -24,15 +24,13 @@ public class WalletManager : IWalletManager
         IHolonStore holonStore,
         IBlockchainProviderFactory chainFactory,
         WalletKeyService keyService,
-        IConfiguration config,
-        IAlgorandFaucet algorandFaucet)
+        IConfiguration config)
     {
         _walletStore = walletStore;
         _holonStore = holonStore;
         _chainFactory = chainFactory;
         _keyService = keyService;
         _config = config;
-        _algorandFaucet = algorandFaucet;
         _blockchainConfig = new BlockchainConfigurationManager(config);
     }
 
@@ -182,6 +180,7 @@ public class WalletManager : IWalletManager
         };
 
         decimal balance = 0;
+        var fungibles = new List<FungibleHolding>();
         try
         {
             var network = _blockchainConfig.GetDefaultNetwork(wallet.ChainType);
@@ -191,13 +190,27 @@ public class WalletManager : IWalletManager
                 var balanceResult = await chainProvider.GetBalanceAsync(wallet.Address);
                 if (!balanceResult.IsError && balanceResult.Result != null)
                     decimal.TryParse(balanceResult.Result, out balance);
+
+                // Fungible (ASA) holdings from chain truth: enumerate owned tokens via
+                // the existing provider surface (GetTokensByOwnerAsync gives assetId +
+                // base-unit amount), then hydrate display metadata (unit name, name,
+                // decimals) per asset via GetTokenMetadataAsync — the SAME path the
+                // fungible-mint flow reads. No new chain call invented.
+                fungibles = await GatherFungibleHoldingsAsync(chainProvider, wallet.Address);
             }
         }
         catch (Exception ex)
         {
-            // Fall back to 0 if blockchain unavailable.
+            // Fall back to 0 / empty if blockchain unavailable.
             System.Diagnostics.Debug.WriteLine($"Portfolio balance lookup failed for wallet {wallet.Id}: {ex.Message}");
         }
+
+        // Render-ready asset list (fungible-mint-and-render-model §11.5): shape chain
+        // truth into everything the frontend needs in ONE call — the native coin, every
+        // fungible (ASA) holding, and every NFT holding, each carrying raw +
+        // display-formatted amounts so the UI renders without a second round-trip or
+        // client-side decimals math.
+        var assets = BuildRenderAssets(wallet.ChainType, symbol, balance, fungibles, nfts);
 
         var portfolio = new PortfolioResult
         {
@@ -207,10 +220,137 @@ public class WalletManager : IWalletManager
             Balance = balance,
             Symbol = symbol,
             Nfts = nfts,
+            Assets = assets,
             ComputedAt = DateTime.UtcNow
         };
 
         return new AZOAResult<PortfolioResult> { Result = portfolio, Message = "Portfolio computed." };
+    }
+
+    // ─── Render-model assembly (fungible-mint-and-render-model §11.5) ───
+
+    /// <summary>
+    /// Shapes chain truth into the unified, render-ready <see cref="PortfolioAsset"/>
+    /// list: the native coin (decimal-adjusted display + base-unit raw), one entry per
+    /// fungible (ASA) holding, plus one entry per NFT holding. The frontend renders
+    /// directly off this — no second round-trip, no client-side decimals math.
+    /// </summary>
+    private static List<PortfolioAsset> BuildRenderAssets(
+        string chainType, string symbol, decimal nativeDisplayBalance,
+        List<FungibleHolding> fungibles, List<NftHolding> nfts)
+    {
+        var assets = new List<PortfolioAsset>();
+
+        var nativeDecimals = BlockchainAmounts.NativeDecimalsFor(chainType);
+        assets.Add(new PortfolioAsset
+        {
+            Id = symbol,
+            Kind = PortfolioAssetKind.Native,
+            Symbol = symbol,
+            Name = chainType,
+            Decimals = nativeDecimals,
+            // The provider balance is already in whole-coin (display) units; derive the
+            // base-unit raw amount from the chain's native decimals.
+            RawAmount = BlockchainAmounts.ToBaseUnits(nativeDisplayBalance, nativeDecimals),
+            DisplayAmount = nativeDisplayBalance.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Chain = chainType,
+            IconRef = null
+        });
+
+        // Fungible (ASA) holdings: RawAmount is chain-truth base units; DisplayAmount is
+        // derived from the asset's own decimals (NOT the native chain decimals).
+        foreach (var fungible in fungibles)
+        {
+            assets.Add(new PortfolioAsset
+            {
+                Id = fungible.AssetId,
+                Kind = PortfolioAssetKind.Fungible,
+                Symbol = string.IsNullOrWhiteSpace(fungible.UnitName) ? fungible.AssetId : fungible.UnitName,
+                Name = string.IsNullOrWhiteSpace(fungible.Name) ? fungible.AssetId : fungible.Name,
+                Decimals = fungible.Decimals,
+                RawAmount = fungible.RawAmount,
+                DisplayAmount = BlockchainAmounts.FromBaseUnits(fungible.RawAmount, fungible.Decimals),
+                Chain = chainType,
+                IconRef = null
+            });
+        }
+
+        foreach (var nft in nfts)
+        {
+            assets.Add(new PortfolioAsset
+            {
+                Id = nft.HolonId.ToString(),
+                Kind = PortfolioAssetKind.Nft,
+                // NFTs are supply-1, no unit name; the token id (when present) is the
+                // closest symbol-like handle, else fall back to the name.
+                Symbol = nft.TokenId ?? nft.Name,
+                Name = nft.Name,
+                Decimals = 0,
+                RawAmount = "1",
+                DisplayAmount = "1",
+                Chain = chainType,
+                IconRef = nft.ImageUri
+            });
+        }
+
+        return assets;
+    }
+
+    /// <summary>
+    /// Enumerates the wallet's fungible-token (ASA) holdings from chain truth using the
+    /// existing provider surface: <c>GetTokensByOwnerAsync</c> for the owned
+    /// asset-id/base-unit pairs, then <c>GetTokenMetadataAsync</c> per asset to hydrate
+    /// the unit name / name / decimals. Zero-amount rows are skipped. Any per-asset
+    /// metadata failure degrades gracefully (the holding is still emitted with 0
+    /// decimals and the asset id as its label) rather than dropping the holding or
+    /// throwing into the portfolio path.
+    /// </summary>
+    private static async Task<List<FungibleHolding>> GatherFungibleHoldingsAsync(
+        IBlockchainProvider provider, string ownerAddress)
+    {
+        var holdings = new List<FungibleHolding>();
+
+        var tokensResult = await provider.GetTokensByOwnerAsync(ownerAddress);
+        if (tokensResult.IsError || tokensResult.Result == null)
+            return holdings;
+
+        foreach (var token in tokensResult.Result)
+        {
+            var assetId = token.TryGetValue("assetId", out var idObj) ? idObj?.ToString() ?? "" : "";
+            var rawAmount = token.TryGetValue("amount", out var amtObj) ? amtObj?.ToString() ?? "0" : "0";
+            if (string.IsNullOrWhiteSpace(assetId))
+                continue;
+
+            // Skip zero-balance ASAs (an opted-in-but-empty holding is not a holding).
+            if (System.Numerics.BigInteger.TryParse(rawAmount, out var rawValue) && rawValue.IsZero)
+                continue;
+
+            var holding = new FungibleHolding
+            {
+                AssetId = assetId,
+                RawAmount = rawAmount,
+                UnitName = string.Empty,
+                Name = assetId,
+                Decimals = 0
+            };
+
+            var metaResult = await provider.GetTokenMetadataAsync(assetId);
+            if (!metaResult.IsError && metaResult.Result != null)
+            {
+                var meta = metaResult.Result;
+                if (meta.TryGetValue("unitName", out var unit) && unit is not null)
+                    holding.UnitName = unit.ToString() ?? string.Empty;
+                if (meta.TryGetValue("name", out var name) && name is not null && !string.IsNullOrWhiteSpace(name.ToString()))
+                    holding.Name = name.ToString()!;
+                if (meta.TryGetValue("decimals", out var dec) && dec is not null
+                    && int.TryParse(dec.ToString(), out var decimals))
+                    holding.Decimals = decimals;
+            }
+
+            holdings.Add(holding);
+        }
+
+        return holdings;
     }
 
     // ─── New: Generate a wallet on-platform ───
@@ -370,67 +510,72 @@ public class WalletManager : IWalletManager
         if (dispenseAmount <= 0)
             return new AZOAResult<object> { IsError = true, Message = "Amount must be a positive value." };
 
-        switch (wallet.ChainType.ToLowerInvariant())
+        // Faucet operations are provider-scoped (defined on IBlockchainProvider):
+        // the chain owns whether and how it tops up. The manager stays chain-agnostic
+        // — resolve the provider, check it supports a faucet, then delegate.
+        IBlockchainProvider provider;
+        try
         {
-            case "algorand":
-            case "algo":
-                if (!_algorandFaucet.IsConfigured)
-                    return new AZOAResult<object>
-                    {
-                        IsError = true,
-                        Message = "Algorand faucet is not configured (set Blockchain:Faucet:Algorand:Mnemonic)."
-                    };
-
-                try
-                {
-                    // Client-supplied Idempotency-Key (if any) wins; otherwise the
-                    // faucet derives a deterministic content key from
-                    // (chain, recipient, amount) — absence is still dedup-safe,
-                    // no random per-request key is ever generated.
-                    var txHash = string.IsNullOrWhiteSpace(clientIdempotencyKey)
-                        ? await _algorandFaucet.DispenseAsync(wallet.Address, dispenseAmount, ct: default)
-                        : await _algorandFaucet.DispenseAsync(wallet.Address, dispenseAmount, clientIdempotencyKey, ct: default);
-                    return new AZOAResult<object>
-                    {
-                        Result = new
-                        {
-                            txHash,
-                            amount = dispenseAmount,
-                            chain = wallet.ChainType,
-                            network = network.ToString()
-                        },
-                        Message = $"Dispensed {dispenseAmount} test ALGO to {wallet.Address} on {network}."
-                    };
-                }
-                catch (Exception ex)
-                {
-                    return new AZOAResult<object> { IsError = true, Message = $"Algorand faucet failed: {ex.Message}", Exception = ex };
-                }
-
-            case "solana":
-            case "sol":
-                // Solana devnet/testnet top-up is performed client-side via RPC airdrop
-                // (the frontend handles Solana). Keep the method shape consistent.
-                return new AZOAResult<object>
-                {
-                    IsError = false,
-                    Result = new
-                    {
-                        txHash = (string?)null,
-                        amount = dispenseAmount,
-                        chain = wallet.ChainType,
-                        network = network.ToString()
-                    },
-                    Message = "Solana devnet/testnet top-up is performed client-side via RPC airdrop (requestAirdrop)."
-                };
-
-            default:
-                return new AZOAResult<object>
-                {
-                    IsError = true,
-                    Message = $"Top-up not supported for chain {wallet.ChainType}."
-                };
+            provider = _chainFactory.GetProvider(wallet.ChainType, network);
         }
+        catch (Exception ex)
+        {
+            // No provider registered for this chain ⇒ no faucet path.
+            return new AZOAResult<object>
+            {
+                IsError = true,
+                Message = $"Top-up not supported for chain {wallet.ChainType}.",
+                Exception = ex
+            };
+        }
+
+        if (provider is null || !provider.SupportsFaucet)
+            return new AZOAResult<object>
+            {
+                IsError = true,
+                Message = $"Top-up not supported for chain {wallet.ChainType}."
+            };
+
+        // Client-supplied Idempotency-Key (if any) wins; otherwise a server-side
+        // provider derives a deterministic content key from (chain, recipient,
+        // amount) — absence is still dedup-safe, no random per-request key.
+        AZOAResult<FaucetDispenseResult> dispense;
+        try
+        {
+            dispense = await provider.DispenseFromFaucetAsync(
+                wallet.Address, dispenseAmount, clientIdempotencyKey, ct: default);
+        }
+        catch (Exception ex)
+        {
+            // Providers should surface failures as an error result; guard the
+            // boundary so a throwing provider never escapes the manager.
+            return new AZOAResult<object>
+            {
+                IsError = true,
+                Message = $"{wallet.ChainType} faucet failed: {ex.Message}",
+                Exception = ex
+            };
+        }
+
+        if (dispense.IsError || dispense.Result is null)
+            return new AZOAResult<object>
+            {
+                IsError = true,
+                Message = dispense.Message,
+                Exception = dispense.Exception
+            };
+
+        return new AZOAResult<object>
+        {
+            Result = new
+            {
+                txHash = dispense.Result.TxHash,
+                amount = dispenseAmount,
+                chain = wallet.ChainType,
+                network = network.ToString()
+            },
+            Message = dispense.Result.Message
+        };
     }
 
     private async Task UnsetPreviousDefaultAsync(Guid avatarId, string chainType, Guid exceptWalletId)

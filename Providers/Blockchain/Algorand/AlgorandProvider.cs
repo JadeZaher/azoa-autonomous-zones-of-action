@@ -53,9 +53,21 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     private readonly IServiceScopeFactory? _custodyScopeFactory;
     private readonly WalletKeyService? _keyService;
 
+    // Provider-scoped faucet: the Algorand test-ALGO dispenser (idempotency-ledger +
+    // Algorand2 SDK build/sign/submit) lives behind IAlgorandFaucet; the provider
+    // owns the chain's top-up path and delegates the mechanics here. Optional so the
+    // test ctors (no faucet wired) construct cleanly — DispenseFromFaucetAsync then
+    // surfaces the same "not configured" error a missing mnemonic would.
+    private readonly IAlgorandFaucet? _faucet;
+
     public override string ChainType => "Algorand";
     public string CapabilityName => "Algorand.ASA";
     public override bool SupportsBridging => true;
+
+    // Algorand exposes a server-side faucet; "configured?" is resolved at dispense
+    // time so the caller gets the precise "set Blockchain:Faucet:Algorand:Mnemonic"
+    // message rather than a generic "not supported".
+    public override bool SupportsFaucet => true;
 
     public AlgorandProvider(IConfiguration config, ILogger<AlgorandProvider> logger)
         : this(config, logger, signerFactory: null, keyService: null)
@@ -77,7 +89,8 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         ITransactionSignerFactory? signerFactory,
         WalletKeyService? keyService,
         IKeyCustodyService? custodyService,
-        IServiceScopeFactory? custodyScopeFactory)
+        IServiceScopeFactory? custodyScopeFactory,
+        IAlgorandFaucet? faucet = null)
         : base(config, logger)
     {
         _configManager = new BlockchainConfigurationManager(config);
@@ -85,6 +98,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         _keyService = keyService;
         _custodyService = custodyService;
         _custodyScopeFactory = custodyScopeFactory;
+        _faucet = faucet;
 
         var network = _configManager.GetDefaultNetwork(ChainType);
         var networkConfig = _configManager.GetNetworkConfig(ChainType, network);
@@ -187,6 +201,39 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         catch (Exception ex)
         {
             return new AZOAResult<bool> { IsError = true, Result = false, Message = $"Validation failed: {ex.Message}" };
+        }
+    }
+
+    // ─── Faucet (dev / test networks only) ───
+
+    /// <summary>
+    /// Provider-scoped Algorand top-up: delegates to the idempotent
+    /// <see cref="IAlgorandFaucet"/> dispenser (the one real server-side broadcaster).
+    /// A client-supplied <paramref name="idempotencyKey"/> wins; otherwise the faucet
+    /// derives a deterministic content key from (chain, recipient, amount). The
+    /// mainnet guard is the caller's responsibility (and enforced upstream).
+    /// </summary>
+    public override async Task<AZOAResult<FaucetDispenseResult>> DispenseFromFaucetAsync(
+        string toAddress, decimal amount, string? idempotencyKey = null, CancellationToken ct = default)
+    {
+        if (_faucet is null || !_faucet.IsConfigured)
+            return Error<FaucetDispenseResult>(
+                "Algorand faucet is not configured (set Blockchain:Faucet:Algorand:Mnemonic).");
+
+        try
+        {
+            var txHash = string.IsNullOrWhiteSpace(idempotencyKey)
+                ? await _faucet.DispenseAsync(toAddress, amount, ct)
+                : await _faucet.DispenseAsync(toAddress, amount, idempotencyKey, ct);
+
+            return Ok(
+                new FaucetDispenseResult(txHash, IsClientSide: false,
+                    $"Dispensed {amount} test ALGO to {toAddress} on {ActiveNetwork}."),
+                "Faucet dispense submitted.");
+        }
+        catch (Exception ex)
+        {
+            return Error<FaucetDispenseResult>($"Algorand faucet failed: {ex.Message}", ex);
         }
     }
 

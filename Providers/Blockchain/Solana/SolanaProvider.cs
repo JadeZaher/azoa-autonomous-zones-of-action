@@ -22,6 +22,11 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
     public string CapabilityName => "Solana.Metaplex";
     public override bool SupportsBridging => true;
 
+    // Solana devnet/testnet top-up is a CLIENT-side RPC airdrop (requestAirdrop):
+    // the frontend performs it. The provider supports the faucet path but only
+    // acknowledges — it submits nothing server-side.
+    public override bool SupportsFaucet => true;
+
     public SolanaProvider(IConfiguration config, ILogger<SolanaProvider> logger)
         : base(config, logger)
     {
@@ -52,6 +57,26 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             BaseAddress = new Uri(config.NodeUrl),
             Timeout = TimeSpan.FromMilliseconds(config.TimeoutMs ?? 30000)
         };
+    }
+
+    // ─── Faucet (dev / test networks only) ───
+
+    /// <summary>
+    /// Solana top-up is performed CLIENT-side via the RPC airdrop
+    /// (<c>requestAirdrop</c>) — the frontend handles it. The provider only
+    /// acknowledges: no server-side broadcast, so the tx hash is null and
+    /// <see cref="FaucetDispenseResult.IsClientSide"/> is true. The caller still
+    /// enforces the mainnet guard upstream.
+    /// </summary>
+    public override Task<AZOAResult<FaucetDispenseResult>> DispenseFromFaucetAsync(
+        string toAddress, decimal amount, string? idempotencyKey = null, CancellationToken ct = default)
+    {
+        return Task.FromResult(Ok(
+            new FaucetDispenseResult(
+                TxHash: null,
+                IsClientSide: true,
+                "Solana devnet/testnet top-up is performed client-side via RPC airdrop (requestAirdrop)."),
+            "Client-side airdrop acknowledged."));
     }
 
     private async Task<SolanaRpcResponse<T>> RpcCallAsync<T>(string method, object[] parameters, CancellationToken ct = default)

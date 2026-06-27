@@ -15,9 +15,9 @@ public class WalletManagerTests
 {
     private readonly Mock<IWalletStore> _walletStore;
     private readonly Mock<IHolonStore> _holonStore;
+    private readonly Mock<IBlockchainProviderFactory> _chainFactory;
     private readonly WalletManager _manager;
     private readonly WalletKeyService _keyService;
-    private readonly Mock<IAlgorandFaucet> _algorandFaucet;
     private readonly IConfiguration _config;
 
     public WalletManagerTests()
@@ -33,10 +33,26 @@ public class WalletManagerTests
                 ["Blockchain:Faucet:DefaultAmount"] = "5"
             })
             .Build();
-        var chainFactory = new Mock<IBlockchainProviderFactory>();
+        _chainFactory = new Mock<IBlockchainProviderFactory>();
         _keyService = new WalletKeyService(_config);
-        _algorandFaucet = new Mock<IAlgorandFaucet>();
-        _manager = new WalletManager(_walletStore.Object, _holonStore.Object, chainFactory.Object, _keyService, _config, _algorandFaucet.Object);
+        _manager = new WalletManager(_walletStore.Object, _holonStore.Object, _chainFactory.Object, _keyService, _config);
+    }
+
+    /// <summary>
+    /// Faucet operations are provider-scoped: stub a provider that the factory hands
+    /// out for <paramref name="chainType"/>, with its faucet capability + dispense
+    /// outcome under the test's control.
+    /// </summary>
+    private Mock<IBlockchainProvider> GivenFaucetProvider(
+        string chainType, bool supportsFaucet = true)
+    {
+        var provider = new Mock<IBlockchainProvider>();
+        provider.SetupGet(p => p.ChainType).Returns(chainType);
+        provider.SetupGet(p => p.SupportsFaucet).Returns(supportsFaucet);
+        _chainFactory
+            .Setup(f => f.GetProvider(chainType, It.IsAny<ChainNetwork>()))
+            .Returns(provider.Object);
+        return provider;
     }
 
     [Fact]
@@ -226,8 +242,10 @@ public class WalletManagerTests
             })
             .Build();
         var chainFactory = new Mock<IBlockchainProviderFactory>();
+        var provider = new Mock<IBlockchainProvider>();
+        chainFactory.Setup(f => f.GetProvider("Algorand", It.IsAny<ChainNetwork>())).Returns(provider.Object);
         var manager = new WalletManager(_walletStore.Object, _holonStore.Object, chainFactory.Object,
-            new WalletKeyService(mainnetConfig), mainnetConfig, _algorandFaucet.Object);
+            new WalletKeyService(mainnetConfig), mainnetConfig);
 
         var avatarId = Guid.NewGuid();
         var wallet = GivenOwnedAlgorandWallet(avatarId);
@@ -236,7 +254,9 @@ public class WalletManagerTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("mainnet");
-        _algorandFaucet.Verify(f => f.DispenseAsync(It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()), Times.Never);
+        // Mainnet is hard-blocked BEFORE the provider faucet path is ever reached.
+        provider.Verify(p => p.DispenseFromFaucetAsync(
+            It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -244,7 +264,15 @@ public class WalletManagerTests
     {
         var avatarId = Guid.NewGuid();
         var wallet = GivenOwnedAlgorandWallet(avatarId);
-        _algorandFaucet.Setup(f => f.IsConfigured).Returns(false);
+        var provider = GivenFaucetProvider("Algorand");
+        provider
+            .Setup(p => p.DispenseFromFaucetAsync(
+                It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<FaucetDispenseResult>
+            {
+                IsError = true,
+                Message = "Algorand faucet is not configured (set Blockchain:Faucet:Algorand:Mnemonic)."
+            });
 
         var result = await _manager.TopUpAsync(wallet.Id, 5m, avatarId);
 
@@ -257,9 +285,14 @@ public class WalletManagerTests
     {
         var avatarId = Guid.NewGuid();
         var wallet = GivenOwnedAlgorandWallet(avatarId);
-        _algorandFaucet.Setup(f => f.IsConfigured).Returns(true);
-        _algorandFaucet.Setup(f => f.DispenseAsync(wallet.Address, 5m, It.IsAny<CancellationToken>()))
-                       .ReturnsAsync("TXHASH123");
+        var provider = GivenFaucetProvider("Algorand");
+        provider
+            .Setup(p => p.DispenseFromFaucetAsync(
+                wallet.Address, 5m, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<FaucetDispenseResult>
+            {
+                Result = new FaucetDispenseResult("TXHASH123", IsClientSide: false, "Dispensed 5 test ALGO.")
+            });
 
         var result = await _manager.TopUpAsync(wallet.Id, null, avatarId);
 
@@ -273,18 +306,41 @@ public class WalletManagerTests
     }
 
     [Fact]
-    public async Task TopUpAsync_AlgorandFaucetThrows_ReturnsError()
+    public async Task TopUpAsync_AlgorandFaucetErrors_ReturnsError()
     {
         var avatarId = Guid.NewGuid();
         var wallet = GivenOwnedAlgorandWallet(avatarId);
-        _algorandFaucet.Setup(f => f.IsConfigured).Returns(true);
-        _algorandFaucet.Setup(f => f.DispenseAsync(It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<CancellationToken>()))
-                       .ThrowsAsync(new InvalidOperationException("algod unreachable"));
+        var provider = GivenFaucetProvider("Algorand");
+        provider
+            .Setup(p => p.DispenseFromFaucetAsync(
+                It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<FaucetDispenseResult>
+            {
+                IsError = true,
+                Message = "Algorand faucet failed: algod unreachable"
+            });
 
         var result = await _manager.TopUpAsync(wallet.Id, 5m, avatarId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("algod unreachable");
+    }
+
+    [Fact]
+    public async Task TopUpAsync_ProviderThrows_ReturnsErrorNotThrows()
+    {
+        var avatarId = Guid.NewGuid();
+        var wallet = GivenOwnedAlgorandWallet(avatarId);
+        var provider = GivenFaucetProvider("Algorand");
+        provider
+            .Setup(p => p.DispenseFromFaucetAsync(
+                It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var result = await _manager.TopUpAsync(wallet.Id, 5m, avatarId);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("boom");
     }
 
     [Fact]
@@ -301,6 +357,15 @@ public class WalletManagerTests
         };
         _walletStore.Setup(p => p.GetByIdAsync(wallet.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IWallet> { Result = wallet });
+        var provider = GivenFaucetProvider("Solana");
+        provider
+            .Setup(p => p.DispenseFromFaucetAsync(
+                It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<FaucetDispenseResult>
+            {
+                Result = new FaucetDispenseResult(null, IsClientSide: true,
+                    "Solana devnet/testnet top-up is performed client-side via RPC airdrop (requestAirdrop).")
+            });
 
         var result = await _manager.TopUpAsync(wallet.Id, 1m, avatarId);
 
@@ -322,6 +387,8 @@ public class WalletManagerTests
         };
         _walletStore.Setup(p => p.GetByIdAsync(wallet.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IWallet> { Result = wallet });
+        // A provider with no faucet path (SupportsFaucet == false) ⇒ "not supported".
+        GivenFaucetProvider("Ethereum", supportsFaucet: false);
 
         var result = await _manager.TopUpAsync(wallet.Id, 1m, avatarId);
 

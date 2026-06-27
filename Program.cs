@@ -586,7 +586,11 @@ builder.Services.AddSingleton<IBlockchainProvider>(sp => new AlgorandProvider(
     // AlgorandFaucet precedent). Passing null for the direct custody seam keeps
     // that injection for unit tests only.
     custodyService: null,
-    custodyScopeFactory: sp.GetRequiredService<IServiceScopeFactory>()));
+    custodyScopeFactory: sp.GetRequiredService<IServiceScopeFactory>(),
+    // Faucet operations are provider-scoped: the Algorand provider owns the
+    // test-ALGO top-up path and delegates the idempotent build/sign/submit to the
+    // injected IAlgorandFaucet (WalletManager no longer depends on it directly).
+    faucet: sp.GetRequiredService<IAlgorandFaucet>()));
 builder.Services.AddSingleton<IBlockchainProvider, SolanaProvider>();
 // db-only-null-provider: the no-signer simulated provider. The factory hands it
 // out for every chain when Blockchain:Mode == "Simulated"; otherwise it is only

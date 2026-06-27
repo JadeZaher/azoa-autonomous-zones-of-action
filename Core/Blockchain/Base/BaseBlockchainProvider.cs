@@ -92,6 +92,24 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
         });
     }
 
+    /// <summary>
+    /// Conservative base default: a provider has no faucet unless it opts in. The
+    /// chain-agnostic top-up caller reads this to short-circuit unsupported chains.
+    /// </summary>
+    public virtual bool SupportsFaucet => false;
+
+    /// <summary>
+    /// Base default for chains without a faucet path — returns a clear
+    /// "not supported" error. Providers that top up override this (server-side
+    /// dispense or client-side airdrop acknowledgement) and set
+    /// <see cref="SupportsFaucet"/> to true.
+    /// </summary>
+    public virtual Task<AZOAResult<FaucetDispenseResult>> DispenseFromFaucetAsync(
+        string toAddress, decimal amount, string? idempotencyKey = null, CancellationToken ct = default)
+    {
+        return Task.FromResult(Error<FaucetDispenseResult>($"Top-up not supported for chain {ChainType}."));
+    }
+
     public virtual Task<AZOAResult<string>> MintAsync(
         string tokenUri, ulong amount, string assetType, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
