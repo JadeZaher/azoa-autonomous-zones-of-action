@@ -101,8 +101,17 @@ public sealed class QuestNodeHandlerResult
     public static QuestNodeHandlerResult Ok(string? output, string? message = null, string? txHash = null, string? chainType = null) =>
         new() { IsError = false, Output = output, Message = message, TxHash = txHash, ChainType = chainType };
 
-    public static QuestNodeHandlerResult Fail(string message) =>
-        new() { IsError = true, Message = message };
+    /// <summary>
+    /// Failure result. The optional <paramref name="txHash"/>/<paramref name="chainType"/>
+    /// carry the broadcast tx the handler put on-chain BEFORE it failed (e.g. the
+    /// confirmation read timed out): a chain-action handler MUST forward them so the
+    /// reconcile-before-retry engine can verify chain truth and avoid a double-mint,
+    /// instead of discarding the hash and blind-retrying
+    /// (blockchain-recovery-and-portable-wallets §1.3). A non-chain failure passes
+    /// neither (both null) and behaves exactly as before.
+    /// </summary>
+    public static QuestNodeHandlerResult Fail(string message, string? txHash = null, string? chainType = null) =>
+        new() { IsError = true, Message = message, TxHash = txHash, ChainType = chainType };
 
     /// <summary>
     /// Invalid-config failure: nothing was broadcast and re-running can never

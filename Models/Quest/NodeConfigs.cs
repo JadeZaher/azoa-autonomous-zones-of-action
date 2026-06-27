@@ -77,14 +77,27 @@ public class StarGenerateNodeConfig
 /// <summary>
 /// GateCheck predicate config. <see cref="Predicate"/> is a whitelisted
 /// boolean expression over upstream outputs (referenced as
-/// <c>upstream.&lt;nodeName&gt;.&lt;jsonPath&gt;</c>) and injected reads
-/// (<c>reads.&lt;name&gt;</c>). <see cref="Reads"/> supplies tenant-injected
-/// read values by name. No economics: AZOA only compares.
+/// <c>upstream.&lt;nodeName&gt;.&lt;jsonPath&gt;</c>), injected reads
+/// (<c>reads.&lt;name&gt;</c>), and holon lifecycle state
+/// (<c>holon.&lt;id&gt;.&lt;field&gt;</c>). <see cref="Reads"/> supplies
+/// tenant-injected read values by name; <see cref="Holons"/> lists the holon ids
+/// whose CURRENT state the gate reads directly (smart-gates-holon-state §8.1). No
+/// economics: AZOA only compares.
 /// </summary>
 public class GateCheckNodeConfig
 {
     public string Predicate { get; set; } = string.Empty;
     public Dictionary<string, JsonElement> Reads { get; set; } = new();
+
+    /// <summary>
+    /// Holon ids whose CURRENT lifecycle state the predicate reads directly as
+    /// <c>holon.&lt;id&gt;.&lt;field&gt;</c> (e.g.
+    /// <c>holon.&lt;projectId&gt;.status == "FUNDED"</c>) — instead of threading the
+    /// value through an upstream <c>HolonGet</c>. The handler resolves each id to a
+    /// <c>holon.&lt;id&gt;</c> scope entry by reading the holon's live state; a
+    /// missing/unreadable holon fails the gate closed (smart-gates-holon-state §8.1).
+    /// </summary>
+    public List<Guid> Holons { get; set; } = new();
 }
 
 /// <summary>

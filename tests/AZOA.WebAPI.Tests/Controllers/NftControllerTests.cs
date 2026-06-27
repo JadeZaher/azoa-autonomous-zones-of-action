@@ -15,12 +15,16 @@ namespace AZOA.WebAPI.Tests.Controllers;
 public class NftControllerTests
 {
     private readonly Mock<INftManager> _nftManager;
+    private readonly Mock<IFungibleTokenManager> _fungibleTokenManager;
+    private readonly Mock<IHolonManager> _holonManager;
     private readonly NftController _controller;
 
     public NftControllerTests()
     {
         _nftManager = new Mock<INftManager>();
-        _controller = new NftController(_nftManager.Object);
+        _fungibleTokenManager = new Mock<IFungibleTokenManager>();
+        _holonManager = new Mock<IHolonManager>();
+        _controller = new NftController(_nftManager.Object, _fungibleTokenManager.Object, _holonManager.Object);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
@@ -88,7 +92,7 @@ public class NftControllerTests
     [Fact]
     public async Task Mint_NoAuth_ReturnsUnauthorized()
     {
-        var noAuth = new NftController(_nftManager.Object);
+        var noAuth = new NftController(_nftManager.Object, _fungibleTokenManager.Object, _holonManager.Object);
         noAuth.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
@@ -129,7 +133,7 @@ public class NftControllerTests
         _nftManager.Setup(m => m.GetMetadataAsync(It.IsAny<Guid>(), null))
             .ReturnsAsync(new AZOAResult<NftMetadata> { Result = new NftMetadata() });
 
-        var noAuth = new NftController(_nftManager.Object);
+        var noAuth = new NftController(_nftManager.Object, _fungibleTokenManager.Object, _holonManager.Object);
         noAuth.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }

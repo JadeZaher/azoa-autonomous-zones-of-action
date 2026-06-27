@@ -120,7 +120,7 @@ public class ComposedDagDeterminismTests
     {
         var (swap, _) = NewSwap(priceImpact);
         var (grant, nft) = NewGrant();
-        var gate = new GateCheckNodeHandler();
+        var gate = new GateCheckNodeHandler(HolonManagerMocks.Empty());
 
         var swapNode = Node(QuestNodeType.Swap, "Swap", SwapConfig(), entry: true);
         var gateNode = Node(QuestNodeType.GateCheck, "Gate", GateConfig());
@@ -142,7 +142,8 @@ public class ComposedDagDeterminismTests
             store, new InMemoryQuestRunStore(), execStore,
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant }),
-            new InMemorySagaStore(), WalletManagerMocks.WithOneWallet());
+            new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
+            BlockchainProviderFactoryFakes.Returning());
 
         var result = await manager.ExecuteAsync(quest.Id, AvatarId);
         result.IsError.Should().BeFalse(result.Message);
@@ -180,7 +181,7 @@ public class ComposedDagDeterminismTests
         {
             var (swap, _) = NewSwap(0.9);
             var (grant, _) = NewGrant();
-            var gate = new GateCheckNodeHandler();
+            var gate = new GateCheckNodeHandler(HolonManagerMocks.Empty());
 
             var swapNode = Node(QuestNodeType.Swap, "Swap", SwapConfig(), entry: true);
             var gateNode = Node(QuestNodeType.GateCheck, "Gate", GateConfig());
@@ -198,7 +199,8 @@ public class ComposedDagDeterminismTests
             var manager = new QuestManager(
                 store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(),
                 new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant }),
-                new InMemorySagaStore(), WalletManagerMocks.WithOneWallet());
+                new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
+            BlockchainProviderFactoryFakes.Returning());
 
             var runId = manager.ExecuteAsync(quest.Id, AvatarId).GetAwaiter().GetResult().Result!.Id;
             string S(QuestNode n) =>
@@ -228,7 +230,7 @@ public class ComposedDagDeterminismTests
         var (swap, _) = NewSwap(0.9);            // 0.9 ≥ 0.5 ⇒ gate Fail
         var (grant, grantNft) = NewGrant();
         var (refund, refundNft) = NewRefund(nftId);
-        var gate = new GateCheckNodeHandler();
+        var gate = new GateCheckNodeHandler(HolonManagerMocks.Empty());
 
         var swapNode = Node(QuestNodeType.Swap, "Swap", SwapConfig(), entry: true);
         var gateNode = Node(QuestNodeType.GateCheck, "Gate", GateConfig());
@@ -255,7 +257,8 @@ public class ComposedDagDeterminismTests
         var manager = new QuestManager(
             store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, refund }),
-            new InMemorySagaStore(), WalletManagerMocks.WithOneWallet());
+            new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
+            BlockchainProviderFactoryFakes.Returning());
 
         var result = await manager.ExecuteAsync(quest.Id, AvatarId);
         result.IsError.Should().BeFalse(result.Message);
@@ -286,7 +289,7 @@ public class ComposedDagDeterminismTests
         var (swap, _) = NewSwap(0.1);            // 0.1 < 0.5 ⇒ gate Pass
         var (grant, grantNft) = NewGrant();
         var (refund, _) = NewRefund(nftId);
-        var gate = new GateCheckNodeHandler();
+        var gate = new GateCheckNodeHandler(HolonManagerMocks.Empty());
 
         var swapNode = Node(QuestNodeType.Swap, "Swap", SwapConfig(), entry: true);
         var gateNode = Node(QuestNodeType.GateCheck, "Gate", GateConfig());
@@ -311,7 +314,8 @@ public class ComposedDagDeterminismTests
         var manager = new QuestManager(
             store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, refund }),
-            new InMemorySagaStore(), WalletManagerMocks.WithOneWallet());
+            new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
+            BlockchainProviderFactoryFakes.Returning());
 
         var result = await manager.ExecuteAsync(quest.Id, AvatarId);
         result.IsError.Should().BeFalse(result.Message);

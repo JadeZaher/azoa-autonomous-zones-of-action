@@ -178,6 +178,31 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
             }
         }
 
+        // ── 3a. Record the broadcast tx hash BEFORE confirmation resolves ─────
+        // The reconcile-before-retry guarantee's first clause
+        // (blockchain-recovery-and-portable-wallets §1.1 / P7 owed-item 1): a
+        // chain-action handler that put a tx on the wire stamps the hash on the
+        // STILL-Running execution row immediately — before the reconcile probe runs
+        // and before the terminal write. So even if this step crashes between the
+        // handler return and the terminal/park write, the row already carries the
+        // hash for a later sweep to reconcile against (otherwise a crash here would
+        // strand a broadcast tx with no recorded hash → the run could never be
+        // safely reconciled, only parked-then-stuck). The row stays Running, so the
+        // later guarded terminal write (expectedState: Running) still matches.
+        if (handlerRequiresChain && !string.IsNullOrWhiteSpace(result.TxHash)
+            && execution.State == QuestNodeState.Running)
+        {
+            execution.TxHash = result.TxHash;
+            execution.ChainType = result.ChainType;
+            var stamped = await _executionStore.UpdateAsync(
+                execution, expectedState: QuestNodeState.Running, ct);
+            if (stamped.IsError)
+                // The row drifted off Running underneath us (lease-reclaimed
+                // sibling, fork-cancel) — re-drive from the durable outcome rather
+                // than continuing on a stale in-memory row.
+                return await ReplayAdvancementAsync(quest, node, p, advance, ct);
+        }
+
         // ── 3b. Reconcile-before-retry for chain-action nodes ─────────────────
         // A chain-action node (Grant/Transfer/Swap/FungibleTokenCreate) that
         // FAILED must NOT be blind-retried: attempt 1 may have broadcast and

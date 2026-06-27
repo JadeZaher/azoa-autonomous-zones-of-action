@@ -2,10 +2,13 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Providers.Stores;
 using AZOA.WebAPI.Sagas;
@@ -66,6 +69,14 @@ public sealed class DurableWorkflowEngineTests
         /// </summary>
         public IWalletManager WalletManager { get; init; } = WalletManagerMocks.Empty();
 
+        /// <summary>
+        /// The provider factory the reconcile-before-retry re-probe resolves chain
+        /// truth from. Defaults to the conservative <see cref="ChainConfirmation.Unknown"/>
+        /// (parks); a reconcile test overrides it to a definite verdict.
+        /// </summary>
+        public IBlockchainProviderFactory ProviderFactory { get; init; } =
+            BlockchainProviderFactoryFakes.Returning();
+
         public QuestManager NewManager() => new(
             QuestStore,
             RunStore,
@@ -73,7 +84,8 @@ public sealed class DurableWorkflowEngineTests
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new[] { NodeHandler }),
             SagaStore,
-            WalletManager);
+            WalletManager,
+            ProviderFactory);
 
         /// <summary>
         /// Build a FRESH <see cref="SagaProcessor"/> over a FRESH DI scope, all
@@ -95,10 +107,12 @@ public sealed class DurableWorkflowEngineTests
             services.AddSingleton<IQuestNodeHandlerRegistry>(
                 new QuestNodeHandlerRegistry(new[] { NodeHandler }));
             services.AddSingleton<IWalletManager>(WalletManager);
-            // QuestNodeStepHandler resolves a provider factory for reconcile-before-retry;
-            // the default fake returns Unknown (conservative) and is never reached by
-            // these non-chain / Tier-1 runs.
-            services.AddSingleton(BlockchainProviderFactoryFakes.Returning());
+            // QuestNodeStepHandler resolves a provider factory for reconcile-before-retry.
+            // Use the SAME factory the manager's re-probe uses so a reconcile test sets a
+            // single verdict for both the live park (step handler) and the sweep (manager).
+            // The default fake returns Unknown (conservative) and is never reached by the
+            // non-chain / Tier-1 runs.
+            services.AddSingleton(ProviderFactory);
 
             // The two typed step handlers the QuestWorkflow saga dispatches.
             services.AddScoped<IStepHandler<QuestStepPayload>, QuestNodeStepHandler>();

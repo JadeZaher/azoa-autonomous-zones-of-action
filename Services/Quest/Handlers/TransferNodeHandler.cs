@@ -29,7 +29,15 @@ public sealed class TransferNodeHandler : IQuestNodeHandler
         // tenant-driven transfer stamps it on the op for the seam's consent gate.
         var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.Quest.AvatarId, actingTenantId: context.ActingTenantId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
-        if (r.IsError) return QuestNodeResults.Fail(r.Message);
-        return QuestNodeResults.Ok(outputJson);
+
+        // Forward the broadcast tx hash on BOTH outcomes: a transfer that broadcast
+        // then timed out on confirmation surfaces as IsError while the move already
+        // landed. The reconcile-before-retry engine needs the hash to verify chain
+        // truth instead of blind-retrying (blockchain-recovery-and-portable-wallets §1.3).
+        var opTxHash = ChainOperationOutputs.ReadTxHash(r.Result);
+        var opChainType = ChainOperationOutputs.ReadChainType(r.Result);
+
+        if (r.IsError) return QuestNodeResults.Fail(r.Message, txHash: opTxHash, chainType: opChainType ?? "Algorand");
+        return QuestNodeResults.Ok(outputJson, txHash: opTxHash, chainType: opChainType ?? "Algorand");
     }
 }

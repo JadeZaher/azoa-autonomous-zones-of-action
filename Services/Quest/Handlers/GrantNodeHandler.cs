@@ -40,14 +40,25 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
         // gate fires (null = user-driven → unchanged).
         var r = await _nftManager.MintAsync(cfg.Request, context.Quest.AvatarId, actingTenantId: context.ActingTenantId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
-        if (r.IsError) return QuestNodeResults.Fail(r.Message);
+
+        // The op can be non-null even on failure: a broadcast-then-confirmation-
+        // timeout surfaces as IsError while the tx already landed. Read the hash
+        // off the op regardless of outcome so the failure path forwards it to the
+        // reconcile-before-retry engine (blockchain-recovery-and-portable-wallets §1.3)
+        // — discarding it here is the double-mint hole this track closes.
+        var opTxHash = ChainOperationOutputs.ReadTxHash(r.Result);
+        var opChainType = ChainOperationOutputs.ReadChainType(r.Result);
+
+        // On failure, surface the hash so the engine reconciles (Confirmed→no-remint,
+        // NotFound→retry, Indeterminate→park) instead of blind-retrying.
+        if (r.IsError) return QuestNodeResults.Fail(r.Message, txHash: opTxHash, chainType: opChainType ?? "Algorand");
 
         // D10 Holon↔asset link (opt-in): copy the minted asset id + chain id onto
         // the tenant-named holon. Link is opt-in — skip when HolonId is null.
         if (cfg.HolonId is { } holonId && r.Result is { } operation)
         {
             var tokenId = ReadAssetId(operation);
-            var chainId = ReadChainId(operation);
+            var chainId = ChainOperationOutputs.ReadChainType(operation);
 
             // Only update if at least one value is present, so a Pending mint with
             // no synchronous asset id doesn't clobber an existing holon value.
@@ -65,9 +76,7 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
         // can verify chain truth before any retry (blockchain-recovery-and-portable-wallets §1.3).
         // Only when the mint produced an operation (r.Result non-null) — a Pending
         // mint with no synchronous op carries no hash to reconcile against.
-        var txHash = r.Result is { } op ? ReadTxHash(op) : null;
-        var chainType = r.Result is { } chainOp ? ReadChainId(chainOp) : null;
-        return QuestNodeResults.Ok(outputJson, txHash: txHash, chainType: chainType ?? "Algorand");
+        return QuestNodeResults.Ok(outputJson, txHash: opTxHash, chainType: opChainType ?? "Algorand");
     }
 
     // The IBlockchainOperation has no typed asset_id/tx_hash property — the minted
@@ -82,22 +91,4 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
         return null;
     }
 
-    private static string? ReadChainId(IBlockchainOperation op)
-    {
-        foreach (var key in new[] { "chainId", "chain_id" })
-            if (op.Parameters.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
-                return v;
-        return null;
-    }
-
-    // The broadcast tx hash surfaces via the Parameters bag under a provider-
-    // dependent key. Read several candidates defensively; null means "no tx hash
-    // recorded" → the reconcile-before-retry engine parks rather than blind-retries.
-    private static string? ReadTxHash(IBlockchainOperation op)
-    {
-        foreach (var key in new[] { "txHash", "tx_hash", "txId", "tx_id" })
-            if (op.Parameters.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
-                return v;
-        return null;
-    }
 }

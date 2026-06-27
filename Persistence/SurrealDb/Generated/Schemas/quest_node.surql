@@ -10,7 +10,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- QuestNode.QuestNodeTypeKind
-DEFINE PARAM IF NOT EXISTS $quest_node_node_type VALUE ["HolonCreate", "HolonUpdate", "HolonDelete", "HolonGet", "HolonQuery", "HolonInteract", "HolonGetChildren", "HolonGetPeers", "HolonGetAncestors", "HolonGetDescendants", "HolonPropagate", "HolonCompose", "HolonClone", "HolonMoveSubtree", "NftMint", "NftTransfer", "NftBurn", "NftGet", "NftQuery", "NftGetMetadata", "WalletCreate", "WalletUpdate", "WalletDelete", "WalletGet", "WalletQuery", "WalletSetDefault", "WalletGetPortfolio", "StarGenerate", "StarDeploy", "Search", "AvatarNFTGetComposite", "BlockchainExecute", "Condition", "ComposeOutputs"];
+DEFINE PARAM IF NOT EXISTS $quest_node_node_type VALUE ["HolonCreate", "HolonUpdate", "HolonDelete", "HolonGet", "HolonQuery", "HolonInteract", "HolonGetChildren", "HolonGetPeers", "HolonGetAncestors", "HolonGetDescendants", "HolonPropagate", "HolonCompose", "HolonClone", "HolonMoveSubtree", "NftMint", "NftTransfer", "NftBurn", "NftGet", "NftQuery", "NftGetMetadata", "WalletCreate", "WalletUpdate", "WalletDelete", "WalletGet", "WalletQuery", "WalletSetDefault", "WalletGetPortfolio", "StarGenerate", "StarDeploy", "Search", "AvatarNFTGetComposite", "BlockchainExecute", "Condition", "ComposeOutputs", "GateCheck", "Emit", "Swap", "Grant", "Transfer", "Refund", "FungibleTokenCreate"];
 
 DEFINE TABLE IF NOT EXISTS quest_node SCHEMAFULL;
 

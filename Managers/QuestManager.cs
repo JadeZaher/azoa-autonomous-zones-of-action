@@ -1,7 +1,9 @@
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -30,6 +32,14 @@ public class QuestManager : IQuestManager
     private readonly IQuestNodeHandlerRegistry _registry;
     private readonly ISagaStore _sagaStore;
     private readonly IWalletManager _walletManager;
+    private readonly IBlockchainProviderFactory _chainFactory;
+
+    // Semantic transition-legality layer (smart-gates-holon-state §8.2), invoked
+    // ALONGSIDE the structural Kahn validator — never replacing it. Stateless with
+    // the default project-lifecycle map; constructing it here keeps the DI signature
+    // unchanged. A future track that needs a per-quest lifecycle can promote this to
+    // an injected dependency.
+    private readonly QuestTransitionValidator _transitionValidator = new();
 
     public QuestManager(
         IQuestStore questStore,
@@ -38,7 +48,8 @@ public class QuestManager : IQuestManager
         IQuestDagValidator dagValidator,
         IQuestNodeHandlerRegistry registry,
         ISagaStore sagaStore,
-        IWalletManager walletManager)
+        IWalletManager walletManager,
+        IBlockchainProviderFactory chainFactory)
     {
         _questStore = questStore;
         _runStore = runStore;
@@ -47,6 +58,7 @@ public class QuestManager : IQuestManager
         _registry = registry;
         _sagaStore = sagaStore;
         _walletManager = walletManager;
+        _chainFactory = chainFactory;
     }
 
     /// <summary>
@@ -192,6 +204,23 @@ public class QuestManager : IQuestManager
                 IsError = true,
                 Result = false,
                 Message = $"DAG validation failed: {string.Join("; ", validation.Errors)}"
+            };
+        }
+
+        // ADDED semantic layer (smart-gates-holon-state §8.2): structural validity
+        // does not prove that a gated edge encoding a phase transition encodes a
+        // LEGAL one. Run the transition validator alongside the Kahn pass and reject
+        // an authored DAG whose phase-transition edges jump illegally
+        // (e.g. DRAFT -> IN_PROGRESS without FUNDED). Edges that do not encode a phase
+        // transition are ignored by this layer.
+        var transitionValidation = _transitionValidator.Validate(quest);
+        if (!transitionValidation.IsValid)
+        {
+            return new AZOAResult<bool>
+            {
+                IsError = true,
+                Result = false,
+                Message = $"DAG validation failed: {string.Join("; ", transitionValidation.Errors)}"
             };
         }
 
@@ -1387,6 +1416,190 @@ public class QuestManager : IQuestManager
         run.Status = QuestRunStatus.Running;
         var updated = await _runStore.UpdateAsync(run);
         return new AZOAResult<QuestRun> { Result = updated.Result ?? run, Message = "Signal delivered; workflow run resuming." };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // RECONCILE-BEFORE-RETRY RE-PROBE (P7, blockchain-recovery-and-portable-wallets §1.4)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Manual re-probe of a single run parked in
+    /// <see cref="QuestRunStatus.AwaitingReconciliation"/>. Avatar-scoped; rejects a
+    /// run not in that state. Delegates to <see cref="ReprobeReconciliationAsync"/>,
+    /// the shared chain-truth logic that NEVER re-broadcasts.
+    /// </summary>
+    public async Task<AZOAResult<QuestReconciliationResult>> ReconcileRunAsync(Guid runId, Guid avatarId, AZOARequest? request = null)
+    {
+        var runResult = await LoadOwnedRunAsync(runId, avatarId);
+        if (runResult.IsError || runResult.Result == null)
+            return new AZOAResult<QuestReconciliationResult> { IsError = true, Message = runResult.Message };
+
+        var run = runResult.Result;
+        if (run.Status != QuestRunStatus.AwaitingReconciliation)
+            return new AZOAResult<QuestReconciliationResult>
+            {
+                IsError = true,
+                Message = $"Cannot reconcile run {runId}: status is {run.Status} (only AwaitingReconciliation runs accept a re-probe)."
+            };
+
+        var result = await ReprobeReconciliationAsync(run);
+        return new AZOAResult<QuestReconciliationResult> { Result = result, Message = "Reconciliation re-probe complete." };
+    }
+
+    /// <summary>
+    /// Operator/background sweep: re-probe EVERY run parked in
+    /// <see cref="QuestRunStatus.AwaitingReconciliation"/>. Unscoped (operator
+    /// context). Each run runs through the same <see cref="ReprobeReconciliationAsync"/>
+    /// chain-truth logic; a probe failure on one run does not abort the sweep.
+    /// </summary>
+    public async Task<AZOAResult<IEnumerable<QuestReconciliationResult>>> SweepReconciliationAsync(AZOARequest? request = null)
+    {
+        var parked = await _runStore.GetByStatusAsync(QuestRunStatus.AwaitingReconciliation);
+        if (parked.IsError)
+            return new AZOAResult<IEnumerable<QuestReconciliationResult>> { IsError = true, Message = parked.Message };
+
+        var results = new List<QuestReconciliationResult>();
+        foreach (var run in parked.Result ?? Enumerable.Empty<QuestRun>())
+            results.Add(await ReprobeReconciliationAsync(run));
+
+        return new AZOAResult<IEnumerable<QuestReconciliationResult>>
+        {
+            Result = results,
+            Message = $"Swept {results.Count} run(s) awaiting reconciliation."
+        };
+    }
+
+    /// <summary>
+    /// The shared reconcile-before-retry re-probe for ONE parked run. For each
+    /// Failed chain-action execution that carries a broadcast tx hash, it re-probes
+    /// chain truth and feeds the verdict into <see cref="ChainActionRecovery"/>:
+    ///
+    /// <list type="bullet">
+    /// <item><b>Confirmed</b> → the tx LANDED. Reconcile the execution to Succeeded
+    /// (guarded on Failed) and un-park the run's parked saga step (gate
+    /// <c>recon:{nodeId}</c>) so the durable engine re-drives advancement from the
+    /// now-Succeeded row — NO re-broadcast.</item>
+    /// <item><b>FailedOnChain</b> → provably failed. Un-park the step; the
+    /// re-dispatched node-step replays its Failed outcome into the saga's
+    /// retry/compensation budget (re-broadcast is safe here).</item>
+    /// <item><b>Pending/Unknown</b> (or a probe error / no hash) → still
+    /// indeterminate. Leave the node Failed and the run parked, untouched, for the
+    /// next sweep. NEVER auto-re-broadcast — this is the double-mint guard.</item>
+    /// </list>
+    ///
+    /// <para>The run is left in <see cref="QuestRunStatus.AwaitingReconciliation"/>
+    /// while ANY node remains indeterminate; once a node is un-parked the saga
+    /// processor projects the run back to Running as it resumes. We never force a
+    /// terminal status here — the engine (success advance) or the saga
+    /// (retry/compensation) owns the terminal verdict, exactly as on the live path.</para>
+    /// </summary>
+    private async Task<QuestReconciliationResult> ReprobeReconciliationAsync(QuestRun run)
+    {
+        var outcome = new QuestReconciliationResult { RunId = run.Id, Status = run.Status };
+
+        var execsResult = await _executionStore.GetByRunIdAsync(run.Id);
+        var execs = (execsResult.Result ?? Enumerable.Empty<QuestNodeExecution>()).ToList();
+
+        // Only Failed rows carrying a broadcast hash are candidates: those are the
+        // parked chain-action nodes the step handler stamped before parking. A
+        // Failed row with no hash was a non-broadcast failure (parked because we
+        // could not prove anything was on the wire) — re-probing has nothing to
+        // probe, so it stays parked for an operator.
+        var candidates = execs
+            .Where(e => e.State == QuestNodeState.Failed && !string.IsNullOrWhiteSpace(e.TxHash))
+            .ToList();
+
+        foreach (var exec in candidates)
+        {
+            var verdict = await ProbeConfirmationAsync(exec.TxHash, exec.ChainType);
+            var action = ChainActionRecovery.Decide(exec.TxHash, verdict);
+
+            switch (action)
+            {
+                case ChainActionRecoveryAction.AdvanceReconciled:
+                    // Confirmed — reconcile the row to Succeeded (guarded on Failed),
+                    // then un-park so the engine re-drives advancement. No re-mint.
+                    exec.State = QuestNodeState.Succeeded;
+                    exec.Error = null;
+                    exec.EndedAt = DateTime.UtcNow;
+                    var reconciled = await _executionStore.UpdateAsync(
+                        exec, expectedState: QuestNodeState.Failed);
+                    if (!reconciled.IsError)
+                    {
+                        await UnparkReconciliationStepAsync(run.Id, exec.NodeId);
+                        outcome.ReconciledConfirmed++;
+                    }
+                    else
+                    {
+                        // The row drifted off Failed (a concurrent sweep already
+                        // reconciled it) — count it as still-indeterminate for this
+                        // pass rather than double-counting; the winner advanced it.
+                        outcome.StillIndeterminate++;
+                    }
+                    break;
+
+                case ChainActionRecoveryAction.Retry:
+                    // Provably FailedOnChain — re-broadcast is safe. Un-park so the
+                    // node-step replays Failed into the saga retry/compensation budget.
+                    await UnparkReconciliationStepAsync(run.Id, exec.NodeId);
+                    outcome.ReleasedFailedOnChain++;
+                    break;
+
+                case ChainActionRecoveryAction.ParkForReconciliation:
+                default:
+                    // Still in-flight / ambiguous — leave parked. NEVER re-broadcast.
+                    outcome.StillIndeterminate++;
+                    break;
+            }
+        }
+
+        // Re-read the run so the caller sees the post-unpark status (the saga
+        // projection flips AwaitingReconciliation→Running as the un-parked step
+        // resumes). A run with no candidates, or all still-indeterminate, stays
+        // AwaitingReconciliation.
+        var refreshed = await _runStore.GetByIdAsync(run.Id);
+        outcome.Status = refreshed.Result?.Status ?? run.Status;
+        return outcome;
+    }
+
+    /// <summary>
+    /// Re-probe chain truth for a recorded broadcast tx, mirroring the step
+    /// handler's <c>ResolveProvider</c>/probe path. A missing hash, an unresolvable
+    /// provider, or a probe error all fold to <see cref="ChainConfirmation.Unknown"/>
+    /// — the conservative verdict that parks rather than re-broadcasts.
+    /// </summary>
+    private async Task<ChainConfirmation> ProbeConfirmationAsync(string? txHash, string? chainType)
+    {
+        if (string.IsNullOrWhiteSpace(txHash))
+            return ChainConfirmation.Unknown;
+
+        IBlockchainProvider? provider;
+        try
+        {
+            provider = string.IsNullOrWhiteSpace(chainType)
+                ? _chainFactory.GetDefaultProvider()
+                : _chainFactory.GetProvider(chainType, ChainNetwork.Devnet);
+        }
+        catch
+        {
+            return ChainConfirmation.Unknown;
+        }
+
+        var conf = await provider.GetTransactionConfirmationAsync(txHash!, CancellationToken.None);
+        return conf.IsError ? ChainConfirmation.Unknown : conf.Result;
+    }
+
+    /// <summary>
+    /// Un-park the saga step the step handler parked for a reconciliation node. The
+    /// gate id mirrors the handler's park (<c>recon:{nodeId}</c>); a single-winner
+    /// <c>TrySignalAsync</c> flips the parked step back to Pending so the processor
+    /// re-dispatches it. Idempotent — a second un-park (a racing sweep) is a no-op.
+    /// </summary>
+    private async Task UnparkReconciliationStepAsync(Guid runId, Guid nodeId)
+    {
+        var reconGateId = $"recon:{nodeId}";
+        await _sagaStore.TrySignalAsync(
+            runId.ToString(), reconGateId, newPayloadJson: null, CancellationToken.None);
     }
 
     // ── Workflow helpers ───────────────────────────────────────────────────

@@ -8,6 +8,9 @@ export type {
   NftTransferParams,
   NftBurnParams,
   NftQueryParams,
+  // Fungible mint (fungible-mint-and-render-model)
+  FungibleMintParams,
+  FungibleTokenResult,
   // Swap types
   SwapQuoteParams,
   SwapExecuteParams,
@@ -23,6 +26,8 @@ export type {
   WalletUpdateParams,
   WalletQueryParams,
   PortfolioResult,
+  PortfolioAsset,
+  PortfolioAssetKind,
   NftHolding,
   // BlockchainOperation types
   BlockchainOperationResult,

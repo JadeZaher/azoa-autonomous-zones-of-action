@@ -104,4 +104,23 @@ public interface IQuestManager
     /// so the engine resumes the DAG. Avatar-scoped; idempotent (a duplicate
     /// signal un-parks at most once).</summary>
     Task<AZOAResult<QuestRun>> SignalAsync(Guid runId, string gateId, string? payload, Guid avatarId, AZOARequest? request = null);
+
+    // ── Reconcile-before-retry re-probe (P7, blockchain-recovery-and-portable-wallets §1.4) ──
+    // A run parked in AwaitingReconciliation is NEVER auto-re-broadcast. These
+    // entry points re-probe chain truth for the parked chain-action nodes and
+    // resume the DAG only on a definite verdict (Confirmed→reconcile-to-success,
+    // FailedOnChain→retry/compensation); an indeterminate node stays parked.
+
+    /// <summary>Manually re-probe a single run parked in
+    /// <see cref="QuestRunStatus.AwaitingReconciliation"/>. Avatar-scoped; rejects a
+    /// run not in that state. NEVER re-broadcasts — it reconciles a Confirmed tx to
+    /// success and un-parks, releases a FailedOnChain node to retry/compensation, and
+    /// leaves an indeterminate node parked.</summary>
+    Task<AZOAResult<QuestReconciliationResult>> ReconcileRunAsync(Guid runId, Guid avatarId, AZOARequest? request = null);
+
+    /// <summary>Operator/background sweep: re-probe EVERY run currently parked in
+    /// <see cref="QuestRunStatus.AwaitingReconciliation"/>. Unscoped (operator
+    /// context) — the per-run re-probe is the same chain-truth logic as
+    /// <see cref="ReconcileRunAsync"/>. Returns one result per run swept.</summary>
+    Task<AZOAResult<IEnumerable<QuestReconciliationResult>>> SweepReconciliationAsync(AZOARequest? request = null);
 }

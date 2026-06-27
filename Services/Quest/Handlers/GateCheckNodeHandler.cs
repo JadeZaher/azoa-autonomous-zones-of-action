@@ -1,4 +1,6 @@
 using System.Text.Json;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Services.Quest.Predicates;
@@ -7,9 +9,9 @@ namespace AZOA.WebAPI.Services.Quest.Handlers;
 
 /// <summary>
 /// Handles <see cref="QuestNodeType.GateCheck"/>. Evaluates a tenant-supplied,
-/// whitelisted boolean predicate over upstream node outputs and injected reads,
-/// returning <c>Ok {"pass":true}</c> when the predicate holds and <c>Fail</c>
-/// otherwise. A Fail propagates through the engine's existing
+/// whitelisted boolean predicate over upstream node outputs, injected reads, and
+/// holon lifecycle state, returning <c>Ok {"pass":true}</c> when the predicate
+/// holds and <c>Fail</c> otherwise. A Fail propagates through the engine's existing
 /// failed-predecessor skip (<c>QuestManager.cs:272-285</c>), gating downstream
 /// nodes — so GateCheck <i>is</i> the branch primitive.
 /// </summary>
@@ -18,9 +20,12 @@ namespace AZOA.WebAPI.Services.Quest.Handlers;
 /// The predicate references upstream outputs as
 /// <c>upstream.&lt;nodeName&gt;.&lt;jsonPath&gt;</c> (mirroring
 /// <see cref="ComposeOutputsNodeHandler"/>'s upstream gather: incoming edge →
-/// source node → that node's <see cref="QuestNodeExecution.Output"/>) and
-/// injected reads as <c>reads.&lt;name&gt;</c> from
-/// <see cref="GateCheckNodeConfig.Reads"/>.
+/// source node → that node's <see cref="QuestNodeExecution.Output"/>), injected
+/// reads as <c>reads.&lt;name&gt;</c> from <see cref="GateCheckNodeConfig.Reads"/>,
+/// and holon lifecycle state as <c>holon.&lt;id&gt;.&lt;field&gt;</c> for each holon
+/// id in <see cref="GateCheckNodeConfig.Holons"/> (smart-gates-holon-state §8.1).
+/// The holon resolver reads the holon's CURRENT state directly — no upstream
+/// <c>HolonGet</c> node is required to thread the value through.
 /// </para>
 /// <para>
 /// The evaluator (<see cref="GatePredicateEvaluator"/>) is a closed-grammar
@@ -28,26 +33,41 @@ namespace AZOA.WebAPI.Services.Quest.Handlers;
 /// error, unknown path, or type mismatch surfaces as a
 /// <see cref="GatePredicateException"/> which this handler catches and turns
 /// into a <c>Fail</c> (it never lets an exception escape into the engine, and
-/// the gate fails closed).
+/// the gate fails closed). A missing/unreadable/non-owned holon ALSO
+    /// fails the gate closed (holon reads are owner-scoped to the run owner).
 /// </para>
 /// <para>
-/// Store-free and chain-free: <c>RequiresChainCapability</c> stays the default
-/// <c>false</c>. The handler reads only <c>context.UpstreamExecutions</c> and
-/// the node config — never a manager, store, or chain.
+/// Chain-free: <c>RequiresChainCapability</c> stays the default <c>false</c>. The
+/// handler reads <c>context.UpstreamExecutions</c>, the node config, and (when the
+/// config lists holons) the holon manager — never a chain.
 /// </para>
 /// </remarks>
 public sealed class GateCheckNodeHandler : IQuestNodeHandler
 {
+    private readonly IHolonManager _holonManager;
+
+    public GateCheckNodeHandler(IHolonManager holonManager) => _holonManager = holonManager;
+
     public QuestNodeType NodeType => QuestNodeType.GateCheck;
 
     // RequiresChainCapability intentionally NOT overridden — stays default false.
 
-    public Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
+    public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
         var cfg = JsonSerializer.Deserialize<GateCheckNodeConfig>(context.Node.Config, QuestNodeJson.Options)
                   ?? new GateCheckNodeConfig();
 
-        var scope = BuildScope(context, cfg);
+        Dictionary<string, JsonElement> scope;
+        try
+        {
+            scope = await BuildScopeAsync(context, cfg, ct);
+        }
+        catch (GatePredicateException ex)
+        {
+            // A holon that could not be resolved (missing / store error) fails the
+            // gate CLOSED — same posture as a predicate error, never silently pass.
+            return QuestNodeResults.Fail($"gate scope error: {ex.Message}");
+        }
 
         bool pass;
         try
@@ -56,22 +76,23 @@ public sealed class GateCheckNodeHandler : IQuestNodeHandler
         }
         catch (GatePredicateException ex)
         {
-            return Task.FromResult(QuestNodeResults.Fail($"gate predicate error: {ex.Message}"));
+            return QuestNodeResults.Fail($"gate predicate error: {ex.Message}");
         }
 
-        return Task.FromResult(pass
+        return pass
             ? QuestNodeResults.Ok("{\"pass\":true}")
-            : QuestNodeResults.Fail($"gate not met: {cfg.Predicate}"));
+            : QuestNodeResults.Fail($"gate not met: {cfg.Predicate}");
     }
 
     /// <summary>
     /// Builds the evaluator scope: upstream node outputs keyed by
     /// <c>upstream.&lt;nodeName&gt;</c> (parsed from each predecessor's
-    /// <see cref="QuestNodeExecution.Output"/>) plus injected reads keyed by
-    /// <c>reads.&lt;name&gt;</c>.
+    /// <see cref="QuestNodeExecution.Output"/>), injected reads keyed by
+    /// <c>reads.&lt;name&gt;</c>, and holon lifecycle state keyed by
+    /// <c>holon.&lt;id&gt;</c> for each configured holon id.
     /// </summary>
-    private static Dictionary<string, JsonElement> BuildScope(
-        QuestNodeExecutionContext context, GateCheckNodeConfig cfg)
+    private async Task<Dictionary<string, JsonElement>> BuildScopeAsync(
+        QuestNodeExecutionContext context, GateCheckNodeConfig cfg, CancellationToken ct)
     {
         var scope = new Dictionary<string, JsonElement>();
 
@@ -97,7 +118,59 @@ public sealed class GateCheckNodeHandler : IQuestNodeHandler
             scope[$"reads.{name}"] = value;
         }
 
+        // Holon-state resolver (§8.1): read each configured holon's CURRENT state
+        // and key it as holon.<id> so the predicate can compare holon.<id>.<field>
+        // directly. OWNER-SCOPED: a tenant-authored predicate may only name holons
+        // owned by the run owner (context.Quest.AvatarId). A holon owned by any other
+        // avatar is rejected with the SAME error as not-found so existence cannot be
+        // probed across tenants. Fail closed on a missing/unreadable/non-owned holon:
+        // the gate must never silently pass when the lifecycle state it gates on
+        // cannot be read.
+        foreach (var holonId in cfg.Holons)
+        {
+            var holonResult = await _holonManager.GetAsync(holonId);
+            if (holonResult.IsError || holonResult.Result is null
+                || holonResult.Result.AvatarId != context.Quest.AvatarId)
+                throw new GatePredicateException($"holon '{holonId}' not found or unreadable");
+
+            scope[$"holon.{holonId}"] = HolonStateJson(holonResult.Result);
+        }
+
         return scope;
+    }
+
+    /// <summary>
+    /// Flattens a holon's live lifecycle state into a JSON object so the predicate
+    /// can read <c>holon.&lt;id&gt;.&lt;field&gt;</c>. Exposes the typed fields
+    /// (name, assetType, tokenId, chainId, isActive, parentHolonId, avatarId) AND
+    /// every <see cref="IHolon.Metadata"/> entry (e.g. <c>status</c>, <c>phase</c>).
+    /// Metadata is where the consumer-owned lifecycle field (<c>status == "FUNDED"</c>)
+    /// lives — AZOA derives no economic meaning from it, it only exposes it for
+    /// comparison. A metadata key that collides with a typed field name is preferred
+    /// (the consumer's explicit lifecycle value wins over the structural field).
+    /// </summary>
+    private static JsonElement HolonStateJson(IHolon holon)
+    {
+        var state = new Dictionary<string, object?>
+        {
+            ["id"] = holon.Id.ToString(),
+            ["name"] = holon.Name,
+            ["assetType"] = holon.AssetType,
+            ["tokenId"] = holon.TokenId,
+            ["chainId"] = holon.ChainId,
+            ["isActive"] = holon.IsActive,
+            ["parentHolonId"] = holon.ParentHolonId?.ToString(),
+            ["avatarId"] = holon.AvatarId?.ToString(),
+        };
+
+        // Metadata overlays the typed fields: the consumer-authored lifecycle
+        // values (status/phase/…) are the primary gate inputs.
+        foreach (var (key, value) in holon.Metadata)
+            state[key] = value;
+
+        var json = JsonSerializer.Serialize(state, QuestNodeJson.Options);
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.Clone();
     }
 
     private static bool TryParseJson(string json, out JsonElement element)

@@ -25,8 +25,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 import { QuestNode, type QuestNodeData } from './quest-node'
 import { layoutGraph } from './layout'
+import { QUEST_PRESETS, presetIsLoadable, type QuestPreset } from './presets'
 import {
   NODE_CATALOG,
   NODE_CATALOG_BY_TYPE,
@@ -59,8 +68,12 @@ export interface BuiltGraph {
     nodeTemplateId?: string
   }>
   edges: Array<{
-    sourceNodeIndex: number
-    targetNodeIndex: number
+    // NOTE: these are array indices into `nodes`, not Guids. The backend
+    // QuestEdgeCreateModel binds them by these exact names (SourceNodeId /
+    // TargetNodeId, camelCased over the wire), so the key names must match
+    // or every edge silently binds 0→0 and fails self-loop validation.
+    sourceNodeId: number
+    targetNodeId: number
     edgeType: string
     condition?: string
   }>
@@ -223,6 +236,48 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     setSelectedId(null)
   }, [setNodes, setEdges])
 
+  // ─── Load a preset graph ───
+  const loadPreset = useCallback(
+    (preset: QuestPreset) => {
+      // Map preset node keys → freshly minted canvas ids so edges can reference them.
+      const idByKey = new Map<string, string>()
+      const rawNodes: Node<QuestNodeData>[] = preset.nodes.map((pn) => {
+        const id = nextId()
+        idByKey.set(pn.key, id)
+        const catalog = NODE_CATALOG_BY_TYPE[pn.nodeType]
+        return {
+          id,
+          type: 'quest',
+          position: { x: 0, y: 0 }, // replaced by layoutGraph below
+          data: {
+            label: pn.label ?? catalog?.label ?? pn.nodeType,
+            nodeType: pn.nodeType,
+            config: pn.config ?? catalog?.defaultConfig ?? '{}',
+            isEntry: !!pn.isEntry,
+            isTerminal: !!pn.isTerminal,
+          },
+        }
+      })
+
+      const rawEdges: Edge[] = preset.edges
+        .filter((pe) => idByKey.has(pe.from) && idByKey.has(pe.to))
+        .map((pe) => ({
+          id: `e_${idByKey.get(pe.from)}_${idByKey.get(pe.to)}`,
+          source: idByKey.get(pe.from)!,
+          target: idByKey.get(pe.to)!,
+          markerEnd: { type: MarkerType.ArrowClosed },
+          style: { stroke: '#94a3b8' },
+          data: { edgeType: pe.edgeType ?? 'Control', condition: pe.condition },
+        }))
+
+      setNodes(layoutGraph(rawNodes, rawEdges) as Node<QuestNodeData>[])
+      setEdges(rawEdges)
+      setSelectedId(null)
+      window.setTimeout(() => rfInstance.current?.fitView({ padding: 0.2 }), 0)
+    },
+    [setNodes, setEdges],
+  )
+
   // ─── Serialize and submit ───
   const handleSubmit = useCallback(() => {
     const indexOf = new Map(nodes.map((n, i) => [n.id, i]))
@@ -238,8 +293,8 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       edges: edges
         .filter((e) => indexOf.has(e.source) && indexOf.has(e.target))
         .map((e) => ({
-          sourceNodeIndex: indexOf.get(e.source)!,
-          targetNodeIndex: indexOf.get(e.target)!,
+          sourceNodeId: indexOf.get(e.source)!,
+          targetNodeId: indexOf.get(e.target)!,
           edgeType: (e.data as { edgeType?: string })?.edgeType ?? 'Control',
           condition: (e.data as { condition?: string })?.condition,
         })),
@@ -257,10 +312,89 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     }
   }, [selectedNode])
 
+  // ─── Client-side DAG pre-check ───
+  // Mirrors the backend QuestDagValidator rules so the user sees structural
+  // problems (missing entry/terminal, orphans, cycles) BEFORE submitting and
+  // eating a 400. Not authoritative — the server re-validates — but it stops
+  // the common "why won't my quest save" guessing game.
+  const dagWarnings = useMemo(() => {
+    const warnings: string[] = []
+    if (nodes.length === 0) return warnings
+
+    const ids = new Set(nodes.map((n) => n.id))
+    const incoming = new Map(nodes.map((n) => [n.id, 0]))
+    const outgoing = new Map(nodes.map((n) => [n.id, 0]))
+    const adj = new Map<string, string[]>(nodes.map((n) => [n.id, []]))
+    for (const e of edges) {
+      if (!ids.has(e.source) || !ids.has(e.target)) continue
+      incoming.set(e.target, (incoming.get(e.target) ?? 0) + 1)
+      outgoing.set(e.source, (outgoing.get(e.source) ?? 0) + 1)
+      adj.get(e.source)!.push(e.target)
+    }
+
+    const roots = nodes.filter((n) => (incoming.get(n.id) ?? 0) === 0)
+    const leaves = nodes.filter((n) => (outgoing.get(n.id) ?? 0) === 0)
+    const markedEntries = nodes.filter((n) => n.data.isEntry)
+    const markedTerminals = nodes.filter((n) => n.data.isTerminal)
+
+    if (markedEntries.length === 0) {
+      warnings.push('No node is marked as Entry. Mark the starting node’s "Entry" flag in the inspector.')
+    }
+    const unmarkedRoots = roots.filter((n) => !n.data.isEntry)
+    if (unmarkedRoots.length > 0) {
+      warnings.push(`Orphan (no incoming edge, not Entry): ${unmarkedRoots.map((n) => n.data.label).join(', ')}.`)
+    }
+    if (markedTerminals.length === 0) {
+      warnings.push('No node is marked as Terminal. Mark a leaf node’s "Terminal" flag in the inspector.')
+    }
+    const terminalNotLeaf = markedTerminals.filter((n) => (outgoing.get(n.id) ?? 0) > 0)
+    if (terminalNotLeaf.length > 0) {
+      warnings.push(`Marked Terminal but has outgoing edges: ${terminalNotLeaf.map((n) => n.data.label).join(', ')}.`)
+    }
+
+    // Reachability + cycle detection via BFS from marked entries.
+    const reachable = new Set<string>()
+    const queue = markedEntries.map((n) => n.id)
+    queue.forEach((id) => reachable.add(id))
+    while (queue.length > 0) {
+      const cur = queue.shift()!
+      for (const next of adj.get(cur) ?? []) {
+        if (!reachable.has(next)) {
+          reachable.add(next)
+          queue.push(next)
+        }
+      }
+    }
+    if (markedEntries.length > 0) {
+      const unreachable = nodes.filter((n) => !reachable.has(n.id))
+      if (unreachable.length > 0) {
+        warnings.push(`Not reachable from an Entry node: ${unreachable.map((n) => n.data.label).join(', ')}.`)
+      }
+    }
+
+    // Kahn cycle detection.
+    const indeg = new Map(nodes.map((n) => [n.id, incoming.get(n.id) ?? 0]))
+    const kq = nodes.filter((n) => (indeg.get(n.id) ?? 0) === 0).map((n) => n.id)
+    let visited = 0
+    while (kq.length > 0) {
+      const cur = kq.shift()!
+      visited++
+      for (const next of adj.get(cur) ?? []) {
+        indeg.set(next, (indeg.get(next) ?? 0) - 1)
+        if ((indeg.get(next) ?? 0) === 0) kq.push(next)
+      }
+    }
+    if (visited !== nodes.length) {
+      warnings.push('Graph contains a cycle — quests must be acyclic (DAG).')
+    }
+
+    return warnings
+  }, [nodes, edges])
+
   return (
     <div className="flex h-[640px] gap-3">
       {/* ─── Palette ─── */}
-      <div className="flex w-56 shrink-0 flex-col rounded-md border bg-card">
+      <div className="flex h-full w-56 shrink-0 flex-col overflow-hidden rounded-md border bg-card">
         <div className="border-b p-2">
           <Input
             value={paletteFilter}
@@ -269,7 +403,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
             className="h-8 text-xs"
           />
         </div>
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-3 p-2">
             {CATEGORY_ORDER.map((cat) => {
               const items = grouped.get(cat)
@@ -345,6 +479,34 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
 
         {/* Toolbar */}
         <div className="absolute right-2 top-2 z-10 flex gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger className="inline-flex h-8 items-center rounded-md border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent">
+              Presets ▾
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              <DropdownMenuLabel>Load a starter flow</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {QUEST_PRESETS.map((preset) => {
+                const loadable = presetIsLoadable(preset)
+                return (
+                  <DropdownMenuItem
+                    key={preset.id}
+                    disabled={!loadable}
+                    onClick={() => loadPreset(preset)}
+                    className="flex-col items-start gap-0.5"
+                  >
+                    <span className="flex w-full items-center gap-1.5 text-xs font-medium">
+                      {preset.name}
+                      {preset.requiresChain && (
+                        <Badge variant="outline" className="text-[8px]">on-chain</Badge>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">{preset.description}</span>
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button size="sm" variant="outline" onClick={autoLayout} disabled={nodes.length === 0}>
             Auto-layout
           </Button>
@@ -355,13 +517,13 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       </div>
 
       {/* ─── Inspector ─── */}
-      <div className="flex w-72 shrink-0 flex-col rounded-md border bg-card">
+      <div className="flex h-full w-72 shrink-0 flex-col overflow-hidden rounded-md border bg-card">
         <div className="border-b p-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {selectedNode ? 'Node Config' : 'Inspector'}
           </span>
         </div>
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-3 p-3">
             {selectedNode ? (
               <>
@@ -428,6 +590,16 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
           <div className="flex justify-between">
             <span>{nodes.length} nodes · {edges.length} edges</span>
           </div>
+          {dagWarnings.length > 0 && (
+            <ul className="space-y-0.5 rounded border border-amber-500/40 bg-amber-50 p-1.5 text-[10px] text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              {dagWarnings.map((w, i) => (
+                <li key={i} className="flex gap-1">
+                  <span aria-hidden>⚠</span>
+                  <span>{w}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           <Button
             className="w-full"
             size="sm"
