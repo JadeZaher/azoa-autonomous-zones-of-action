@@ -20,6 +20,35 @@ public interface IBlockchainProvider
     Task<AZOAResult<string>> GetBalanceAsync(string address, string? tokenId = null, CancellationToken ct = default);
     Task<AZOAResult<bool>> ValidateAddressAsync(string address, CancellationToken ct = default);
 
+    // ─── Faucet (dev / test networks only) ───
+    /// <summary>
+    /// True when this provider exposes a faucet top-up path for its chain (server-
+    /// side dispense like Algorand, or a client-side airdrop acknowledgement like
+    /// Solana). Mirrors <see cref="SupportsBridging"/>: the chain-agnostic top-up
+    /// caller checks this before dispatching, so an unsupported chain yields a clear
+    /// "not supported" without inspecting concrete provider types.
+    /// </summary>
+    bool SupportsFaucet { get; }
+
+    /// <summary>
+    /// Dispense test funds to <paramref name="toAddress"/> on this provider's active
+    /// network. Faucet operations are provider-scoped: each chain owns how (and
+    /// whether) it tops up. Callers MUST enforce the mainnet guard before invoking;
+    /// providers may also refuse on mainnet.
+    ///
+    /// <para>The on-chain submit (when server-side) is idempotent: an optional
+    /// <paramref name="idempotencyKey"/> (e.g. a client <c>Idempotency-Key</c> header)
+    /// dedups a retried/concurrent dispense; when absent the provider derives a
+    /// deterministic content key from (chain, recipient, amount). A client-side
+    /// faucet (Solana) returns <see cref="FaucetDispenseResult.IsClientSide"/> = true
+    /// with a null tx hash.</para>
+    /// </summary>
+    Task<AZOAResult<FaucetDispenseResult>> DispenseFromFaucetAsync(
+        string toAddress,
+        decimal amount,
+        string? idempotencyKey = null,
+        CancellationToken ct = default);
+
     // ─── Token / Asset Lifecycle ───
     // value-path-wiring H4: the value amount is `ulong` (Algorand ASA AssetAmount
     // is ulong-native) so large allocations cannot truncate at the boundary.

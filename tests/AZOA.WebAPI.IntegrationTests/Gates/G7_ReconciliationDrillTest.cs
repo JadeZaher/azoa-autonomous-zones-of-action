@@ -263,6 +263,7 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
         public string ChainType       => "Algorand";
         public ChainNetwork ActiveNetwork => ChainNetwork.Devnet;
         public bool SupportsBridging  => false;
+        public bool SupportsFaucet    => false;
 
         public void Initialize(BlockchainNetworkConfig config, ChainNetwork network) { }
 
@@ -390,6 +391,11 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             string proofData, string sourceChain, string targetChainId,
             CancellationToken ct = default) =>
             MutationNotExpected<bool>(nameof(VerifyBridgeProofAsync));
+
+        public Task<AZOAResult<FaucetDispenseResult>> DispenseFromFaucetAsync(
+            string toAddress, decimal amount, string? idempotencyKey = null,
+            CancellationToken ct = default) =>
+            MutationNotExpected<FaucetDispenseResult>(nameof(DispenseFromFaucetAsync));
 
         private static Task<AZOAResult<T>> MutationNotExpected<T>(string method) =>
             throw new InvalidOperationException(
