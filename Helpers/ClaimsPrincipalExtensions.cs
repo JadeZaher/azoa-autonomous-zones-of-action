@@ -1,6 +1,6 @@
 using System.Security.Claims;
 
-namespace AZOA.WebAPI.Core;
+namespace AZOA.WebAPI.Helpers;
 
 /// <summary>
 /// The single, reusable consuming side of the scope claims emitted by

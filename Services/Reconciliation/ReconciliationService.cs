@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;

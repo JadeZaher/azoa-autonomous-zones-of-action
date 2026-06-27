@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 
-namespace AZOA.WebAPI.Core;
+namespace AZOA.WebAPI.Providers.Blockchain;
 
 public interface IBlockchainProviderFactory
 {

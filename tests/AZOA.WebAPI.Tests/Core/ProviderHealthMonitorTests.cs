@@ -1,5 +1,6 @@
 using FluentAssertions;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Blockchain;
 
 namespace AZOA.WebAPI.Tests.Core;
 

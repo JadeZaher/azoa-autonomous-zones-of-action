@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Providers.Blockchain.Simulated;
 using AZOA.WebAPI.Providers.Blockchain.Solana;

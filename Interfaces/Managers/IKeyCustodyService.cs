@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Responses;
 

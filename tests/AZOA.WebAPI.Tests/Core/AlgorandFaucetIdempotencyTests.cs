@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Providers.Blockchain.Algorand;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Tests.TestSupport;

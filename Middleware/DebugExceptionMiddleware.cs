@@ -1,7 +1,7 @@
 using System.Text.Json;
 using AZOA.WebAPI.Models.Responses;
 
-namespace AZOA.WebAPI.Core;
+namespace AZOA.WebAPI.Middleware;
 
 /// <summary>
 /// Converts an unhandled exception into a structured JSON response that mirrors

@@ -7,6 +7,7 @@ using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Core.Signing;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;

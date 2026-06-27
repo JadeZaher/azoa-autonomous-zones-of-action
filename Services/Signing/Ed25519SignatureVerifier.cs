@@ -7,7 +7,7 @@ using AZOA.WebAPI.Interfaces;
 using Ed25519Signer = BCCrypto2::Org.BouncyCastle.Crypto.Signers.Ed25519Signer;
 using Ed25519PublicKeyParameters = BCCrypto2::Org.BouncyCastle.Crypto.Parameters.Ed25519PublicKeyParameters;
 
-namespace AZOA.WebAPI.Core;
+namespace AZOA.WebAPI.Services.Signing;
 
 // ─── DI registration (orchestrator applies to Program.cs — do NOT edit here) ───
 //

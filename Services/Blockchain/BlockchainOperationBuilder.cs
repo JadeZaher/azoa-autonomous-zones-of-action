@@ -1,7 +1,7 @@
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models;
 
-namespace AZOA.WebAPI.Core;
+namespace AZOA.WebAPI.Services.Blockchain;
 
 public class BlockchainOperationBuilder
 {

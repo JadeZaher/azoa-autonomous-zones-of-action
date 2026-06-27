@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Core.Signing;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Responses;
@@ -164,7 +165,7 @@ public class AlgorandProviderCustodySigningTests : IDisposable
         var signerFactory = new TransactionSignerFactory(new[] { new AlgorandTransactionSigner() });
         var provider = new AlgorandProvider(
             config, NullLogger<AlgorandProvider>.Instance, signerFactory,
-            keyService: new AZOA.WebAPI.Core.WalletKeyService(config),
+            keyService: new AZOA.WebAPI.Services.Signing.WalletKeyService(config),
             custodyService: null, custodyScopeFactory: null);
 
         var userAddr = _userAccount.Address.EncodeAsString();

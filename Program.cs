@@ -18,8 +18,13 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Middleware;
+using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Services.Auth;
 using AZOA.WebAPI.Services.Avatar;
+using AZOA.WebAPI.Services.Blockchain;
 using AZOA.WebAPI.Services.Dex;
+using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Models.Responses;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -487,7 +492,7 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentWebhookEmitte
     AZOA.WebAPI.Services.Consent.ConsentWebhookEmitter>();
 // user-sovereign-identity: wallet-challenge auth + claim flow.
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.IWalletSignatureVerifier,
-    AZOA.WebAPI.Core.Ed25519SignatureVerifier>();
+    AZOA.WebAPI.Services.Signing.Ed25519SignatureVerifier>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IWalletAuthManager,
     AZOA.WebAPI.Managers.WalletAuthManager>();
 // Webhook bridge (AC7/AC8): SSRF guard + timestamped HMAC signer (singletons) +
