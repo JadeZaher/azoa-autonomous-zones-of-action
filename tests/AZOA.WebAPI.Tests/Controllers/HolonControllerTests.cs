@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Moq;
 using AZOA.WebAPI.Controllers;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;

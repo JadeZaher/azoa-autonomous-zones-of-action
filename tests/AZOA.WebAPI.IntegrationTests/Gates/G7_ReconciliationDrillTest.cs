@@ -6,6 +6,7 @@ using Azoa.SurrealDb.Client;
 using Azoa.SurrealDb.Client.Connection;
 using Azoa.SurrealDb.Client.Query;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Interfaces;

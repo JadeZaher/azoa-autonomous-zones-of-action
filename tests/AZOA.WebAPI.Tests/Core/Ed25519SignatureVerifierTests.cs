@@ -2,6 +2,7 @@ extern alias BCCrypto2;
 using System.Text;
 using FluentAssertions;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Signing;
 using Ed25519PrivateKeyParameters = BCCrypto2::Org.BouncyCastle.Crypto.Parameters.Ed25519PrivateKeyParameters;
 using Ed25519Signer = BCCrypto2::Org.BouncyCastle.Crypto.Signers.Ed25519Signer;
 

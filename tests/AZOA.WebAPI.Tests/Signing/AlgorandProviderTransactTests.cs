@@ -7,6 +7,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Core.Signing;
+using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Providers.Blockchain.Algorand;
 using Xunit;
 using AlgoAccount = Algorand.Algod.Model.Account;
@@ -56,7 +57,7 @@ public class AlgorandProviderTransactTests : IDisposable
             })
             .Build();
 
-        var keyService = new AZOA.WebAPI.Core.WalletKeyService(config);
+        var keyService = new AZOA.WebAPI.Services.Signing.WalletKeyService(config);
         var signerFactory = new TransactionSignerFactory(new[] { new AlgorandTransactionSigner() });
         return new AlgorandProvider(config, NullLogger<AlgorandProvider>.Instance, signerFactory, keyService);
     }

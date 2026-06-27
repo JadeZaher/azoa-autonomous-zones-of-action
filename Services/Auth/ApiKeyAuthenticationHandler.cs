@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Interfaces.Stores;
 
-namespace AZOA.WebAPI.Core;
+namespace AZOA.WebAPI.Services.Auth;
 
 public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {

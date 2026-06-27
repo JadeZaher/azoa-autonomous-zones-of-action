@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;

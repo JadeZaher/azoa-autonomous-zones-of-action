@@ -1,4 +1,4 @@
-namespace AZOA.WebAPI.Core;
+namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
 /// <summary>
 /// Dispenses test ALGO from a configured faucet account to a recipient address.

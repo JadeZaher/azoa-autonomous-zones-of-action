@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace AZOA.WebAPI.Core;
+namespace AZOA.WebAPI.Services.Signing;
 
 /// <summary>
 /// Generates cryptographic keypairs for supported chains and encrypts private keys

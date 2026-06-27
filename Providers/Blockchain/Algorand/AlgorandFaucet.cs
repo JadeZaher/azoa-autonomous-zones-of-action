@@ -2,11 +2,12 @@ using Algorand;
 using Algorand.Algod;
 using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Providers.Blockchain.Base;
 
-namespace AZOA.WebAPI.Core;
+namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
 /// <summary>
 /// Dispenses test ALGO via the Algorand2 SDK (build → sign → submit).
@@ -130,7 +131,7 @@ public class AlgorandFaucet : IAlgorandFaucet
 
             var txParams = await algod.TransactionParamsAsync(ct);
 
-            var microAlgos = Algorand.Utils.Utils.AlgosToMicroalgos((double)amountAlgo);
+            var microAlgos = global::Algorand.Utils.Utils.AlgosToMicroalgos((double)amountAlgo);
 
             var payment = PaymentTransaction.GetPaymentTransactionFromNetworkTransactionParameters(
                 faucetAccount.Address,
@@ -143,7 +144,7 @@ public class AlgorandFaucet : IAlgorandFaucet
 
             // The single, irreversible on-chain effect. Reached only by the
             // claim winner.
-            var response = await Algorand.Utils.Utils.SubmitTransaction(algod, signedTx);
+            var response = await global::Algorand.Utils.Utils.SubmitTransaction(algod, signedTx);
 
             _logger.LogInformation(
                 "Algorand faucet dispensed {Amount} ALGO to {To} on {Network} (tx {TxId})",

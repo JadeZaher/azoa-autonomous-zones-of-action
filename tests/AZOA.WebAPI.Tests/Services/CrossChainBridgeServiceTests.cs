@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;

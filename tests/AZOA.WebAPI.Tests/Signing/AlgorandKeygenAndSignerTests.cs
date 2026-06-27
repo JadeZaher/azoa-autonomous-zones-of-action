@@ -4,6 +4,7 @@ using Algorand.Utils;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Core.Signing;
 using AZOA.WebAPI.Providers.Blockchain.Algorand;
 using Xunit;
