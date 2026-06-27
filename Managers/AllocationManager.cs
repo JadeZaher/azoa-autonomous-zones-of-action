@@ -396,7 +396,7 @@ public sealed class AllocationManager : IAllocationManager
             request.Amount,
             request.AssetId ?? string.Empty,
             request.AssetRecordId?.ToString("N") ?? string.Empty);
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+        var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 

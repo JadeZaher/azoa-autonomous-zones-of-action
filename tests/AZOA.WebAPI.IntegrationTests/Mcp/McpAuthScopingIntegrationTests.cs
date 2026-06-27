@@ -152,7 +152,7 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
         };
         return new StringContent(
             JsonSerializer.Serialize(body, _json),
-            Encoding.UTF8,
+            System.Text.Encoding.UTF8,
             "application/json");
     }
 

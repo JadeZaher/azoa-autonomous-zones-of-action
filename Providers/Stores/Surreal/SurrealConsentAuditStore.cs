@@ -49,7 +49,7 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM consent_audit WHERE tenant_id = $_tenant ORDER BY occurred_at DESC")
-                .WithParam("_tenant", SurrealLink.ToLink("avatar", ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(tenantId)));
             var rows = await _executor.QueryAsync<ConsentAuditPoco>(q, ct);
             return new AZOAResult<IEnumerable<ConsentAuditEntry>>
             {
@@ -63,16 +63,14 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
         }
     }
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
-    private static Guid FromSurrealId(string id) => Guid.ParseExact(id, "N");
 
     private static ConsentAuditPoco FromDomain(ConsentAuditEntry e) => new()
     {
-        Id         = ToSurrealId(e.Id),
+        Id         = SurrealId.ToSurrealId(e.Id),
         Action     = e.Action.ToString(),
-        GrantId    = e.GrantId == Guid.Empty ? null : ToSurrealId(e.GrantId),
-        TenantId   = SurrealLink.ToLink("avatar", ToSurrealId(e.TenantId)) ?? string.Empty,
-        AvatarId   = e.AvatarId == Guid.Empty ? null : SurrealLink.ToLink("avatar", ToSurrealId(e.AvatarId)),
+        GrantId    = e.GrantId == Guid.Empty ? null : SurrealId.ToSurrealId(e.GrantId),
+        TenantId   = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(e.TenantId)) ?? string.Empty,
+        AvatarId   = e.AvatarId == Guid.Empty ? null : SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(e.AvatarId)),
         Scope      = e.Scope,
         Detail     = e.Detail,
         OccurredAt = new DateTimeOffset(DateTime.SpecifyKind(e.OccurredAt, DateTimeKind.Utc)),
@@ -80,11 +78,11 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
 
     private static ConsentAuditEntry ToDomain(ConsentAuditPoco p) => new()
     {
-        Id         = FromSurrealId(p.Id),
+        Id         = SurrealId.FromSurrealId(p.Id),
         Action     = Enum.TryParse<ConsentAuditAction>(p.Action, ignoreCase: true, out var a) ? a : ConsentAuditAction.TenantSignDenied,
-        GrantId    = string.IsNullOrEmpty(p.GrantId) ? Guid.Empty : FromSurrealId(p.GrantId),
-        TenantId   = FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
-        AvatarId   = string.IsNullOrEmpty(p.AvatarId) ? Guid.Empty : FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+        GrantId    = string.IsNullOrEmpty(p.GrantId) ? Guid.Empty : SurrealId.FromSurrealId(p.GrantId),
+        TenantId   = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
+        AvatarId   = string.IsNullOrEmpty(p.AvatarId) ? Guid.Empty : SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
         Scope      = p.Scope ?? string.Empty,
         Detail     = p.Detail,
         OccurredAt = p.OccurredAt.UtcDateTime,

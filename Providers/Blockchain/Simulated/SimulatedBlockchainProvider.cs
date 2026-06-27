@@ -258,7 +258,7 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
     private static string Canonical(params string[] parts) => string.Join("", parts);
 
     private static byte[] Sha256(string input) =>
-        SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(input));
 
     // RFC 4648 base32 (no padding), lowercase. Used purely as a stable, opaque,
     // alphanumeric digest representation — independent of any chain's encoding.

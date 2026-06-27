@@ -297,7 +297,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             request.UnitName,
             request.Total.ToString(),
             request.Decimals.ToString());
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+        var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 

@@ -126,15 +126,13 @@ public sealed class SurrealWalletAuthClaimTokenStore : IWalletAuthClaimTokenStor
 
     // ── Mapping ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
-    private static Guid FromSurrealId(string id) => Guid.ParseExact(id, "N");
 
     private static WalletAuthClaimTokenPoco FromDomain(WalletAuthClaimToken t) => new()
     {
-        Id             = ToSurrealId(t.Id),
+        Id             = SurrealId.ToSurrealId(t.Id),
         Token          = t.Token,
-        TargetAvatarId = SurrealLink.ToLink("avatar", ToSurrealId(t.TargetAvatarId)) ?? string.Empty,
-        TenantId       = SurrealLink.ToLink("avatar", ToSurrealId(t.TenantId)) ?? string.Empty,
+        TargetAvatarId = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(t.TargetAvatarId)) ?? string.Empty,
+        TenantId       = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(t.TenantId)) ?? string.Empty,
         ExpiresAt      = new DateTimeOffset(DateTime.SpecifyKind(t.ExpiresAt, DateTimeKind.Utc)),
         ConsumedAt     = t.ConsumedAt.HasValue
                          ? new DateTimeOffset(DateTime.SpecifyKind(t.ConsumedAt.Value, DateTimeKind.Utc))
@@ -144,10 +142,10 @@ public sealed class SurrealWalletAuthClaimTokenStore : IWalletAuthClaimTokenStor
 
     private static WalletAuthClaimToken ToDomain(WalletAuthClaimTokenPoco p) => new()
     {
-        Id             = FromSurrealId(p.Id),
+        Id             = SurrealId.FromSurrealId(p.Id),
         Token          = p.Token,
-        TargetAvatarId = FromSurrealId(SurrealLink.FromLink(p.TargetAvatarId)!),
-        TenantId       = FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
+        TargetAvatarId = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TargetAvatarId)!),
+        TenantId       = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
         ExpiresAt      = p.ExpiresAt.UtcDateTime,
         ConsumedAt     = p.ConsumedAt?.UtcDateTime,
         CreatedAt      = p.CreatedAt.UtcDateTime,

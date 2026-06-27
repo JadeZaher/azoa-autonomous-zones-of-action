@@ -102,7 +102,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var result = new AZOAResult<WalletChallengeResponse>();
 
         var addr = (address ?? string.Empty).Trim();
-        var chain = NormalizeChain(chainType);
+        var chain = ChainNames.NormalizeChain(chainType);
         if (string.IsNullOrWhiteSpace(addr) || string.IsNullOrWhiteSpace(chain))
         {
             result.IsError = true;
@@ -122,7 +122,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        var nonce = GenerateNonce();
+        var nonce = Crypto.GenerateNonce();
         var expiresAt = now.Add(ChallengeLifetime);
         var domainMessage = BuildDomainMessage(chain, addr, nonce, expiresAt);
 
@@ -306,7 +306,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var token = new WalletAuthClaimToken
         {
             Id = Guid.NewGuid(),
-            Token = GenerateNonce(),
+            Token = Crypto.GenerateNonce(),
             TargetAvatarId = childAvatarId,
             TenantId = tenantId,
             ExpiresAt = expiresAt,
@@ -505,7 +505,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var result = new AZOAResult<WalletAuthChallenge>();
 
         var addr = (address ?? string.Empty).Trim();
-        var chain = NormalizeChain(chainType);
+        var chain = ChainNames.NormalizeChain(chainType);
         if (string.IsNullOrWhiteSpace(addr) || string.IsNullOrWhiteSpace(chain) || string.IsNullOrWhiteSpace(signature))
         {
             result.IsError = true;
@@ -572,14 +572,14 @@ public sealed class WalletAuthManager : IWalletAuthManager
         }
 
         // Decode the signature (accept base64 or hex) and verify over the STORED bytes.
-        if (!TryDecodeSignature(signature, out var signatureBytes))
+        if (!AZOA.WebAPI.Helpers.Encoding.TryDecodeSignature(signature, out var signatureBytes))
         {
             result.IsError = true;
             result.Message = "Signature is not valid base64 or hex.";
             return result;
         }
 
-        var messageBytes = Encoding.UTF8.GetBytes(challenge.DomainMessage);
+        var messageBytes = System.Text.Encoding.UTF8.GetBytes(challenge.DomainMessage);
 
         bool ok;
         try
@@ -670,47 +670,12 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return sb.ToString();
     }
 
-    private static string NormalizeChain(string? chainType)
-        => (chainType ?? string.Empty).Trim().ToLowerInvariant();
-
-    /// <summary>Cryptographically-random URL-safe nonce (256 bits).</summary>
-    private static string GenerateNonce()
-        => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-
-    /// <summary>Accept a signature as base64 (preferred) or hex; fail-closed otherwise.</summary>
-    private static bool TryDecodeSignature(string signature, out byte[] bytes)
-    {
-        var s = signature.Trim();
-        try
-        {
-            bytes = Convert.FromBase64String(s);
-            return true;
-        }
-        catch (FormatException)
-        {
-            // not base64 — fall through to hex
-        }
-
-        try
-        {
-            var hex = s.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? s[2..] : s;
-            bytes = Convert.FromHexString(hex);
-            return true;
-        }
-        catch (FormatException)
-        {
-            bytes = Array.Empty<byte>();
-            return false;
-        }
-    }
-
     // ── Login JWT (mirrors AvatarManager.GenerateJwt exactly) ─────────────────
 
     private string GenerateLoginJwt(IAvatar avatar)
     {
         var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+        var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]

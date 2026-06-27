@@ -244,7 +244,7 @@ public sealed class ConsentWebhookDeliveryWorker : BackgroundService
             var client = _httpClientFactory.CreateClient(WebhookOptions.HttpClientName);
             client.Timeout = TimeSpan.FromSeconds(Math.Max(1, _options.HttpTimeoutSeconds));
 
-            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
             using var request = new HttpRequestMessage(HttpMethod.Post, registration.Url) { Content = content };
             request.Headers.TryAddWithoutValidation("X-Azoa-Signature", signature);
             request.Headers.TryAddWithoutValidation("X-Azoa-Timestamp", timestampIso);

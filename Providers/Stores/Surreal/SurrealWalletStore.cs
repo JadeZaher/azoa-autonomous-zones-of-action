@@ -32,7 +32,7 @@ public sealed class SurrealWalletStore : IWalletStore
     {
         try
         {
-            var q = SurrealQuery.SelectById(GeneratedWallet.SchemaNameConst, ToSurrealId(id));
+            var q = SurrealQuery.SelectById(GeneratedWallet.SchemaNameConst, SurrealId.ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<GeneratedWallet>(q, ct);
             return new AZOAResult<IWallet>
             {
@@ -113,12 +113,12 @@ public sealed class SurrealWalletStore : IWalletStore
         try
         {
             // Check existence first (matches the prior EF read-before-update contract).
-            var checkQ = SurrealQuery.SelectById(GeneratedWallet.SchemaNameConst, ToSurrealId(id));
+            var checkQ = SurrealQuery.SelectById(GeneratedWallet.SchemaNameConst, SurrealId.ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<GeneratedWallet>(checkQ, ct);
             if (existing == null)
                 return new AZOAResult<bool> { IsError = true, Message = "Wallet not found.", Result = false };
 
-            var q = SurrealQuery.DeleteById(GeneratedWallet.SchemaNameConst, ToSurrealId(id));
+            var q = SurrealQuery.DeleteById(GeneratedWallet.SchemaNameConst, SurrealId.ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new AZOAResult<bool> { Result = true, Message = "Deleted." };
@@ -131,16 +131,12 @@ public sealed class SurrealWalletStore : IWalletStore
 
     // ── Mapping ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id)
-        => id.ToString("N").ToLowerInvariant();
 
-    private static Guid FromSurrealId(string id)
-        => Guid.ParseExact(id, "N");
 
     private static GeneratedWallet ToPoco(IWallet w) => new()
     {
-        Id                   = ToSurrealId(w.Id),
-        AvatarId             = SurrealLink.ToLink("avatar", ToSurrealId(w.AvatarId)),
+        Id                   = SurrealId.ToSurrealId(w.Id),
+        AvatarId             = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(w.AvatarId)),
         ChainType            = w.ChainType,
         Address              = w.Address,
         PublicKey            = w.PublicKey,
@@ -155,8 +151,8 @@ public sealed class SurrealWalletStore : IWalletStore
 
     private static Wallet FromPoco(GeneratedWallet p) => new()
     {
-        Id                  = FromSurrealId(p.Id),
-        AvatarId            = FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+        Id                  = SurrealId.FromSurrealId(p.Id),
+        AvatarId            = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
         ChainType           = p.ChainType,
         Address             = p.Address,
         PublicKey           = p.PublicKey,

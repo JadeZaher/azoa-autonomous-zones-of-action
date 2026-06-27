@@ -75,8 +75,8 @@ public class WalletKeyService
         var privateKeyBytes = account.KeyPair.ClearTextPrivateKey;
         var publicKeyBytes = account.KeyPair.ClearTextPublicKey;
 
-        var privateKeyHex = Convert.ToHexString(privateKeyBytes).ToLowerInvariant();
-        var publicKeyHex = Convert.ToHexString(publicKeyBytes).ToLowerInvariant();
+        var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(privateKeyBytes);
+        var publicKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKeyBytes);
         var address = account.Address.EncodeAsString();   // real SHA-512/256 checksum + base32
         var seedPhrase = account.ToMnemonic();            // real, restorable 25-word mnemonic
 
@@ -92,25 +92,25 @@ public class WalletKeyService
         Array.Copy(seed, 0, privateKeyBytes, 0, 32);
         Array.Copy(publicKey, 0, privateKeyBytes, 32, 32);
 
-        var privateKeyHex = Convert.ToHexString(privateKeyBytes).ToLowerInvariant();
+        var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(privateKeyBytes);
         // Solana address is the base58-encoded public key
         var address = Base58Encode(publicKey);
         var seedPhrase = GenerateMnemonic(seed);
 
-        return (Convert.ToHexString(publicKey).ToLowerInvariant(), privateKeyHex, address, seedPhrase);
+        return (AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKey), privateKeyHex, address, seedPhrase);
     }
 
     private (string, string, string, string?) GenerateEthereumKeypair()
     {
         // Ethereum uses secp256k1
         var privateKeyBytes = RandomNumberGenerator.GetBytes(32);
-        var privateKeyHex = Convert.ToHexString(privateKeyBytes).ToLowerInvariant();
+        var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(privateKeyBytes);
         var publicKey = DeriveSecp256k1PublicKey(privateKeyBytes);
         // Ethereum address is the last 20 bytes of keccak256(publicKey)
         var address = EthereumAddressFromPublicKey(publicKey);
         var seedPhrase = GenerateMnemonic(privateKeyBytes);
 
-        return (Convert.ToHexString(publicKey).ToLowerInvariant(), privateKeyHex, address, seedPhrase);
+        return (AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKey), privateKeyHex, address, seedPhrase);
     }
 
     // ─── Ed25519 public key derivation (simplified) ───
@@ -181,7 +181,7 @@ public class WalletKeyService
         var addressBytes = new byte[20];
         Array.Copy(hash, hash.Length - 20, addressBytes, 0, 20);
 
-        return "0x" + Convert.ToHexString(addressBytes).ToLowerInvariant();
+        return "0x" + AZOA.WebAPI.Helpers.Encoding.ToLowerHex(addressBytes);
     }
 
     // ─── AES-256-GCM encryption ───
@@ -202,7 +202,7 @@ public class WalletKeyService
         Array.Copy(tag, 0, result, 12, 16);
         Array.Copy(ciphertext, 0, result, 28, ciphertext.Length);
 
-        return Convert.ToHexString(result).ToLowerInvariant();
+        return AZOA.WebAPI.Helpers.Encoding.ToLowerHex(result);
     }
 
     private string AesGcmDecrypt(string encryptedHex)

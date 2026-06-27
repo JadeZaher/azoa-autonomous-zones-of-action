@@ -39,7 +39,7 @@ internal static class SurrealTestSchema
     public static async Task BootstrapWithExtraAsync(string testNamespace, string? extraDdl, params string[] tableGoldenNames)
     {
         var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
 
         // 1. Namespace at ROOT (no NS/DB headers — the identifier is interpolated).
         using (var root = NewClient(credentials))
@@ -82,7 +82,7 @@ internal static class SurrealTestSchema
     public static async Task DropAsync(string testNamespace)
     {
         var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
+            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
         using var root = NewClient(credentials);
         try { await PostAsync(root, $"REMOVE NAMESPACE IF EXISTS {testNamespace}"); }
         catch { /* best-effort teardown */ }
@@ -98,7 +98,7 @@ internal static class SurrealTestSchema
     private static async Task PostAsync(HttpClient client, string surql)
     {
         var resp = await client.PostAsync("/sql",
-            new StringContent(surql, Encoding.UTF8, "text/plain"));
+            new StringContent(surql, System.Text.Encoding.UTF8, "text/plain"));
         // Surface DDL failures rather than swallowing them — a failed schema
         // apply must not masquerade as a passing (but tableless) test.
         var body = await resp.Content.ReadAsStringAsync();

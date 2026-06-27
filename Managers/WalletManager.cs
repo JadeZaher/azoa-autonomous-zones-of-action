@@ -241,7 +241,7 @@ public class WalletManager : IWalletManager
     {
         var assets = new List<PortfolioAsset>();
 
-        var nativeDecimals = BlockchainAmounts.NativeDecimalsFor(chainType);
+        var nativeDecimals = Amounts.NativeDecimalsFor(chainType);
         assets.Add(new PortfolioAsset
         {
             Id = symbol,
@@ -251,7 +251,7 @@ public class WalletManager : IWalletManager
             Decimals = nativeDecimals,
             // The provider balance is already in whole-coin (display) units; derive the
             // base-unit raw amount from the chain's native decimals.
-            RawAmount = BlockchainAmounts.ToBaseUnits(nativeDisplayBalance, nativeDecimals),
+            RawAmount = Amounts.ToBaseUnits(nativeDisplayBalance, nativeDecimals),
             DisplayAmount = nativeDisplayBalance.ToString(System.Globalization.CultureInfo.InvariantCulture),
             Chain = chainType,
             IconRef = null
@@ -269,7 +269,7 @@ public class WalletManager : IWalletManager
                 Name = string.IsNullOrWhiteSpace(fungible.Name) ? fungible.AssetId : fungible.Name,
                 Decimals = fungible.Decimals,
                 RawAmount = fungible.RawAmount,
-                DisplayAmount = BlockchainAmounts.FromBaseUnits(fungible.RawAmount, fungible.Decimals),
+                DisplayAmount = Amounts.FromBaseUnits(fungible.RawAmount, fungible.Decimals),
                 Chain = chainType,
                 IconRef = null
             });

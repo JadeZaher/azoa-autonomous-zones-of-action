@@ -74,6 +74,6 @@ public static class HealthCheckExtensions
             WriteIndented = false
         });
 
-        await context.Response.WriteAsync(json, Encoding.UTF8);
+        await context.Response.WriteAsync(json, System.Text.Encoding.UTF8);
     }
 }

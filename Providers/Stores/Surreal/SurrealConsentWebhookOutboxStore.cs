@@ -112,7 +112,7 @@ public sealed class SurrealConsentWebhookOutboxStore : IConsentWebhookOutboxStor
             var q = SurrealQuery
                 .Of("UPDATE type::record($_t, $_id) SET status = $_delivered, last_error = NONE WHERE status = $_pending RETURN AFTER")
                 .WithParam("_t", Table)
-                .WithParam("_id", ToSurrealId(id))
+                .WithParam("_id", SurrealId.ToSurrealId(id))
                 .WithParam("_delivered", StatusDelivered)
                 .WithParam("_pending", StatusPending);
 
@@ -139,7 +139,7 @@ public sealed class SurrealConsentWebhookOutboxStore : IConsentWebhookOutboxStor
             var q = SurrealQuery
                 .Of("UPDATE type::record($_t, $_id) SET attempt_count = $_attempts, next_attempt_at = $_next, last_error = $_error WHERE status = $_pending RETURN AFTER")
                 .WithParam("_t", Table)
-                .WithParam("_id", ToSurrealId(id))
+                .WithParam("_id", SurrealId.ToSurrealId(id))
                 .WithParam("_attempts", attemptCount)
                 .WithParam("_next", nextUtc)
                 .WithParam("_error", (object?)Truncate(lastError, LastErrorMaxLength)!)
@@ -165,7 +165,7 @@ public sealed class SurrealConsentWebhookOutboxStore : IConsentWebhookOutboxStor
             var q = SurrealQuery
                 .Of("UPDATE type::record($_t, $_id) SET status = $_dead, last_error = $_error WHERE status = $_pending RETURN AFTER")
                 .WithParam("_t", Table)
-                .WithParam("_id", ToSurrealId(id))
+                .WithParam("_id", SurrealId.ToSurrealId(id))
                 .WithParam("_dead", StatusDeadLettered)
                 .WithParam("_error", (object?)Truncate(lastError, LastErrorMaxLength)!)
                 .WithParam("_pending", StatusPending);
@@ -183,19 +183,17 @@ public sealed class SurrealConsentWebhookOutboxStore : IConsentWebhookOutboxStor
 
     // ── Mapping ────────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
-    private static Guid FromSurrealId(string id) => Guid.ParseExact(id, "N");
 
     private static string? Truncate(string? s, int max) =>
         s is null || s.Length <= max ? s : s[..max];
 
     private static ConsentWebhookEventPoco FromDomain(ConsentWebhookEvent e) => new()
     {
-        Id               = ToSurrealId(e.Id),
-        TenantId         = SurrealLink.ToLink("avatar", ToSurrealId(e.TenantId)) ?? string.Empty,
+        Id               = SurrealId.ToSurrealId(e.Id),
+        TenantId         = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(e.TenantId)) ?? string.Empty,
         EventType        = e.EventType.ToString(),
-        GrantId          = SurrealLink.ToLink("consent_grant", ToSurrealId(e.GrantId)) ?? string.Empty,
-        AvatarId         = SurrealLink.ToLink("avatar", ToSurrealId(e.AvatarId)) ?? string.Empty,
+        GrantId          = SurrealLink.ToLink("consent_grant", SurrealId.ToSurrealId(e.GrantId)) ?? string.Empty,
+        AvatarId         = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(e.AvatarId)) ?? string.Empty,
         Scopes           = e.Scopes ?? string.Empty,
         ParticipationRef = e.ParticipationRef,
         OccurredAt       = new DateTimeOffset(DateTime.SpecifyKind(e.OccurredAt, DateTimeKind.Utc)),
@@ -209,11 +207,11 @@ public sealed class SurrealConsentWebhookOutboxStore : IConsentWebhookOutboxStor
 
     private static ConsentWebhookEvent ToDomain(ConsentWebhookEventPoco p) => new()
     {
-        Id               = FromSurrealId(StripIdPrefix(p.Id)),
-        TenantId         = FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
+        Id               = SurrealId.FromSurrealId(StripIdPrefix(p.Id)),
+        TenantId         = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
         EventType        = Enum.TryParse<ConsentWebhookEventType>(p.EventType, ignoreCase: true, out var t) ? t : ConsentWebhookEventType.Granted,
-        GrantId          = FromSurrealId(SurrealLink.FromLink(p.GrantId)!),
-        AvatarId         = FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+        GrantId          = SurrealId.FromSurrealId(SurrealLink.FromLink(p.GrantId)!),
+        AvatarId         = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
         Scopes           = p.Scopes ?? string.Empty,
         ParticipationRef = p.ParticipationRef,
         OccurredAt       = p.OccurredAt.UtcDateTime,

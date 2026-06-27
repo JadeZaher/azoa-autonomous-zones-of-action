@@ -43,7 +43,7 @@ public static class TinymanV2PoolLocator
 
         // Algorand logicsig account address = Sha512_256("Program" || program).
         var prefixed = new byte[7 + program.Length];
-        Encoding.ASCII.GetBytes("Program").CopyTo(prefixed, 0);
+        System.Text.Encoding.ASCII.GetBytes("Program").CopyTo(prefixed, 0);
         program.CopyTo(prefixed, 7);
 
         var publicKey = Sha512_256(prefixed); // 32 bytes

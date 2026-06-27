@@ -29,7 +29,7 @@ public class Ed25519SignatureVerifierTests
         var seed = account.KeyPair.ClearTextPrivateKey;
         var seed32 = seed.Length == 32 ? seed : seed[..32];
         var priv = new Ed25519PrivateKeyParameters(seed32, 0);
-        var msgBytes = Encoding.UTF8.GetBytes(message);
+        var msgBytes = System.Text.Encoding.UTF8.GetBytes(message);
 
         var signer = new Ed25519Signer();
         signer.Init(true, priv);
@@ -50,7 +50,7 @@ public class Ed25519SignatureVerifierTests
     public void VerifyAlgorand_TamperedMessage_ReturnsFalse()
     {
         var (address, _, signature) = RealSignedChallenge("AZOA-AUTH-v1 challenge nonce-abc");
-        var tampered = Encoding.UTF8.GetBytes("AZOA-AUTH-v1 challenge nonce-XYZ");
+        var tampered = System.Text.Encoding.UTF8.GetBytes("AZOA-AUTH-v1 challenge nonce-XYZ");
         _verifier.VerifyAlgorand(address, tampered, signature).Should().BeFalse();
     }
 
@@ -71,7 +71,7 @@ public class Ed25519SignatureVerifierTests
 
     [Fact]
     public void VerifyAlgorand_MalformedAddress_FailsClosed()
-        => _verifier.VerifyAlgorand("NOT-AN-ADDRESS", Encoding.UTF8.GetBytes("x"), new byte[64]).Should().BeFalse();
+        => _verifier.VerifyAlgorand("NOT-AN-ADDRESS", System.Text.Encoding.UTF8.GetBytes("x"), new byte[64]).Should().BeFalse();
 
     [Fact]
     public void Verify_UnsupportedChain_Throws()

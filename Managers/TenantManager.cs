@@ -282,7 +282,7 @@ public class TenantManager : ITenantManager
     private string GenerateChildJwt(Guid userAvatarId, Guid tenantId, IEnumerable<string> scopes, DateTime notBefore, DateTime expiresAt)
     {
         var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+        var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
         var claims = new List<Claim>

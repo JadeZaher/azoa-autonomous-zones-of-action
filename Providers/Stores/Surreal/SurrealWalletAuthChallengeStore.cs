@@ -192,12 +192,10 @@ public sealed class SurrealWalletAuthChallengeStore : IWalletAuthChallengeStore
 
     // ── Mapping ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
-    private static Guid FromSurrealId(string id) => Guid.ParseExact(id, "N");
 
     private static WalletAuthChallengePoco FromDomain(WalletAuthChallenge c) => new()
     {
-        Id            = ToSurrealId(c.Id),
+        Id            = SurrealId.ToSurrealId(c.Id),
         Nonce         = c.Nonce,
         Address       = c.Address,
         ChainType     = c.ChainType,
@@ -211,7 +209,7 @@ public sealed class SurrealWalletAuthChallengeStore : IWalletAuthChallengeStore
 
     private static WalletAuthChallenge ToDomain(WalletAuthChallengePoco p) => new()
     {
-        Id            = FromSurrealId(p.Id),
+        Id            = SurrealId.FromSurrealId(p.Id),
         Nonce         = p.Nonce,
         Address       = p.Address,
         ChainType     = p.ChainType,

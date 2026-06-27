@@ -39,7 +39,7 @@ public sealed class SurrealKycStore : IKycStore
     {
         try
         {
-            var q = SurrealQuery.SelectById(KycSubmission.SchemaNameConst, ToSurrealId(id));
+            var q = SurrealQuery.SelectById(KycSubmission.SchemaNameConst, SurrealId.ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
             return new AZOAResult<KycSubmission>
             {
@@ -60,7 +60,7 @@ public sealed class SurrealKycStore : IKycStore
             var q = SurrealQuery
                 .Of("SELECT * FROM type::table($_t) WHERE avatar_id = $_avatar ORDER BY submitted_at DESC LIMIT 1")
                 .WithParam("_t",      KycSubmission.SchemaNameConst)
-                .WithParam("_avatar", SurrealLink.ToLink("avatar", ToSurrealId(avatarId)));
+                .WithParam("_avatar", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)));
 
             var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
             return new AZOAResult<KycSubmission>
@@ -82,7 +82,7 @@ public sealed class SurrealKycStore : IKycStore
             var q = SurrealQuery
                 .Of("SELECT * FROM type::table($_t) WHERE avatar_id = $_avatar AND status INSIDE $_active ORDER BY submitted_at DESC LIMIT 1")
                 .WithParam("_t",      KycSubmission.SchemaNameConst)
-                .WithParam("_avatar", SurrealLink.ToLink("avatar", ToSurrealId(avatarId)))
+                .WithParam("_avatar", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)))
                 .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
 
             var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
@@ -154,7 +154,7 @@ public sealed class SurrealKycStore : IKycStore
             var q = SurrealQuery
                 .Of("SELECT * FROM type::table($_t) WHERE submission_id = $_submission ORDER BY created_date ASC")
                 .WithParam("_t",          KycDocument.SchemaNameConst)
-                .WithParam("_submission", SurrealLink.ToLink(KycSubmission.SchemaNameConst, ToSurrealId(submissionId)));
+                .WithParam("_submission", SurrealLink.ToLink(KycSubmission.SchemaNameConst, SurrealId.ToSurrealId(submissionId)));
 
             var rows = await _executor.QueryAsync<KycDocument>(q, ct);
             return new AZOAResult<IEnumerable<KycDocument>>
@@ -196,8 +196,6 @@ public sealed class SurrealKycStore : IKycStore
 
     // ── Mapping ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id)
-        => id.ToString("N").ToLowerInvariant();
 
     /// <summary>
     /// Produce a write-ready clone whose FK fields carry the SurrealDB record-link

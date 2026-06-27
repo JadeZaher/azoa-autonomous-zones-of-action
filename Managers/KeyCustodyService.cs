@@ -337,7 +337,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
         // Algorand2 persists the private key as hex of the raw ClearTextPrivateKey
         // bytes (WalletKeyService.GenerateAlgorandKeypair:78). FromHexString recovers
         // those exact bytes; the signer reconstructs `new Account(bytes)` from them.
-        byte[] key = FromHexOrUtf8(keyHex);
+        byte[] key = AZOA.WebAPI.Helpers.Encoding.FromHexOrUtf8(keyHex);
         try
         {
             result.Result = await sign(key);
@@ -355,31 +355,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
         }
     }
 
-    /// <summary>
-    /// Decode the decrypted key string to zeroable bytes. Algorand private keys are
-    /// stored as hex (<c>WalletKeyService.GenerateAlgorandKeypair</c>); fall back to
-    /// UTF-8 bytes for any non-hex payload (e.g. a mnemonic string) so the byte[]
-    /// contract holds for every chain.
-    /// </summary>
-    private static byte[] FromHexOrUtf8(string value)
-    {
-        if (IsHex(value))
-            return Convert.FromHexString(value);
-        return System.Text.Encoding.UTF8.GetBytes(value);
-    }
-
     /// <summary>UTF-8 bytes of a transient secret string, solely so the buffer can be
     /// zeroed after re-encryption (the string itself cannot be — see P1 caveat).</summary>
     private static byte[] ToZeroableBuffer(string value) => System.Text.Encoding.UTF8.GetBytes(value);
-
-    private static bool IsHex(string value)
-    {
-        if (value.Length == 0 || (value.Length % 2) != 0) return false;
-        foreach (var c in value)
-        {
-            var isHexDigit = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-            if (!isHexDigit) return false;
-        }
-        return true;
-    }
 }

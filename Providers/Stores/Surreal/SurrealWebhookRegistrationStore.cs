@@ -59,7 +59,7 @@ public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
             // read another tenant's registration through this seam (H5).
             var q = SurrealQuery
                 .Of("SELECT * FROM webhook_registration WHERE tenant_id = $_tenant LIMIT 1")
-                .WithParam("_tenant", SurrealLink.ToLink("avatar", ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(tenantId)));
             var row = await _executor.QuerySingleAsync<WebhookRegistrationPoco>(q, ct);
             return new AZOAResult<WebhookRegistration>
             {
@@ -85,7 +85,7 @@ public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
                 .Of("UPDATE webhook_registration SET secret = $_secret, secret_rotated_at = $_now WHERE tenant_id = $_tenant RETURN AFTER")
                 .WithParam("_secret", newSecret)
                 .WithParam("_now", nowUtc)
-                .WithParam("_tenant", SurrealLink.ToLink("avatar", ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(tenantId)));
 
             var resp = await _executor.ExecuteAsync(q, ct);
             if (resp.Count == 0 || !resp[0].IsOk)
@@ -100,13 +100,11 @@ public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
 
     // ── Mapping ────────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
-    private static Guid FromSurrealId(string id) => Guid.ParseExact(id, "N");
 
     private static WebhookRegistrationPoco FromDomain(WebhookRegistration r) => new()
     {
-        Id              = ToSurrealId(r.Id),
-        TenantId        = SurrealLink.ToLink("avatar", ToSurrealId(r.TenantId)) ?? string.Empty,
+        Id              = SurrealId.ToSurrealId(r.Id),
+        TenantId        = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(r.TenantId)) ?? string.Empty,
         Url             = r.Url ?? string.Empty,
         Secret          = r.Secret ?? string.Empty,
         SecretRotatedAt = r.SecretRotatedAt.HasValue
@@ -118,8 +116,8 @@ public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
 
     private static WebhookRegistration ToDomain(WebhookRegistrationPoco p) => new()
     {
-        Id              = FromSurrealId(StripIdPrefix(p.Id)),
-        TenantId        = FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
+        Id              = SurrealId.FromSurrealId(StripIdPrefix(p.Id)),
+        TenantId        = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
         Url             = p.Url ?? string.Empty,
         Secret          = p.Secret ?? string.Empty,
         SecretRotatedAt = p.SecretRotatedAt?.UtcDateTime,

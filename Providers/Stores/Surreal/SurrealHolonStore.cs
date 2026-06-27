@@ -40,7 +40,7 @@ public sealed class SurrealHolonStore : IHolonStore
             var q = SurrealQuery
                 .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  HolonPoco.HolonTable)
-                .WithParam("_id", ToSurrealId(id));
+                .WithParam("_id", SurrealId.ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<HolonPoco>(q, ct);
             return new AZOAResult<IHolon>
             {
@@ -80,7 +80,7 @@ public sealed class SurrealHolonStore : IHolonStore
 
                 if (query.AvatarId.HasValue)
                 {
-                    var avatarIdStr = SurrealLink.ToLink("avatar", ToSurrealId(query.AvatarId.Value));
+                    var avatarIdStr = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(query.AvatarId.Value));
                     builder = builder.Where(h => h.AvatarId == avatarIdStr);
                     hasDbFilter = true;
                 }
@@ -115,7 +115,7 @@ public sealed class SurrealHolonStore : IHolonStore
 
                 if (query.ParentHolonId.HasValue)
                 {
-                    var parentIdStr = SurrealLink.ToLink(HolonPoco.HolonTable, ToSurrealId(query.ParentHolonId.Value));
+                    var parentIdStr = SurrealLink.ToLink(HolonPoco.HolonTable, SurrealId.ToSurrealId(query.ParentHolonId.Value));
                     builder = builder.Where(h => h.ParentHolonId == parentIdStr);
                     hasDbFilter = true;
                 }
@@ -192,7 +192,7 @@ public sealed class SurrealHolonStore : IHolonStore
             var checkQ = SurrealQuery
                 .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  HolonPoco.HolonTable)
-                .WithParam("_id", ToSurrealId(id));
+                .WithParam("_id", SurrealId.ToSurrealId(id));
             var existing = await _executor.QuerySingleAsync<HolonPoco>(checkQ, ct);
             if (existing == null)
                 return new AZOAResult<bool> { IsError = true, Message = "Holon not found.", Result = false };
@@ -200,7 +200,7 @@ public sealed class SurrealHolonStore : IHolonStore
             var q = SurrealQuery
                 .Of("DELETE type::record($_t, $_id)")
                 .WithParam("_t",  HolonPoco.HolonTable)
-                .WithParam("_id", ToSurrealId(id));
+                .WithParam("_id", SurrealId.ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new AZOAResult<bool> { Result = true, Message = "Deleted." };
@@ -214,11 +214,7 @@ public sealed class SurrealHolonStore : IHolonStore
 
     // ── Mapping ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id)
-        => id.ToString("N").ToLowerInvariant();
 
-    private static Guid FromSurrealId(string id)
-        => Guid.ParseExact(id, "N");
 
     private static HolonPoco ToPoco(IHolon h)
     {
@@ -238,7 +234,7 @@ public sealed class SurrealHolonStore : IHolonStore
         JsonElement? peerIdsJson = null;
         if (h.PeerHolonIds is { Count: > 0 })
         {
-            var strs = h.PeerHolonIds.Select(ToSurrealId).ToList();
+            var strs = h.PeerHolonIds.Select(SurrealId.ToSurrealId).ToList();
             var raw  = JsonSerializer.Serialize(strs, SurrealJsonOptions.Default);
             using var doc = JsonDocument.Parse(raw);
             peerIdsJson = doc.RootElement.Clone();
@@ -246,11 +242,11 @@ public sealed class SurrealHolonStore : IHolonStore
 
         return new HolonPoco
         {
-            Id             = ToSurrealId(h.Id),
+            Id             = SurrealId.ToSurrealId(h.Id),
             Name           = h.Name,
             Description    = h.Description,
-            ParentHolonId  = h.ParentHolonId.HasValue ? SurrealLink.ToLink(HolonPoco.HolonTable, ToSurrealId(h.ParentHolonId.Value)) : null,
-            AvatarId       = h.AvatarId.HasValue ? SurrealLink.ToLink("avatar", ToSurrealId(h.AvatarId.Value)) : null,
+            ParentHolonId  = h.ParentHolonId.HasValue ? SurrealLink.ToLink(HolonPoco.HolonTable, SurrealId.ToSurrealId(h.ParentHolonId.Value)) : null,
+            AvatarId       = h.AvatarId.HasValue ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(h.AvatarId.Value)) : null,
             ProviderName   = h.ProviderName,
             ChainId        = h.ChainId,
             AssetType      = h.AssetType,
@@ -291,18 +287,18 @@ public sealed class SurrealHolonStore : IHolonStore
                 if (strs != null)
                     // Stored as bare hex ids (array<string>); tolerate a legacy
                     // `holon:<id>` link form by stripping the prefix if present.
-                    peerHolonIds = strs.Select(s => FromSurrealId(SurrealLink.FromLink(s) ?? s)).ToList();
+                    peerHolonIds = strs.Select(s => SurrealId.FromSurrealId(SurrealLink.FromLink(s) ?? s)).ToList();
             }
             catch { /* best-effort */ }
         }
 
         return new Holon
         {
-            Id            = FromSurrealId(p.Id),
+            Id            = SurrealId.FromSurrealId(p.Id),
             Name          = p.Name,
             Description   = p.Description,
-            ParentHolonId = p.ParentHolonId is not null ? FromSurrealId(SurrealLink.FromLink(p.ParentHolonId)!) : null,
-            AvatarId      = p.AvatarId is not null ? FromSurrealId(SurrealLink.FromLink(p.AvatarId)!) : null,
+            ParentHolonId = p.ParentHolonId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(p.ParentHolonId)!) : null,
+            AvatarId      = p.AvatarId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!) : null,
             ProviderName  = p.ProviderName,
             ChainId       = p.ChainId,
             AssetType     = p.AssetType,

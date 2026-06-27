@@ -60,7 +60,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     {
         var q = SurrealQuery
             .Of("SELECT * FROM api_key WHERE avatar_id = $_avatar ORDER BY created_date DESC")
-            .WithParam("_avatar", SurrealLink.ToLink("avatar", ToSurrealId(avatarId)));
+            .WithParam("_avatar", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)));
 
         var rows = await _executor.QueryAsync<ApiKeyPoco>(q, ct);
         var result = new List<ApiKey>(rows.Count);
@@ -70,7 +70,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
 
     public async Task<ApiKey?> GetByIdForAvatarAsync(Guid id, Guid avatarId, CancellationToken ct)
     {
-        var surrealId = ToSurrealId(id);
+        var surrealId = SurrealId.ToSurrealId(id);
         var q = SurrealQuery
             .Of("SELECT * FROM type::record($_t, $_id)")
             .WithParam("_t", Table)
@@ -80,7 +80,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         if (rows.Count == 0) return null;
 
         var poco = rows[0];
-        var avatarHex = SurrealLink.ToLink("avatar", ToSurrealId(avatarId));
+        var avatarHex = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
         // Scoped to owner — surface as "not found" rather than "forbidden" so
         // a cross-avatar probe cannot distinguish "no such key" from
         // "exists but belongs to someone else".
@@ -114,8 +114,8 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
 
     public async Task<bool> RevokeAsync(Guid id, Guid avatarId, DateTime revokedAt, CancellationToken ct)
     {
-        var surrealId = ToSurrealId(id);
-        var avatarHex = SurrealLink.ToLink("avatar", ToSurrealId(avatarId));
+        var surrealId = SurrealId.ToSurrealId(id);
+        var avatarHex = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
         var revokedUtc = DateTime.SpecifyKind(revokedAt, DateTimeKind.Utc);
 
         var q = SurrealQuery
@@ -132,8 +132,8 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
 
     public async Task<bool> DeleteAsync(Guid id, Guid avatarId, CancellationToken ct)
     {
-        var surrealId = ToSurrealId(id);
-        var avatarHex = SurrealLink.ToLink("avatar", ToSurrealId(avatarId));
+        var surrealId = SurrealId.ToSurrealId(id);
+        var avatarHex = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
 
         var q = SurrealQuery
             .Of("DELETE type::record($_t, $_id) WHERE avatar_id = $_avatar RETURN BEFORE")
@@ -156,7 +156,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         // worst case is a stale last_used_at, which the management UI tolerates.
         try
         {
-            var surrealId = ToSurrealId(id);
+            var surrealId = SurrealId.ToSurrealId(id);
             var lastUtc = DateTime.SpecifyKind(lastUsedAt, DateTimeKind.Utc);
 
             var q = SurrealQuery
@@ -175,15 +175,12 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
 
     // ── Mapping helpers ───────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
-    private static Guid FromSurrealId(string id)
-        => Guid.ParseExact(id, "N");
 
     private static ApiKeyPoco FromDomain(ApiKey k) => new()
     {
-        Id          = ToSurrealId(k.Id),
-        AvatarId    = SurrealLink.ToLink("avatar", ToSurrealId(k.AvatarId)) ?? string.Empty,
+        Id          = SurrealId.ToSurrealId(k.Id),
+        AvatarId    = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(k.AvatarId)) ?? string.Empty,
         Name        = k.Name ?? string.Empty,
         KeyHash     = k.KeyHash ?? string.Empty,
         KeyPrefix   = k.KeyPrefix ?? string.Empty,
@@ -203,8 +200,8 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
 
     private static ApiKey ToDomain(ApiKeyPoco p) => new()
     {
-        Id          = FromSurrealId(p.Id),
-        AvatarId    = FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+        Id          = SurrealId.FromSurrealId(p.Id),
+        AvatarId    = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
         Name        = p.Name ?? string.Empty,
         KeyHash     = p.KeyHash ?? string.Empty,
         KeyPrefix   = p.KeyPrefix ?? string.Empty,

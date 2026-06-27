@@ -46,9 +46,9 @@ public class SolanaSignerStubTests
     public void Solana_sign_fails_closed_with_no_signed_bytes()
     {
         var signer = new SolanaTransactionSigner();
-        using var key = new SigningKeyMaterial(Encoding.UTF8.GetBytes("not-a-real-key"));
+        using var key = new SigningKeyMaterial(System.Text.Encoding.UTF8.GetBytes("not-a-real-key"));
 
-        var result = signer.Sign(Encoding.UTF8.GetBytes("canonical-txn"), key);
+        var result = signer.Sign(System.Text.Encoding.UTF8.GetBytes("canonical-txn"), key);
 
         result.IsError.Should().BeTrue();
         result.Result.Should().BeNull();

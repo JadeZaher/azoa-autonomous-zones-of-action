@@ -308,7 +308,7 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             var status = await GetTransactionStatusAsync(txHash, ct);
             return new AZOAResult<AZOA.WebAPI.Models.Blockchain.ChainConfirmation>
             {
-                Result = AZOA.WebAPI.Core.Blockchain.ChainTxClassifier.Classify(status)
+                Result = AZOA.WebAPI.Helpers.ChainTxClassifier.Classify(status)
             };
         }
 

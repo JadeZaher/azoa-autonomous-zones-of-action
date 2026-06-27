@@ -74,7 +74,7 @@ public sealed class SurrealQuestStore : IQuestStore
     {
         try
         {
-            var surrealId = ToSurrealId(id);
+            var surrealId = SurrealId.ToSurrealId(id);
 
             var headQ = SurrealQuery
                 .Of("SELECT * FROM type::record($_t, $_id)")
@@ -102,7 +102,7 @@ public sealed class SurrealQuestStore : IQuestStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM quest WHERE avatar_id = $_avatar")
-                .WithParam("_avatar", SurrealLink.ToLink("avatar", ToSurrealId(avatarId)));
+                .WithParam("_avatar", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)));
 
             var rows = await _executor.QueryAsync<QuestPoco>(q, ct);
             return await HydrateManyAsync(rows, ct);
@@ -120,7 +120,7 @@ public sealed class SurrealQuestStore : IQuestStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM quest WHERE dapp_series_id = $_series")
-                .WithParam("_series", SurrealLink.ToLink("dapp_series", ToSurrealId(dappSeriesId)));
+                .WithParam("_series", SurrealLink.ToLink("dapp_series", SurrealId.ToSurrealId(dappSeriesId)));
 
             var rows = await _executor.QueryAsync<QuestPoco>(q, ct);
             return await HydrateManyAsync(rows, ct);
@@ -142,7 +142,7 @@ public sealed class SurrealQuestStore : IQuestStore
             if (quest.Id == Guid.Empty)
                 quest.Id = Guid.NewGuid();
 
-            var surrealId = ToSurrealId(quest.Id);
+            var surrealId = SurrealId.ToSurrealId(quest.Id);
             var poco      = FromDomain(quest);
 
             // Step 1: clear any prior child rows for this quest so the upsert
@@ -228,7 +228,7 @@ public sealed class SurrealQuestStore : IQuestStore
     {
         try
         {
-            var surrealId = ToSurrealId(id);
+            var surrealId = SurrealId.ToSurrealId(id);
 
             // Pre-check existence: a DELETE of a missing row is a silent no-op in
             // SurrealDB, and the post-delete absence check cannot distinguish
@@ -297,7 +297,7 @@ public sealed class SurrealQuestStore : IQuestStore
             var q = SurrealQuery
                 .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  QuestTemplateTable)
-                .WithParam("_id", ToSurrealId(id));
+                .WithParam("_id", SurrealId.ToSurrealId(id));
 
             var rows = await _executor.QueryAsync<QuestTemplatePoco>(q, ct);
             return rows.Count == 0
@@ -358,7 +358,7 @@ public sealed class SurrealQuestStore : IQuestStore
     {
         try
         {
-            var surrealId = ToSurrealId(id);
+            var surrealId = SurrealId.ToSurrealId(id);
             var del = SurrealQuery
                 .Of("DELETE type::record($_t, $_id)")
                 .WithParam("_t",  QuestTemplateTable)
@@ -446,7 +446,7 @@ public sealed class SurrealQuestStore : IQuestStore
     /// </summary>
     private async Task HydrateChildrenAsync(Quest quest, CancellationToken ct)
     {
-        var surrealId = ToSurrealId(quest.Id);
+        var surrealId = SurrealId.ToSurrealId(quest.Id);
 
         var questLink = SurrealLink.ToLink("quest", surrealId);
 
@@ -488,12 +488,12 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestPoco FromDomain(Quest q) => new()
     {
-        Id           = ToSurrealId(q.Id),
-        AvatarId     = SurrealLink.ToLink("avatar", ToSurrealId(q.AvatarId)) ?? string.Empty,
+        Id           = SurrealId.ToSurrealId(q.Id),
+        AvatarId     = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(q.AvatarId)) ?? string.Empty,
         Name         = q.Name ?? string.Empty,
         Description  = q.Description,
-        TemplateId   = q.TemplateId.HasValue   ? SurrealLink.ToLink("quest_template", ToSurrealId(q.TemplateId.Value))   : null,
-        DappSeriesId = q.DappSeriesId.HasValue ? SurrealLink.ToLink("dapp_series", ToSurrealId(q.DappSeriesId.Value)) : null,
+        TemplateId   = q.TemplateId.HasValue   ? SurrealLink.ToLink("quest_template", SurrealId.ToSurrealId(q.TemplateId.Value))   : null,
+        DappSeriesId = q.DappSeriesId.HasValue ? SurrealLink.ToLink("dapp_series", SurrealId.ToSurrealId(q.DappSeriesId.Value)) : null,
         Metadata     = MetadataToJsonObject(q.Metadata),
         CreatedDate  = ToUtcOffset(q.CreatedDate),
     };
@@ -517,9 +517,9 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestNodePoco FromDomain(QuestNode n) => new()
     {
-        Id              = ToSurrealId(n.Id),
-        QuestId         = SurrealLink.ToLink("quest", ToSurrealId(n.QuestId)) ?? string.Empty,
-        NodeTemplateId  = n.NodeTemplateId.HasValue ? SurrealLink.ToLink("quest_node_template", ToSurrealId(n.NodeTemplateId.Value)) : null,
+        Id              = SurrealId.ToSurrealId(n.Id),
+        QuestId         = SurrealLink.ToLink("quest", SurrealId.ToSurrealId(n.QuestId)) ?? string.Empty,
+        NodeTemplateId  = n.NodeTemplateId.HasValue ? SurrealLink.ToLink("quest_node_template", SurrealId.ToSurrealId(n.NodeTemplateId.Value)) : null,
         NodeType        = n.NodeType.ToString(),
         Name            = n.Name ?? string.Empty,
         Config          = n.Config ?? "{}",
@@ -545,10 +545,10 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestEdgePoco FromDomain(QuestEdge e) => new()
     {
-        Id            = ToSurrealId(e.Id),
-        QuestId       = SurrealLink.ToLink("quest", ToSurrealId(e.QuestId)) ?? string.Empty,
-        SourceNodeId  = SurrealLink.ToLink("quest_node", ToSurrealId(e.SourceNodeId)) ?? string.Empty,
-        TargetNodeId  = SurrealLink.ToLink("quest_node", ToSurrealId(e.TargetNodeId)) ?? string.Empty,
+        Id            = SurrealId.ToSurrealId(e.Id),
+        QuestId       = SurrealLink.ToLink("quest", SurrealId.ToSurrealId(e.QuestId)) ?? string.Empty,
+        SourceNodeId  = SurrealLink.ToLink("quest_node", SurrealId.ToSurrealId(e.SourceNodeId)) ?? string.Empty,
+        TargetNodeId  = SurrealLink.ToLink("quest_node", SurrealId.ToSurrealId(e.TargetNodeId)) ?? string.Empty,
         Condition     = e.Condition,
         EdgeType      = e.EdgeType.ToString(),
     };
@@ -567,10 +567,10 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestTemplatePoco FromDomain(QuestTemplate t) => new()
     {
-        Id             = ToSurrealId(t.Id),
+        Id             = SurrealId.ToSurrealId(t.Id),
         Name           = t.Name ?? string.Empty,
         Description    = t.Description,
-        AuthorAvatarId = ToSurrealId(t.AuthorAvatarId),
+        AuthorAvatarId = SurrealId.ToSurrealId(t.AuthorAvatarId),
         Parameters     = t.Parameters ?? "{}",
         Version        = string.IsNullOrEmpty(t.Version) ? "1.0.0" : t.Version,
         IsPublic       = t.IsPublic,
@@ -603,9 +603,9 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestTemplateNodePoco FromDomainTemplateNode(QuestTemplateNode n) => new()
     {
-        Id              = ToSurrealId(n.Id),
+        Id              = SurrealId.ToSurrealId(n.Id),
         SlotId          = n.SlotId,
-        NodeTemplateId  = ToSurrealId(n.NodeTemplateId),
+        NodeTemplateId  = SurrealId.ToSurrealId(n.NodeTemplateId),
         ParamOverrides  = n.ParamOverrides ?? "{}",
         IsEntry         = n.IsEntry,
         IsTerminal      = n.IsTerminal,
@@ -624,7 +624,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestTemplateEdgePoco FromDomainTemplateEdge(QuestTemplateEdge e) => new()
     {
-        Id            = ToSurrealId(e.Id),
+        Id            = SurrealId.ToSurrealId(e.Id),
         SourceSlotId  = e.SourceSlotId,
         TargetSlotId  = e.TargetSlotId,
         EdgeType      = e.EdgeType.ToString(),
@@ -643,7 +643,7 @@ public sealed class SurrealQuestStore : IQuestStore
 
     private static QuestNodeTemplatePoco FromDomain(QuestNodeTemplate t) => new()
     {
-        Id              = ToSurrealId(t.Id),
+        Id              = SurrealId.ToSurrealId(t.Id),
         Name            = t.Name ?? string.Empty,
         NodeType        = t.NodeType.ToString(),
         Description     = t.Description,
@@ -652,7 +652,7 @@ public sealed class SurrealQuestStore : IQuestStore
         InputSchema     = t.InputSchema    ?? "{}",
         OutputSchema    = t.OutputSchema   ?? "{}",
         Version         = string.IsNullOrEmpty(t.Version) ? "1.0.0" : t.Version,
-        AuthorAvatarId  = ToSurrealId(t.AuthorAvatarId),
+        AuthorAvatarId  = SurrealId.ToSurrealId(t.AuthorAvatarId),
         IsPublic        = t.IsPublic,
         Tags            = t.Tags?.ToList() ?? new List<string>(),
     };
@@ -675,7 +675,6 @@ public sealed class SurrealQuestStore : IQuestStore
 
     // ── Shared helpers ────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static Guid FromSurrealId(string id)
     {

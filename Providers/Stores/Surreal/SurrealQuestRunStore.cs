@@ -88,7 +88,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
             // request atomically — an error in either inner statement rolls
             // back both, satisfying the §6.1 fork write contract. The params
             // merge across the combined statements.
-            var parentSurrId = ToSurrealId(run.ParentRunId.Value);
+            var parentSurrId = SurrealId.ToSurrealId(run.ParentRunId.Value);
 
             // RELATE cannot parse an inline type::record(...) on either side of
             // the ->edge-> arrow (SurrealDB rejects it: "Unexpected token `::`").
@@ -138,7 +138,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
             var q = SurrealQuery
                 .Of("SELECT * FROM type::record($_t, $_id)")
                 .WithParam("_t",  RunTable)
-                .WithParam("_id", ToSurrealId(id));
+                .WithParam("_id", SurrealId.ToSurrealId(id));
 
             var rows = await _executor.QueryAsync<QuestRunPoco>(q, ct);
             return rows.Count == 0
@@ -163,7 +163,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
         try
         {
-            var surrealId = ToSurrealId(run.Id);
+            var surrealId = SurrealId.ToSurrealId(run.Id);
 
             // Pre-check existence so we can surface "not found" the same way
             // the in-memory store does (rather than silently CREATE on
@@ -223,7 +223,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM quest_run WHERE quest_id = $_qid")
-                .WithParam("_qid", SurrealLink.ToLink("quest", ToSurrealId(questId)));
+                .WithParam("_qid", SurrealLink.ToLink("quest", SurrealId.ToSurrealId(questId)));
 
             var rows = await _executor.QueryAsync<QuestRunPoco>(q, ct);
             return OkMany(rows.Select(ToDomain).ToList());
@@ -242,7 +242,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM quest_run WHERE avatar_id = $_aid")
-                .WithParam("_aid", SurrealLink.ToLink("avatar", ToSurrealId(avatarId)));
+                .WithParam("_aid", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)));
 
             var rows = await _executor.QueryAsync<QuestRunPoco>(q, ct);
             return OkMany(rows.Select(ToDomain).ToList());
@@ -308,7 +308,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
             // node — so we read the parent's full row via the graph edge, never
             // the parent_run_id scalar.
             var seed = await _executor.QueryAsync<QuestRunPoco>(
-                SurrealQuery<QuestRunPoco>.Key(ToSurrealId(runId)), ct);
+                SurrealQuery<QuestRunPoco>.Key(SurrealId.ToSurrealId(runId)), ct);
             if (seed.Count == 0)
                 return Missing<IEnumerable<QuestRun>>($"QuestRun {runId} not found.");
 
@@ -324,7 +324,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
                 var parentRows = await _executor.QueryAsync<QuestRunPoco>(
                     SurrealQuery<QuestRunPoco>
-                        .Key(ToSurrealId(current.Id))
+                        .Key(SurrealId.ToSurrealId(current.Id))
                         .Traverse<QuestRunPoco>(r => r.Out<ForkedFromEdge>().To<QuestRunPoco>()),
                     ct);
 
@@ -347,27 +347,27 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
     private static QuestRunPoco FromDomain(QuestRun r) => new()
     {
-        Id              = ToSurrealId(r.Id),
-        QuestId         = SurrealLink.ToLink("quest", ToSurrealId(r.QuestId)),
-        AvatarId        = SurrealLink.ToLink("avatar", ToSurrealId(r.AvatarId)),
+        Id              = SurrealId.ToSurrealId(r.Id),
+        QuestId         = SurrealLink.ToLink("quest", SurrealId.ToSurrealId(r.QuestId)),
+        AvatarId        = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(r.AvatarId)),
         // tenant-consent-delegation AC4: persist the acting tenant as a nullable
         // record<avatar> link so the seam's live consent check survives the async
         // saga hop. Mirrors SurrealBlockchainOperationStore's acting_tenant_id.
         ActingTenantId  = r.ActingTenantId.HasValue
-                          ? SurrealLink.ToLink("avatar", ToSurrealId(r.ActingTenantId.Value))
+                          ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(r.ActingTenantId.Value))
                           : null,
         Status          = r.Status.ToString(),
         StartedAt       = ToUtcOffset(r.StartedAt),
         EndedAt         = r.EndedAt.HasValue ? ToUtcOffset(r.EndedAt.Value) : null,
-        ParentRunId     = r.ParentRunId.HasValue     ? SurrealLink.ToLink("quest_run", ToSurrealId(r.ParentRunId.Value))     : null,
-        ForkedAtNodeId  = r.ForkedAtNodeId.HasValue  ? SurrealLink.ToLink("quest_node", ToSurrealId(r.ForkedAtNodeId.Value))  : null,
+        ParentRunId     = r.ParentRunId.HasValue     ? SurrealLink.ToLink("quest_run", SurrealId.ToSurrealId(r.ParentRunId.Value))     : null,
+        ForkedAtNodeId  = r.ForkedAtNodeId.HasValue  ? SurrealLink.ToLink("quest_node", SurrealId.ToSurrealId(r.ForkedAtNodeId.Value))  : null,
         ForkReason      = r.ForkReason,
         FailReason      = r.FailReason,
     };
 
     private static QuestRun ToDomain(QuestRunPoco p) => new()
     {
-        Id              = FromSurrealId(p.Id),
+        Id              = SurrealId.FromSurrealId(p.Id),
         QuestId         = string.IsNullOrEmpty(p.QuestId)  ? Guid.Empty : FromSurrealIdFk(SurrealLink.FromLink(p.QuestId)!),
         AvatarId        = string.IsNullOrEmpty(p.AvatarId) ? Guid.Empty : FromSurrealIdFk(SurrealLink.FromLink(p.AvatarId)!),
         // tenant-consent-delegation AC4: read the acting tenant back from the
@@ -384,10 +384,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
-    private static Guid FromSurrealId(string id)
-        => Guid.ParseExact(id, "N");
 
     private static Guid FromSurrealIdFk(string id)
     {

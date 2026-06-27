@@ -50,8 +50,8 @@ public sealed class KycManager : IKycManager
 
         var submission = new KycSubmission
         {
-            Id          = ToSurrealId(submissionId),
-            AvatarId    = ToSurrealId(avatarId),
+            Id          = SurrealId.ToSurrealId(submissionId),
+            AvatarId    = SurrealId.ToSurrealId(avatarId),
             Provider    = KycProvider.MANUAL,
             Status      = KycStatus.PENDING,
             SubmittedAt = now,
@@ -66,8 +66,8 @@ public sealed class KycManager : IKycManager
         // Persist the documents.
         var documents = model.Documents.Select(d => new KycDocument
         {
-            Id            = ToSurrealId(Guid.NewGuid()),
-            SubmissionId  = ToSurrealId(submissionId),
+            Id            = SurrealId.ToSurrealId(Guid.NewGuid()),
+            SubmissionId  = SurrealId.ToSurrealId(submissionId),
             Type          = d.Type,
             FileUrl       = d.FileUrl,
             FileName      = d.FileName,
@@ -170,7 +170,7 @@ public sealed class KycManager : IKycManager
 
         var now = DateTimeOffset.UtcNow;
         submission.Status       = KycStatus.APPROVED;
-        submission.ReviewerId   = ToSurrealId(reviewerAvatarId);
+        submission.ReviewerId   = SurrealId.ToSurrealId(reviewerAvatarId);
         submission.ReviewNotes  = notes;
         submission.ReviewedAt   = now;
         submission.ModifiedDate = now;
@@ -202,7 +202,7 @@ public sealed class KycManager : IKycManager
 
         var now = DateTimeOffset.UtcNow;
         submission.Status          = KycStatus.REJECTED;
-        submission.ReviewerId      = ToSurrealId(reviewerAvatarId);
+        submission.ReviewerId      = SurrealId.ToSurrealId(reviewerAvatarId);
         submission.ReviewNotes     = notes;
         submission.RejectionReason = rejectionReason;
         submission.ReviewedAt      = now;
@@ -277,7 +277,6 @@ public sealed class KycManager : IKycManager
         return Ok(true);
     }
 
-    private static string ToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
 
     private static KycDocumentModel ToDocumentModel(KycDocument d) => new()
     {
