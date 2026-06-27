@@ -5,7 +5,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 
-namespace AZOA.WebAPI.Managers;
+namespace AZOA.WebAPI.Services.Kyc;
 
 /// <summary>
 /// Reads the KYC ledger (<see cref="IKycStore"/>) to answer the gate questions.

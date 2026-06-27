@@ -12,6 +12,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Signing;
 using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.Base;

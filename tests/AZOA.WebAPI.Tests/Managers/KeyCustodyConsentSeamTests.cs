@@ -6,6 +6,8 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Services.Consent;
+using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 

@@ -4,6 +4,7 @@ using Moq;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Services.Consent;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 

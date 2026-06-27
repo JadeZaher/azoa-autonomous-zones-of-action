@@ -8,7 +8,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 
-namespace AZOA.WebAPI.Managers.Dex;
+namespace AZOA.WebAPI.Services.Dex;
 
 /// <summary>
 /// Jupiter v2 (Solana) DEX adapter. Mirrors the SDK's <c>JupiterAdapter</c>

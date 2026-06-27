@@ -18,7 +18,8 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
-using AZOA.WebAPI.Managers.Dex;
+using AZOA.WebAPI.Services.Avatar;
+using AZOA.WebAPI.Services.Dex;
 using AZOA.WebAPI.Models.Responses;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -468,7 +469,7 @@ builder.Services.AddScoped<IHolonManager, HolonManager>();
 // custody-key-management: decrypt→sign→zero resolver (the only signer-facing
 // key path besides WalletManager.ExportWalletAsync). Scoped to match IWalletStore.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKeyCustodyService,
-    AZOA.WebAPI.Managers.KeyCustodyService>();
+    AZOA.WebAPI.Services.Custody.KeyCustodyService>();
 // tenant-onboarding: tenant principal provisioning + cross-tenant isolation.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ITenantManager,
     AZOA.WebAPI.Managers.TenantManager>();
@@ -478,12 +479,12 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ITenantManager,
 // before any tenant-driven key decrypt. KeyCustodyService depends on this — it is
 // the single chokepoint's fail-closed authority.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ITenantConsentGate,
-    AZOA.WebAPI.Managers.TenantConsentGate>();
+    AZOA.WebAPI.Services.Consent.TenantConsentGate>();
 // The consent authority (grant/revoke/list) + the thin outbox emitter it calls.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentManager,
     AZOA.WebAPI.Managers.ConsentManager>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentWebhookEmitter,
-    AZOA.WebAPI.Managers.ConsentWebhookEmitter>();
+    AZOA.WebAPI.Services.Consent.ConsentWebhookEmitter>();
 // user-sovereign-identity: wallet-challenge auth + claim flow.
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.IWalletSignatureVerifier,
     AZOA.WebAPI.Core.Ed25519SignatureVerifier>();
@@ -522,7 +523,7 @@ else
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycManager,
     AZOA.WebAPI.Managers.KycManager>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycGateService,
-    AZOA.WebAPI.Managers.KycGateService>();
+    AZOA.WebAPI.Services.Kyc.KycGateService>();
 // fiat-stripe-bridge: idempotent, KYC-gated, tenant-callable allocation primitive.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationManager,
     AZOA.WebAPI.Managers.AllocationManager>();

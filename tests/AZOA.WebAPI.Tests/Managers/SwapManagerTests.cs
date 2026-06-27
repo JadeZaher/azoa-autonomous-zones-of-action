@@ -1,6 +1,6 @@
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Managers;
-using AZOA.WebAPI.Managers.Dex;
+using AZOA.WebAPI.Services.Dex;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using Microsoft.Extensions.Caching.Memory;
