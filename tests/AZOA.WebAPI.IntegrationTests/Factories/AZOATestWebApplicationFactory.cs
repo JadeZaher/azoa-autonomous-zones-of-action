@@ -29,6 +29,25 @@ namespace AZOA.WebAPI.IntegrationTests.Factories;
 /// </summary>
 public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
 {
+    /// <summary>
+    /// SurrealDB namespace the in-process app writes to for this factory.
+    ///
+    /// One factory exists per test class (IClassFixture), so this value gives
+    /// per-class isolation: classes run in parallel under their own namespace,
+    /// methods within a class share it and run serially. The value is a
+    /// server-safe Guid-hex identifier (no hyphens) generated once per factory.
+    ///
+    /// IntegrationTestBase reads this so the namespace it CREATES + applies the
+    /// generated schema to is the SAME namespace the app CONNECTS to. Before
+    /// this was wired the factory left SurrealDb:Namespace at its "azoa" default
+    /// while the harness created a different per-test guid namespace — every
+    /// controller write then faulted with "The namespace 'azoa' does not exist".
+    /// </summary>
+    public string TestNamespace { get; } = $"itest{Guid.NewGuid():N}";
+
+    /// <summary>Database the app + harness agree on (created by IntegrationTestBase).</summary>
+    public const string TestDatabase = "test";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("IntegrationTest");
@@ -50,6 +69,14 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
                 ["SurrealDb:Endpoint"] = SurrealTestDefaults.Endpoint,
                 ["SurrealDb:User"]     = SurrealTestDefaults.User,
                 ["SurrealDb:Password"] = SurrealTestDefaults.Password,
+
+                // Pin the app's namespace/database to the per-class test scope so
+                // the app writes to the SAME namespace IntegrationTestBase creates
+                // and schemas. Without these two keys the app fell back to the
+                // "azoa" default (SurrealConnectionOptions) which no test ever
+                // creates -> "The namespace 'azoa' does not exist" on every write.
+                ["SurrealDb:Namespace"] = TestNamespace,
+                ["SurrealDb:Database"]  = TestDatabase,
 
                 // Keep the AZOA provider key so Program.cs provider-selection code
                 // (if any) doesn't throw on missing config.

@@ -16,7 +16,9 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Create_ShouldReturnWalletWithAvatarId()
     {
-        var model = new WalletCreateModel { ChainType = "Solana", Address = "sol_addr_1", Label = "Main" };
+        // Address must satisfy WalletCreateModelValidator (^[a-zA-Z0-9]+$): the
+        // prior "sol_addr_1" had underscores and was rejected with a 400.
+        var model = new WalletCreateModel { ChainType = "Solana", Address = "soladdr1", Label = "Main" };
 
         var response = await Client.PostAsJsonAsync("api/wallet", model);
 
@@ -24,16 +26,19 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
         var result = await ReadResultAsync<Wallet>(response);
         result!.IsError.Should().BeFalse();
         result.Result!.ChainType.Should().Be("Solana");
-        result.Result.Address.Should().Be("sol_addr_1");
+        result.Result.Address.Should().Be("soladdr1");
     }
 
     [Fact]
     public async Task Create_DuplicateAddress_ReturnsBadRequest()
     {
         var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        await SeedWalletAsync(w => w.ForAvatar(avatarId).OnChain("Solana").WithAddress("dup_addr"));
+        // Address must be alphanumeric (WalletCreateModelValidator); both the
+        // seed and the duplicate attempt use the same value to trigger the
+        // duplicate-address 400. "dup_addr" had an underscore and failed at seed.
+        await SeedWalletAsync(w => w.ForAvatar(avatarId).OnChain("Solana").WithAddress("dupaddr"));
 
-        var model = new WalletCreateModel { ChainType = "Solana", Address = "dup_addr" };
+        var model = new WalletCreateModel { ChainType = "Solana", Address = "dupaddr" };
         var response = await Client.PostAsJsonAsync("api/wallet", model);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
