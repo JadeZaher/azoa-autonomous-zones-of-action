@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using AZOA.WebAPI.Managers.Dex;
+using AZOA.WebAPI.Services.Dex;
 using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Tests.Managers.Dex;

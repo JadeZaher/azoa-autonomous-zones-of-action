@@ -6,7 +6,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
 using AlgoAccount = Algorand.Algod.Model.Account;
 
-namespace AZOA.WebAPI.Managers;
+namespace AZOA.WebAPI.Services.Custody;
 
 // ─── DI registration (orchestrator applies to Program.cs — do NOT edit here) ───
 //

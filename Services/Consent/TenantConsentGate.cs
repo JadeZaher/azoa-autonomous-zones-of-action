@@ -6,7 +6,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 
-namespace AZOA.WebAPI.Managers;
+namespace AZOA.WebAPI.Services.Consent;
 
 /// <summary>
 /// The live consent check invoked by the single custody chokepoint

@@ -7,7 +7,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 
-namespace AZOA.WebAPI.Managers.Dex;
+namespace AZOA.WebAPI.Services.Dex;
 
 /// <summary>
 /// Tinyman V2 (Algorand) DEX adapter. Mirrors the SDK's

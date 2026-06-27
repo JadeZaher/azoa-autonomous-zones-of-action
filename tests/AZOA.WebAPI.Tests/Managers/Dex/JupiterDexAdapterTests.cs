@@ -3,7 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Core.Blockchain;
-using AZOA.WebAPI.Managers.Dex;
+using AZOA.WebAPI.Services.Dex;
 using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Tests.Managers.Dex;

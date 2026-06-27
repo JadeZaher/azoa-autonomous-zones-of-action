@@ -6,7 +6,7 @@
 //   builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWebhookRegistrationStore,
 //       AZOA.WebAPI.Providers.Stores.Surreal.SurrealWebhookRegistrationStore>();
 //   builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentWebhookEmitter,
-//       AZOA.WebAPI.Managers.ConsentWebhookEmitter>();
+//       AZOA.WebAPI.Services.Consent.ConsentWebhookEmitter>();
 // (The outbox store + the hosted delivery worker + HttpClient registration are listed
 //  in ConsentWebhookDeliveryWorker.cs.)
 // ────────────────────────────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 
-namespace AZOA.WebAPI.Managers;
+namespace AZOA.WebAPI.Services.Consent;
 
 /// <summary>
 /// The thin enqueue seam for the consent webhook bridge (tenant-consent-delegation §4,
