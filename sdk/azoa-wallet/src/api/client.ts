@@ -144,6 +144,44 @@ export interface NftTransferParams {
   memo?: string;
 }
 
+/**
+ * Mirrors .NET FungibleMintRequest — the body for `POST /api/nft/fungible-mint`
+ * (the one-shot, no-DAG fungible token launch). Field shape matches the
+ * `FungibleTokenCreate` quest node config; total + decimals are tenant-authoritative.
+ */
+export interface FungibleMintParams {
+  /** Target chain (e.g. "Algorand"). Algorand-only in v1. */
+  chainType: string;
+  /** Human-readable asset name (ASA name). */
+  name: string;
+  /** Short unit name / ticker (ASA unit name). */
+  unitName: string;
+  /** Total supply in base units. Must be > 0. Sent as a number/bigint-safe value. */
+  total: number;
+  /** Number of decimal places (0..19). */
+  decimals: number;
+  /** Optional holon to link the created asset to (D10 Holon↔asset link). */
+  holonId?: string;
+}
+
+/** Mirrors .NET FungibleTokenResult — the outcome of a fungible-token (ASA) launch. */
+export interface FungibleTokenResult {
+  /** The avatar the token was launched for. */
+  avatarId: string;
+  /** The custodial wallet the token was launched from. */
+  walletId: string;
+  /** The on-chain address of the custodial wallet. */
+  walletAddress: string;
+  /** True when this call provisioned a brand-new wallet. */
+  walletProvisioned: boolean;
+  /** The chain-native asset id of the created fungible token (ASA id). */
+  assetId: string;
+  /** The idempotency key the launch was deduped on (diagnostics). */
+  idempotencyKey: string;
+  /** True when this response replays a prior launch — no second token was created. */
+  replayed: boolean;
+}
+
 export interface NftBurnParams {
   walletId: string;
 }
@@ -254,7 +292,39 @@ export interface PortfolioResult {
   balance: number;
   symbol: string;
   nfts: NftHolding[];
+  /**
+   * Render-ready holdings (fungible-mint-and-render-model §11.5). One entry per
+   * asset — native coin, fungible token, NFT — carrying everything the UI needs to
+   * render in this single call (raw + display amounts precomputed). Prefer this over
+   * the legacy scalar `balance`/`nfts` fields when rendering.
+   */
+  assets: PortfolioAsset[];
   computedAt: string;
+}
+
+/** The kind of holding, so the UI can branch rendering without guessing. */
+export type PortfolioAssetKind = "Native" | "Fungible" | "Nft";
+
+/** A single render-ready holding from {@link PortfolioResult.assets}. */
+export interface PortfolioAsset {
+  /** Stable id: chain-native asset id / symbol for tokens, holon id for an NFT. */
+  id: string;
+  /** Holding kind. Serialized as the .NET enum name ("Native"|"Fungible"|"Nft"). */
+  kind: PortfolioAssetKind;
+  /** Short symbol / unit name / ticker. */
+  symbol: string;
+  /** Human-readable display name. */
+  name: string;
+  /** Decimal places relating rawAmount to displayAmount. */
+  decimals: number;
+  /** Raw on-chain amount in base units (arbitrary-precision string — chain truth). */
+  rawAmount: string;
+  /** Decimal-adjusted, human-readable amount (precomputed for the UI). */
+  displayAmount: string;
+  /** The chain this asset lives on (e.g. "Algorand"). */
+  chain: string;
+  /** Optional icon / metadata reference (e.g. an image URI). */
+  iconRef?: string;
 }
 
 export interface NftHolding {
@@ -686,6 +756,33 @@ export class AzoaApiClient {
     return this.request("POST", "/api/nft/mint", params);
   }
 
+  /**
+   * One-shot fungible token (ASA) mint — the direct (no-DAG) parallel to the
+   * `FungibleTokenCreate` quest node. Maps to `POST /api/nft/fungible-mint`
+   * (NftController.FungibleMint). KYC-gated (a fail-closed rejection surfaces as a
+   * 403 → `SdkError` with the `KYC_FORBIDDEN:` message) and idempotent.
+   *
+   * Supply `options.idempotencyKey` to set the `Idempotency-Key` header; the
+   * backend dedupes on it (absent ⇒ deterministic content key). A duplicate call
+   * under the same key returns the ORIGINAL result with `replayed: true` and
+   * creates NO second token.
+   */
+  async fungibleMint(
+    params: FungibleMintParams,
+    options?: { idempotencyKey?: string }
+  ): Promise<Result<FungibleTokenResult, SdkError>> {
+    const extraHeaders = options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined;
+    return this.request<FungibleTokenResult>(
+      "POST",
+      "/api/nft/fungible-mint",
+      params,
+      false,
+      extraHeaders
+    );
+  }
+
   async transferNft(nftId: string, params: NftTransferParams): Promise<Result<unknown, SdkError>> {
     assertUuid(nftId, "nftId");
     // POST /api/nft/{id}/transfer with NftTransferRequest body
@@ -793,6 +890,21 @@ export class AzoaApiClient {
   async getWalletPortfolio(walletId: string): Promise<Result<PortfolioResult, SdkError>> {
     assertUuid(walletId, "walletId");
     return this.request("GET", `/api/wallet/${walletId}/portfolio`);
+  }
+
+  /**
+   * Render-model portfolio read (fungible-mint-and-render-model §11.5): the SAME
+   * `GET /api/wallet/{id}/portfolio` call, typed to emphasise the render-ready
+   * {@link PortfolioResult.assets} list — everything the UI needs to render the
+   * wallet's holdings (native coin + fungible tokens + NFTs, with raw + display
+   * amounts precomputed) in ONE round-trip. Chain stays source of truth; AZOA
+   * stores no balance. Use this when driving a render off `result.value.assets`.
+   */
+  async getWalletPortfolioRenderModel(
+    walletId: string
+  ): Promise<Result<PortfolioResult, SdkError>> {
+    assertUuid(walletId, "walletId");
+    return this.request<PortfolioResult>("GET", `/api/wallet/${walletId}/portfolio`);
   }
 
   // ─── BlockchainOperation ───

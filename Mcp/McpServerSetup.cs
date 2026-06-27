@@ -3,6 +3,7 @@ namespace AZOA.WebAPI.Mcp;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Server;
 using AZOA.WebAPI.Mcp.Tools;
 
 /// <summary>
@@ -25,6 +26,9 @@ public static class McpServerSetup
 
         // ── Tool registrations (mcp-surface track) ────────────────────────────
         services.AddScoped<IMcpTool, QuestReachabilityTool>();
+        // NL → DAG authoring surface: vocabulary (read) + validate-and-persist (write).
+        services.AddScoped<IMcpTool, QuestCatalogTool>();
+        services.AddScoped<IMcpTool, QuestAuthorTool>();
         services.AddScoped<IMcpTool, HolonTraverseTool>();
         services.AddScoped<IMcpTool, NftOwnershipGraphTool>();
         services.AddScoped<IMcpTool, AvatarScopedQueryTool>();
@@ -36,11 +40,42 @@ public static class McpServerSetup
         // becomes semantically meaningful.
         services.AddSingleton<IEmbeddingProvider, DeterministicDummyEmbeddingProvider>();
 
-        // Bridge to the SDK's MCP server with HTTP+SSE transport.
+        // McpAuthMiddleware stashes the avatar id on HttpContext.Items; the tool
+        // bridge lifts it back out per request, so the accessor must be available.
+        services.AddHttpContextAccessor();
+
+        // Bridge to the SDK's MCP server with HTTP+SSE transport, and register
+        // every IMcpTool as an SDK McpServerTool so they are actually reachable
+        // over /mcp. The IMcpTool instances here are stateless shells — all
+        // request-scoped dependencies (ISurrealExecutor, IQuestManager, …) are
+        // resolved inside the bridge handler from the per-request service
+        // provider via IHttpContextAccessor (see McpToolBridge), so no app
+        // service provider is captured at registration time.
+        var serverTools = ToolInstances()
+            .Select(t => McpToolBridge.ToServerTool(t))
+            .ToList();
+
         services.AddMcpServer()
-            .WithHttpTransport();
+            .WithHttpTransport()
+            .WithTools(serverTools);
         return services;
     }
+
+    /// <summary>
+    /// The canonical IMcpTool set, instantiated as stateless shells for the SDK
+    /// bridge. Mirrors the AddScoped registrations above (which back the
+    /// integration-test ExecuteAsync path). Keep the two lists in sync.
+    /// </summary>
+    private static IEnumerable<IMcpTool> ToolInstances() => new IMcpTool[]
+    {
+        new QuestReachabilityTool(),
+        new QuestCatalogTool(),
+        new QuestAuthorTool(),
+        new HolonTraverseTool(),
+        new NftOwnershipGraphTool(),
+        new AvatarScopedQueryTool(),
+        new VectorSearchTool(),
+    };
 
     public static IApplicationBuilder UseMcpAuth(this IApplicationBuilder app)
     {

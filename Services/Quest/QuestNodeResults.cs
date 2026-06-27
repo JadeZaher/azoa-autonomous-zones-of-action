@@ -24,9 +24,17 @@ public static class QuestNodeResults
     /// Failure result carrying <paramref name="message"/>. The manager will
     /// write this to <see cref="QuestNodeExecution.Error"/> and transition
     /// the row to <see cref="QuestNodeState.Failed"/>.
+    /// <para>
+    /// A Tier-2 chain-action handler that broadcast a tx BEFORE failing (e.g. a
+    /// confirmation-read timeout) MUST forward <paramref name="txHash"/>/
+    /// <paramref name="chainType"/> so the reconcile-before-retry engine verifies
+    /// chain truth instead of blind-retrying and double-minting
+    /// (blockchain-recovery-and-portable-wallets §1.3). A non-chain failure omits
+    /// both (the default) and behaves exactly as before.
+    /// </para>
     /// </summary>
-    public static QuestNodeHandlerResult Fail(string message)
-        => QuestNodeHandlerResult.Fail(message);
+    public static QuestNodeHandlerResult Fail(string message, string? txHash = null, string? chainType = null)
+        => QuestNodeHandlerResult.Fail(message, txHash, chainType);
 
     /// <summary>
     /// Invalid-config failure that can never succeed on retry (nothing was

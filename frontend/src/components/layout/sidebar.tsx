@@ -21,6 +21,7 @@ import {
   KeyRound,
   Settings,
   FlaskConical,
+  Coins,
   Menu,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -44,6 +45,7 @@ const navGroups = [
     items: [
       { href: '/wallets', label: 'Wallets', icon: Wallet },
       { href: '/nfts', label: 'NFTs', icon: Image },
+      { href: '/fungible-mint', label: 'Fungible Mint', icon: Coins },
       { href: '/avatar-nfts', label: 'Avatar NFTs', icon: UserCircle },
     ],
   },

@@ -35,15 +35,18 @@ public sealed class GatePredicateException : Exception
 /// comparison:= primary ( ("==" | "!=" | "&lt;" | "&lt;=" | "&gt;" | "&gt;=") primary )?
 /// primary   := number | string | "true" | "false" | "null"
 ///            | path | "(" expr ")"
-/// path      := identifier ( "." identifier )*    // e.g. upstream.bal.amount, reads.kyc
+/// path      := identifier ( "." segment )*       // e.g. upstream.bal.amount, reads.kyc, holon.&lt;id&gt;.status
+/// segment   := identifier | guid-like             // a post-dot segment may be GUID-shaped (digits + hyphens)
 /// </code>
 /// <para><b>Literals:</b> numbers (double), strings (single- OR double-quoted),
 /// <c>true</c>/<c>false</c>, <c>null</c>. Single-quoted strings are recommended
 /// so JSON double-quotes do not clash, but both quote styles are accepted.</para>
-/// <para><b>Field paths</b> resolve <c>upstream.&lt;node&gt;.&lt;json.path&gt;</c>
-/// and <c>reads.&lt;name&gt;[.&lt;json.path&gt;]</c>. The first one or two
-/// segments select a value from <paramref name="scope"/> (the handler keys it
-/// as <c>upstream.&lt;node&gt;</c> and <c>reads.&lt;name&gt;</c>); any remaining
+/// <para><b>Field paths</b> resolve <c>upstream.&lt;node&gt;.&lt;json.path&gt;</c>,
+/// <c>reads.&lt;name&gt;[.&lt;json.path&gt;]</c>, and
+/// <c>holon.&lt;id&gt;.&lt;field&gt;</c>. The first one or two segments select a
+/// value from <paramref name="scope"/> (the handler keys it as
+/// <c>upstream.&lt;node&gt;</c>, <c>reads.&lt;name&gt;</c>, and
+/// <c>holon.&lt;id&gt;</c> — the holon's live lifecycle state); any remaining
 /// segments navigate into the JSON object. A missing scope key or missing JSON
 /// member is a <see cref="GatePredicateException"/> — the gate <b>fails
 /// closed</b>, never silently <c>false</c>.</para>
@@ -122,6 +125,21 @@ public static class GatePredicateEvaluator
                 var c = input[i];
 
                 if (char.IsWhiteSpace(c)) { i++; continue; }
+
+                // A path SEGMENT immediately after a '.' is read GUID-friendly: it
+                // may start with a digit and contain hyphens, so a holon id
+                // (holon.<guid>.<field>) tokenizes as ONE identifier segment rather
+                // than fragmenting at the first digit/hyphen. This is the only place
+                // a digit/hyphen-leading run is treated as an identifier — outside a
+                // path the number/operator rules are unchanged, so the grammar stays
+                // closed (a segment is still just a dotted-path name, never code).
+                if (tokens.Count > 0 && tokens[^1].Kind == TokenKind.Dot && IsSegmentChar(c))
+                {
+                    var (segText, segNext) = ReadSegment(input, i);
+                    tokens.Add(new Token(TokenKind.Identifier, segText, i));
+                    i = segNext;
+                    continue;
+                }
 
                 switch (c)
                 {
@@ -286,6 +304,19 @@ public static class GatePredicateEvaluator
             while (i < input.Length && IsIdentifierPart(input[i])) i++;
             return (input.Substring(start, i - start), i);
         }
+
+        // A post-dot path segment: letters, digits, '_' and '-'. The hyphen makes a
+        // GUID holon id (holon.<guid>.<field>) a single segment; the only context
+        // this runs in is right after a '.', so it can never be mistaken for the
+        // numeric-minus prefix (which is only read at a primary position).
+        private static (string text, int next) ReadSegment(string input, int start)
+        {
+            var i = start;
+            while (i < input.Length && IsSegmentChar(input[i])) i++;
+            return (input.Substring(start, i - start), i);
+        }
+
+        private static bool IsSegmentChar(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '-';
 
         private static bool IsIdentifierStart(char c) => char.IsLetter(c) || c == '_';
         private static bool IsIdentifierPart(char c) => char.IsLetterOrDigit(c) || c == '_';

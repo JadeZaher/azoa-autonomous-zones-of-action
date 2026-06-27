@@ -63,6 +63,15 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             BlockchainExecute,
             Condition,
             ComposeOutputs,
+            // economic-primitive-nodes track: Tier-1 (chain-free) + Tier-2 (RequiresChainCapability).
+            GateCheck,
+            Emit,
+            Swap,
+            Grant,
+            Transfer,
+            Refund,
+            // fungible-token-node track.
+            FungibleTokenCreate,
         }
 
         [Id]
@@ -83,7 +92,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
                 "WalletSetDefault", "WalletGetPortfolio",
                 "StarGenerate", "StarDeploy",
                 "Search", "AvatarNFTGetComposite", "BlockchainExecute",
-                "Condition", "ComposeOutputs")]
+                "Condition", "ComposeOutputs",
+                "GateCheck", "Emit", "Swap", "Grant", "Transfer", "Refund",
+                "FungibleTokenCreate")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public NodeTypeKind NodeType { get; set; }
 

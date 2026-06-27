@@ -67,6 +67,13 @@ export type {
   SwapQuoteParams,
   SwapExecuteParams,
   SwapQuoteResponse,
+  // Fungible mint + render-model portfolio (fungible-mint-and-render-model)
+  FungibleMintParams,
+  FungibleTokenResult,
+  PortfolioResult,
+  PortfolioAsset,
+  PortfolioAssetKind,
+  NftHolding,
 } from "./api/index.js";
 
 // High-level client

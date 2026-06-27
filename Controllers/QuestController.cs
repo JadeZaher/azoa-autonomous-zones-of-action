@@ -207,6 +207,48 @@ public class QuestController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Re-probe a run parked in <c>AwaitingReconciliation</c> (reconcile-before-retry,
+    /// contract §7 / P7). Re-checks chain truth for the parked chain-action node(s):
+    /// a Confirmed tx reconciles to success and resumes the DAG (NO re-mint), a
+    /// FailedOnChain node is released to retry/compensation, and an indeterminate
+    /// node stays parked. This NEVER re-broadcasts — it is the manual resolution
+    /// hook for a "pending settlement" board state. Avatar-scoped.
+    /// </summary>
+    [HttpPost("runs/{runId:guid}/reconcile")]
+    public async Task<ActionResult<AZOAResult<QuestReconciliationResult>>> Reconcile(Guid runId, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<QuestReconciliationResult> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.ReconcileRunAsync(runId, avatarId.Value, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Operator sweep: re-probe EVERY run parked in <c>AwaitingReconciliation</c>
+    /// (reconcile-before-retry, contract §7 / P7). The background/operator entry
+    /// point that drains the pending-settlement backlog; same chain-truth logic as
+    /// the per-run reconcile, applied to all parked runs. NEVER re-broadcasts.
+    /// OPERATOR-ONLY: SweepReconciliationAsync is cross-avatar (unscoped), so this
+    /// action requires the "Operator" admin policy — unlike the per-run reconcile
+    /// above, which is avatar-scoped and open to any authenticated caller.
+    /// </summary>
+    [HttpPost("runs/reconcile-sweep")]
+    [Authorize(Policy = "Operator")]
+    public async Task<ActionResult<AZOAResult<IEnumerable<QuestReconciliationResult>>>> ReconcileSweep([FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<IEnumerable<QuestReconciliationResult>> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.SweepReconciliationAsync(request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
     // ─── Templates ───
 
     [HttpPost("templates")]

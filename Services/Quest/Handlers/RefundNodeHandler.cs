@@ -52,8 +52,17 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
         // seam's consent gate.
         var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.Quest.AvatarId, actingTenantId: context.ActingTenantId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
-        if (r.IsError) return QuestNodeResults.Fail(r.Message);
-        return QuestNodeResults.Ok(outputJson);
+
+        // Forward the broadcast tx hash on BOTH outcomes (a refund is a reverse
+        // transfer): a broadcast-then-confirmation-timeout surfaces as IsError while
+        // the reversal already landed, so the reconcile-before-retry engine must
+        // verify chain truth instead of blind-retrying
+        // (blockchain-recovery-and-portable-wallets §1.3).
+        var opTxHash = ChainOperationOutputs.ReadTxHash(r.Result);
+        var opChainType = ChainOperationOutputs.ReadChainType(r.Result);
+
+        if (r.IsError) return QuestNodeResults.Fail(r.Message, txHash: opTxHash, chainType: opChainType ?? "Algorand");
+        return QuestNodeResults.Ok(outputJson, txHash: opTxHash, chainType: opChainType ?? "Algorand");
     }
 
     private static bool IsSoulbound(Dictionary<string, string> metadata)

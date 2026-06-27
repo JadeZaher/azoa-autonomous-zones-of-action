@@ -93,6 +93,9 @@ export const API_PATHS = {
   NFT_GET: (id: string) => `/api/nft/${id}`,
   NFT_LIST: "/api/nft",
   NFT_MINT: "/api/nft/mint",
+  // fungible-mint-and-render-model (§11.3): one-shot fungible token (ASA) launch,
+  // the direct (no-DAG) parallel to the FungibleTokenCreate quest node.
+  NFT_FUNGIBLE_MINT: "/api/nft/fungible-mint",
   NFT_TRANSFER: (id: string) => `/api/nft/${id}/transfer`,
   NFT_BURN: (id: string) => `/api/nft/${id}/burn`,
   NFT_METADATA: (id: string) => `/api/nft/${id}/metadata`,
