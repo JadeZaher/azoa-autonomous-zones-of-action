@@ -108,11 +108,15 @@ dotnet test tests/Azoa.SurrealDb.Schema.Tests/Azoa.SurrealDb.Schema.Tests.csproj
   `dev-up` stack already brings up. Bring it up first, then run.
 - Unit suite is the authoritative regression gate; integration suites
   are higher-fidelity but slower.
-- Open follow-up: per-test SurrealDB namespace isolation is not yet
-  propagated to the WebAPI executor — three STARODK IDOR integration
-  tests are written but pending harness fix. Track:
-  `integration-test-namespace-isolation` (not yet a formal
-  conductor track).
+- **SurrealDB namespace isolation: RESOLVED** (2026-06-27). The factory
+  (`tests/AZOA.WebAPI.IntegrationTests/Factories/AZOATestWebApplicationFactory.cs`)
+  pins `SurrealDb:Namespace/Database` to a per-CLASS namespace so the app
+  and the schema-applied namespace match (the app was connecting to `azoa`
+  while the harness seeded into `test{guid}`). Integration suite is now
+  **216 passing / 0 skipped**; the residual ~37 are pre-existing and triaged
+  in `tests/AZOA.WebAPI.IntegrationTests/INTEGRATION-TEST-PASSOFF.md`
+  (test-design IDOR conflicts, env/repo-layout drift, socket races) — do not
+  paper these over.
 
 ## Conventions for agents
 
@@ -132,6 +136,26 @@ dotnet test tests/Azoa.SurrealDb.Schema.Tests/Azoa.SurrealDb.Schema.Tests.csproj
   See [PROVIDERS.md](PROVIDERS.md).
 - **Self-documenting code over verbose comments.** Test helpers over
   narrative.
+- **Role/pattern-first layout (2026-06-27).** Place new code by ROLE, domain
+  second: `Managers/` = orchestrators only; `Services/<domain>/` = services /
+  gates / emitters / adapters / workers; `Helpers/` = reusable static utilities
+  (`AZOA.WebAPI.Helpers`, global-using'd); `Core/` = primitives ONLY (enums,
+  value-types, constants, `Idempotency/`, base classes — no behavior classes);
+  `Providers/`, `Middleware/`, `Interfaces/` as named. Folder↔namespace is
+  strictly mirrored — moving a file means updating its `namespace`. Gotchas:
+  `Services/Sagas/` deliberately keeps ns `AZOA.WebAPI.Sagas`; `Program.cs`
+  scans Quest handlers by namespace STRING (don't move that folder blindly);
+  the `Providers/Blockchain/Algorand` ns collides with the Algorand SDK root
+  (use `global::Algorand.*`).
+- **Code style is enforced** via the root `.editorconfig` +
+  `EnforceCodeStyleInBuild` (Directory.Build.props). The high-value rules are
+  `warning` (unused usings IDE0005, unused private members IDE0051/0052,
+  interface `I`-prefix); stylistic rules (`var`, expression bodies, file-scoped
+  namespaces) are `suggestion` — don't churn the tree converting them. The app
+  project (`AZOA.WebAPI.csproj`) promotes **IDE0005 to a build ERROR** (it is
+  clean), so do NOT commit unused usings in app code. Don't run a blanket
+  `dotnet format` — it rewrites whitespace/EOL across dozens of files; use
+  `dotnet format analyzers --diagnostics IDE0005` or remove the flagged line.
 - **Bridge moves real value** — never weaken an exactly-once / replay
   assertion to make a test pass; fix the cause. Pre-launch safety
   surface + ops runbook: `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md`.

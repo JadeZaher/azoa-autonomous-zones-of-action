@@ -20,12 +20,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Threading;
 using System.Threading.Tasks;
 using Azoa.SurrealDb.Client.Schema;
 using Azoa.SurrealDb.Schema.Cli;
 using Azoa.SurrealDb.Schema.Generator;
-using Azoa.SurrealDb.Schema.Model;
 using Azoa.SurrealDb.Schema.Migration;
 
 namespace Azoa.SurrealDb.Schema

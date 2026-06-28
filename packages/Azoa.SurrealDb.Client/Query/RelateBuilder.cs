@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
 
 namespace Azoa.SurrealDb.Client.Query
 {

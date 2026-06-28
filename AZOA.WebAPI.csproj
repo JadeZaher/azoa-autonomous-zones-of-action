@@ -3,6 +3,11 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Enforcement teeth: the app project is IDE0005-clean, so a NEW unused using
+         here fails the build (not just warns). Style severities live in the root
+         .editorconfig; EnforceCodeStyleInBuild (Directory.Build.props) surfaces them.
+         Packages/tests stay at warning to avoid breaking their pre-existing baseline. -->
+    <WarningsAsErrors>$(WarningsAsErrors);IDE0005</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <!-- Quest models are included (no longer excluded) -->

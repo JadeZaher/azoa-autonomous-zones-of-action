@@ -15,6 +15,19 @@
   <PropertyGroup>
     <AzoaSurrealDbVersion>0.1.0</AzoaSurrealDbVersion>
   </PropertyGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Code-style enforcement (repo-wide). The .editorconfig at the repo root is
+       the single source of truth for style; EnforceCodeStyleInBuild surfaces its
+       analyzer diagnostics (e.g. IDE0005 unused usings) during `dotnet build` and
+       in CI — not just in the IDE. Severities live in .editorconfig: only the
+       high-value rules are `warning`; the rest are `suggestion` to avoid noise.
+       Promotion of specific rules to build-breaking errors is done per-project
+       via <WarningsAsErrors> once that project is clean (see AZOA.WebAPI.csproj).
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <PropertyGroup>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
   <!-- The root-project glob exclusion for packages/** lives in
        Directory.Build.targets (imported AFTER the SDK glob has run) so the
        Remove items see the items the glob produced. Keeping the property
