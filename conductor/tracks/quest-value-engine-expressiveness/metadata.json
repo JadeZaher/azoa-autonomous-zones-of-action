@@ -1,0 +1,7 @@
+{
+  "id": "quest-value-engine-expressiveness",
+  "description": "Complete the deferred value-engine features: $from output-binding in node configs, OnFailure edge type (both engines), Emit webhooks on the consent outbox, QuestDependency enforcement, opt-in HolonType registry, unpublish TOCTOU guard, SDK+builder mirrors",
+  "type": "feature",
+  "created_at": "2026-07-02T00:00:00Z",
+  "status": "pending"
+}
