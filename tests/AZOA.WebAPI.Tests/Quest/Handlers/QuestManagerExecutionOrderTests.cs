@@ -68,7 +68,8 @@ public class QuestManagerExecutionOrderTests
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var result = await manager.ValidateDAGAsync(questId);
 
@@ -125,7 +126,8 @@ public class QuestManagerExecutionOrderTests
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { new ConditionNodeHandler() }),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var result = await manager.ExecuteAsync(questId, quest.AvatarId);
 

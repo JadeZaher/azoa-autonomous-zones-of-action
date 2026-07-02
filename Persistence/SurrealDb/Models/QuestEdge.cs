@@ -28,6 +28,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         {
             Control,
             Conditional,
+            /// <summary>Failure arm — target runs when source Failed, skipped when Succeeded.</summary>
+            OnFailure,
         }
 
         [Id]
@@ -51,7 +53,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? Condition { get; set; }
 
         [FieldGroup("QuestEdgeType enum name")]
-        [Inside("Control", "Conditional")]
+        [Inside("Control", "Conditional", "OnFailure")]
         [Default("\"Control\"")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public QuestEdgeTypeKind EdgeType { get; set; }

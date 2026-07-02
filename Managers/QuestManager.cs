@@ -476,14 +476,13 @@ public class QuestManager : IQuestManager
 
             // FR-1 ($from binding) — resolve before handler dispatch.
             // See Services/Quest/AGENTS.md §output-binding.
-            var bindingOk = await _bindingResolver.TryResolveAsync(
-                node.Config, node, quest, upstream, quest.AvatarId,
-                CancellationToken.None, out var resolvedConfig, out var bindingError);
+            var bindingResult = await _bindingResolver.TryResolveAsync(
+                node.Config, node, quest, upstream, quest.AvatarId, CancellationToken.None);
 
             QuestNodeHandlerResult result;
-            if (!bindingOk)
+            if (!bindingResult.Ok)
             {
-                result = QuestNodeResults.Fail($"$from binding error on node '{node.Name}': {bindingError}");
+                result = QuestNodeResults.Fail($"$from binding error on node '{node.Name}': {bindingResult.Error}");
             }
             else if (!_registry.TryGet(node.NodeType, out var handler))
             {
@@ -505,7 +504,7 @@ public class QuestManager : IQuestManager
                     // carries the resolved values. Restored after the call (ExecuteAsync is
                     // sequential; the definition node object is not shared across calls).
                     var originalConfig = node.Config;
-                    node.Config = resolvedConfig;
+                    node.Config = bindingResult.ResolvedJson;
                     try
                     {
                         var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstream, run.ActingTenantId);
@@ -599,14 +598,14 @@ public class QuestManager : IQuestManager
         await _executionStore.CreateAsync(execution);
 
         // FR-1 ($from binding) — resolve before handler dispatch (single-node path).
-        var bindingOkSingle = await _bindingResolver.TryResolveAsync(
+        var bindingResultSingle = await _bindingResolver.TryResolveAsync(
             node.Config, node, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            quest.AvatarId, CancellationToken.None, out var resolvedConfigSingle, out var bindingErrorSingle);
+            quest.AvatarId, CancellationToken.None);
 
         QuestNodeHandlerResult result;
-        if (!bindingOkSingle)
+        if (!bindingResultSingle.Ok)
         {
-            result = QuestNodeResults.Fail($"$from binding error on node '{node.Name}': {bindingErrorSingle}");
+            result = QuestNodeResults.Fail($"$from binding error on node '{node.Name}': {bindingResultSingle.Error}");
         }
         else if (!_registry.TryGet(node.NodeType, out var handler))
         {
@@ -617,7 +616,7 @@ public class QuestManager : IQuestManager
             try
             {
                 var originalConfigSingle = node.Config;
-                node.Config = resolvedConfigSingle;
+                node.Config = bindingResultSingle.ResolvedJson;
                 try
                 {
                     var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstreamExecutions: null, run.ActingTenantId);

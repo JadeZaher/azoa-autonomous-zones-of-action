@@ -34,7 +34,12 @@ public class QuestNodeConfigRegistryBindingTests
 
         var err = QuestNodeConfigRegistry.Validate(QuestNodeType.Transfer, cfg);
 
-        err.Should().NotBeNull().And.Contain("typoField").Or.Contain("parse error");
+        err.Should().NotBeNull(because: "strict deserialization must reject unknown fields");
+        // Error message mentions the offending field or signals a parse failure.
+        (err!.Contains("typoField", StringComparison.OrdinalIgnoreCase)
+            || err.Contains("parse error", StringComparison.OrdinalIgnoreCase)
+            || err.Contains("deserializ", StringComparison.OrdinalIgnoreCase))
+            .Should().BeTrue(because: $"expected field/parse error mention in: {err}");
     }
 
     // ── Grammar checks at definition time (AC-1d i–iii) ──────────────────────
@@ -142,7 +147,7 @@ public class QuestNodeConfigRegistryBindingTests
         // For the grammar test itself, use any config-free node type that accepts unknown fields.
         // We test the grammar checker directly via a node type that maps null (config-free).
         // For a config-free node, Validate always returns null — just confirm no crash.
-        var cfg = $$"""{"amount":{"$from":"holon.{{guid}}.status"}}""";
+        var cfg = $"{{\"amount\":{{\"$from\":\"holon.{guid}.status\"}}}}";
 
         // Use HolonGet (config-free: IdConfig) — the shadow will drop the binding,
         // leaving empty object which passes IdConfig (which has optional Id).

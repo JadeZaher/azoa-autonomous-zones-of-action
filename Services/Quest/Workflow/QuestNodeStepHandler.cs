@@ -168,13 +168,12 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
             var runForTenant = await _runStore.GetByIdAsync(p.RunId, ct);
             var actingTenantId = runForTenant.Result?.ActingTenantId;
 
-            var bindingOk = await _bindingResolver.TryResolveAsync(
-                node.Config, node, quest, upstream, quest.AvatarId, ct,
-                out var resolvedConfig, out var bindingError);
+            var bindingResult = await _bindingResolver.TryResolveAsync(
+                node.Config, node, quest, upstream, quest.AvatarId, ct);
 
-            if (!bindingOk)
+            if (!bindingResult.Ok)
             {
-                result = QuestNodeHandlerResult.Fail($"$from binding error on node '{node.Name}': {bindingError}");
+                result = QuestNodeHandlerResult.Fail($"$from binding error on node '{node.Name}': {bindingResult.Error}");
             }
             else
             {
@@ -187,7 +186,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
                     // worker, so it MUST come from the persisted run. A user-driven run
                     // has ActingTenantId = null → identical behaviour to before.
                     var originalConfig = node.Config;
-                    node.Config = resolvedConfig;
+                    node.Config = bindingResult.ResolvedJson;
                     try
                     {
                         var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, upstream, actingTenantId);

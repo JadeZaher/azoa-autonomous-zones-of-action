@@ -108,7 +108,12 @@ public enum QuestNodeState
 public enum QuestEdgeType
 {
     Control,
-    Conditional
+    Conditional,
+    /// <summary>
+    /// Failure arm: target runs when the source node Failed; skipped when
+    /// source Succeeded (inverse of Control). See Managers/AGENTS.md §onfailure-semantics.
+    /// </summary>
+    OnFailure
 }
 
 /// <summary>

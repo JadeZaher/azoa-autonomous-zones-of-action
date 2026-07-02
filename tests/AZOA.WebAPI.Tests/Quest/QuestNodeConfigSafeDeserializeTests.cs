@@ -133,7 +133,8 @@ public class QuestNodeConfigSafeDeserializeTests
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { transferHandler }),
             new InMemorySagaStore(),
             WalletManagerMocks.WithOneWallet(),    // chain-cap gate passes
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         // Should not throw; the node should end up Failed with a descriptive message.
         var act = async () => await manager.ExecuteAsync(quest.Id, AvatarId);
@@ -183,7 +184,8 @@ public class QuestNodeConfigSafeDeserializeTests
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { gateHandler }),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var act = async () => await manager.ExecuteAsync(quest.Id, AvatarId);
         await act.Should().NotThrowAsync("malformed config must never throw out of the engine");
@@ -317,7 +319,8 @@ public class QuestNodeConfigSafeDeserializeTests
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         return (manager, questStore);
     }

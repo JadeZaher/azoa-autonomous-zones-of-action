@@ -88,7 +88,8 @@ public class QuestManagerSkipPropagationTests
             new QuestNodeHandlerRegistry(handlers),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var runResult = await manager.ExecuteAsync(quest.Id, avatarId);
         runResult.IsError.Should().BeFalse("execution should succeed even when gate fails");
@@ -176,7 +177,8 @@ public class QuestManagerSkipPropagationTests
             }),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var runResult = await manager.ExecuteAsync(quest.Id, avatarId);
         runResult.IsError.Should().BeFalse();
@@ -242,7 +244,8 @@ public class QuestManagerSkipPropagationTests
             }),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var runResult = await manager.ExecuteAsync(quest.Id, avatarId);
         runResult.IsError.Should().BeFalse();
@@ -300,7 +303,8 @@ public class QuestManagerSkipPropagationTests
             }),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var runResult = await manager.ExecuteAsync(quest.Id, avatarId);
         runResult.IsError.Should().BeFalse();

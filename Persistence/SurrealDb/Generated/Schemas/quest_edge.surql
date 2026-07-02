@@ -9,7 +9,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- QuestEdge.QuestEdgeTypeKind
-DEFINE PARAM IF NOT EXISTS $quest_edge_edge_type VALUE ["Control", "Conditional"];
+DEFINE PARAM IF NOT EXISTS $quest_edge_edge_type VALUE ["Control", "Conditional", "OnFailure"];
 
 DEFINE TABLE IF NOT EXISTS quest_edge SCHEMAFULL;
 

@@ -144,7 +144,8 @@ public class ComposedDagDeterminismTests
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant }),
             new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var result = await manager.ExecuteAsync(quest.Id, AvatarId);
         result.IsError.Should().BeFalse(result.Message);
@@ -202,7 +203,8 @@ public class ComposedDagDeterminismTests
                 store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(),
                 new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant }),
                 new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
             var runId = manager.ExecuteAsync(quest.Id, AvatarId).GetAwaiter().GetResult().Result!.Id;
             string S(QuestNode n) =>
@@ -261,7 +263,8 @@ public class ComposedDagDeterminismTests
             store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, refund }),
             new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var result = await manager.ExecuteAsync(quest.Id, AvatarId);
         result.IsError.Should().BeFalse(result.Message);
@@ -319,7 +322,8 @@ public class ComposedDagDeterminismTests
             store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, refund }),
             new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var result = await manager.ExecuteAsync(quest.Id, AvatarId);
         result.IsError.Should().BeFalse(result.Message);

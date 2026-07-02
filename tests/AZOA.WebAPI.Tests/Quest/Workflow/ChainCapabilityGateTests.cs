@@ -55,7 +55,8 @@ public sealed class ChainCapabilityGateTests
             new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new[] { NodeHandler }),
             SagaStore, WalletManager,
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         public (SagaProcessor Processor, ServiceProvider Scope) NewProcessor()
         {

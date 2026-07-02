@@ -69,7 +69,7 @@ public class QuestForkLineageTests
         var runs = new InMemoryQuestRunStore();
         var execs = new InMemoryQuestNodeExecutionStore();
         var registry = new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { new ConditionNodeHandler() });
-        var manager = new QuestManager(store.Object, runs, execs, new QuestDagValidator(), registry, new InMemorySagaStore(), WalletManagerMocks.Empty(), BlockchainProviderFactoryFakes.Returning());
+        var manager = new QuestManager(store.Object, runs, execs, new QuestDagValidator(), registry, new InMemorySagaStore(), WalletManagerMocks.Empty(), BlockchainProviderFactoryFakes.Returning(), BindingResolverFakes.PassThrough());
 
         return (manager, runs, execs, quest);
     }
@@ -351,7 +351,8 @@ public class QuestForkLineageTests
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var internalFail = await manager.ExecuteAsync(quest.Id, quest.AvatarId);
         internalFail.Result!.Status.Should().Be(QuestRunStatus.Failed);

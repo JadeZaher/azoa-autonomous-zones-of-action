@@ -86,7 +86,8 @@ public sealed class DurableWorkflowEngineTests
             new QuestNodeHandlerRegistry(new[] { NodeHandler }),
             SagaStore,
             WalletManager,
-            ProviderFactory);
+            ProviderFactory,
+            BindingResolverFakes.PassThrough());
 
         /// <summary>
         /// Build a FRESH <see cref="SagaProcessor"/> over a FRESH DI scope, all

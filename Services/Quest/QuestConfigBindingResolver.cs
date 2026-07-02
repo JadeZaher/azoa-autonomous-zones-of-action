@@ -1,8 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Services.Quest.Predicates;
+using QuestModel = AZOA.WebAPI.Models.Quest.Quest;
 
 namespace AZOA.WebAPI.Services.Quest;
 
@@ -33,30 +35,24 @@ public sealed class QuestConfigBindingResolver
     /// </param>
     /// <param name="avatarId">Run avatar: holon reads are owner-scoped to this avatar.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <param name="resolvedJson">
-    /// On success: config JSON with all bindings substituted. On failure: the original json.
-    /// </param>
-    /// <param name="error">On failure: descriptive error naming the path.</param>
-    /// <returns>True when all bindings resolved; false with <paramref name="error"/> set on any failure.</returns>
-    public async Task<bool> TryResolveAsync(
+    /// <returns>
+    /// A result containing <c>Ok=true</c> + resolved JSON on success, or
+    /// <c>Ok=false</c> + error message on any failure.
+    /// </returns>
+    public async Task<BindingResolveResult> TryResolveAsync(
         string? configJson,
         QuestNode node,
-        Quest quest,
+        QuestModel quest,
         IReadOnlyDictionary<Guid, QuestNodeExecution> upstreamExecutions,
         Guid avatarId,
-        CancellationToken ct,
-        out string? resolvedJson,
-        out string error)
+        CancellationToken ct)
     {
-        resolvedJson = configJson;
-        error = string.Empty;
-
         if (string.IsNullOrWhiteSpace(configJson))
-            return true;
+            return BindingResolveResult.Pass(configJson);
 
         // Fast path: if no $from key present, skip the walk entirely.
         if (!configJson.Contains("\"$from\"", StringComparison.Ordinal))
-            return true;
+            return BindingResolveResult.Pass(configJson);
 
         JsonNode? root;
         try
@@ -65,14 +61,13 @@ public sealed class QuestConfigBindingResolver
         }
         catch (JsonException ex)
         {
-            error = $"$from resolver: config JSON is malformed: {ex.Message}";
-            return false;
+            return BindingResolveResult.Fail($"$from resolver: config JSON is malformed: {ex.Message}");
         }
 
         if (root is null)
         {
             // null document is fine (empty config), nothing to resolve.
-            return true;
+            return BindingResolveResult.Pass(configJson);
         }
 
         // Build the scope lazily: upstream outputs by "upstream.<nodeName>" +
@@ -80,12 +75,11 @@ public sealed class QuestConfigBindingResolver
         var upstreamScope = BuildUpstreamScope(node, quest, upstreamExecutions);
         var holonCache = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
 
-        var ok = await ResolveNodeAsync(root, upstreamScope, holonCache, avatarId, ct, out error);
+        var (ok, error) = await ResolveNodeAsync(root, upstreamScope, holonCache, avatarId, ct);
         if (!ok)
-            return false;
+            return BindingResolveResult.Fail(error!);
 
-        resolvedJson = root.ToJsonString();
-        return true;
+        return BindingResolveResult.Pass(root.ToJsonString());
     }
 
     /// <summary>
@@ -117,6 +111,15 @@ public sealed class QuestConfigBindingResolver
         return CollectBindings(root, inArray: false, paths);
     }
 
+    // ── Result type ─────────────────────────────────────────────────────────
+
+    /// <summary>Result of <see cref="QuestConfigBindingResolver.TryResolveAsync"/>.</summary>
+    public sealed record BindingResolveResult(bool Ok, string? ResolvedJson, string? Error)
+    {
+        public static BindingResolveResult Pass(string? json) => new(true, json, null);
+        public static BindingResolveResult Fail(string error) => new(false, null, error);
+    }
+
     // ── Private helpers ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -125,7 +128,7 @@ public sealed class QuestConfigBindingResolver
     /// </summary>
     private static Dictionary<string, JsonElement> BuildUpstreamScope(
         QuestNode node,
-        Quest quest,
+        QuestModel quest,
         IReadOnlyDictionary<Guid, QuestNodeExecution> upstreamExecutions)
     {
         var scope = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
@@ -159,42 +162,38 @@ public sealed class QuestConfigBindingResolver
     /// <summary>
     /// Recursively walks the JSON tree and replaces <c>{"$from":"path"}</c>
     /// binding objects in place. Holons are loaded on first use and cached.
+    /// Returns (true, null) on success; (false, error) on failure.
     /// </summary>
-    private async Task<bool> ResolveNodeAsync(
+    private async Task<(bool Ok, string? Error)> ResolveNodeAsync(
         JsonNode node,
         Dictionary<string, JsonElement> upstreamScope,
         Dictionary<string, JsonElement> holonCache,
         Guid avatarId,
-        CancellationToken ct,
-        out string error)
+        CancellationToken ct)
     {
-        error = string.Empty;
-
         if (node is JsonObject obj)
         {
-            // Check if this object IS itself a binding ({"$from":"path"}).
-            // We can't replace it in-place here — parent must do the swap.
-            // So the parent calls IsSingleBinding before recursing into children.
             foreach (var key in obj.Select(p => p.Key).ToList())
             {
                 var child = obj[key];
                 if (child is JsonObject childObj && IsSingleBinding(childObj, out var path))
                 {
                     // Resolve the binding and replace the property value.
-                    if (!TryResolvePath(path!, upstreamScope, holonCache, out var resolved, out error))
+                    var (resolved, pathError) = TryResolvePath(path!, upstreamScope, holonCache);
+                    if (pathError is not null)
                     {
                         // holon might need async load
-                        var loaded = await TryLoadHolonAsync(path!, holonCache, avatarId, ct, out error);
-                        if (!loaded) return false;
-                        if (!TryResolvePath(path!, upstreamScope, holonCache, out resolved, out error))
-                            return false;
+                        var (loaded, loadError) = await TryLoadHolonAsync(path!, holonCache, avatarId, ct);
+                        if (!loaded) return (false, loadError);
+                        (resolved, pathError) = TryResolvePath(path!, upstreamScope, holonCache);
+                        if (pathError is not null) return (false, pathError);
                     }
-                    obj[key] = JsonNode.Parse(resolved!.GetRawText());
+                    obj[key] = JsonNode.Parse(resolved!.Value.GetRawText());
                 }
                 else if (child is not null)
                 {
-                    var ok = await ResolveNodeAsync(child, upstreamScope, holonCache, avatarId, ct, out error);
-                    if (!ok) return false;
+                    var (ok, err) = await ResolveNodeAsync(child, upstreamScope, holonCache, avatarId, ct);
+                    if (!ok) return (false, err);
                 }
             }
         }
@@ -212,18 +211,17 @@ public sealed class QuestConfigBindingResolver
                     // A $from directly as an array element is a definition-time
                     // error (AC-1d v). At runtime it should have been caught by
                     // FindAndValidateBindings. Fail closed if it slipped through.
-                    error = "$from as an array element is not supported (V1 restriction).";
-                    return false;
+                    return (false, "$from as an array element is not supported (V1 restriction).");
                 }
                 if (elem is not null)
                 {
-                    var ok = await ResolveNodeAsync(elem, upstreamScope, holonCache, avatarId, ct, out error);
-                    if (!ok) return false;
+                    var (ok, err) = await ResolveNodeAsync(elem, upstreamScope, holonCache, avatarId, ct);
+                    if (!ok) return (false, err);
                 }
             }
         }
 
-        return true;
+        return (true, null);
     }
 
     /// <summary>
@@ -242,141 +240,99 @@ public sealed class QuestConfigBindingResolver
 
     /// <summary>
     /// Resolves a path against the already-built upstream scope and holon cache.
-    /// Returns false (with error) when the path is unknown or navigation fails.
+    /// Returns (element, null) on success; (default, errorMessage) on failure.
+    /// A non-null error for a holon path means the holon is not yet in cache —
+    /// caller should call TryLoadHolonAsync then retry.
     /// </summary>
-    private static bool TryResolvePath(
+    private static (JsonElement? Resolved, string? Error) TryResolvePath(
         string path,
         Dictionary<string, JsonElement> upstreamScope,
-        Dictionary<string, JsonElement> holonCache,
-        out JsonElement resolved,
-        out string error)
+        Dictionary<string, JsonElement> holonCache)
     {
-        resolved = default;
-        error = string.Empty;
-
         if (!GatePath.TryParse(path, out var segments, out var parseError))
-        {
-            error = $"$from '{path}': invalid path — {parseError}";
-            return false;
-        }
+            return (null, $"$from '{path}': invalid path — {parseError}");
 
         var root = segments[0];
         JsonElement element;
 
         if (root == "upstream")
         {
-            // "upstream.<nodeName>" is the scope key; remaining segments navigate JSON.
             if (segments.Count < 3)
-            {
-                error = $"$from '{path}': upstream path requires at least 3 segments (upstream.<node>.<field>).";
-                return false;
-            }
+                return (null, $"$from '{path}': upstream path requires at least 3 segments (upstream.<node>.<field>).");
+
             var scopeKey = $"upstream.{segments[1]}";
             if (!upstreamScope.TryGetValue(scopeKey, out element))
-            {
-                error = $"$from '{path}': upstream node '{segments[1]}' not found in scope or has no output.";
-                return false;
-            }
-            // Navigate remaining segments into the JSON.
+                return (null, $"$from '{path}': upstream node '{segments[1]}' not found in scope or has no output.");
+
             for (var i = 2; i < segments.Count; i++)
             {
                 if (element.ValueKind != JsonValueKind.Object)
-                {
-                    error = $"$from '{path}': cannot read member '{segments[i]}' from a non-object at segment {i}.";
-                    return false;
-                }
+                    return (null, $"$from '{path}': cannot read member '{segments[i]}' from a non-object at segment {i}.");
                 if (!element.TryGetProperty(segments[i], out var child))
-                {
-                    error = $"$from '{path}': member '{segments[i]}' not found.";
-                    return false;
-                }
+                    return (null, $"$from '{path}': member '{segments[i]}' not found.");
                 element = child;
             }
-            resolved = element;
-            return true;
+            return (element, null);
         }
 
         if (root == "holon")
         {
             if (segments.Count < 3)
-            {
-                error = $"$from '{path}': holon path requires at least 3 segments (holon.<guid>.<field>).";
-                return false;
-            }
+                return (null, $"$from '{path}': holon path requires at least 3 segments (holon.<guid>.<field>).");
+
             var holonKey = $"holon.{segments[1]}";
             if (!holonCache.TryGetValue(holonKey, out element))
-            {
-                // Not yet loaded — caller must trigger async load.
-                error = $"holon.{segments[1]} not in cache";
-                return false;
-            }
+                return (null, $"holon.{segments[1]} not in cache"); // signal: needs async load
+
             for (var i = 2; i < segments.Count; i++)
             {
                 if (element.ValueKind != JsonValueKind.Object)
-                {
-                    error = $"$from '{path}': cannot read member '{segments[i]}' from a non-object at holon segment {i}.";
-                    return false;
-                }
+                    return (null, $"$from '{path}': cannot read member '{segments[i]}' from a non-object at holon segment {i}.");
                 if (!element.TryGetProperty(segments[i], out var child))
-                {
-                    error = $"$from '{path}': holon member '{segments[i]}' not found.";
-                    return false;
-                }
+                    return (null, $"$from '{path}': holon member '{segments[i]}' not found.");
                 element = child;
             }
-            resolved = element;
-            return true;
+            return (element, null);
         }
 
-        error = $"$from '{path}': unsupported root '{root}'.";
-        return false;
+        return (null, $"$from '{path}': unsupported root '{root}'.");
     }
 
     /// <summary>
-    /// Loads a holon by the id in the path's second segment, owner-scopes it to
+    /// Loads a holon by id from the path's second segment, owner-scopes it to
     /// <paramref name="avatarId"/>, and caches it under "holon.&lt;id&gt;".
-    /// Returns false (with error) if not found, unowned, or the path is invalid.
+    /// Returns (true, null) on success; (false, error) on failure.
     /// </summary>
-    private async Task<bool> TryLoadHolonAsync(
+    private async Task<(bool Loaded, string? Error)> TryLoadHolonAsync(
         string path,
         Dictionary<string, JsonElement> holonCache,
         Guid avatarId,
-        CancellationToken ct,
-        out string error)
+        CancellationToken ct)
     {
-        error = string.Empty;
-
         if (!GatePath.TryParse(path, out var segments, out var parseError))
-        {
-            error = $"$from '{path}': {parseError}";
-            return false;
-        }
+            return (false, $"$from '{path}': {parseError}");
 
         if (segments[0] != "holon")
-            return true; // upstream paths don't need holon loading
+            return (true, null); // upstream paths don't need holon loading
 
         var idStr = segments[1];
         var cacheKey = $"holon.{idStr}";
 
         if (holonCache.ContainsKey(cacheKey))
-            return true; // already loaded
+            return (true, null); // already loaded
 
         if (!Guid.TryParse(idStr, out var holonId))
-        {
-            error = $"$from '{path}': holon id '{idStr}' is not a valid GUID.";
-            return false;
-        }
+            return (false, $"$from '{path}': holon id '{idStr}' is not a valid GUID.");
 
         var result = await _holonManager.GetAsync(holonId);
         if (result.IsError || result.Result is null || result.Result.AvatarId != avatarId)
         {
             // Not-found indistinguishable from non-owned (privacy posture same as GateCheck).
-            error = $"$from '{path}': holon '{idStr}' not found or not accessible.";
-            return false;
+            return (false, $"$from '{path}': holon '{idStr}' not found or not accessible.");
         }
 
         holonCache[cacheKey] = HolonStateJson(result.Result);
-        return true;
+        return (true, null);
     }
 
     /// <summary>

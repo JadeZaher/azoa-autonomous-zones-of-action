@@ -6,11 +6,11 @@ using FluentAssertions;
 using Moq;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
-using AZOA.WebAPI.Models;
-using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Services.Quest;
 using Xunit;
+using QuestModel = AZOA.WebAPI.Models.Quest.Quest;
 
 namespace AZOA.WebAPI.Tests.Quest;
 
@@ -34,7 +34,11 @@ public class QuestConfigBindingResolverTests
         new() { Id = id, QuestId = QuestId, Name = name, Config = config };
 
     private static QuestNodeExecution MakeExec(Guid nodeId, string output) =>
-        new() { Id = Guid.NewGuid(), RunId = Guid.NewGuid(), NodeId = nodeId, State = QuestNodeState.Succeeded, Output = output };
+        new()
+        {
+            Id = Guid.NewGuid(), RunId = Guid.NewGuid(), NodeId = nodeId,
+            State = QuestNodeState.Succeeded, Output = output
+        };
 
     private static IHolon MakeHolon(Guid avatarId, Dictionary<string, string>? metadata = null) =>
         new TestHolon
@@ -60,17 +64,20 @@ public class QuestConfigBindingResolverTests
         return mock.Object;
     }
 
-    private static Quest MakeQuestWithEdge(QuestNode source, QuestNode target) =>
+    private static QuestModel MakeQuestWithEdge(QuestNode source, QuestNode target) =>
         new()
         {
             Id = QuestId, AvatarId = AvatarId,
             Nodes = [source, target],
-            Edges = [new QuestEdge
-            {
-                Id = Guid.NewGuid(), QuestId = QuestId,
-                SourceNodeId = source.Id, TargetNodeId = target.Id,
-                EdgeType = QuestEdgeType.Control
-            }]
+            Edges =
+            [
+                new QuestEdge
+                {
+                    Id = Guid.NewGuid(), QuestId = QuestId,
+                    SourceNodeId = source.Id, TargetNodeId = target.Id,
+                    EdgeType = QuestEdgeType.Control
+                }
+            ]
         };
 
     private static QuestConfigBindingResolver MakeResolver(IHolonManager? holonManager = null) =>
@@ -82,31 +89,31 @@ public class QuestConfigBindingResolverTests
     public async Task TryResolveAsync_NoBinding_ReturnsOriginalUnchanged()
     {
         var cfg = """{"amount":"100","recipient":"abc"}""";
-        var resolver = MakeResolver();
         var node = MakeNode("myNode", cfg);
-        var quest = new Quest { Id = QuestId, AvatarId = AvatarId, Nodes = [node], Edges = [] };
+        var quest = new QuestModel { Id = QuestId, AvatarId = AvatarId, Nodes = [node], Edges = [] };
 
-        var ok = await resolver.TryResolveAsync(cfg, node, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None, out var resolved, out _);
+        var r = await MakeResolver().TryResolveAsync(
+            cfg, node, quest, new Dictionary<Guid, QuestNodeExecution>(),
+            AvatarId, CancellationToken.None);
 
-        ok.Should().BeTrue();
-        resolved.Should().Be(cfg);
+        r.Ok.Should().BeTrue();
+        r.ResolvedJson.Should().Be(cfg);
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task TryResolveAsync_NullOrEmpty_ReturnsTrue(string? cfg)
+    public async Task TryResolveAsync_NullOrEmpty_ReturnsOk(string? cfg)
     {
-        var resolver = MakeResolver();
         var node = MakeNode("n", cfg);
-        var quest = new Quest { Id = QuestId, AvatarId = AvatarId, Nodes = [node], Edges = [] };
+        var quest = new QuestModel { Id = QuestId, AvatarId = AvatarId, Nodes = [node], Edges = [] };
 
-        var ok = await resolver.TryResolveAsync(cfg, node, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None, out _, out _);
+        var r = await MakeResolver().TryResolveAsync(
+            cfg, node, quest, new Dictionary<Guid, QuestNodeExecution>(),
+            AvatarId, CancellationToken.None);
 
-        ok.Should().BeTrue();
+        r.Ok.Should().BeTrue();
     }
 
     // ── Upstream binding — happy path ─────────────────────────────────────────
@@ -116,18 +123,18 @@ public class QuestConfigBindingResolverTests
     {
         var sourceId = Guid.NewGuid();
         var source = MakeNodeWithId(sourceId, "gate");
-        var target = MakeNodeWithId(NodeId, "transfer", """{"amount":{"$from":"upstream.gate.amount"}}""");
+        var target = MakeNodeWithId(NodeId, "transfer",
+            """{"amount":{"$from":"upstream.gate.amount"}}""");
         var quest = MakeQuestWithEdge(source, target);
 
         var exec = MakeExec(sourceId, """{"amount":"500","recipient":"xyz"}""");
         var upstreamExecs = new Dictionary<Guid, QuestNodeExecution> { [sourceId] = exec };
 
-        var ok = await MakeResolver().TryResolveAsync(
-            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None,
-            out var resolved, out var error);
+        var r = await MakeResolver().TryResolveAsync(
+            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None);
 
-        ok.Should().BeTrue(because: error);
-        var doc = JsonDocument.Parse(resolved!);
+        r.Ok.Should().BeTrue(because: r.Error ?? "no error");
+        var doc = JsonDocument.Parse(r.ResolvedJson!);
         doc.RootElement.GetProperty("amount").GetString().Should().Be("500");
     }
 
@@ -143,12 +150,11 @@ public class QuestConfigBindingResolverTests
         var exec = MakeExec(sourceId, """{"info":{"value":"42"}}""");
         var upstreamExecs = new Dictionary<Guid, QuestNodeExecution> { [sourceId] = exec };
 
-        var ok = await MakeResolver().TryResolveAsync(
-            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None,
-            out var resolved, out var error);
+        var r = await MakeResolver().TryResolveAsync(
+            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None);
 
-        ok.Should().BeTrue(because: error);
-        var doc = JsonDocument.Parse(resolved!);
+        r.Ok.Should().BeTrue(because: r.Error ?? "no error");
+        var doc = JsonDocument.Parse(r.ResolvedJson!);
         doc.RootElement.GetProperty("config").GetProperty("amount").GetString().Should().Be("42");
     }
 
@@ -166,12 +172,11 @@ public class QuestConfigBindingResolverTests
         var exec = MakeExec(sourceId, """{"amount":"100"}""");
         var upstreamExecs = new Dictionary<Guid, QuestNodeExecution> { [sourceId] = exec };
 
-        var ok = await MakeResolver().TryResolveAsync(
-            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None,
-            out _, out var error);
+        var r = await MakeResolver().TryResolveAsync(
+            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None);
 
-        ok.Should().BeFalse();
-        error.Should().Contain("nonExistent");
+        r.Ok.Should().BeFalse();
+        r.Error.Should().Contain("nonExistent");
     }
 
     [Fact]
@@ -183,16 +188,14 @@ public class QuestConfigBindingResolverTests
             """{"amount":{"$from":"upstream.otherNode.amount"}}""");
         var quest = MakeQuestWithEdge(source, target);
 
-        // Provide exec for the actual source, but path references a different node
         var exec = MakeExec(sourceId, """{"amount":"100"}""");
         var upstreamExecs = new Dictionary<Guid, QuestNodeExecution> { [sourceId] = exec };
 
-        var ok = await MakeResolver().TryResolveAsync(
-            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None,
-            out _, out var error);
+        var r = await MakeResolver().TryResolveAsync(
+            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None);
 
-        ok.Should().BeFalse();
-        error.Should().Contain("otherNode");
+        r.Ok.Should().BeFalse();
+        r.Error.Should().Contain("otherNode");
     }
 
     // ── Holon binding — happy path ────────────────────────────────────────────
@@ -204,16 +207,16 @@ public class QuestConfigBindingResolverTests
         var holon = MakeHolon(AvatarId, new Dictionary<string, string> { ["status"] = "FUNDED" });
         var holonManager = MakeHolonManager(holon, holonId);
 
-        var cfg = $$"""{"status":{"$from":"holon.{{holonId}}.status"}}""";
+        var cfg = $"{{\"status\":{{\"$from\":\"holon.{holonId}.status\"}}}}";
         var target = MakeNodeWithId(NodeId, "check", cfg);
-        var quest = new Quest { Id = QuestId, AvatarId = AvatarId, Nodes = [target], Edges = [] };
+        var quest = new QuestModel { Id = QuestId, AvatarId = AvatarId, Nodes = [target], Edges = [] };
 
-        var ok = await new QuestConfigBindingResolver(holonManager).TryResolveAsync(
+        var r = await new QuestConfigBindingResolver(holonManager).TryResolveAsync(
             cfg, target, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None, out var resolved, out var error);
+            AvatarId, CancellationToken.None);
 
-        ok.Should().BeTrue(because: error);
-        var doc = JsonDocument.Parse(resolved!);
+        r.Ok.Should().BeTrue(because: r.Error ?? "no error");
+        var doc = JsonDocument.Parse(r.ResolvedJson!);
         doc.RootElement.GetProperty("status").GetString().Should().Be("FUNDED");
     }
 
@@ -223,37 +226,35 @@ public class QuestConfigBindingResolverTests
     public async Task TryResolveAsync_NonOwnedHolon_ReturnsFalseWithError()
     {
         var holonId = Guid.NewGuid();
-        var differentAvatar = Guid.NewGuid();
-        var holon = MakeHolon(differentAvatar); // owned by a different avatar
+        var holon = MakeHolon(Guid.NewGuid()); // owned by a different avatar
         var holonManager = MakeHolonManager(holon, holonId);
 
-        var cfg = $$"""{"x":{"$from":"holon.{{holonId}}.status"}}""";
+        var cfg = $"{{\"x\":{{\"$from\":\"holon.{holonId}.status\"}}}}";
         var target = MakeNodeWithId(NodeId, "check", cfg);
-        var quest = new Quest { Id = QuestId, AvatarId = AvatarId, Nodes = [target], Edges = [] };
+        var quest = new QuestModel { Id = QuestId, AvatarId = AvatarId, Nodes = [target], Edges = [] };
 
-        var ok = await new QuestConfigBindingResolver(holonManager).TryResolveAsync(
+        var r = await new QuestConfigBindingResolver(holonManager).TryResolveAsync(
             cfg, target, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None, out _, out var error);
+            AvatarId, CancellationToken.None);
 
-        ok.Should().BeFalse();
-        error.Should().Contain("not found or not accessible");
+        r.Ok.Should().BeFalse();
+        r.Error.Should().Contain("not found or not accessible");
     }
 
     [Fact]
     public async Task TryResolveAsync_HolonNotFound_ReturnsFalseWithError()
     {
         var holonId = Guid.NewGuid();
-        // holonManager returns error for all IDs
-        var cfg = $$"""{"x":{"$from":"holon.{{holonId}}.status"}}""";
+        var cfg = $"{{\"x\":{{\"$from\":\"holon.{holonId}.status\"}}}}";
         var target = MakeNodeWithId(NodeId, "check", cfg);
-        var quest = new Quest { Id = QuestId, AvatarId = AvatarId, Nodes = [target], Edges = [] };
+        var quest = new QuestModel { Id = QuestId, AvatarId = AvatarId, Nodes = [target], Edges = [] };
 
-        var ok = await MakeResolver().TryResolveAsync(
+        var r = await MakeResolver().TryResolveAsync(
             cfg, target, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None, out _, out var error);
+            AvatarId, CancellationToken.None);
 
-        ok.Should().BeFalse();
-        error.Should().Contain("not found or not accessible");
+        r.Ok.Should().BeFalse();
+        r.Error.Should().Contain("not found or not accessible");
     }
 
     // ── Structural violations (definition-time checks) ────────────────────────
@@ -270,7 +271,6 @@ public class QuestConfigBindingResolverTests
     [Fact]
     public void FindAndValidateBindings_ArrayElement_ReturnsError()
     {
-        // $from as array element — V1 restriction
         var cfg = """{"items":[{"$from":"upstream.gate.amount"}]}""";
         var err = QuestConfigBindingResolver.FindAndValidateBindings(cfg, out _);
 

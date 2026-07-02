@@ -96,7 +96,8 @@ public class QuestNodeHandlerRegistryTests
             emptyRegistry,
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         var result = await manager.ExecuteNodeAsync(questId, node.Id, quest.AvatarId);
 

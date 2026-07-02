@@ -38,7 +38,8 @@ public class QuestPublishLifecycleTests
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning());
+            BlockchainProviderFactoryFakes.Returning(),
+            BindingResolverFakes.PassThrough());
 
         return (manager, questStore, runStore);
     }

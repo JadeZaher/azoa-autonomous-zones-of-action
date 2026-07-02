@@ -102,7 +102,8 @@ public sealed class ReconcileBeforeRetryWiringTests
         public QuestManager NewManager() => new(
             QuestStore, RunStore, ExecutionStore, new QuestDagValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { NodeHandler }),
-            SagaStore, WalletManager, ProviderFactory);
+            SagaStore, WalletManager, ProviderFactory,
+            BindingResolverFakes.PassThrough());
 
         public (SagaProcessor Processor, ServiceProvider Scope) NewProcessor()
         {
