@@ -45,6 +45,15 @@ Draft ──publish──▶ Active ──unpublish──▶ Draft
 Execute-time re-validation is kept as defence-in-depth (does not replace the
 publish gate; both run independently).
 
+**Known pre-launch limitation (TOCTOU):** `StartWorkflowRunAsync` reads `Status
+== Active` while `UnpublishAsync` flips it to `Draft`; there is no optimistic-
+concurrency guard between the two, so a narrow race window exists where a run
+starts on a quest that is simultaneously being unpublished. This is non-
+transactional in SurrealDB v3.x at the current integration depth. Mitigation:
+guard `UnpublishAsync` to also check for in-flight runs (already done), which
+closes the race for well-behaved callers. A write-side optimistic-concurrency
+stamp (`status_version`) is the tracked follow-up for pre-launch hardening.
+
 ## §holon-parent-cycle — HolonManager parent-cycle guard
 
 `EnsureNotDescendantAsync(holonId, proposedParentId)` is a shared private helper
@@ -66,3 +75,8 @@ The guard is called on every `ParentHolonId` write path:
 
 If you add a new `ParentHolonId` write path, call `EnsureNotDescendantAsync`
 before persisting.
+
+`CloneAsync` (`HolonManager.cs:~359`) is the one intentionally-unguarded
+`ParentHolonId` write: it assigns a fresh `Guid.NewGuid()` as both the clone's
+`Id` and the new tree root, so no existing holon is named as parent and no cycle
+is reachable. No guard call is needed or correct there.

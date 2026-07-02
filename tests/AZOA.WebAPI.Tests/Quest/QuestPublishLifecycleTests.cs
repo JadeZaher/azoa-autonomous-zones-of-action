@@ -275,7 +275,7 @@ public class QuestPublishLifecycleTests
     // ─── AC-3b: same fan-out quest still executes on legacy path (warning) ────
 
     [Fact]
-    public async Task DagValidator_FanOut_IsWarningOnLegacyPath()
+    public void DagValidator_FanOut_IsWarningOnLegacyPath()
     {
         var quest = FanOutQuest();
         var validator = new QuestDagValidator();
@@ -289,7 +289,7 @@ public class QuestPublishLifecycleTests
     }
 
     [Fact]
-    public async Task DagValidator_FanOut_IsErrorOnDurablePath()
+    public void DagValidator_FanOut_IsErrorOnDurablePath()
     {
         var quest = FanOutQuest();
         var validator = new QuestDagValidator();

@@ -80,26 +80,35 @@ public class HolonParentCycleGuardTests
             .ReturnsAsync((IHolon h, CancellationToken _) => new AZOAResult<IHolon> { Result = h });
     }
 
-    // ─── AC-6a: self-parent rejected on CreateAsync ───────────────────────
+    // ─── AC-6a: self-parent rejected via UpdateAsync ──────────────────────
+    // CreateAsync self-parent is unreachable through the API (HolonCreateModel
+    // has no Id field; the new Holon is assigned a fresh Guid server-side, so
+    // a caller cannot pass the not-yet-known Id as ParentHolonId). The guard is
+    // defence-in-depth for internal calls — covered by MoveSubtreeAsync_SelfParent_Rejected.
+    // This test pins the same self-parent rejection path via UpdateAsync, which
+    // IS API-reachable and exercises the identical EnsureNotDescendantAsync branch.
 
     [Fact]
-    public async Task CreateAsync_SelfParent_Rejected()
+    public async Task UpdateAsync_SelfParent_Rejected()
     {
-        // Can't set the new holon as its own parent.
-        // The new Holon gets a fresh Id, so we can't predict it — but we can
-        // set ParentHolonId to Guid.Empty and ensure it differs, OR we test
-        // the self-parent path directly by faking the model.
-        // Since the Id is auto-assigned, we rely on EnsureNotDescendantAsync's
-        // self-check: id == proposedParentId. We set up a deterministic Id by
-        // seeding a known value via HolonCreateModel if possible — but the model
-        // has no Id field. Instead, test the next-best case: a cycle where the
-        // proposed parent is an existing descendant of a DIFFERENT holon (via
-        // UpdateAsync). For the self-parent on Create, we verify via MoveSubtree.
-        // (CreateAsync self-parent is only theoretically possible if the caller
-        // somehow passes the not-yet-known Id, which can't happen through the API;
-        // the guard is defence-in-depth for internal calls.)
-        // → Skip; covered by MoveSubtree self-parent test below.
-        await Task.CompletedTask; // placeholder — see MoveSubtreeAsync_SelfParent_Rejected
+        var holonId = Guid.NewGuid();
+
+        SetupExisting(holonId);
+        // No descendants — EnsureNotDescendantAsync short-circuits on id == proposedParentId
+        // before the BFS. Store returns empty children for completeness.
+        _store
+            .Setup(s => s.QueryAsync(
+                It.Is<HolonQueryRequest>(q => q.ParentHolonId == holonId),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>() });
+
+        var result = await _manager.UpdateAsync(holonId, new HolonUpdateModel
+        {
+            ParentHolonId = holonId, // self-parent
+        });
+
+        result.IsError.Should().BeTrue("a holon cannot be its own parent (AC-6a, self-parent via UpdateAsync)");
+        result.Message.Should().ContainEquivalentOf("own parent");
     }
 
     // ─── AC-6b: UpdateAsync rejects cycle ────────────────────────────────
