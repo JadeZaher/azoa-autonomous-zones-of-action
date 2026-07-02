@@ -329,6 +329,6 @@ public class HolonManagerTests
         var result = await _manager.MoveSubtreeAsync(a.Id, b.Id);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("Cannot move");
+        result.Message.Should().ContainEquivalentOf("cycle");
     }
 }

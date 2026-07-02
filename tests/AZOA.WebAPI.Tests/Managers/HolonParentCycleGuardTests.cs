@@ -122,7 +122,7 @@ public class HolonParentCycleGuardTests
         });
 
         result.IsError.Should().BeTrue("setting a descendant as parent creates a cycle (AC-6b)");
-        result.Message.Should().Contain("cycle", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("cycle");
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public class HolonParentCycleGuardTests
         });
 
         result.IsError.Should().BeTrue("InteractAsync must guard cycle on NewParentHolonId (AC-6b)");
-        result.Message.Should().Contain("cycle", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("cycle");
     }
 
     [Fact]
@@ -202,7 +202,7 @@ public class HolonParentCycleGuardTests
         var result = await _manager.MoveSubtreeAsync(holonId, holonId);
 
         result.IsError.Should().BeTrue("a holon cannot be its own parent (self-parent cycle)");
-        result.Message.Should().Contain("own parent", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("own parent");
     }
 
     [Fact]
@@ -219,6 +219,6 @@ public class HolonParentCycleGuardTests
         var result = await _manager.MoveSubtreeAsync(rootId, grandChildId);
 
         result.IsError.Should().BeTrue("MoveSubtreeAsync must guard cycle (original precedent)");
-        result.Message.Should().Contain("cycle", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("cycle");
     }
 }

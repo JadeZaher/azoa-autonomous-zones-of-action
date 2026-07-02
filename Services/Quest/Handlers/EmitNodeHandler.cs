@@ -25,7 +25,9 @@ public sealed class EmitNodeHandler : IQuestNodeHandler
         QuestNodeExecutionContext context,
         CancellationToken ct = default)
     {
-        if (!QuestNodeConfig.TryDeserialize<EmitNodeConfig>(context.Node.Config, nameof(QuestNodeType.Emit), out var cfg, out var cfgError))
+        // Emit is forward-compatible: unknown config keys are silently skipped at runtime.
+        // Definition-time strict validation is still enforced via QuestNodeConfigRegistry.
+        if (!QuestNodeConfig.TryDeserialize<EmitNodeConfig>(context.Node.Config, nameof(QuestNodeType.Emit), out var cfg, out var cfgError, strict: false))
             return Task.FromResult(QuestNodeResults.Fail(cfgError));
 
         // Gracefully handle a missing or undefined payload — emit empty object.

@@ -129,6 +129,11 @@ public class HolonManagerExtendedTests
         var newParent = Guid.NewGuid();
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
+        // Cycle-guard BFS: holon has no children so newParent cannot be a descendant.
+        _store.Setup(p => p.QueryAsync(
+                It.Is<HolonQueryRequest>(q => q.ParentHolonId == holon.Id),
+                It.IsAny<CancellationToken>()))
+             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>() });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IHolon h, CancellationToken _) => new AZOAResult<IHolon> { Result = h });
 

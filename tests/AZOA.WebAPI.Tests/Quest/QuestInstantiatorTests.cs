@@ -24,7 +24,7 @@ public class QuestInstantiatorTests
         _templateStoreMock = new Mock<IQuestTemplateStore>();
 
         _validatorMock = new Mock<IQuestDagValidator>();
-        _validatorMock.Setup(v => v.Validate(It.IsAny<QuestEntity>()))
+        _validatorMock.Setup(v => v.Validate(It.IsAny<QuestEntity>(), It.IsAny<bool>()))
             .Returns(new DagValidationResult { IsValid = true });
 
         var loggerMock = new Mock<ILogger<QuestInstantiator>>();
@@ -224,7 +224,7 @@ public class QuestInstantiatorTests
             .Setup(s => s.GetNodeTemplateAsync(nodeTemplateId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(nodeTemplate);
 
-        _validatorMock.Setup(v => v.Validate(It.IsAny<QuestEntity>()))
+        _validatorMock.Setup(v => v.Validate(It.IsAny<QuestEntity>(), It.IsAny<bool>()))
             .Returns(new DagValidationResult
             {
                 IsValid = false,

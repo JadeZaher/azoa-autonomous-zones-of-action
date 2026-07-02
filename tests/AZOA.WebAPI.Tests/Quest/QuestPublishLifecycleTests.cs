@@ -116,7 +116,7 @@ public class QuestPublishLifecycleTests
         var result = await manager.PublishAsync(quest.Id, quest.AvatarId);
 
         result.IsError.Should().BeTrue("cyclic DAG must be rejected");
-        result.Message.Should().Contain("Cycle", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("Cycle");
 
         // Quest must remain Draft after a failed publish.
         var reloaded = (await questStore.GetQuestAsync(quest.Id)).Result;
@@ -134,7 +134,7 @@ public class QuestPublishLifecycleTests
         var result = await manager.ExecuteAsync(quest.Id, quest.AvatarId);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("publish", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("publish");
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public class QuestPublishLifecycleTests
         var result = await manager.StartWorkflowRunAsync(quest.Id, quest.AvatarId);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("publish", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("publish");
     }
 
     // ─── AC-2c: mutations on Active quest rejected; succeed after unpublish ───
@@ -163,7 +163,7 @@ public class QuestPublishLifecycleTests
             quest.AvatarId);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("unpublish", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("unpublish");
     }
 
     [Fact]
@@ -206,7 +206,7 @@ public class QuestPublishLifecycleTests
         var result = await manager.UnpublishAsync(quest.Id, quest.AvatarId);
 
         result.IsError.Should().BeTrue("in-flight run blocks unpublish");
-        result.Message.Should().Contain("in-flight", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("in-flight");
     }
 
     [Fact]
@@ -269,7 +269,7 @@ public class QuestPublishLifecycleTests
         var result = await manager.PublishAsync(quest.Id, quest.AvatarId);
 
         result.IsError.Should().BeTrue("fan-out is rejected at publish time (AC-3a)");
-        result.Message.Should().Contain("fan-out", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("fan-out");
     }
 
     // ─── AC-3b: same fan-out quest still executes on legacy path (warning) ────

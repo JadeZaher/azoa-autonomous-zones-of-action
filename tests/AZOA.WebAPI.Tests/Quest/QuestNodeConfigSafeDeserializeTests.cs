@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Moq;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Quest;
@@ -65,7 +66,7 @@ public class QuestNodeConfigSafeDeserializeTests
 
         ok.Should().BeFalse();
         error.Should().Contain("GateCheck");
-        error.Should().Contain("parse error", StringComparison.OrdinalIgnoreCase);
+        error.Should().ContainEquivalentOf("parse error");
     }
 
     [Fact]
@@ -144,7 +145,7 @@ public class QuestNodeConfigSafeDeserializeTests
         // result — what matters is no exception escapes.
         nftMock.Verify(m => m.TransferAsync(
             It.IsAny<Guid>(), It.IsAny<NftTransferRequest>(),
-            It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<string?>()),
+            It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
             Moq.Times.Never,
             "TransferAsync must never be reached when config parse fails");
     }
@@ -208,7 +209,7 @@ public class QuestNodeConfigSafeDeserializeTests
             AvatarId);
 
         result.IsError.Should().BeTrue("unknown config member must be rejected at add time");
-        result.Message.Should().Contain("config", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("config");
     }
 
     [Fact]
@@ -220,7 +221,7 @@ public class QuestNodeConfigSafeDeserializeTests
         var (manager, _) = BuildManager(quest);
 
         // Valid Transfer config (Guid + empty request).
-        var validConfig = $$"""{"nftId":"{{Guid.NewGuid()}}","request":{}}""";
+        var validConfig = "{\"nftId\":\"" + Guid.NewGuid() + "\",\"request\":{}}";
         var result = await manager.AddNodeAsync(quest.Id,
             new QuestNodeCreateModel
             {
@@ -269,7 +270,7 @@ public class QuestNodeConfigSafeDeserializeTests
         var result = await manager.PublishAsync(quest.Id, AvatarId);
 
         result.IsError.Should().BeTrue("publish must be rejected when a node has invalid config (AC-4b)");
-        result.Message.Should().Contain("config", StringComparison.OrdinalIgnoreCase);
+        result.Message.Should().ContainEquivalentOf("config");
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────

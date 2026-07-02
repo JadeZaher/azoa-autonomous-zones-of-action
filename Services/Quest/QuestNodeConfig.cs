@@ -23,17 +23,31 @@ public static class QuestNodeConfig
     };
 
     /// <summary>
+    /// Permissive options: unknown members are silently skipped. Used for
+    /// forward-compatible handlers (e.g. Emit) where extra keys in stored config
+    /// must not cause a runtime failure.
+    /// </summary>
+    public static readonly JsonSerializerOptions PermissiveOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip,
+    };
+
+    /// <summary>
     /// Attempts to deserialize <paramref name="json"/> as <typeparamref name="T"/>.
     /// Returns true on success; on failure sets <paramref name="error"/> to a
     /// message carrying the node type name and parse detail.
     /// Null/empty <paramref name="json"/> returns a default-constructed instance
     /// (not an error) — handlers that need a non-null value get the default.
+    /// Pass <paramref name="strict"/> = false to allow unknown JSON members
+    /// (useful for forward-compatible handlers such as Emit).
     /// </summary>
     public static bool TryDeserialize<T>(
         string? json,
         string nodeTypeName,
         out T config,
-        out string error) where T : new()
+        out string error,
+        bool strict = true) where T : new()
     {
         error = string.Empty;
 
@@ -43,9 +57,11 @@ public static class QuestNodeConfig
             return true;
         }
 
+        var options = strict ? StrictOptions : PermissiveOptions;
+
         try
         {
-            var result = JsonSerializer.Deserialize<T>(json, StrictOptions);
+            var result = JsonSerializer.Deserialize<T>(json, options);
             if (result is null)
             {
                 config = new T();

@@ -104,7 +104,7 @@ public class QuestManagerSkipPropagationTests
     {
         var (_, execStore, quest, run) = await BuildAndExecuteGateChainAsync(gateCheckPasses: false);
 
-        var executions = (await execStore.ListByRunAsync(run.Id)).Result!.ToList();
+        var executions = (await execStore.GetByRunIdAsync(run.Id)).Result!.ToList();
 
         var gateExec  = executions.First(e => e.NodeId == quest.Nodes[0].Id);
         var t1Exec    = executions.First(e => e.NodeId == quest.Nodes[1].Id);
@@ -120,7 +120,7 @@ public class QuestManagerSkipPropagationTests
     {
         var (_, execStore, quest, run) = await BuildAndExecuteGateChainAsync(gateCheckPasses: true);
 
-        var executions = (await execStore.ListByRunAsync(run.Id)).Result!.ToList();
+        var executions = (await execStore.GetByRunIdAsync(run.Id)).Result!.ToList();
         var t2Exec = executions.First(e => e.NodeId == quest.Nodes[2].Id);
 
         // Happy path: none skipped.
@@ -181,7 +181,7 @@ public class QuestManagerSkipPropagationTests
         var runResult = await manager.ExecuteAsync(quest.Id, avatarId);
         runResult.IsError.Should().BeFalse();
 
-        var executions = (await execStore.ListByRunAsync(runResult.Result!.Id)).Result!.ToList();
+        var executions = (await execStore.GetByRunIdAsync(runResult.Result!.Id)).Result!.ToList();
         executions.First(e => e.NodeId == tgtId).State.Should().Be(QuestNodeState.Skipped,
             "empty-condition Conditional edge propagates skip on source Failed");
     }
@@ -247,7 +247,7 @@ public class QuestManagerSkipPropagationTests
         var runResult = await manager.ExecuteAsync(quest.Id, avatarId);
         runResult.IsError.Should().BeFalse();
 
-        var executions = (await execStore.ListByRunAsync(runResult.Result!.Id)).Result!.ToList();
+        var executions = (await execStore.GetByRunIdAsync(runResult.Result!.Id)).Result!.ToList();
         executions.First(e => e.NodeId == bId).State.Should().Be(QuestNodeState.Skipped);
         executions.First(e => e.NodeId == cId).State.Should().Be(QuestNodeState.Skipped,
             "Skipped source behind empty-condition Conditional edge cascades skip");
@@ -305,7 +305,7 @@ public class QuestManagerSkipPropagationTests
         var runResult = await manager.ExecuteAsync(quest.Id, avatarId);
         runResult.IsError.Should().BeFalse();
 
-        var executions = (await execStore.ListByRunAsync(runResult.Result!.Id)).Result!.ToList();
+        var executions = (await execStore.GetByRunIdAsync(runResult.Result!.Id)).Result!.ToList();
         executions.First(e => e.NodeId == bId).State.Should().Be(QuestNodeState.Succeeded,
             "no skip when predecessor succeeded");
     }

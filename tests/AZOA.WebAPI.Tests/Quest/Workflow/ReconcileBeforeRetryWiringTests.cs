@@ -167,6 +167,7 @@ public sealed class ReconcileBeforeRetryWiringTests
             Id = questId,
             Name = "ReconcileQuest",
             AvatarId = AvatarId,
+            Status = QuestStatus.Active,
             Nodes = new List<QuestNode> { node },
             Edges = new List<QuestEdge>(),
         };

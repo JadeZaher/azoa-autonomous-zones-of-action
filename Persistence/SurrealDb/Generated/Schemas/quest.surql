@@ -2,10 +2,15 @@
 -- Table: quest
 -- Aggregate: Quest (Models/Quest/Quest.cs)
 -- Guardrail: G6 SCHEMAFULL; definition-side workflow shape. Runtime state lives on quest_run + quest_node_execution per quest-temporal-fork-model ADR §1.
--- Note: Shape-only definition: name, owner, template ancestry, dapp-series binding, free-form metadata. status/completed_date were intentionally removed when quest-temporal-fork-model split runtime from definition -- see SURREAL-SCHEMA-HINTS.md §1 'Removed from quest'.
+-- Note: Shape-only definition: name, owner, template ancestry, dapp-series binding, free-form metadata. completed_date was removed when quest-temporal-fork-model split runtime from definition. status was also removed then but is reintroduced by quest-dag-semantic-hardening FR-2 for the DEFINITION lifecycle (Draft/Active) -- distinct from the runtime QuestRun.Status. See Managers/AGENTS.md §publish-lifecycle.
 -- Note: nodes/edges/dependencies live in their own tables (quest_node, quest_edge, quest_dependency) keyed by quest_id -- they are queried independently of the parent and mutated through Add/Remove endpoints. Embedding them would force the controller-side node/edge CRUD endpoints to read-modify-write the entire quest row.
 -- Note: metadata is a free-form string->string map for caller-supplied tags (e.g. UI color, sort hint). Persisted as a SurrealDB object to keep arbitrary keys queryable.
 -- ============================================================
+
+-- ── Enums ─────────────────────────────────────────────────
+
+-- Quest.QuestStatusKind
+DEFINE PARAM IF NOT EXISTS $quest_status VALUE ["Draft", "Active", "Completed", "Failed", "Archived"];
 
 DEFINE TABLE IF NOT EXISTS quest SCHEMAFULL;
 
@@ -31,6 +36,11 @@ DEFINE FIELD IF NOT EXISTS dapp_series_id ON TABLE quest TYPE option<record<dapp
 
 -- Free-form caller-supplied metadata (string->string map)
 DEFINE FIELD IF NOT EXISTS metadata ON TABLE quest TYPE object FLEXIBLE;
+
+-- Definition lifecycle: Draft (editable) or Active (locked for execution). See Managers/AGENTS.md §publish-lifecycle.
+DEFINE FIELD IF NOT EXISTS status ON TABLE quest TYPE string
+    ASSERT $value INSIDE $quest_status
+    DEFAULT "Draft";
 
 -- Definition birthdate -- STAYS on the definition, not a runtime artifact
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE quest TYPE datetime
