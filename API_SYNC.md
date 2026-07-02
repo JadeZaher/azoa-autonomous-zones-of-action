@@ -64,6 +64,8 @@ This document tracks drift between backend endpoints and SDK method coverage. Us
 | | /api/quest/{id} | PUT | `updateQuest` | client.ts | OK |
 | | /api/quest/{id} | DELETE | `deleteQuest` | client.ts | OK |
 | | /api/quest/{id}/validate | POST | `validateQuestDag` | client.ts | OK |
+| | /api/quest/{id}/publish | POST | `publishQuest` | client.ts | OK |
+| | /api/quest/{id}/unpublish | POST | `unpublishQuest` | client.ts | OK |
 | | /api/quest/{id}/execute | POST | `executeQuest` | client.ts | OK |
 | | /api/quest/{id}/nodes/{nodeId}/execute | POST | `executeQuestNode` | client.ts | OK |
 | | /api/quest/templates | POST | `createQuestTemplate` | client.ts | OK |
@@ -140,4 +142,6 @@ This document tracks drift between backend endpoints and SDK method coverage. Us
 
 **CI does not validate this document.** It is a manual gate at PR-review. The author of a PR touching controllers or the SDK is responsible for syncing this table before merge.
 
-**Last reconciled:** 2026-06-11 (post quest-api + self-audit-one-fix ship)
+**Last reconciled:** 2026-07-02 (quest-dag-semantic-hardening Phase G — publish/unpublish SDK methods added)
+
+**Note:** The quests page (`frontend/src/app/(dashboard)/quests/page.tsx`) uses `azoa.api.request(...)` directly rather than the typed SDK quest methods. The publish/unpublish calls on the page are therefore direct HTTP calls, not `publishQuest`/`unpublishQuest`. The typed SDK methods exist for external SDK consumers. This gap is tracked as part of the existing quest sub-resource SDK gap (row 8 in "Open Drift" above).

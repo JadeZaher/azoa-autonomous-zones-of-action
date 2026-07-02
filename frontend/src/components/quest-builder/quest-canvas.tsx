@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useCallback, useMemo, useRef, useState } from 'react'
 import {
@@ -46,6 +46,12 @@ import {
   type NodeTypeMeta,
 } from './node-catalog'
 
+/** Data stored on each edge in the canvas. */
+interface EdgeData {
+  edgeType?: 'Control' | 'Conditional'
+  condition?: string
+}
+
 const nodeTypes = { quest: QuestNode }
 
 /** A node template fetched from the API, normalized into palette-meta shape. */
@@ -82,6 +88,14 @@ export interface BuiltGraph {
 let idCounter = 0
 const nextId = () => `n${++idCounter}_${Math.round(performance.now())}`
 
+/** Visual style for an edge based on its type. */
+function edgeStyle(type: string | undefined): Pick<Edge, 'animated' | 'style' | 'label'> {
+  if (type === 'Conditional') {
+    return { animated: true, style: { stroke: '#f59e0b', strokeDasharray: '5 5' } }
+  }
+  return { animated: false, style: { stroke: '#94a3b8' } }
+}
+
 interface PaletteEntry extends NodeTypeMeta {
   templateId?: string
   templateName?: string
@@ -112,12 +126,15 @@ interface QuestCanvasProps {
   onSubmit: (graph: BuiltGraph) => void
   submitting?: boolean
   submitLabel?: string
+  /** When true, node/edge mutations are disabled (Active quest). */
+  readOnly?: boolean
 }
 
-function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = 'Create Quest' }: QuestCanvasProps) {
+function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = 'Create Quest', readOnly = false }: QuestCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<QuestNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [paletteFilter, setPaletteFilter] = useState('')
   const wrapperRef = useRef<HTMLDivElement>(null)
   const rfInstance = useRef<ReactFlowInstance<Node<QuestNodeData>, Edge> | null>(null)
@@ -137,6 +154,22 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
   }, [palette, paletteFilter])
 
   const selectedNode = nodes.find((n) => n.id === selectedId) ?? null
+  const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null
+
+  // ─── Patch an edge's data (EdgeType / condition) ───
+  const patchEdge = useCallback(
+    (patch: Partial<EdgeData>) => {
+      if (!selectedEdgeId) return
+      setEdges((eds) =>
+        eds.map((e) =>
+          e.id === selectedEdgeId
+            ? { ...e, data: { ...(e.data as EdgeData), ...patch }, ...(edgeStyle(patch.edgeType ?? (e.data as EdgeData)?.edgeType ?? 'Control')) }
+            : e,
+        ),
+      )
+    },
+    [selectedEdgeId, setEdges],
+  )
 
   // ─── Add a node ───
   const addNode = useCallback(
@@ -197,8 +230,8 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
           {
             ...c,
             markerEnd: { type: MarkerType.ArrowClosed },
-            style: { stroke: '#94a3b8' },
-            data: { edgeType: 'Control' },
+            ...edgeStyle('Control'),
+            data: { edgeType: 'Control' } satisfies EdgeData,
           },
           eds,
         ),
@@ -206,6 +239,11 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     },
     [setEdges],
   )
+
+  const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+    setSelectedEdgeId(edge.id)
+    setSelectedId(null)
+  }, [])
 
   // ─── Node config edits ───
   const patchSelected = useCallback(
@@ -224,6 +262,12 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     setEdges((eds) => eds.filter((e) => e.source !== selectedId && e.target !== selectedId))
     setSelectedId(null)
   }, [selectedId, setNodes, setEdges])
+
+  const deleteSelectedEdge = useCallback(() => {
+    if (!selectedEdgeId) return
+    setEdges((eds) => eds.filter((e) => e.id !== selectedEdgeId))
+    setSelectedEdgeId(null)
+  }, [selectedEdgeId, setEdges])
 
   const autoLayout = useCallback(() => {
     setNodes((nds) => layoutGraph(nds, edges) as Node<QuestNodeData>[])
@@ -266,8 +310,8 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
           source: idByKey.get(pe.from)!,
           target: idByKey.get(pe.to)!,
           markerEnd: { type: MarkerType.ArrowClosed },
-          style: { stroke: '#94a3b8' },
-          data: { edgeType: pe.edgeType ?? 'Control', condition: pe.condition },
+          ...edgeStyle(pe.edgeType),
+          data: { edgeType: pe.edgeType ?? 'Control', condition: pe.condition } satisfies EdgeData,
         }))
 
       setNodes(layoutGraph(rawNodes, rawEdges) as Node<QuestNodeData>[])
@@ -280,6 +324,11 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
 
   // ─── Serialize and submit ───
   const handleSubmit = useCallback(() => {
+    // Hard blocks: invalid config JSON or Conditional edges missing condition
+    // will be rejected by the server anyway — surface them here first.
+    if (nodesWithInvalidConfig.length > 0) return
+    if (conditionalEdgeMissingCondition.length > 0) return
+
     const indexOf = new Map(nodes.map((n, i) => [n.id, i]))
     const graph: BuiltGraph = {
       nodes: nodes.map((n) => ({
@@ -295,12 +344,12 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
         .map((e) => ({
           sourceNodeId: indexOf.get(e.source)!,
           targetNodeId: indexOf.get(e.target)!,
-          edgeType: (e.data as { edgeType?: string })?.edgeType ?? 'Control',
-          condition: (e.data as { condition?: string })?.condition,
+          edgeType: (e.data as EdgeData)?.edgeType ?? 'Control',
+          condition: (e.data as EdgeData)?.condition,
         })),
     }
     onSubmit(graph)
-  }, [nodes, edges, onSubmit])
+  }, [nodes, edges, onSubmit, nodesWithInvalidConfig, conditionalEdgeMissingCondition])
 
   const configValid = useMemo(() => {
     if (!selectedNode) return true
@@ -312,44 +361,89 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     }
   }, [selectedNode])
 
+  // Conditional edge with empty condition is a server hard-reject (FR-1c / FR-8b).
+  const conditionalEdgeMissingCondition = useMemo(() =>
+    edges.filter((e) => (e.data as EdgeData)?.edgeType === 'Conditional' && !((e.data as EdgeData)?.condition ?? '').trim()),
+  [edges])
+
+  // Any node with invalid JSON config blocks submit (G3 — config validity pre-submit).
+  const nodesWithInvalidConfig = useMemo(() =>
+    nodes.filter((n) => {
+      try { JSON.parse(n.data.config || '{}'); return false } catch { return true }
+    }),
+  [nodes])
+
   // ─── Client-side DAG pre-check ───
   // Mirrors the backend QuestDagValidator rules so the user sees structural
   // problems (missing entry/terminal, orphans, cycles) BEFORE submitting and
   // eating a 400. Not authoritative — the server re-validates — but it stops
   // the common "why won't my quest save" guessing game.
+  //
+  // Warning levels: { text, error: true } = blocks publish/submit on the server.
   const dagWarnings = useMemo(() => {
-    const warnings: string[] = []
+    const warnings: Array<{ text: string; error?: boolean }> = []
     if (nodes.length === 0) return warnings
 
     const ids = new Set(nodes.map((n) => n.id))
     const incoming = new Map(nodes.map((n) => [n.id, 0]))
     const outgoing = new Map(nodes.map((n) => [n.id, 0]))
+    const controlOut = new Map(nodes.map((n) => [n.id, 0]))
     const adj = new Map<string, string[]>(nodes.map((n) => [n.id, []]))
     for (const e of edges) {
       if (!ids.has(e.source) || !ids.has(e.target)) continue
       incoming.set(e.target, (incoming.get(e.target) ?? 0) + 1)
       outgoing.set(e.source, (outgoing.get(e.source) ?? 0) + 1)
+      if ((e.data as EdgeData)?.edgeType !== 'Conditional') {
+        controlOut.set(e.source, (controlOut.get(e.source) ?? 0) + 1)
+      }
       adj.get(e.source)!.push(e.target)
     }
 
     const roots = nodes.filter((n) => (incoming.get(n.id) ?? 0) === 0)
-    const leaves = nodes.filter((n) => (outgoing.get(n.id) ?? 0) === 0)
     const markedEntries = nodes.filter((n) => n.data.isEntry)
     const markedTerminals = nodes.filter((n) => n.data.isTerminal)
 
     if (markedEntries.length === 0) {
-      warnings.push('No node is marked as Entry. Mark the starting node’s "Entry" flag in the inspector.')
+      warnings.push({ text: 'No node is marked as Entry. Mark the starting node's "Entry" flag in the inspector.' })
     }
     const unmarkedRoots = roots.filter((n) => !n.data.isEntry)
     if (unmarkedRoots.length > 0) {
-      warnings.push(`Orphan (no incoming edge, not Entry): ${unmarkedRoots.map((n) => n.data.label).join(', ')}.`)
+      warnings.push({ text: `Orphan (no incoming edge, not Entry): ${unmarkedRoots.map((n) => n.data.label).join(', ')}.` })
     }
     if (markedTerminals.length === 0) {
-      warnings.push('No node is marked as Terminal. Mark a leaf node’s "Terminal" flag in the inspector.')
+      warnings.push({ text: 'No node is marked as Terminal. Mark a leaf node's "Terminal" flag in the inspector.' })
     }
     const terminalNotLeaf = markedTerminals.filter((n) => (outgoing.get(n.id) ?? 0) > 0)
     if (terminalNotLeaf.length > 0) {
-      warnings.push(`Marked Terminal but has outgoing edges: ${terminalNotLeaf.map((n) => n.data.label).join(', ')}.`)
+      warnings.push({ text: `Marked Terminal but has outgoing edges: ${terminalNotLeaf.map((n) => n.data.label).join(', ')}.` })
+    }
+
+    // Fan-out: >1 outgoing Control edge from any node. Durable engine rejects at
+    // publish; shown as error-level (won't publish) rather than advisory.
+    const fanOutNodes = nodes.filter((n) => (controlOut.get(n.id) ?? 0) > 1)
+    for (const n of fanOutNodes) {
+      warnings.push({
+        text: `Fan-out on "${n.data.label}" (${controlOut.get(n.id)} outgoing Control edges) — won't publish; durable engine requires a single Control successor.`,
+        error: true,
+      })
+    }
+
+    // Conditional edges missing condition text: server hard-rejects these (FR-1c).
+    for (const e of conditionalEdgeMissingCondition) {
+      const src = nodes.find((n) => n.id === e.source)
+      const tgt = nodes.find((n) => n.id === e.target)
+      warnings.push({
+        text: `Conditional edge from "${src?.data.label ?? e.source}" → "${tgt?.data.label ?? e.target}" has no condition text — server will reject this edge.`,
+        error: true,
+      })
+    }
+
+    // Nodes with invalid config JSON block the server round-trip (FR-8d).
+    for (const n of nodesWithInvalidConfig) {
+      warnings.push({
+        text: `Node "${n.data.label}" has invalid JSON config — fix before submitting.`,
+        error: true,
+      })
     }
 
     // Reachability + cycle detection via BFS from marked entries.
@@ -368,7 +462,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     if (markedEntries.length > 0) {
       const unreachable = nodes.filter((n) => !reachable.has(n.id))
       if (unreachable.length > 0) {
-        warnings.push(`Not reachable from an Entry node: ${unreachable.map((n) => n.data.label).join(', ')}.`)
+        warnings.push({ text: `Not reachable from an Entry node: ${unreachable.map((n) => n.data.label).join(', ')}.` })
       }
     }
 
@@ -385,11 +479,19 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       }
     }
     if (visited !== nodes.length) {
-      warnings.push('Graph contains a cycle — quests must be acyclic (DAG).')
+      warnings.push({ text: 'Graph contains a cycle — quests must be acyclic (DAG).' })
+    }
+
+    // Skip-cascade advisory: remind authors that a failed/skipped node cascades
+    // through the entire downstream Control chain, not just one hop.
+    if (edges.some((e) => (e.data as EdgeData)?.edgeType !== 'Conditional')) {
+      warnings.push({
+        text: 'Skip cascades: if any node fails or is skipped, ALL downstream Control-chain nodes are also skipped (not just the next hop).',
+      })
     }
 
     return warnings
-  }, [nodes, edges])
+  }, [nodes, edges, conditionalEdgeMissingCondition, nodesWithInvalidConfig])
 
   return (
     <div className="flex h-[640px] gap-3">
@@ -453,16 +555,19 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
+          onConnect={readOnly ? undefined : onConnect}
           onInit={(inst) => (rfInstance.current = inst)}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          onNodeClick={(_, n) => setSelectedId(n.id)}
-          onPaneClick={() => setSelectedId(null)}
+          onDrop={readOnly ? undefined : onDrop}
+          onDragOver={readOnly ? undefined : onDragOver}
+          onNodeClick={(_, n) => { setSelectedId(n.id); setSelectedEdgeId(null) }}
+          onEdgeClick={onEdgeClick}
+          onPaneClick={() => { setSelectedId(null); setSelectedEdgeId(null) }}
           nodeTypes={nodeTypes}
           fitView
           proOptions={{ hideAttribution: true }}
-          deleteKeyCode={['Backspace', 'Delete']}
+          deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}
+          nodesConnectable={!readOnly}
+          nodesDraggable={!readOnly}
         >
           <Background gap={16} />
           <Controls showInteractive={false} />
@@ -520,12 +625,12 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       <div className="flex h-full w-72 shrink-0 flex-col overflow-hidden rounded-md border bg-card">
         <div className="border-b p-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {selectedNode ? 'Node Config' : 'Inspector'}
+            {selectedNode ? 'Node Config' : selectedEdge ? 'Edge Config' : 'Inspector'}
           </span>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-3 p-3">
-            {selectedNode ? (
+            {selectedNode && !readOnly ? (
               <>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Name</Label>
@@ -577,10 +682,18 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
                   Delete Node
                 </Button>
               </>
+            ) : selectedEdge ? (
+              // ─── Edge inspector (G2) ───
+              <EdgeInspector
+                edge={selectedEdge}
+                onPatch={readOnly ? undefined : patchEdge}
+                onDelete={readOnly ? undefined : deleteSelectedEdge}
+              />
             ) : (
               <p className="text-xs text-muted-foreground">
-                Select a node to edit its name, flags, and config. Drag from a node&apos;s bottom
-                handle to another node&apos;s top handle to create an edge.
+                {readOnly
+                  ? 'This quest is Active — unpublish it before making changes.'
+                  : 'Select a node to edit its config or click an edge to change its type. Drag from a node's bottom handle to another node's top handle to create an edge.'}
               </p>
             )}
           </div>
@@ -591,11 +704,11 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
             <span>{nodes.length} nodes · {edges.length} edges</span>
           </div>
           {dagWarnings.length > 0 && (
-            <ul className="space-y-0.5 rounded border border-amber-500/40 bg-amber-50 p-1.5 text-[10px] text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+            <ul className="space-y-0.5 rounded border border-amber-500/40 bg-amber-50 p-1.5 text-[10px] dark:bg-amber-900/20">
               {dagWarnings.map((w, i) => (
-                <li key={i} className="flex gap-1">
-                  <span aria-hidden>⚠</span>
-                  <span>{w}</span>
+                <li key={i} className={`flex gap-1 ${w.error ? 'text-red-700 dark:text-red-400' : 'text-amber-800 dark:text-amber-300'}`}>
+                  <span aria-hidden>{w.error ? '✕' : '⚠'}</span>
+                  <span>{w.text}</span>
                 </li>
               ))}
             </ul>
@@ -603,8 +716,15 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
           <Button
             className="w-full"
             size="sm"
-            disabled={submitting || nodes.length === 0}
+            disabled={submitting || nodes.length === 0 || nodesWithInvalidConfig.length > 0 || conditionalEdgeMissingCondition.length > 0}
             onClick={handleSubmit}
+            title={
+              nodesWithInvalidConfig.length > 0
+                ? 'Fix invalid JSON config before submitting'
+                : conditionalEdgeMissingCondition.length > 0
+                ? 'Add condition text to all Conditional edges before submitting'
+                : undefined
+            }
           >
             {submitting ? 'Saving…' : submitLabel}
           </Button>
@@ -619,5 +739,74 @@ export function QuestCanvas(props: QuestCanvasProps) {
     <ReactFlowProvider>
       <QuestCanvasInner {...props} />
     </ReactFlowProvider>
+  )
+}
+
+// ─── Edge inspector sub-component (G2) ───
+
+interface EdgeInspectorProps {
+  edge: Edge
+  onPatch?: (patch: Partial<EdgeData>) => void
+  onDelete?: () => void
+}
+
+function EdgeInspector({ edge, onPatch, onDelete }: EdgeInspectorProps) {
+  const data = (edge.data as EdgeData) ?? {}
+  const edgeType = data.edgeType ?? 'Control'
+  const condition = data.condition ?? ''
+  const missingCondition = edgeType === 'Conditional' && !condition.trim()
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs">Edge Type</Label>
+        <div className="flex gap-2">
+          {(['Control', 'Conditional'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => onPatch?.({ edgeType: t })}
+              disabled={!onPatch}
+              className={`rounded border px-2 py-1 text-xs transition-colors ${
+                edgeType === t
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background hover:bg-accent'
+              } disabled:opacity-50`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {edgeType === 'Conditional' && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Condition</Label>
+            {missingCondition && (
+              <span className="text-[10px] text-red-600">required</span>
+            )}
+          </div>
+          <Input
+            value={condition}
+            onChange={(e) => onPatch?.({ condition: e.target.value })}
+            disabled={!onPatch}
+            placeholder="e.g. true, false, output.ok == true"
+            className={`h-8 text-xs ${missingCondition ? 'border-red-500' : ''}`}
+          />
+          {missingCondition && (
+            <p className="text-[10px] text-red-600">
+              Conditional edges require a non-empty condition. The server will reject this edge.
+            </p>
+          )}
+        </div>
+      )}
+
+      {onDelete && (
+        <Button size="sm" variant="destructive" className="w-full" onClick={onDelete}>
+          Delete Edge
+        </Button>
+      )}
+    </div>
   )
 }

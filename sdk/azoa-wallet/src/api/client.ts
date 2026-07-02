@@ -2,6 +2,7 @@ import type { Result } from "../core/result.js";
 import { ok, err } from "../core/result.js";
 import { SdkError, SdkErrorCode } from "../core/errors.js";
 import type { SdkErrorDetail } from "../core/errors.js";
+import { API_PATHS } from "./api-version.js";
 
 export interface AzoaApiConfig {
   baseUrl: string;
@@ -1133,6 +1134,25 @@ export class AzoaApiClient {
   async validateQuestDag(questId: string): Promise<Result<boolean, SdkError>> {
     assertUuid(questId, "questId");
     return this.request("POST", `/api/quest/${questId}/validate`);
+  }
+
+  /**
+   * Run the full validation stack and flip the quest from Draft to Active.
+   * Returns validation errors on failure (400); quest stays Draft.
+   * See Managers/AGENTS.md §publish-lifecycle.
+   */
+  async publishQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
+    assertUuid(questId, "questId");
+    return this.request("POST", API_PATHS.QUEST_PUBLISH(questId));
+  }
+
+  /**
+   * Flip an Active quest back to Draft so its definition can be mutated.
+   * Returns an error if any in-flight runs exist for this quest.
+   */
+  async unpublishQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
+    assertUuid(questId, "questId");
+    return this.request("POST", API_PATHS.QUEST_UNPUBLISH(questId));
   }
 
   /** Execute all ready nodes in the quest DAG. Returns the updated quest. */

@@ -87,12 +87,45 @@ function useNodeTemplates() {
 
 // ─── My Quests ───
 
+/** Render a server validation error payload as a readable list. */
+function ValidationErrorList({ message }: { message: string }) {
+  // The server joins publish-failure validation errors as a semicolon-separated
+  // string: "Publish failed — DAG invalid: e1; e2". Attempt JSON.parse first
+  // (future-proofing); fall back to splitting on "; " so each error becomes
+  // its own bullet. Single-error messages render as a plain paragraph.
+  let lines: string[] = []
+  try {
+    const parsed = JSON.parse(message)
+    if (Array.isArray(parsed)) lines = parsed.map(String)
+  } catch {
+    // Not JSON — check for semicolon-joined publish failure format.
+    const PUBLISH_PREFIX = 'Publish failed — DAG invalid: '
+    if (message.includes('; ')) {
+      const body = message.startsWith(PUBLISH_PREFIX)
+        ? message.slice(PUBLISH_PREFIX.length)
+        : message
+      lines = body.split('; ').map((s) => s.trim()).filter(Boolean)
+    } else {
+      lines = [message]
+    }
+  }
+  if (lines.length === 1) return <p className="text-sm text-red-600">{lines[0]}</p>
+  return (
+    <ul className="space-y-0.5 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-400">
+      {lines.map((l, i) => (
+        <li key={i} className="flex gap-1"><span aria-hidden>✕</span><span>{l}</span></li>
+      ))}
+    </ul>
+  )
+}
+
 function QuestList() {
   const { avatarId } = useAzoa()
   const [quests, setQuests] = useState<Quest[]>([])
   const [selected, setSelected] = useState<Quest | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [actionResult, setActionResult] = useState<unknown>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [detailTab, setDetailTab] = useState<'dag' | 'actions' | 'raw'>('dag')
@@ -100,13 +133,13 @@ function QuestList() {
   const loadQuests = useCallback(async () => {
     if (!avatarId) return
     setLoading(true)
-    setError(null)
+    setListError(null)
     try {
       const result = await azoa.api.request<Quest[]>('GET', `/api/quest/avatar/${avatarId}`)
       if (isOk(result)) setQuests(result.value)
-      else setError(result.error.message)
+      else setListError(result.error.message)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      setListError(e instanceof Error ? e.message : 'Unknown error')
     } finally {
       setLoading(false)
     }
@@ -120,16 +153,19 @@ function QuestList() {
   const runAction = async (label: string, fn: () => Promise<unknown>) => {
     setActionLoading(true)
     setActionResult(null)
+    setActionError(null)
     try {
       const result = (await fn()) as { ok: boolean; value?: unknown; error?: { message: string } }
       if (result.ok) {
         setActionResult(result.value)
         if (selected) await loadQuest(selected.id)
+        // Reload list to reflect status changes (e.g. publish flips Draft→Active).
+        await loadQuests()
       } else {
-        setError(result.error?.message ?? `${label} failed`)
+        setActionError(result.error?.message ?? `${label} failed`)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      setActionError(e instanceof Error ? e.message : 'Unknown error')
     } finally {
       setActionLoading(false)
     }
@@ -153,7 +189,7 @@ function QuestList() {
         <span className="text-sm text-muted-foreground">{quests.length} quests</span>
       </div>
 
-      {error ? <ErrorBanner message={error} onRetry={loadQuests} /> : null}
+      {listError ? <ErrorBanner message={listError} onRetry={loadQuests} /> : null}
       {loading ? <LoadingSkeleton /> : null}
 
       {/* Full-width list with inline-expanding detail */}
@@ -209,7 +245,28 @@ function QuestList() {
 
                     {detailTab === 'actions' && (
                       <div className="flex flex-col gap-3">
+                        {/* ─── Lifecycle actions (G1) ─── */}
                         <div className="flex flex-wrap gap-2">
+                          {selected.status === 'Draft' && (
+                            <Button
+                              size="sm"
+                              variant="default"
+                              disabled={actionLoading}
+                              onClick={() => runAction('Publish', () => azoa.api.request('POST', `/api/quest/${selected.id}/publish`))}
+                            >
+                              Publish
+                            </Button>
+                          )}
+                          {selected.status === 'Active' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={actionLoading}
+                              onClick={() => runAction('Unpublish', () => azoa.api.request('POST', `/api/quest/${selected.id}/unpublish`))}
+                            >
+                              Unpublish
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -220,7 +277,8 @@ function QuestList() {
                           </Button>
                           <Button
                             size="sm"
-                            disabled={actionLoading || selected.status === 'Completed'}
+                            disabled={actionLoading || selected.status !== 'Active'}
+                            title={selected.status !== 'Active' ? 'Publish the quest before executing' : undefined}
                             onClick={() => runAction('Execute', () => azoa.api.request('POST', `/api/quest/${selected.id}/execute`))}
                           >
                             Execute Quest
@@ -234,6 +292,18 @@ function QuestList() {
                             Delete
                           </Button>
                         </div>
+                        {selected.status === 'Draft' && (
+                          <p className="text-xs text-muted-foreground">
+                            This quest is a <strong>Draft</strong> — publish it to enable execution.
+                          </p>
+                        )}
+                        {selected.status === 'Active' && (
+                          <p className="text-xs text-muted-foreground">
+                            This quest is <strong>Active</strong> — unpublish it to edit nodes or edges.
+                          </p>
+                        )}
+                        {/* Render server validation errors as a readable list (G1) */}
+                        {actionError && <ValidationErrorList message={actionError} />}
                         {actionResult !== null && actionResult !== undefined && (
                           <div>
                             <Separator />

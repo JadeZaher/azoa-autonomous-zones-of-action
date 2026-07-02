@@ -118,6 +118,10 @@ export const API_PATHS = {
   SWAP_QUOTE: "/api/swap/quote",
   SWAP_EXECUTE: "/api/swap/execute",
 
+  // Quest definition lifecycle (quest-dag-semantic-hardening FR-2 / FR-8).
+  QUEST_PUBLISH: (questId: string) => `/api/quest/${questId}/publish`,
+  QUEST_UNPUBLISH: (questId: string) => `/api/quest/${questId}/unpublish`,
+
   // Durable workflow engine (durable-workflow-engine) — run-driver surface on
   // QuestController. `start-workflow` starts a durable run on an existing quest;
   // `advance` is the `.step(nodeId)` primitive; `signal` un-parks a gate.
