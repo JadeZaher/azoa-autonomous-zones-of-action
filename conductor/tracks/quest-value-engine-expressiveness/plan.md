@@ -16,7 +16,7 @@ Commits per phase: `[quest-value-engine-expressiveness] <imperative>`.
 All file paths repo-relative. Spec §Background V1–V14 are the locked design
 decisions — do not re-litigate them.
 
-## Phase A: F1 — output-binding core (`$from`) [x] [7976e80]
+## Phase A: F1 — output-binding core (`$from`) [x] [ef08478]
 
 Goal: `{"$from": "<path>"}` resolves at dispatch time on both engines, fails
 closed, and validates at definition/publish time (FR-1, AC-1a..1f).
@@ -49,14 +49,14 @@ Tasks:
 - [x] Task: Docs — `Services/Quest/AGENTS.md` §output-binding added.
 - [x] Task: Commit Phase A.
 
-## Phase B: F2 — OnFailure edge type (both engines + validator + POCO)
+## Phase B: F2 — OnFailure edge type (both engines + validator + POCO) [~]
 
 Goal: first-class failure arm with the exactly-one-arm property (FR-2,
 AC-2a..2f); closes the durable-skip-propagation divergence.
 
 Tasks:
 
-- [ ] Task: Domain enum + POCO. Add `OnFailure` to `QuestEdgeType`
+- [x] Task: Domain enum + POCO. Add `OnFailure` to `QuestEdgeType`
   (`Models/Quest/QuestEnums.cs:108`) and to
   `Persistence/SurrealDb/Models/QuestEdge.cs` `QuestEdgeTypeKind` +
   `[Inside("Control", "Conditional", "OnFailure")]` (V4). Regen goldens via
