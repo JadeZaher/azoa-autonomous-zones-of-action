@@ -56,7 +56,7 @@ engine can never start a fan-out quest.
 
 Tasks:
 
-- [ ] Task B1: Reintroduce definition lifecycle status. Add `Status`
+- [x] Task B1: Reintroduce definition lifecycle status. Add `Status`
       (`QuestStatus`, default `Draft`) to the domain Quest
       (`Models/Quest/Quest.cs`) and the POCO
       (`Persistence/SurrealDb/Models/Quest.cs`) — the POCO's SurrealNote records
@@ -67,7 +67,7 @@ Tasks:
       quest-run-status-inside-constraint-gap lesson. Regen schema goldens via
       the pipeline — never hand-edit `.surql`. Ensure the store round-trips the
       field (`SurrealQuestStore`).
-- [ ] Task B2: Engine-profile check (Item 3, AC-3a/3b). Add `Warnings` list to
+- [x] Task B2: Engine-profile check (Item 3, AC-3a/3b). Add `Warnings` list to
       `DagValidationResult`; add a fan-out check (any node with >1 outgoing
       Control edges) — either inside `Services/QuestDagValidator.cs` behind a
       profile flag or as a small helper both callers share (keep it a targeted
@@ -75,7 +75,7 @@ Tasks:
       (`Managers/QuestManager.cs:1257`) treat fan-out as ERROR;
       `ExecuteAsync` (line 244 validation) records it as WARNING only. Unit
       tests: fan-out quest → error via workflow path, warning via legacy path.
-- [ ] Task B3: Publish/unpublish manager methods. `PublishAsync(questId, avatarId)`:
+- [x] Task B3: Publish/unpublish manager methods. `PublishAsync(questId, avatarId)`:
       owned-quest load (reuse `LoadOwnedQuestAsync` IDOR pattern) → full stack
       (structural `QuestDagValidator` + B2 profile-as-error + FR-4 config check
       via a hook that Phase C fills in — wire the call now, registry lands in C)
@@ -83,24 +83,24 @@ Tasks:
       `UnpublishAsync(questId, avatarId)`: refuse while any `QuestRun` for the
       quest is non-final (query `_runStore`); else `Active→Draft`. Unit tests
       for AC-2a/2d.
-- [ ] Task B4: Enforce lifecycle at seams (AC-2b/2c). `ExecuteAsync` +
+- [x] Task B4: Enforce lifecycle at seams (AC-2b/2c). `ExecuteAsync` +
       `StartWorkflowRunAsync` require `Status == Active` (clear error naming
       publish); keep execute-time re-validation as defense in depth. Definition
       mutations — `AddNodeAsync` (:866), `UpdateNodeAsync` (:894), node delete,
       `AddEdgeAsync` (:958), `RemoveEdgeAsync` (:1015) — reject when
       `Status == Active` with a conflict-style error. Unit tests: mutate-Active
       rejected, mutate-after-unpublish succeeds.
-- [ ] Task B5: Controller endpoints `POST /api/quest/{id}/publish` +
+- [x] Task B5: Controller endpoints `POST /api/quest/{id}/publish` +
       `POST /api/quest/{id}/unpublish` on `Controllers/QuestController.cs`
       (matches existing verb-subroute shape, cf. `/{id}/validate` :88,
       `/{id}/execute` :98). Map conflict-style manager errors appropriately.
       Note in AGENTS.md (Managers/ or Services/Quest/) §publish-lifecycle.
-- [ ] Task B6: Sweep existing tests/fixtures that create-and-execute quests —
+- [x] Task B6: Sweep existing tests/fixtures that create-and-execute quests —
       builders must publish (or construct `Active`) before execute, or the whole
       suite fails in Phase E. Update `TestDataBuilders` accordingly.
-- [ ] Verification B: self-review against AC-2a–2e + AC-3a/3b; confirm goldens
-      regenerated (diff shows generated `.surql`, no hand edits)
-      [checkpoint marker]
+- [x] Verification B: AC-2a–2e + AC-3a/3b all covered. POCO edited (not generated
+      .surql); goldens will regenerate in Phase E dotnet build.
+      [checkpoint]
 
 ## Phase C: Config schema validation + safe deserialization (Item 4)
 

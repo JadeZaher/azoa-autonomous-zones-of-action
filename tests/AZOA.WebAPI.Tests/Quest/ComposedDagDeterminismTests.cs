@@ -131,6 +131,7 @@ public class ComposedDagDeterminismTests
             Id = Guid.NewGuid(),
             Name = "swap-gate-grant",
             AvatarId = AvatarId,
+            Status = QuestStatus.Active,   // B6: must be Active to execute
             Nodes = new List<QuestNode> { swapNode, gateNode, grantNode },
             Edges = new List<QuestEdge> { Edge(swapNode, gateNode), Edge(gateNode, grantNode) },
         };
@@ -190,6 +191,7 @@ public class ComposedDagDeterminismTests
             var quest = new QuestEntity
             {
                 Id = Guid.NewGuid(), Name = "determinism", AvatarId = AvatarId,
+                Status = QuestStatus.Active,   // B6: must be Active to execute
                 Nodes = new List<QuestNode> { swapNode, gateNode, grantNode },
                 Edges = new List<QuestEdge> { Edge(swapNode, gateNode), Edge(gateNode, grantNode) },
             };
@@ -242,6 +244,7 @@ public class ComposedDagDeterminismTests
             Id = Guid.NewGuid(),
             Name = "gate-refund-on-fail",
             AvatarId = AvatarId,
+            Status = QuestStatus.Active,   // B6: must be Active to execute
             Nodes = new List<QuestNode> { swapNode, gateNode, grantNode, refundNode },
             Edges = new List<QuestEdge>
             {
@@ -299,6 +302,7 @@ public class ComposedDagDeterminismTests
         var quest = new QuestEntity
         {
             Id = Guid.NewGuid(), Name = "gate-pass", AvatarId = AvatarId,
+            Status = QuestStatus.Active,   // B6: must be Active to execute
             Nodes = new List<QuestNode> { swapNode, gateNode, grantNode, refundNode },
             Edges = new List<QuestEdge>
             {

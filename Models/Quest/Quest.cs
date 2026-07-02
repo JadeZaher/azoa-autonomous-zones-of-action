@@ -28,4 +28,10 @@ public class Quest
 
     /// <summary>Definition birthdate. STAYS on the definition (not a runtime artifact).</summary>
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Definition lifecycle: Draft (editable) or Active (locked for execution).
+    /// Reintroduced by quest-dag-semantic-hardening FR-2; see Managers/AGENTS.md §publish-lifecycle.
+    /// </summary>
+    public QuestStatus Status { get; set; } = QuestStatus.Draft;
 }

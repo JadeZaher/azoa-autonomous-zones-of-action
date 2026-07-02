@@ -101,6 +101,7 @@ public class QuestManagerExecutionOrderTests
             Id = questId,
             Name = "Single",
             AvatarId = Guid.NewGuid(),
+            Status = QuestStatus.Active,   // B6: must be Active to execute
             Nodes = new List<QuestNode>
             {
                 new() { Id = nodeId, Name = "Only", IsEntry = true, IsTerminal = true, NodeType = QuestNodeType.Condition, Config = "{}" }

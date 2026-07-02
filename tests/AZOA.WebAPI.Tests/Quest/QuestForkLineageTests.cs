@@ -37,6 +37,7 @@ public class QuestForkLineageTests
             Id = Guid.NewGuid(),
             Name = "Linear",
             AvatarId = Guid.NewGuid(),
+            Status = QuestStatus.Active,   // B6: must be Active to execute
             Nodes = Enumerable.Range(0, nodeCount).Select(i => new QuestNode
             {
                 Id = Guid.NewGuid(),
@@ -320,6 +321,7 @@ public class QuestForkLineageTests
             Id = Guid.NewGuid(),
             Name = "Failing",
             AvatarId = Guid.NewGuid(),
+            Status = QuestStatus.Active,   // B6: must be Active to execute
             Nodes = new List<QuestNode>
             {
                 new()

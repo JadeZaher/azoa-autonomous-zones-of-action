@@ -93,6 +93,40 @@ public class QuestController : ControllerBase
         return Ok(result);
     }
 
+    // ─── Definition lifecycle (FR-2, quest-dag-semantic-hardening) ───
+
+    /// <summary>
+    /// Runs the full validation stack and flips the quest from Draft to Active.
+    /// See Managers/AGENTS.md §publish-lifecycle.
+    /// </summary>
+    [HttpPost("{id:guid}/publish")]
+    public async Task<ActionResult<AZOAResult<Quest>>> Publish(Guid id, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<Quest> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.PublishAsync(id, avatarId.Value, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Flips an Active quest back to Draft so its definition can be mutated.
+    /// Refused while any in-flight runs exist.
+    /// </summary>
+    [HttpPost("{id:guid}/unpublish")]
+    public async Task<ActionResult<AZOAResult<Quest>>> Unpublish(Guid id, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<Quest> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.UnpublishAsync(id, avatarId.Value, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
     // ─── Execution ───
 
     [HttpPost("{id:guid}/execute")]

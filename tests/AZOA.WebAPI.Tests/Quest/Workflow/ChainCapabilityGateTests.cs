@@ -147,7 +147,9 @@ public sealed class ChainCapabilityGateTests
         }
         var quest = new QuestEntity
         {
-            Id = questId, Name = "GateQuest", AvatarId = AvatarId, Nodes = nodes, Edges = edges,
+            Id = questId, Name = "GateQuest", AvatarId = AvatarId,
+            Status = QuestStatus.Active,   // B6: must be Active to execute
+            Nodes = nodes, Edges = edges,
         };
         h.QuestStore.UpsertQuestAsync(quest).GetAwaiter().GetResult();
         return quest;

@@ -4,6 +4,7 @@ using QuestNode = AZOA.WebAPI.Models.Quest.QuestNode;
 using QuestEdge = AZOA.WebAPI.Models.Quest.QuestEdge;
 using QuestNodeState = AZOA.WebAPI.Models.Quest.QuestNodeState;
 using QuestStatus = AZOA.WebAPI.Models.Quest.QuestStatus;
+using QuestEdgeType = AZOA.WebAPI.Models.Quest.QuestEdgeType;
 
 namespace AZOA.WebAPI.Services;
 
@@ -13,7 +14,7 @@ namespace AZOA.WebAPI.Services;
 /// </summary>
 public class QuestDagValidator : IQuestDagValidator
 {
-    public DagValidationResult Validate(QuestEntity quest)
+    public DagValidationResult Validate(QuestEntity quest, bool fanOutAsError = false)
     {
         var result = new DagValidationResult { IsValid = true };
 
@@ -174,6 +175,30 @@ public class QuestDagValidator : IQuestDagValidator
         {
             result.Errors.Add($"Orphan nodes not reachable from any entry: {string.Join(", ", orphanNodes.Select(n => n.Name))}.");
             result.IsValid = false;
+        }
+
+        // FR-3 (quest-dag-semantic-hardening): fan-out check.
+        // A node with >1 outgoing Control edges is rejected by the durable engine
+        // (ResolveSingleSuccessor) and by the publish gate; the legacy executor
+        // runs fan-out but surfaces the advisory here as a warning.
+        var fanOutNodes = quest.Nodes
+            .Where(n => quest.Edges.Count(e => e.SourceNodeId == n.Id
+                                              && e.EdgeType == QuestEdgeType.Control) > 1)
+            .ToList();
+        foreach (var n in fanOutNodes)
+        {
+            var count = quest.Edges.Count(e => e.SourceNodeId == n.Id && e.EdgeType == QuestEdgeType.Control);
+            var msg = $"Node '{n.Name}' has {count} outgoing Control edges (fan-out); " +
+                      "the durable engine and publish gate reject this.";
+            if (fanOutAsError)
+            {
+                result.Errors.Add(msg);
+                result.IsValid = false;
+            }
+            else
+            {
+                result.Warnings.Add(msg);
+            }
         }
 
         return result;

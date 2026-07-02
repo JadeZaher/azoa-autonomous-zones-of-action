@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealTable("quest",
         Aggregate = "Quest (Models/Quest/Quest.cs)",
         Guardrail = "G6 SCHEMAFULL; definition-side workflow shape. Runtime state lives on quest_run + quest_node_execution per quest-temporal-fork-model ADR §1.")]
-    [SurrealNote("Shape-only definition: name, owner, template ancestry, dapp-series binding, free-form metadata. status/completed_date were intentionally removed when quest-temporal-fork-model split runtime from definition -- see SURREAL-SCHEMA-HINTS.md §1 'Removed from quest'.")]
+    [SurrealNote("Shape-only definition: name, owner, template ancestry, dapp-series binding, free-form metadata. completed_date was removed when quest-temporal-fork-model split runtime from definition. status was also removed then but is reintroduced by quest-dag-semantic-hardening FR-2 for the DEFINITION lifecycle (Draft/Active) -- distinct from the runtime QuestRun.Status. See Managers/AGENTS.md §publish-lifecycle.")]
     [SurrealNote("nodes/edges/dependencies live in their own tables (quest_node, quest_edge, quest_dependency) keyed by quest_id -- they are queried independently of the parent and mutated through Add/Remove endpoints. Embedding them would force the controller-side node/edge CRUD endpoints to read-modify-write the entire quest row.")]
     [SurrealNote("metadata is a free-form string->string map for caller-supplied tags (e.g. UI color, sort hint). Persisted as a SurrealDB object to keep arbitrary keys queryable.")]
     [Slice("quest")]
@@ -55,8 +55,25 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Free-form caller-supplied metadata (string->string map)")]
         public JsonElement Metadata { get; set; }
 
+        [FieldGroup("Definition lifecycle: Draft (editable) or Active (locked for execution). See Managers/AGENTS.md §publish-lifecycle.")]
+        [Inside("Draft", "Active", "Completed", "Failed", "Archived")]
+        [Default("\"Draft\"")]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public QuestStatusKind Status { get; set; }
+
         [FieldGroup("Definition birthdate -- STAYS on the definition, not a runtime artifact")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }
+
+        /// <summary>Mirrors the full domain QuestStatus enum (quest-dag-semantic-hardening FR-2).
+        /// [Inside] values must stay in sync with QuestStatus in Models/Quest/QuestEnums.cs.</summary>
+        public enum QuestStatusKind
+        {
+            Draft,
+            Active,
+            Completed,
+            Failed,
+            Archived
+        }
     }
 }

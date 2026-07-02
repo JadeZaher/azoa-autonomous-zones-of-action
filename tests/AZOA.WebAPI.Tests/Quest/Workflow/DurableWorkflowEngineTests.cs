@@ -238,6 +238,7 @@ public sealed class DurableWorkflowEngineTests
             Id = questId,
             Name = "WorkflowQuest",
             AvatarId = AvatarId,
+            Status = QuestStatus.Active,   // B6: must be Active to start a workflow run
             Nodes = nodes,
             Edges = edges,
         };

@@ -183,6 +183,86 @@ public class QuestManager : IQuestManager
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // DEFINITION LIFECYCLE — publish / unpublish (FR-2)
+    // See Managers/AGENTS.md §publish-lifecycle.
+    // ═══════════════════════════════════════════════════════════════════
+
+    public async Task<AZOAResult<Quest>> PublishAsync(Guid questId, Guid avatarId, AZOARequest? request = null)
+    {
+        var owned = await LoadOwnedQuestAsync(questId, avatarId);
+        if (owned.IsError || owned.Result == null)
+            return owned;
+        var quest = owned.Result;
+
+        if (quest.Status == QuestStatus.Active)
+            return new AZOAResult<Quest> { IsError = true, Message = "Quest is already Active." };
+
+        // Full validation stack: structural DAG + fan-out-as-error + config check.
+        var dagResult = _dagValidator.Validate(quest, fanOutAsError: true);
+        if (!dagResult.IsValid)
+            return new AZOAResult<Quest> { IsError = true, Message = $"Publish failed — DAG invalid: {string.Join("; ", dagResult.Errors)}" };
+
+        var transitionResult = _transitionValidator.Validate(quest);
+        if (!transitionResult.IsValid)
+            return new AZOAResult<Quest> { IsError = true, Message = $"Publish failed — transition invalid: {string.Join("; ", transitionResult.Errors)}" };
+
+        // Per-node config check (hook filled in by Phase C / QuestNodeConfigRegistry).
+        var configError = ValidateNodeConfigs(quest);
+        if (configError != null)
+            return new AZOAResult<Quest> { IsError = true, Message = $"Publish failed — node config invalid: {configError}" };
+
+        // Persist fresh ExecutionOrder (dagResult already populated it via Validate).
+        quest.Status = QuestStatus.Active;
+        var upsert = await _questStore.UpsertQuestAsync(quest);
+        if (upsert.IsError)
+            return new AZOAResult<Quest> { IsError = true, Message = upsert.Message };
+
+        return new AZOAResult<Quest> { Result = upsert.Result, Message = "Quest published." };
+    }
+
+    public async Task<AZOAResult<Quest>> UnpublishAsync(Guid questId, Guid avatarId, AZOARequest? request = null)
+    {
+        var owned = await LoadOwnedQuestAsync(questId, avatarId);
+        if (owned.IsError || owned.Result == null)
+            return owned;
+        var quest = owned.Result;
+
+        if (quest.Status != QuestStatus.Active)
+            return new AZOAResult<Quest> { IsError = true, Message = "Quest is not Active; cannot unpublish." };
+
+        // Refuse while any in-flight run exists (AC-2d).
+        var runsResult = await _runStore.GetByQuestIdAsync(questId);
+        if (!runsResult.IsError && runsResult.Result != null)
+        {
+            var inFlight = runsResult.Result.Where(r => !r.Status.IsTerminal()).ToList();
+            if (inFlight.Count > 0)
+                return new AZOAResult<Quest>
+                {
+                    IsError = true,
+                    Message = $"Cannot unpublish: {inFlight.Count} in-flight run(s) exist. Wait for them to reach a terminal state."
+                };
+        }
+
+        quest.Status = QuestStatus.Draft;
+        var upsert = await _questStore.UpsertQuestAsync(quest);
+        if (upsert.IsError)
+            return new AZOAResult<Quest> { IsError = true, Message = upsert.Message };
+
+        return new AZOAResult<Quest> { Result = upsert.Result, Message = "Quest unpublished." };
+    }
+
+    /// <summary>
+    /// Per-node config validation hook. Returns the first error message, or null
+    /// when all nodes pass. Filled in by QuestNodeConfigRegistry (Phase C);
+    /// until then returns null (no config check at publish time).
+    /// </summary>
+    private string? ValidateNodeConfigs(Quest quest)
+    {
+        // Phase C wires QuestNodeConfigRegistry here. Stub returns null (no-op).
+        return null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // DAG VALIDATION
     // ═══════════════════════════════════════════════════════════════════
 
@@ -239,6 +319,10 @@ public class QuestManager : IQuestManager
         var owned = await LoadOwnedQuestAsync(questId, avatarId);
         if (owned.IsError || owned.Result == null)
             return new AZOAResult<QuestRun> { IsError = true, Message = owned.Message };
+
+        // FR-2 (quest-dag-semantic-hardening): require Active status before execution.
+        if (owned.Result.Status != QuestStatus.Active)
+            return new AZOAResult<QuestRun> { IsError = true, Message = "Quest must be published (Active) before it can be executed. Call POST /{id}/publish first." };
 
         // Validate DAG first (also assigns ExecutionOrder onto definition nodes).
         var validationResult = await ValidateDAGAsync(questId, request);
@@ -876,6 +960,9 @@ public class QuestManager : IQuestManager
             return new AZOAResult<QuestNode> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
+        // FR-2 / AC-2c: mutations are blocked while the quest is Active.
+        if (quest.Status == QuestStatus.Active)
+            return new AZOAResult<QuestNode> { IsError = true, Message = "Cannot mutate an Active quest. Call POST /{id}/unpublish first." };
 
         var node = new QuestNode
         {
@@ -904,6 +991,9 @@ public class QuestManager : IQuestManager
             return new AZOAResult<QuestNode> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
+        // FR-2 / AC-2c: mutations are blocked while the quest is Active.
+        if (quest.Status == QuestStatus.Active)
+            return new AZOAResult<QuestNode> { IsError = true, Message = "Cannot mutate an Active quest. Call POST /{id}/unpublish first." };
         var node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null)
             return new AZOAResult<QuestNode> { IsError = true, Message = $"Node {nodeId} not found in quest {questId}." };
@@ -928,6 +1018,9 @@ public class QuestManager : IQuestManager
             return new AZOAResult<bool> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
+        // FR-2 / AC-2c: mutations are blocked while the quest is Active.
+        if (quest.Status == QuestStatus.Active)
+            return new AZOAResult<bool> { IsError = true, Message = "Cannot mutate an Active quest. Call POST /{id}/unpublish first." };
         var node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null)
             return new AZOAResult<bool> { IsError = true, Message = $"Node {nodeId} not found in quest {questId}." };
@@ -968,6 +1061,9 @@ public class QuestManager : IQuestManager
             return new AZOAResult<QuestEdge> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
+        // FR-2 / AC-2c: mutations are blocked while the quest is Active.
+        if (quest.Status == QuestStatus.Active)
+            return new AZOAResult<QuestEdge> { IsError = true, Message = "Cannot mutate an Active quest. Call POST /{id}/unpublish first." };
 
         // Endpoint existence guard — both ends must reference nodes already in
         // the quest. Without this an invalid graph can be persisted and only
@@ -1025,6 +1121,9 @@ public class QuestManager : IQuestManager
             return new AZOAResult<bool> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
+        // FR-2 / AC-2c: mutations are blocked while the quest is Active.
+        if (quest.Status == QuestStatus.Active)
+            return new AZOAResult<bool> { IsError = true, Message = "Cannot mutate an Active quest. Call POST /{id}/unpublish first." };
         var edge = quest.Edges.FirstOrDefault(e => e.Id == edgeId);
         if (edge == null)
             return new AZOAResult<bool> { IsError = true, Message = $"Edge {edgeId} not found in quest {questId}." };
@@ -1266,9 +1365,25 @@ public class QuestManager : IQuestManager
         if (owned.IsError || owned.Result == null)
             return new AZOAResult<QuestRun> { IsError = true, Message = owned.Message };
 
+        // FR-2: require Active status before starting a durable workflow run.
+        if (owned.Result.Status != QuestStatus.Active)
+            return new AZOAResult<QuestRun> { IsError = true, Message = "Quest must be published (Active) before a workflow run can be started. Call POST /{id}/publish first." };
+
         var validationResult = await ValidateDAGAsync(questId, request);
         if (validationResult.IsError)
             return new AZOAResult<QuestRun> { IsError = true, Message = validationResult.Message };
+
+        // FR-3 / AC-3a: fan-out is an error on the durable path — reject before any
+        // saga rows are written (ResolveSingleSuccessor catches it at runtime too,
+        // but catching here gives a cleaner, pre-run error message).
+        var questForFanOut = (await _questStore.GetQuestAsync(questId)).Result;
+        if (questForFanOut != null)
+        {
+            var fanOutCheck = _dagValidator.Validate(questForFanOut, fanOutAsError: true);
+            var fanOutErrors = fanOutCheck.Errors.Where(e => e.Contains("fan-out", StringComparison.OrdinalIgnoreCase)).ToList();
+            if (fanOutErrors.Count > 0)
+                return new AZOAResult<QuestRun> { IsError = true, Message = $"Workflow run rejected — fan-out not supported on durable path: {string.Join("; ", fanOutErrors)}" };
+        }
 
         var questResult = await _questStore.GetQuestAsync(questId);
         if (questResult.IsError || questResult.Result == null)

@@ -495,6 +495,7 @@ public sealed class SurrealQuestStore : IQuestStore
         TemplateId   = q.TemplateId.HasValue   ? SurrealLink.ToLink("quest_template", SurrealId.ToSurrealId(q.TemplateId.Value))   : null,
         DappSeriesId = q.DappSeriesId.HasValue ? SurrealLink.ToLink("dapp_series", SurrealId.ToSurrealId(q.DappSeriesId.Value)) : null,
         Metadata     = MetadataToJsonObject(q.Metadata),
+        Status       = q.Status.ToString(),
         CreatedDate  = ToUtcOffset(q.CreatedDate),
     };
 
@@ -507,6 +508,7 @@ public sealed class SurrealQuestStore : IQuestStore
         TemplateId   = string.IsNullOrEmpty(p.TemplateId)   ? null : FromSurrealId(SurrealLink.FromLink(p.TemplateId)!),
         DappSeriesId = string.IsNullOrEmpty(p.DappSeriesId) ? null : FromSurrealId(SurrealLink.FromLink(p.DappSeriesId)!),
         Metadata     = MetadataFromJsonObject(p.Metadata),
+        Status       = Enum.TryParse<QuestStatus>(p.Status, out var st) ? st : QuestStatus.Draft,
         CreatedDate  = p.CreatedDate.UtcDateTime,
         Nodes        = new List<QuestNode>(),
         Edges        = new List<QuestEdge>(),
@@ -765,6 +767,7 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("template_id")]     public string? TemplateId { get; set; }
         [JsonPropertyName("dapp_series_id")]  public string? DappSeriesId { get; set; }
         [JsonPropertyName("metadata")]        public JsonElement Metadata { get; set; }
+        [JsonPropertyName("status")]          public string? Status { get; set; }
         [JsonPropertyName("created_date")]    public DateTimeOffset CreatedDate { get; set; }
     }
 

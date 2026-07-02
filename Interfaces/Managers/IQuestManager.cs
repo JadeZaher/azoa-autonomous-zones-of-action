@@ -13,6 +13,11 @@ public interface IQuestManager
     Task<AZOAResult<Quest>> UpdateAsync(Guid id, QuestUpdateModel model, Guid avatarId, AZOARequest? request = null);
     Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid avatarId, AZOARequest? request = null);
 
+    // Quest definition lifecycle (FR-2, quest-dag-semantic-hardening).
+    // See Managers/AGENTS.md §publish-lifecycle.
+    Task<AZOAResult<Quest>> PublishAsync(Guid questId, Guid avatarId, AZOARequest? request = null);
+    Task<AZOAResult<Quest>> UnpublishAsync(Guid questId, Guid avatarId, AZOARequest? request = null);
+
     // DAG validation
     Task<AZOAResult<bool>> ValidateDAGAsync(Guid questId, AZOARequest? request = null);
 
