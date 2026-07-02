@@ -67,7 +67,7 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
     private static QuestCreateModel ArdanovaFundedGateQuest(Guid projectHolonId, string name = "ArdanovaFunded") => new()
     {
         Name = name,
-        Description = "ArdaNova: GateCheck(holon.status==FUNDED) → Emit",
+        Description = "ArdaNova GateCheck holon status FUNDED then Emit",
         Nodes =
         [
             new QuestNodeCreateModel
@@ -192,7 +192,7 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
             new QuestCreateModel
             {
                 Name = "ArdanovaFundedReadsQuest",
-                Description = "Gate via reads injection — simulates FUNDED signal from tenant",
+                Description = "Gate via reads injection simulates FUNDED signal from tenant",
                 Nodes =
                 [
                     new QuestNodeCreateModel
@@ -294,10 +294,16 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         var walletSeeded = walletResp.IsSuccessStatusCode;
 
         // 2. Create a Grant quest.
+        // Use a deterministic WalletId for the Grant config. The Grant handler
+        // resolves the wallet from the run context (actor avatar); WalletId here
+        // is a hint for the NFT mint request. We use a stable deterministic value
+        // so the config round-trip is deterministic.
+        var stableWalletId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
         var grantQuest = new QuestCreateModel
         {
             Name = "ArdanovaGrantQuest",
-            Description = "Tier-2 Grant on simulated provider (H3-c)",
+            Description = "Tier-2 Grant on simulated provider H3-c",
             Nodes =
             [
                 new QuestNodeCreateModel
@@ -308,10 +314,12 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
                     {
                         request = new
                         {
-                            walletAddress = SimulatedBlockchainProvider.SimAddress("Simulated", "ardanova-test-wallet"),
-                            tokenUri      = "sim:uri:ardanova-project-share",
-                            amount        = 1ul,
-                            assetType     = "ProjectShare"
+                            walletId    = stableWalletId,
+                            name        = "ArdanovaProjectShare",
+                            description = "Simulated project share token",
+                            chainId     = "Simulated",
+                            tokenId     = SimulatedBlockchainProvider.SimAddress("Simulated", "ardanova-project-share"),
+                            metadata    = new Dictionary<string, string> { ["simulated"] = "true" }
                         },
                         holonId = (Guid?)null
                     }),

@@ -31,7 +31,7 @@ public class QuestSemanticsIntegrationTests : IntegrationTestBase
     private static QuestCreateModel GateCascadeQuest(string name = "GateCascade") => new()
     {
         Name = name,
-        Description = "GateCheck always-false → Control → Control cascade",
+        Description = "GateCheck always-false Control Control cascade",
         Nodes =
         [
             new QuestNodeCreateModel
@@ -78,7 +78,7 @@ public class QuestSemanticsIntegrationTests : IntegrationTestBase
     private static QuestCreateModel FanOutQuest(string name = "FanOut") => new()
     {
         Name = name,
-        Description = "Fan-out: one node → two Control successors",
+        Description = "Fan-out one node two Control successors",
         Nodes =
         [
             new QuestNodeCreateModel
