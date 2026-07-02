@@ -1,0 +1,7 @@
+{
+  "id": "quest-dag-semantic-hardening",
+  "description": "Quest DAG semantic hardening: skip-propagation fix (P0), Draft→Active publish gate, engine-profile fan-out validation, per-node-type config validation + safe deserialization, ExtractBoundHolonIds array fix, holon parent-cycle guard",
+  "type": "bug",
+  "created_at": "2026-07-01T00:00:00Z",
+  "status": "pending"
+}
