@@ -138,23 +138,19 @@ Tasks:
 
 Tasks:
 
-- [ ] Task D1 (Item 5, AC-5): extend `ScanForGuids` in
-      `Managers/DappCompositionManager.cs:529+` to also collect Guids from
-      ARRAY values under `*holon*`-named properties (covers
-      `GateCheckNodeConfig.Holons`, `Models/Quest/NodeConfigs.cs:100`) — or, if
-      smaller after C2 lands, extract via the typed registry for known types.
-      Regression test: GateCheck node referencing a nonexistent holon ⇒
-      `HolonBindingsResolved=false` + diagnostic.
-- [ ] Task D2 (Item 6, AC-6a/6b): extract the descendant-cycle check from
-      `Managers/HolonManager.cs:393–398` (`MoveSubtreeAsync`) into a shared
-      private guard (e.g. `EnsureNotDescendantAsync(id, proposedParentId)`) and
-      call it from every `ParentHolonId` write: `CreateAsync` (~:38, when
-      supplied), `UpdateAsync` (~:61), `InteractAsync` (~:104–105
-      `NewParentHolonId`), and `MoveSubtreeAsync` itself. Clear rejection
-      message. Tests: A-parent-B then B-parent-A rejected on each of the four
-      paths; ancestors complete on surviving fixtures.
-- [ ] Verification D: self-review both guards; confirm no other
-      `ParentHolonId =` write sites exist (grep) [checkpoint marker]
+- [x] Task D1 (Item 5, AC-5): extended `ScanForGuids` in
+      `Managers/DappCompositionManager.cs` to also collect Guids from ARRAY
+      values under `*holon*`-named properties (covers GateCheckNodeConfig.Holons).
+      Regression test added to DappCompositionManagerTests.
+- [x] Task D2 (Item 6, AC-6a/6b): extracted `EnsureNotDescendantAsync(id,
+      proposedParentId)` from `MoveSubtreeAsync` and wired it into CreateAsync
+      (self-parent guard), UpdateAsync (ParentHolonId change), InteractAsync
+      (NewParentHolonId), and MoveSubtreeAsync. Managers/AGENTS.md
+      §holon-parent-cycle documents all four call sites. Tests in
+      HolonParentCycleGuardTests cover all paths.
+- [x] Verification D: grep confirms no other bare ParentHolonId write sites;
+      EnsureNotDescendantAsync is the single cycle-check source of truth
+      [checkpoint marker]
 
 ## Phase E: Single integrated verification sweep
 

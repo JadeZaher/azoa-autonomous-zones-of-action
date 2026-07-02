@@ -45,6 +45,15 @@ public class HolonManager : IHolonManager
             PeerHolonIds = model.PeerHolonIds
         };
 
+        // FR-6 / AC-6a: guard self-parent on create (descendant check is
+        // vacuous for a brand-new holon, but self-parent is still a cycle).
+        if (model.ParentHolonId.HasValue)
+        {
+            var cycleError = await EnsureNotDescendantAsync(holon.Id, model.ParentHolonId.Value, request);
+            if (cycleError != null)
+                return new AZOAResult<IHolon> { IsError = true, Message = cycleError };
+        }
+
         return await _holonStore.UpsertAsync(holon, default);
     }
 
@@ -58,6 +67,14 @@ public class HolonManager : IHolonManager
         var holon = (Holon)existing.Result;
         if (model.Name != null) holon.Name = model.Name;
         if (model.Description != null) holon.Description = model.Description;
+
+        // FR-6 / AC-6b: guard cycle on parent change.
+        if (model.ParentHolonId.HasValue)
+        {
+            var cycleError = await EnsureNotDescendantAsync(id, model.ParentHolonId.Value, request);
+            if (cycleError != null)
+                return new AZOAResult<IHolon> { IsError = true, Message = cycleError };
+        }
         if (model.ParentHolonId.HasValue) holon.ParentHolonId = model.ParentHolonId;
         if (model.ProviderName != null) holon.ProviderName = model.ProviderName;
         if (model.ChainId != null) holon.ChainId = model.ChainId;
@@ -101,8 +118,14 @@ public class HolonManager : IHolonManager
 
         var holon = (Holon)existing.Result;
 
+        // FR-6 / AC-6b: guard cycle on reparent via Interact.
         if (request.NewParentHolonId.HasValue)
+        {
+            var cycleError = await EnsureNotDescendantAsync(id, request.NewParentHolonId.Value, providerRequest);
+            if (cycleError != null)
+                return new AZOAResult<IHolon> { IsError = true, Message = cycleError };
             holon.ParentHolonId = request.NewParentHolonId;
+        }
 
         foreach (var peerId in request.AddPeerHolonIds)
         {
@@ -392,10 +415,9 @@ public class HolonManager : IHolonManager
 
     public async Task<AZOAResult<bool>> MoveSubtreeAsync(Guid id, Guid newParentId, Guid? avatarId = null, AZOARequest? request = null)
     {
-        // Prevent moving a holon under its own descendant (would create a cycle)
-        var descendantsResult = await GetDescendantsAsync(id, request);
-        if (descendantsResult.Result?.Any(d => d.Id == newParentId) == true)
-            return new AZOAResult<bool> { IsError = true, Message = "Cannot move a holon under its own descendant." };
+        // FR-6 / AC-6a: guard via shared helper (MoveSubtree precedent).
+        var cycleError = await EnsureNotDescendantAsync(id, newParentId, request);
+        if (cycleError != null) return new AZOAResult<bool> { IsError = true, Message = cycleError };
 
         var holonResult = await _holonStore.GetByIdAsync(id, default);
         if (holonResult.IsError || holonResult.Result == null)
@@ -412,5 +434,27 @@ public class HolonManager : IHolonManager
             return new AZOAResult<bool> { IsError = true, Message = saveResult.Message };
 
         return new AZOAResult<bool> { Result = true, Message = "Subtree moved." };
+    }
+
+    /// <summary>
+    /// Returns an error message if <paramref name="proposedParentId"/> is a
+    /// descendant of <paramref name="holonId"/> (which would create a cycle),
+    /// or if the descendants could not be fetched. Returns null when safe.
+    /// See Managers/AGENTS.md §holon-parent-cycle.
+    /// </summary>
+    private async Task<string?> EnsureNotDescendantAsync(
+        Guid holonId, Guid proposedParentId, AZOARequest? request = null)
+    {
+        if (holonId == proposedParentId)
+            return "Cannot set a holon as its own parent.";
+
+        var descendantsResult = await GetDescendantsAsync(holonId, request);
+        if (descendantsResult.IsError)
+            return $"Could not verify parent cycle: {descendantsResult.Message}";
+
+        if (descendantsResult.Result?.Any(d => d.Id == proposedParentId) == true)
+            return "Cannot set a descendant holon as parent (cycle detected).";
+
+        return null;
     }
 }

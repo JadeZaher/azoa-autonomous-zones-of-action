@@ -533,12 +533,29 @@ public sealed class DappCompositionManager : IDappCompositionManager
             case JsonValueKind.Object:
                 foreach (var prop in element.EnumerateObject())
                 {
-                    if (prop.Name.Contains(propertyNameFilter, StringComparison.OrdinalIgnoreCase)
+                    var nameMatches = prop.Name.Contains(propertyNameFilter, StringComparison.OrdinalIgnoreCase);
+
+                    // Scalar string value under a *holon*-named property.
+                    if (nameMatches
                         && prop.Value.ValueKind == JsonValueKind.String
-                        && Guid.TryParse(prop.Value.GetString(), out var guid))
+                        && Guid.TryParse(prop.Value.GetString(), out var scalarGuid))
                     {
-                        yield return guid;
+                        yield return scalarGuid;
                     }
+
+                    // FR-5 / AC-5: array value under a *holon*-named property
+                    // (e.g. GateCheckNodeConfig.Holons serialises as
+                    // "holons": ["<guid>", "<guid>", ...]). Yield each Guid element.
+                    if (nameMatches && prop.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var arrayItem in prop.Value.EnumerateArray())
+                        {
+                            if (arrayItem.ValueKind == JsonValueKind.String
+                                && Guid.TryParse(arrayItem.GetString(), out var arrayGuid))
+                                yield return arrayGuid;
+                        }
+                    }
+
                     foreach (var nested in ScanForGuids(prop.Value, propertyNameFilter))
                         yield return nested;
                 }

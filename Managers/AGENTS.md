@@ -44,3 +44,25 @@ Draft ──publish──▶ Active ──unpublish──▶ Draft
 
 Execute-time re-validation is kept as defence-in-depth (does not replace the
 publish gate; both run independently).
+
+## §holon-parent-cycle — HolonManager parent-cycle guard
+
+`EnsureNotDescendantAsync(holonId, proposedParentId)` is a shared private helper
+introduced by `quest-dag-semantic-hardening` FR-6. It:
+
+1. Rejects self-parent (`holonId == proposedParentId`) immediately.
+2. Calls `GetDescendantsAsync(holonId)` and rejects if `proposedParentId` is
+   in the result set (cycle: the proposed parent is already a descendant).
+3. Returns null when safe; returns an error string to surface as `IsError`.
+
+The guard is called on every `ParentHolonId` write path:
+
+| Method | Guard condition |
+|---|---|
+| `CreateAsync` | `model.ParentHolonId.HasValue` — self-parent only (new holon has no descendants yet) |
+| `UpdateAsync` | `model.ParentHolonId.HasValue` — full cycle check |
+| `InteractAsync` | `request.NewParentHolonId.HasValue` — full cycle check |
+| `MoveSubtreeAsync` | always — full cycle check (original precedent) |
+
+If you add a new `ParentHolonId` write path, call `EnsureNotDescendantAsync`
+before persisting.

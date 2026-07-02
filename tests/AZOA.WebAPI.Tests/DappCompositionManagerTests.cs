@@ -206,6 +206,52 @@ public class DappCompositionManagerTests
         report.Result.Diagnostics.Should().Contain(d => d.Contains(orphanHolon.ToString()));
     }
 
+    // ── FR-5 / AC-5: holon-ref scanner covers array-valued *holon* properties ──
+
+    [Fact]
+    public async Task Validate_FailsWhenHolonReferencedViaArrayProperty_DoesNotExist()
+    {
+        // GateCheckNodeConfig.Holons serialises as "holons": ["<guid>", ...].
+        // Before FR-5, ScanForGuids only picked up scalar string values under
+        // *holon*-named keys, so this reference was silently ignored and
+        // HolonBindingsResolved would incorrectly be true. After the fix, the
+        // array elements are also scanned and the missing holon is caught.
+        var missingHolonId = Guid.NewGuid();
+        var questId = Guid.NewGuid();
+        SetupQuestDef(questId, nodes: new[]
+        {
+            new QuestNodeDef
+            {
+                Id = Guid.NewGuid(),
+                QuestId = questId,
+                NodeType = QuestNodeType.GateCheck,
+                // Simulate GateCheckNodeConfig serialised: array-valued "holons" key.
+                Config = JsonSerializer.Serialize(new
+                {
+                    predicate = "true",
+                    reads     = new { },
+                    holons    = new[] { missingHolonId.ToString() },
+                }),
+            },
+        });
+
+        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "GateCheck array holon" });
+        var seriesId = create.Result!.IdGuid;
+        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questId, Order = 1 });
+        SetupLatestRunStatus(questId, QuestRunStatus.Succeeded);
+
+        _holonStore.Setup(s => s.GetByIdAsync(missingHolonId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IHolon> { IsError = true, Message = "not found" });
+
+        var report = await _manager.ValidateAsync(seriesId, _avatarId);
+
+        report.Result!.HolonBindingsResolved.Should().BeFalse(
+            "a Guid inside a *holon*-named array property must be treated as a holon reference (FR-5 / AC-5)");
+        report.Result.Diagnostics.Should().Contain(
+            d => d.Contains(missingHolonId.ToString()),
+            "the missing holon id must appear in diagnostics");
+    }
+
     // ── Compose + Generate + Deploy pipeline ──────────────────────────────────
 
     [Fact]
