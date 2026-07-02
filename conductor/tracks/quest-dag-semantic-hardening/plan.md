@@ -174,3 +174,67 @@ Tasks:
 - [x] Verification E: build 0 errors / 25 warnings (under baseline); 1027 tests
       green; Swagger publish/unpublish endpoints registered via
       POST /api/quest/{id}/publish + /unpublish [checkpoint marker]
+
+## Phase F: Review fixes (Addendum FR-7)
+
+Tasks:
+
+- [ ] Task F1: Real assertion (or deletion) for the vacuous
+      `CreateAsync_SelfParent_Rejected` in
+      `tests/AZOA.WebAPI.Tests/Managers/HolonParentCycleGuardTests.cs:85-103`.
+- [ ] Task F2: `Managers/` AGENTS.md one-liner — `CloneAsync` is the
+      intentionally-unguarded-but-cycle-safe `ParentHolonId` write.
+- [ ] Task F3: Publish-lifecycle AGENTS.md — record the run-start/unpublish
+      TOCTOU as a known pre-launch limitation (follow-up: optimistic status
+      write).
+- [ ] Task F4: Fix the two `CS1998` warnings in
+      `QuestPublishLifecycleTests.cs:278,292`.
+
+## Phase G: Frontend builder incorporation (Addendum FR-8)
+
+Frontend-only; no backend changes. Scoped `tsc --noEmit` on touched files only.
+
+Tasks:
+
+- [ ] Task G1: Publish lifecycle UI — status badge (Draft/Active) on quest
+      list; Publish/Unpublish buttons wired to the new endpoints; server
+      validation errors rendered as a list; Execute disabled on Draft with
+      hint; node/edge mutation affordances disabled on Active.
+- [ ] Task G2: Edge inspector — select edge → EdgeType toggle + Condition
+      input; Conditional+empty = blocking builder error.
+- [ ] Task G3: dagWarnings update — cascade-skip phrasing; fan-out (>1
+      outgoing Control) shown as error-level "won't publish"; invalid config
+      JSON becomes a BLOCKING submit error.
+- [ ] Task G4: SDK surface — publish/unpublish typed methods in the TS SDK
+      (`sdk/oasis-wallet/`) + API_SYNC.md row if the page consumes the SDK for
+      quest calls; else call via the existing client path and note the SDK gap
+      in NOTES.md.
+- [ ] Verification G: scoped tsc clean on touched files; manual flow described
+      in NOTES.md [checkpoint marker]
+
+## Phase H: Create→publish→execute e2e coverage (Addendum FR-9)
+
+Integration tests (`tests/AZOA.WebAPI.IntegrationTests`, per-class namespace
+factory pattern). SurrealDB must be UP (podman; see RUNBOOK/dev-stack notes).
+
+Tasks:
+
+- [ ] Task H1: Lifecycle suite — linear Tier-1 quest create→publish→execute→
+      Completed; execute-on-Draft rejected; mutation-on-Active rejected;
+      unpublish-with-in-flight-run rejected; publish IDOR (other avatar →
+      not-found).
+- [ ] Task H2: Semantics suite — gate-fail cascade (second hop Skipped,
+      asserted via execution-state API); fan-out publish 400 + legacy warning.
+- [ ] Task H3: ArdaNova flow e2e — holon → GateCheck(FUNDED) fail → metadata
+      update → pass → Tier-2 (Grant/FungibleTokenCreate on simulated provider,
+      wallet bound) → Emit output read from run state; D10 link asserted.
+      Tier-2 leg may drop to manager-level pin if harness chain-sim wiring is
+      unavailable — record honestly in NOTES.md.
+- [ ] Verification H: integration suite green with SurrealDB up; per-test
+      results in NOTES.md [checkpoint marker]
+
+## Phase I: Addendum verification sweep
+
+- [ ] Task I1: single integrated `dotnet build` (zero new warnings) +
+      `dotnet test` (unit + schema + integration) + scoped tsc; evidence
+      verbatim in NOTES.md.

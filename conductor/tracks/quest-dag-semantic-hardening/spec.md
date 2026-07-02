@@ -214,3 +214,88 @@ a clear error message.
 
 None blocking. Builds on shipped economic-primitive-nodes,
 durable-workflow-engine, quest-temporal-fork-model, dapp-composition.
+
+---
+
+## Addendum (2026-07-02): review fixes + frontend incorporation + e2e coverage
+
+Phases A–E shipped (commits 3f32a70..a6ce980); Opus review verdict
+APPROVE-WITH-FIXES. This addendum adds the review fixes and the user-requested
+extension: surface the new semantics in the visual builder and prove the
+create→publish→execute lifecycle end-to-end, including the ArdaNova flow.
+
+### FR-7: Review fixes (from the 2026-07-02 Opus review)
+
+- (a) Replace the vacuous `CreateAsync_SelfParent_Rejected` placeholder test
+  with a real assertion (or delete it) — test-integrity.
+- (b) One-line note in `Managers/` AGENTS.md: `CloneAsync` (`HolonManager.cs:359`)
+  is the intentionally-unguarded-but-cycle-safe `ParentHolonId` write site.
+- (c) Run-start vs unpublish TOCTOU (`QuestManager.cs` StartWorkflowRunAsync /
+  UnpublishAsync): record as a known pre-launch limitation in the
+  publish-lifecycle AGENTS.md section (optimistic-concurrency guard is a
+  follow-up, not required now).
+- (d) Fix the two `CS1998` warnings in `QuestPublishLifecycleTests.cs`.
+
+**AC-7:** all four landed; no vacuous `[Fact]` remains in the track's test files.
+
+### FR-8: Frontend builder — mirror the new semantics, easier to author valid quests
+
+Scope: `frontend/src/components/quest-builder/` + the quests page. Advisory
+mirror stays advisory where the server is lenient, but becomes BLOCKING where
+the server now hard-rejects.
+
+- (a) **Publish lifecycle UI:** quest list shows a Draft/Active status badge;
+  Publish / Unpublish actions calling `POST /api/quest/{id}/publish` /
+  `/unpublish`; server validation errors rendered as a readable list (not a
+  toast blob); Execute action disabled for Draft with a "publish first" hint;
+  mutation affordances disabled on Active quests.
+- (b) **Edge inspector:** selecting an edge exposes EdgeType (Control /
+  Conditional) + Condition text; Conditional with empty condition is a
+  BLOCKING builder error (mirrors the new input-layer rule).
+- (c) **Skip-semantics + fan-out warnings updated:** dagWarnings reflect
+  cascade-skip (remove any one-hop phrasing); a node with >1 outgoing Control
+  edges shows a "won't publish / durable engine can't run this" error-level
+  warning.
+- (d) **Config validity made visible pre-submit:** invalid-JSON config becomes
+  a BLOCKING submit error (today it's visual-only); per-node-type required-field
+  hints come from `node-catalog.ts` defaultConfig (no client-side C# DTO mirror
+  — server strict round-trip remains authoritative; render its 400s clearly).
+- (e) Frontend typecheck: scoped `tsc --noEmit` on new/changed files ONLY
+  (per no-frontend-typecheck; quest-visual-builder precedent).
+
+**AC-8:** a user can author → publish → execute a valid quest entirely from the
+builder; the three new hard-reject classes (conditional-empty, fan-out at
+publish, malformed config) are visible in the builder BEFORE the server 400s.
+
+### FR-9: Create→publish→execute e2e coverage (incl. ArdaNova flow)
+
+Integration tests (WebApplicationFactory + per-class SurrealDB namespace
+pattern; simulated chain via `AZOA:BlockchainMode` null-provider where chain
+capability is needed) exercising the full lifecycle through the HTTP layer:
+
+- (a) Linear Tier-1 holon quest: create → publish → execute → run Completed,
+  no wallet, no chain call.
+- (b) Gate-pass and gate-fail: fail path asserts the SECOND hop is Skipped
+  through the API (AC-1a at the HTTP layer).
+- (c) Fan-out quest: publish → 400 with fan-out error; legacy execute of the
+  same (Draft-forced or pre-publish) shape surfaces the warning.
+- (d) Lifecycle guards: execute-on-Draft rejected; node/edge mutation on
+  Active rejected; unpublish with an in-flight run rejected; publish IDOR
+  (other avatar → 404/not-found semantics).
+- (e) **ArdaNova flow e2e** (contract §5 shape): project holon create → GateCheck
+  on `holon.<id>.status == 'FUNDED'` fails → update holon metadata → re-run
+  passes → chain-capability node (Grant or FungibleTokenCreate on the simulated
+  provider, wallet bound) → Emit payload readable from the run's execution
+  state. Asserts: gate fail-closed, cascade skip of the value nodes on the fail
+  run, D10 holon↔asset link + Emit output on the pass run.
+
+**AC-9:** all of the above green with SurrealDB up; recorded per-test in the
+track NOTES.md. If chain-sim wiring for (e)'s Tier-2 leg proves unavailable in
+the integration harness, the Tier-2 leg may be pinned at manager level instead
+— recorded honestly, never faked.
+
+### Out of scope (unchanged + new)
+
+- Frontend test harness (none exists — separate pending request).
+- Client-side mirror of C# config DTOs.
+- Optimistic-concurrency guard for the unpublish TOCTOU (ticketed via FR-7c).
