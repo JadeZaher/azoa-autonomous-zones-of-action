@@ -4,6 +4,7 @@ using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
@@ -18,7 +19,8 @@ public sealed class WalletCreateNodeHandler : IQuestNodeHandler
 
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var model = JsonSerializer.Deserialize<WalletCreateModel>(context.Node.Config, QuestNodeJson.Options)!;
+        if (!QuestNodeConfig.TryDeserialize<WalletCreateModel>(context.Node.Config, nameof(QuestNodeType.WalletCreate), out var model, out var cfgError))
+            return QuestNodeResults.Fail(cfgError);
         var r = await _walletManager.CreateAsync(model, context.Quest.AvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);

@@ -2,6 +2,7 @@ using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
@@ -24,7 +25,8 @@ public sealed class TransferNodeHandler : IQuestNodeHandler
 
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<TransferNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
+        if (!QuestNodeConfig.TryDeserialize<TransferNodeConfig>(context.Node.Config, nameof(QuestNodeType.Transfer), out var cfg, out var cfgError))
+            return QuestNodeResults.Fail(cfgError);
         // tenant-consent-delegation AC4: forward the run's acting tenant so a
         // tenant-driven transfer stamps it on the op for the seam's consent gate.
         var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.Quest.AvatarId, actingTenantId: context.ActingTenantId);

@@ -258,7 +258,12 @@ public class QuestManager : IQuestManager
     /// </summary>
     private string? ValidateNodeConfigs(Quest quest)
     {
-        // Phase C wires QuestNodeConfigRegistry here. Stub returns null (no-op).
+        foreach (var node in quest.Nodes)
+        {
+            var err = QuestNodeConfigRegistry.Validate(node.NodeType, node.Config);
+            if (err != null)
+                return $"Node '{node.Name}' ({node.NodeType}): {err}";
+        }
         return null;
     }
 
@@ -964,6 +969,11 @@ public class QuestManager : IQuestManager
         if (quest.Status == QuestStatus.Active)
             return new AZOAResult<QuestNode> { IsError = true, Message = "Cannot mutate an Active quest. Call POST /{id}/unpublish first." };
 
+        // FR-4 / AC-4b: validate config schema before persisting.
+        var configValidationError = QuestNodeConfigRegistry.Validate(model.NodeType, model.Config);
+        if (configValidationError != null)
+            return new AZOAResult<QuestNode> { IsError = true, Message = $"Node config error: {configValidationError}" };
+
         var node = new QuestNode
         {
             Id = Guid.NewGuid(),
@@ -997,6 +1007,14 @@ public class QuestManager : IQuestManager
         var node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null)
             return new AZOAResult<QuestNode> { IsError = true, Message = $"Node {nodeId} not found in quest {questId}." };
+
+        // FR-4 / AC-4b: validate new config schema before applying.
+        if (model.Config != null)
+        {
+            var configValidationError = QuestNodeConfigRegistry.Validate(node.NodeType, model.Config);
+            if (configValidationError != null)
+                return new AZOAResult<QuestNode> { IsError = true, Message = $"Node config error: {configValidationError}" };
+        }
 
         // Patch semantics: only non-null fields are applied.
         if (model.Name != null) node.Name = model.Name;

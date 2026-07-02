@@ -3,6 +3,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
@@ -17,7 +18,8 @@ public sealed class HolonMoveSubtreeNodeHandler : IQuestNodeHandler
 
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<HolonMoveNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
+        if (!QuestNodeConfig.TryDeserialize<HolonMoveNodeConfig>(context.Node.Config, nameof(QuestNodeType.HolonMoveSubtree), out var cfg, out var cfgError))
+            return QuestNodeResults.Fail(cfgError);
         var r = await _holonManager.MoveSubtreeAsync(cfg.HolonId, cfg.NewParentId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);

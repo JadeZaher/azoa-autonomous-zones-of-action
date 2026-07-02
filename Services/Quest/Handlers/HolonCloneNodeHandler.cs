@@ -3,6 +3,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
@@ -17,7 +18,8 @@ public sealed class HolonCloneNodeHandler : IQuestNodeHandler
 
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<HolonCloneNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
+        if (!QuestNodeConfig.TryDeserialize<HolonCloneNodeConfig>(context.Node.Config, nameof(QuestNodeType.HolonClone), out var cfg, out var cfgError))
+            return QuestNodeResults.Fail(cfgError);
         var r = await _holonManager.CloneAsync(cfg.HolonId, cfg.Request, context.Quest.AvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);

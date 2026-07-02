@@ -4,6 +4,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
@@ -32,7 +33,8 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
 
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<GrantNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
+        if (!QuestNodeConfig.TryDeserialize<GrantNodeConfig>(context.Node.Config, nameof(QuestNodeType.Grant), out var cfg, out var cfgError))
+            return QuestNodeResults.Fail(cfgError);
 
         // Actor is ALWAYS the run-context avatar; the config body avatar is ignored.
         // tenant-consent-delegation AC4: forward the run's acting tenant so a

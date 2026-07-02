@@ -3,6 +3,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Services.Quest;
 using AZOA.WebAPI.Services.Quest.Predicates;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
@@ -54,8 +55,8 @@ public sealed class GateCheckNodeHandler : IQuestNodeHandler
 
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<GateCheckNodeConfig>(context.Node.Config, QuestNodeJson.Options)
-                  ?? new GateCheckNodeConfig();
+        if (!QuestNodeConfig.TryDeserialize<GateCheckNodeConfig>(context.Node.Config, nameof(QuestNodeType.GateCheck), out var cfg, out var cfgParseError))
+            return QuestNodeResults.Fail(cfgParseError);
 
         Dictionary<string, JsonElement> scope;
         try

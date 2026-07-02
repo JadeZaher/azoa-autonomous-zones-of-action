@@ -2,6 +2,7 @@ using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
@@ -34,7 +35,8 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
 
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<RefundNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
+        if (!QuestNodeConfig.TryDeserialize<RefundNodeConfig>(context.Node.Config, nameof(QuestNodeType.Refund), out var cfg, out var cfgError))
+            return QuestNodeResults.Fail(cfgError);
 
         // Soulbound detection: the NFT is a Holon (AssetType="NFT") and the
         // Holon-based INftManager.TransferAsync has no soulbound concept (it never

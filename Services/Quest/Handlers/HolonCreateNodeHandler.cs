@@ -4,6 +4,7 @@ using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
@@ -18,7 +19,8 @@ public sealed class HolonCreateNodeHandler : IQuestNodeHandler
 
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var model = JsonSerializer.Deserialize<HolonCreateModel>(context.Node.Config, QuestNodeJson.Options)!;
+        if (!QuestNodeConfig.TryDeserialize<HolonCreateModel>(context.Node.Config, nameof(QuestNodeType.HolonCreate), out var model, out var cfgError))
+            return QuestNodeResults.Fail(cfgError);
         var r = await _holonManager.CreateAsync(model, context.Quest.AvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);

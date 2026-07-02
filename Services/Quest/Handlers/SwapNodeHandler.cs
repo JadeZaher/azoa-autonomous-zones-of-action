@@ -2,6 +2,7 @@ using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
@@ -24,7 +25,8 @@ public sealed class SwapNodeHandler : IQuestNodeHandler
 
     public async Task<QuestNodeHandlerResult> HandleAsync(QuestNodeExecutionContext context, CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<SwapNodeConfig>(context.Node.Config, QuestNodeJson.Options)!;
+        if (!QuestNodeConfig.TryDeserialize<SwapNodeConfig>(context.Node.Config, nameof(QuestNodeType.Swap), out var cfg, out var cfgError))
+            return QuestNodeResults.Fail(cfgError);
 
         // Idempotency key: QuestNodeExecutionContext exposes no dedicated
         // idempotency surface, so derive a stable key from the run+node identity.

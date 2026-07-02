@@ -109,31 +109,28 @@ at definition time; no `Deserialize<T>(...)!` remains in handlers.
 
 Tasks:
 
-- [ ] Task C1: Shared helper — `Services/Quest/QuestNodeConfig.cs` with
+- [x] Task C1: Shared helper — `Services/Quest/QuestNodeConfig.cs` with
       `TryDeserialize<T>(string? json, out T config, out string error)` (or a
       small result type): strict `System.Text.Json` options
       (`UnmappedMemberHandling.Disallow` where feasible), null/empty and
       `JsonException` handled, error message carries node-type + parse detail.
       Unit tests: malformed JSON, unknown member, empty string, happy path.
-- [ ] Task C2: Registry `QuestNodeType → config DTO type` (DTOs in
+- [x] Task C2: Registry `QuestNodeType → config DTO type` (DTOs in
       `Models/Quest/NodeConfigs.cs`); config-free node types registered
       explicitly. Unit test: every `QuestNodeType` enum value has a registry
       entry (exhaustiveness pin — new node types can't dodge it).
-- [ ] Task C3: Handler sweep — replace `JsonSerializer.Deserialize<T>(...)!` in
-      ALL `Services/Quest/Handlers/*.cs` (29 sites; `GateCheckNodeHandler`
-      already catches — converge it on the helper too) with the C1 helper;
-      failure returns `QuestNodeResults.Fail`, never throws. Mechanical,
-      one pattern. Tests (AC-4a): one Tier-2 handler (Transfer — silent-wrong
-      defaulted amount case) + one Tier-1 handler with malformed config ⇒
-      Failed execution with descriptive message.
-- [ ] Task C4: Definition-time enforcement (AC-4b): `AddNodeAsync`/
-      `UpdateNodeAsync` validate config via registry strict round-trip; wire the
-      B3 publish-gate hook to re-check all nodes. Unit tests: bad config
-      rejected at add/update; quest with a bad-config node fails publish.
-- [ ] Task C5: Document in `Services/Quest/AGENTS.md` §node-config (helper is
+- [x] Task C3: Handler sweep — replaced `JsonSerializer.Deserialize<T>(...)!` in
+      ALL 39 `Services/Quest/Handlers/*.cs` sites (including GateCheck and
+      Emit convergence) with TryDeserialize; failure returns
+      `QuestNodeResults.Fail`, never throws. Tests added (AC-4a).
+- [x] Task C4: Definition-time enforcement (AC-4b): `AddNodeAsync`/
+      `UpdateNodeAsync` validate config via registry strict round-trip; wired
+      B3 publish-gate hook (`ValidateNodeConfigs`) to re-check all nodes. Unit
+      tests: bad config rejected at add; quest with bad-config node fails publish.
+- [x] Task C5: Documented in `Services/Quest/AGENTS.md` §node-config (helper is
       mandatory for new handlers; template configSchema/inputSchema/outputSchema
       explicitly remain unenforced — AC-4c).
-- [ ] Verification C: grep confirms zero remaining `Deserialize<...>(...)!` in
+- [x] Verification C: grep confirms zero remaining `Deserialize<...>(...)` in
       `Services/Quest/Handlers/`; registry exhaustiveness test present
       [checkpoint marker]
 

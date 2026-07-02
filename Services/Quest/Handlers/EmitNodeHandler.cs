@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
@@ -24,11 +25,11 @@ public sealed class EmitNodeHandler : IQuestNodeHandler
         QuestNodeExecutionContext context,
         CancellationToken ct = default)
     {
-        var cfg = JsonSerializer.Deserialize<EmitNodeConfig>(
-            context.Node.Config, QuestNodeJson.Options);
+        if (!QuestNodeConfig.TryDeserialize<EmitNodeConfig>(context.Node.Config, nameof(QuestNodeType.Emit), out var cfg, out var cfgError))
+            return Task.FromResult(QuestNodeResults.Fail(cfgError));
 
         // Gracefully handle a missing or undefined payload — emit empty object.
-        if (cfg is null || cfg.Payload.ValueKind == JsonValueKind.Undefined)
+        if (cfg.Payload.ValueKind == JsonValueKind.Undefined)
             return Task.FromResult(QuestNodeResults.Ok("{}"));
 
         var outputJson = JsonSerializer.Serialize(cfg.Payload, QuestNodeJson.Options);
