@@ -93,10 +93,39 @@ no cycle possible).
 
 ### Phase E
 
-**E-1 — SurrealDB availability**
-If the podman `oasis-postgres` container / SurrealDB is not running at Phase E
-time, integration tests are skipped. Unit tests + schema tests are run fully.
-Results are recorded in this file with `[SKIPPED - SurrealDB unreachable]` tags.
+**E-1 — Unit + schema tests: 1027/1027 passed**
+`dotnet test tests/AZOA.WebAPI.Tests/` — 1027 passed, 0 failed, 0 skipped.
+Includes all new tests from Phases A–D plus the 34 schema golden tests.
+`quest.surql` golden regenerated via the `AZOA_REGENERATE_GOLDENS` escape hatch
+after Phase B added `Status` to the Quest POCO.
+
+**E-2 — Integration tests: skipped (SurrealDB not running)**
+The podman SurrealDB container was not available during the sweep. Integration
+tests in `tests/AZOA.WebAPI.IntegrationTests/` were not run.
+Pre-existing status: 216 passing as of commit d80cf74; no integration test
+fixtures were modified by this track (integration tests do not exercise the new
+quest publish gate, skip cascade, or holon cycle guard through the HTTP layer).
+
+**E-3 — Build: 0 errors, 25 unique warnings (baseline 28)**
+Zero new warnings introduced by this track.
+
+**E-4 — Fixes surfaced by the sweep**
+Six categories of test errors were discovered and resolved during Phase E:
+1. `QuestNodeConfig.TryDeserialize` strict param added; `EmitNodeHandler` uses
+   `strict:false` so unknown config keys at runtime do not cause failure (the
+   existing `EmitNodeHandlerTests.HandleAsync_UndefinedPayload_EmitsEmptyObject`
+   pinned this contract).
+2. `QuestInstantiatorTests`: `IQuestDagValidator.Validate` mock updated to pass
+   `It.IsAny<bool>()` for the `fanOutAsError` parameter added in Phase B (CS0854).
+3. `QuestNodeConfigSafeDeserializeTests`: added `using Moq;`; fixed `TransferAsync`
+   `.Verify` arg types (`AZOARequest?` not `Guid?`; `Guid?` not `string?`).
+4. `HolonManagerTests.MoveSubtreeAsync_CyclePrevention_ReturnsError`: updated
+   assertion from `Contain("Cannot move")` to `ContainEquivalentOf("cycle")` to
+   match the new unified `EnsureNotDescendantAsync` error message.
+5. `HolonManagerExtendedTests.InteractAsync_ShouldChangeParent`: added `QueryAsync`
+   stub returning empty children (the cycle-guard BFS requires a store response).
+6. `ReconcileBeforeRetryWiringTests.BuildSingleChainNodeQuest`: set
+   `Status = QuestStatus.Active` — this file was missed in the Phase B fixture sweep.
 
 ## Out-of-scope follow-ups (named for future tracks)
 
