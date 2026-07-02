@@ -16,53 +16,38 @@ Commits per phase: `[quest-value-engine-expressiveness] <imperative>`.
 All file paths repo-relative. Spec §Background V1–V14 are the locked design
 decisions — do not re-litigate them.
 
-## Phase A: F1 — output-binding core (`$from`)
+## Phase A: F1 — output-binding core (`$from`) [x] [7976e80]
 
 Goal: `{"$from": "<path>"}` resolves at dispatch time on both engines, fails
 closed, and validates at definition/publish time (FR-1, AC-1a..1f).
 
 Tasks:
 
-- [ ] Task: Extract the shared path parser (V12). New
+- [x] Task: Extract the shared path parser (V12). New
   `Services/Quest/Predicates/GatePath.cs` with `TryParse(string, out IReadOnlyList<string> segments, out string error)`
   using the exact lexer segment rules of `GatePredicateEvaluator` (GUID-friendly
   post-dot segments); refactor `GatePredicateEvaluator.ParsePath`/`PathNode` to
   consume it. Tests first: `GatePathTests` pin `upstream.n.a.b`, `holon.<guid>.status`,
   rejects (`a..b`, empty, operator chars, non-Guid where segment rules break).
-- [ ] Task: Binding walker + resolver. New `Services/Quest/QuestConfigBindingResolver.cs`:
-  (a) `FindBindings(configJson)` — walks JSON, yields `$from` property-value
+- [x] Task: Binding walker + resolver. New `Services/Quest/QuestConfigBindingResolver.cs`:
+  (a) `FindAndValidateBindings(configJson)` — walks JSON, yields `$from` property-value
   nodes with their paths; malformed binding objects (extra keys, non-string
   value, array-element position) are errors; (b)
   `TryResolveAsync(configJson, node, quest, upstreamExecutions, avatarId, ct, out resolvedJson, out error)`
   — builds the GateCheck-shaped scope (`upstream.<nodeName>` from incoming-edge
   source executions with non-empty Output; `holon.<id>` via `IHolonManager.GetAsync`
-  owner-scoped, not-found == non-owned, reuse/extract `GateCheckNodeHandler.HolonStateJson`),
-  substitutes resolved `JsonElement`s verbatim. Tests first:
-  `QuestConfigBindingResolverTests` — happy path, nested property, missing
-  member, non-owned holon, extra-key binding, array-element binding, no-binding
-  passthrough (returns input unchanged, zero-cost).
-- [ ] Task: Wire the legacy engine. In `Managers/QuestManager.cs` `ExecuteAsync`
-  node loop (before handler dispatch, ~line 481) and the single-node run path
-  (~line 575): resolve bindings; on error, record the execution `Failed` with
-  the resolver error (cascade-skip then applies downstream). Tests:
-  `QuestManagerBindingTests` — AC-1a ($from-bound Transfer amount reaches the
-  handler; mock `TransferAsync` verify), AC-1c fail-closed + downstream skip.
-- [ ] Task: Wire the durable engine. In `Services/Quest/Workflow/QuestNodeStepHandler.cs`
-  before its config deserialize/handler dispatch: same resolve-or-record-Failed
-  seam (the Failed record flows into the existing saga fail path). Test: AC-1b
-  at handler level with upstream executions in scope.
-- [ ] Task: Definition-time validation. Extend `Services/Quest/QuestNodeConfigRegistry.Validate`:
-  binding pre-pass (grammar check per binding via `GatePath.TryParse` + root
-  must be `upstream`/`holon` + `holon.` second segment Guid-shaped) then strict
-  round-trip on the `$from`-stripped shadow (V1 — strip the property, run
-  existing `StrictOptions` deserialize). Add publish-only overload/parameter
-  taking the node's direct-upstream name set for the `upstream.<nodeName>`
-  graph check; call it from the publish gate in `QuestManager.PublishAsync`.
-  Tests: AC-1d (i)–(v), AC-1e.
-- [ ] Task: Docs — `Services/Quest/AGENTS.md` §output-binding: syntax, V1
-  shadow rationale, fail-closed posture, v1 restrictions (property-value only,
-  no coercion, upstream/holon roots). One-line pointers in new files.
-- [ ] Task: Commit Phase A.
+  owner-scoped, not-found == non-owned, HolonStateJson mirrors GateCheckNodeHandler),
+  substitutes resolved `JsonElement`s verbatim. Tests: `QuestConfigBindingResolverTests`.
+- [x] Task: Wire the legacy engine. In `Managers/QuestManager.cs` `ExecuteAsync`
+  node loop (before handler dispatch) and the single-node run path: resolve
+  bindings; on error, record the execution `Failed` with the resolver error.
+- [x] Task: Wire the durable engine. In `Services/Quest/Workflow/QuestNodeStepHandler.cs`
+  before handler dispatch: same resolve-or-record-Failed seam.
+- [x] Task: Definition-time validation. Extend `Services/Quest/QuestNodeConfigRegistry.Validate`:
+  binding pre-pass + shadow round-trip (V1) + publish-only upstream name check.
+  Tests: `QuestNodeConfigRegistryBindingTests` (AC-1d i–v, AC-1e).
+- [x] Task: Docs — `Services/Quest/AGENTS.md` §output-binding added.
+- [x] Task: Commit Phase A.
 
 ## Phase B: F2 — OnFailure edge type (both engines + validator + POCO)
 
