@@ -241,6 +241,7 @@ Tasks:
 
 ## Phase I: Addendum verification sweep
 
-- [ ] Task I1: single integrated `dotnet build` (zero new warnings) +
-      `dotnet test` (unit + schema + integration) + scoped tsc; evidence
-      verbatim in NOTES.md.
+- [x] Task I1: single integrated sweep — build 0 errors 0 warnings; unit+schema
+      1027/1027 passed; integration 228 passed / 37 failed (37 pre-existing from
+      PASSOFF.md baseline) / 0 skipped (+12 new Phase H tests, all green).
+      Evidence verbatim in NOTES.md §Phase I.
