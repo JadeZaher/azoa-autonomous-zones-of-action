@@ -152,9 +152,12 @@ appears only for Draft quests; Unpublish only for Active. Execute is disabled fo
 status that isn't Active, with a tooltip hinting "Publish first".
 
 **Server validation error rendering:** `ValidationErrorList` attempts to JSON-parse
-the server `message` field as a string array (the shape `PublishAsync` returns for
-multi-error validation failures). Falls back to a single string if parsing fails.
-This handles both the structured publish-failure payload and plain string errors.
+the server `message` field first (future-proofing for any endpoint that might return
+a JSON array). The actual `PublishAsync` contract returns a plain semicolon-joined
+string: `"Publish failed — DAG invalid: e1; e2"`. When JSON.parse fails the component
+splits on `"; "` and strips the `"Publish failed — DAG invalid: "` prefix so multiple
+errors render as individual bullets. Single-error messages (and plain non-semicolon
+strings from other endpoints) render as a paragraph.
 
 **Mutation affordances on Active quests:** `QuestCanvas` now accepts a `readOnly`
 prop. When true: `onConnect`/`onDrop`/`onDragOver` are removed from ReactFlow,
@@ -289,11 +292,16 @@ changed from `async Task` to `void` — neither contains `await`.
   at unit level via `QuestPublishLifecycleTests.DagValidator_FanOut_IsWarningOnLegacyPath`.
 
 **H-3 — ArdaNova flow: QuestArdanovaFlowIntegrationTests (3 tests, all PASS)**
-- `ArdanovaFlow_GateFails_BothEmitNodesSkipped`: gate predicate "false" fails;
-  both downstream Emit nodes are Skipped (cascade skip, AC-1a at HTTP layer).
-- `ArdanovaFlow_AfterFunding_GatePasses_EmitOutputReadable`: gate predicate
-  `reads.status == "FUNDED"` with `reads.status="FUNDED"` injected in config;
-  gate passes; Emit output readable from `GET /api/quest/runs/{runId}/execution-state`.
+- `ArdanovaFlow_GateFails_BothEmitNodesSkipped` (H3-a): creates a project holon
+  (no Metadata.status); GateCheck predicate is `holon.<id>.status == 'FUNDED'` with
+  `holons: [holonId]` in config; the holon-state resolver fetches the holon live,
+  finds no 'status' key, and the gate fails closed (FR-9e). Both downstream Emit
+  nodes are asserted Skipped with `HaveCount(2)` (exact count, not a lower bound).
+- `ArdanovaFlow_AfterFunding_GatePasses_EmitOutputReadable` (H3-b): uses the same
+  holon-state resolver predicate (`holon.<id>.status == 'FUNDED'`, `holons: [holonId]`).
+  First run asserts gate fails and exactly 1 downstream node is Skipped. Then
+  `PUT /api/holon/{id}` sets `Metadata.status=FUNDED`. A second run asserts gate
+  passes and Emit output is readable from the execution-state API (FR-9e).
 - `ArdanovaFlow_Tier2Grant_SimulatedProvider_TerminatesCleanly`: uses
   `ArdanovaSimulatedFactory` (pins `Blockchain:Mode=Simulated`); Grant node config
   uses the correct `NftMintRequest` shape (`walletId`, `name`, `description`, `chainId`,
@@ -324,9 +332,11 @@ without affecting the H1/H2 tests (which use the default factory with `Mode=Live
 ## Phase I
 
 **I-1 — Build (2026-07-02)**
-`dotnet build AZOA.WebAPI.csproj -nologo` → Build succeeded, 0 errors, 0 warnings.
-No new warnings introduced by Phases F, H, I. Pre-track baseline: 25 unique warnings
-(Phase E), all pre-existing in non-touched files.
+`dotnet build AZOA.WebAPI.csproj -nologo` → Build succeeded, 0 errors, 35 warnings
+(IDE0051/IDE0052 unused-member warnings in untouched files). 0 NEW warnings vs the
+pre-track baseline; all 35 are pre-existing in non-touched files. The Phase E note
+of "25 unique warnings" counted uniquely de-duplicated diagnostic IDs; 35 is the raw
+warning line count from the build output.
 
 **I-2 — Unit + schema tests (2026-07-02)**
 `dotnet test tests/AZOA.WebAPI.Tests/ -nologo` → Passed: 1027, Failed: 0, Skipped: 0.

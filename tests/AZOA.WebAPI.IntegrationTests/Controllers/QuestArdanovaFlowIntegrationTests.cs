@@ -76,15 +76,11 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
                 NodeType = QuestNodeType.GateCheck,
                 Config = JsonSerializer.Serialize(new
                 {
-                    // Predicate reads holon.<id>.Metadata.status (injected via reads).
-                    // The GateCheck handler evaluates 'reads.status == "FUNDED"'
-                    // using its closed-grammar evaluator against the reads dictionary.
-                    predicate = "reads.status == \"FUNDED\"",
-                    reads = new Dictionary<string, object>
-                    {
-                        // This will be overridden per-test via the Holons list;
-                        // the initial run omits this to let the gate fail closed.
-                    },
+                    // Holon-state resolver predicate: GateCheckNodeHandler fetches the holon
+                    // live and keys it as holon.<id> in the evaluator scope. The predicate
+                    // drills into .status (from Metadata, which overlays typed fields).
+                    // An unfunded holon has no 'status' key → predicate fails closed (FR-9e).
+                    predicate = $"holon.{projectHolonId}.status == 'FUNDED'",
                     holons = new[] { projectHolonId }
                 }),
                 IsEntry = true,
@@ -166,13 +162,18 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         gateExec!.State.Should().NotBe(QuestNodeState.Succeeded,
             "GateCheck on unfunded project must not succeed (gate fail-closed, FR-9e)");
 
-        // Both downstream emit nodes should be Skipped (cascade skip, AC-1a).
+        // Both downstream Emit nodes must be Skipped (cascade skip, AC-1a).
+        // The DAG has exactly 2 downstream nodes (EmitStarted, EmitDone) so the count
+        // must be exactly 2 — a looser bound would mask a partially-skipped cascade.
         var skipped = nodeExecs.Where(n => n.State == QuestNodeState.Skipped).ToList();
-        skipped.Should().HaveCountGreaterThanOrEqualTo(1,
-            "downstream value nodes must be Skipped when the gate fails (cascade skip D10 pre-condition)");
+        skipped.Should().HaveCount(2,
+            "both downstream Emit nodes must be Skipped when the gate fails (cascade skip D10 / AC-1a)");
     }
 
     // ─── H3-b: metadata update → re-run → gate passes → Emit output readable ──
+    // FR-9e spec shape: create holon (unfunded) → quest with holon-state predicate →
+    // first run fails gate → update holon metadata status=FUNDED → second run passes gate
+    // → Emit output readable from execution-state API.
 
     [Fact]
     public async Task ArdanovaFlow_AfterFunding_GatePasses_EmitOutputReadable()
@@ -180,19 +181,22 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         var skip = await SkipIfSurrealDbUnavailableAsync();
         Skip.IfNot(skip, "SurrealDB unavailable");
 
-        // 1. Create project holon — start without FUNDED metadata.
+        // 1. Create project holon — unfunded (no 'status' in Metadata so gate sees
+        //    no FUNDED value; missing path fails closed per GatePredicateEvaluator).
         var holon = await SeedHolonAsync(h => h.WithName("ArdanovaProject_WillFund"));
 
-        // 2. Build a gate quest that reads status from holon metadata via Reads
-        //    injection (the simpler path that doesn't require the holons[] holon-
-        //    state reader, which needs a live HolonGet inside the handler).
-        //    We inject status="FUNDED" directly into the Reads dict on the re-run
-        //    by building a quest with reads.status and predicate reads.status == "FUNDED".
+        // 2. Create quest whose GateCheck predicate reads the holon's live Metadata.status
+        //    via the holon-state resolver (GateCheckNodeHandler §8.1 / NOTES.md §Phase H).
+        //    The holons array tells the handler to fetch the holon and key it as
+        //    holon.<id> in the predicate scope; the predicate drills into .status.
+        var holonId = holon.Id;
+        var predicate = $"holon.{holonId}.status == 'FUNDED'";
+
         var create = await Client.PostAsJsonAsync("api/quest",
             new QuestCreateModel
             {
-                Name = "ArdanovaFundedReadsQuest",
-                Description = "Gate via reads injection simulates FUNDED signal from tenant",
+                Name = "ArdanovaHolonStateQuest",
+                Description = "Gate on holon Metadata.status via holon-state resolver FR-9e",
                 Nodes =
                 [
                     new QuestNodeCreateModel
@@ -201,8 +205,8 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
                         NodeType = QuestNodeType.GateCheck,
                         Config = JsonSerializer.Serialize(new
                         {
-                            predicate = "reads.status == \"FUNDED\"",
-                            reads     = new { status = "FUNDED" }  // pre-inject FUNDED in config
+                            predicate,
+                            holons = new[] { holonId }
                         }),
                         IsEntry = true,
                         IsTerminal = false
@@ -213,7 +217,7 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
                         NodeType = QuestNodeType.Emit,
                         Config = JsonSerializer.Serialize(new
                         {
-                            payload = new { @event = "project.started", projectHolonId = holon.Id }
+                            payload = new { @event = "project.started", projectHolonId = holonId }
                         }),
                         IsEntry = false,
                         IsTerminal = true
@@ -233,31 +237,62 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         create.StatusCode.Should().Be(HttpStatusCode.OK, $"create failed: {await create.Content.ReadAsStringAsync()}");
         var quest = (await ReadResultAsync<Quest>(create))!.Result!;
 
-        // 3. Publish.
+        // 3. Publish — GateCheck→Emit is a valid linear DAG (no fan-out).
         var publish = await Client.PostAsync($"api/quest/{quest.Id}/publish", null);
         publish.StatusCode.Should().Be(HttpStatusCode.OK, $"publish failed: {await publish.Content.ReadAsStringAsync()}");
 
-        // 4. Execute — gate has reads.status="FUNDED" in config, gate passes.
-        var exec = await Client.PostAsync($"api/quest/{quest.Id}/execute", null);
-        exec.StatusCode.Should().Be(HttpStatusCode.OK, $"execute failed: {await exec.Content.ReadAsStringAsync()}");
-        var run = (await ReadResultAsync<QuestRun>(exec))!.Result!;
+        // 4. First run — gate should FAIL because holon has no status=FUNDED metadata.
+        var exec1 = await Client.PostAsync($"api/quest/{quest.Id}/execute", null);
+        exec1.StatusCode.Should().Be(HttpStatusCode.OK, $"execute1 failed: {await exec1.Content.ReadAsStringAsync()}");
+        var run1 = (await ReadResultAsync<QuestRun>(exec1))!.Result!;
 
-        // 5. Read execution state — gate Succeeded, Emit Succeeded.
-        var stateResp = await Client.GetAsync($"api/quest/runs/{run.Id}/execution-state");
-        stateResp.StatusCode.Should().Be(HttpStatusCode.OK);
-        var execState = (await ReadResultAsync<QuestExecutionState>(stateResp))!.Result!;
+        var state1Resp = await Client.GetAsync($"api/quest/runs/{run1.Id}/execution-state");
+        state1Resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var execState1 = (await ReadResultAsync<QuestExecutionState>(state1Resp))!.Result!;
 
-        var nodeExecs = execState.NodeExecutions.ToList();
-        nodeExecs.Should().NotBeEmpty();
+        var nodeExecs1 = execState1.NodeExecutions.ToList();
+        nodeExecs1.Should().NotBeEmpty("first run must have at least the gate execution row");
 
-        // All nodes should Succeed (gate passes, Emit produces output).
-        var failed = nodeExecs.Where(n => n.State == QuestNodeState.Failed).ToList();
-        failed.Should().BeEmpty("when gate reads.status=FUNDED the gate passes and all nodes succeed");
+        var gateExec1 = nodeExecs1.FirstOrDefault();
+        gateExec1.Should().NotBeNull();
+        gateExec1!.State.Should().NotBe(QuestNodeState.Succeeded,
+            "gate on unfunded holon (no status metadata) must not pass (fail-closed, FR-9e)");
 
-        var emitExec = nodeExecs.LastOrDefault(n => n.State == QuestNodeState.Succeeded);
-        emitExec.Should().NotBeNull("at least one node should Succeed");
+        var skipped1 = nodeExecs1.Where(n => n.State == QuestNodeState.Skipped).ToList();
+        skipped1.Should().HaveCount(1,
+            "the single downstream Emit node must be Skipped when the gate fails (cascade skip)");
 
-        // Emit output should be readable (non-null) from the execution-state API.
+        // 5. Update the holon's Metadata.status to FUNDED — the quest is Active during
+        //    this mutation; that is fine, holon mutation is not a quest-definition mutation.
+        var updateResp = await Client.PutAsJsonAsync($"api/holon/{holonId}",
+            new HolonUpdateModel
+            {
+                Metadata = new Dictionary<string, string> { ["status"] = "FUNDED" }
+            },
+            JsonOptions);
+        updateResp.StatusCode.Should().Be(HttpStatusCode.OK,
+            $"holon metadata update failed: {await updateResp.Content.ReadAsStringAsync()}");
+
+        // 6. Second run — gate must now PASS (holon Metadata.status == "FUNDED").
+        var exec2 = await Client.PostAsync($"api/quest/{quest.Id}/execute", null);
+        exec2.StatusCode.Should().Be(HttpStatusCode.OK, $"execute2 failed: {await exec2.Content.ReadAsStringAsync()}");
+        var run2 = (await ReadResultAsync<QuestRun>(exec2))!.Result!;
+
+        var state2Resp = await Client.GetAsync($"api/quest/runs/{run2.Id}/execution-state");
+        state2Resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var execState2 = (await ReadResultAsync<QuestExecutionState>(state2Resp))!.Result!;
+
+        var nodeExecs2 = execState2.NodeExecutions.ToList();
+        nodeExecs2.Should().NotBeEmpty();
+
+        // Gate and Emit must both Succeed on the second run.
+        var failed2 = nodeExecs2.Where(n => n.State == QuestNodeState.Failed).ToList();
+        failed2.Should().BeEmpty("when holon.status=FUNDED the gate passes and all nodes succeed");
+
+        var emitExec = nodeExecs2.LastOrDefault(n => n.State == QuestNodeState.Succeeded);
+        emitExec.Should().NotBeNull("Emit node must Succeed on the funded run");
+
+        // Emit output must be readable from the execution-state API (FR-9e).
         emitExec!.Output.Should().NotBeNullOrEmpty(
             "Emit node output must be readable from the execution-state API (FR-9e)");
     }
