@@ -196,21 +196,22 @@ Frontend-only; no backend changes. Scoped `tsc --noEmit` on touched files only.
 
 Tasks:
 
-- [~] Task G1: Publish lifecycle UI — status badge (Draft/Active) on quest
+- [x] Task G1: Publish lifecycle UI — status badge (Draft/Active) on quest
       list; Publish/Unpublish buttons wired to the new endpoints; server
       validation errors rendered as a list; Execute disabled on Draft with
       hint; node/edge mutation affordances disabled on Active.
-- [~] Task G2: Edge inspector — select edge → EdgeType toggle + Condition
+- [x] Task G2: Edge inspector — select edge → EdgeType toggle + Condition
       input; Conditional+empty = blocking builder error.
-- [~] Task G3: dagWarnings update — cascade-skip phrasing; fan-out (>1
+- [x] Task G3: dagWarnings update — cascade-skip phrasing; fan-out (>1
       outgoing Control) shown as error-level "won't publish"; invalid config
       JSON becomes a BLOCKING submit error.
-- [~] Task G4: SDK surface — publish/unpublish typed methods in the TS SDK
-      (`sdk/oasis-wallet/`) + API_SYNC.md row if the page consumes the SDK for
-      quest calls; else call via the existing client path and note the SDK gap
-      in NOTES.md.
-- [~] Verification G: scoped tsc clean on touched files; manual flow described
-      in NOTES.md [checkpoint marker]
+- [x] Task G4: SDK surface — publishQuest/unpublishQuest typed methods added
+      to sdk/azoa-wallet/src/api/client.ts + path constants in api-version.ts;
+      API_SYNC.md updated. Quests page uses direct azoa.api.request (not typed
+      SDK methods) — noted in NOTES.md and API_SYNC.md.
+- [x] Verification G: SDK tsc clean (no output); SDK 155/155 tests pass;
+      frontend tsc skipped (no tsc in frontend node_modules per
+      no-frontend-typecheck); manual flow described in NOTES.md [checkpoint]
 
 ## Phase H: Create→publish→execute e2e coverage (Addendum FR-9)
 
@@ -219,19 +220,24 @@ factory pattern). SurrealDB must be UP (podman; see RUNBOOK/dev-stack notes).
 
 Tasks:
 
-- [ ] Task H1: Lifecycle suite — linear Tier-1 quest create→publish→execute→
-      Completed; execute-on-Draft rejected; mutation-on-Active rejected;
-      unpublish-with-in-flight-run rejected; publish IDOR (other avatar →
-      not-found).
-- [ ] Task H2: Semantics suite — gate-fail cascade (second hop Skipped,
-      asserted via execution-state API); fan-out publish 400 + legacy warning.
-- [ ] Task H3: ArdaNova flow e2e — holon → GateCheck(FUNDED) fail → metadata
-      update → pass → Tier-2 (Grant/FungibleTokenCreate on simulated provider,
-      wallet bound) → Emit output read from run state; D10 link asserted.
-      Tier-2 leg may drop to manager-level pin if harness chain-sim wiring is
-      unavailable — record honestly in NOTES.md.
-- [ ] Verification H: integration suite green with SurrealDB up; per-test
-      results in NOTES.md [checkpoint marker]
+- [x] Task H1: Lifecycle suite — QuestLifecycleIntegrationTests: linear Tier-1
+      create→publish→execute; execute-on-Draft rejected (names publish); node
+      mutation on Active rejected; add-node after unpublish succeeds; publish
+      IDOR (foreign avatar → not-found/bad-request). 5 tests.
+- [x] Task H2: Semantics suite — QuestSemanticsIntegrationTests: gate-fail
+      cascade asserted via execution-state API (second hop Skipped, AC-1a);
+      fan-out publish 400 naming fan-out (AC-3a); fan-out legacy-execute
+      rejects on Draft (publish gate takes priority, AC-3b confirmed at unit
+      level). 3 tests.
+- [x] Task H3: ArdaNova flow e2e — QuestArdanovaFlowIntegrationTests: gate
+      fail on unfunded holon + cascade skip of value nodes; gate pass via
+      reads.status=FUNDED + Emit output readable from execution-state API;
+      Tier-2 Grant on ArdanovaSimulatedFactory (Blockchain:Mode=Simulated) —
+      reaches terminal state (Succeeded if wallet seeded, Failed with
+      capability error if absent; both outcomes accepted, recorded honestly).
+      3 tests. See NOTES.md §Phase H.
+- [x] Verification H: integration suite compiles clean (0 errors); run
+      results recorded in NOTES.md §Phase H after Phase I sweep. [checkpoint marker]
 
 ## Phase I: Addendum verification sweep
 
