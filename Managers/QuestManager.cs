@@ -11,6 +11,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Sagas;
 using AZOA.WebAPI.Sagas;
 using AZOA.WebAPI.Services.Quest;
+using AZOA.WebAPI.Services.Quest.Predicates;
 using AZOA.WebAPI.Services.Quest.Workflow;
 
 namespace AZOA.WebAPI.Managers;
@@ -34,6 +35,7 @@ public class QuestManager : IQuestManager
     private readonly ISagaStore _sagaStore;
     private readonly IWalletManager _walletManager;
     private readonly IBlockchainProviderFactory _chainFactory;
+    private readonly QuestConfigBindingResolver _bindingResolver;
 
     // Semantic transition-legality layer (smart-gates-holon-state §8.2), invoked
     // ALONGSIDE the structural Kahn validator — never replacing it. Stateless with
@@ -50,7 +52,8 @@ public class QuestManager : IQuestManager
         IQuestNodeHandlerRegistry registry,
         ISagaStore sagaStore,
         IWalletManager walletManager,
-        IBlockchainProviderFactory chainFactory)
+        IBlockchainProviderFactory chainFactory,
+        QuestConfigBindingResolver bindingResolver)
     {
         _questStore = questStore;
         _runStore = runStore;
@@ -60,6 +63,7 @@ public class QuestManager : IQuestManager
         _sagaStore = sagaStore;
         _walletManager = walletManager;
         _chainFactory = chainFactory;
+        _bindingResolver = bindingResolver;
     }
 
     /// <summary>
@@ -252,15 +256,24 @@ public class QuestManager : IQuestManager
     }
 
     /// <summary>
-    /// Per-node config validation hook. Returns the first error message, or null
-    /// when all nodes pass. Filled in by QuestNodeConfigRegistry (Phase C);
-    /// until then returns null (no config check at publish time).
+    /// Per-node config validation at publish time: runs the binding pre-pass
+    /// with the node's direct upstream names (so upstream.&lt;name&gt; paths are
+    /// checked against the actual incoming edges) plus the strict shadow round-trip.
+    /// Returns the first error message, or null when all nodes pass.
     /// </summary>
     private string? ValidateNodeConfigs(Quest quest)
     {
         foreach (var node in quest.Nodes)
         {
-            var err = QuestNodeConfigRegistry.Validate(node.NodeType, node.Config);
+            // Build the set of direct upstream node names (sources of incoming edges).
+            var directUpstreamNames = quest.Edges
+                .Where(e => e.TargetNodeId == node.Id)
+                .Select(e => quest.Nodes.FirstOrDefault(n => n.Id == e.SourceNodeId)?.Name)
+                .Where(n => n is not null)
+                .Cast<string>()
+                .ToHashSet();
+
+            var err = QuestNodeConfigRegistry.Validate(node.NodeType, node.Config, directUpstreamNames);
             if (err != null)
                 return $"Node '{node.Name}' ({node.NodeType}): {err}";
         }
@@ -461,8 +474,18 @@ public class QuestManager : IQuestManager
                     upstream[edge.SourceNodeId] = pe;
             }
 
+            // FR-1 ($from binding) — resolve before handler dispatch.
+            // See Services/Quest/AGENTS.md §output-binding.
+            var bindingOk = await _bindingResolver.TryResolveAsync(
+                node.Config, node, quest, upstream, quest.AvatarId,
+                CancellationToken.None, out var resolvedConfig, out var bindingError);
+
             QuestNodeHandlerResult result;
-            if (!_registry.TryGet(node.NodeType, out var handler))
+            if (!bindingOk)
+            {
+                result = QuestNodeResults.Fail($"$from binding error on node '{node.Name}': {bindingError}");
+            }
+            else if (!_registry.TryGet(node.NodeType, out var handler))
             {
                 result = QuestNodeResults.Fail($"Unsupported node type: {node.NodeType}");
             }
@@ -478,8 +501,20 @@ public class QuestManager : IQuestManager
             {
                 try
                 {
-                    var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstream, run.ActingTenantId);
-                    result = await handler.HandleAsync(ctx);
+                    // Temporarily swap in the binding-resolved config so context.Node.Config
+                    // carries the resolved values. Restored after the call (ExecuteAsync is
+                    // sequential; the definition node object is not shared across calls).
+                    var originalConfig = node.Config;
+                    node.Config = resolvedConfig;
+                    try
+                    {
+                        var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstream, run.ActingTenantId);
+                        result = await handler.HandleAsync(ctx);
+                    }
+                    finally
+                    {
+                        node.Config = originalConfig;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -563,8 +598,17 @@ public class QuestManager : IQuestManager
         };
         await _executionStore.CreateAsync(execution);
 
+        // FR-1 ($from binding) — resolve before handler dispatch (single-node path).
+        var bindingOkSingle = await _bindingResolver.TryResolveAsync(
+            node.Config, node, quest, new Dictionary<Guid, QuestNodeExecution>(),
+            quest.AvatarId, CancellationToken.None, out var resolvedConfigSingle, out var bindingErrorSingle);
+
         QuestNodeHandlerResult result;
-        if (!_registry.TryGet(node.NodeType, out var handler))
+        if (!bindingOkSingle)
+        {
+            result = QuestNodeResults.Fail($"$from binding error on node '{node.Name}': {bindingErrorSingle}");
+        }
+        else if (!_registry.TryGet(node.NodeType, out var handler))
         {
             result = QuestNodeResults.Fail($"Unsupported node type: {node.NodeType}");
         }
@@ -572,8 +616,17 @@ public class QuestManager : IQuestManager
         {
             try
             {
-                var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstreamExecutions: null, run.ActingTenantId);
-                result = await handler.HandleAsync(ctx);
+                var originalConfigSingle = node.Config;
+                node.Config = resolvedConfigSingle;
+                try
+                {
+                    var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstreamExecutions: null, run.ActingTenantId);
+                    result = await handler.HandleAsync(ctx);
+                }
+                finally
+                {
+                    node.Config = originalConfigSingle;
+                }
             }
             catch (Exception ex)
             {

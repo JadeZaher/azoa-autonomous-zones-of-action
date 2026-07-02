@@ -7,6 +7,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Sagas;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Workflow;
 
@@ -48,6 +49,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
     private readonly ISagaStore _sagaStore;
     private readonly IWalletManager _walletManager;
     private readonly IBlockchainProviderFactory _chainFactory;
+    private readonly QuestConfigBindingResolver _bindingResolver;
     private readonly ILogger<QuestNodeStepHandler> _logger;
 
     public QuestNodeStepHandler(
@@ -58,6 +60,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         ISagaStore sagaStore,
         IWalletManager walletManager,
         IBlockchainProviderFactory chainFactory,
+        QuestConfigBindingResolver bindingResolver,
         ILogger<QuestNodeStepHandler> logger)
     {
         _questStore = questStore;
@@ -67,6 +70,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         _sagaStore = sagaStore;
         _walletManager = walletManager;
         _chainFactory = chainFactory;
+        _bindingResolver = bindingResolver;
         _logger = logger;
     }
 
@@ -159,23 +163,45 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         }
         else
         {
-            try
-            {
-                // tenant-consent-delegation AC4: read the acting tenant off the
-                // durable run (persisted at activation by StartWorkflowRunAsync) and
-                // carry it into the node context. This is the seam where the acting
-                // tenant re-enters the async saga path — it is NOT ambient on the
-                // worker, so it MUST come from the persisted run. A user-driven run
-                // has ActingTenantId = null → identical behaviour to before.
-                var runForTenant = await _runStore.GetByIdAsync(p.RunId, ct);
-                var actingTenantId = runForTenant.Result?.ActingTenantId;
+            // FR-1 ($from binding) — resolve before handler dispatch (durable path).
+            // See Services/Quest/AGENTS.md §output-binding.
+            var runForTenant = await _runStore.GetByIdAsync(p.RunId, ct);
+            var actingTenantId = runForTenant.Result?.ActingTenantId;
 
-                var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, upstream, actingTenantId);
-                result = await handler.HandleAsync(nodeCtx, ct);
-            }
-            catch (Exception ex)
+            var bindingOk = await _bindingResolver.TryResolveAsync(
+                node.Config, node, quest, upstream, quest.AvatarId, ct,
+                out var resolvedConfig, out var bindingError);
+
+            if (!bindingOk)
             {
-                result = QuestNodeHandlerResult.Fail(ex.Message);
+                result = QuestNodeHandlerResult.Fail($"$from binding error on node '{node.Name}': {bindingError}");
+            }
+            else
+            {
+                try
+                {
+                    // tenant-consent-delegation AC4: read the acting tenant off the
+                    // durable run (persisted at activation by StartWorkflowRunAsync) and
+                    // carry it into the node context. This is the seam where the acting
+                    // tenant re-enters the async saga path — it is NOT ambient on the
+                    // worker, so it MUST come from the persisted run. A user-driven run
+                    // has ActingTenantId = null → identical behaviour to before.
+                    var originalConfig = node.Config;
+                    node.Config = resolvedConfig;
+                    try
+                    {
+                        var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, upstream, actingTenantId);
+                        result = await handler.HandleAsync(nodeCtx, ct);
+                    }
+                    finally
+                    {
+                        node.Config = originalConfig;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result = QuestNodeHandlerResult.Fail(ex.Message);
+                }
             }
         }
 

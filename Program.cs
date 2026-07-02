@@ -558,6 +558,7 @@ builder.Services.AddScoped<ISTARManager, STARManager>();
 builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
 builder.Services.AddScoped<IAvatarNFTService, AvatarNFTService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Quest.QuestConfigBindingResolver>();
 builder.Services.AddScoped<IQuestManager, QuestManager>();
 
 // <dapp-composition>
