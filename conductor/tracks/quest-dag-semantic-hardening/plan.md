@@ -179,16 +179,16 @@ Tasks:
 
 Tasks:
 
-- [ ] Task F1: Real assertion (or deletion) for the vacuous
-      `CreateAsync_SelfParent_Rejected` in
-      `tests/AZOA.WebAPI.Tests/Managers/HolonParentCycleGuardTests.cs:85-103`.
-- [ ] Task F2: `Managers/` AGENTS.md one-liner — `CloneAsync` is the
+- [x] Task F1: Replaced vacuous `CreateAsync_SelfParent_Rejected` with real
+      `UpdateAsync_SelfParent_Rejected` assertion exercising the same
+      `EnsureNotDescendantAsync` self-parent branch via an API-reachable path.
+- [x] Task F2: `Managers/` AGENTS.md — added CloneAsync one-liner explaining
       intentionally-unguarded-but-cycle-safe `ParentHolonId` write.
-- [ ] Task F3: Publish-lifecycle AGENTS.md — record the run-start/unpublish
-      TOCTOU as a known pre-launch limitation (follow-up: optimistic status
-      write).
-- [ ] Task F4: Fix the two `CS1998` warnings in
-      `QuestPublishLifecycleTests.cs:278,292`.
+- [x] Task F3: Publish-lifecycle AGENTS.md — TOCTOU documented as known
+      pre-launch limitation; optimistic-concurrency stamp noted as follow-up.
+- [x] Task F4: Fixed two `CS1998` warnings: `DagValidator_FanOut_IsWarningOnLegacyPath`
+      and `DagValidator_FanOut_IsErrorOnDurablePath` changed from `async Task`
+      to `void` (no await in either body).
 
 ## Phase G: Frontend builder incorporation (Addendum FR-8)
 
@@ -196,20 +196,20 @@ Frontend-only; no backend changes. Scoped `tsc --noEmit` on touched files only.
 
 Tasks:
 
-- [ ] Task G1: Publish lifecycle UI — status badge (Draft/Active) on quest
+- [~] Task G1: Publish lifecycle UI — status badge (Draft/Active) on quest
       list; Publish/Unpublish buttons wired to the new endpoints; server
       validation errors rendered as a list; Execute disabled on Draft with
       hint; node/edge mutation affordances disabled on Active.
-- [ ] Task G2: Edge inspector — select edge → EdgeType toggle + Condition
+- [~] Task G2: Edge inspector — select edge → EdgeType toggle + Condition
       input; Conditional+empty = blocking builder error.
-- [ ] Task G3: dagWarnings update — cascade-skip phrasing; fan-out (>1
+- [~] Task G3: dagWarnings update — cascade-skip phrasing; fan-out (>1
       outgoing Control) shown as error-level "won't publish"; invalid config
       JSON becomes a BLOCKING submit error.
-- [ ] Task G4: SDK surface — publish/unpublish typed methods in the TS SDK
+- [~] Task G4: SDK surface — publish/unpublish typed methods in the TS SDK
       (`sdk/oasis-wallet/`) + API_SYNC.md row if the page consumes the SDK for
       quest calls; else call via the existing client path and note the SDK gap
       in NOTES.md.
-- [ ] Verification G: scoped tsc clean on touched files; manual flow described
+- [~] Verification G: scoped tsc clean on touched files; manual flow described
       in NOTES.md [checkpoint marker]
 
 ## Phase H: Create→publish→execute e2e coverage (Addendum FR-9)
