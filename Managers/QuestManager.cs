@@ -305,7 +305,12 @@ public class QuestManager : IQuestManager
                 executionsByNode.TryGetValue(edge.SourceNodeId, out var sourceExec);
                 var sourceState = sourceExec?.State;
 
-                if (edge.EdgeType == QuestEdgeType.Conditional && !string.IsNullOrEmpty(edge.Condition))
+                // FR-1 (quest-dag-semantic-hardening): cascade skip on both edge types.
+                // Conditional: skip when source Failed/Skipped regardless of Condition text
+                //   (the old !IsNullOrEmpty guard silently let empty-condition edges run).
+                // Control: skip when source Failed OR Skipped (was Failed-only).
+                // See Managers/AGENTS.md §skip-semantics.
+                if (edge.EdgeType == QuestEdgeType.Conditional)
                 {
                     if (sourceState == QuestNodeState.Failed || sourceState == QuestNodeState.Skipped)
                     {
@@ -314,7 +319,8 @@ public class QuestManager : IQuestManager
                     }
                 }
 
-                if (edge.EdgeType == QuestEdgeType.Control && sourceState == QuestNodeState.Failed)
+                if (edge.EdgeType == QuestEdgeType.Control &&
+                    (sourceState == QuestNodeState.Failed || sourceState == QuestNodeState.Skipped))
                 {
                     shouldSkip = true;
                     break;

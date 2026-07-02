@@ -32,38 +32,22 @@ Goal: a failed gate stops the entire chain behind it; no inert Conditional edges
 
 Tasks:
 
-- [ ] Task A1: Write pinning tests for cascade-skip (TDD red first).
-      New test class (e.g. `Managers/QuestManagerSkipPropagationTests.cs` beside
-      existing QuestManager tests): (1) GateCheck→Transfer1→Transfer2 all-Control
-      chain, gate fails ⇒ BOTH transfers `Skipped` (AC-1a); (2) Conditional edge
-      with EMPTY condition, source Failed ⇒ target Skipped (AC-1b); (3) Conditional
-      edge, source Skipped ⇒ target Skipped; (4) happy path: all-Completed
-      predecessors ⇒ target runs. Locate and UPDATE any existing tests that pin
-      one-hop-only skip (search tests for `QuestNodeState.Skipped` assertions) —
-      deliberate semantics change, note in commit body (AC-1d).
-- [ ] Task A2: Implement the new skip rule in `Managers/QuestManager.cs:296–322`
-      (`ExecuteAsync` skip loop): Control edge skips target when source is
-      `Failed` OR `Skipped`; Conditional edge skips on `Failed`/`Skipped`
-      regardless of `Condition` text (drop the `!IsNullOrEmpty` guard from the
-      skip decision). Keep the HIGH#7 G2 expectedState guard untouched.
-- [ ] Task A3: Input-layer belt-and-braces (AC-1b): in
-      `Validators/QuestEdgeCreateModelValidator.cs` add
-      `Condition` non-empty `When(EdgeType == Conditional)`; apply the same rule
-      to the `AddEdgeAsync` surface (`QuestEdgeAddModel` — no validator exists
-      today; add one and register it, or enforce in
-      `Managers/QuestManager.cs:958 AddEdgeAsync`, whichever matches the
-      FluentValidation registration pattern in `Program.cs`). Extend
-      `tests/AZOA.WebAPI.Tests/Validation/ValidationTests.cs`
-      (`QuestEdgeCreateModelValidatorTests`, line ~720) with the new cases.
-- [ ] Task A4: Durable-path audit (AC-1c): read
-      `Services/Quest/Workflow/QuestNodeStepHandler.cs` +
-      `QuestWorkflowEdges.cs`; confirm failure is handled via saga
-      retry/compensation with no skip seam (expected — single-Control-successor
-      chains, `ResolveSingleSuccessor` at QuestWorkflowEdges.cs:34). Document the
-      divergence in `Services/Quest/Workflow/` AGENTS.md (§skip-semantics) and
-      align only if a cheap seam exists.
-- [ ] Verification A: self-review the diff against AC-1a–1d; confirm no other
-      call sites read the old Conditional guard [checkpoint marker]
+- [x] Task A1: Write pinning tests for cascade-skip (TDD red first).
+      New test class `tests/AZOA.WebAPI.Tests/Quest/QuestManagerSkipPropagationTests.cs`:
+      (1) GateCheck→Transfer1→Transfer2 all-Control chain, gate fails ⇒ BOTH Skipped (AC-1a);
+      (2) Conditional edge with EMPTY condition, source Failed ⇒ target Skipped (AC-1b);
+      (3) Conditional edge source Skipped ⇒ target Skipped; (4) happy-path all-Succeeded.
+      No existing tests pinned one-hop-only skip by assertion (confirmed by grep).
+- [x] Task A2: Implement new skip rule in `Managers/QuestManager.cs` skip loop:
+      Control skips when source Failed OR Skipped; Conditional skips on Failed/Skipped
+      regardless of Condition text. G2 guard untouched.
+- [x] Task A3: `Validators/QuestEdgeCreateModelValidator.cs` — Conditional requires
+      non-empty Condition. New `Validators/QuestEdgeAddModelValidator.cs` for post-hoc
+      surface. Validation test cases added to `ValidationTests.cs`.
+- [x] Task A4: Durable path confirmed: no skip seam (ResolveSingleSuccessor/saga compensation).
+      Divergence documented in `Services/Quest/Workflow/AGENTS.md §skip-semantics`.
+- [x] Verification A: AC-1a/1b/1c/1d all covered. No other call sites read the old
+      Conditional guard (the only site was QuestManager.cs:308, now updated). [checkpoint]
 
 ## Phase B: Publish gate + engine-profile validation (Items 2+3)
 

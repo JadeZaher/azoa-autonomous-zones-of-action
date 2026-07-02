@@ -767,6 +767,104 @@ public class QuestEdgeCreateModelValidatorTests
             EdgeType = (QuestEdgeType)42
         }).ShouldHaveValidationErrorFor(x => x.EdgeType);
     }
+
+    // FR-1b / AC-1b: Conditional edges require non-empty Condition.
+    [Fact]
+    public void Conditional_EmptyCondition_Fails()
+    {
+        var result = _validator.Validate(new QuestEdgeCreateModel
+        {
+            SourceNodeId = 0,
+            TargetNodeId = 1,
+            EdgeType = QuestEdgeType.Conditional,
+            Condition = ""
+        });
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("Condition is required"));
+    }
+
+    [Fact]
+    public void Conditional_NullCondition_Fails()
+    {
+        var result = _validator.Validate(new QuestEdgeCreateModel
+        {
+            SourceNodeId = 0,
+            TargetNodeId = 1,
+            EdgeType = QuestEdgeType.Conditional,
+            Condition = null
+        });
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("Condition is required"));
+    }
+
+    [Fact]
+    public void Conditional_WithCondition_Passes()
+    {
+        _validator.TestValidate(new QuestEdgeCreateModel
+        {
+            SourceNodeId = 0,
+            TargetNodeId = 1,
+            EdgeType = QuestEdgeType.Conditional,
+            Condition = "x == 1"
+        }).IsValid.Should().BeTrue();
+    }
+}
+
+public class QuestEdgeAddModelValidatorTests
+{
+    private readonly FV.QuestEdgeAddModelValidator _validator = new();
+
+    [Fact]
+    public void Control_Valid_Passes()
+    {
+        _validator.TestValidate(new QuestEdgeAddModel
+        {
+            SourceNodeId = Guid.NewGuid(),
+            TargetNodeId = Guid.NewGuid(),
+            EdgeType = QuestEdgeType.Control
+        }).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SelfLoop_Fails()
+    {
+        var id = Guid.NewGuid();
+        var result = _validator.Validate(new QuestEdgeAddModel
+        {
+            SourceNodeId = id,
+            TargetNodeId = id,
+            EdgeType = QuestEdgeType.Control
+        });
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("self-loops not allowed"));
+    }
+
+    // FR-1b / AC-1b: same Condition rule applies to the post-hoc add surface.
+    [Fact]
+    public void Conditional_EmptyCondition_Fails()
+    {
+        var result = _validator.Validate(new QuestEdgeAddModel
+        {
+            SourceNodeId = Guid.NewGuid(),
+            TargetNodeId = Guid.NewGuid(),
+            EdgeType = QuestEdgeType.Conditional,
+            Condition = ""
+        });
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("Condition is required"));
+    }
+
+    [Fact]
+    public void Conditional_WithCondition_Passes()
+    {
+        _validator.TestValidate(new QuestEdgeAddModel
+        {
+            SourceNodeId = Guid.NewGuid(),
+            TargetNodeId = Guid.NewGuid(),
+            EdgeType = QuestEdgeType.Conditional,
+            Condition = "score > 10"
+        }).IsValid.Should().BeTrue();
+    }
 }
 
 // ─── Representative sample of the remaining (non-financial) validators ───

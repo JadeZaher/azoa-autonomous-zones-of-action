@@ -1,17 +1,18 @@
 using FluentValidation;
+using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Validators;
 
-public class QuestEdgeCreateModelValidator : AbstractValidator<QuestEdgeCreateModel>
+/// <summary>
+/// Validates the post-hoc edge-add body (Guid-reference variant). See spec FR-1c / AC-1b.
+/// </summary>
+public class QuestEdgeAddModelValidator : AbstractValidator<QuestEdgeAddModel>
 {
-    public QuestEdgeCreateModelValidator()
+    public QuestEdgeAddModelValidator()
     {
-        RuleFor(x => x.SourceNodeId)
-            .GreaterThanOrEqualTo(0).WithMessage("SourceNodeId must be a non-negative index.");
-
-        RuleFor(x => x.TargetNodeId)
-            .GreaterThanOrEqualTo(0).WithMessage("TargetNodeId must be a non-negative index.");
+        RuleFor(x => x.SourceNodeId).NotEmpty().WithMessage("SourceNodeId is required.");
+        RuleFor(x => x.TargetNodeId).NotEmpty().WithMessage("TargetNodeId is required.");
 
         RuleFor(x => x)
             .Must(e => e.SourceNodeId != e.TargetNodeId)
@@ -20,8 +21,7 @@ public class QuestEdgeCreateModelValidator : AbstractValidator<QuestEdgeCreateMo
         RuleFor(x => x.EdgeType)
             .IsInEnum().WithMessage("EdgeType is not a valid QuestEdgeType value.");
 
-        // FR-1b: Conditional edges must carry non-empty Condition text —
-        // empty condition produced inert (no-skip) edges. See spec AC-1b.
+        // FR-1b: Conditional edges must carry non-empty Condition text.
         When(x => x.EdgeType == QuestEdgeType.Conditional, () =>
         {
             RuleFor(x => x.Condition)
