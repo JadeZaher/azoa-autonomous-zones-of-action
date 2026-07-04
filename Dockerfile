@@ -1,5 +1,5 @@
 # ─── AZOA .NET WebAPI ───
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy everything and let the SDK's solution-walk handle restore. We need
@@ -16,7 +16,7 @@ RUN dotnet publish AZOA.WebAPI.csproj -c Release -o /app/publish --no-restore
 # from the CLI so `dotnet publish` actually emits a ready-to-run binary
 # (otherwise the publish step is a silent no-op).
 RUN dotnet publish packages/Azoa.SurrealDb.Schema/Azoa.SurrealDb.Schema.csproj \
-    -c Release -o /app/schema-cli --no-restore --framework net8.0 \
+    -c Release -o /app/schema-cli --no-restore --framework net10.0 \
     -p:IsPublishable=true -p:PackAsTool=false
 
 # Also stage the committed schemas + migrations folder into the image so
@@ -24,7 +24,7 @@ RUN dotnet publish packages/Azoa.SurrealDb.Schema/Azoa.SurrealDb.Schema.csproj \
 RUN mkdir -p /app/persistence && cp -r Persistence/SurrealDb /app/persistence/SurrealDb
 
 # Runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 # curl is needed for the entrypoint's pre-flight health probe against

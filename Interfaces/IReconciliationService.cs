@@ -62,7 +62,8 @@ public sealed record ReconciliationReport(
     int Advanced,
     int StuckFlagged,
     int Failed,
-    int Errors)
+    int Errors,
+    int LockedFundsAtRisk = 0)
 {
     public static ReconciliationReport Empty { get; } = new(0, 0, 0, 0, 0);
 
@@ -74,9 +75,10 @@ public sealed record ReconciliationReport(
         Advanced + other.Advanced,
         StuckFlagged + other.StuckFlagged,
         Failed + other.Failed,
-        Errors + other.Errors);
+        Errors + other.Errors,
+        Math.Max(LockedFundsAtRisk, other.LockedFundsAtRisk));
 
     public override string ToString() =>
         $"scanned={Scanned} advanced={Advanced} stuckFlagged={StuckFlagged} " +
-        $"failed={Failed} errors={Errors}";
+        $"failed={Failed} errors={Errors} lockedFundsAtRisk={LockedFundsAtRisk}";
 }

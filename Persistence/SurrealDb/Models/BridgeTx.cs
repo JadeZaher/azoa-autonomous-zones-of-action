@@ -41,6 +41,14 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             Wormhole,
         }
 
+        /// <summary>Mirrors <see cref="AZOA.WebAPI.Core.ChainNetwork"/> — ALL values must stay in sync. See AGENTS.md §BridgeTx.</summary>
+        public enum NetworkKind
+        {
+            Devnet,
+            Testnet,
+            Mainnet,
+        }
+
         [Id]
         [FieldGroup("Core identity")]
         [Required(NotEmpty = true)]
@@ -114,5 +122,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [FieldGroup("Exactly-once / atomic-transition safety (G2)")]
         public string? IdempotencyKey { get; set; }
+
+        [FieldGroup("Network (nullable — absent on rows written before this field existed)")]
+        [Assert("$value = NONE OR $value INSIDE [\"Devnet\", \"Testnet\", \"Mainnet\"]")]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public NetworkKind? Network { get; set; }
     }
 }

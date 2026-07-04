@@ -654,6 +654,10 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IIdempotencyStore,
 // ─── Cross-chain bridge (hybrid trusted + Wormhole) ───
 // surrealdb-migration wave-2 task 8: routes through IBridgeStore +
 // IIdempotencyStore. Storage backend is SurrealDB after wave-3 EF deletion.
+// bridge-safety-hardening Phase A: kill-switch options (RealValueEnabled defaults false).
+builder.Services.AddOptions<AZOA.WebAPI.Services.Bridge.BridgeOptions>()
+    .Bind(builder.Configuration.GetSection(
+        AZOA.WebAPI.Services.Bridge.BridgeOptions.SectionName));
 builder.Services.AddScoped<ICrossChainBridgeService, CrossChainBridgeService>();
 
 // ─── Chain reconciliation (api-safety-hardening tasks 14/15) ───

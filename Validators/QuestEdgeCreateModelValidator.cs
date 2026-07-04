@@ -30,7 +30,17 @@ public class QuestEdgeCreateModelValidator : AbstractValidator<QuestEdgeCreateMo
                 .MaximumLength(4096).WithMessage("Condition must not exceed 4096 characters.");
         });
 
-        When(x => x.EdgeType != QuestEdgeType.Conditional && x.Condition != null, () =>
+        // AC-2f: OnFailure edges must not carry Condition text (it is meaningless
+        // and would be silently ignored, so we reject it at the input surface).
+        When(x => x.EdgeType == QuestEdgeType.OnFailure, () =>
+        {
+            RuleFor(x => x.Condition)
+                .Null().WithMessage("OnFailure edges must not carry a Condition expression.");
+        });
+
+        When(x => x.EdgeType != QuestEdgeType.Conditional
+                  && x.EdgeType != QuestEdgeType.OnFailure
+                  && x.Condition != null, () =>
         {
             RuleFor(x => x.Condition)
                 .MaximumLength(4096).WithMessage("Condition must not exceed 4096 characters.");

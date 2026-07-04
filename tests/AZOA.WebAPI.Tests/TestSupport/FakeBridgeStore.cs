@@ -146,21 +146,30 @@ public sealed class FakeBridgeStore : IBridgeStore
         }
     }
 
-    public Task SaveVaaFetchResultAsync(
+    public Task<ConsumedVaaRecord?> GetConsumedVaaAsync(string digest, CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            return Task.FromResult(
+                _consumedVaas.TryGetValue(digest, out var r) ? Clone(r) : (ConsumedVaaRecord?)null);
+        }
+    }
+
+    public Task<bool> SaveVaaFetchResultAsync(
         string id, string vaaBytes, int sigCount, string proofData,
         BridgeStatus statusVAAReady, CancellationToken ct = default)
     {
         lock (_lock)
         {
-            if (_bridges.TryGetValue(id, out var row))
-            {
-                row.VaaBytes = vaaBytes;
-                row.VaaSignatureCount = sigCount;
-                row.ProofData = proofData;
-                row.Status = statusVAAReady;
-            }
+            if (!_bridges.TryGetValue(id, out var row)) return Task.FromResult(false);
+            // AC1 guard: only write when the row is still AwaitingVAA (mirrors WHERE predicate).
+            if (row.Status != BridgeStatus.AwaitingVAA) return Task.FromResult(false);
+            row.VaaBytes = vaaBytes;
+            row.VaaSignatureCount = sigCount;
+            row.ProofData = proofData;
+            row.Status = statusVAAReady;
+            return Task.FromResult(true);
         }
-        return Task.CompletedTask;
     }
 
     public Task<int> TryTransitionBridgeStatusAsync(
@@ -227,6 +236,22 @@ public sealed class FakeBridgeStore : IBridgeStore
         }
     }
 
+    public Task<IReadOnlyList<string>> GetFailedBridgesWithLockedFundsAsync(
+        int maxIds, CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            IReadOnlyList<string> ids = _bridges.Values
+                .Where(r => r.Status == BridgeStatus.Failed
+                         && r.LockTxHash != null
+                         && r.MintTxHash == null)
+                .Take(maxIds)
+                .Select(r => r.Id)
+                .ToList();
+            return Task.FromResult(ids);
+        }
+    }
+
     // ── Test-only seeding / inspection helpers ────────────────────────────────
 
     /// <summary>
@@ -286,6 +311,7 @@ public sealed class FakeBridgeStore : IBridgeStore
         VaaSignatureCount = b.VaaSignatureCount,
         RedemptionTxHash = b.RedemptionTxHash,
         IdempotencyKey = b.IdempotencyKey,
+        Network = b.Network,
     };
 
     private static BlockchainOperation Clone(BlockchainOperation o) => new()

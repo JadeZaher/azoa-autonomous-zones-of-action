@@ -393,10 +393,10 @@ if ($env:AZOA_SKIP_RESET -eq "1") {
     Write-Host ""
     if ($Reset) {
         Write-Host "[dev-up] -Reset: wiping + re-applying SurrealDB schema..."
-        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net8.0 -- reset
+        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net10.0 -- reset
     } else {
         Write-Host "[dev-up] syncing SurrealDB schema (idempotent; use -Reset to wipe)..."
-        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net8.0 -- up
+        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net10.0 -- up
     }
     $schemaExit = $LASTEXITCODE
     $env:AZOA_SURREAL_URL = $schemaUrlBackup

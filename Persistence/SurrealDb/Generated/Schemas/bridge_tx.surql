@@ -72,6 +72,10 @@ DEFINE FIELD IF NOT EXISTS redemption_tx_hash ON TABLE bridge_tx TYPE option<str
 -- Exactly-once / atomic-transition safety (G2)
 DEFINE FIELD IF NOT EXISTS idempotency_key ON TABLE bridge_tx TYPE option<string>;
 
+-- Network (nullable — absent on rows written before this field existed)
+DEFINE FIELD IF NOT EXISTS network ON TABLE bridge_tx TYPE option<string>
+    ASSERT $value = NONE OR $value INSIDE ["Devnet", "Testnet", "Mainnet"];
+
 -- ── Indexes ──────────────────────────────────────────────────
 
 DEFINE INDEX IF NOT EXISTS bridge_tx_idempotency_key

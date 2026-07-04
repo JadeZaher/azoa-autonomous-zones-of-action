@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 
 namespace AZOA.WebAPI.Models.Responses;
@@ -82,6 +83,9 @@ public class BridgeTransactionResult
     /// </summary>
     [MaxLength(200)]
     public string? IdempotencyKey { get; set; }
+
+    /// <summary>Network the bridge was initiated on. Nullable — absent on rows written before this field existed.</summary>
+    public ChainNetwork? Network { get; set; }
 }
 
 public enum BridgeStatus

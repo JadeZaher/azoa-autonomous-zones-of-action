@@ -24,6 +24,35 @@ public static class QuestWorkflowEdges
             .ToList();
 
     /// <summary>
+    /// Outgoing OnFailure-edge target node ids for <paramref name="nodeId"/>.
+    /// Used by the durable engine to advance on the failure arm when a node
+    /// terminally fails (V5, Services/Quest/Workflow/AGENTS.md §skip-semantics).
+    /// </summary>
+    public static IReadOnlyList<Guid> OnFailureNodeIds(Models.Quest.Quest quest, Guid nodeId) =>
+        quest.Edges
+            .Where(e => e.SourceNodeId == nodeId && e.EdgeType == QuestEdgeType.OnFailure)
+            .Select(e => e.TargetNodeId)
+            .Distinct()
+            .ToList();
+
+    /// <summary>
+    /// Resolves the OnFailure successor for a terminally-failed node.
+    /// Returns <see cref="SuccessorKind.Terminal"/> when no OnFailure edge exists,
+    /// <see cref="SuccessorKind.Single"/> for exactly one, or
+    /// <see cref="SuccessorKind.FanOut"/> for >1 (publish validator blocks this).
+    /// </summary>
+    public static SuccessorResolution ResolveOnFailureSuccessor(Models.Quest.Quest quest, Guid nodeId)
+    {
+        var targets = OnFailureNodeIds(quest, nodeId);
+        return targets.Count switch
+        {
+            0 => new SuccessorResolution(SuccessorKind.Terminal, null, 0),
+            1 => new SuccessorResolution(SuccessorKind.Single, targets[0], 1),
+            _ => new SuccessorResolution(SuccessorKind.FanOut, null, targets.Count),
+        };
+    }
+
+    /// <summary>
     /// Resolve the single next hop, enforcing the fork-merge non-goal in one
     /// place: a node has zero successors (<see cref="SuccessorKind.Terminal"/>),
     /// exactly one (<see cref="SuccessorKind.Single"/> — the normal hop), or more

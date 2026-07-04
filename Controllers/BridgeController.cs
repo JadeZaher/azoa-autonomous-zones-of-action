@@ -68,8 +68,8 @@ public class BridgeController : ControllerBase
         if (amount > int.MaxValue)
             return BadRequest(new { error = "Amount exceeds the currently supported bridge range." });
 
-        // Optional client Idempotency-Key — used verbatim as the lock→mint
-        // idempotency key so a retried initiate collapses to one chain effect.
+        // Optional client Idempotency-Key — avatar-namespaced by the service so a
+        // retried initiate collapses to one chain effect without cross-avatar collisions.
         // Absent ⇒ null ⇒ service uses its deterministic content key (safe).
         var idempotencyKey = ReadIdempotencyKey();
 

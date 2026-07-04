@@ -38,8 +38,13 @@ public interface IBridgeStore
     /// </summary>
     Task<bool> TryInsertConsumedVaaAsync(ConsumedVaaRecord record, CancellationToken ct = default);
 
-    /// <summary>Persists a fetched VAA's bytes/signature-count/proof and advances status to <paramref name="statusVAAReady"/>.</summary>
-    Task SaveVaaFetchResultAsync(string id, string vaaBytes, int sigCount, string proofData, BridgeStatus statusVAAReady, CancellationToken ct = default);
+    /// <summary>
+    /// Conditionally persists a fetched VAA's bytes/signature-count/proof and advances status to
+    /// <paramref name="statusVAAReady"/> only when the row is still in <see cref="BridgeStatus.AwaitingVAA"/>.
+    /// Returns true when the guarded write won (affected &gt; 0), false when the predicate didn't match
+    /// (row already advanced or lost a race). The store never asserts==1, retries, or RMW — policy stays in caller.
+    /// </summary>
+    Task<bool> SaveVaaFetchResultAsync(string id, string vaaBytes, int sigCount, string proofData, BridgeStatus statusVAAReady, CancellationToken ct = default);
 
     /// <summary>
     /// Conditional status transition: UPDATE … WHERE Id=id AND Status=expected
@@ -84,4 +89,20 @@ public interface IBridgeStore
     /// idempotency ledger reports Completed.
     /// </summary>
     Task<BridgeTransactionResult?> GetBridgeByIdempotencyKeyAsync(string idempotencyKey, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the consumed-VAA ledger row for the given canonical digest, or null if absent.
+    /// Used to distinguish self-replay (same bridge) from cross-bridge replay on the false branch
+    /// of <see cref="TryInsertConsumedVaaAsync"/>. The returned record includes
+    /// <see cref="ConsumedVaaRecord.BridgeTransactionId"/> for the ownership check.
+    /// </summary>
+    Task<ConsumedVaaRecord?> GetConsumedVaaAsync(string digest, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns ids of bridges in terminal <see cref="BridgeStatus.Failed"/> state that hold locked
+    /// funds with no mint — i.e. lock_tx_hash is set but mint_tx_hash is absent. These are invisible
+    /// to the standard non-terminal sweep and require manual intervention to recover funds. Capped at
+    /// <paramref name="maxIds"/> to bound the log payload.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetFailedBridgesWithLockedFundsAsync(int maxIds, CancellationToken ct = default);
 }

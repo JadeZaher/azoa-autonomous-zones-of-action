@@ -177,7 +177,7 @@ public class QuestDagValidator : IQuestDagValidator
             result.IsValid = false;
         }
 
-        // FR-3 (quest-dag-semantic-hardening): fan-out check.
+        // FR-3 (quest-dag-semantic-hardening): Control fan-out check.
         // A node with >1 outgoing Control edges is rejected by the durable engine
         // (ResolveSingleSuccessor) and by the publish gate; the legacy executor
         // runs fan-out but surfaces the advisory here as a warning.
@@ -190,6 +190,30 @@ public class QuestDagValidator : IQuestDagValidator
             var count = quest.Edges.Count(e => e.SourceNodeId == n.Id && e.EdgeType == QuestEdgeType.Control);
             var msg = $"Node '{n.Name}' has {count} outgoing Control edges (fan-out); " +
                       "the durable engine and publish gate reject this.";
+            if (fanOutAsError)
+            {
+                result.Errors.Add(msg);
+                result.IsValid = false;
+            }
+            else
+            {
+                result.Warnings.Add(msg);
+            }
+        }
+
+        // OnFailure fan-out check: >1 outgoing OnFailure edges from a single node
+        // is an error under the publish profile (V2: exactly-one-arm property).
+        // The durable engine (ResolveOnFailureSuccessor) rejects fan-out at runtime,
+        // but we catch it at validation time so invalid DAGs never reach execution.
+        var onFailureFanOutNodes = quest.Nodes
+            .Where(n => quest.Edges.Count(e => e.SourceNodeId == n.Id
+                                              && e.EdgeType == QuestEdgeType.OnFailure) > 1)
+            .ToList();
+        foreach (var n in onFailureFanOutNodes)
+        {
+            var count = quest.Edges.Count(e => e.SourceNodeId == n.Id && e.EdgeType == QuestEdgeType.OnFailure);
+            var msg = $"Node '{n.Name}' has {count} outgoing OnFailure edges; " +
+                      "at most one OnFailure arm is allowed per node (exactly-one-arm property, V2).";
             if (fanOutAsError)
             {
                 result.Errors.Add(msg);

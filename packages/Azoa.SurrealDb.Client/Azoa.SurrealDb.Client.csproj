@@ -3,8 +3,8 @@
   <PropertyGroup>
     <!-- Multi-target so consumers on .NET Framework / netstandard tooling
          (analyzers, build tasks, CLI utilities) can reference the same
-         package as net8.0 production consumers. -->
-    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+         package as net10.0 production consumers. -->
+    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>

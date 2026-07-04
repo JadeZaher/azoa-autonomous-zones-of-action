@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Azoa.SurrealDb.Client;
 using Azoa.SurrealDb.Client.Query;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -106,6 +107,24 @@ public sealed class SurrealBridgeStore : IBridgeStore
 
         var rows = await _executor.QueryAsync<BridgeIdProjection>(q, ct);
         return rows.Count > 0;
+    }
+
+    public async Task<IReadOnlyList<string>> GetFailedBridgesWithLockedFundsAsync(
+        int maxIds, CancellationToken ct = default)
+    {
+        if (maxIds <= 0) return Array.Empty<string>();
+
+        // G6: Failed rows with lock_tx_hash set and mint_tx_hash absent represent
+        // funds locked on the source chain with no corresponding mint on the target.
+        // These are invisible to GetNonTerminalBridgeIdsAsync (terminal status) but
+        // still hold value — surface them for operator alerting.
+        var q = SurrealQuery
+            .Of("SELECT id FROM bridge_tx WHERE status = $_failed AND lock_tx_hash != NONE AND mint_tx_hash = NONE LIMIT $_max")
+            .WithParam("_failed", BridgeStatus.Failed.ToString())
+            .WithParam("_max",    maxIds);
+
+        var rows = await _executor.QueryAsync<BridgeIdProjection>(q, ct);
+        return rows.Select(r => r.Id).Where(s => !string.IsNullOrEmpty(s)).ToList();
     }
 
     public async Task<BridgeTransactionResult?> GetBridgeByIdempotencyKeyAsync(
@@ -300,7 +319,17 @@ public sealed class SurrealBridgeStore : IBridgeStore
         return stmt.AffectedCount() == 1;
     }
 
-    public async Task SaveVaaFetchResultAsync(
+    public async Task<ConsumedVaaRecord?> GetConsumedVaaAsync(string digest, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(digest)) return null;
+
+        // SELECT by deterministic record id (digest is the PK on consumed_vaa_ledger).
+        var q = SurrealQuery.SelectById(VaaTable, digest);
+        var row = await _executor.QuerySingleAsync<ConsumedVaaLedger>(q, ct);
+        return row is null ? null : FromVaaPoco(row);
+    }
+
+    public async Task<bool> SaveVaaFetchResultAsync(
         string id,
         string vaaBytes,
         int sigCount,
@@ -311,25 +340,39 @@ public sealed class SurrealBridgeStore : IBridgeStore
         if (string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("Bridge id must not be empty.", nameof(id));
 
-        // Multi-field conditional UPDATE — UpdateOnlyBuilder.Set() takes only
-        // one column at a time, so we author the SET list directly via
-        // SurrealQuery.Of and parameter-bind every value (G3). The trailing
-        // RETURN AFTER lets us read the affected count via AffectedCount().
-        //
-        // The WHERE clause keys on id only (matches the prior EF
-        // SaveVaaFetchResultAsync contract — no expected-status constraint).
-        // The caller already owns the state-machine policy.
-        var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET vaa_bytes = $_vaa, vaa_signature_count = $_sigs, proof_data = $_proof, status = $_status RETURN AFTER")
-            .WithParam("_t",      BridgeTable)
-            .WithParam("_id",     id)
-            .WithParam("_vaa",    vaaBytes)
-            .WithParam("_sigs",   (long)sigCount)
-            .WithParam("_proof",  proofData)
-            .WithParam("_status", statusVAAReady.ToString());
+        // AC1 fix: guard the multi-field UPDATE with WHERE status = $_expected
+        // (AwaitingVAA) so a concurrent/replayed write cannot overwrite payload +
+        // status when the row has already advanced. Uses BuildConditionalUpdateSql
+        // so the WHERE predicate is part of the same single statement — same
+        // atomicity contract as TryTransitionBridgeStatusAsync. Returns affected
+        // count VERBATIM: true = won, false = predicate missed (row already moved).
+        var setParts = new List<string>
+        {
+            "vaa_bytes = $_vaa",
+            "vaa_signature_count = $_sigs",
+            "proof_data = $_proof",
+            "status = $_status",
+        };
+
+        var paramBag = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["_t"]        = BridgeTable,
+            ["_id"]       = id,
+            ["_expected"] = BridgeStatus.AwaitingVAA.ToString(),
+            ["_vaa"]      = vaaBytes,
+            ["_sigs"]     = (long)sigCount,
+            ["_proof"]    = proofData,
+            ["_status"]   = statusVAAReady.ToString(),
+        };
+
+        var sql = BuildConditionalUpdateSql(setParts);
+        var q = SurrealQuery.Of(sql).WithParams(paramBag);
 
         var response = await _executor.ExecuteAsync(q, ct);
-        response.EnsureAllOk();
+        if (response.Count == 0) return false;
+        var stmt = response[0];
+        if (!stmt.IsOk) return false;
+        return stmt.AffectedCount() > 0;
     }
 
     public async Task<int> TryTransitionBridgeStatusAsync(
@@ -540,6 +583,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         VaaSignatureCount        = tx.VaaSignatureCount.HasValue ? (long?)tx.VaaSignatureCount.Value : null,
         RedemptionTxHash         = tx.RedemptionTxHash,
         IdempotencyKey           = tx.IdempotencyKey,
+        Network                  = tx.Network.HasValue ? ParseBridgeNetwork(tx.Network.Value) : null,
     };
 
     private static BridgeTransactionResult FromBridgePoco(BridgeTx poco) => new BridgeTransactionResult
@@ -569,6 +613,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         VaaSignatureCount      = poco.VaaSignatureCount.HasValue ? (int?)poco.VaaSignatureCount.Value : null,
         RedemptionTxHash       = poco.RedemptionTxHash,
         IdempotencyKey         = poco.IdempotencyKey,
+        Network                = poco.Network.HasValue ? ParseBridgeNetworkKind(poco.Network.Value) : null,
     };
 
     // ── Mapping: ConsumedVaaRecord → ConsumedVaaLedger ────────────────────────
@@ -582,6 +627,19 @@ public sealed class SurrealBridgeStore : IBridgeStore
         Sequence            = record.Sequence,
         BridgeTransactionId = SurrealLink.ToLink("bridge_tx", record.BridgeTransactionId),
         ConsumedAt          = ToUtcOffset(record.ConsumedAt),
+    };
+
+    private static ConsumedVaaRecord FromVaaPoco(ConsumedVaaLedger poco) => new ConsumedVaaRecord
+    {
+        Digest              = poco.Digest,
+        EmitterChainId      = (int)poco.EmitterChainId,
+        EmitterAddress      = poco.EmitterAddress,
+        Sequence            = poco.Sequence,
+        // BridgeTransactionId is stored as a link (bridge_tx:<id>); strip the table prefix.
+        BridgeTransactionId = poco.BridgeTransactionId is null
+            ? null
+            : StripSurrealIdPrefix(poco.BridgeTransactionId, BridgeTable),
+        ConsumedAt          = poco.ConsumedAt.UtcDateTime,
     };
 
     // ── Mapping: BlockchainOperation ↔ OperationLog (read-only here) ──────────
@@ -642,6 +700,18 @@ public sealed class SurrealBridgeStore : IBridgeStore
         Enum.TryParse<BridgeMode>(kind.ToString(), ignoreCase: false, out var m)
             ? m
             : BridgeMode.Trusted;
+
+    private static BridgeTx.NetworkKind ParseBridgeNetwork(ChainNetwork network) =>
+        Enum.TryParse<BridgeTx.NetworkKind>(network.ToString(), ignoreCase: false, out var k)
+            ? k
+            : throw new InvalidOperationException(
+                $"ChainNetwork '{network}' has no corresponding BridgeTx.NetworkKind — enums drifted.");
+
+    private static ChainNetwork ParseBridgeNetworkKind(BridgeTx.NetworkKind kind) =>
+        Enum.TryParse<ChainNetwork>(kind.ToString(), ignoreCase: false, out var n)
+            ? n
+            : throw new InvalidOperationException(
+                $"BridgeTx.NetworkKind '{kind}' has no corresponding ChainNetwork — enums drifted.");
 
     // ── Id helpers ────────────────────────────────────────────────────────────
 

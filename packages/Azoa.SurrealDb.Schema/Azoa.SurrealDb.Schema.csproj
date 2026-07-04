@@ -2,10 +2,10 @@
 
   <PropertyGroup>
     <!-- Multi-target so the Schema package can be referenced from both the
-         netstandard2.0 analyzer and net8.0 production code. The CLI tool
-         (PackAsTool) packages the net8.0 build only; netstandard2.0 stays a
+         netstandard2.0 analyzer and net10.0 production code. The CLI tool
+         (PackAsTool) packages the net10.0 build only; netstandard2.0 stays a
          library-only build with the CLI Program.cs excluded. -->
-    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -13,8 +13,8 @@
     <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
-  <!-- CLI tool packaging: only meaningful on net8.0 (the executable target). -->
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0'">
+  <!-- CLI tool packaging: only meaningful on net10.0 (the executable target). -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <OutputType>Exe</OutputType>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>azoa-surreal</ToolCommandName>
@@ -30,7 +30,7 @@
     <Compile Remove="Cli\ResetCommand.cs" />
   </ItemGroup>
 
-  <!-- System.Text.Json is in-box on net8.0; explicit on netstandard2.0. Versions
+  <!-- System.Text.Json is in-box on net10.0; explicit on netstandard2.0. Versions
        match Azoa.SurrealDb.Client so the solution restores one set of assemblies. -->
   <ItemGroup>
     <PackageReference Include="System.Text.Json" Version="8.0.5" Condition="'$(TargetFramework)' == 'netstandard2.0'" />

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -11,6 +12,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Bridge;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services;
+using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Tests.TestSupport;
 
 namespace AZOA.WebAPI.Tests.Services;
@@ -44,7 +46,10 @@ public class CrossChainBridgeServiceTests
             Options.Create(_config),
             new FakeBridgeStore(),
             new FakeIdempotencyStore(),
-            Mock.Of<ILogger<CrossChainBridgeService>>());
+            Mock.Of<ILogger<CrossChainBridgeService>>(),
+            // RealValueEnabled=true: these tests exercise the live flows behind the gate.
+            Options.Create(new BridgeOptions { RealValueEnabled = true }),
+            new ConfigurationBuilder().Build());
     }
 
     // ─── Initiation ───
@@ -904,7 +909,9 @@ public class CrossChainBridgeServiceTests
                 Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Wormhole }),
                 _trackingStore,
                 _fakeIdempotency,
-                Mock.Of<ILogger<CrossChainBridgeService>>());
+                Mock.Of<ILogger<CrossChainBridgeService>>(),
+                Options.Create(new BridgeOptions { RealValueEnabled = true }),
+                new ConfigurationBuilder().Build());
             return (svc, _trackingStore);
         }
 
@@ -1062,6 +1069,9 @@ public class CrossChainBridgeServiceTests
             string idempotencyKey, CancellationToken ct = default)
             => _inner.GetBridgeByIdempotencyKeyAsync(idempotencyKey, ct);
 
+        public Task<ConsumedVaaRecord?> GetConsumedVaaAsync(string digest, CancellationToken ct = default)
+            => _inner.GetConsumedVaaAsync(digest, ct);
+
         // ── IBridgeStore writes — intercept where tracking is needed ──────────
 
         public Task AddBridgeAsync(BridgeTransactionResult tx, CancellationToken ct = default)
@@ -1081,7 +1091,7 @@ public class CrossChainBridgeServiceTests
             return inserted;
         }
 
-        public Task SaveVaaFetchResultAsync(
+        public Task<bool> SaveVaaFetchResultAsync(
             string id, string vaaBytes, int sigCount, string proofData,
             BridgeStatus statusVAAReady, CancellationToken ct = default)
             => _inner.SaveVaaFetchResultAsync(id, vaaBytes, sigCount, proofData, statusVAAReady, ct);
@@ -1145,5 +1155,9 @@ public class CrossChainBridgeServiceTests
 
         public Task<int> ForceCompleteBridgeAsync(string id, CancellationToken ct = default)
             => _inner.ForceCompleteBridgeAsync(id, ct);
+
+        public Task<IReadOnlyList<string>> GetFailedBridgesWithLockedFundsAsync(
+            int maxIds, CancellationToken ct = default)
+            => _inner.GetFailedBridgesWithLockedFundsAsync(maxIds, ct);
     }
 }

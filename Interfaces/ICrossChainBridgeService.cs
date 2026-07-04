@@ -30,16 +30,20 @@ public interface ICrossChainBridgeService
 
     /// <summary>
     /// Complete a bridge by confirming the target-chain mint (trusted mode).
+    /// <paramref name="callerAvatarId"/>: when set, the row must belong to that
+    /// avatar (IDOR guard at the untrusted boundary; internal callers pass null).
     /// </summary>
     Task<AZOAResult<BridgeTransactionResult>> CompleteBridgeAsync(
-        string bridgeTransactionId, CancellationToken ct = default);
+        string bridgeTransactionId, CancellationToken ct = default,
+        Guid? callerAvatarId = null);
 
     /// <summary>
     /// Fetch the signed VAA for a Wormhole bridge transaction.
     /// Polls the Guardian network until the VAA is available or timeout.
     /// </summary>
     Task<AZOAResult<BridgeTransactionResult>> FetchVAAAsync(
-        string bridgeTransactionId, CancellationToken ct = default);
+        string bridgeTransactionId, CancellationToken ct = default,
+        Guid? callerAvatarId = null);
 
     /// <summary>
     /// Redeem a Wormhole bridge on the target chain using a verified VAA.
@@ -52,7 +56,8 @@ public interface ICrossChainBridgeService
     /// </param>
     Task<AZOAResult<BridgeTransactionResult>> RedeemWithVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
-        string? clientIdempotencyKey = null);
+        string? clientIdempotencyKey = null,
+        Guid? callerAvatarId = null);
 
     /// <summary>
     /// Reverse bridge: burn wrapped on target, release original on source.
@@ -65,7 +70,8 @@ public interface ICrossChainBridgeService
     /// </param>
     Task<AZOAResult<BridgeTransactionResult>> ReverseBridgeAsync(
         string bridgeTransactionId, string sourceRecipientAddress, CancellationToken ct = default,
-        string? clientIdempotencyKey = null);
+        string? clientIdempotencyKey = null,
+        Guid? callerAvatarId = null);
 
     /// <summary>
     /// Get bridge history for an avatar.
@@ -83,5 +89,6 @@ public interface ICrossChainBridgeService
     /// Get the status of a specific bridge transaction.
     /// </summary>
     Task<AZOAResult<BridgeTransactionResult>> GetBridgeStatusAsync(
-        string bridgeTransactionId, CancellationToken ct = default);
+        string bridgeTransactionId, CancellationToken ct = default,
+        Guid? callerAvatarId = null);
 }

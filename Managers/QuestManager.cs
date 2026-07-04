@@ -397,21 +397,25 @@ public class QuestManager : IQuestManager
 
         foreach (var node in sortedNodes)
         {
-            // Conditional / failed-predecessor skipping — uses upstream executions
-            // (not the obsolete in-place QuestNode.State).
+            // V2 skip rule (Managers/AGENTS.md §onfailure-semantics):
+            // 1. Any Control/Conditional source Failed or Skipped → skip.
+            // 2. OnFailure edges are excluded from rule 1; they activate when
+            //    source Failed and skip when source Succeeded/Skipped (inverse).
+            // 3. When ≥1 OnFailure edges exist: node runs only if ≥1 OnFailure
+            //    source Failed (and no Control/Conditional source failed rule 1).
             var incomingEdges = quest.Edges.Where(e => e.TargetNodeId == node.Id).ToList();
             var shouldSkip = false;
 
-            foreach (var edge in incomingEdges)
+            var onFailureEdges = incomingEdges.Where(e => e.EdgeType == QuestEdgeType.OnFailure).ToList();
+            var controlEdges = incomingEdges.Where(
+                e => e.EdgeType == QuestEdgeType.Control || e.EdgeType == QuestEdgeType.Conditional).ToList();
+
+            // Rule 1: Control/Conditional source Failed or Skipped → skip.
+            foreach (var edge in controlEdges)
             {
                 executionsByNode.TryGetValue(edge.SourceNodeId, out var sourceExec);
                 var sourceState = sourceExec?.State;
 
-                // FR-1 (quest-dag-semantic-hardening): cascade skip on both edge types.
-                // Conditional: skip when source Failed/Skipped regardless of Condition text
-                //   (the old !IsNullOrEmpty guard silently let empty-condition edges run).
-                // Control: skip when source Failed OR Skipped (was Failed-only).
-                // See Managers/AGENTS.md §skip-semantics.
                 if (edge.EdgeType == QuestEdgeType.Conditional)
                 {
                     if (sourceState == QuestNodeState.Failed || sourceState == QuestNodeState.Skipped)
@@ -427,6 +431,19 @@ public class QuestManager : IQuestManager
                     shouldSkip = true;
                     break;
                 }
+            }
+
+            // Rule 2+3: OnFailure edges (inverse activation).
+            if (!shouldSkip && onFailureEdges.Count > 0)
+            {
+                var anyOnFailureSourceFailed = onFailureEdges.Any(e =>
+                {
+                    executionsByNode.TryGetValue(e.SourceNodeId, out var ex);
+                    return ex?.State == QuestNodeState.Failed;
+                });
+                // Skip unless at least one OnFailure source actually Failed.
+                if (!anyOnFailureSourceFailed)
+                    shouldSkip = true;
             }
 
             var execution = (await _executionStore.GetByRunAndNodeAsync(run.Id, node.Id)).Result!;
@@ -547,11 +564,18 @@ public class QuestManager : IQuestManager
             executionsByNode[node.Id] = execution;
         }
 
-        // Determine overall run status from the per-node executions.
+        // V3 run-status: Failed iff any UNHANDLED Failed execution exists.
+        // A Failed node is "handled" when it has ≥1 outgoing OnFailure edge
+        // (the failure arm activated, so the run can still succeed).
+        // See Managers/AGENTS.md §onfailure-semantics.
         var allExecs = (await _executionStore.GetByRunIdAsync(run.Id)).Result ?? Enumerable.Empty<QuestNodeExecution>();
-        run.Status = allExecs.Any(e => e.State == QuestNodeState.Failed)
-            ? QuestRunStatus.Failed
-            : QuestRunStatus.Succeeded;
+        var nodesWithOnFailureOut = quest.Edges
+            .Where(e => e.EdgeType == QuestEdgeType.OnFailure)
+            .Select(e => e.SourceNodeId)
+            .ToHashSet();
+        var hasUnhandledFailure = allExecs.Any(e =>
+            e.State == QuestNodeState.Failed && !nodesWithOnFailureOut.Contains(e.NodeId));
+        run.Status = hasUnhandledFailure ? QuestRunStatus.Failed : QuestRunStatus.Succeeded;
         run.EndedAt = DateTime.UtcNow;
         var updated = await _runStore.UpdateAsync(run);
 

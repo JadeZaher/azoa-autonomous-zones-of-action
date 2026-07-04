@@ -88,4 +88,23 @@ public sealed class FakeIdempotencyStore : IIdempotencyStore
             UpdatedAt = DateTime.UtcNow
         };
     }
+
+    /// <summary>
+    /// Seed a record with an explicit <paramref name="createdAt"/> so stale-claim
+    /// tests can place the claim in the past without sleeping.
+    /// </summary>
+    public void SeedAged(string key, string operationType, IdempotencyState state,
+        DateTime createdAt, string? resultPayload = null, string? error = null)
+    {
+        _records[key] = new IdempotencyRecord
+        {
+            Key = key,
+            OperationType = operationType,
+            State = state,
+            ResultPayload = resultPayload,
+            Error = error,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+        };
+    }
 }

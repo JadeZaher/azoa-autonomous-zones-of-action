@@ -107,6 +107,10 @@ public sealed class ReconciliationService : IReconciliationService
             }
         }
 
+        // G6: surface Failed bridges that hold locked funds with no mint — terminal status
+        // makes them invisible to the non-terminal sweep above; alert so operators can act.
+        report = report.Combine(await CheckLockedFundsAtRiskAsync(ct));
+
         return report;
     }
 
@@ -140,8 +144,21 @@ public sealed class ReconciliationService : IReconciliationService
     {
         var tx = await _bridgeStore.GetBridgeAsync(id, ct);
 
-        if (tx is null || !NonTerminalBridge.Contains(tx.Status))
-            return ReconciliationReport.Empty; // already terminal / vanished — nothing to do
+        if (tx is null) return ReconciliationReport.Empty; // vanished — nothing to do
+
+        if (!NonTerminalBridge.Contains(tx.Status))
+        {
+            // Task 6: row already reached a TERMINAL state (raced with foreground). If an
+            // IdempotencyKey is stamped, settle it now so a crash between the terminal-transition
+            // and the idempotency-complete call (audit Window 6) doesn't leak InProgress forever.
+            var isSuccessTerminal = tx.Status == BridgeStatus.Completed || tx.Status == BridgeStatus.Refunded;
+            if (!string.IsNullOrWhiteSpace(tx.IdempotencyKey))
+                await SettleBridgeIdempotencyAsync(
+                    tx, settleCompleted: isSuccessTerminal,
+                    payloadOrReason: $"sweep: row already terminal ({tx.Status}) — settling orphaned idempotency record",
+                    ct);
+            return ReconciliationReport.Empty;
+        }
 
         var ageSeconds = (now - tx.CreatedAt).TotalSeconds;
         var hardStuck = ageSeconds >= Math.Max(0, _options.BridgeHardStuckAfterSeconds);
@@ -183,7 +200,7 @@ public sealed class ReconciliationService : IReconciliationService
                 $"no on-chain tx hash for phase {phase}");
         }
 
-        var provider = TryResolveProvider(chainName);
+        var provider = TryResolveProvider(chainName, tx.Network);
         if (provider is null)
         {
             _logger.LogWarning(
@@ -199,6 +216,19 @@ public sealed class ReconciliationService : IReconciliationService
         {
             case ChainVerdict.Confirmed:
             {
+                // G1 fix: Locked row with a confirmed lock tx cannot self-transition
+                // Locked→Locked. The lock landed but the downstream mint/VAA step
+                // never ran — foreground or operator must re-drive; sweep observes only.
+                if (tx.Status == BridgeStatus.Locked && advanceTo == BridgeStatus.Locked)
+                {
+                    _logger.LogWarning(
+                        "Reconciliation: lock confirmed on-chain for bridge tx {BridgeId} " +
+                        "(LockTx={LockTx}, chain={Chain}) but downstream mint/VAA step never ran " +
+                        "— awaiting operator/foreground re-drive. Will not self-transition Locked→Locked.",
+                        tx.Id, txHash, chainName);
+                    return ReconciliationReport.Empty with { StuckFlagged = 1 };
+                }
+
                 // Atomic, conditional advance. WHERE Id == x AND Status ==
                 // <expected current>. If a concurrent live request already
                 // moved it, affected == 0 and we simply no-op (idempotent).
@@ -329,6 +359,35 @@ public sealed class ReconciliationService : IReconciliationService
             "not yet hard-stuck ({Reason}) — leaving untouched",
             tx.Id, tx.Status, ageSeconds, reason);
         return ReconciliationReport.Empty;
+    }
+
+    /// <summary>
+    /// G6: count Failed bridges with locked funds and no mint; log a warning per sweep tick
+    /// if any exist so operators can act. The sweep never mutates these rows.
+    /// </summary>
+    private async Task<ReconciliationReport> CheckLockedFundsAtRiskAsync(CancellationToken ct)
+    {
+        try
+        {
+            var batchSize = Math.Clamp(_options.BatchSize, 1, 1000);
+            var ids = await _bridgeStore.GetFailedBridgesWithLockedFundsAsync(batchSize, ct);
+            if (ids.Count == 0) return ReconciliationReport.Empty;
+
+            var sample = string.Join(", ", ids.Take(5));
+            _logger.LogWarning(
+                "Reconciliation: {Count} failed bridge(s) hold locked funds with no mint — " +
+                "manual intervention required to recover source-chain funds. " +
+                "Sample ids: [{Sample}]",
+                ids.Count, sample);
+
+            return ReconciliationReport.Empty with { LockedFundsAtRisk = ids.Count };
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Reconciliation: failed to check locked-funds-at-risk");
+            return ReconciliationReport.Empty;
+        }
     }
 
     // ─────────────────────── Operation reconciliation ────────────────────────
@@ -707,15 +766,18 @@ public sealed class ReconciliationService : IReconciliationService
 
     // ───────────────────────── Provider resolution ──────────────────────────
 
-    private IBlockchainProvider? TryResolveProvider(string? chain)
+    /// <summary>
+    /// Resolves the chain provider using the bridge row's persisted network when available,
+    /// falling back to Devnet when absent (rows written before the network field existed).
+    /// </summary>
+    private IBlockchainProvider? TryResolveProvider(string? chain, ChainNetwork? network = null)
     {
         if (string.IsNullOrWhiteSpace(chain)) return SafeDefaultProvider();
         try
         {
-            // Network is not authoritatively persisted on the bridge row;
-            // use the configured default network for the chain. (Provider
-            // factory caches per chain:network.)
-            return _chainFactory.GetProvider(chain, ChainNetwork.Devnet);
+            // G5: prefer the network stamped on the row; fall back to Devnet for pre-field rows.
+            var resolvedNetwork = network ?? ChainNetwork.Devnet;
+            return _chainFactory.GetProvider(chain, resolvedNetwork);
         }
         catch (Exception ex)
         {

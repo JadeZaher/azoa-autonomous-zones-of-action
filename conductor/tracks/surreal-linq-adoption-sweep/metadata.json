@@ -1,0 +1,7 @@
+{
+  "id": "surreal-linq-adoption-sweep",
+  "description": "Adopt the shipped LINQ/typed query surface for the read path: migrate the ~4 remaining raw SELECT sites to SurrealQuery<T>/ctx.Set<T>(); keep raw escape hatch for conditional/atomic writes",
+  "type": "chore",
+  "created_at": "2026-07-01T00:00:00Z",
+  "status": "pending"
+}

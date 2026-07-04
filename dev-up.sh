@@ -334,10 +334,10 @@ else
     SCHEMA_EXIT=0
     if [ "$DO_RESET_SCHEMA" -eq 1 ]; then
         echo "[dev-up] --reset: wiping + re-applying SurrealDB schema..."
-        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net8.0 -- reset || SCHEMA_EXIT=$?
+        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net10.0 -- reset || SCHEMA_EXIT=$?
     else
         echo "[dev-up] syncing SurrealDB schema (idempotent; use --reset to wipe)..."
-        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net8.0 -- up || SCHEMA_EXIT=$?
+        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net10.0 -- up || SCHEMA_EXIT=$?
     fi
     export AZOA_SURREAL_URL="$SCHEMA_URL_BACKUP"
     if [ "$SCHEMA_EXIT" -ne 0 ]; then

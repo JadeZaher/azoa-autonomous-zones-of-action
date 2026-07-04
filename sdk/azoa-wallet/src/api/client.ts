@@ -117,6 +117,8 @@ export interface BridgeRouteInfo {
   wormholeSupported: boolean;
   wormholeSourceChainId?: number;
   wormholeTargetChainId?: number;
+  /** Whether real-value bridge movement is permitted (kill switch). False = test-mode only. */
+  realValueEnabled?: boolean;
 }
 
 export interface SearchResult {

@@ -288,10 +288,34 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         // Pre-empting with Failed here would suppress the Cancelled projection
         // (the terminal-guard would never let compensation overwrite it).
         if (result.IsError)
+        {
+            // V5: when the failed node has an OnFailure successor, advance to it
+            // instead of surfacing the saga failure. This keeps the run Running
+            // and lets the failure arm complete without triggering compensation.
+            // See Services/Quest/Workflow/AGENTS.md §skip-semantics.
+            var onFailureHop = QuestWorkflowEdges.ResolveOnFailureSuccessor(quest, node.Id);
+            if (onFailureHop.Kind == SuccessorKind.Single)
+                return await AdvanceOnFailureAsync(p, onFailureHop.NodeId!.Value, ct);
+
             return StepResult.Fail(result.Message ?? $"Node {p.NodeId} failed.");
+        }
 
         // ── 5. Self-advance ───────────────────────────────────────────────────
         return await AdvanceAsync(quest, node, p, advance, result.Output, ct);
+    }
+
+    /// <summary>
+    /// Enqueues the OnFailure successor and keeps the run Running. The failure
+    /// arm takes over normal forward progression; from the saga's perspective the
+    /// step succeeds (no compensation triggered). V5 — both fresh and replay seams
+    /// call this. See Services/Quest/Workflow/AGENTS.md §skip-semantics.
+    /// </summary>
+    private async Task<StepResult> AdvanceOnFailureAsync(
+        QuestStepPayload p, Guid onFailureNodeId, CancellationToken ct)
+    {
+        await EnqueueNodeAsync(p, onFailureNodeId, signalPayload: null, ct);
+        await ProjectRunStatusAsync(p.RunId, QuestRunStatus.Running, ct);
+        return StepResult.Ok(null);
     }
 
     /// <summary>
@@ -526,12 +550,12 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
 
         if (state is QuestNodeState.Failed)
         {
-            // Re-fail the saga step so its retry/compensation machinery owns the
-            // outcome. Do NOT project a terminal Failed here (same reasoning as
-            // the forward-failure path): the node-step always declares a
-            // compensation, so the terminal verdict is Cancelled (compensation)
-            // or, only if compensation itself dead-letters, Failed — both owned
-            // downstream, not pre-empted on a replay.
+            // V5 replay: same OnFailure short-circuit as the forward path.
+            var onFailureHop = QuestWorkflowEdges.ResolveOnFailureSuccessor(quest, node.Id);
+            if (onFailureHop.Kind == SuccessorKind.Single)
+                return await AdvanceOnFailureAsync(p, onFailureHop.NodeId!.Value, ct);
+
+            // No OnFailure successor — re-fail so saga retry/compensation machinery owns it.
             return StepResult.Fail(existing.Result?.Error ?? $"Node {p.NodeId} failed.");
         }
 

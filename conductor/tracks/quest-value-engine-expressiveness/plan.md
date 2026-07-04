@@ -2,7 +2,7 @@
 type: plan
 track: quest-value-engine-expressiveness
 created: 2026-07-02
-status: pending
+status: in_progress
 ---
 
 # Implementation Plan: quest-value-engine-expressiveness
