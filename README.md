@@ -1,4 +1,4 @@
-# AZOA Sleek
+# AZOA - Autonomous Zones of Action
 
 A .NET 8 WebAPI for the AZOA protocol with a TypeScript SDK and Next.js 14 frontend. Single storage engine: SurrealDB.
 
