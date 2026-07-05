@@ -179,6 +179,6 @@ run; repeat invocations are no-ops when the ledger matches the on-disk files.
 | "How do I clone + run locally?" | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | "What's the right C# pattern for a new SurrealDB entity?" | [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md) |
 | "What does the API surface look like?" | [PROVIDERS.md](PROVIDERS.md) |
-| "What invariants does the bridge enforce?" | [conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md](conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md) |
+| "What invariants does the bridge enforce?" | [docs/RESIDUAL-RISK-RUNBOOK.md](docs/RESIDUAL-RISK-RUNBOOK.md) |
 | "Which track is which?" | [conductor/tracks.md](conductor/tracks.md) |
 | "Historical RUNBOOK status snapshots" | [conductor/retros/runbook-status-2026-06-12.md](conductor/retros/runbook-status-2026-06-12.md) |

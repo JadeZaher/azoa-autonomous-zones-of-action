@@ -158,7 +158,7 @@ dotnet test tests/SurrealForge.Schema.Tests/SurrealForge.Schema.Tests.csproj -c 
   `dotnet format analyzers --diagnostics IDE0005` or remove the flagged line.
 - **Bridge moves real value** — never weaken an exactly-once / replay
   assertion to make a test pass; fix the cause. Pre-launch safety
-  surface + ops runbook: `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md`.
+  surface + ops runbook: `docs/RESIDUAL-RISK-RUNBOOK.md`.
 - **DEX env-conditions are 200 OK with `Unavailable: true`** — no-pool
   on Tinyman, upstream unreachable on Jupiter. Frontend tests
   render these as expected, not as red failures.

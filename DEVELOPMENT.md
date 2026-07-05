@@ -187,8 +187,8 @@ are no-ops when the ledger matches the on-disk files.
 |---|---|---|
 | SurrealDB entity = hand-authored attributed POCO + partial extensions | [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md) | All SurrealDB-backed aggregates |
 | No EF Core migrations on new work (EF + Postgres removed in surrealdb-migration) | greenfield pre-launch, no customers/data | All persistence work |
-| Integration tests run against the dev-up SurrealDB instance (`azoa-dev-surrealdb` on `:8000`) | [RESIDUAL-RISK-RUNBOOK](conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md) | All `AZOA.WebAPI.IntegrationTests` |
-| Bridge tier-0 hardening invariants | [api-safety-hardening RESIDUAL-RISK-RUNBOOK §4](conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md) | Bridge value flow |
+| Integration tests run against the dev-up SurrealDB instance (`azoa-dev-surrealdb` on `:8000`) | [RESIDUAL-RISK-RUNBOOK](docs/RESIDUAL-RISK-RUNBOOK.md) | All `AZOA.WebAPI.IntegrationTests` |
+| Bridge tier-0 hardening invariants | [api-safety-hardening RESIDUAL-RISK-RUNBOOK §4](docs/RESIDUAL-RISK-RUNBOOK.md) | Bridge value flow |
 | TDD on bug fixes + features | [conductor/skills/tdd-workflow](conductor/) | Default |
 
 ### SurrealDB convention recap (C#-first)

@@ -150,6 +150,10 @@ This brings up SurrealDB, the WebAPI, and the frontend via
 `docker-compose.dev.yml`, then applies the schema. Tear down with
 `./dev-down.sh`.
 
+**Self-hosting / running a node:** AZOA is meant to be self-hosted. To stand up
+and run a real node (the .NET 8 WebAPI + the SurrealDB it owns) beyond the local
+dev stack, see [`docs/NODE-HOST.md`](docs/NODE-HOST.md).
+
 ## Docs
 
 - `PROVIDERS.md` — API surface and provider architecture
@@ -158,8 +162,12 @@ This brings up SurrealDB, the WebAPI, and the frontend via
 - `DEVELOPMENT.md` — Developer setup, dev-up variants, conventions,
   troubleshooting
 - `RUNBOOK.md` — Operations: local stack control, production deploy, diagnostics
-- `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md` — Operator
-  runbook: exactly-once guarantees, reconciliation, manual-intervention gates
+- `docs/NODE-HOST.md` — Node host setup: self-hosting an AZOA node (WebAPI +
+  SurrealDB)
+- `docs/GO-TO-PROD.md` — Production-readiness gate checklist
+- `docs/GUARDIAN-SET-SETUP.md` — Wormhole Guardian-set trust-root setup
+- `docs/RESIDUAL-RISK-RUNBOOK.md` — Operator runbook: exactly-once guarantees,
+  reconciliation, manual-intervention gates
 - `conductor/product.md` — Product vision and goals
 - `conductor/tracks.md` — Feature track catalog and status
 

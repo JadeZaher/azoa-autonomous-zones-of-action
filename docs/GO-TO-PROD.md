@@ -4,10 +4,15 @@
 flows." Greenfield / pre-launch: no customers, no data — bias to clean config,
 fail-closed defaults, and verified trust roots, not compat shims.
 
+> **Note:** the DB sections below (Postgres/EF, `ConnectionStrings:AZOADatabase`,
+> `db.Database.Migrate()`) predate the SurrealDB cutover. SurrealDB is now the
+> sole data engine — see [NODE-HOST.md](NODE-HOST.md) for current data-engine
+> setup. The safety gates in §1–§6 stand unchanged.
+
 **Companion docs (read together):**
-- [../RESIDUAL-RISK-RUNBOOK.md](../RESIDUAL-RISK-RUNBOOK.md) — what's safe, residual risks, stuck-bridge ops.
-- [../GUARDIAN-SET-SETUP.md](../GUARDIAN-SET-SETUP.md) — Guardian-set trust-root procedure.
-- [../../../../AGENTS.md](../../../../AGENTS.md) — build/test/stack ops.
+- [RESIDUAL-RISK-RUNBOOK.md](RESIDUAL-RISK-RUNBOOK.md) — what's safe, residual risks, stuck-bridge ops.
+- [GUARDIAN-SET-SETUP.md](GUARDIAN-SET-SETUP.md) — Guardian-set trust-root procedure.
+- [../AGENTS.md](../AGENTS.md) — build/test/stack ops.
 - `tests/run-tests.ps1` — full safety suite entry point (xUnit + optional live harness + Stryker).
 
 ---

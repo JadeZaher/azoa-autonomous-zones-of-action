@@ -278,7 +278,7 @@ Spine for replay safety on key endpoints. Client can supply `Idempotency-Key` he
 - `assertUuid` guards in SDK — prevents path traversal on all URL-interpolated IDs
 - STARODK upsert IDOR-resistance — STARODK upsert routes scope the lookup by route id + authenticated avatar identity; caller-supplied `model.AvatarId` on the body is ignored (closes IDOR surface caught by self-audit-one-fix)
 
-See `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md` for full pre-launch gates.
+See `docs/RESIDUAL-RISK-RUNBOOK.md` for full pre-launch gates.
 
 ## Removed Surfaces
 
