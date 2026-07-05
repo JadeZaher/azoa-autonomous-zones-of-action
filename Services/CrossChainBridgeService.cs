@@ -96,10 +96,11 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     }
 
     public async Task<AZOAResult<BridgeTransactionResult>> FetchVAAAsync(
-        string bridgeTransactionId, CancellationToken ct = default)
+        string bridgeTransactionId, CancellationToken ct = default,
+        Guid? callerAvatarId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null)
+        if (tx == null || !CallerOwns(tx, callerAvatarId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         if (tx.Mode != BridgeMode.Wormhole)
@@ -161,10 +162,11 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     public async Task<AZOAResult<BridgeTransactionResult>> RedeemWithVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
-        string? clientIdempotencyKey = null)
+        string? clientIdempotencyKey = null,
+        Guid? callerAvatarId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null)
+        if (tx == null || !CallerOwns(tx, callerAvatarId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         if (tx.Mode != BridgeMode.Wormhole)
@@ -535,10 +537,11 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     }
 
     public async Task<AZOAResult<BridgeTransactionResult>> CompleteBridgeAsync(
-        string bridgeTransactionId, CancellationToken ct = default)
+        string bridgeTransactionId, CancellationToken ct = default,
+        Guid? callerAvatarId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null)
+        if (tx == null || !CallerOwns(tx, callerAvatarId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         if (tx.Status == BridgeStatus.Completed)
@@ -560,10 +563,11 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     public async Task<AZOAResult<BridgeTransactionResult>> ReverseBridgeAsync(
         string bridgeTransactionId, string sourceRecipientAddress, CancellationToken ct = default,
-        string? clientIdempotencyKey = null)
+        string? clientIdempotencyKey = null,
+        Guid? callerAvatarId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null)
+        if (tx == null || !CallerOwns(tx, callerAvatarId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         if (tx.Status == BridgeStatus.Refunded)
@@ -789,14 +793,24 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     }
 
     public async Task<AZOAResult<BridgeTransactionResult>> GetBridgeStatusAsync(
-        string bridgeTransactionId, CancellationToken ct = default)
+        string bridgeTransactionId, CancellationToken ct = default,
+        Guid? callerAvatarId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null)
+        if (tx == null || !CallerOwns(tx, callerAvatarId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         return Ok(tx, $"Bridge status: {tx.Status} (mode: {tx.Mode})");
     }
+
+    /// <summary>
+    /// IDOR guard: internal callers pass null (no scoping); an untrusted caller
+    /// passes its authenticated avatar id and may only touch its own rows. A
+    /// mismatch is surfaced as "not found" (never a distinct 403) so bridge-id
+    /// existence is not leaked across avatars.
+    /// </summary>
+    private static bool CallerOwns(BridgeTransactionResult tx, Guid? callerAvatarId)
+        => !callerAvatarId.HasValue || tx.AvatarId == callerAvatarId.Value;
 
     // ─── Private: Wormhole (trustless) flow ───
 

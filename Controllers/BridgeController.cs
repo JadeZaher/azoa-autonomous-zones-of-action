@@ -94,7 +94,7 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(404)]
     public async Task<IActionResult> FetchVAA(string id, CancellationToken ct)
     {
-        var result = await _bridgeService.FetchVAAAsync(id, ct);
+        var result = await _bridgeService.FetchVAAAsync(id, ct, GetAvatarId());
         if (result.IsError)
         {
             if (result.Message.Contains("not found"))
@@ -118,7 +118,7 @@ public class BridgeController : ControllerBase
     public async Task<IActionResult> RedeemWithVAA(string id, CancellationToken ct)
     {
         var idempotencyKey = ReadIdempotencyKey();
-        var result = await _bridgeService.RedeemWithVAAAsync(id, ct, idempotencyKey);
+        var result = await _bridgeService.RedeemWithVAAAsync(id, ct, idempotencyKey, GetAvatarId());
         if (result.IsError)
         {
             if (result.Message.Contains("not found"))
@@ -136,7 +136,7 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(typeof(BridgeTransactionResult), 200)]
     public async Task<IActionResult> CompleteBridge(string id, CancellationToken ct)
     {
-        var result = await _bridgeService.CompleteBridgeAsync(id, ct);
+        var result = await _bridgeService.CompleteBridgeAsync(id, ct, GetAvatarId());
         if (result.IsError)
             return NotFound(result.ToErrorPayload());
 
@@ -155,7 +155,7 @@ public class BridgeController : ControllerBase
         CancellationToken ct)
     {
         var idempotencyKey = ReadIdempotencyKey();
-        var result = await _bridgeService.ReverseBridgeAsync(id, request.SourceRecipientAddress, ct, idempotencyKey);
+        var result = await _bridgeService.ReverseBridgeAsync(id, request.SourceRecipientAddress, ct, idempotencyKey, GetAvatarId());
         if (result.IsError)
             return BadRequest(result.ToErrorPayload());
 
@@ -169,7 +169,7 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(typeof(BridgeTransactionResult), 200)]
     public async Task<IActionResult> GetBridgeStatus(string id, CancellationToken ct)
     {
-        var result = await _bridgeService.GetBridgeStatusAsync(id, ct);
+        var result = await _bridgeService.GetBridgeStatusAsync(id, ct, GetAvatarId());
         if (result.IsError)
             return NotFound(result.ToErrorPayload());
 
