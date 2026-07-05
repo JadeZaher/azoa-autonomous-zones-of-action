@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
@@ -88,7 +88,7 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
         OccurredAt = p.OccurredAt.UtcDateTime,
     };
 
-    private sealed class ConsentAuditPoco : Azoa.SurrealDb.Client.ISurrealRecord
+    private sealed class ConsentAuditPoco : SurrealForge.Client.ISurrealRecord
     {
         public string SchemaName => Table;
 

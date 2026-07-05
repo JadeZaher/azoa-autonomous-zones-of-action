@@ -59,7 +59,7 @@ step 1 of the investigation and was kept as a permanent harness improvement
 
 ### Why it happened (file:line)
 
-- `packages/Azoa.SurrealDb.Client/SurrealConnectionOptions.cs:26` — the app's
+- `https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealConnectionOptions.cs:26` — the app's
   `Namespace` defaults to `"azoa"`.
 - `Extensions/SurrealDbServiceCollectionExtensions.cs:61` — binds
   `SurrealConnectionOptions` from the `SurrealDb` config section.
@@ -196,8 +196,8 @@ moved or renamed. Not a code bug; the gate config paths are stale.
 - `G1_CrashDurabilityTest.G1_DurabilityAckGate_FailsClosed_IfSyncEventual`
   → expects `podman-compose.yml` at repo root; file not present at that path.
 - `G1_CrashDurabilityTest.G1_HardKill_DurableInserts_SurviveRestart`
-  → `podman kill ... azoa-surrealdb-test` — expects a container literally named
-  `azoa-surrealdb-test`; the working container here is `azoa-test-surrealdb`.
+  → `podman kill ... surrealforgedb-test` — expects a container literally named
+  `surrealforgedb-test`; the working container here is `azoa-test-surrealdb`.
 - `G5_RestoreDrillTest` → expects `scripts/surrealdb/backup.ps1`; the `scripts/`
   tree no longer exists at this commit (confirmed: `scripts/` is absent).
 - `SurrealPerfBudgets.WalletGetById_P99_Under50ms` → machine-dependent timing

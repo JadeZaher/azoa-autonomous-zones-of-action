@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Json;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Json;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
@@ -572,7 +572,7 @@ public sealed class SurrealNftStore : INftStore
     // These tables have no generated POCOs (not in the Mermaid schema).
     // They are SCHEMALESS (SurrealDB defaults) — adapters manage the shape.
 
-    private sealed class SurrealHolonBinding : Azoa.SurrealDb.Client.ISurrealRecord
+    private sealed class SurrealHolonBinding : SurrealForge.Client.ISurrealRecord
     {
         public string SchemaName => HolonBindingTable;
 
@@ -604,7 +604,7 @@ public sealed class SurrealNftStore : INftStore
         public bool IsActive { get; set; } = true;
     }
 
-    private sealed class SurrealWalletBinding : Azoa.SurrealDb.Client.ISurrealRecord
+    private sealed class SurrealWalletBinding : SurrealForge.Client.ISurrealRecord
     {
         public string SchemaName => WalletBindingTable;
 

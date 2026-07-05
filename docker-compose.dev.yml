@@ -6,7 +6,7 @@
 #
 # Services:
 #   - surrealdb       RocksDB-backed v3.1.4 instance (port 8000)
-#   - azoa-api       .NET 8 WebAPI (port 5000) -- runs `azoa-surreal up`
+#   - azoa-api       .NET 8 WebAPI (port 5000) -- runs `surrealforge up`
 #                     against `surrealdb` on first boot to apply schemas,
 #                     then starts the WebAPI host.
 #   - azoa-frontend  Next.js dev frontend (port 3000) wired to azoa-api
@@ -95,27 +95,27 @@ services:
       # external SurrealDB is detected on the host. Default points at the
       # bundled `surrealdb` service (compose-network DNS entry).
       #
-      # The interpolation source variable is AZOA_SURREAL_URL (NOT
+      # The interpolation source variable is SURREALFORGE_URL (NOT
       # `SurrealDb__Endpoint`) because podman-compose's ${VAR:-default}
       # parser drops env-var names that contain double underscores --
       # so both .NET config keys (`SurrealDb__Endpoint`) AND the CLI's
-      # `AZOA_SURREAL_URL` get the SAME value via AZOA_SURREAL_URL,
+      # `SURREALFORGE_URL` get the SAME value via SURREALFORGE_URL,
       # which is single-underscore-safe.
-      SurrealDb__Endpoint: "${AZOA_SURREAL_URL:-http://surrealdb:8000}"
+      SurrealDb__Endpoint: "${SURREALFORGE_URL:-http://surrealdb:8000}"
       SurrealDb__Namespace: "azoa"
       SurrealDb__Database: "azoa"
       SurrealDb__User: "root"
       SurrealDb__Password: "root"
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:5000"
-      # Mirror env-var aliases used by the azoa-surreal CLI so the on-boot
+      # Mirror env-var aliases used by the surrealforge CLI so the on-boot
       # migration pre-step (entrypoint wrapper, see below) reaches the right
       # instance with no flags.
-      AZOA_SURREAL_URL: "${AZOA_SURREAL_URL:-http://surrealdb:8000}"
-      AZOA_SURREAL_NS: "azoa"
-      AZOA_SURREAL_DB: "azoa"
-      AZOA_SURREAL_USER: "root"
-      AZOA_SURREAL_PASS: "root"
+      SURREALFORGE_URL: "${SURREALFORGE_URL:-http://surrealdb:8000}"
+      SURREALFORGE_NS: "azoa"
+      SURREALFORGE_DB: "azoa"
+      SURREALFORGE_USER: "root"
+      SURREALFORGE_PASS: "root"
     ports:
       - "5000:5000"
     networks:

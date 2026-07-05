@@ -173,9 +173,9 @@ if ($DoWipe) {
 if (-not $env:SURREALDB_HOST_PORT) { $env:SURREALDB_HOST_PORT = '8000' }
 $SurrealHostPort = $env:SURREALDB_HOST_PORT
 
-# Snapshot AZOA_SURREAL_URL so the host.containers.internal / 127.0.0.1
+# Snapshot SURREALFORGE_URL so the host.containers.internal / 127.0.0.1
 # rewrites below don't leak into the caller's shell. Restored in finally.
-$AzoaSurrealUrlEntry = $env:AZOA_SURREAL_URL
+$AzoaSurrealUrlEntry = $env:SURREALFORGE_URL
 try {
 
 # A responder on the host port is only "external" when it ISN'T our own
@@ -210,11 +210,11 @@ if ($ExistingSurrealDb) {
     # parsed at runtime, but podman-compose still validates the field at
     # config-load time. The default `8000` lets that validation pass; the
     # service simply doesn't start.
-    # AZOA_SURREAL_URL drives BOTH the schema CLI's --connection and the
+    # SURREALFORGE_URL drives BOTH the schema CLI's --connection and the
     # WebAPI's SurrealDb:Endpoint (the compose file interpolates the same
     # value into both). Single-underscore-safe -- podman-compose's
     # ${VAR:-default} parser drops names with double underscores.
-    $env:AZOA_SURREAL_URL    = "http://${HostDbInternal}:$SurrealHostPort"
+    $env:SURREALFORGE_URL    = "http://${HostDbInternal}:$SurrealHostPort"
     $ComposeUpServices        = @('azoa-api', 'azoa-frontend')
 } else {
     $ComposeUpServices        = @()  # empty == all services
@@ -330,7 +330,7 @@ Invoke-Compose @('-f', $ComposeFile, 'ps')
 
 # ── SurrealDB schema sync ─────────────────────────────────────────────────────
 #
-# Default: run `azoa-surreal up` -- idempotent. The CLI tracks applied files
+# Default: run `surrealforge up` -- idempotent. The CLI tracks applied files
 # via the schema_migration table, so re-running is a no-op when nothing has
 # changed and applies only pending files when there's drift. This is the
 # "newcomer clones the repo and runs ./dev-up.ps1" path.
@@ -342,22 +342,22 @@ Invoke-Compose @('-f', $ComposeFile, 'ps')
 if ($env:AZOA_SKIP_RESET -eq "1") {
     Write-Host "[dev-up] AZOA_SKIP_RESET=1 set -- skipping schema sync"
 } else {
-    if (-not $env:AZOA_SURREAL_NS)   { $env:AZOA_SURREAL_NS   = 'azoa' }
-    if (-not $env:AZOA_SURREAL_DB)   { $env:AZOA_SURREAL_DB   = 'azoa' }
-    if (-not $env:AZOA_SURREAL_USER) { $env:AZOA_SURREAL_USER = 'root' }
-    if (-not $env:AZOA_SURREAL_PASS) { $env:AZOA_SURREAL_PASS = 'root' }
+    if (-not $env:SURREALFORGE_NS)   { $env:SURREALFORGE_NS   = 'azoa' }
+    if (-not $env:SURREALFORGE_DB)   { $env:SURREALFORGE_DB   = 'azoa' }
+    if (-not $env:SURREALFORGE_USER) { $env:SURREALFORGE_USER = 'root' }
+    if (-not $env:SURREALFORGE_PASS) { $env:SURREALFORGE_PASS = 'root' }
 
-    # Schema CLI runs on the HOST. The AZOA_SURREAL_URL set earlier for
+    # Schema CLI runs on the HOST. The SURREALFORGE_URL set earlier for
     # the API container points at host.containers.internal which won't
     # resolve here -- override for the CLI call, restore after.
-    $schemaUrlBackup = $env:AZOA_SURREAL_URL
-    $env:AZOA_SURREAL_URL = "http://127.0.0.1:$SurrealHostPort"
+    $schemaUrlBackup = $env:SURREALFORGE_URL
+    $env:SURREALFORGE_URL = "http://127.0.0.1:$SurrealHostPort"
 
     # Wait for SurrealDB to be reachable (the container case needs a beat).
     $surrealReady = $false
     for ($i = 0; $i -lt 20; $i++) {
         try {
-            $null = Invoke-WebRequest -Uri "$env:AZOA_SURREAL_URL/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+            $null = Invoke-WebRequest -Uri "$env:SURREALFORGE_URL/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
             $surrealReady = $true
             break
         } catch {
@@ -365,8 +365,8 @@ if ($env:AZOA_SKIP_RESET -eq "1") {
         }
     }
     if (-not $surrealReady) {
-        $probedUrl = $env:AZOA_SURREAL_URL
-        $env:AZOA_SURREAL_URL = $schemaUrlBackup
+        $probedUrl = $env:SURREALFORGE_URL
+        $env:SURREALFORGE_URL = $schemaUrlBackup
         Write-Host ""
         Write-Host "[dev-up] SurrealDB at $probedUrl never became reachable." -ForegroundColor Yellow
         Write-Host "[dev-up] Dumping bundled surrealdb container state + logs to diagnose:" -ForegroundColor Yellow
@@ -391,15 +391,18 @@ if ($env:AZOA_SKIP_RESET -eq "1") {
     }
 
     Write-Host ""
+    # Restore the SurrealForge.Schema CLI (pinned in .config/dotnet-tools.json).
+    dotnet tool restore | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Error "[dev-up] dotnet tool restore failed"; exit 1 }
     if ($Reset) {
         Write-Host "[dev-up] -Reset: wiping + re-applying SurrealDB schema..."
-        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net10.0 -- reset
+        dotnet surrealforge reset
     } else {
         Write-Host "[dev-up] syncing SurrealDB schema (idempotent; use -Reset to wipe)..."
-        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net10.0 -- up
+        dotnet surrealforge up
     }
     $schemaExit = $LASTEXITCODE
-    $env:AZOA_SURREAL_URL = $schemaUrlBackup
+    $env:SURREALFORGE_URL = $schemaUrlBackup
     $global:LASTEXITCODE = $schemaExit
     if ($LASTEXITCODE -ne 0) {
         $verb = if ($Reset) { 'reset' } else { 'up' }
@@ -437,11 +440,11 @@ if ($Logs) {
     Invoke-Compose @('-f', $ComposeFile, 'logs', '-f')
 }
 } finally {
-    # Restore the caller's AZOA_SURREAL_URL so host.containers.internal /
+    # Restore the caller's SURREALFORGE_URL so host.containers.internal /
     # 127.0.0.1 rewrites don't leak into the shell after the script exits.
     if ($null -eq $AzoaSurrealUrlEntry) {
-        Remove-Item Env:AZOA_SURREAL_URL -ErrorAction SilentlyContinue
+        Remove-Item Env:SURREALFORGE_URL -ErrorAction SilentlyContinue
     } else {
-        $env:AZOA_SURREAL_URL = $AzoaSurrealUrlEntry
+        $env:SURREALFORGE_URL = $AzoaSurrealUrlEntry
     }
 }

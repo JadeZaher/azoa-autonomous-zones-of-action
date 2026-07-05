@@ -29,7 +29,7 @@ idempotently. Flags:
 | `--reset-db` / `-ResetDb` | **DESTRUCTIVE.** Tear down + wipe the SurrealDB volume before bringing the stack up. (alias: `--clean` / `-Clean`) |
 | `--reset` / `-Reset` | Wipe + re-apply the SurrealDB schema/namespace WITHOUT touching the volume. Combine with `--reset-db` for a total reset. |
 | `--logs` / `-Logs` | Tail combined container logs after startup. |
-| `AZOA_SKIP_RESET=1` (env) | Skip the host-side schema sync entirely (the container entrypoint still applies `azoa-surreal up`). |
+| `AZOA_SKIP_RESET=1` (env) | Skip the host-side schema sync entirely (the container entrypoint still applies `surrealforge up`). |
 
 After ~30-60s (first run builds images):
 
@@ -67,7 +67,7 @@ Or, preserving the volume but re-applying the namespace:
 
 The host-side schema sync needs `dotnet` on the host (the schema CLI runs
 from source via `dotnet run`). Without it, set `AZOA_SKIP_RESET=1` — the
-WebAPI container's entrypoint applies `azoa-surreal up` on its own. See
+WebAPI container's entrypoint applies `surrealforge up` on its own. See
 [DEVELOPMENT.md](DEVELOPMENT.md) for host-run and bring-your-own-SurrealDB
 variants.
 
@@ -76,7 +76,7 @@ variants.
 ## 2. Production deploy (Railway)
 
 The WebAPI ships as a single image (`Dockerfile`) bundling the
-`azoa-surreal` schema CLI alongside `AZOA.WebAPI.dll`. SurrealDB runs as a
+`surrealforge` schema CLI alongside `AZOA.WebAPI.dll`. SurrealDB runs as a
 separate Railway service.
 
 ### WebAPI service — required environment variables
@@ -97,15 +97,15 @@ separate Railway service.
 
 The `SurrealDb__*` family is consumed by both the .NET host AND the
 entrypoint's migration pre-step; you only need to wire one family. The
-entrypoint also accepts the `AZOA_SURREAL_*` aliases
-(`AZOA_SURREAL_URL` / `_NS` / `_DB` / `_USER` / `_PASS`) if preferred.
+entrypoint also accepts the `SURREALFORGE_*` aliases
+(`SURREALFORGE_URL` / `_NS` / `_DB` / `_USER` / `_PASS`) if preferred.
 
 ### Entrypoint migration behavior
 
 On every boot, `docker-entrypoint.sh`:
 1. Waits up to ~2 min for SurrealDB to answer `/health`, then aborts if
    unreachable.
-2. Runs `azoa-surreal up` — applies `Generated/Schemas/` then
+2. Runs `surrealforge up` — applies `Generated/Schemas/` then
    `Migrations/` against the configured namespace/database. **Idempotent**:
    the `schema_migration` ledger skips already-applied files. A fresh
    SurrealDB needs no out-of-band setup (the runner bootstraps
@@ -140,7 +140,7 @@ script picks the first one it finds.
    podman volume-ownership (`permission denied` on `/data`), or the port
    already bound.
 
-**"checksum mismatch detected" re-running `azoa-surreal up`**
+**"checksum mismatch detected" re-running `surrealforge up`**
 A migration file drifted from its recorded `schema_migration` hash. Revert
 the edit, or rerun with `--force` (see the migrations README "Drift
 detection").
@@ -165,7 +165,7 @@ DEVELOPMENT.md troubleshooting note.
 
 **Which migrations are applied?**
 ```bash
-dotnet run --project packages/Azoa.SurrealDb.Schema -- migrate status
+surrealforge migrate status
 ```
 Reads the `schema_migration` ledger. `dev-up` does this implicitly on every
 run; repeat invocations are no-ops when the ledger matches the on-disk files.

@@ -1,7 +1,7 @@
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Idempotency;
-using PkgIdempotency = Azoa.SurrealDb.Client.Idempotency;
+using PkgIdempotency = SurrealForge.Client.Idempotency;
 
 namespace AZOA.WebAPI.Core.Idempotency;
 
@@ -12,7 +12,7 @@ namespace AZOA.WebAPI.Core.Idempotency;
 /// the UNIQUE-violation race handling, the conditional state-transition
 /// UPDATEs, and the deterministic record-id encoding — lives in the reusable
 /// package primitive
-/// <see cref="Azoa.SurrealDb.Client.Idempotency.SurrealIdempotencyLedger"/>.
+/// <see cref="SurrealForge.Client.Idempotency.SurrealIdempotencyLedger"/>.
 /// This class only:
 /// <list type="bullet">
 ///   <item>implements the WebAPI domain contract
@@ -23,7 +23,7 @@ namespace AZOA.WebAPI.Core.Idempotency;
 /// </list>
 ///
 /// The public behaviour is identical to the prior hand-rolled implementation;
-/// see <see cref="Azoa.SurrealDb.Client.Idempotency.SurrealIdempotencyLedger"/>
+/// see <see cref="SurrealForge.Client.Idempotency.SurrealIdempotencyLedger"/>
 /// for the atomicity model and state-transition guard documentation.
 /// </summary>
 public sealed class SurrealIdempotencyStore : IIdempotencyStore

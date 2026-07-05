@@ -26,9 +26,9 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Connection;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.IntegrationTests.Builders;
 using AZOA.WebAPI.IntegrationTests.Factories;
@@ -402,13 +402,13 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
     }
 
     /// Walk parent directories from the test assembly output path to find the
-    /// Azoa.SurrealDb.Analyzer csproj (mirrors IntegrationTestBase.FindRepoRoot).
+    /// SurrealForge.Analyzer csproj (mirrors IntegrationTestBase.FindRepoRoot).
     private static string? FindAnalyzerCsprojPath()
     {
         var root = FindRepoRootStatic();
         if (root is null) return null;
-        var candidate = Path.Combine(root, "packages", "Azoa.SurrealDb.Analyzer",
-            "Azoa.SurrealDb.Analyzer.csproj");
+        var candidate = Path.Combine(root, "packages", "SurrealForge.Analyzer",
+            "SurrealForge.Analyzer.csproj");
         return File.Exists(candidate) ? candidate : null;
     }
 
@@ -416,8 +416,8 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
     {
         var root = FindRepoRootStatic();
         if (root is null) return null;
-        var candidate = Path.Combine(root, "packages", "Azoa.SurrealDb.Client",
-            "Azoa.SurrealDb.Client.csproj");
+        var candidate = Path.Combine(root, "packages", "SurrealForge.Client",
+            "SurrealForge.Client.csproj");
         return File.Exists(candidate) ? candidate : null;
     }
 
@@ -436,7 +436,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
     /// Minimal C# source that calls SurrealQuery.Of with a string-interpolated
     /// argument — the exact pattern SRDB0001 is designed to catch.
     private static string BuildFixtureSource() => """
-        using Azoa.SurrealDb.Client.Query;
+        using SurrealForge.Client.Query;
 
         namespace G3.Fixture;
 

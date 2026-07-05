@@ -183,7 +183,7 @@
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealAvatarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealAvatarStore.UpsertAsync(IAvatar avatar, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealAvatarStore.cs:line 91","inner":null}}
+{"isError":true,"message":"SurrealAvatarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealAvatarStore.UpsertAsync(IAvatar avatar, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealAvatarStore.cs:line 91","inner":null}}
 ```
 </details>
 
@@ -1433,7 +1433,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -1450,7 +1450,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -1467,7 +1467,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2217,7 +2217,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2234,7 +2234,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2425,7 +2425,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2442,7 +2442,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2459,7 +2459,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealStarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealStarStore.UpsertAsync(ISTARODK odk, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealStarStore.cs:line 90","inner":null}}
+{"isError":true,"message":"SurrealStarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealStarStore.UpsertAsync(ISTARODK odk, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealStarStore.cs:line 90","inner":null}}
 ```
 </details>
 
@@ -2644,7 +2644,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2661,7 +2661,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2832,7 +2832,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -2998,7 +2998,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -3015,7 +3015,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealStarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealStarStore.UpsertAsync(ISTARODK odk, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealStarStore.cs:line 90","inner":null}}
+{"isError":true,"message":"SurrealStarStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealStarStore.UpsertAsync(ISTARODK odk, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealStarStore.cs:line 90","inner":null}}
 ```
 </details>
 
@@ -3137,7 +3137,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -3302,7 +3302,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5089,7 +5089,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5106,7 +5106,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5123,7 +5123,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5140,7 +5140,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5157,7 +5157,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5174,7 +5174,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5191,7 +5191,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5208,7 +5208,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5225,7 +5225,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5242,7 +5242,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5335,7 +5335,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5643,7 +5643,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5677,7 +5677,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5694,7 +5694,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -5892,7 +5892,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 
@@ -6053,7 +6053,7 @@ X-Injected: evil' is invalid.
 <summary>Response body</summary>
 
 ```json
-{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"Azoa.SurrealDb.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at Azoa.SurrealDb.Client.SurrealResponse.EnsureAllOk() in /src/packages/Azoa.SurrealDb.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
+{"isError":true,"message":"SurrealHolonStore.UpsertAsync failed: SurrealDB statement 1/1 returned ERR: (no detail)","result":null,"detail":{"type":"SurrealForge.Client.SurrealStatementException","message":"SurrealDB statement 1/1 returned ERR: (no detail)","stackTrace":"   at SurrealForge.Client.SurrealResponse.EnsureAllOk() in /src/https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealResponse.cs:line 98\n   at AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore.UpsertAsync(IHolon holon, CancellationToken ct) in /src/Providers/Stores/Surreal/SurrealHolonStore.cs:line 172","inner":null}}
 ```
 </details>
 

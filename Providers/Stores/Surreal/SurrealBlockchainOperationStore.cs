@@ -1,6 +1,6 @@
 using System.Text.Json;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;

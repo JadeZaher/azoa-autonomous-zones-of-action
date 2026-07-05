@@ -169,11 +169,11 @@ if [ "$EXTERNAL_SURREALDB" -eq 1 ]; then
         *podman*) HOST_DB_INTERNAL="host.containers.internal" ;;
         *)        HOST_DB_INTERNAL="host.docker.internal" ;;
     esac
-    # AZOA_SURREAL_URL drives BOTH the schema CLI's --connection and the
+    # SURREALFORGE_URL drives BOTH the schema CLI's --connection and the
     # WebAPI's SurrealDb:Endpoint (the compose file interpolates the same
     # value into both). Single-underscore-safe -- podman-compose's
     # ${VAR:-default} parser drops names with double underscores.
-    export AZOA_SURREAL_URL="http://${HOST_DB_INTERNAL}:${SURREALDB_HOST_PORT}"
+    export SURREALFORGE_URL="http://${HOST_DB_INTERNAL}:${SURREALDB_HOST_PORT}"
     COMPOSE_UP_SERVICES="azoa-api azoa-frontend"
 fi
 
@@ -266,7 +266,7 @@ $COMPOSE -f "$COMPOSE_FILE" ps
 
 # ── SurrealDB schema sync ─────────────────────────────────────────────────────
 #
-# Default: `azoa-surreal up` -- idempotent. The CLI tracks applied files
+# Default: `surrealforge up` -- idempotent. The CLI tracks applied files
 # via the schema_migration table, so re-running is a no-op when nothing
 # has changed and applies only pending files when there's drift.
 #
@@ -277,22 +277,22 @@ $COMPOSE -f "$COMPOSE_FILE" ps
 if [ "${AZOA_SKIP_RESET:-}" = "1" ]; then
     echo "[dev-up] AZOA_SKIP_RESET=1 set -- skipping schema sync"
 else
-    : "${AZOA_SURREAL_NS:=azoa}"
-    : "${AZOA_SURREAL_DB:=azoa}"
-    : "${AZOA_SURREAL_USER:=root}"
-    : "${AZOA_SURREAL_PASS:=root}"
-    export AZOA_SURREAL_NS AZOA_SURREAL_DB AZOA_SURREAL_USER AZOA_SURREAL_PASS
+    : "${SURREALFORGE_NS:=azoa}"
+    : "${SURREALFORGE_DB:=azoa}"
+    : "${SURREALFORGE_USER:=root}"
+    : "${SURREALFORGE_PASS:=root}"
+    export SURREALFORGE_NS SURREALFORGE_DB SURREALFORGE_USER SURREALFORGE_PASS
 
-    # Schema CLI runs on the HOST. The AZOA_SURREAL_URL set earlier for
+    # Schema CLI runs on the HOST. The SURREALFORGE_URL set earlier for
     # the API container points at host.containers.internal which won't
     # resolve here -- override for the CLI call, restore after.
-    SCHEMA_URL_BACKUP="${AZOA_SURREAL_URL:-}"
-    export AZOA_SURREAL_URL="http://127.0.0.1:${SURREALDB_HOST_PORT}"
+    SCHEMA_URL_BACKUP="${SURREALFORGE_URL:-}"
+    export SURREALFORGE_URL="http://127.0.0.1:${SURREALDB_HOST_PORT}"
 
     # Wait for SurrealDB to be reachable.
     SURREAL_READY=0
     for _ in $(seq 1 20); do
-        if curl -sfo /dev/null --max-time 2 "$AZOA_SURREAL_URL/health" 2>/dev/null; then
+        if curl -sfo /dev/null --max-time 2 "$SURREALFORGE_URL/health" 2>/dev/null; then
             SURREAL_READY=1
             break
         fi
@@ -300,7 +300,7 @@ else
     done
 
     if [ "$SURREAL_READY" -ne 1 ]; then
-        export AZOA_SURREAL_URL="$SCHEMA_URL_BACKUP"
+        export SURREALFORGE_URL="$SCHEMA_URL_BACKUP"
         echo "" >&2
         echo "[dev-up] SurrealDB at http://127.0.0.1:${SURREALDB_HOST_PORT} never became reachable." >&2
         echo "[dev-up] Dumping bundled surrealdb container state + logs to diagnose:" >&2
@@ -331,15 +331,17 @@ else
     # `|| SCHEMA_EXIT=$?` captures the failure WITHOUT tripping `set -e`, so
     # the guidance block below can actually print. A bare invocation would
     # abort the script before SCHEMA_EXIT is read.
+    # Restore the SurrealForge.Schema CLI (pinned in .config/dotnet-tools.json).
+    dotnet tool restore >/dev/null || { echo "[dev-up] dotnet tool restore failed" >&2; exit 1; }
     SCHEMA_EXIT=0
     if [ "$DO_RESET_SCHEMA" -eq 1 ]; then
         echo "[dev-up] --reset: wiping + re-applying SurrealDB schema..."
-        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net10.0 -- reset || SCHEMA_EXIT=$?
+        dotnet surrealforge reset || SCHEMA_EXIT=$?
     else
         echo "[dev-up] syncing SurrealDB schema (idempotent; use --reset to wipe)..."
-        dotnet run --project packages/Azoa.SurrealDb.Schema --framework net10.0 -- up || SCHEMA_EXIT=$?
+        dotnet surrealforge up || SCHEMA_EXIT=$?
     fi
-    export AZOA_SURREAL_URL="$SCHEMA_URL_BACKUP"
+    export SURREALFORGE_URL="$SCHEMA_URL_BACKUP"
     if [ "$SCHEMA_EXIT" -ne 0 ]; then
         if [ "$DO_RESET_SCHEMA" -eq 1 ]; then
             echo "[dev-up] SurrealDB reset failed (exit $SCHEMA_EXIT). Set AZOA_SKIP_RESET=1 to skip, or pass --reset-db for a clean volume wipe." >&2

@@ -1,5 +1,5 @@
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;

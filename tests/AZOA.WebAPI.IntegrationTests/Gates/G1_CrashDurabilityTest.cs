@@ -29,9 +29,9 @@
 
 using System.Diagnostics;
 using FluentAssertions;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Connection;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Models.Responses;

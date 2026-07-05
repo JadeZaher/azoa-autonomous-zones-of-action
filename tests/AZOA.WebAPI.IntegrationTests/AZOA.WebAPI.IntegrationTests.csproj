@@ -22,13 +22,10 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="..\..\AZOA.WebAPI.csproj" />
-    <!-- Homebake SurrealDB client (replaces the SurrealDb.Net 0.10.2 SDK ref).
-         The integration harness no longer touches the SDK directly; per-test
-         namespace setup/teardown goes through HttpClient + the new client's
-         types where deserialization is needed. Project reference is enough —
-         the package version pin (<AzoaSurrealDbVersion>) is read by the
-         passoff gate, not the test build. -->
-    <ProjectReference Include="..\..\packages\Azoa.SurrealDb.Client\Azoa.SurrealDb.Client.csproj" />
+    <!-- SurrealForge SurrealDB client (from nuget.org). The integration harness
+         does per-test namespace setup/teardown via HttpClient + the client's
+         types where deserialization is needed. -->
+    <PackageReference Include="SurrealForge.Client" Version="0.1.1" />
   </ItemGroup>
 
 </Project>

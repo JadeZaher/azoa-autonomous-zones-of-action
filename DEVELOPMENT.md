@@ -34,21 +34,21 @@ Tear down: `./dev-down.sh` (or `.ps1`). Wipe the DB volume too:
    without the `surrealkv` feature flag; a 2.x/3.x bump is tracked at
    [`surrealdb-major-upgrade`](conductor/tracks/surrealdb-major-upgrade/spec.md).
 3. **Bring up the WebAPI** — `Dockerfile` builds the .NET 8 image plus
-   the `azoa-surreal` CLI. The container's entrypoint
+   the `surrealforge` CLI. The container's entrypoint
    ([`docker-entrypoint.sh`](docker-entrypoint.sh)):
    1. Waits for SurrealDB to be reachable
-   2. Runs `azoa-surreal up` (applies `Persistence/SurrealDb/Generated/Schemas/`
+   2. Runs `surrealforge up` (applies `Persistence/SurrealDb/Generated/Schemas/`
       then `Persistence/SurrealDb/Migrations/` via the runner, idempotent)
    3. Execs `dotnet AZOA.WebAPI.dll`
 4. **Bring up the frontend** — Next.js dev image talking to the WebAPI
    at the host-mapped port. Depends on the WebAPI's `/health` being
    green.
 5. **Host-side schema sync** — after compose is up, `dev-up` invokes
-   `azoa-surreal up` from the host against `127.0.0.1:8000`. This is
+   `surrealforge up` from the host against `127.0.0.1:8000`. This is
    idempotent: the `schema_migration` ledger skips already-applied files
    and only applies new ones. Safe to re-run any time. Pass `-Reset`
    (PowerShell) / `--reset` (bash) to wipe the namespace and re-apply
-   from scratch. Defaults for `AZOA_SURREAL_NS` / `_DB` / `_USER` /
+   from scratch. Defaults for `SURREALFORGE_NS` / `_DB` / `_USER` /
    `_PASS` (`azoa` / `azoa` / `root` / `root`) are applied if unset,
    so a fresh clone needs zero env config.
 
@@ -72,7 +72,7 @@ no-op / alias forms. PowerShell equivalents use PascalCase
 The host-side schema sync step still needs `dotnet` on the host (the
 schema CLI runs from source via `dotnet run`). If you don't have it,
 either set `AZOA_SKIP_RESET=1` (the WebAPI container's entrypoint
-applies `azoa-surreal up` on its own) or follow Option B.
+applies `surrealforge up` on its own) or follow Option B.
 
 ### Option B: Host-run WebAPI against a containerised SurrealDB
 Useful when iterating on the C# side and you want the debugger attached:
@@ -82,7 +82,7 @@ Useful when iterating on the C# side and you want the debugger attached:
 docker compose -f docker-compose.dev.yml up -d surrealdb
 
 # 2. Apply schemas
-packages/Azoa.SurrealDb.Schema/bin/Debug/net8.0/Azoa.SurrealDb.Schema up \
+surrealforge up \
     --connection http://127.0.0.1:8000 \
     --user root --pass root \
     --namespace azoa --database azoa
@@ -98,7 +98,7 @@ starting at step 2.
 ## Configuration
 
 The `SurrealDb` section in `appsettings.json` / `appsettings.Development.json`
-binds to [`SurrealConnectionOptions`](packages/Azoa.SurrealDb.Client/SurrealConnectionOptions.cs):
+binds to [`SurrealConnectionOptions`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/SurrealConnectionOptions.cs):
 
 ```json
 "SurrealDb": {
@@ -117,7 +117,7 @@ becomes `http://surrealdb:8000` (service-name DNS inside the compose
 network).
 
 CLI invocations + the migration container use the same values via the
-`AZOA_SURREAL_URL` / `_NS` / `_DB` / `_USER` / `_PASS` env-var aliases.
+`SURREALFORGE_URL` / `_NS` / `_DB` / `_USER` / `_PASS` env-var aliases.
 
 ## Migrations
 
@@ -141,7 +141,7 @@ Two things to check:
 1. The container is running: `docker compose -f docker-compose.dev.yml ps`
 2. Port 8000 isn't already occupied by something else on the host.
 
-**"checksum mismatch detected" when re-running `azoa-surreal up`**
+**"checksum mismatch detected" when re-running `surrealforge up`**
 A migration file's content drifted from what's recorded in the
 `schema_migration` ledger. Either revert the edit OR rerun with
 `--force` (see migrations README §"Drift detection").
@@ -175,7 +175,7 @@ Or, if SurrealDB is preserved but you want the namespace re-applied:
 
 **Migrations: how do I know what's applied?**
 ```
-dotnet run --project packages/Azoa.SurrealDb.Schema -- migrate status
+surrealforge migrate status
 ```
 Reads the `schema_migration` ledger table and reports which files are
 applied. `dev-up` does this implicitly on every run — repeat invocations
@@ -194,12 +194,12 @@ are no-ops when the ledger matches the on-disk files.
 ### SurrealDB convention recap (C#-first)
 
 Full doc: [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md).
-Attribute reference: [packages/Azoa.SurrealDb.Client/Schema/ANNOTATIONS.md](packages/Azoa.SurrealDb.Client/Schema/ANNOTATIONS.md).
+Attribute reference: [https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/ANNOTATIONS.md](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/ANNOTATIONS.md).
 
 **Source of truth:** decorated C# POCOs in
 [Persistence/SurrealDb/Models/](Persistence/SurrealDb/Models/), namespace
 `AZOA.WebAPI.Persistence.SurrealDb.Models`. Each POCO is a `partial class`
-implementing `Azoa.SurrealDb.Client.ISurrealRecord`, carrying
+implementing `SurrealForge.Client.ISurrealRecord`, carrying
 `[SurrealTable]` + per-field `[Column]` / `[Assert]` / `[Inside]` /
 `[Default]` / `[Index]` attributes plus `[JsonPropertyName]` for the wire shape.
 
@@ -207,11 +207,11 @@ implementing `Azoa.SurrealDb.Client.ISurrealRecord`, carrying
 [Persistence/SurrealDb/Generated/](Persistence/SurrealDb/Generated/):
 - `Schemas/<table>.surql` — DDL emitted from the attribute scan
 - `Flowcharts/<slice>.flowchart.mermaid` + `Flowcharts/domain.flowchart.mermaid` — `graph LR` visualization
-- `Dbml/schema.dbml` — DBML diff manifest (opt-in via `AzoaSurrealDbOptions.Generation.EmitDbml`)
+- `Dbml/schema.dbml` — DBML diff manifest (opt-in via `SurrealForgeOptions.Generation.EmitDbml`)
 
-**Configuration:** [`AzoaSurrealDbOptions`](packages/Azoa.SurrealDb.Client/Schema/AzoaSurrealDbOptions.cs)
+**Configuration:** [`SurrealForgeOptions`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/SurrealForgeOptions.cs)
 binds to `SurrealDb` in `appsettings.json` with `Connection` + `Generation`
-subsections. Env overrides (`AZOA_SURREAL_*`) preserved for CLI invocations.
+subsections. Env overrides (`SURREALFORGE_*`) preserved for CLI invocations.
 
 **Adapter / extension code** lives in sibling partial-class files in the
 same namespace — `Persistence/SurrealDb/Models/<Name>.Extensions.cs` (domain
@@ -227,13 +227,13 @@ automatically extends coverage; a missing or drifted golden file fails CI.
 
 **Regenerating** after a POCO attribute change:
 ```
-azoa-surreal generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
-azoa-surreal flowcharts-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
+surrealforge generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
+surrealforge flowcharts-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
 ```
 
 ## Related docs
 
 - [RUNBOOK.md](RUNBOOK.md) — operations: local stack, production deploy, diagnostics
 - [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md) — POCO-as-schema convention
-- [packages/Azoa.SurrealDb.Client/Schema/ANNOTATIONS.md](packages/Azoa.SurrealDb.Client/Schema/ANNOTATIONS.md) — attribute reference
+- [https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/ANNOTATIONS.md](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/ANNOTATIONS.md) — attribute reference
 - [Persistence/SurrealDb/Migrations/README.md](Persistence/SurrealDb/Migrations/README.md) — data-migration authoring

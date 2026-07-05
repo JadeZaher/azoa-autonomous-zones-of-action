@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Observability;
 

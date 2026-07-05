@@ -51,36 +51,27 @@
   </ItemGroup>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       Homebake SurrealDB package suite (post-2026-06-03 C#-first):
+       SurrealForge SurrealDB package suite (published to nuget.org from
+       github.com/Escherbridge/surrealforge; formerly the in-repo
+       packages/Azoa.SurrealDb.* project suite):
 
-       - Azoa.SurrealDb.Client   → runtime: HTTP transport, query builder,
-                                    transactions, JSON converters. Also hosts
-                                    the [SurrealTable]/[Column]/etc. attribute
-                                    surface that POCOs in Persistence/SurrealDb/
-                                    Models/ decorate themselves with.
-       - Azoa.SurrealDb.Schema   → CLI tool + AttributeSchemaScanner +
-                                    SurqlEmitter + MermaidFlowchartEmitter.
-                                    Normal compile-time ref (no analyzer
-                                    contortions; the previous setup loaded it
-                                    as an analyzer to satisfy the deleted
-                                    source-gen).
-       - Azoa.SurrealDb.Analyzer → analyzer-only reference (SRDB0001 catches
-                                    string-interpolated SurrealQL outside the
-                                    safe layer).
-
-       The previous Azoa.SurrealDb.SourceGen + AdditionalFiles wiring +
-       AzoaSurrealDbModelsNamespace property were removed when the Mermaid
-       pipeline was retired; the C#-first surface is now the only authoring
-       path.
+       - SurrealForge.Client   → runtime: HTTP transport, query builder,
+                                  transactions, JSON converters. Also hosts
+                                  the [SurrealTable]/[Column]/etc. attribute
+                                  surface that POCOs in Persistence/SurrealDb/
+                                  Models/ decorate themselves with.
+       - SurrealForge.Schema   → AttributeSchemaScanner + SurqlEmitter +
+                                  migration runner (also ships the
+                                  `surrealforge` dotnet CLI tool).
+       - SurrealForge.Analyzer → SRDB0001 analyzer (catches string-interpolated
+                                  SurrealQL outside the safe layer); ships as an
+                                  analyzer asset, so PrivateAssets=all.
        ═══════════════════════════════════════════════════════════════ -->
   <ItemGroup>
-    <ProjectReference
-      Include="packages\Azoa.SurrealDb.Client\Azoa.SurrealDb.Client.csproj" />
-    <ProjectReference
-      Include="packages\Azoa.SurrealDb.Schema\Azoa.SurrealDb.Schema.csproj" />
-    <ProjectReference
-      Include="packages\Azoa.SurrealDb.Analyzer\Azoa.SurrealDb.Analyzer.csproj"
-      OutputItemType="Analyzer"
-      ReferenceOutputAssembly="false" />
+    <PackageReference Include="SurrealForge.Client" Version="0.1.1" />
+    <PackageReference Include="SurrealForge.Schema" Version="0.1.1" />
+    <!-- Analyzer ships as an analyzer asset in the package; PrivateAssets=all
+         keeps it from flowing to downstream consumers of this project. -->
+    <PackageReference Include="SurrealForge.Analyzer" Version="0.1.1" PrivateAssets="all" />
   </ItemGroup>
 </Project>

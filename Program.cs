@@ -439,7 +439,7 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWebhookRegistrationSto
 // SurrealDB-backed *Store adapters land in surrealdb-migration wave-2 tasks
 // 5-8; until then this registration just makes the client available for
 // any code that wants to use it (integration tests, future adapters).
-builder.Services.AddAzoaSurrealDb(builder.Configuration);
+builder.Services.AddSurrealForge(builder.Configuration);
 // Decorate ISurrealExecutor with OTEL instrumentation (spans + SurrealMetrics).
 // The decorator is in AZOA.WebAPI so the homebake package stays observability-agnostic.
 // Remove the package's DefaultSurrealExecutor descriptor and re-register the same
@@ -448,11 +448,11 @@ builder.Services.AddAzoaSurrealDb(builder.Configuration);
 // would otherwise return two entries; the runbook's M1 finding).
 {
     var defaultExecutorDescriptor = builder.Services.Single(d =>
-        d.ServiceType == typeof(Azoa.SurrealDb.Client.Query.ISurrealExecutor));
+        d.ServiceType == typeof(SurrealForge.Client.Query.ISurrealExecutor));
     builder.Services.Remove(defaultExecutorDescriptor);
-    builder.Services.AddScoped<Azoa.SurrealDb.Client.Query.ISurrealExecutor>(sp =>
+    builder.Services.AddScoped<SurrealForge.Client.Query.ISurrealExecutor>(sp =>
     {
-        var inner = (Azoa.SurrealDb.Client.Query.ISurrealExecutor)
+        var inner = (SurrealForge.Client.Query.ISurrealExecutor)
             ActivatorUtilities.CreateInstance(sp, defaultExecutorDescriptor.ImplementationType!);
         return new AZOA.WebAPI.Observability.InstrumentedSurrealExecutor(inner);
     });
@@ -840,14 +840,14 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
 
     using var scope = app.Services.CreateScope();
     var executor = scope.ServiceProvider.GetRequiredService<
-        Azoa.SurrealDb.Client.Query.ISurrealExecutor>();
+        SurrealForge.Client.Query.ISurrealExecutor>();
     try
     {
         // RETURN 1; is the idiomatic SurrealQL no-op probe -- SELECT
         // requires FROM in 1.5+ and was being rejected with a parse
         // error here, masking the real "server reachable" intent.
         await executor.ExecuteAsync(
-            Azoa.SurrealDb.Client.Query.SurrealQuery.Of("RETURN 1"));
+            SurrealForge.Client.Query.SurrealQuery.Of("RETURN 1"));
     }
     catch (Exception ex)
     {

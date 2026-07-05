@@ -1,22 +1,5 @@
 <Project>
   <!-- ═══════════════════════════════════════════════════════════════════════
-       Repo-wide MSBuild properties.
-
-       <AzoaSurrealDbVersion> is the single source of truth for the version
-       of the homebake SurrealDB package suite (Azoa.SurrealDb.Client /
-       .Schema / .Analyzer). Consumers reference packages via
-         <PackageReference Include="Azoa.SurrealDb.Client"
-                            Version="$(AzoaSurrealDbVersion)" />
-       Project references inside this repo do not need the version (they
-       resolve directly), but version-pin assertions (Directory.Build.props
-       drift gate, scripts/passoff-surrealdb-wave1.ps1) read this property.
-       Bump in lockstep with the package csproj <Version> elements.
-       ═══════════════════════════════════════════════════════════════════════ -->
-  <PropertyGroup>
-    <AzoaSurrealDbVersion>0.1.0</AzoaSurrealDbVersion>
-  </PropertyGroup>
-
-  <!-- ═══════════════════════════════════════════════════════════════════════
        Code-style enforcement (repo-wide). The .editorconfig at the repo root is
        the single source of truth for style; EnforceCodeStyleInBuild surfaces its
        analyzer diagnostics (e.g. IDE0005 unused usings) during `dotnet build` and
@@ -28,8 +11,4 @@
   <PropertyGroup>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
-  <!-- The root-project glob exclusion for packages/** lives in
-       Directory.Build.targets (imported AFTER the SDK glob has run) so the
-       Remove items see the items the glob produced. Keeping the property
-       here and the items there is the standard MSBuild pattern. -->
 </Project>

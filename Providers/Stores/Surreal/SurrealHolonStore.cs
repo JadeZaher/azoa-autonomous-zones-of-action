@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Json;
-using Azoa.SurrealDb.Client.Query;
-using Azoa.SurrealDb.Client.Schema;
+using SurrealForge.Client;
+using SurrealForge.Client.Json;
+using SurrealForge.Client.Query;
+using SurrealForge.Client.Schema;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;

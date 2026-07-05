@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client.Query;
 
 /// <summary>
 /// Bridges the in-house <see cref="IMcpTool"/> registry to the ModelContextProtocol

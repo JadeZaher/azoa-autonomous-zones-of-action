@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
@@ -134,7 +134,7 @@ public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
 
     // ── POCO (private; inline until source-gen catches up) ─────────────────────
 
-    private sealed class WebhookRegistrationPoco : Azoa.SurrealDb.Client.ISurrealRecord
+    private sealed class WebhookRegistrationPoco : SurrealForge.Client.ISurrealRecord
     {
         public string SchemaName => Table;
 

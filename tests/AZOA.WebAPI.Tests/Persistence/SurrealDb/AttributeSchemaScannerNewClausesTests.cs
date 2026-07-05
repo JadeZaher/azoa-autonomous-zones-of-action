@@ -11,8 +11,8 @@
 
 using System;
 using FluentAssertions;
-using Azoa.SurrealDb.Client.Schema;
-using Azoa.SurrealDb.Schema.Generator;
+using SurrealForge.Client.Schema;
+using SurrealForge.Schema.Generator;
 using Xunit;
 
 namespace AZOA.WebAPI.Tests.Persistence.SurrealDb

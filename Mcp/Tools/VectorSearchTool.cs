@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Mcp.Tools;
 

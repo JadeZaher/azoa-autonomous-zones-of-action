@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Mcp.Tools;
 

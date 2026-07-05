@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
@@ -397,7 +397,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
     // ── POCO (private — replace with generated POCO when source-gen catches up) ──
 
-    private sealed class QuestNodeExecutionPoco : Azoa.SurrealDb.Client.ISurrealRecord
+    private sealed class QuestNodeExecutionPoco : SurrealForge.Client.ISurrealRecord
     {
         public string SchemaName => ExecTable;
 

@@ -50,12 +50,12 @@ names with `--kebab-case` (e.g. `--reset-db`, `--no-build`).
 - Connection: `SurrealDb:Endpoint=http://surrealdb:8000` (from-API),
   or `http://localhost:8000` (from host). Namespace `azoa`, database
   `azoa`, user `root`, password `root` — single-underscore env-var
-  aliases `AZOA_SURREAL_NS` / `_DB` / `_USER` / `_PASS` get the same
+  aliases `SURREALFORGE_NS` / `_DB` / `_USER` / `_PASS` get the same
   values via the compose file.
 - Schema lives in [Persistence/SurrealDb/Generated/Schemas/](Persistence/SurrealDb/Generated/Schemas/)
   (26 `.surql` files, emitted from decorated POCOs by
-  [packages/Azoa.SurrealDb.Schema](packages/Azoa.SurrealDb.Schema/)).
-- Schema sync is **idempotent** — `azoa-surreal up` runs from the API
+  [https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Schema](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Schema/)).
+- Schema sync is **idempotent** — `surrealforge up` runs from the API
   container's entrypoint on every boot AND from the host as the last
   dev-up step. The `schema_migration` ledger skips already-applied
   files. `-Reset` / `--reset` wipes the namespace and re-applies.
@@ -85,7 +85,7 @@ dotnet build azoa.sln    -c Debug           # whole solution (incl. test project
 - No `dotnet ef` migrations on new work — EF was removed in
   surrealdb-migration. Schema changes are now decorated-POCO edits +
   re-emitting `Persistence/SurrealDb/Generated/Schemas/*.surql` via
-  [Azoa.SurrealDb.Schema](packages/Azoa.SurrealDb.Schema/).
+  [SurrealForge.Schema](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Schema/).
 
 ## Test
 
@@ -101,7 +101,7 @@ dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj -c Debug `
 dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj -c Debug
 
 # Schema package
-dotnet test tests/Azoa.SurrealDb.Schema.Tests/Azoa.SurrealDb.Schema.Tests.csproj -c Debug
+dotnet test tests/SurrealForge.Schema.Tests/SurrealForge.Schema.Tests.csproj -c Debug
 ```
 
 - Integration tests use the persistent SurrealDB instance the

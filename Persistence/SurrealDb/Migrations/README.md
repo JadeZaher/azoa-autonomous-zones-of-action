@@ -25,7 +25,7 @@ Examples:
 20260606_093000__seed_dev_admin_avatar.surql
 ```
 
-The timestamp prefix is lexically sortable; the `azoa-surreal up` runner
+The timestamp prefix is lexically sortable; the `surrealforge up` runner
 applies files in `StringComparer.Ordinal` order. Use the canonical `__`
 (double-underscore) separator between timestamp and description so an
 operator scanning `ls` output can read the description fluently.
@@ -33,7 +33,7 @@ operator scanning `ls` output can read the description fluently.
 ## Apply order
 
 ```
-azoa-surreal up
+surrealforge up
   -> Persistence/SurrealDb/Generated/Schemas/*.surql   (lexical)
   -> Persistence/SurrealDb/Migrations/*.surql          (lexical)
 ```
@@ -41,7 +41,7 @@ azoa-surreal up
 Schemas come first so any table / field / index a migration needs to
 touch is guaranteed to exist. Both directories funnel through the same
 `schema_migration` ledger (keyed by file name + SHA-256), so re-running
-`azoa-surreal up` is a no-op when no files changed.
+`surrealforge up` is a no-op when no files changed.
 
 ## Authoring rules
 
@@ -60,7 +60,7 @@ touch is guaranteed to exist. Both directories funnel through the same
 ## Status check
 
 ```
-azoa-surreal migrate status
+surrealforge migrate status
 ```
 
 Lists every applied file with its checksum + apply timestamp. A file
@@ -75,7 +75,7 @@ runner detects the checksum drift and refuses to proceed with a
 
 1. **Revert the edit** — restore the file to the previously-applied
    content. The original migration stays canonical.
-2. **Force re-apply** — `azoa-surreal up --force` overwrites the
+2. **Force re-apply** — `surrealforge up --force` overwrites the
    recorded checksum. Use this only when the edit is intentional AND
    the new content is semantically idempotent (re-applying it produces
    the same final DB state).

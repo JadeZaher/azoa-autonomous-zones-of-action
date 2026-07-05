@@ -2,7 +2,7 @@
 
 ## Overview
 
-AZOA is a .NET 8 WebAPI with 15 controllers backed by 10 managers. The sole storage engine is SurrealDB (via `Azoa.SurrealDb.*` packages). Two authentication schemes are supported: JWT (Bearer token) and X-Api-Key (auto-detected by header). Rate limiting is applied globally, with strict "financial" policies on value-moving endpoints.
+AZOA is a .NET 8 WebAPI with 15 controllers backed by 10 managers. The sole storage engine is SurrealDB (via `SurrealForge.*` packages). Two authentication schemes are supported: JWT (Bearer token) and X-Api-Key (auto-detected by header). Rate limiting is applied globally, with strict "financial" policies on value-moving endpoints.
 
 _Last reconciled: 2026-06-11 (post quest-api phase-F + self-audit-one-fix)._
 

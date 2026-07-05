@@ -5,8 +5,8 @@
 
 using System;
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Schema;
+using SurrealForge.Client;
+using SurrealForge.Client.Schema;
 
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {

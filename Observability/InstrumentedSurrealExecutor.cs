@@ -4,8 +4,8 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Observability;
 
@@ -13,8 +13,8 @@ namespace AZOA.WebAPI.Observability;
 // Lives in AZOA.WebAPI so the homebake package stays observability-agnostic.
 sealed class InstrumentedSurrealExecutor : ISurrealExecutor
 {
-    static readonly ActivitySource _activitySource = new("Azoa.SurrealDb");
-    static readonly Meter          _meter          = new("Azoa.SurrealDb", "1.0.0");
+    static readonly ActivitySource _activitySource = new("SurrealForge");
+    static readonly Meter          _meter          = new("SurrealForge", "1.0.0");
 
     static readonly Counter<long>      _queryCounter = _meter.CreateCounter<long>(
         "surrealdb.queries",

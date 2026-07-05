@@ -17,14 +17,14 @@ The class carries two layers of attributes:
 
 - **Schema-emit metadata** — `[SurrealTable]`, `[Column]`, `[Assert]`,
   `[Inside]`, `[Default]`, `[Index]`, `[FieldGroup]`, etc., declared
-  in [Azoa.SurrealDb.Client.Schema](../../packages/Azoa.SurrealDb.Client/Schema/).
+  in [SurrealForge.Client.Schema](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/).
   These drive the `.surql` DDL emit, the flowchart visualization, and
   (eventually) the DBML diff manifest.
 - **Wire shape** — `[JsonPropertyName]` for the wire-format column
   name, `[JsonConverter(typeof(JsonStringEnumConverter))]` for
   closed-set enum-typed properties.
 
-The class implements `Azoa.SurrealDb.Client.ISurrealRecord` (carrying
+The class implements `SurrealForge.Client.ISurrealRecord` (carrying
 `SchemaNameConst` + `SchemaName`) so the typed query builder + JSON
 serializer round-trip rows correctly.
 
@@ -116,7 +116,7 @@ public class DappSeriesUpdateModel
 | "Where do I add a `QuestStartedNotification` DTO?" | `Models/Requests/QuestRequests.cs`. References `AZOA.WebAPI.Persistence.SurrealDb.Models.Quest` by type if it needs to. |
 | "Where do I write `ComposeAsync(...)` validation logic?" | The manager (`Managers/DappCompositionManager.cs`). Never on the entity. |
 | "What about a *computed* `IsActive` from latest QuestRun?" | Manager-level method, not a partial. The entity doesn't get to query a different aggregate. |
-| "How do I regenerate the `.surql` files?" | `azoa-surreal generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll`. Or just run the byte-equivalence test — failures point at drift. |
+| "How do I regenerate the `.surql` files?" | `surrealforge generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll`. Or just run the byte-equivalence test — failures point at drift. |
 
 ---
 
@@ -172,8 +172,8 @@ The build must succeed before the generator can reflect over the assembly.
 **Step 3 — Regenerate `.surql` and flowchart artifacts**
 
 ```
-azoa-surreal generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
-azoa-surreal flowcharts-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
+surrealforge generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
+surrealforge flowcharts-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
 ```
 
 The first command runs `AttributeSchemaScanner` → `SurqlEmitter` and overwrites
@@ -299,17 +299,17 @@ Persistence/SurrealDb/
             wallet_nft.flowchart.mermaid
             domain.flowchart.mermaid
         Dbml/
-            schema.dbml        # opt-in via AzoaSurrealDbOptions
+            schema.dbml        # opt-in via SurrealForgeOptions
 ```
 
 Regenerate via:
 
 ```
-azoa-surreal generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
-azoa-surreal flowcharts-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
+surrealforge generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
+surrealforge flowcharts-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll
 ```
 
-The output paths can be overridden via `AzoaSurrealDbOptions.Generation.GeneratedPath`
+The output paths can be overridden via `SurrealForgeOptions.Generation.GeneratedPath`
 in `appsettings.json`.
 
 ---
@@ -367,13 +367,13 @@ gap surfaces only at integration-test time. The flowchart + legend +
 DDL emission work shipped on 2026-06-05 do NOT depend on this
 migration completing.
 
-## 10. Applying schemas to a live SurrealDB (`azoa-surreal up`)
+## 10. Applying schemas to a live SurrealDB (`surrealforge up`)
 
 The canonical entry point for "bring the deployed DB in sync with the
 schema" is:
 
 ```
-azoa-surreal up \
+surrealforge up \
     --connection http://127.0.0.1:8000 \
     --user root --pass root \
     --namespace azoa --database azoa
@@ -407,7 +407,7 @@ DEFINE DATABASE IF NOT EXISTS <db>;
 ```
 
 The `--namespace` / `--database` CLI flags (or the
-`AZOA_SURREAL_NS` / `AZOA_SURREAL_DB` env vars) supply the names. No
+`SURREALFORGE_NS` / `SURREALFORGE_DB` env vars) supply the names. No
 out-of-band setup step is required on a fresh SurrealDB server.
 
 ### Flags
@@ -418,7 +418,7 @@ out-of-band setup step is required on a fresh SurrealDB server.
 | `--migrations-dir <path>` | `Persistence/SurrealDb/Migrations` | Phase-2 source |
 | `--dry-run` | (off) | Plan without writing |
 | `--force` | (off) | Overwrite recorded checksum on mismatch (use sparingly; see migrations README) |
-| `--applied-by <s>` | `azoa-surreal/cli` | Identity recorded in each `schema_migration.applied_by` row |
+| `--applied-by <s>` | `surrealforge/cli` | Identity recorded in each `schema_migration.applied_by` row |
 | `--connection <url>` | (required) | SurrealDB HTTP endpoint, e.g. `http://127.0.0.1:8000` |
 | `--user <s>` / `--pass <s>` | (required) | Basic-auth credentials |
 | `--namespace <s>` / `--database <s>` | (required) | Target scope. Created automatically if missing. |
@@ -427,16 +427,16 @@ out-of-band setup step is required on a fresh SurrealDB server.
 
 | Command | Status |
 |---|---|
-| `azoa-surreal migrate up` | Implemented (also: `azoa-surreal up` — the two-phase apply documented above) |
-| `azoa-surreal migrate status` | Implemented |
-| `azoa-surreal migrate dry-run` | Implemented |
-| `azoa-surreal migrate reset` | Implemented |
-| `azoa-surreal migrate down` | Stubbed — manual rollback only (intentional pre-launch) |
+| `surrealforge migrate up` | Implemented (also: `surrealforge up` — the two-phase apply documented above) |
+| `surrealforge migrate status` | Implemented |
+| `surrealforge migrate dry-run` | Implemented |
+| `surrealforge migrate reset` | Implemented |
+| `surrealforge migrate down` | Stubbed — manual rollback only (intentional pre-launch) |
 
 ### Status check
 
 ```
-azoa-surreal migrate status \
+surrealforge migrate status \
     --connection http://127.0.0.1:8000 \
     --user root --pass root \
     --namespace azoa --database azoa
@@ -448,7 +448,7 @@ deployed `schema_migration` ledger.
 ### Idempotent contract verification
 
 The integration test
-[`MigrationRunnerLiveTests`](../../tests/Azoa.SurrealDb.Schema.Tests/Migration/MigrationRunnerLiveTests.cs)
+[`MigrationRunnerLiveTests`](../../tests/SurrealForge.Schema.Tests/Migration/MigrationRunnerLiveTests.cs)
 applies every committed `.surql` against a live SurrealDB instance,
 asserts the ledger lands one row per file, then re-runs the same set
 and asserts every plan item classifies as `Skip` (the canonical
@@ -457,11 +457,11 @@ without SurrealDB can opt out via `--filter "Category!=Live"`.
 
 ## 11. References
 
-- Attribute layer: [`packages/Azoa.SurrealDb.Client/Schema/SurrealAttributes.cs`](../../packages/Azoa.SurrealDb.Client/Schema/SurrealAttributes.cs)
-- Annotation reference: [`packages/Azoa.SurrealDb.Client/Schema/ANNOTATIONS.md`](../../packages/Azoa.SurrealDb.Client/Schema/ANNOTATIONS.md)
-- Configuration shape: [`packages/Azoa.SurrealDb.Client/Schema/AzoaSurrealDbOptions.cs`](../../packages/Azoa.SurrealDb.Client/Schema/AzoaSurrealDbOptions.cs)
-- Schema scanner: [`packages/Azoa.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs`](../../packages/Azoa.SurrealDb.Schema/Generator/AttributeSchemaScanner.cs)
-- `.surql` emitter: [`packages/Azoa.SurrealDb.Schema/Generator/SurqlEmitter.cs`](../../packages/Azoa.SurrealDb.Schema/Generator/SurqlEmitter.cs)
-- Flowchart emitter: [`packages/Azoa.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs`](../../packages/Azoa.SurrealDb.Schema/Generator/MermaidFlowchartEmitter.cs)
+- Attribute layer: [`https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/SurrealAttributes.cs`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/SurrealAttributes.cs)
+- Annotation reference: [`https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/ANNOTATIONS.md`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/ANNOTATIONS.md)
+- Configuration shape: [`https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/SurrealForgeOptions.cs`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/SurrealForgeOptions.cs)
+- Schema scanner: [`https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Schema/Generator/AttributeSchemaScanner.cs`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Schema/Generator/AttributeSchemaScanner.cs)
+- `.surql` emitter: [`https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Schema/Generator/SurqlEmitter.cs`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Schema/Generator/SurqlEmitter.cs)
+- Flowchart emitter: [`https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Schema/Generator/MermaidFlowchartEmitter.cs`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Schema/Generator/MermaidFlowchartEmitter.cs)
 - Byte-equivalence test: [`tests/AZOA.WebAPI.Tests/Persistence/SurrealDb/AttributePocoByteEquivalenceTests.cs`](../../tests/AZOA.WebAPI.Tests/Persistence/SurrealDb/AttributePocoByteEquivalenceTests.cs)
 - Originating ADR: [`conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md`](../../conductor/tracks/surrealql-toolkit/DESIGN-mermaid-portfolio.md)

@@ -6,8 +6,8 @@
 // SurrealConsentGrantStore). Register alongside them in the Surreal store block.
 
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
@@ -221,7 +221,7 @@ public sealed class SurrealWalletAuthChallengeStore : IWalletAuthChallengeStore
 
     // ── POCO (private; inline until source-gen catches up) ────────────────────
 
-    private sealed class WalletAuthChallengePoco : Azoa.SurrealDb.Client.ISurrealRecord
+    private sealed class WalletAuthChallengePoco : SurrealForge.Client.ISurrealRecord
     {
         public string SchemaName => Table;
 

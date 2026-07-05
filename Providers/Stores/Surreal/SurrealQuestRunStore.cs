@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
@@ -433,7 +433,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
 
     // ── POCO (private — replace with generated POCO when source-gen catches up) ──
 
-    private sealed class QuestRunPoco : Azoa.SurrealDb.Client.ISurrealRecord
+    private sealed class QuestRunPoco : SurrealForge.Client.ISurrealRecord
     {
         public string SchemaName => RunTable;
 
@@ -459,7 +459,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
     // GetLineageAsync. Only its schema name is consumed by the traversal emit
     // (the edge body isn't deserialized here), but it must satisfy
     // ISurrealRecord,new() so the graph operators can resolve "forked_from".
-    private sealed class ForkedFromEdge : Azoa.SurrealDb.Client.ISurrealRecord
+    private sealed class ForkedFromEdge : SurrealForge.Client.ISurrealRecord
     {
         public string SchemaName => "forked_from";
         [JsonPropertyName("id")]  public string Id  { get; set; } = string.Empty;

@@ -2,22 +2,18 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Copy everything and let the SDK's solution-walk handle restore. We need
-# the schema CLI (Azoa.SurrealDb.Schema) alongside the WebAPI so the
-# container can run `azoa-surreal up` as a pre-start migration step.
+# Copy everything and restore the WebAPI (which pulls the SurrealForge.*
+# packages from NuGet). The container also needs the schema CLI
+# (SurrealForge.Schema) so it can run `surrealforge up` as a pre-start
+# migration step.
 COPY . .
 RUN dotnet restore AZOA.WebAPI.csproj
-RUN dotnet restore packages/Azoa.SurrealDb.Schema/Azoa.SurrealDb.Schema.csproj
 
 RUN dotnet publish AZOA.WebAPI.csproj -c Release -o /app/publish --no-restore
 
-# The Schema package sets <IsPublishable>false</IsPublishable> because it
-# ships as a dotnet pack tool, not as an app. Override those two properties
-# from the CLI so `dotnet publish` actually emits a ready-to-run binary
-# (otherwise the publish step is a silent no-op).
-RUN dotnet publish packages/Azoa.SurrealDb.Schema/Azoa.SurrealDb.Schema.csproj \
-    -c Release -o /app/schema-cli --no-restore --framework net10.0 \
-    -p:IsPublishable=true -p:PackAsTool=false
+# Install the SurrealForge schema/migration CLI (published as a dotnet tool
+# on NuGet) into a self-contained path we copy into the runtime image.
+RUN dotnet tool install --tool-path /app/schema-cli SurrealForge.Schema --version 0.1.1
 
 # Also stage the committed schemas + migrations folder into the image so
 # the runtime container can apply them at boot via the schema CLI.
@@ -51,7 +47,7 @@ USER $APP_UID
 ENV ASPNETCORE_ENVIRONMENT=Production
 EXPOSE 5000
 
-# The entrypoint waits for SurrealDB, runs `azoa-surreal up`, then execs
+# The entrypoint waits for SurrealDB, runs `surrealforge up`, then execs
 # the WebAPI host. Set AZOA_SKIP_MIGRATIONS=1 to bypass the migration
 # step when running against a DB that has already been migrated.
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

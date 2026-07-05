@@ -12,10 +12,10 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Connection;
-using Azoa.SurrealDb.Client.Query;
-using Azoa.SurrealDb.Client.Schema;
+using SurrealForge.Client;
+using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
+using SurrealForge.Client.Schema;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using Xunit;
 
@@ -47,7 +47,7 @@ public sealed class SurrealLiveQueryTests : IntegrationTestBase
         await socket.ConnectAsync();
 
         var ctx = new SurrealContext(
-            new Azoa.SurrealDb.Client.Connection.HttpSurrealConnection(
+            new SurrealForge.Client.Connection.HttpSurrealConnection(
                 new System.Net.Http.HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) },
                 options));
 

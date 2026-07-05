@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 
@@ -221,7 +221,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     /// table 120. When it does, delete this type and substitute the generated
     /// one — no contract change.
     /// </summary>
-    private sealed class ApiKeyPoco : Azoa.SurrealDb.Client.ISurrealRecord
+    private sealed class ApiKeyPoco : SurrealForge.Client.ISurrealRecord
     {
         public string SchemaName => Table;
 

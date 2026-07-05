@@ -2,14 +2,14 @@ using System;
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Connection;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Extensions;
 
 /// <summary>
-/// DI registration helper for the homebake <c>Azoa.SurrealDb.Client</c>
+/// DI registration helper for the homebake <c>SurrealForge.Client</c>
 /// package (surrealdb-client-package Phase 6, sub-wave 1.5a).
 ///
 /// Replaces the previous direct registration of <c>SurrealDb.Net</c>'s
@@ -37,7 +37,7 @@ namespace AZOA.WebAPI.Extensions;
 public static class SurrealDbServiceCollectionExtensions
 {
     /// <summary>
-    /// Register the homebake SurrealDB client (<c>Azoa.SurrealDb.Client</c>)
+    /// Register the homebake SurrealDB client (<c>SurrealForge.Client</c>)
     /// with the application's DI container. Reads connection settings from
     /// the <c>SurrealDb</c> configuration section by default.
     /// </summary>
@@ -47,7 +47,7 @@ public static class SurrealDbServiceCollectionExtensions
     /// Configuration section to bind <see cref="SurrealConnectionOptions"/> from
     /// (default: <c>"SurrealDb"</c>).
     /// </param>
-    public static IServiceCollection AddAzoaSurrealDb(
+    public static IServiceCollection AddSurrealForge(
         this IServiceCollection services,
         IConfiguration configuration,
         string configSectionName = "SurrealDb")
@@ -70,7 +70,7 @@ public static class SurrealDbServiceCollectionExtensions
             var optionsAccessor = sp.GetRequiredService<
                 Microsoft.Extensions.Options.IOptions<SurrealConnectionOptions>>();
             var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var http        = httpFactory.CreateClient("Azoa.SurrealDb.Client");
+            var http        = httpFactory.CreateClient("SurrealForge.Client");
             return new HttpSurrealConnection(http, optionsAccessor.Value);
         });
 

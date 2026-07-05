@@ -33,16 +33,11 @@
          AttributePocoByteEquivalenceTests (uses AttributeSchemaScanner +
          SurqlEmitter). AZOA.WebAPI loads it as an analyzer asset only;
          the test project needs the real DLL on its compile path. -->
-    <ProjectReference Include="..\..\packages\Azoa.SurrealDb.Schema\Azoa.SurrealDb.Schema.csproj" />
-    <!-- Phase 6 (surrealdb-client-package): legacy
-         analyzers/SurrealQlSafetyAnalyzer/ project reference was removed
-         along with the legacy SurrealDb in-tree test suite under
-         tests/AZOA.WebAPI.Tests/SurrealDb/. Analyzer coverage now lives
-         in tests/Azoa.SurrealDb.Analyzer.Tests/ which references the new
-         packages/Azoa.SurrealDb.Analyzer/ project directly. The
-         Microsoft.CodeAnalysis.* test packages above were also dropped
-         from this csproj because no remaining tests here exercise the
-         analyzer harness. -->
+    <PackageReference Include="SurrealForge.Schema" Version="0.1.1" />
+    <!-- Analyzer coverage lives in the external SurrealForge repo
+         (github.com/Escherbridge/surrealforge); the SRDB0001 analyzer ships as
+         the SurrealForge.Analyzer package. No tests here exercise the analyzer
+         harness, so the Microsoft.CodeAnalysis.* test packages are omitted. -->
   </ItemGroup>
 
   <!-- Make the app's real configuration available so config-reading tests are

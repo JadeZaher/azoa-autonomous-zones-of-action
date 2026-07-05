@@ -20,9 +20,9 @@
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Azoa.SurrealDb.Client;
-using Azoa.SurrealDb.Client.Connection;
-using Azoa.SurrealDb.Client.Query;
+using SurrealForge.Client;
+using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Mcp;
 using AZOA.WebAPI.Mcp.Tools;

@@ -4,7 +4,7 @@
 //
 // Acceptance contract:
 //   For every [SurrealTable]-decorated POCO in Persistence/SurrealDb/Models/
-//   the emitted .surql (via Azoa.SurrealDb.Schema.AttributeSchemaScanner +
+//   the emitted .surql (via SurrealForge.Schema.AttributeSchemaScanner +
 //   SurqlEmitter) MUST be byte-identical to the corresponding committed file
 //   under Persistence/SurrealDb/Generated/Schemas/<table>.surql.
 //
@@ -18,9 +18,9 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using FluentAssertions;
-using Azoa.SurrealDb.Client.Schema;
-using Azoa.SurrealDb.Schema.Generator;
-using Azoa.SurrealDb.Schema.Model;
+using SurrealForge.Client.Schema;
+using SurrealForge.Schema.Generator;
+using SurrealForge.Schema.Model;
 
 namespace AZOA.WebAPI.Tests.Persistence.SurrealDb
 {
@@ -68,14 +68,14 @@ namespace AZOA.WebAPI.Tests.Persistence.SurrealDb
 
             File.Exists(goldenPath).Should().BeTrue(
                 $"missing committed .surql at {goldenPath}; either author the file " +
-                $"(regenerate via `azoa-surreal generate-from-assembly`) or remove the " +
+                $"(regenerate via `surrealforge generate-from-assembly`) or remove the " +
                 $"[SurrealTable] attribute from {pocoType.FullName}.");
 
             var golden = File.ReadAllText(goldenPath);
             Normalize(emitted).Should().Be(Normalize(golden),
                 $"attribute-driven .surql for {pocoType.FullName} (table {tableName}) " +
                 $"diverged from the committed file at {goldenPath}. If the divergence is " +
-                "intentional, regenerate the .surql via the CLI (`azoa-surreal " +
+                "intentional, regenerate the .surql via the CLI (`surrealforge " +
                 "generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll`) or run the " +
                 "test suite with AZOA_REGENERATE_GOLDENS=1; if not, fix the POCO's " +
                 "attribute decoration.");

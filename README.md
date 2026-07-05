@@ -103,7 +103,7 @@ A quick orientation for contributors:
 
 - **.NET 8 WebAPI** — the AZOA protocol: identity, quests, holons, swaps, STAR,
   bridges. Dual auth (JWT + `X-Api-Key`).
-- **SurrealDB** — the sole data engine, via the `Azoa.SurrealDb.*` packages.
+- **SurrealDB** — the sole data engine, via the `SurrealForge.*` packages.
   Real-world state (chain confirmations, settlement callbacks) is the source of
   truth; balances are read, never stored.
 - **@azoa/wallet-sdk** — TypeScript SDK (`AzoaClient` facade) with pluggable
@@ -117,7 +117,7 @@ A quick orientation for contributors:
 - `Core/` — providers, base classes, auth handlers
 - `Persistence/SurrealDb/`, `Providers/Stores/Surreal/` — data engine and
   per-aggregate stores; conventions in `CONVENTION.md`
-- `packages/Azoa.SurrealDb.*` — SurrealDB toolkit (C#-first schema authoring +
+- `https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.*` — SurrealDB toolkit (C#-first schema authoring +
   Roslyn injection-guard analyzer)
 - `sdk/azoa-wallet/` — TypeScript SDK
 - `frontend/` — Next.js 14 app
