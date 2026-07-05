@@ -1,0 +1,20 @@
+{
+  "id": "final-hardening-cutover",
+  "description": "The single final engineering track: absorbs all remaining implementation across 9 active tracks + DEPLOY-TODO code items so that when it ships the only work left is `railway up` + secret/guardian-set provisioning. Phases: A correctness blockers (sagas-inert fix, warnings), B real cross-chain value primitives (Solana signer, bridge lock/burn/verify, reconcile-retry, custody), C quest F2-F7, D fractionalization + ecosystem tree, E data/query hygiene, F saga operator surface, G doc+bookkeeping close-out.",
+  "type": "feature",
+  "created_at": "2026-07-05T00:00:00Z",
+  "status": "pending",
+  "phase": "A (not started)",
+  "blocks": [],
+  "supersedes": [
+    "quest-value-engine-expressiveness",
+    "bridge-safety-hardening",
+    "project-asset-fractionalization",
+    "star-odk-ecosystem-tree",
+    "durable-saga-orchestration",
+    "data-backfill-migrations",
+    "surreal-linq-adoption-sweep",
+    "surrealdb-major-upgrade",
+    "blockchain-recovery-and-portable-wallets"
+  ]
+}

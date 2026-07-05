@@ -210,7 +210,177 @@ The faucet (`Blockchain:Faucet:Algorand:Mnemonic`) is a **secret**, testnet-only
 
 ---
 
-## 7. Cross-links
+## 8. Going to production — operator checklist
+
+AZOA is built so the **safe path is the automatic one**: fail-closed defaults,
+boot guards that refuse to start on a missing secret, and a trust root that
+rejects everything until you supply and verify it. What is left for launch is
+therefore not code — it is the small set of **explicit config, secret, and
+trust-root decisions that only the operator can own**. The code track can make
+the safe path automatic; it cannot decide *your* KMS provider, *your* Guardian
+addresses, or *when* real value is allowed to flow. Those are yours. This
+section is the checklist for making them — each item is what you DO, why it
+matters, and how you confirm it took.
+
+The full production-readiness gate lives in **`GO-TO-PROD.md`**; this section is
+the node-operator view of the same finish line and does not duplicate its
+sign-off table.
+
+### 8.1 Provision the secrets (the load-bearing step)
+
+Supply every secret from your secret store / deploy env — **never** committed
+appsettings. The base `appsettings.json` ships these as empty placeholders on
+purpose. Always required:
+
+- `Jwt__Key` — JWT signing key, ≥32 chars, random and rotated.
+- `AZOA__WalletEncryptionKey` — at-rest key material for platform wallet
+  generation.
+- `SurrealDb__Password` — SurrealDB root password (must match the value the
+  SurrealDB service starts with).
+
+Required only if you enable the matching feature:
+
+- The **KYC provider secret** (`Kyc__VeriffApiKey` + base URL / webhook secret)
+  — only when automated KYC is turned on (§8.5).
+- The **platform signing mnemonic** (`Blockchain__Faucet__Algorand__Mnemonic`,
+  and any custodial platform-account seed) — testnet-only for the faucet; do not
+  fund on mainnet unless deliberate.
+
+**Why it's fail-safe:** `Program.cs` guards these. Outside
+Development/IntegrationTest the node **refuses to boot** without `Jwt__Key`, and
+`WalletKeyService` throws without `AZOA__WalletEncryptionKey` — a deploy that
+forgot a secret fails loudly at startup, never silently with a weak default.
+
+**Verify:** the node boots clean with the real secrets set, and a config audit
+confirms none of these values live in a committed file. For the complete
+per-key list and the audit gate, see **`GO-TO-PROD.md` §2** (read its DB row as
+the `SurrealDb__*` reality of this guide, not its legacy Postgres DSN).
+
+### 8.2 Choose your key custody (recommended for real value)
+
+By default, wallet keys are AES-GCM encrypted under a data key **derived from a
+config secret** (`AZOA__WalletEncryptionKey`). That is fine for a beta / internal
+cut, but a config-derived secret is **not production-grade custody for
+value-bearing keys**.
+
+For production custody, provision a **KMS/HSM-backed key store** and wire your
+KMS provider in at deploy time. The code exposes a custody seam
+(`IKeyCustodyService`) that is the single audited decrypt→sign→zero choke point,
+so a KMS-backed implementation drops in **without touching the signing path** —
+your KMS provider slots in behind the same interface.
+
+**This is a recommended-for-real-value step, not mandatory for a beta/internal
+cut.** If you are moving real value, do it before flipping mainnet (§8.3).
+
+**Verify:** with the KMS store wired, no value-bearing private key is
+recoverable from app config alone.
+
+### 8.3 Sign the mainnet enablement gate before flipping any chain to real value
+
+Before you set a chain's `Mainnet.IsEnabled=true` or `Blockchain__Bridge__RealValueEnabled=true`,
+sign off a documented checklist. Do **not** flip these until every box is true:
+
+- Real on-chain signing has been verified on testnet (a real transaction signs,
+  broadcasts, and confirms).
+- Production key custody is in place (§8.2).
+- Guardian sets for the target network are provisioned **and** independently
+  verified (§8.7 / `GUARDIAN-SET-SETUP.md`).
+- A security review of the value path has been signed off.
+
+**Why:** flipping to mainnet early moves real value over paths that may not yet
+be fully signed, custodied, or trust-rooted. The gate is the deliberate stop.
+The hard launch gates and the sign-off table are in **`GO-TO-PROD.md` §1**;
+Guardian-set verification is **`GUARDIAN-SET-SETUP.md`**.
+
+### 8.4 Fund the platform account and alert on low balance
+
+A custodial signer needs native gas (**ALGO** on Algorand) to pay transaction
+fees. This is pure ops:
+
+- Provision the platform account and **fund it** with enough native token to
+  cover expected fee volume.
+- Set up **low-balance alerting** so the account is topped up before it runs
+  dry — a drained fee account stalls every custodial write.
+
+**Verify:** the account holds a working balance and an alert fires on a test
+threshold.
+
+### 8.5 Enable KYC (only if you need automated verification)
+
+The default is **manual admin-review KYC**, which needs no secrets — leave
+`Kyc:Provider=manual` for a beta cut. To enable **automated KYC (Veriff)**:
+
+- Set `Kyc__Provider=veriff`.
+- Supply `Kyc__VeriffApiKey`, the provider base URL, and the webhook signing
+  secret from the secret store (empty placeholders in the `Kyc` section of
+  `appsettings.json` — never commit real values).
+
+**Note:** the **mint path is KYC-gated** — an unverified avatar is rejected at
+the single mint choke point with no asset created, whether it arrives via the
+allocation door or a raw mint call. Whether wallet-generation should also be
+gated pre-KYC (a zero-balance wallet before verification) is a deployment policy
+decision you make; by default wallet provisioning is allowed pre-KYC.
+
+**Verify:** an unverified avatar is denied at mint (403); with `veriff`
+configured, a verification session round-trips against the provider.
+
+### 8.6 Onboard the first tenant
+
+The provisioning surface (`api/tenant`) and the step-by-step onboarding runbook
+already exist. As the operator you actually execute them for your first tenant:
+
+- Register the first tenant avatar.
+- Mint its **tenant-scoped API key** and provision that key as an env secret for
+  the tenant (e.g. the tenant authenticates its allocation calls with this key —
+  it carries the tenant's mint/manage scope; never commit it).
+- Populate the tenant's **user→avatar mapping** so external user ids resolve to
+  AZOA avatars.
+
+Follow the generic onboarding steps: register tenant → mint tenant-scoped key →
+provision children → issue child credential → resolve by external id.
+
+**Verify:** the tenant's key authenticates, and an external user id resolves to
+the expected avatar.
+
+### 8.7 Provision Guardian sets and run the Railway deploy
+
+**Guardian sets.** For testnet/mainnet, the Wormhole Guardian set is the bridge
+**trust root** and is **not shipped** — absent ⇒ every VAA is rejected
+(fail-closed). Retrieve the ordered Guardian address list, verify it byte-for-byte
+across at least two independent authoritative sources, drop it into the
+per-environment appsettings under `Blockchain:Wormhole:GuardianSets`, and sign
+the verification checklist. Full procedure: **`GUARDIAN-SET-SETUP.md`**.
+
+**The deploy.** Production runs as a WebAPI image (bundling the `surrealforge`
+schema CLI) plus a **separate SurrealDB service**; the container entrypoint waits
+for SurrealDB `/health`, applies schema + migrations idempotently, then execs the
+host. The full Railway procedure — required env vars, entrypoint behavior, and
+the SurrealDB service definition — is in **`RUNBOOK.md` §2**.
+
+**SurrealDB version note.** Match the SurrealDB version in production to the one
+your schema was generated and tested against. Dev/local is pinned to
+`surrealdb/surrealdb:v3.1.4`, while `RUNBOOK.md` §2 still specifies the Railway
+service at `v1.5.4`. **Move the Railway SurrealDB service to `v3.1.4`** so prod
+matches dev — a 3.x instance answers `/health` but enforces stricter
+namespace/DDL rules than 1.5.x, so the two must not be mixed.
+
+**Verify:** `/health` returns 200 with `storage-db` Healthy, `surrealforge
+migrate status` matches the on-disk files, and for testnet/mainnet the Guardian
+set is present and its checklist signed.
+
+### 8.8 Set up the brand-boundary CI guard
+
+AZOA must not leak third-party-tenant brand strings into its own surface. A CI
+check enforces this boundary (a "no third-party brand strings" grep, promoted to
+a required pipeline stage). As the CI owner, wire this check into the pipeline so
+the brand boundary cannot silently regress.
+
+**Verify:** the check runs as a required stage and fails the build on a
+deliberately introduced brand string.
+
+---
+
+## 9. Cross-links
 
 - **`RUNBOOK.md`** — local stack control (`dev-up`/`dev-down`), the Railway
   production deploy (WebAPI image + separate SurrealDB service, entrypoint
