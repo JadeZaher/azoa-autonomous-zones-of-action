@@ -107,7 +107,19 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             return Error<BridgeTransactionResult>("FetchVAA is only available for Wormhole bridges");
 
         if (tx.Status != BridgeStatus.AwaitingVAA)
+        {
+            // Idempotent replay: a concurrent fetch already advanced the row past
+            // AwaitingVAA and persisted the VAA bytes. Any post-fetch state that
+            // carries VAA bytes is an acceptable already-fetched outcome — return
+            // success rather than erroring (mirrors the post-save lost-race branch).
+            if (!string.IsNullOrWhiteSpace(tx.VaaBytes)
+                && tx.Status is BridgeStatus.VAAReady or BridgeStatus.Redeeming
+                             or BridgeStatus.Completed or BridgeStatus.Refunded)
+            {
+                return Ok(tx, $"VAA already fetched (bridge is {tx.Status})");
+            }
             return Error<BridgeTransactionResult>($"Bridge is in {tx.Status} state, expected AwaitingVAA");
+        }
 
         if (tx.WormholeEmitterChainId == null || tx.WormholeEmitterAddress == null || tx.WormholeSequence == null)
             return Error<BridgeTransactionResult>("Missing Wormhole emitter information");
@@ -570,10 +582,12 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         if (tx == null || !CallerOwns(tx, callerAvatarId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
-        if (tx.Status == BridgeStatus.Refunded)
-            return Ok(tx, "Bridge already reversed (idempotent replay)");
-
-        if (tx.Status != BridgeStatus.Completed)
+        // Only a Completed bridge starts a fresh reversal. Refunded and Reversing
+        // are RECOVERY states reachable only through an existing idempotency claim —
+        // they must fall through to the stale-claim decision tree below (which settles
+        // Refunded as an idempotent success and parks Reversing for reconciliation),
+        // NOT be short-circuited here. Anything genuinely non-reversible is rejected now.
+        if (tx.Status is not (BridgeStatus.Completed or BridgeStatus.Refunded or BridgeStatus.Reversing))
             return Error<BridgeTransactionResult>("Only completed bridges can be reversed");
 
         // Kill switch: refuse real-value reversal when flag is off and route is non-simulated.
@@ -670,6 +684,13 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         if (affected != 1)
         {
             tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
+            if (tx?.Status == BridgeStatus.Refunded)
+            {
+                // Already reversed (idempotent replay of a fresh claim that found the
+                // bridge terminal). Settle the claim we hold to Completed, not Failed.
+                await _idempotency.CompleteAsync(idempotencyKey, tx.RedemptionTxHash ?? string.Empty, ct);
+                return Ok(tx, "Bridge already reversed (idempotent replay)");
+            }
             var raceMsg = $"Bridge no longer reversible (state {tx?.Status.ToString() ?? "MISSING"}) — concurrent operation won";
             await _idempotency.FailAsync(idempotencyKey, raceMsg, ct);
             return Error<BridgeTransactionResult>(raceMsg);
@@ -760,9 +781,12 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         {
             for (int j = 0; j < providers.Count; j++)
             {
-                if (i == j) continue;
                 var src = providers[i];
                 var tgt = providers[j];
+                // Skip same-provider self-routes EXCEPT the simulated self-route:
+                // Simulated→Simulated is an always-available sim-only lane and must
+                // be emitted so callers can move test value while real value is off.
+                if (i == j && !IsSimulatedRoute(src.ChainType, tgt.ChainType)) continue;
 
                 var wormholeSupported = _wormhole.IsRouteSupported(src.ChainType, tgt.ChainType);
                 var modes = new List<BridgeMode> { BridgeMode.Trusted };

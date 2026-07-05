@@ -71,6 +71,9 @@ public sealed class ChainCapabilityGateTests
             services.AddSingleton<IWalletManager>(WalletManager);
             // QuestNodeStepHandler resolves a provider factory for reconcile-before-retry.
             services.AddSingleton(BlockchainProviderFactoryFakes.Returning());
+            // QuestNodeStepHandler depends on the binding resolver (holon-path $from
+            // resolution); register the pass-through fake so the scope can build it.
+            services.AddSingleton(BindingResolverFakes.PassThrough());
             services.AddScoped<IStepHandler<QuestStepPayload>, QuestNodeStepHandler>();
             services.AddScoped<IStepHandler<QuestCompensatePayload>, QuestCompensateStepHandler>();
 

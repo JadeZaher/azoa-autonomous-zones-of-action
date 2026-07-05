@@ -18,7 +18,7 @@ public class QuestNodeConfigRegistryBindingTests
     {
         // Transfer config with amount bound — shadow strips the binding so the
         // absent field is not flagged as unknown (AC-1e).
-        var cfg = """{"amount":{"$from":"upstream.gate.amount"},"recipient":"abc","assetId":"X"}""";
+        var cfg = """{"NftId":{"$from":"upstream.gate.amount"},"Request":{}}""";
 
         // No upstream names at definition time (edges not finalized yet).
         var err = QuestNodeConfigRegistry.Validate(QuestNodeType.Transfer, cfg);
@@ -106,7 +106,7 @@ public class QuestNodeConfigRegistryBindingTests
     [Fact]
     public void Validate_WithUpstreamNames_ValidName_Passes()
     {
-        var cfg = """{"amount":{"$from":"upstream.gate.amount"},"recipient":"abc","assetId":"X"}""";
+        var cfg = """{"NftId":{"$from":"upstream.gate.amount"},"Request":{}}""";
         var upstreams = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "gate" };
 
         var err = QuestNodeConfigRegistry.Validate(QuestNodeType.Transfer, cfg, upstreams);
@@ -118,7 +118,7 @@ public class QuestNodeConfigRegistryBindingTests
     public void Validate_WithUpstreamNames_UnknownName_ReturnsError()
     {
         // "gate" is referenced but only "other" is a real upstream — publish reject.
-        var cfg = """{"amount":{"$from":"upstream.gate.amount"},"recipient":"abc","assetId":"X"}""";
+        var cfg = """{"NftId":{"$from":"upstream.gate.amount"},"Request":{}}""";
         var upstreams = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "other" };
 
         var err = QuestNodeConfigRegistry.Validate(QuestNodeType.Transfer, cfg, upstreams);
@@ -130,7 +130,7 @@ public class QuestNodeConfigRegistryBindingTests
     public void Validate_NullUpstreamNames_SkipsGraphCheck()
     {
         // At definition time directUpstreamNames is null → graph check skipped.
-        var cfg = """{"amount":{"$from":"upstream.gate.amount"},"recipient":"abc","assetId":"X"}""";
+        var cfg = """{"NftId":{"$from":"upstream.gate.amount"},"Request":{}}""";
 
         var err = QuestNodeConfigRegistry.Validate(QuestNodeType.Transfer, cfg, directUpstreamNames: null);
 

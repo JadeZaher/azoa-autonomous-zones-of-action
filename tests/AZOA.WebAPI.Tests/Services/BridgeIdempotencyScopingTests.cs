@@ -74,6 +74,14 @@ public class BridgeIdempotencyScopingTests
         var provider = new Mock<IBlockchainProvider>();
         provider.Setup(p => p.ChainType).Returns("Solana");
         provider.Setup(p => p.SupportsBridging).Returns(true);
+        // Reverse's on-chain burn must return a non-null result so the reverse flow
+        // completes past the idempotency claim (these tests assert the claim key,
+        // not the burn — but an un-stubbed Task<AZOAResult<string>> yields a null
+        // result and NREs before the assertion).
+        provider.Setup(p => p.BurnWrappedAsync(
+                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "burn_tx" });
 
         var factory = new Mock<IBlockchainProviderFactory>();
         factory.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
@@ -90,23 +98,43 @@ public class BridgeIdempotencyScopingTests
         Mock<IIdempotencyStore> idempotency,
         Mock<IBridgeStore>? bridgeStore = null)
     {
+        // Only apply the lenient catch-all stubs when the caller did NOT supply a
+        // configured store. A caller-supplied store has already set up the specific
+        // GetBridgeAsync(id)/etc returns it needs; adding It.IsAny catch-alls here
+        // would register LAST and — since Moq lets the last matching setup win —
+        // clobber those specific returns to null (making every lookup miss).
         var store = bridgeStore ?? new Mock<IBridgeStore>();
+        if (bridgeStore is null)
+        {
+            // Lenient bridge store stubs for writes the trusted path performs.
+            store.Setup(s => s.AddBridgeAsync(It.IsAny<BridgeTransactionResult>(), It.IsAny<CancellationToken>()))
+                 .Returns(Task.CompletedTask);
+            store.Setup(s => s.TryTransitionBridgeStatusAsync(
+                    It.IsAny<string>(), It.IsAny<BridgeStatus>(), It.IsAny<BridgeStatus>(),
+                    It.IsAny<BridgeStatusMutation?>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(1);
+            store.Setup(s => s.GetBridgeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((BridgeTransactionResult?)null);
+            store.Setup(s => s.GetBridgeByIdempotencyKeyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((BridgeTransactionResult?)null);
+        }
 
-        // Lenient bridge store stubs for writes the trusted path performs.
-        store.Setup(s => s.AddBridgeAsync(It.IsAny<BridgeTransactionResult>(), It.IsAny<CancellationToken>()))
-             .Returns(Task.CompletedTask);
-        store.Setup(s => s.TryTransitionBridgeStatusAsync(
-                It.IsAny<string>(), It.IsAny<BridgeStatus>(), It.IsAny<BridgeStatus>(),
-                It.IsAny<BridgeStatusMutation?>(), It.IsAny<CancellationToken>()))
-             .ReturnsAsync(1);
-        store.Setup(s => s.GetBridgeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-             .ReturnsAsync((BridgeTransactionResult?)null);
-        store.Setup(s => s.GetBridgeByIdempotencyKeyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-             .ReturnsAsync((BridgeTransactionResult?)null);
+        // Redeem's on-chain call must return a non-null success result so the
+        // redeem flow completes past the idempotency claim (an un-stubbed
+        // Task<AZOAResult<WormholeRedemptionResult>> yields a null result and NREs).
+        var wormhole = new Mock<IWormholeAdapter>();
+        wormhole.Setup(w => w.RedeemTransferAsync(
+                It.IsAny<string>(), It.IsAny<WormholeVAA>(),
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<WormholeRedemptionResult>
+            {
+                IsError = false,
+                Result = new WormholeRedemptionResult { TxHash = "redeem_tx" }
+            });
 
         return new CrossChainBridgeService(
             factory.Object,
-            Mock.Of<IWormholeAdapter>(),
+            wormhole.Object,
             Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Trusted }),
             store.Object,
             idempotency.Object,

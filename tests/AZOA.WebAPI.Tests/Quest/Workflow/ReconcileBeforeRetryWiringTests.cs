@@ -117,6 +117,9 @@ public sealed class ReconcileBeforeRetryWiringTests
                 new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { NodeHandler }));
             services.AddSingleton<IWalletManager>(WalletManager);
             services.AddSingleton(ProviderFactory);
+            // QuestNodeStepHandler depends on the binding resolver (holon-path $from
+            // resolution); register the pass-through fake so the scope can build it.
+            services.AddSingleton(BindingResolverFakes.PassThrough());
             services.AddScoped<IStepHandler<QuestStepPayload>, QuestNodeStepHandler>();
             services.AddScoped<IStepHandler<QuestCompensatePayload>, QuestCompensateStepHandler>();
 

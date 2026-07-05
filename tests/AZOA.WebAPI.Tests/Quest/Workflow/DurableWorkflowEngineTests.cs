@@ -115,6 +115,9 @@ public sealed class DurableWorkflowEngineTests
             // The default fake returns Unknown (conservative) and is never reached by the
             // non-chain / Tier-1 runs.
             services.AddSingleton(ProviderFactory);
+            // QuestNodeStepHandler depends on the binding resolver (holon-path $from
+            // resolution); register the pass-through fake so the scope can build it.
+            services.AddSingleton(BindingResolverFakes.PassThrough());
 
             // The two typed step handlers the QuestWorkflow saga dispatches.
             services.AddScoped<IStepHandler<QuestStepPayload>, QuestNodeStepHandler>();
