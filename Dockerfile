@@ -2,6 +2,10 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# unzip is needed to extract the SurrealForge.Schema CLI payload from its nupkg.
+RUN apt-get update && apt-get install -y --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy everything and restore the WebAPI (which pulls the SurrealForge.*
 # packages from NuGet). The container also needs the schema CLI
 # (SurrealForge.Schema) so it can run `surrealforge up` as a pre-start
@@ -11,9 +15,22 @@ RUN dotnet restore AZOA.WebAPI.csproj
 
 RUN dotnet publish AZOA.WebAPI.csproj -c Release -o /app/publish --no-restore
 
-# Install the SurrealForge schema/migration CLI (published as a dotnet tool
-# on NuGet) into a self-contained path we copy into the runtime image.
-RUN dotnet tool install --tool-path /app/schema-cli SurrealForge.Schema --version 0.1.1
+# Stage the SurrealForge schema/migration CLI so the entrypoint can run
+# `surrealforge up` at boot. The published SurrealForge.Schema package ships a
+# complete framework-dependent CLI payload under tools/net10.0/any/ (DLL +
+# runtimeconfig + deps), but the 0.1.x nuspec omits the DotnetTool package type,
+# so `dotnet tool install` rejects it ("not a .NET tool"). We extract that
+# tools/ payload directly instead — it runs as `dotnet SurrealForge.Schema.dll`.
+ARG SURREALFORGE_SCHEMA_VERSION=0.1.1
+RUN set -eu; \
+    url="https://api.nuget.org/v3-flatcontainer/surrealforge.schema/${SURREALFORGE_SCHEMA_VERSION}/surrealforge.schema.${SURREALFORGE_SCHEMA_VERSION}.nupkg"; \
+    curl -fsSL "$url" -o /tmp/sfs.nupkg; \
+    mkdir -p /app/schema-cli; \
+    cd /app/schema-cli; \
+    unzip -q -o /tmp/sfs.nupkg "tools/net10.0/any/*" -d /tmp/sfs; \
+    cp -r /tmp/sfs/tools/net10.0/any/* /app/schema-cli/; \
+    rm -rf /tmp/sfs /tmp/sfs.nupkg; \
+    test -f /app/schema-cli/SurrealForge.Schema.dll
 
 # Also stage the committed schemas + migrations folder into the image so
 # the runtime container can apply them at boot via the schema CLI.

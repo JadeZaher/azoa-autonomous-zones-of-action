@@ -41,7 +41,10 @@ if [ "${AZOA_SKIP_MIGRATIONS:-0}" != "1" ]; then
     echo "[entrypoint] Applying schemas + migrations via surrealforge up ..."
     # The SurrealForge.Schema dotnet tool, installed to /app/schema-cli via
     # `dotnet tool install --tool-path` in the Dockerfile build stage.
-    /app/schema-cli/surrealforge up \
+    # Invoked as `dotnet <dll>` — the SurrealForge.Schema package ships a
+    # framework-dependent CLI payload (not an installed dotnet tool); see the
+    # Dockerfile schema-cli extraction step.
+    dotnet /app/schema-cli/SurrealForge.Schema.dll up \
         --connection "$SURREAL_URL" \
         --user "$SURREAL_USER" \
         --pass "$SURREAL_PASS" \
