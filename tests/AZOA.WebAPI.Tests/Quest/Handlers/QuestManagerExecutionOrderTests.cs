@@ -115,6 +115,9 @@ public class QuestManagerExecutionOrderTests
              .ReturnsAsync(new AZOAResult<QuestEntity> { Result = quest });
         store.Setup(s => s.UpsertQuestAsync(It.IsAny<QuestEntity>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync((QuestEntity q, CancellationToken _) => new AZOAResult<QuestEntity> { Result = q });
+        // F6: the run-start version-confirm sees an unchanged definition here.
+        store.Setup(s => s.TryConfirmQuestStateAsync(It.IsAny<Guid>(), It.IsAny<QuestStatus>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync(1);
 
         var runStore = new InMemoryQuestRunStore();
         var execStore = new InMemoryQuestNodeExecutionStore();

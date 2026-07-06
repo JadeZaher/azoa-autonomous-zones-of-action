@@ -55,7 +55,9 @@ builder.Services.AddControllers(options =>
     });
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
-builder.Services.AddAutoMapper(typeof(Program).Assembly);
+// AutoMapper 15.x: AddAutoMapper takes a config action; AddMaps scans the assembly
+// for Profile types (was the removed AddAutoMapper(Assembly) overload).
+builder.Services.AddAutoMapper(cfg => cfg.AddMaps(typeof(Program).Assembly));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -119,6 +121,12 @@ if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("
             "before starting outside Development.");
 }
 
+// Fail-fast simulated-mode guard (H1): Blockchain:Mode=Simulated short-circuits
+// every chain to fake sim:tx: settlement with no real network I/O. That must
+// never happen in Production; Dev/IntegrationTest/other envs are unaffected.
+AZOA.WebAPI.Providers.Blockchain.BlockchainProviderFactory.GuardAgainstSimulatedModeInProduction(
+    builder.Configuration, builder.Environment.IsProduction());
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = "MultiScheme";
@@ -180,9 +188,12 @@ builder.Services.AddAuthentication(options =>
             // token's nbf (falling back to iat) as a UTC DateTime; if neither is present
             // ValidFrom is DateTime.MinValue, which is always stale against a watermark.
             var jwt = context.SecurityToken as System.IdentityModel.Tokens.Jwt.JwtSecurityToken;
-            var iatClaim = jwt?.Payload?.Iat;
-            var tokenInstant = iatClaim is int iat
-                ? DateTimeOffset.FromUnixTimeSeconds(iat).UtcDateTime
+            // Payload.IssuedAt surfaces the token's iat as a UTC DateTime (DateTime.MinValue
+            // when absent), superseding the deprecated int? Payload.Iat. Fall back to nbf
+            // (ValidFrom) when iat is unset so a nbf-only token still watermarks correctly.
+            var issuedAt = jwt?.Payload?.IssuedAt ?? DateTime.MinValue;
+            var tokenInstant = issuedAt != DateTime.MinValue
+                ? issuedAt
                 : (jwt?.ValidFrom ?? DateTime.MinValue);
 
             if (AZOA.WebAPI.Core.AuthWatermark.IsTokenStale(tokenInstant, watermark))
@@ -204,9 +215,22 @@ builder.Services.AddAuthentication(options =>
 
 // TenantScope policy (tenant-onboarding): a tenant-surface action requires the
 // tenant:provision scope claim (emitted per-CSV-entry by ApiKeyAuthenticationHandler).
-// Operator policy: an operator/admin-only surface (e.g. the cross-avatar
-// reconcile-sweep) requires an admin role/claim — mirrors the per-action admin
-// convention in KycController.IsAdmin (role "Admin" / role claim / is_admin=true).
+//
+// Operator policy (security-review HIGH-2): gates the MOST destructive surfaces in the
+// tree — live wrapping-key rotation and data backfill, both of which rewrite state
+// across every avatar. Hardened along two independent axes so no single misconfig
+// grants admin:
+//   1. AUTHENTICATION-SCHEME FLOOR. The principal must NOT have been authenticated via
+//      the API-key scheme. ApiKeyAuthenticationHandler stamps AuthMethod=ApiKey; any
+//      principal carrying that claim is rejected outright. This means an X-Api-Key —
+//      which can only ever emit `scope` claims from its stored CSV, never a JWT role —
+//      can never reach these endpoints even if it somehow carried an admin-looking
+//      claim. (Belt: ApiKeyAuthenticationHandler also strips the operator scope at
+//      emit time; suspenders: this policy refuses the whole scheme.)
+//   2. EXPLICIT OPERATOR CAPABILITY. Beyond the scheme floor, the JWT must carry a real
+//      admin signal: the dedicated operator:admin scope (minted only for admins), the
+//      "Admin" role, a role=Admin claim, or is_admin=true — the KycController.IsAdmin
+//      convention, now additionally fenced behind the scheme floor.
 builder.Services.AddAuthorization(o =>
 {
     o.AddPolicy("TenantScope", p =>
@@ -214,9 +238,19 @@ builder.Services.AddAuthorization(o =>
             ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision)));
     o.AddPolicy("Operator", p =>
         p.RequireAssertion(ctx =>
-            ctx.User.IsInRole("Admin")
-            || string.Equals(ctx.User.FindFirst("role")?.Value, "Admin", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(ctx.User.FindFirst("is_admin")?.Value, "true", StringComparison.OrdinalIgnoreCase)));
+        {
+            // Axis 1: reject API-key-authenticated principals outright. An API key can
+            // never be an operator — operator authority originates only from a JWT.
+            var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
+            if (string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // Axis 2: require an explicit admin/operator capability on the JWT.
+            return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.Operator)
+                || ctx.User.IsInRole("Admin")
+                || string.Equals(ctx.User.FindFirst("role")?.Value, "Admin", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ctx.User.FindFirst("is_admin")?.Value, "true", StringComparison.OrdinalIgnoreCase);
+        }));
 });
 
 // ─── Rate limiting + per-API-key metering (api-safety-hardening task 18) ───
@@ -363,10 +397,16 @@ builder.Services.AddScoped<IWalletStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletStore>();
 builder.Services.AddScoped<IHolonStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonStore>();
+// final-hardening-cutover F5: opt-in Holon AssetType registry store.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IHolonTypeRegistryStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonTypeRegistryStore>();
 builder.Services.AddScoped<IBlockchainOperationStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealBlockchainOperationStore>();
 builder.Services.AddScoped<ISTARStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealStarStore>();
+// star-odk-ecosystem-tree (D2): tree of DappSeries/STARODK nodes owned by a STARODK.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEcosystemStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealEcosystemStore>();
 // kyc-module: KYC submission/document persistence (SurrealDB).
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKycStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealKycStore>();
@@ -397,6 +437,16 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IApiKeyStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealApiKeyStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IQuestTemplateStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealQuestTemplateStore>();
+
+// ─── Data-backfill primitive (final-hardening-cutover Phase E2) ───
+// Application-level data-rewrite runner + data_migration ledger. Distinct from
+// surrealforge's schema_migration DDL ledger. IBackfill units are registered as
+// scoped services (empty registry today — greenfield pre-launch has zero rows to
+// rewrite); the runner discovers them via IEnumerable<IBackfill>. Surface:
+// GET/POST /api/admin/backfill (Operator policy). See Services/Backfill/AGENTS.md.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IDataMigrationLedgerStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealDataMigrationLedgerStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Backfill.BackfillRunner>();
 
 // <quest-temporal-fork-model>
 // Per-attempt runtime stores for QuestRun + QuestNodeExecution. As of
@@ -430,6 +480,11 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IConsentWebhookOutboxSt
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealConsentWebhookOutboxStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWebhookRegistrationStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWebhookRegistrationStore>();
+// final-hardening F3: generic quest.emit webhook transactional outbox — a parallel
+// outbox to the consent one that SHARES the registration store (above) + SSRF guard +
+// HMAC signer + WebhookOptions (all registered on the consent path below).
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IQuestWebhookOutboxStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealQuestWebhookOutboxStore>();
 
 // <surrealdb-client-package>
 // Homebake SurrealDB client (Phase 6, sub-wave 1.5a). Replaces direct
@@ -465,16 +520,36 @@ builder.Services.AddSurrealForge(builder.Configuration);
 builder.Services.AddMemoryCache(o => o.SizeLimit = 1024);
 
 builder.Services.AddScoped<IAvatarManager, AvatarManager>();
+// final-hardening-cutover H2: operator:admin JWT-mint bootstrap. Stamping itself
+// lives in AvatarManager.GenerateJwt (stateless, per-mint); this hosted service
+// only makes a PARTIAL AdminBootstrap config loud at boot. See Services/Admin/AGENTS.md.
+builder.Services.AddOptions<AZOA.WebAPI.Services.Admin.AdminBootstrapOptions>()
+    .Bind(builder.Configuration.GetSection(AZOA.WebAPI.Services.Admin.AdminBootstrapOptions.SectionName));
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Admin.SeedAdminHostedService>();
 builder.Services.AddSingleton<WalletKeyService>();
 builder.Services.AddSingleton<IAlgorandFaucet, AlgorandFaucet>();
 builder.Services.AddScoped<IWalletManager, WalletManager>();
 builder.Services.AddScoped<IHolonManager, HolonManager>();
+// final-hardening-cutover F5: opt-in Holon AssetType registry manager (CRUD + the
+// validation hook HolonManager consults on every holon create/update).
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IHolonTypeRegistryManager,
+    AZOA.WebAPI.Managers.HolonTypeRegistryManager>();
 
 // ─── Custodial-provider initiative: custody / tenant / kyc / allocation managers ───
 // custody-key-management: decrypt→sign→zero resolver (the only signer-facing
 // key path besides WalletManager.ExportWalletAsync). Scoped to match IWalletStore.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKeyCustodyService,
     AZOA.WebAPI.Services.Custody.KeyCustodyService>();
+// final-hardening B5: live wrapping-key rotation orchestration (dual-key window,
+// batch re-wrap, idempotent/resumable, all-or-nothing rollback) on top of
+// IKeyCustodyService.RewrapAsync. Scoped to match IWalletStore / IKeyCustodyService.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKeyRotationService,
+    AZOA.WebAPI.Services.Custody.KeyRotationService>();
+// security-review HIGH-1: durable, out-of-DB pending-rotation marker (verifier token
+// only, never the raw key) so a discarded-new-key scenario after a partial rotation is
+// recoverable. Singleton — thin stateless wrapper over one on-disk file.
+builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Managers.IPendingRotationKeyStore,
+    AZOA.WebAPI.Services.Custody.FilePendingRotationKeyStore>();
 // tenant-onboarding: tenant principal provisioning + cross-tenant isolation.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ITenantManager,
     AZOA.WebAPI.Managers.TenantManager>();
@@ -509,6 +584,20 @@ builder.Services.AddHttpClient(AZOA.WebAPI.Services.Webhooks.WebhookOptions.Http
         ConnectCallback = AZOA.WebAPI.Core.Webhooks.WebhookSsrfGuard.CreateGuardedConnectCallback(),
     });
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Webhooks.ConsentWebhookDeliveryWorker>();
+// final-hardening F3: the GENERIC quest.emit webhook path. The Emit node's enqueue seam
+// (QuestWebhookEmitter) + a named HttpClient using the SAME SSRF-guarded, no-auto-redirect
+// primary handler as the consent client + the parallel hosted delivery worker. Reuses the
+// shared WebhookSsrfGuard / WebhookHmacSigner / WebhookOptions / IWebhookRegistrationStore
+// registered above — a tenant's ONE registration receives both consent and quest.emit events.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IQuestWebhookEmitter,
+    AZOA.WebAPI.Services.Quest.QuestWebhookEmitter>();
+builder.Services.AddHttpClient(AZOA.WebAPI.Services.Webhooks.WebhookOptions.QuestHttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        ConnectCallback = AZOA.WebAPI.Core.Webhooks.WebhookSsrfGuard.CreateGuardedConnectCallback(),
+    });
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Webhooks.QuestWebhookDeliveryWorker>();
 // kyc-module: KycSettings bound from the "Kyc" section; the provider is selected
 // by Kyc:Provider (manual default; veriff = config-gated deploy-stub, throws).
 builder.Services.Configure<AZOA.WebAPI.Settings.KycSettings>(
@@ -580,9 +669,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IDappCompositionManag
 // Adding a chain is one new ITransactionSigner registration here.
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner,
     AZOA.WebAPI.Providers.Blockchain.Algorand.AlgorandTransactionSigner>();
-// Solana signer is a fail-closed stub (deploy-stub H1): GetSigner("Solana")
-// resolves so the seam is probeable, but Sign returns an error (no silent no-op).
-// Real Solana Ed25519 signing replaces only the stub body; the seam is unchanged.
+// Solana signer: real Ed25519 signing via Solnet.Wallet (final-hardening B1).
+// See Providers/Blockchain/Solana/AGENTS.md §signer for the canonical byte contract.
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner,
     AZOA.WebAPI.Providers.Blockchain.Solana.SolanaTransactionSigner>();
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(sp =>
@@ -793,7 +881,7 @@ var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 };
-forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownIPNetworks.Clear();
 forwardedHeadersOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeadersOptions);
 
@@ -810,17 +898,24 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Integratio
 
 // SurrealDB boot self-check (G1 reachability + durability acknowledgement).
 //
-// G1 durability ("sync=every") is enforced by the storage URI passed to
-// `surreal start` in docker-compose.surrealdb.yml — it is a server-side CLI
-// flag, NOT a property of the HTTP client URL. SurrealDB 1.5.x exposes no
-// SQL surface to read back the fsync mode at runtime, so this code path
-// cannot truly verify durability; it must remain a deploy-time review item
-// (compose file diff). What we CAN verify at boot is:
+// G1 durability on SurrealDB 3.x is enforced by the RocksDB storage engine
+// (`rocksdb:///data/db` passed to `surreal start`) plus the
+// `SURREAL_SYNC_DATA: "true"` env var, which makes RocksDB fsync its WAL on
+// every commit before ACK. Both live in docker-compose.dev.yml (and the
+// Railway deploy manifest). The retired 1.5.x `surrealkv://...?sync=every`
+// URI parameter is NOT used — the v3.1.4 cutover kept rocksdb (see
+// conductor/tracks/_archive/surrealdb-major-upgrade/DECISION.md).
+//
+// SurrealDB exposes no SQL surface to read back the fsync mode at runtime
+// (memory [[surrealdb-fsync-mode-not-introspectable]]), so this code path
+// cannot behaviourally verify durability; it stays a deploy-time review item
+// (the static G1_DurabilityAckGate test asserts the compose posture). What we
+// CAN verify at boot is:
 //   (1) the server is reachable through the same ISurrealExecutor the rest
 //       of the app uses (proves DI + connection + auth all line up), and
 //   (2) the SurrealDb:G1DurabilityAcknowledged config flag is set to true
 //       — operators must explicitly ack that they've reviewed compose and
-//       confirmed `?sync=every` is present. This is an audit-trail gate,
+//       confirmed the durable posture. This is an audit-trail gate,
 //       not a behavioural one.
 // IntegrationTest environments skip both checks because the test container
 // is brought up per-test by the harness, not at host boot.
@@ -830,13 +925,13 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
     if (!ack)
         throw new InvalidOperationException(
             "SurrealDB G1 durability acknowledgement is missing. Confirm that " +
-            "docker-compose.surrealdb.yml (or your deploy manifest) passes " +
-            "`rocksdb:///data/azoa.db` to `surreal start` (RocksDB syncs its " +
-            "WAL on every commit by default — equivalent to the original " +
-            "`surrealkv://...?sync=every` we used before the prebuilt 1.5.4 " +
-            "image was confirmed to ship WITHOUT the surrealkv feature flag), " +
-            "then set SurrealDb:G1DurabilityAcknowledged=true in configuration " +
-            "to acknowledge the review. Every commit must fsync before ack (G1).");
+            "docker-compose.dev.yml (or your deploy manifest) passes " +
+            "`rocksdb:///data/db` to `surreal start` AND sets " +
+            "`SURREAL_SYNC_DATA: \"true\"` (RocksDB then fsyncs its WAL on every " +
+            "commit before ACK — the 3.x durable path that replaced the retired " +
+            "`surrealkv://...?sync=every`), then set " +
+            "SurrealDb:G1DurabilityAcknowledged=true in configuration to " +
+            "acknowledge the review. Every commit must fsync before ack (G1).");
 
     using var scope = app.Services.CreateScope();
     var executor = scope.ServiceProvider.GetRequiredService<
@@ -852,10 +947,10 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
     catch (Exception ex)
     {
         var endpoint = builder.Configuration["SurrealDb:Endpoint"]
-            ?? "http://localhost:8442";
+            ?? "http://localhost:8000";
         throw new InvalidOperationException(
             "SurrealDB server unreachable at boot. Ensure the container is running " +
-            $"and reachable at {endpoint}. Review docker-compose.surrealdb.yml and " +
+            $"and reachable at {endpoint}. Review docker-compose.dev.yml and " +
             "confirm health checks are passing.",
             ex);
     }

@@ -1,0 +1,15 @@
+{
+  "id": "federation-v2",
+  "description": "DEFERRED v2 design track: let sovereign AZOA nodes interoperate without surrendering custody/data/autonomy. ActivityPub-shaped (signed documents, not consensus). Four additive layers: L0 signed node descriptor + G-gate conformance manifest (alpha-cheap, ~1-2d, land early); L1 verifiable cross-node holon references (azoa:// resolve+verify+cache, no DB replication); L2 discovery (static peers -> optional directory nodes -> never DHT); L3 identity portability (same self-sovereign avatar across nodes with per-node revocable consent). Value is NOT federated (chain settles between nodes). Activation-gated on build-side traction (>=3 operators + >=1 real cross-node use case).",
+  "type": "feature",
+  "created_at": "2026-07-05T00:00:00Z",
+  "status": "deferred",
+  "horizon": "v2",
+  "phase": "not started (design captured)",
+  "blocks": [],
+  "depends_on": [
+    "final-hardening-cutover",
+    "user-sovereign-identity",
+    "tenant-consent-delegation"
+  ]
+}

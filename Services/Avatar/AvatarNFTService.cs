@@ -25,6 +25,11 @@ public class AvatarNFTService : IAvatarNFTService
         {
             AvatarId = avatarId,
             ChainType = model.ChainType,
+            // Chain-mint semantics: the id is assigned at mint when the caller
+            // supplies none. Required non-empty by the nft_ownership schema.
+            TokenId = string.IsNullOrWhiteSpace(model.TokenId)
+                ? Guid.NewGuid().ToString("N")
+                : model.TokenId,
             NFTContractAddress = model.NFTContractAddress,
             TokenStandard = model.TokenStandard,
             MetadataURI = model.MetadataURI,

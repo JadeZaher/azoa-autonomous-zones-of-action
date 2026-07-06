@@ -16,14 +16,14 @@ const nextConfig = {
     // Same reasoning: ESLint findings should not gate the docker image build.
     ignoreDuringBuilds: true,
   },
-  env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000',
-  },
+  // NOTE: no NEXT_PUBLIC_API_URL here on purpose — that bakes the API URL at
+  // `next build` time, which is the bug this file fixes. The API URL is
+  // resolved at request time instead (see src/lib/runtime-config.ts).
   images: {
     domains: ['localhost'],
   },
   // Transpile the local SDK package for Next.js bundling
-  transpilePackages: ['@azoa/wallet-sdk'],
+  transpilePackages: ['@azoa/sdk'],
   webpack: (config) => {
     // Ensure the SDK's dependencies resolve from the frontend's node_modules
     // so that @noble/curves/ed25519 subpath imports work correctly

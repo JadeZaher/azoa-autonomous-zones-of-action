@@ -69,4 +69,16 @@ public enum StepStatus
     /// conditional UPDATE so a duplicate signal un-parks at most once.</para>
     /// </summary>
     Parked = 5,
+
+    /// <summary>
+    /// TERMINALLY cancelled by an operator (Phase-F operator surface). A parked
+    /// or dead-lettered step an operator decided must never run again — the
+    /// generic "give up on this step" verb beneath the quest-level reconcile
+    /// board. Distinct from <see cref="DeadLettered"/> (which is the engine's
+    /// automatic retry-exhaustion outcome, still requeue-able): a cancelled step
+    /// is an explicit human decision and the requeue op refuses to revive it.
+    /// Invisible to every processor scan (it is neither Pending nor Parked).
+    /// Terminal.
+    /// </summary>
+    Cancelled = 6,
 }

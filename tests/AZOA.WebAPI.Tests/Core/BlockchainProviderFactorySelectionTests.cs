@@ -79,4 +79,40 @@ public class BlockchainProviderFactorySelectionTests
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*No provider registered for chain type: Bitcoin*");
     }
+
+    // H1: Blockchain:Mode=Simulated must never reach a Production host.
+    [Fact]
+    public void GuardAgainstSimulatedModeInProduction_ProductionAndSimulated_Throws()
+    {
+        var config = ConfigWithMode("Simulated");
+
+        var act = () => BlockchainProviderFactory.GuardAgainstSimulatedModeInProduction(
+            config, isProductionEnvironment: true);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Blockchain:Mode*Simulated*Production*");
+    }
+
+    [Theory]
+    [InlineData(false)] // Dev/IntegrationTest/other non-Production environments
+    public void GuardAgainstSimulatedModeInProduction_NonProductionAndSimulated_Allowed(bool isProductionEnvironment)
+    {
+        var config = ConfigWithMode("Simulated");
+
+        var act = () => BlockchainProviderFactory.GuardAgainstSimulatedModeInProduction(
+            config, isProductionEnvironment);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void GuardAgainstSimulatedModeInProduction_ProductionAndLive_Allowed()
+    {
+        var config = ConfigWithMode("Live");
+
+        var act = () => BlockchainProviderFactory.GuardAgainstSimulatedModeInProduction(
+            config, isProductionEnvironment: true);
+
+        act.Should().NotThrow();
+    }
 }

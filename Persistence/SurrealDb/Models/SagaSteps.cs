@@ -39,6 +39,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             // Invisible to the due-step claim scan until signalled or its timer
             // fires, at which point it returns to Pending (due now).
             Parked,
+            // Terminally cancelled by an operator (Phase-F operator surface).
+            // An explicit human give-up on a parked/dead-lettered step; the
+            // requeue op refuses to revive it. Invisible to every processor scan.
+            Cancelled,
         }
 
         [Id]
@@ -65,7 +69,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string Payload { get; set; } = string.Empty;
 
         [FieldGroup("Lifecycle state (StepStatus enum) -- drives the G2 conditional claim")]
-        [Inside("Pending", "InProgress", "Completed", "Compensating", "DeadLettered", "Parked")]
+        [Inside("Pending", "InProgress", "Completed", "Compensating", "DeadLettered", "Parked", "Cancelled")]
         [Default("\"Pending\"")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public StepStatus Status { get; set; }

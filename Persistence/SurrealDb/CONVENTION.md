@@ -455,7 +455,38 @@ and asserts every plan item classifies as `Skip` (the canonical
 idempotent no-op). Tagged `[Trait("Category", "Live")]` so CI lanes
 without SurrealDB can opt out via `--filter "Category!=Live"`.
 
-## 11. References
+## 11. Query surface: three tiers, reads vs writes (added 2026-07-05)
+
+Store adapters under [`Providers/Stores/Surreal/`](../../Providers/Stores/Surreal/)
+have three legitimate ways to issue a query. Pick by table below — don't reach
+for raw SurrealQL out of habit.
+
+| Tier | Entry point | Use for |
+|---|---|---|
+| 1. Raw | `SurrealQuery.Of("...").WithParam(...)` | Writes (`UPSERT`/`UPDATE`/`DELETE`), `RELATE`, DDL, multi-statement `Combine()`, and any read the typed tier can't express (narrow projections, dynamic `ORDER BY`, existence-check-only column lists). |
+| 2. Typed (eager) | `SurrealQuery<T>.From().Where(x => ...).Limit(...)` | The default for simple full-row `SELECT` reads (equality filters, single or multiple `Where` clauses) where `T : ISurrealRecord`. |
+| 3. LINQ (deferred) | `ctx.Set<T>().Where(...).ToListAsync()` | Full `IQueryable<T>` surface when a `SurrealContext` is already threaded through the call site. Prefer over Tier 2 only when that context already exists — don't inject one solely to reach Tier 3. |
+
+**Policy:**
+- Every full-row `SELECT` read against a fixed table with a simple `==`
+  predicate (or none) migrates to Tier 2/3. `SurrealQuery.SelectById(table, id)`
+  is the standing helper for single-record-by-id full-row reads — prefer it
+  over hand-writing `type::record($_t, $_id)`.
+- Raw stays for: writes/DDL/`RELATE` (always), narrow projections (e.g.
+  `SELECT id FROM ...` existence checks — the row shape differs from what
+  `SelectById` returns), dynamic `ORDER BY`, and anything fused into one wire
+  round-trip via `SurrealQuery.Combine(...)` (no multi-statement surface exists
+  on Tiers 2/3).
+- Every raw `SELECT` that stays raw for one of the above reasons carries a
+  one-line `// raw: <reason>` pointer comment at the call site — no
+  un-annotated raw reads.
+- This is read-path policy only. Conditional/atomic writes (e.g. the saga
+  store's single-winner `UPDATE ... WHERE status = ...`) are intentionally
+  raw and out of scope here — see
+  `conductor/tracks/_archive/surreal-linq-adoption-sweep/spec.md` §"Write path"
+  for the original decision record.
+
+## 12. References
 
 - Attribute layer: [`https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/SurrealAttributes.cs`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/SurrealAttributes.cs)
 - Annotation reference: [`https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/ANNOTATIONS.md`](https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.Client/Schema/ANNOTATIONS.md)

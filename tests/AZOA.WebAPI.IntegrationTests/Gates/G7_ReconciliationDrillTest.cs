@@ -388,10 +388,7 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             string targetChain, string targetRecipient, CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(LockForBridgeAsync));
 
-        public Task<AZOAResult<bool>> VerifyBridgeProofAsync(
-            string proofData, string sourceChain, string targetChainId,
-            CancellationToken ct = default) =>
-            MutationNotExpected<bool>(nameof(VerifyBridgeProofAsync));
+        // VerifyBridgeProofAsync removed from IBlockchainProvider (B2) — no stub needed.
 
         public Task<AZOAResult<FaucetDispenseResult>> DispenseFromFaucetAsync(
             string toAddress, decimal amount, string? idempotencyKey = null,

@@ -1,10 +1,10 @@
-namespace AZOA.WebAPI.Mcp;
-
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using AZOA.WebAPI.Mcp.Tools;
+
+namespace AZOA.WebAPI.Mcp;
 
 /// <summary>
 /// In-process MCP server hosted alongside AZOA.WebAPI at /mcp.

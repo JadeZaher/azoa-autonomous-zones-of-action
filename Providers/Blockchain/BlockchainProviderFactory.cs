@@ -14,6 +14,26 @@ public interface IBlockchainProviderFactory
 
 public class BlockchainProviderFactory : IBlockchainProviderFactory
 {
+    /// <summary>
+    /// Fail-fast boot guard (H1): refuses to start when <c>Blockchain:Mode=Simulated</c>
+    /// in a Production host environment, since simulated settlement (fake <c>sim:tx:</c>
+    /// results, no network I/O) must never leak into prod. Dev/IntegrationTest/other
+    /// non-Production environments are unaffected. Mirrors the secret/CORS/durability
+    /// boot guards in <c>Program.cs</c>.
+    /// </summary>
+    public static void GuardAgainstSimulatedModeInProduction(IConfiguration config, bool isProductionEnvironment)
+    {
+        if (!isProductionEnvironment)
+            return;
+
+        var mode = config.GetSection("Blockchain").Get<BlockchainConfig>()?.Mode ?? "Live";
+        if (string.Equals(mode, SimulatedChainType, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Blockchain:Mode is set to \"Simulated\" in a Production environment. " +
+                "Simulated settlement (fake sim:tx: results, no network I/O) must never " +
+                "run in Production. Set Blockchain:Mode=Live (or unset it) before starting.");
+    }
+
     private readonly IReadOnlyDictionary<string, Func<IBlockchainProvider>> _providerFactories;
     private readonly BlockchainConfig _config;
     private readonly ConcurrentDictionary<string, IBlockchainProvider> _activeProviders = new();

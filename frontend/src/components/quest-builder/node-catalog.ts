@@ -85,7 +85,11 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   { type: 'Condition', category: 'Control', label: 'Condition', description: 'Legacy branch (prefer GateCheck)', defaultConfig: J({ expression: '' }) },
   { type: 'ComposeOutputs', category: 'Control', label: 'Compose Outputs', description: 'Merge outputs of upstream nodes', defaultConfig: J({ sources: [] }) },
   { type: 'GateCheck', category: 'Control', label: 'Gate Check', description: 'Tier-1 gate predicate (supersedes Condition)', defaultConfig: J({ expression: '' }) },
-  { type: 'Emit', category: 'Control', label: 'Emit', description: 'Emit a settlement event to the tenant', defaultConfig: J({ event: '', payload: {} }) },
+  // eventType (final-hardening F3) is the free-form quest.emit webhook event name;
+  // it is a top-level sibling of payload on the wire (Models/Quest/NodeConfigs.cs
+  // EmitNodeConfig.EventType), NOT nested inside payload. Defaults server-side to
+  // "quest.emit" when omitted.
+  { type: 'Emit', category: 'Control', label: 'Emit', description: 'Emit a settlement event to the tenant', defaultConfig: J({ eventType: '', payload: {} }) },
 
   // ─── Economic (Tier-2, requires chain capability) ───
   { type: 'Swap', category: 'Economic', label: 'Swap', description: 'On-chain token swap', defaultConfig: J({ from: '', to: '', amount: '' }), requiresChain: true },
@@ -93,6 +97,11 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   { type: 'Transfer', category: 'Economic', label: 'Transfer', description: 'Transfer value on-chain', defaultConfig: J({ to: '', amount: '' }), requiresChain: true },
   { type: 'Refund', category: 'Economic', label: 'Refund', description: 'Refund a prior transfer', defaultConfig: J({ ref: '' }), requiresChain: true },
   { type: 'FungibleTokenCreate', category: 'Economic', label: 'Create Fungible Token', description: 'Launch a fungible token (ASA) backed/linked to an asset holon', defaultConfig: J({ chainType: 'Algorand', name: '', unitName: '', total: 1000000, decimals: 6, holonId: null }), requiresChain: true },
+  // Fractionalization rails (final-hardening D1): both route through the REAL
+  // cross-chain bridge (Algorand real, Solana fail-closed). The node moves value
+  // only — peg/valuation is tenant-side (compute it and hand it off via Emit).
+  { type: 'Bridge', category: 'Economic', label: 'Bridge', description: 'Lock/bridge an asset cross-chain (real bridge; peg stays tenant-side)', defaultConfig: J({ sourceChain: 'Algorand', targetChain: '', tokenId: '', recipientAddress: '', amount: 1, mode: null }), requiresChain: true },
+  { type: 'Back', category: 'Economic', label: 'Back (Reverse Bridge)', description: 'Reverse a prior Bridge: burn wrapped on target, release original on source', defaultConfig: J({ bridgeTransactionId: '', sourceRecipientAddress: '' }), requiresChain: true },
 ]
 
 export const NODE_CATALOG_BY_TYPE: Record<string, NodeTypeMeta> = Object.fromEntries(

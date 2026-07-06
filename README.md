@@ -101,12 +101,12 @@ integration tests run against a persistent podman SurrealDB. See
 
 A quick orientation for contributors:
 
-- **.NET 8 WebAPI** — the AZOA protocol: identity, quests, holons, swaps, STAR,
+- **.NET 10 WebAPI** — the AZOA protocol: identity, quests, holons, swaps, STAR,
   bridges. Dual auth (JWT + `X-Api-Key`).
 - **SurrealDB** — the sole data engine, via the `SurrealForge.*` packages.
   Real-world state (chain confirmations, settlement callbacks) is the source of
   truth; balances are read, never stored.
-- **@azoa/wallet-sdk** — TypeScript SDK (`AzoaClient` facade) with pluggable
+- **@azoa/sdk** — TypeScript SDK (`AzoaClient` facade) with pluggable
   `ChainProvider` and `DexAdapter` points.
 - **Next.js 14 frontend** — reference UI, including a visual quest builder.
 
@@ -127,7 +127,7 @@ A quick orientation for contributors:
 
 ## Getting started
 
-**Prerequisites:** .NET 8 SDK, Node 20+, podman or Docker (for SurrealDB).
+**Prerequisites:** .NET 10 SDK, Node 20+, podman or Docker (for SurrealDB).
 
 ```bash
 # Backend
@@ -151,7 +151,7 @@ This brings up SurrealDB, the WebAPI, and the frontend via
 `./dev-down.sh`.
 
 **Self-hosting / running a node:** AZOA is meant to be self-hosted. To stand up
-and run a real node (the .NET 8 WebAPI + the SurrealDB it owns) beyond the local
+and run a real node (the .NET 10 WebAPI + the SurrealDB it owns) beyond the local
 dev stack, see [`docs/NODE-HOST.md`](docs/NODE-HOST.md).
 
 ## Docs

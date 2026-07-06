@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Models.Sagas;
 
 namespace AZOA.WebAPI.Sagas;
@@ -44,9 +45,22 @@ public sealed class SurrealSagaStore : ISagaStore
     private const string StatusCompensating = "Compensating";
     private const string StatusDeadLettered = "DeadLettered";
     private const string StatusParked       = "Parked";
+    private const string StatusCancelled    = "Cancelled";
 
     private const int LastErrorMaxLength = 2048;
     private const int OutputMaxLength    = 4096;
+
+    // SurrealForge.Client type-infers string literals: a GUID-shaped value
+    // becomes a `uuid` literal (u'...') and a `table:id`-shaped value becomes a
+    // record-link literal — either of which a SCHEMAFULL `TYPE string` field
+    // rejects ("Expected string but found u'...'" / "...saga:..."). The saga
+    // outbox's opaque tokens hit both: correlation_key/step_name are GUIDs on
+    // the quest-workflow path and step_idempotency_key is `saga:{corr}:{step}`.
+    // We tag every such token with this sentinel on the way to SurrealDB so it
+    // stays a plain string, and strip it on the way back — transparent to every
+    // caller (the tokens are store-internal and always round-trip through here).
+    // See Services/Sagas/AGENTS.md §opaque-key-encoding.
+    private const string OpaqueKeyTag = "s_";
 
     private readonly ISurrealExecutor _executor;
 
@@ -154,7 +168,7 @@ public sealed class SurrealSagaStore : ISagaStore
                 .WithParam("_t", TableName)
                 .WithParam("_id", surrealId)
                 .WithParam("_parked", StatusParked)
-                .WithParam("_gate", gateId)
+                .WithParam("_gate", EncodeOpaqueKey(gateId))
                 .WithParam("_in_progress", StatusInProgress)
                 .WithParam("_now", nowUtc);
         }
@@ -187,8 +201,8 @@ public sealed class SurrealSagaStore : ISagaStore
                 .Of("UPDATE saga_steps SET status = $_pending, next_run_at = $_now, gate_id = NONE, payload = $_payload, updated_at = $_now WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate RETURN AFTER")
                 .WithParam("_pending", StatusPending)
                 .WithParam("_parked", StatusParked)
-                .WithParam("_corr", correlationKey)
-                .WithParam("_gate", gateId)
+                .WithParam("_corr", EncodeOpaqueKey(correlationKey))
+                .WithParam("_gate", EncodeOpaqueKey(gateId))
                 .WithParam("_payload", newPayloadJson)
                 .WithParam("_now", nowUtc);
         }
@@ -198,23 +212,30 @@ public sealed class SurrealSagaStore : ISagaStore
                 .Of("UPDATE saga_steps SET status = $_pending, next_run_at = $_now, gate_id = NONE, updated_at = $_now WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate RETURN AFTER")
                 .WithParam("_pending", StatusPending)
                 .WithParam("_parked", StatusParked)
-                .WithParam("_corr", correlationKey)
-                .WithParam("_gate", gateId)
+                .WithParam("_corr", EncodeOpaqueKey(correlationKey))
+                .WithParam("_gate", EncodeOpaqueKey(gateId))
                 .WithParam("_now", nowUtc);
         }
 
-        var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0 || !response[0].IsOk)
-            return null;
+        // Concurrent/duplicate signals race this conditional un-park of the SAME
+        // parked row, so it is a genuine single-winner seam and can hit SurrealDB
+        // 3.x's retryable transaction conflict. Retry so the loser resolves to
+        // affected==0 (row already Pending) instead of throwing.
+        return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var response = await _executor.ExecuteAsync(q, ct);
+            if (response.Count == 0 || !response[0].IsOk)
+                return (SagaStepRecord?)null;
 
-        // At most one row should match a given (correlation, gate) park; if more
-        // than one un-parks, the first is returned and the rest still resume via
-        // the due scan. Zero affected ⇒ nothing was parked on this gate.
-        if (response[0].AffectedCount() < 1)
-            return null;
+            // At most one row should match a given (correlation, gate) park; if more
+            // than one un-parks, the first is returned and the rest still resume via
+            // the due scan. Zero affected ⇒ nothing was parked on this gate.
+            if (response[0].AffectedCount() < 1)
+                return null;
 
-        var pocos = response[0].GetValues<SagaStepPoco>();
-        return pocos.Count >= 1 ? ToDomain(pocos[0]) : null;
+            var pocos = response[0].GetValues<SagaStepPoco>();
+            return pocos.Count >= 1 ? ToDomain(pocos[0]) : null;
+        }, ct);
     }
 
     // ── GetDueStepIdsAsync ────────────────────────────────────────────────────
@@ -264,7 +285,14 @@ public sealed class SurrealSagaStore : ISagaStore
             .WithParam("_batch", safeBatch);
 
         var combined = SurrealQuery.Combine(reclaim, fireTimers, scan);
-        var response = await _executor.ExecuteAsync(combined, ct);
+        // The reclaim + fire-timers statements are conditional UPDATEs that every
+        // processor tick runs over the shared due-set; concurrent ticks can
+        // contend the same stale-lease / timer rows and surface SurrealDB 3.x's
+        // retryable transaction conflict. Retry so the batch scan doesn't throw —
+        // on retry the losing tick's predicate simply mutates the already-updated
+        // rows to a no-op and the SELECT still returns the due ids.
+        var response = await SurrealTransientConflict.RetryOnConflictAsync(
+            () => _executor.ExecuteAsync(combined, ct), ct);
         response.EnsureAllOk();
 
         // Statement [2]: SELECT id projects to { "id": <thing> }; thing
@@ -310,16 +338,24 @@ public sealed class SurrealSagaStore : ISagaStore
             .WithParam("_in_progress", StatusInProgress)
             .WithParam("_now", nowUtc);
 
-        var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0 || !response[0].IsOk)
-            return null;
+        // SurrealDB 3.x throws a RETRYABLE "Transaction conflict: Resource busy"
+        // when concurrent processor ticks contend this exact single-winner row
+        // instead of one cleanly winning and the rest getting affected==0. The
+        // shared retry lets the conflict resolve to the winner's write landing;
+        // on retry the row is InProgress so the loser's predicate misses (→ null).
+        return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var response = await _executor.ExecuteAsync(q, ct);
+            if (response.Count == 0 || !response[0].IsOk)
+                return (SagaStepRecord?)null;
 
-        var affected = response[0].AffectedCount();
-        if (affected != 1)
-            return null; // lost the race / no longer due — single winner only
+            var affected = response[0].AffectedCount();
+            if (affected != 1)
+                return null; // lost the race / no longer due — single winner only
 
-        var pocos = response[0].GetValues<SagaStepPoco>();
-        return pocos.Count == 1 ? ToDomain(pocos[0]) : null;
+            var pocos = response[0].GetValues<SagaStepPoco>();
+            return pocos.Count == 1 ? ToDomain(pocos[0]) : null;
+        }, ct);
     }
 
     // ── CompleteStepAsync ─────────────────────────────────────────────────────
@@ -471,8 +507,8 @@ public sealed class SurrealSagaStore : ISagaStore
         var q = SurrealQuery
             .Of("SELECT * FROM saga_steps WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate LIMIT 1")
             .WithParam("_parked", StatusParked)
-            .WithParam("_corr", correlationKey)
-            .WithParam("_gate", gateId);
+            .WithParam("_corr", EncodeOpaqueKey(correlationKey))
+            .WithParam("_gate", EncodeOpaqueKey(gateId));
 
         var rows = await _executor.QueryAsync<SagaStepPoco>(q, ct);
         return rows.Count == 0 ? null : ToDomain(rows[0]);
@@ -485,8 +521,8 @@ public sealed class SurrealSagaStore : ISagaStore
     {
         var q = SurrealQuery
             .Of("SELECT id FROM saga_steps WHERE correlation_key = $_corr AND step_name = $_name LIMIT 1")
-            .WithParam("_corr", correlationKey)
-            .WithParam("_name", stepName);
+            .WithParam("_corr", EncodeOpaqueKey(correlationKey))
+            .WithParam("_name", EncodeOpaqueKey(stepName));
 
         var rows = await _executor.QueryAsync<SagaStepIdProjection>(q, ct);
         return rows.Count > 0;
@@ -504,6 +540,76 @@ public sealed class SurrealSagaStore : ISagaStore
 
         var rows = await _executor.QueryAsync<SagaStepPoco>(q, ct);
         return rows.Count == 0 ? null : ToDomain(rows[0]);
+    }
+
+    // ── Operator / dead-letter surface (Phase-F) ──────────────────────────────
+
+    public async Task<IReadOnlyList<SagaStepRecord>> ListByStatusesAsync(
+        IReadOnlyCollection<StepStatus> statuses, int limit, CancellationToken ct)
+    {
+        if (statuses.Count == 0) return Array.Empty<SagaStepRecord>();
+        var safeLimit = Math.Clamp(limit, 1, 1000);
+
+        // status INSIDE $_statuses over a bound array of the wire tokens — no
+        // interpolation (G3); the array is a single bound param. Newest-updated
+        // first so an operator sees the freshest failures at the top.
+        var statusTokens = statuses.Select(StatusToString).Distinct().ToArray();
+
+        var q = SurrealQuery
+            .Of("SELECT * FROM saga_steps WHERE status INSIDE $_statuses ORDER BY updated_at DESC LIMIT $_limit")
+            .WithParam("_statuses", statusTokens)
+            .WithParam("_limit", safeLimit);
+
+        var rows = await _executor.QueryAsync<SagaStepPoco>(q, ct);
+        return rows.Select(ToDomain).ToList();
+    }
+
+    public async Task<bool> RequeueStepAsync(Guid id, CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var surrealId = SurrealId.ToSurrealId(id);
+
+        // Revive a Parked or DeadLettered step to Pending+due-now. Conditional on
+        // status INSIDE [Parked, DeadLettered] — the arbiter refuses to revive a
+        // Cancelled (operator gave up), Completed (done), or InProgress (actively
+        // leased) row. Clears the lease + gate + dead_lettered mirror so the due
+        // scan claims it cleanly. Idempotent: a re-requeue of a now-Pending row
+        // matches zero rows.
+        var q = SurrealQuery
+            .Of("UPDATE type::record($_t, $_id) SET status = $_pending, next_run_at = $_now, claimed_at = NONE, gate_id = NONE, dead_lettered = false, updated_at = $_now WHERE status INSIDE $_revivable RETURN AFTER")
+            .WithParam("_t", TableName)
+            .WithParam("_id", surrealId)
+            .WithParam("_pending", StatusPending)
+            .WithParam("_now", nowUtc)
+            .WithParam("_revivable", new[] { StatusParked, StatusDeadLettered });
+
+        var response = await _executor.ExecuteAsync(q, ct);
+        if (response.Count == 0 || !response[0].IsOk) return false;
+        return response[0].AffectedCount() == 1;
+    }
+
+    public async Task<bool> CancelStepAsync(Guid id, string reason, CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var surrealId = SurrealId.ToSurrealId(id);
+
+        // Terminally cancel a Pending / Parked / DeadLettered step. Conditional on
+        // status INSIDE those three — will not un-complete a Completed step nor
+        // yank an InProgress (leased) one out from under a live handler. Records
+        // the operator reason on last_error for the audit trail. Idempotent: a
+        // re-cancel of an already-Cancelled row matches zero rows.
+        var q = SurrealQuery
+            .Of("UPDATE type::record($_t, $_id) SET status = $_cancelled, claimed_at = NONE, gate_id = NONE, last_error = $_reason, updated_at = $_now WHERE status INSIDE $_cancellable RETURN AFTER")
+            .WithParam("_t", TableName)
+            .WithParam("_id", surrealId)
+            .WithParam("_cancelled", StatusCancelled)
+            .WithParam("_cancellable", new[] { StatusPending, StatusParked, StatusDeadLettered })
+            .WithParam("_reason", (object?)Truncate(reason, LastErrorMaxLength)!)
+            .WithParam("_now", nowUtc);
+
+        var response = await _executor.ExecuteAsync(q, ct);
+        if (response.Count == 0 || !response[0].IsOk) return false;
+        return response[0].AffectedCount() == 1;
     }
 
     // ── Mapping helpers ───────────────────────────────────────────────────────
@@ -526,10 +632,10 @@ public sealed class SurrealSagaStore : ISagaStore
     private static SagaStepPoco FromDomain(SagaStepRecord r) => new()
     {
         Id                 = SurrealId.ToSurrealId(r.Id),
-        CorrelationKey     = r.CorrelationKey,
+        CorrelationKey     = EncodeOpaqueKey(r.CorrelationKey),
         SagaName           = r.SagaName,
-        StepName           = r.StepName,
-        StepIdempotencyKey = r.StepIdempotencyKey,
+        StepName           = EncodeOpaqueKey(r.StepName),
+        StepIdempotencyKey = EncodeOpaqueKey(r.StepIdempotencyKey),
         Payload            = r.Payload ?? string.Empty,
         Status             = StatusToString(r.Status),
         IsCompensation     = r.IsCompensation,
@@ -543,16 +649,16 @@ public sealed class SurrealSagaStore : ISagaStore
         DeadLettered       = r.DeadLettered,
         CreatedAt          = new DateTimeOffset(DateTime.SpecifyKind(r.CreatedAt, DateTimeKind.Utc)),
         UpdatedAt          = new DateTimeOffset(DateTime.SpecifyKind(r.UpdatedAt, DateTimeKind.Utc)),
-        GateId             = r.GateId,
+        GateId             = r.GateId is null ? null : EncodeOpaqueKey(r.GateId),
     };
 
     private static SagaStepRecord ToDomain(SagaStepPoco p) => new()
     {
         Id                 = SurrealId.FromSurrealId(StripIdPrefix(p.Id)),
-        CorrelationKey     = p.CorrelationKey ?? string.Empty,
+        CorrelationKey     = DecodeOpaqueKey(p.CorrelationKey ?? string.Empty),
         SagaName           = p.SagaName ?? string.Empty,
-        StepName           = p.StepName ?? string.Empty,
-        StepIdempotencyKey = p.StepIdempotencyKey ?? string.Empty,
+        StepName           = DecodeOpaqueKey(p.StepName ?? string.Empty),
+        StepIdempotencyKey = DecodeOpaqueKey(p.StepIdempotencyKey ?? string.Empty),
         Payload            = p.Payload ?? string.Empty,
         Status             = StatusFromString(p.Status),
         IsCompensation     = p.IsCompensation,
@@ -564,7 +670,7 @@ public sealed class SurrealSagaStore : ISagaStore
         DeadLettered       = p.DeadLettered,
         CreatedAt          = p.CreatedAt.UtcDateTime,
         UpdatedAt          = p.UpdatedAt.UtcDateTime,
-        GateId             = p.GateId,
+        GateId             = p.GateId is null ? null : DecodeOpaqueKey(p.GateId),
     };
 
     /// <summary>
@@ -587,6 +693,7 @@ public sealed class SurrealSagaStore : ISagaStore
         StepStatus.Compensating => StatusCompensating,
         StepStatus.DeadLettered => StatusDeadLettered,
         StepStatus.Parked       => StatusParked,
+        StepStatus.Cancelled    => StatusCancelled,
         _ => throw new ArgumentOutOfRangeException(nameof(s), s, "Unknown StepStatus value."),
     };
 
@@ -598,6 +705,7 @@ public sealed class SurrealSagaStore : ISagaStore
         StatusCompensating => StepStatus.Compensating,
         StatusDeadLettered => StepStatus.DeadLettered,
         StatusParked       => StepStatus.Parked,
+        StatusCancelled    => StepStatus.Cancelled,
         _ => throw new InvalidOperationException(
             $"Unrecognised saga step status '{s}' read from SurrealDB. " +
             "Schema ASSERT INSIDE [...] should have prevented this; refresh the schema."),
@@ -605,6 +713,37 @@ public sealed class SurrealSagaStore : ISagaStore
 
     private static string? Truncate(string? s, int max) =>
         s is null || s.Length <= max ? s : s[..max];
+
+    // The colon is what SurrealForge reads as a record-link separator
+    // (`table:id`), so an idempotency key like `saga:{corr}:{step}` gets inferred
+    // as a record link (verified against the live engine). We map it to a token
+    // that cannot occur in any real key (our keys are GUIDs [hyphen-delimited],
+    // node ids, and the literal `saga` prefix -- none contain `_C_`), so the
+    // encoding is unambiguous and reversible.
+    private const string ColonEscapeToken = "_C_";
+
+    /// <summary>Tag an opaque key so SurrealForge stores it as a plain string
+    /// instead of type-inferring it into a `uuid` (GUID-shaped) or record-link
+    /// (`table:id`-shaped) literal — either of which a SCHEMAFULL `TYPE string`
+    /// field rejects. The prefix defeats uuid inference; colon-escaping defeats
+    /// record-link inference. Empty stays empty (the schema ASSERT NotEmpty owns
+    /// that case).</summary>
+    private static string EncodeOpaqueKey(string value) =>
+        string.IsNullOrEmpty(value)
+            ? value
+            : OpaqueKeyTag + value.Replace(":", ColonEscapeToken);
+
+    /// <summary>Inverse of <see cref="EncodeOpaqueKey"/>: strip the sentinel and
+    /// un-escape colons so callers see the original key. An untagged value is
+    /// returned as-is (defensive against any legacy/un-encoded row).</summary>
+    private static string DecodeOpaqueKey(string value)
+    {
+        if (!value.StartsWith(OpaqueKeyTag, StringComparison.Ordinal))
+            return value;
+        var body = value[OpaqueKeyTag.Length..];
+        // Restore colons; a doubled token was a literal token in the source.
+        return body.Replace(ColonEscapeToken, ":");
+    }
 
     // ── POCO (private) ────────────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Moq;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -29,7 +30,9 @@ public class AvatarManagerTests
             })
             .Build();
 
-        _manager = new AvatarManager(_store.Object, config);
+        var environment = new Mock<IHostEnvironment>();
+        environment.Setup(e => e.EnvironmentName).Returns("Development");
+        _manager = new AvatarManager(_store.Object, config, environment.Object);
     }
 
     [Fact]

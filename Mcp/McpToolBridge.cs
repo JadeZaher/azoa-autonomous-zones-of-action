@@ -1,11 +1,11 @@
-namespace AZOA.WebAPI.Mcp;
-
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using SurrealForge.Client.Query;
+
+namespace AZOA.WebAPI.Mcp;
 
 /// <summary>
 /// Bridges the in-house <see cref="IMcpTool"/> registry to the ModelContextProtocol
@@ -46,6 +46,10 @@ public static class McpToolBridge
             // services (ISurrealExecutor, IQuestManager, etc.).
             var http = ctx.Services?.GetService<IHttpContextAccessor>()?.HttpContext;
             var requestServices = http?.RequestServices ?? ctx.Services ?? appServices;
+            if (requestServices is null)
+            {
+                return ErrorResult("mcp_unavailable: no service provider in scope.");
+            }
 
             // AvatarId is mandatory — McpAuthMiddleware already rejected (401)
             // any request without one, but guard defensively.

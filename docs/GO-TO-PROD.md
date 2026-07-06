@@ -1,5 +1,19 @@
 # GO TO PROD — AZOA API production-readiness
 
+> ⚠️ **DEPRECATED — dated 2026-05-18, predates the SurrealDB cutover and the
+> Phase-A saga-default flip.** `docs/NODE-HOST.md` is the authoritative
+> operator guide for current data-engine setup and production readiness. Two
+> corrections this doc gets wrong as written:
+> 1. **`Sagas:Enabled=true` is the deliberate default**, with a boot guard,
+>    not `Enabled=false` (gate 7 and the §2/§4 references below describe the
+>    old, superseded premise — the durable-quest saga consumer now exists and
+>    runs by default; see [[durable-quests-inert-sagas-disabled]]).
+> 2. **The G1 durability gate is live and green on SurrealDB 3.1.4** —
+>    re-verified during `final-hardening-cutover`.
+> These corrections exist because two independent auditors were misled by this
+> stale doc. Read [NODE-HOST.md](NODE-HOST.md) instead for anything
+> operational; this file is retained for historical safety-gate reasoning only.
+
 **Purpose:** the single gate between "code complete" and "real cross-chain value
 flows." Greenfield / pre-launch: no customers, no data — bias to clean config,
 fail-closed defaults, and verified trust roots, not compat shims.
@@ -95,7 +109,7 @@ not a bug.
 
 - **Database:** Postgres (EF migrations). Greenfield → start from an EMPTY DB; `Migrate()` on boot builds the full schema (incl. `AddIdempotencyAndBridgeSafetyConstraints`, `AddSagaOutbox`). Do NOT add "table already exists" compat shims — reset instead. SurrealDB replaces this later (`surrealdb-migration` track).
 - **Backup/restore:** Postgres-era only; a restore drill is owned by `surrealdb-migration` G5. For the Postgres interim, ensure standard PITR/snapshot if any value flows before migration.
-- **Container/runtime:** podman/docker Postgres for local/CI (`tests/run-tests.ps1` auto-spins it); prod uses managed Postgres. `.NET 8` host.
+- **Container/runtime:** podman/docker Postgres for local/CI (`tests/run-tests.ps1` auto-spins it); prod uses managed Postgres. `.NET 10` host.
 - **Rate limiting:** in-memory per instance. **Multi-instance scale-out needs a distributed store (Redis fixed-window)** before horizontal scaling — single instance is fine pre-launch.
 - **Monitoring (must be wired before launch):**
   - Alert on log `MANUAL INTERVENTION REQUIRED` (ERROR) from reconciliation.

@@ -230,16 +230,71 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
     /// Execute a parameterized SurrealQL statement via the SurrealDB HTTP API.
     /// The <paramref name="parameters"/> object's properties become $name bindings.
     /// NEVER interpolate user input into <paramref name="sql"/> — always bind via params.
+    /// Executes SurrealQL with optional bound parameters against the HTTP /sql endpoint.
+    /// SurrealDB 3.x rejects the pre-3.x JSON envelope {query, params} (it treats the
+    /// whole body as a literal string and silently no-ops). We instead prefix a
+    /// `LET $name = <literal>;` statement per parameter to the SurrealQL in a
+    /// text/plain body — this binds scalars AND structured objects (for CONTENT
+    /// clauses), type-preserved. See tests/AZOA.WebAPI.IntegrationTests/AGENTS.md
+    /// §param-binding.
     protected async Task ExecuteSurrealSqlAsync(string sql, object? parameters = null)
     {
         if (!await IsSurrealDbAvailableAsync()) return;
 
-        var body = new { query = sql, @params = parameters ?? new { } };
-        var content = JsonContent.Create(body, options: JsonOptions);
+        var script = BuildParamLets(parameters) + sql;
+        var request = new HttpRequestMessage(HttpMethod.Post, "/sql")
+        {
+            Content = new StringContent(script, System.Text.Encoding.UTF8, "text/plain"),
+        };
 
-        var response = await SurrealClient.PostAsync("/sql", content);
-        // Non-2xx → throw so test failures surface cleanly
+        var response = await SurrealClient.SendAsync(request);
+        // Non-2xx → throw so test failures surface cleanly.
         response.EnsureSuccessStatusCode();
+
+        // SurrealDB returns HTTP 200 even when an individual statement errors; the
+        // per-statement status lives in the JSON body. Surface an ERR so a failed
+        // seed can never masquerade as a successful one.
+        var payload = await response.Content.ReadAsStringAsync();
+        if (payload.Contains("\"status\":\"ERR\"", StringComparison.Ordinal))
+            throw new InvalidOperationException($"SurrealQL statement failed: {payload}");
+    }
+
+    /// Renders a params object as `LET $name = <surql-literal>;` prelude statements.
+    private static string BuildParamLets(object? parameters)
+    {
+        if (parameters is null) return string.Empty;
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var p in parameters.GetType()
+            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+        {
+            sb.Append("LET $").Append(p.Name).Append(" = ")
+              .Append(ToSurqlLiteral(p.GetValue(parameters))).Append(";\n");
+        }
+        return sb.ToString();
+    }
+
+    private static readonly JsonSerializerOptions SurqlLiteralJsonOptions = new(JsonSerializerDefaults.Web);
+
+    /// Serializes a CLR value to a SurrealQL literal (JSON is a valid SurrealQL
+    /// object/array literal; null → NONE; scalars stay typed).
+    private static string ToSurqlLiteral(object? value)
+    {
+        if (value is null) return "NONE";
+        return value switch
+        {
+            string s => JsonSerializer.Serialize(s),
+            bool b => b ? "true" : "false",
+            DateTime dt => JsonSerializer.Serialize(dt.ToString("o")),
+            DateTimeOffset dto => JsonSerializer.Serialize(dto.ToString("o")),
+            Guid g => JsonSerializer.Serialize(g.ToString()),
+            System.Collections.IEnumerable when value is not string
+                => JsonSerializer.Serialize(value, SurqlLiteralJsonOptions),
+            // Invariant culture — a comma-decimal locale would emit "1,5" and break SurrealQL.
+            _ when value.GetType().IsPrimitive || value is decimal
+                => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)!,
+            _ => JsonSerializer.Serialize(value, SurqlLiteralJsonOptions),
+        };
     }
 
     /// Execute raw SurrealQL (DDL from Worker C's schema files).

@@ -355,6 +355,57 @@ public sealed class InMemorySagaStore : ISagaStore
     public Task<SagaStepRecord?> GetAsync(Guid id, CancellationToken ct)
         => Task.FromResult(_steps.TryGetValue(id, out var rec) ? Copy(rec) : null);
 
+    // ── Operator / dead-letter surface (Phase-F) ──────────────────────────────
+
+    public Task<IReadOnlyList<SagaStepRecord>> ListByStatusesAsync(
+        IReadOnlyCollection<StepStatus> statuses, int limit, CancellationToken ct)
+    {
+        if (statuses.Count == 0)
+            return Task.FromResult<IReadOnlyList<SagaStepRecord>>(Array.Empty<SagaStepRecord>());
+        var safeLimit = Math.Clamp(limit, 1, 1000);
+        var set = statuses.ToHashSet();
+        var rows = _steps.Values
+            .Where(r => set.Contains(r.Status))
+            .OrderByDescending(r => r.UpdatedAt)
+            .Take(safeLimit)
+            .Select(Copy)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<SagaStepRecord>>(rows);
+    }
+
+    public Task<bool> RequeueStepAsync(Guid id, CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var applied = MutateIf(id,
+            r => r.Status is StepStatus.Parked or StepStatus.DeadLettered,
+            r =>
+            {
+                r.Status = StepStatus.Pending;
+                r.NextRunAt = nowUtc;
+                r.ClaimedAt = null;
+                r.GateId = null;
+                r.DeadLettered = false;
+                r.UpdatedAt = nowUtc;
+            }) is not null;
+        return Task.FromResult(applied);
+    }
+
+    public Task<bool> CancelStepAsync(Guid id, string reason, CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var applied = MutateIf(id,
+            r => r.Status is StepStatus.Pending or StepStatus.Parked or StepStatus.DeadLettered,
+            r =>
+            {
+                r.Status = StepStatus.Cancelled;
+                r.ClaimedAt = null;
+                r.GateId = null;
+                r.LastError = reason;
+                r.UpdatedAt = nowUtc;
+            }) is not null;
+        return Task.FromResult(applied);
+    }
+
     // ── Test-only helpers (not part of ISagaStore) ────────────────────────────
 
     /// <summary>

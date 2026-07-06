@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Mcp.Tools;
@@ -44,8 +45,10 @@ public sealed class NftOwnershipGraphTool : IMcpTool
     {
         try
         {
-            // AvatarId comes exclusively from context — privilege-escalation gate (line 43)
-            var avatarIdStr = SurrealId.ToSurrealId(context.AvatarId);
+            // AvatarId comes exclusively from context — privilege-escalation gate.
+            // avatar_id is a record<avatar> column; bind the `avatar:hex` link form so
+            // the comparison matches. See Mcp/AGENTS.md §record-id-binding.
+            var avatarIdStr = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(context.AvatarId));
 
             // Optional chain filter — null means "all chains"
             string? chainFilter = null;

@@ -136,7 +136,7 @@ public sealed class SurrealWalletStore : IWalletStore
     private static GeneratedWallet ToPoco(IWallet w) => new()
     {
         Id                   = SurrealId.ToSurrealId(w.Id),
-        AvatarId             = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(w.AvatarId)),
+        AvatarId             = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(w.AvatarId))!,
         ChainType            = w.ChainType,
         Address              = w.Address,
         PublicKey            = w.PublicKey,

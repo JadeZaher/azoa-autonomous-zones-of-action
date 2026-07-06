@@ -28,10 +28,10 @@ public class QuestConfigBindingResolverTests
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static QuestNode MakeNode(string name, string? config = null) =>
-        new() { Id = NodeId, QuestId = QuestId, Name = name, Config = config };
+        new() { Id = NodeId, QuestId = QuestId, Name = name, Config = config ?? "{}" };
 
     private static QuestNode MakeNodeWithId(Guid id, string name, string? config = null) =>
-        new() { Id = id, QuestId = QuestId, Name = name, Config = config };
+        new() { Id = id, QuestId = QuestId, Name = name, Config = config ?? "{}" };
 
     private static QuestNodeExecution MakeExec(Guid nodeId, string output) =>
         new()

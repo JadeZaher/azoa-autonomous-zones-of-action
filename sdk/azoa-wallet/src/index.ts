@@ -10,6 +10,7 @@ export {
   mapErr,
   SdkError,
   SdkErrorCode,
+  isQuestConflict,
   toHex,
   fromHex,
   concatBytes,
@@ -74,6 +75,18 @@ export type {
   PortfolioAsset,
   PortfolioAssetKind,
   NftHolding,
+  // Quest + Holon AssetType registry (final-hardening Phase C)
+  QuestResult,
+  HolonTypeResult,
+  HolonTypeRegisterParams,
+  // Admin surfaces: saga operator dead-letters + key rotation (final-hardening Wave6)
+  SagaStepStatus,
+  SagaDeadLetterListParams,
+  SagaStepView,
+  SagaStepRequeueResult,
+  SagaStepCancelResult,
+  KeyRotationReport,
+  KeyRotationParams,
 } from "./api/index.js";
 
 // High-level client

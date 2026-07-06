@@ -113,6 +113,9 @@ export class WorkflowClient {
    * Start a durable, suspendable run on an existing quest
    * (`POST /api/quest/{questId}/start-workflow`). Returns the created
    * `QuestRun` (whose `id` is the runId the handle binds to). `assertUuid`-guarded.
+   * Fails (400, message containing "Quest run conflict") if the quest was
+   * unpublished/modified concurrently, racing this call's version-confirm
+   * (final-hardening F6) — see `isQuestConflict` in `api/client.js`.
    */
   startWorkflow(questId: string): Promise<Result<WorkflowRunResult, SdkError>> {
     assertUuid(questId, "questId");

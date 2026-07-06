@@ -34,4 +34,10 @@ public class Quest
     /// Reintroduced by quest-dag-semantic-hardening FR-2; see Managers/AGENTS.md §publish-lifecycle.
     /// </summary>
     public QuestStatus Status { get; set; } = QuestStatus.Draft;
+
+    /// <summary>
+    /// Optimistic-concurrency token for the definition lifecycle (F6 TOCTOU guard).
+    /// Bumped on every CAS status transition; see Managers/AGENTS.md §publish-lifecycle.
+    /// </summary>
+    public long Version { get; set; }
 }

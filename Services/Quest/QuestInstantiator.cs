@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using QuestEntity = AZOA.WebAPI.Models.Quest.Quest;
@@ -16,16 +15,13 @@ public class QuestInstantiator : IQuestInstantiator
 {
     private readonly IQuestTemplateStore _templateStore;
     private readonly IQuestDagValidator _validator;
-    private readonly ILogger<QuestInstantiator> _logger;
 
     public QuestInstantiator(
         IQuestTemplateStore templateStore,
-        IQuestDagValidator validator,
-        ILogger<QuestInstantiator> logger)
+        IQuestDagValidator validator)
     {
         _templateStore = templateStore;
         _validator = validator;
-        _logger = logger;
     }
 
     public async Task<QuestEntity> InstantiateAsync(Guid templateId, string parametersJson, Guid avatarId)

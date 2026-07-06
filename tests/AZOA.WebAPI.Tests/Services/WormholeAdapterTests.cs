@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -57,6 +58,7 @@ public class WormholeAdapterTests
             _factoryMock.Object,
             Options.Create(_config),
             _loggerMock.Object,
+            new ConfigurationBuilder().Build(),
             signatureVerifier);
     }
 

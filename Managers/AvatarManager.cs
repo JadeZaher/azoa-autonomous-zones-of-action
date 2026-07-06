@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using AZOA.WebAPI.Core;
@@ -9,6 +10,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Admin;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -16,11 +18,13 @@ public class AvatarManager : IAvatarManager
 {
     private readonly IAvatarStore _avatarStore;
     private readonly IConfiguration _config;
+    private readonly IHostEnvironment _environment;
 
-    public AvatarManager(IAvatarStore avatarStore, IConfiguration config)
+    public AvatarManager(IAvatarStore avatarStore, IConfiguration config, IHostEnvironment environment)
     {
         _avatarStore = avatarStore;
         _config = config;
+        _environment = environment;
     }
 
     public async Task<AZOAResult<IAvatar>> RegisterAsync(AvatarRegisterModel model, AZOARequest? request = null)
@@ -105,13 +109,15 @@ public class AvatarManager : IAvatarManager
         var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, avatar.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, avatar.Email),
             new Claim(ClaimTypes.Name, avatar.Username),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        StampOperatorAdminIfSeeded(avatar, claims);
 
         var token = new JwtSecurityToken(
             issuer: _config["Jwt:Issuer"],
@@ -121,5 +127,44 @@ public class AvatarManager : IAvatarManager
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    /// <summary>
+    /// H2 admin-token mint bootstrap: stamps <see cref="AzoaScopes.Operator"/> +
+    /// the interim <c>role=Admin</c> claim onto the JWT for exactly the
+    /// configured seed avatar. See Services/Admin/AGENTS.md for the fail-closed
+    /// rationale and NODE-HOST.md §8.9 for the operator procedure.
+    /// </summary>
+    private void StampOperatorAdminIfSeeded(IAvatar avatar, List<Claim> claims)
+    {
+        var options = _config.GetSection(AdminBootstrapOptions.SectionName).Get<AdminBootstrapOptions>()
+                      ?? new AdminBootstrapOptions();
+
+        var hasEmail = !string.IsNullOrWhiteSpace(options.SeedEmail);
+        var hasSecret = !string.IsNullOrWhiteSpace(options.SeedSecret);
+
+        if (!hasEmail && !hasSecret)
+            return; // bootstrap OFF — the common, safe steady state.
+
+        if (hasEmail != hasSecret)
+        {
+            // Fail-closed: a PARTIAL config (one of the two set) never stamps.
+            // In Production this is also treated as a hard misconfiguration —
+            // SeedAdminHostedService already throws at boot for this case, so
+            // reaching a live request with a partial config in Production means
+            // config was hot-reloaded after boot; refuse here too rather than
+            // silently ignore it.
+            if (_environment.IsProduction())
+                throw new InvalidOperationException(
+                    "AdminBootstrap is misconfigured (SeedEmail/SeedSecret must both be set or both unset).");
+            return;
+        }
+
+        if (!string.Equals(avatar.Email, options.SeedEmail, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        claims.Add(new Claim("scope", AzoaScopes.Operator));
+        claims.Add(new Claim("role", "Admin"));
+        claims.Add(new Claim(ClaimTypes.Role, "Admin"));
     }
 }

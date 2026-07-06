@@ -238,6 +238,52 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// G2 — concurrent TryClaimDueStepAsync on the SAME due step: exactly ONE
+    /// caller wins, all others get null, and NOBODY throws. This is the value-safety
+    /// proof for the now-live saga processor: under N racing processor ticks on
+    /// SurrealDB 3.x RocksDB, the conditional-UPDATE single-winner claim can throw a
+    /// retryable "Transaction conflict: Resource busy" instead of cleanly resolving.
+    /// The shared SurrealTransientConflict retry must absorb that so the invariant
+    /// (one winner, no unhandled exception) holds — mirrors the idempotency store's
+    /// TryClaim_Concurrent_ExactlyOneWins.
+    /// </summary>
+    [SkippableFact]
+    public async Task TryClaimDueStep_Concurrent_ExactlyOneWins_NoConflictThrown()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        const int concurrency = 8;
+        var enq = await _store.EnqueueAsync(
+            "S", "Contended", UniqueCorrelation(), UniqueIdempotency(),
+            "{}", false, CancellationToken.None);
+
+        var now = DateTime.UtcNow.AddSeconds(5);
+
+        // Fire N concurrent claims at the SAME step. Each ticket runs the
+        // conditional single-winner UPDATE; the RocksDB engine may raise a
+        // retryable transaction conflict on the losers, which the store's shared
+        // retry must swallow (resolving to affected==0 → null) rather than throw.
+        var tasks = Enumerable
+            .Range(0, concurrency)
+            .Select(_ => Task.Run(() =>
+                _store.TryClaimDueStepAsync(enq.Id, now, CancellationToken.None)))
+            .ToArray();
+
+        // No task may throw — a leaked transaction conflict would surface here.
+        Func<Task> act = async () => await Task.WhenAll(tasks);
+        await act.Should().NotThrowAsync(
+            "concurrent claims must resolve via retry, never leak a transaction conflict");
+
+        var winners = tasks.Count(t => t.Result is not null);
+        winners.Should().Be(1, "exactly one concurrent tick may win the single-winner claim");
+
+        // The winner's row is InProgress and was not perturbed by the losers.
+        var final = await _store.GetAsync(enq.Id, CancellationToken.None);
+        final!.Status.Should().Be(StepStatus.InProgress);
+        final.ClaimedAt.Should().NotBeNull();
+    }
+
+    /// <summary>
     /// CompleteStepAsync transitions InProgress → Completed and stores the
     /// output. A second call (now on a Completed row) is a no-op because the
     /// WHERE status==InProgress predicate matches nothing.
@@ -493,6 +539,84 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         resumed!.Status.Should().Be(StepStatus.Pending, "the fired timer returns the step to Pending");
     }
 
+    // ── Operator / dead-letter surface (Phase-F) ─────────────────────────────
+
+    /// <summary>
+    /// ListByStatusesAsync returns only rows in the requested statuses (a
+    /// DeadLettered row appears; a Pending one does not) — the operator dead-letter
+    /// inspection query against a real engine.
+    /// </summary>
+    [SkippableFact]
+    public async Task ListByStatuses_ReturnsOnlyRequestedStatuses()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var dead = await _store.EnqueueAsync("S", "Doomed", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
+        await _store.TryClaimDueStepAsync(dead.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        await _store.DeadLetterStepAsync(dead.Id, "terminal", CancellationToken.None);
+
+        var pending = await _store.EnqueueAsync("S", "Fresh", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
+
+        var deadLetters = await _store.ListByStatusesAsync(new[] { StepStatus.DeadLettered }, 100, CancellationToken.None);
+
+        deadLetters.Select(s => s.Id).Should().Contain(dead.Id);
+        deadLetters.Select(s => s.Id).Should().NotContain(pending.Id, "a Pending row is not in the dead-letter list");
+        deadLetters.Single(s => s.Id == dead.Id).LastError.Should().Be("terminal");
+    }
+
+    /// <summary>
+    /// RequeueStepAsync revives a DeadLettered row to Pending (due now, mirror
+    /// cleared) so the due scan claims it again — and refuses a Cancelled row.
+    /// </summary>
+    [SkippableFact]
+    public async Task Requeue_RevivesDeadLettered_AndRefusesCancelled()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var dead = await _store.EnqueueAsync("S", "Doomed", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
+        await _store.TryClaimDueStepAsync(dead.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        await _store.DeadLetterStepAsync(dead.Id, "terminal", CancellationToken.None);
+
+        (await _store.RequeueStepAsync(dead.Id, CancellationToken.None)).Should().BeTrue();
+        var revived = await _store.GetAsync(dead.Id, CancellationToken.None);
+        revived!.Status.Should().Be(StepStatus.Pending);
+        revived.DeadLettered.Should().BeFalse("requeue clears the dead-letter mirror");
+
+        var due = await _store.GetDueStepIdsAsync(DateTime.UtcNow.AddSeconds(1), 10, TimeSpan.FromMinutes(5), CancellationToken.None);
+        due.Should().Contain(dead.Id, "a requeued step is due in the next scan");
+
+        // Cancel it, then a requeue must refuse (terminal human decision).
+        await _store.CancelStepAsync(dead.Id, "gave up", CancellationToken.None);
+        (await _store.RequeueStepAsync(dead.Id, CancellationToken.None))
+            .Should().BeFalse("a Cancelled step is not revivable");
+    }
+
+    /// <summary>
+    /// CancelStepAsync terminally marks a DeadLettered row Cancelled (records the
+    /// reason), and is a no-op on a Completed row.
+    /// </summary>
+    [SkippableFact]
+    public async Task Cancel_MarksDeadLetteredCancelled_AndNoOpsOnCompleted()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var dead = await _store.EnqueueAsync("S", "Doomed", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
+        await _store.TryClaimDueStepAsync(dead.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        await _store.DeadLetterStepAsync(dead.Id, "terminal", CancellationToken.None);
+
+        (await _store.CancelStepAsync(dead.Id, "operator abandon", CancellationToken.None)).Should().BeTrue();
+        var cancelled = await _store.GetAsync(dead.Id, CancellationToken.None);
+        cancelled!.Status.Should().Be(StepStatus.Cancelled);
+        cancelled.LastError.Should().Be("operator abandon");
+
+        // A Completed step cannot be cancelled.
+        var done = await _store.EnqueueAsync("S", "Done", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
+        await _store.TryClaimDueStepAsync(done.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        await _store.CompleteStepAsync(done.Id, "{}", CancellationToken.None);
+        (await _store.CancelStepAsync(done.Id, "too late", CancellationToken.None))
+            .Should().BeFalse("a Completed step is not cancellable");
+    }
+
     // ── Test-only helpers (direct SurrealQL through the same executor) ────────
 
     /// <summary>
@@ -591,7 +715,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
             DEFINE FIELD IF NOT EXISTS step_name            ON saga_steps TYPE string ASSERT $value != NONE AND $value != "";
             DEFINE FIELD IF NOT EXISTS step_idempotency_key ON saga_steps TYPE string ASSERT $value != NONE AND $value != "";
             DEFINE FIELD IF NOT EXISTS payload              ON saga_steps TYPE string;
-            DEFINE FIELD IF NOT EXISTS status               ON saga_steps TYPE string DEFAULT "Pending" ASSERT $value INSIDE ["Pending","InProgress","Completed","Compensating","DeadLettered","Parked"];
+            DEFINE FIELD IF NOT EXISTS status               ON saga_steps TYPE string DEFAULT "Pending" ASSERT $value INSIDE ["Pending","InProgress","Completed","Compensating","DeadLettered","Parked","Cancelled"];
             DEFINE FIELD IF NOT EXISTS is_compensation      ON saga_steps TYPE bool DEFAULT false;
             DEFINE FIELD IF NOT EXISTS attempt_count        ON saga_steps TYPE int DEFAULT 0;
             DEFINE FIELD IF NOT EXISTS next_run_at          ON saga_steps TYPE datetime;

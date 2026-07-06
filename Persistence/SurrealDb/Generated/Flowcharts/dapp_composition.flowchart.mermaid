@@ -6,6 +6,8 @@ graph LR
     %% Nodes in this slice
     dapp_series["dapp_series: Node"]:::nodeClass
     dapp_series_quest["dapp_series_quest: Node"]:::nodeClass
+    ecosystem["ecosystem: Node"]:::nodeClass
+    ecosystem_node["ecosystem_node: Node"]:::nodeClass
 
     %% Cross-slice targets (rendered as ghost nodes)
     avatar["avatar: Node (external)"]:::externalNode
@@ -17,6 +19,10 @@ graph LR
     dapp_series -- "star_odk_id [N:0..1]" --> star_odk
     dapp_series_quest -- "dapp_series_id [N:1]" --> dapp_series
     dapp_series_quest -- "quest_id [N:1]" --> quest
+    ecosystem -- "avatar_id [N:1]" --> avatar
+    ecosystem -- "star_odk_id [N:1]" --> star_odk
+    ecosystem_node -- "ecosystem_id [N:1]" --> ecosystem
+    ecosystem_node -- "parent_node_id [N:0..1]" --> ecosystem_node
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
     classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;

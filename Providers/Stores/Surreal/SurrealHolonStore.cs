@@ -214,31 +214,17 @@ public sealed class SurrealHolonStore : IHolonStore
 
     // ── Mapping ───────────────────────────────────────────────────────────────
 
-
-
     private static HolonPoco ToPoco(IHolon h)
     {
-        // Serialize Metadata (Dictionary<string,string>) to JsonElement? for option<object>.
-        JsonElement? metadataJson = null;
-        if (h.Metadata is { Count: > 0 })
-        {
-            var raw = JsonSerializer.Serialize(h.Metadata, SurrealJsonOptions.Default);
-            using var doc = JsonDocument.Parse(raw);
-            metadataJson = doc.RootElement.Clone();
-        }
+        // ALWAYS serialize (empty → `{}`) so the SET-based upsert REPLACES the
+        // column; see Providers/Stores/Surreal/AGENTS.md §set-omits-null.
+        var metadataJson = JsonSerializer.SerializeToElement(h.Metadata, SurrealJsonOptions.Default);
 
-        // Serialize PeerHolonIds (List<Guid>) as a JSON array of BARE hex ids
-        // for the `array<string>` schema field. NOT `holon:<id>` links — a
-        // `table:id`-shaped element is coerced to a record id by 3.x even inside
-        // an `array<string>` column, which the schema then rejects.
-        JsonElement? peerIdsJson = null;
-        if (h.PeerHolonIds is { Count: > 0 })
-        {
-            var strs = h.PeerHolonIds.Select(SurrealId.ToSurrealId).ToList();
-            var raw  = JsonSerializer.Serialize(strs, SurrealJsonOptions.Default);
-            using var doc = JsonDocument.Parse(raw);
-            peerIdsJson = doc.RootElement.Clone();
-        }
+        // BARE hex ids for the `array<string>` field (a `table:id`-shaped element
+        // is coerced to a record id by 3.x and rejected); always serialize
+        // (empty → `[]`) — see AGENTS.md §set-omits-null.
+        var peerIdsJson = JsonSerializer.SerializeToElement(
+            h.PeerHolonIds.Select(SurrealId.ToSurrealId).ToList(), SurrealJsonOptions.Default);
 
         return new HolonPoco
         {

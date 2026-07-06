@@ -119,10 +119,10 @@ deploy step already applied them).
 
 | Aspect | Value |
 |---|---|
-| Image | `surrealdb/surrealdb:v1.5.4` (pin matches the rest of the stack; a 2.x/3.x bump is tracked at `surrealdb-major-upgrade`). |
+| Image | `surrealdb/surrealdb:v3.1.4` (pin matches the rest of the stack; the 1.5.4→3.x cutover tracked at `surrealdb-major-upgrade` is closed). |
 | Start command | `start --user root --pass <pass> --bind 0.0.0.0:8000 rocksdb:///data/db` |
 | Volume | Mount a persistent volume at `/data` so the RocksDB store survives restarts. |
-| Durability | RocksDB syncs its WAL per commit (`SURREAL_SYNC_DATA: "true"`), which satisfies the G1 durability gate — this is what `SurrealDb__G1DurabilityAcknowledged=true` on the API acknowledges. The 1.5.4 slim image lacks the `surrealkv` engine; RocksDB is the durable path. Review the storage URI + sync flags at deploy time, since the fsync mode is not introspectable at runtime. |
+| Durability | RocksDB syncs its WAL per commit (`SURREAL_SYNC_DATA: "true"`), which satisfies the G1 durability gate — this is what `SurrealDb__G1DurabilityAcknowledged=true` on the API acknowledges. **G1 is live and green on SurrealDB 3.1.4** (re-verified during final-hardening-cutover). RocksDB remains the durable path; review the storage URI + sync flags at deploy time, since the fsync mode is not introspectable at runtime. |
 
 ---
 
@@ -182,3 +182,26 @@ run; repeat invocations are no-ops when the ledger matches the on-disk files.
 | "What invariants does the bridge enforce?" | [docs/RESIDUAL-RISK-RUNBOOK.md](docs/RESIDUAL-RISK-RUNBOOK.md) |
 | "Which track is which?" | [conductor/tracks.md](conductor/tracks.md) |
 | "Historical RUNBOOK status snapshots" | [conductor/retros/runbook-status-2026-06-12.md](conductor/retros/runbook-status-2026-06-12.md) |
+
+---
+
+## 5. Doc-drift audit corrections (final-hardening-cutover Phase H, H8)
+
+Two independent fresh-eyes audits (2026-07-05) were misled by stale operator
+docs into flagging items that were, in fact, already resolved. Recorded here so
+neither claim resurfaces:
+
+1. **Sagas default is `Enabled=true`, not `false`.** `docs/GO-TO-PROD.md` (dated
+   2026-05-18) and its "no consumer until durable-saga Phase 2" premise are
+   superseded — the durable-quest engine IS a saga consumer
+   (`QuestManager`/`SagaProcessorHostedService`), so `Sagas:Enabled=true` ships
+   as the deliberate default with a boot guard. See
+   [[durable-quests-inert-sagas-disabled]] for the fix history.
+2. **The G1 durability gate is live and green on SurrealDB 3.1.4.** RocksDB WAL
+   sync (`SURREAL_SYNC_DATA: "true"`) + `SurrealDb__G1DurabilityAcknowledged=true`
+   were re-verified against the 3.1.4 pin during `final-hardening-cutover`; the
+   gate is not stale or unverified.
+
+`docs/GO-TO-PROD.md` and `docs/RESIDUAL-RISK-RUNBOOK.md` now carry deprecation
+banners pointing to `docs/NODE-HOST.md` as the authoritative operator guide;
+this section is the durable record of why.

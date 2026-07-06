@@ -28,7 +28,10 @@ export type ApiController =
   | "starodk"
   | "quest"
   | "apikey"
-  | "tenant";
+  | "tenant"
+  | "holontypes"
+  | "sagaoperator"
+  | "keyrotation";
 
 /**
  * Resolves the API path for a given controller and sub-path.
@@ -134,4 +137,21 @@ export const API_PATHS = {
   // Tenant onboarding (tenant-onboarding) — child credential issuance the
   // `forActor` actor abstraction threads (tenant acts FOR a child avatar).
   TENANT_CHILD_CREDENTIAL: (avatarId: string) => `/api/tenant/avatars/${avatarId}/credential`,
+
+  // Opt-in Holon AssetType registry (final-hardening-cutover F5). Reads are open
+  // to any authenticated caller; register/deactivate/delete are Operator-scoped.
+  HOLON_TYPES_LIST: "/api/holon-types",
+  HOLON_TYPES_GET: (assetType: string) => `/api/holon-types/${encodeURIComponent(assetType)}`,
+  HOLON_TYPES_REGISTER: "/api/holon-types",
+  HOLON_TYPES_DEACTIVATE: (assetType: string) => `/api/holon-types/${encodeURIComponent(assetType)}/deactivate`,
+  HOLON_TYPES_DELETE: (assetType: string) => `/api/holon-types/${encodeURIComponent(assetType)}`,
+
+  // Saga operator dead-letter surface (SagaOperatorController, final-hardening
+  // Phase-F). Operator-scoped; list/requeue/cancel the generic saga-step outbox.
+  SAGA_DEAD_LETTERS: "/api/admin/sagas/dead-letters",
+  SAGA_REQUEUE: (id: string) => `/api/admin/sagas/${id}/requeue`,
+  SAGA_CANCEL: (id: string) => `/api/admin/sagas/${id}/cancel`,
+
+  // Wallet wrapping-key rotation (KeyRotationController, final-hardening B5). Operator-scoped.
+  KEY_ROTATION_ROTATE: "/api/admin/key-rotation/rotate",
 } as const;

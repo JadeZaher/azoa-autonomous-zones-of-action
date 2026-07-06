@@ -1,3 +1,12 @@
+---
+type: spec
+track: user-sovereign-identity
+status: shipped
+shipped: 2026-06-22
+archived: 2026-07-05
+review: done (commit 10e5dad, 2026-06-22)
+---
+
 # Track: user-sovereign-identity
 
 ## Overview
@@ -137,15 +146,17 @@ A user claims an avatar the tenant provisioned for them, severing tenant custody
       `dotnet build`: 0 errors, 28 warnings = baseline, 0 new. Unit tests: 914 pass
       (2 pre-existing unrelated failures — see Deviations).
 
-## SECURITY-REVIEW REQUIRED (track-1 AC7 / track-2 AC11)
+## SECURITY-REVIEW REQUIRED (track-1 AC7 / track-2 AC11) — ✅ DONE (commit `10e5dad`, 2026-06-22)
 
-This change rewires auth, custody, and value-signing. Per the spec it **warrants a
-separate security-review pass before it is considered done** — the custody seam was
-implemented and unit-tested by the same lane, so it MUST NOT be self-approved.
-Reviewer focus: the `KeyCustodyService` consent chokepoint + `TenantConsentGate`
-fail-closed paths; the AC4b sign-path enumeration (that no path bypasses the gate);
-the wallet-challenge domain separation + atomic nonce consume; the claim watermark
-cut; and the webhook SSRF/HMAC/per-tenant isolation.
+This change rewires auth, custody, and value-signing, so it **warranted a separate
+security-review pass before being considered done** — the custody seam was implemented
+and unit-tested by the same lane, so it could not be self-approved. That pass was
+**performed and its findings remediated in commit `10e5dad` (2026-06-22)**: the
+`KeyCustodyService` consent chokepoint + `TenantConsentGate` fail-closed paths, the
+AC4b sign-path enumeration (no path bypasses the gate), the wallet-challenge domain
+separation + atomic nonce consume, the claim watermark cut, and the webhook
+SSRF/HMAC/per-tenant isolation were all reviewed and hardened. See
+[[consent-gate-architecture]]. AC7 (this track) is therefore satisfied.
 
 ## Out of scope / follow-ups
 

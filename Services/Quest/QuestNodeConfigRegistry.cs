@@ -72,6 +72,10 @@ public static class QuestNodeConfigRegistry
             [QuestNodeType.Transfer]             = typeof(TransferNodeConfig),
             [QuestNodeType.Refund]               = typeof(RefundNodeConfig),
             [QuestNodeType.FungibleTokenCreate]  = typeof(FungibleTokenCreateNodeConfig),
+
+            // Fractionalization rails (final-hardening D1) — route through the real bridge.
+            [QuestNodeType.Bridge]               = typeof(BridgeNodeConfig),
+            [QuestNodeType.Back]                 = typeof(BackNodeConfig),
         };
 
     /// <summary>

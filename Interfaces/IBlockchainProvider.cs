@@ -166,11 +166,11 @@ public interface IBlockchainProvider
         string tokenId, int amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default);
 
-    /// <summary>
-    /// Verify a cross-chain proof/message from another chain.
-    /// </summary>
-    Task<AZOAResult<bool>> VerifyBridgeProofAsync(
-        string proofData, string sourceChain, string targetChainId, CancellationToken ct = default);
+    // Cross-chain proof/VAA verification is intentionally NOT a provider method.
+    // The single hardened verification path is WormholeAdapter +
+    // Secp256k1VaaSignatureVerifier (fail-closed guardian-quorum check). A
+    // provider-level verifier previously returned `true` unconditionally; it was
+    // removed so no always-true verifier can exist. See Providers/Blockchain/AGENTS.md.
 
     /// <summary>
     /// Check if this provider supports bridging operations natively.

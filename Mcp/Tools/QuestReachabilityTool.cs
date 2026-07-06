@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Mcp.Tools;
@@ -55,10 +56,12 @@ public sealed class QuestReachabilityTool : IMcpTool
                 !Guid.TryParse(fromNodeEl.GetString(), out var fromNodeId))
                 return Error("from_node_id is required and must be a valid UUID.");
 
-            var questIdStr   = SurrealId.ToSurrealId(questId);
-            var fromNodeStr  = SurrealId.ToSurrealId(fromNodeId);
-            // AvatarId comes exclusively from context — privilege-escalation gate (line 62)
-            var avatarIdStr  = SurrealId.ToSurrealId(context.AvatarId);
+            // Bind the `table:hex` link form: record ids and record<> link columns
+            // never equal a bare-hex string. See Mcp/AGENTS.md §record-id-binding.
+            var questIdStr   = SurrealLink.ToLink("quest", SurrealId.ToSurrealId(questId))!;
+            var fromNodeStr  = SurrealLink.ToLink("quest_node", SurrealId.ToSurrealId(fromNodeId))!;
+            // AvatarId comes exclusively from context — privilege-escalation gate
+            var avatarIdStr  = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(context.AvatarId))!;
 
             // ── Ownership check: fetch quest head ─────────────────────────
             var questQ = SurrealQuery

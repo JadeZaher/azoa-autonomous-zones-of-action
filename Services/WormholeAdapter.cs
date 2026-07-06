@@ -33,11 +33,15 @@ public class WormholeAdapter : IWormholeAdapter
     /// </summary>
     private readonly IVaaSignatureVerifier? _signatureVerifier;
 
+    /// <summary>Config-driven network for provider resolution (see Services/AGENTS.md §bridge).</summary>
+    private readonly ChainNetwork _network;
+
     public WormholeAdapter(
         HttpClient guardianClient,
         IBlockchainProviderFactory providerFactory,
         IOptions<WormholeConfig> config,
         ILogger<WormholeAdapter> logger,
+        IConfiguration appConfig,
         IVaaSignatureVerifier? signatureVerifier = null)
     {
         _guardianClient = guardianClient;
@@ -45,6 +49,12 @@ public class WormholeAdapter : IWormholeAdapter
         _config = config.Value;
         _logger = logger;
         _signatureVerifier = signatureVerifier;
+        // Single config-driven network for provider resolution — mirrors
+        // CrossChainBridgeService so lock (source) and redeem (target) resolve
+        // the SAME network the bridge stamped, never a hardcoded Devnet.
+        _network = Enum.TryParse<ChainNetwork>(
+            appConfig.GetValue<string>("Blockchain:DefaultNetwork"), ignoreCase: true, out var net)
+            ? net : ChainNetwork.Devnet;
     }
 
     public async Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
@@ -59,7 +69,7 @@ public class WormholeAdapter : IWormholeAdapter
         var sourceMapping = _config.ChainMappings[sourceChain];
         var targetMapping = _config.ChainMappings[targetChain];
 
-        var sourceProvider = _providerFactory.GetProvider(sourceChain, ChainNetwork.Devnet);
+        var sourceProvider = _providerFactory.GetProvider(sourceChain, _network);
 
         // Lock the asset on the source chain via the Wormhole Core Bridge.
         // The provider's LockForBridgeAsync should publish a Wormhole message
@@ -338,7 +348,7 @@ public class WormholeAdapter : IWormholeAdapter
         if (verifyResult.IsError)
             return Error<WormholeRedemptionResult>($"VAA verification failed: {verifyResult.Message}");
 
-        var targetProvider = _providerFactory.GetProvider(targetChain, ChainNetwork.Devnet);
+        var targetProvider = _providerFactory.GetProvider(targetChain, _network);
 
         // Submit the VAA to the target chain's Token Bridge.
         // The provider's MintWrappedAsync handles the on-chain redemption.
@@ -512,13 +522,23 @@ public class WormholeAdapter : IWormholeAdapter
         return true;
     }
 
+    /// <summary>
+    /// Canonicalize an emitter address to lowercase 64-hex (`^[0-9a-f]{64}$`) — the
+    /// exact shape the consumed_vaa_ledger schema ASSERT enforces. This is the single
+    /// seam that produces the emitter written into the replay ledger, so canonicalizing
+    /// HERE guarantees the ASSERT never false-rejects a legit redeem over mere casing or
+    /// an `0x` prefix. Strips a leading `0x`, lowercases, then left-pads to 64 hex chars
+    /// (e.g. Algorand app IDs / EVM checksummed hex). See Services/AGENTS.md §bridge.
+    /// </summary>
     private static string NormalizeEmitterAddress(string address)
     {
-        // Wormhole expects 32-byte hex-encoded emitter addresses.
-        // Pad shorter addresses (e.g., Algorand app IDs) to 64 hex chars.
-        if (address.Length < 64)
-            return address.PadLeft(64, '0');
-        return address;
+        var hex = address.Trim();
+        if (hex.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            hex = hex.Substring(2);
+        hex = hex.ToLowerInvariant();
+        if (hex.Length < 64)
+            hex = hex.PadLeft(64, '0');
+        return hex;
     }
 
     private static long DeriveSequenceFromTxHash(string txHash)

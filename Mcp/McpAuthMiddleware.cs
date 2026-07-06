@@ -1,6 +1,6 @@
-namespace AZOA.WebAPI.Mcp;
-
 using System.Security.Claims;
+
+namespace AZOA.WebAPI.Mcp;
 
 /// <summary>
 /// Extracts the AvatarId claim from the authenticated HttpContext and stashes

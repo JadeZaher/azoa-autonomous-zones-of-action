@@ -226,11 +226,9 @@ public sealed class SurrealNftStore : INftStore
     {
         try
         {
-            // Param name MUST be lowercase: SurrealDB 3.x case-folds the `$token`
-            // in the query but NOT the RPC vars key, so a mixed-case name binds to
-            // NONE and the predicate silently matches nothing.
-            var q = SurrealQuery.Of("SELECT * FROM holon_nft_binding WHERE avatar_nft_id = $avatar_nft_id")
-                .WithParam("avatar_nft_id", SurrealId.ToSurrealId(avatarNFTId));
+            var avatarNftId = SurrealId.ToSurrealId(avatarNFTId);
+            var q = SurrealQuery<SurrealHolonBinding>.From()
+                .Where(b => b.AvatarNftId == avatarNftId);
 
             var rows = await _executor.QueryAsync<SurrealHolonBinding>(q, ct);
             return new AZOAResult<IEnumerable<IHolonNFTBinding>>
@@ -328,9 +326,9 @@ public sealed class SurrealNftStore : INftStore
     {
         try
         {
-            // Lowercase param name — see GetHolonNFTBindingsByAvatarNFTAsync.
-            var q = SurrealQuery.Of("SELECT * FROM wallet_nft_binding WHERE avatar_nft_id = $avatar_nft_id")
-                .WithParam("avatar_nft_id", SurrealId.ToSurrealId(avatarNFTId));
+            var avatarNftId = SurrealId.ToSurrealId(avatarNFTId);
+            var q = SurrealQuery<SurrealWalletBinding>.From()
+                .Where(b => b.AvatarNftId == avatarNftId);
 
             var rows = await _executor.QueryAsync<SurrealWalletBinding>(q, ct);
             return new AZOAResult<IEnumerable<IWalletNFTBinding>>
@@ -376,13 +374,9 @@ public sealed class SurrealNftStore : INftStore
 
     private static GeneratedNft ToNftPoco(IAvatarNFT n)
     {
-        JsonElement? attributesJson = null;
-        if (n.Attributes.Count > 0)
-        {
-            var raw = JsonSerializer.Serialize(n.Attributes, SurrealJsonOptions.Default);
-            using var doc = JsonDocument.Parse(raw);
-            attributesJson = doc.RootElement.Clone();
-        }
+        // ALWAYS serialize (empty → `{}`) so the SET-based upsert REPLACES the
+        // column; see Providers/Stores/Surreal/AGENTS.md §set-omits-null.
+        JsonElement? attributesJson = JsonSerializer.SerializeToElement(n.Attributes, SurrealJsonOptions.Default);
 
         return new GeneratedNft
         {

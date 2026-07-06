@@ -61,6 +61,12 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public StatusKind Status { get; set; }
 
+        // FLEXIBLE: the parameters bag holds arbitrary caller-supplied keys
+        // (TokenUri, Amount, AssetType, WalletAddress, TxHash, ...). A bare
+        // SCHEMAFULL option<object> rejects any undeclared sub-field with
+        // "Found field 'parameters.X', but no such field exists" — FLEXIBLE lets
+        // the object carry arbitrary keys. Mirrors Quest.Metadata.
+        [Column(Flexible = true)]
         [FieldGroup("Opaque parameters bag (Dictionary<string,string>)")]
         public JsonElement? Parameters { get; set; }
 

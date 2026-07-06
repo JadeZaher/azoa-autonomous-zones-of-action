@@ -41,6 +41,10 @@ public class ChainCapabilityFlagInvariantTests
         QuestNodeType.Transfer,
         QuestNodeType.Refund,
         QuestNodeType.FungibleTokenCreate,
+        // Fractionalization rails (final-hardening D1): both reach the real
+        // cross-chain bridge (an on-chain lock/burn), so both are Tier-2.
+        QuestNodeType.Bridge,
+        QuestNodeType.Back,
     };
 
     /// <summary>

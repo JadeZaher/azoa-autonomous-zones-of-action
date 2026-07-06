@@ -1,6 +1,6 @@
-namespace AZOA.WebAPI.Mcp;
-
 using System.Text.Json;
+
+namespace AZOA.WebAPI.Mcp;
 
 public interface IMcpTool
 {

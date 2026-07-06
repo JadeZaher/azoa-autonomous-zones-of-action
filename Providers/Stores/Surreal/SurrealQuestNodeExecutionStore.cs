@@ -328,8 +328,8 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
     private static QuestNodeExecutionPoco FromDomain(QuestNodeExecution e) => new()
     {
         Id         = SurrealId.ToSurrealId(e.Id),
-        RunId      = SurrealLink.ToLink("quest_run", SurrealId.ToSurrealId(e.RunId)),
-        NodeId     = SurrealLink.ToLink("quest_node", SurrealId.ToSurrealId(e.NodeId)),
+        RunId      = SurrealLink.ToLink("quest_run", SurrealId.ToSurrealId(e.RunId))!,
+        NodeId     = SurrealLink.ToLink("quest_node", SurrealId.ToSurrealId(e.NodeId))!,
         State      = e.State.ToString(),
         Output     = e.Output,
         Error      = e.Error,
@@ -358,14 +358,6 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
 
     private static Guid FromSurrealId(string id)
         => Guid.TryParseExact(id, "N", out var g) ? g : Guid.Empty;
-
-    private static string StripIdPrefix(string raw)
-    {
-        if (string.IsNullOrEmpty(raw)) return raw;
-        var colon = raw.IndexOf(':');
-        if (colon < 0 || colon >= raw.Length - 1) return raw;
-        return raw[(colon + 1)..].Trim('⟨', '⟩');
-    }
 
     private static DateTimeOffset ToUtcOffset(DateTime dt)
     {

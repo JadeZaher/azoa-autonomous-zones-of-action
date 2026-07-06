@@ -1,3 +1,12 @@
+---
+type: spec
+track: tenant-consent-delegation
+status: shipped
+shipped: 2026-06-22
+archived: 2026-07-05
+review: done (commit 10e5dad, 2026-06-22)
+---
+
 # Track: tenant-consent-delegation
 
 ## Overview
@@ -230,10 +239,12 @@ decision.
       `consent_audit` row (`ConsentManager` + `TenantConsentGate`), independent of the
       best-effort webhook. Tests assert `Granted`/`Revoked`/`TenantSignAllowed`/
       `TenantSignDenied` rows.
-- [~] AC11 — Security review: **PENDING a separate adversarial pass — the custody seam
-      MUST NOT be self-approved** (see track-1 SECURITY-REVIEW note). `dotnet build`:
-      0 errors, 28 warnings = baseline, 0 new. Unit tests: 914 pass (2 pre-existing
-      unrelated failures).
+- [x] AC11 — Security review: **DONE + remediated in commit `10e5dad` (2026-06-22)** —
+      a separate adversarial pass reviewed the `KeyCustodyService` consent chokepoint,
+      the AC4b sign-path enumeration, wallet-challenge domain separation, the claim
+      watermark, and webhook SSRF/HMAC isolation; findings were remediated in the same
+      commit (see [[consent-gate-architecture]]). `dotnet build`: 0 errors, 28 warnings
+      = baseline, 0 new. Unit tests: 914 pass (2 pre-existing unrelated failures).
 
 ## Dependencies
 

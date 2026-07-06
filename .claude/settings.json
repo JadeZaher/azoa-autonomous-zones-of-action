@@ -17,7 +17,16 @@
       "Bash(grep -c '^{' \"/mnt/c/Users/atooz/Programming/Projects/azoa/tests/AZOA.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl\" 2>/dev/null || wc -l < \"/mnt/c/Users/atooz/Programming/Projects/azoa/tests/AZOA.WebAPI.LiveTests/live-tests/Stress_RapidOperations.jsonl\")",
       "Read(//mnt/c/Users/atooz/Programming/Projects/azoa/tests/AZOA.WebAPI.LiveTests/live-tests/**)",
       "Bash(curl -sS -m 3 http://localhost:5000/health)",
-      "Bash(podman pull *)"
+      "Bash(podman pull *)",
+      "Bash(AZOA_REGENERATE_GOLDENS=1 dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj --filter \"FullyQualifiedName~AttributePocoByteEquivalenceTests\" -v q)",
+      "Bash(curl -s -X POST http://localhost:8000/sql -H \"NS: g5manualtest2\" -H \"DB: test\" -u root:root --data-raw \"SELECT * FROM thing;\")",
+      "Bash(curl -s -X POST http://localhost:8000/sql -u root:root --data-raw \"USE NS g5manualtest2 DB test; SELECT * FROM thing;\")",
+      "Bash(curl -s -X POST http://localhost:8000/sql -H \"NS: g5manualtest2\" -H \"DB: test\" -u root:root --data-raw \"REMOVE NAMESPACE g5manualtest2;\")",
+      "Bash(rm -f /c/tmp/g5t2.surql)",
+      "Bash(cat > *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\atooz\\Programming\\Projects\\oasis-sleek\\.omc\\reviews"
     ]
   }
 }

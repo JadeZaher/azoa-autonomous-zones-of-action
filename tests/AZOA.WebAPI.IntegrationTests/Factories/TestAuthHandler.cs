@@ -43,7 +43,12 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
             new(ClaimTypes.NameIdentifier, avatarId),
             new(ClaimTypes.Name, "testuser"),
             new(ClaimTypes.Email, "test@azoa.local"),
-            new("sub", avatarId)
+            new("sub", avatarId),
+            // Real JWTs carry an explicit "AvatarId" claim; some controllers
+            // (e.g. AvatarNFTController.MintAvatarNFT) read it directly via
+            // Guid.Parse(FindFirst("AvatarId")). Emit it so the test principal
+            // matches production claim shape (absence caused Guid.Parse("") 500s).
+            new("AvatarId", avatarId)
         };
 
         var identity = new ClaimsIdentity(claims, SchemeName);

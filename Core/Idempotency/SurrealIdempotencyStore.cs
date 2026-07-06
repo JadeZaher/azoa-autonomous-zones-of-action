@@ -1,4 +1,5 @@
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Idempotency;
 using PkgIdempotency = SurrealForge.Client.Idempotency;
@@ -38,15 +39,24 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
         _ledger = new PkgIdempotency.SurrealIdempotencyLedger(executor, Table);
     }
 
+    // SurrealDB 3.x (RocksDB) surfaces concurrent single-winner claim collisions
+    // as a RETRYABLE "Transaction conflict: Resource busy" error instead of
+    // serializing them the way 1.5.x did (see memory [[surrealdb-3x-upgrade-progress]]).
+    // The bounded retry lives in the shared SurrealTransientConflict primitive so
+    // the saga single-winner claim can reuse the identical contract; on retry the
+    // winner's row already exists, so the loser resolves cleanly to Won=false via
+    // the ledger's existing-record path.
+
     /// <inheritdoc />
-    public async Task<IdempotencyClaim> TryClaimAsync(
+    public Task<IdempotencyClaim> TryClaimAsync(
         string key,
         string operationType,
         CancellationToken ct)
-    {
-        var claim = await _ledger.TryClaimAsync(key, operationType, ct);
-        return new IdempotencyClaim(claim.Won, ToDomain(claim.Record));
-    }
+        => SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var claim = await _ledger.TryClaimAsync(key, operationType, ct);
+            return new IdempotencyClaim(claim.Won, ToDomain(claim.Record));
+        }, ct);
 
     /// <inheritdoc />
     public Task CompleteAsync(string key, string resultPayload, CancellationToken ct)

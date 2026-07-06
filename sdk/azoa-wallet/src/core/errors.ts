@@ -119,3 +119,17 @@ export class SdkError extends Error {
     return lines.join("\n");
   }
 }
+
+/**
+ * True when `error` is the optimistic-concurrency conflict a quest
+ * publish/unpublish/run-start returns after losing a race on `Quest.Version`
+ * (final-hardening F6). The backend has no distinct HTTP status for this case
+ * (plain 400 `AZOAResult` with a "conflict" message), so detection is by
+ * message substring. Callers should reload the quest and retry.
+ */
+export function isQuestConflict(error: SdkError): boolean {
+  return (
+    error.code === SdkErrorCode.API_ERROR &&
+    /(publish|unpublish|quest run) conflict/i.test(error.message)
+  );
+}

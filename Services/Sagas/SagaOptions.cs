@@ -17,18 +17,12 @@ public sealed class SagaOptions
     /// <summary>Configuration section name: <c>"Sagas"</c>.</summary>
     public const string SectionName = "Sagas";
 
-    /// <summary>
-    /// Whether the background processor is enabled. <b>Default
-    /// <c>false</c>:</b> the durable-saga module is a Phase-1 skeleton with
-    /// ZERO bridge (or any) consumer pre-launch, so a consumerless hosted loop
-    /// must not run in the production financial graph. It stays OFF until
-    /// durable-saga Phase 2 ships a real consumer (see
-    /// <c>docs/adr/ADR-0001-sagas-disabled-prelaunch.md</c> and
-    /// <c>conductor/tracks/api-safety-hardening/docs/GO-TO-PROD.md</c> §4).
-    /// The scoped <see cref="ISagaProcessor"/> can still be invoked directly
-    /// (tests / an ops endpoint) when this is false.
-    /// </summary>
-    public bool Enabled { get; set; } = false;
+    /// <summary>Whether the background processor is enabled. Default
+    /// <c>true</c>: the durable quest engine IS a live consumer (see
+    /// <c>Services/Sagas/AGENTS.md</c> §activation and the superseded
+    /// ADR-0001). A boot guard fails fast if this is off while a workflow
+    /// consumer is registered.</summary>
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// Seconds between processor ticks. Default 5. Clamped to a 1s floor by the

@@ -215,8 +215,28 @@ public class QuestManager : IQuestManager
         if (configError != null)
             return new AZOAResult<Quest> { IsError = true, Message = $"Publish failed — node config invalid: {configError}" };
 
+        // F6 TOCTOU guard: flip Draft → Active via compare-and-swap on the version
+        // we read above. This is the serialization point — two concurrent publishes
+        // race here and exactly one wins; the loser sees affected==0 (the row already
+        // advanced) and gets a conflict, never a torn double-publish.
+        var expectedVersion = quest.Version;
+        var won = await _questStore.TryTransitionQuestStatusAsync(
+            questId, QuestStatus.Draft, QuestStatus.Active, expectedVersion);
+        if (won == 0)
+            return new AZOAResult<Quest>
+            {
+                IsError = true,
+                Message = "Publish conflict: the quest was modified or published concurrently. Reload and retry."
+            };
+
         // Persist fresh ExecutionOrder (dagResult already populated it via Validate).
-        quest.Status = QuestStatus.Active;
+        // Safe now: we own the Active transition, so no concurrent publisher can
+        // interleave a graph write. Assign the authoritative post-CAS row shape
+        // (status Active, version bumped once) so the CONTENT upsert round-trips it
+        // exactly — assignment (not +=) is reference-sharing-safe for the in-memory
+        // store, whose CAS mutated the same instance.
+        quest.Status  = QuestStatus.Active;
+        quest.Version = expectedVersion + 1;
         var upsert = await _questStore.UpsertQuestAsync(quest);
         if (upsert.IsError)
             return new AZOAResult<Quest> { IsError = true, Message = upsert.Message };
@@ -247,12 +267,27 @@ public class QuestManager : IQuestManager
                 };
         }
 
-        quest.Status = QuestStatus.Draft;
-        var upsert = await _questStore.UpsertQuestAsync(quest);
-        if (upsert.IsError)
-            return new AZOAResult<Quest> { IsError = true, Message = upsert.Message };
+        // F6 TOCTOU guard: flip Active → Draft via compare-and-swap on the version
+        // we read above. If a concurrent publish/unpublish moved the row (version
+        // changed) the CAS misses and we return conflict rather than clobbering.
+        // Together with the run-start version-confirm, this closes unpublish racing
+        // a run-start: whichever transition commits first bumps version, so the
+        // other observes the change.
+        var expectedVersion = quest.Version;
+        var won = await _questStore.TryTransitionQuestStatusAsync(
+            questId, QuestStatus.Active, QuestStatus.Draft, expectedVersion);
+        if (won == 0)
+            return new AZOAResult<Quest>
+            {
+                IsError = true,
+                Message = "Unpublish conflict: the quest was modified or transitioned concurrently. Reload and retry."
+            };
 
-        return new AZOAResult<Quest> { Result = upsert.Result, Message = "Quest unpublished." };
+        // Reflect the authoritative post-CAS shape (assignment, not +=, is
+        // reference-sharing-safe for the in-memory store's in-place CAS).
+        quest.Status  = QuestStatus.Draft;
+        quest.Version = expectedVersion + 1;
+        return new AZOAResult<Quest> { Result = quest, Message = "Quest unpublished." };
     }
 
     /// <summary>
@@ -347,11 +382,31 @@ public class QuestManager : IQuestManager
         if (validationResult.IsError)
             return new AZOAResult<QuestRun> { IsError = true, Message = validationResult.Message };
 
+        // final-hardening F4: enforce quest dependencies at run start (fail-closed).
+        // Rejected BEFORE any run/exec rows are written — no orphaned run on rejection.
+        var depGate = await EnforceDependenciesAsync(questId, avatarId, request);
+        if (depGate is not null)
+            return depGate;
+
         var questResult = await _questStore.GetQuestAsync(questId);
         if (questResult.IsError || questResult.Result == null)
             return new AZOAResult<QuestRun> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
+
+        // F6 TOCTOU guard: confirm the definition is STILL Active at the version we
+        // just read before we commit a run against it. This closes unpublish racing
+        // a run-start — if an UnpublishAsync flipped Active → Draft (bumping version)
+        // between our ownership read and here, the confirm misses and we reject
+        // rather than executing a torn/unpublished definition.
+        var confirmed = await _questStore.TryConfirmQuestStateAsync(
+            quest.Id, QuestStatus.Active, quest.Version);
+        if (confirmed == 0)
+            return new AZOAResult<QuestRun>
+            {
+                IsError = true,
+                Message = "Quest run conflict: the quest was unpublished or modified concurrently. Reload and retry."
+            };
 
         // Create the QuestRun upfront — Pending → Running on first node claim.
         var run = new QuestRun
@@ -521,7 +576,8 @@ public class QuestManager : IQuestManager
                     // carries the resolved values. Restored after the call (ExecuteAsync is
                     // sequential; the definition node object is not shared across calls).
                     var originalConfig = node.Config;
-                    node.Config = bindingResult.ResolvedJson;
+                    // Ok==true (checked above) guarantees ResolvedJson is non-null.
+                    node.Config = bindingResult.ResolvedJson!;
                     try
                     {
                         var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstream, run.ActingTenantId);
@@ -640,7 +696,8 @@ public class QuestManager : IQuestManager
             try
             {
                 var originalConfigSingle = node.Config;
-                node.Config = bindingResultSingle.ResolvedJson;
+                // Ok==true (checked above) guarantees ResolvedJson is non-null.
+                node.Config = bindingResultSingle.ResolvedJson!;
                 try
                 {
                     var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstreamExecutions: null, run.ActingTenantId);
@@ -1343,6 +1400,46 @@ public class QuestManager : IQuestManager
         return new AZOAResult<DependencyCheckResult> { Result = check, Message = "Success" };
     }
 
+    /// <summary>
+    /// final-hardening F4: ENFORCE quest dependencies at run start (fail-closed). Both
+    /// run-start paths (<see cref="ExecuteAsync"/> legacy + <see cref="StartWorkflowRunAsync"/>
+    /// durable) call this after DAG validation and before any run/exec rows are written —
+    /// so an unsatisfied dependency rejects the run cleanly with NO orphaned run created.
+    /// Reuses <see cref="CheckDependenciesAsync"/> as the single source of truth for what
+    /// "satisfied" means (any Succeeded run of each depended-on quest), so the manual
+    /// check endpoint and the enforced gate can never diverge. Returns an error result
+    /// when a dependency is unsatisfied (or the check itself faults — fail closed);
+    /// a null return means the run may proceed. See <c>Managers/AGENTS.md</c>
+    /// §quest-dependency-enforcement.
+    /// </summary>
+    private async Task<AZOAResult<QuestRun>?> EnforceDependenciesAsync(Guid questId, Guid avatarId, AZOARequest? request)
+    {
+        var depCheck = await CheckDependenciesAsync(questId, avatarId, request);
+        if (depCheck.IsError || depCheck.Result == null)
+        {
+            // A faulted dependency check fails the run closed — we cannot prove the
+            // dependencies are satisfied, so we must not start the run.
+            return new AZOAResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Dependency check failed; run rejected (fail-closed): {depCheck.Message}"
+            };
+        }
+
+        if (!depCheck.Result.AllSatisfied)
+        {
+            return new AZOAResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Quest {questId} cannot start: {depCheck.Result.Message} " +
+                          $"Unsatisfied dependency ids: [{string.Join(", ", depCheck.Result.UnsatisfiedDependencyIds)}]. " +
+                          "Each depended-on quest must have at least one Succeeded run first."
+            };
+        }
+
+        return null; // all satisfied — proceed
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // QUESTRUN READ SURFACE
     // ═══════════════════════════════════════════════════════════════════
@@ -1479,6 +1576,13 @@ public class QuestManager : IQuestManager
                 return new AZOAResult<QuestRun> { IsError = true, Message = $"Workflow run rejected — fan-out not supported on durable path: {string.Join("; ", fanOutErrors)}" };
         }
 
+        // final-hardening F4: enforce quest dependencies at run start (fail-closed).
+        // Rejected BEFORE the run + per-node executions are written and before the entry
+        // node is enqueued as a saga step — no orphaned durable run on rejection.
+        var depGate = await EnforceDependenciesAsync(questId, avatarId, request);
+        if (depGate is not null)
+            return depGate;
+
         var questResult = await _questStore.GetQuestAsync(questId);
         if (questResult.IsError || questResult.Result == null)
             return new AZOAResult<QuestRun> { IsError = true, Message = questResult.Message };
@@ -1487,6 +1591,18 @@ public class QuestManager : IQuestManager
         var entry = ResolveEntryNode(quest);
         if (entry is null)
             return new AZOAResult<QuestRun> { IsError = true, Message = "Quest has no entry node to start the workflow run." };
+
+        // F6 TOCTOU guard: confirm the definition is STILL Active at the version we
+        // read before committing a durable run -- same discipline as ExecuteAsync.
+        // Closes unpublish racing a workflow-run-start on the durable path.
+        var confirmed = await _questStore.TryConfirmQuestStateAsync(
+            quest.Id, QuestStatus.Active, quest.Version);
+        if (confirmed == 0)
+            return new AZOAResult<QuestRun>
+            {
+                IsError = true,
+                Message = "Quest run conflict: the quest was unpublished or modified concurrently. Reload and retry."
+            };
 
         // Create the run + one Pending QuestNodeExecution per node — identical to
         // ExecuteAsync so the per-node claim/idempotency surface is shared.

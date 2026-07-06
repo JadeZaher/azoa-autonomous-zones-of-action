@@ -2,27 +2,38 @@
 //
 // LOAD-BEARING ASSERTION (read before modifying this file)
 // ──────────────────────────────────────────────────────────
-// G1 requires that SurrealDB is started with the URI parameter `sync=every`
-// (i.e. surrealkv://data/azoa.db?sync=every) so every write commit is fsynced
-// to disk before the server ACKs the client. Without this flag, a hard kill
-// of the process (SIGKILL / kill -9) may leave unflushed write buffers — some
-// rows inserted *before* the kill can silently disappear after restart.
+// G1 requires that every write commit is fsynced to disk before the server
+// ACKs the client. Without per-commit fsync, a hard kill of the process
+// (SIGKILL / kill -9) may leave unflushed write buffers — some rows inserted
+// *before* the kill can silently disappear after restart.
+//
+// DURABILITY SIGNAL ON SurrealDB 3.x (rocksdb engine).
+// The 1.5.x-era `surrealkv://...?sync=every` URI parameter is RETIRED — the
+// v3.1.4 cutover (see conductor/tracks/_archive/surrealdb-major-upgrade/
+// DECISION.md) keeps the RocksDB engine (`rocksdb:///data/db`) and drives
+// per-commit fsync via the `SURREAL_SYNC_DATA: "true"` compose env var.
+// RocksDB syncs its WAL on every commit under that flag. surrealkv is a
+// deliberately-deferred follow-up, NOT the current durable path.
 //
 // G1_HardKill_DurableInserts_SurviveRestart proves this at runtime:
 //   1. Insert N=20 bridge_tx rows + N=20 saga_steps rows via the real stores.
-//   2. Hard-kill the container (podman kill --signal=KILL).
-//   3. Restart via the idempotent start script and wait for /health.
+//   2. Hard-kill the container (podman kill --signal=KILL azoa-dev-surrealdb).
+//   3. Restart the container and wait for /health.
 //   4. Re-query every row by its deterministic id and assert byte-identical fields.
 //
-// If the container is running WITHOUT sync=every, some rows will be lost after
-// the kill and the FluentAssertions equivalence check will FAIL. That failure
-// is INTENTIONAL — it proves that task 12's deploy-time ack flag is real
+// If the container is running WITHOUT per-commit fsync, some rows will be lost
+// after the kill and the FluentAssertions equivalence check will FAIL. That
+// failure is INTENTIONAL — it proves the deploy-time durability posture is real
 // runtime evidence, not just a documentation checkbox.
 //
 // G1_DurabilityAckGate_FailsClosed_IfSyncEventual is a static config assertion
-// that reads podman-compose.yml and asserts the URI contains `sync=every`.
-// This runs without a live container, so a deploy with the wrong URI fails CI
-// before the first container ever starts.
+// that reads docker-compose.dev.yml and asserts the durable posture: the
+// rocksdb engine URI + `SURREAL_SYNC_DATA: "true"`. It runs without a live
+// container, so a deploy that drops the sync flag fails CI before the first
+// container ever starts. (SurrealDB exposes no runtime SQL surface to read the
+// fsync mode back — see memory [[surrealdb-fsync-mode-not-introspectable]] —
+// so this static gate + the SurrealDb:G1DurabilityAcknowledged boot ack are
+// the enforcement points, per Program.cs's boot self-check.)
 //
 // Both tests are guarded by [Trait("Category","Chaos")] so they are excluded
 // from the default CI filter (--filter "Category!=Chaos") and opt-in only.
@@ -91,7 +102,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     public async Task G1_HardKill_DurableInserts_SurviveRestart()
     {
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
-            "SurrealDB test container not reachable at http://localhost:8442 — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
+            $"SurrealDB container not reachable at {SurrealTestDefaults.Endpoint} — start the dev stack via `./dev-up.ps1` (brings up the `azoa-dev-surrealdb` v3.1.4 container).");
 
         // ── Phase 1: Build real stores against TestNamespace ─────────────────
         // InitializeAsync (IntegrationTestBase) already created the namespace
@@ -139,13 +150,15 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
         var postKillSagaStore   = new SurrealSagaStore(postKillExecutor);
 
         // ── Phase 7: Re-query all bridge_tx rows — assert byte-identical ───────
+        // bridge_tx rows have no background mutator, so the post-restart row must
+        // match the pre-kill snapshot field-for-field: a pure durability proof.
         for (var i = 0; i < N; i++)
         {
             var expected = insertedBridges[i];
             var actual   = await postKillBridgeStore.GetBridgeAsync(expected.Id);
 
             actual.Should().NotBeNull(
-                $"bridge_tx row {expected.Id} must survive the hard kill (G1 sync=every is required)");
+                $"bridge_tx row {expected.Id} must survive the hard kill (G1 per-commit fsync is required)");
 
             actual.Should().BeEquivalentTo(expected, opts => opts
                 .Using<DateTime>(ctx => ctx.Subject.Should().BeCloseTo(ctx.Expectation, TimeSpan.FromSeconds(2)))
@@ -153,34 +166,64 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
                 $"bridge_tx row {i} (id={expected.Id}) must be byte-identical after restart");
         }
 
-        // ── Phase 8: Re-query all saga_steps rows — assert byte-identical ──────
+        // ── Phase 8: Re-query all saga_steps rows — assert durability invariants ──
+        // G1 proves the row I fsync'd is still on disk with its IDENTITY + PAYLOAD
+        // intact. The saga PROCESSOR is now enabled by default (Phase A1:
+        // Sagas:Enabled=true), and it legitimately mutates the lifecycle fields of
+        // any enqueued step after restart — the "G1DurabilityProbe" saga has no
+        // registered definition, so the processor dead-letters it (Status→
+        // DeadLettered, AttemptCount++, LastError set, DeadLettered=true). That is
+        // correct live behaviour, NOT a durability loss: the row survived the crash
+        // (it exists, by id) and every write-once field is byte-identical.
+        //
+        // So assert the durability-INVARIANT fields (id, saga/step names,
+        // correlation + idempotency keys, opaque payload, compensation flag,
+        // CreatedAt) and EXCLUDE the processor-owned lifecycle fields the live
+        // processor is entitled to change post-restart. Asserting those mutable
+        // fields would test "is the processor disabled", not "did the write survive
+        // the crash".
         for (var i = 0; i < N; i++)
         {
             var expected = insertedSagas[i];
             var actual   = await postKillSagaStore.GetAsync(expected.Id, CancellationToken.None);
 
             actual.Should().NotBeNull(
-                $"saga_steps row {expected.Id} must survive the hard kill (G1 sync=every is required)");
+                $"saga_steps row {expected.Id} must survive the hard kill (G1 per-commit fsync is required)");
 
             actual.Should().BeEquivalentTo(expected, opts => opts
                 .Using<DateTime>(ctx => ctx.Subject.Should().BeCloseTo(ctx.Expectation, TimeSpan.FromSeconds(2)))
-                .WhenTypeIs<DateTime>(),
-                $"saga_steps row {i} (id={expected.Id}) must be byte-identical after restart");
+                .WhenTypeIs<DateTime>()
+                // Processor-owned lifecycle fields — mutated by the enabled saga
+                // processor after restart (dead-letters the unregistered probe saga).
+                .Excluding(s => s.Status)
+                .Excluding(s => s.AttemptCount)
+                .Excluding(s => s.NextRunAt)
+                .Excluding(s => s.ClaimedAt)
+                .Excluding(s => s.LastError)
+                .Excluding(s => s.Output)
+                .Excluding(s => s.DeadLettered)
+                .Excluding(s => s.GateId)
+                .Excluding(s => s.UpdatedAt),
+                $"saga_steps row {i} (id={expected.Id}) durability-invariant fields " +
+                "(id, names, keys, payload) must be byte-identical after restart");
         }
     }
 
     // ── Test 2: Static config assertion — FailsClosed without container ───────
 
     /// <summary>
-    /// Reads <c>podman-compose.yml</c> from the repo root and asserts that the
-    /// SurrealKV URI contains <c>sync=every</c>. This is a static configuration
-    /// proof — it runs without a live container and will catch a durability
-    /// regression even before any container starts.
+    /// Reads <c>docker-compose.dev.yml</c> from the repo root and asserts the
+    /// SurrealDB 3.x durable posture: the RocksDB engine URI
+    /// (<c>rocksdb:///data/db</c>) plus <c>SURREAL_SYNC_DATA: "true"</c>, which
+    /// makes RocksDB fsync its WAL on every commit. This is a static
+    /// configuration proof — it runs without a live container and will catch a
+    /// durability regression even before any container starts.
     ///
-    /// If a developer accidentally changes the URI to <c>sync=flush</c>,
-    /// <c>sync=none</c>, or removes the parameter entirely, this test fails
-    /// immediately, surfacing the G1 violation in the earliest CI phase
-    /// (pre-container, compile+config stage).
+    /// The 1.5.x <c>surrealkv://...?sync=every</c> URI parameter is RETIRED
+    /// (v3.1.4 cutover kept rocksdb; see DECISION.md). If a developer drops the
+    /// <c>SURREAL_SYNC_DATA</c> flag or swaps to an in-memory / non-durable
+    /// engine, this test fails immediately, surfacing the G1 violation in the
+    /// earliest CI phase (pre-container, compile+config stage).
     /// </summary>
     [SkippableFact]
     public void G1_DurabilityAckGate_FailsClosed_IfSyncEventual()
@@ -188,24 +231,32 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
         // This test intentionally does NOT skip on container availability.
         // It is a static file assertion and must pass on every developer machine.
 
-        var repoRoot  = FindLocalRepoRoot();
-        var composeFile = Path.Combine(repoRoot, "podman-compose.yml");
+        var repoRoot    = FindLocalRepoRoot();
+        var composeFile = Path.Combine(repoRoot, "docker-compose.dev.yml");
 
         File.Exists(composeFile).Should().BeTrue(
-            $"podman-compose.yml must exist at repo root ({composeFile}). " +
-            "If the file was moved, update the G1 config gate path.");
+            $"docker-compose.dev.yml must exist at repo root ({composeFile}). " +
+            "If the file was renamed, update the G1 config gate path.");
 
         var content = File.ReadAllText(composeFile);
 
-        // The authoritative G1 durability signal: the SurrealKV URI parameter.
-        // SURREAL_SYNC_DATA env var is belt-and-suspenders redundancy; the URI
-        // parameter is what SurrealDB 1.x actually honours per the spec notes
-        // in the compose file header comment.
-        content.Should().Contain("sync=every",
-            "podman-compose.yml must pass surrealkv://...?sync=every to the SurrealDB " +
-            "container. Removing or changing this URI parameter disables fsync-before-ack and " +
-            "violates guardrail G1 (crash durability). This test fails closed so a regression " +
-            "is caught before deployment, not after a SIGKILL data loss incident in production.");
+        // Durable posture on 3.x = a persistent on-disk RocksDB engine, NOT an
+        // in-memory or non-durable store. `memory://` or a missing rocksdb URI
+        // would silently drop crash durability.
+        content.Should().Contain("rocksdb://",
+            "docker-compose.dev.yml must start SurrealDB against a persistent RocksDB " +
+            "store (rocksdb:///data/db). An in-memory or non-durable engine violates " +
+            "guardrail G1 (crash durability).");
+
+        // The authoritative 3.x G1 durability signal: SURREAL_SYNC_DATA drives
+        // RocksDB per-commit WAL fsync-before-ack. This REPLACES the retired
+        // 1.5.x `surrealkv://...?sync=every` URI parameter.
+        content.Should().Contain("SURREAL_SYNC_DATA: \"true\"",
+            "docker-compose.dev.yml must set SURREAL_SYNC_DATA: \"true\" on the SurrealDB " +
+            "container so RocksDB fsyncs its WAL on every commit before ACK. Removing this " +
+            "flag disables fsync-before-ack and violates guardrail G1 (crash durability). " +
+            "This test fails closed so a regression is caught before deployment, not after " +
+            "a SIGKILL data-loss incident in production.");
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -275,65 +326,60 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     }
 
     /// <summary>
-    /// Hard-kills the SurrealDB test container via
-    /// <c>podman kill --signal=KILL azoa-surrealdb-test</c>.
+    /// The SurrealDB container name in the dev stack (docker-compose.dev.yml).
+    /// The 1.5.x-era standalone `azoa-surrealdb-test` container is gone — the
+    /// v3.1.4 cutover runs SurrealDB as the `azoa-dev-surrealdb` compose service.
+    /// </summary>
+    private const string SurrealContainerName = "azoa-dev-surrealdb";
+
+    /// <summary>
+    /// Hard-kills the SurrealDB container via
+    /// <c>podman kill --signal=KILL azoa-dev-surrealdb</c>.
     /// Throws with stderr content if the exit code is non-zero so CI logs show
     /// a clear error (e.g. "container not found") rather than a cryptic timeout.
     /// </summary>
     private static void KillContainerHard()
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName               = "podman",
-            Arguments              = "kill --signal=KILL azoa-surrealdb-test",
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            UseShellExecute        = false,
-        };
-
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start podman kill process.");
-
+        using var proc = RunPodman($"kill --signal=KILL {SurrealContainerName}");
         proc.WaitForExit();
 
         if (proc.ExitCode != 0)
         {
             var stderr = proc.StandardError.ReadToEnd();
             throw new InvalidOperationException(
-                $"podman kill --signal=KILL azoa-surrealdb-test exited with code {proc.ExitCode}. " +
+                $"podman kill --signal=KILL {SurrealContainerName} exited with code {proc.ExitCode}. " +
                 $"stderr: {stderr}. Ensure the container is running before the Chaos test.");
         }
     }
 
     /// <summary>
-    /// Restarts the SurrealDB test container via the idempotent PowerShell
-    /// helper script. The script skips start if the container is already running
-    /// and performs a restart otherwise — safe to call unconditionally.
+    /// Restarts the SurrealDB container via <c>podman start azoa-dev-surrealdb</c>.
+    /// A SIGKILL leaves the container in the `exited` state (compose
+    /// `restart: unless-stopped` does not auto-recover a manual kill), so an
+    /// explicit start is required. Idempotent: starting an already-running
+    /// container is a no-op that returns 0; the /health poll that follows is the
+    /// authoritative readiness check regardless of exit code.
     /// </summary>
     private static void RestartContainer()
     {
-        // FindLocalRepoRoot() resolves the scripts/ path relative to the repo root
-        // so the script path is correct regardless of the working directory the
-        // test runner chooses.
-        var repoRoot   = FindLocalRepoRoot();
-        var scriptPath = Path.Combine(repoRoot, "scripts", "surrealdb", "start-test-container.ps1");
+        using var proc = RunPodman($"start {SurrealContainerName}");
+        proc.WaitForExit();
+        // Non-zero exit is not fatal here — the /health poll is authoritative.
+    }
 
+    /// <summary>Start a <c>podman</c> subprocess capturing stdout/stderr.</summary>
+    private static Process RunPodman(string arguments)
+    {
         var psi = new ProcessStartInfo
         {
-            FileName               = "pwsh",
-            Arguments              = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\"",
+            FileName               = "podman",
+            Arguments              = arguments,
             RedirectStandardOutput = true,
             RedirectStandardError  = true,
             UseShellExecute        = false,
         };
-
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start pwsh restart process.");
-
-        proc.WaitForExit();
-        // Non-zero exit is not fatal here — the container may already be running
-        // and the script may return 1 in that idempotent case. The /health poll
-        // that follows is the authoritative readiness check.
+        return Process.Start(psi)
+            ?? throw new InvalidOperationException($"Failed to start `podman {arguments}`.");
     }
 
     /// <summary>

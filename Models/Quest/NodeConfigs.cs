@@ -107,6 +107,17 @@ public class GateCheckNodeConfig
 public class EmitNodeConfig
 {
     public JsonElement Payload { get; set; }
+
+    /// <summary>
+    /// Optional tenant-defined event name for the GENERIC quest.emit webhook
+    /// (final-hardening F3). When the run has an acting tenant AND that tenant has a
+    /// webhook registration, the Emit node ALSO enqueues an outbox event with this name
+    /// (defaults to <c>quest.emit</c> when omitted). Free-form — AZOA does not interpret
+    /// it; it is echoed to the receiver so the tenant can route on it. The webhook is a
+    /// best-effort push ON TOP of the node's serialized output, which remains the
+    /// authoritative settlement surface.
+    /// </summary>
+    public string? EventType { get; set; }
 }
 
 /// <summary>Swap config: tenant-supplied DEX swap params. Rate comes from the DEX, never AZOA.</summary>
@@ -148,4 +159,55 @@ public class FungibleTokenCreateNodeConfig
     public ulong Total { get; set; }
     public int Decimals { get; set; }
     public Guid? HolonId { get; set; }
+}
+
+/// <summary>
+/// Bridge node config (final-hardening D1): lock/bridge an asset from
+/// <see cref="SourceChain"/> to <see cref="TargetChain"/> via the real Phase-B
+/// <c>ICrossChainBridgeService.InitiateBridgeAsync</c>. The node MOVES value only —
+/// it derives no economic meaning; peg/valuation stays tenant-side (Emit). The
+/// actor avatar is taken from the run context (never a config-body avatar). On an
+/// Algorand route the lock/burn is a real broadcast; a Solana route is
+/// fail-closed at the provider level (surfaced as a node failure — correct).
+/// </summary>
+public class BridgeNodeConfig
+{
+    /// <summary>Source chain to lock the asset on (e.g. "Algorand").</summary>
+    public string SourceChain { get; set; } = "Algorand";
+
+    /// <summary>Target chain to mint the wrapped/project asset on.</summary>
+    public string TargetChain { get; set; } = string.Empty;
+
+    /// <summary>The source-chain asset id (ASA id / token id) being bridged.</summary>
+    public string TokenId { get; set; } = string.Empty;
+
+    /// <summary>Recipient address on the target chain.</summary>
+    public string RecipientAddress { get; set; } = string.Empty;
+
+    /// <summary>Units to bridge. Must be positive; the bridge rejects &lt;= 0.</summary>
+    public int Amount { get; set; } = 1;
+
+    /// <summary>
+    /// Optional bridge mode ("Trusted" or "Wormhole"). Null lets the service pick
+    /// its configured default. Parsed case-insensitively; an unrecognised value
+    /// fails the node closed rather than silently defaulting.
+    /// </summary>
+    public string? Mode { get; set; }
+}
+
+/// <summary>
+/// Back node config (final-hardening D1): the reverse of a prior <c>Bridge</c> —
+/// burn the wrapped asset on the target chain and release the original on the
+/// source chain via the real <c>ICrossChainBridgeService.ReverseBridgeAsync</c>.
+/// <see cref="BridgeTransactionId"/> is the id returned by the upstream Bridge
+/// node (typically supplied via a <c>$from</c> upstream binding). The actor is the
+/// run-context avatar; the reverse is IDOR-scoped to that avatar's own bridge rows.
+/// </summary>
+public class BackNodeConfig
+{
+    /// <summary>Id of the forward bridge transaction to reverse (from the upstream Bridge node output).</summary>
+    public string BridgeTransactionId { get; set; } = string.Empty;
+
+    /// <summary>Source-chain address to release the original asset back to.</summary>
+    public string SourceRecipientAddress { get; set; } = string.Empty;
 }

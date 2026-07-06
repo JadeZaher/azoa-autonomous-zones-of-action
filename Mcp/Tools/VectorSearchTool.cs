@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Mcp.Tools;
@@ -112,8 +113,9 @@ public sealed class VectorSearchTool : IMcpTool
             var embedder = context.Services.GetRequiredService<IEmbeddingProvider>();
             var embedding = await embedder.EmbedAsync(queryText, ct);
 
-            // ── AvatarId comes exclusively from context (privilege gate) ───
-            var avatarIdStr = context.AvatarId.ToString("N").ToLowerInvariant();
+            // AvatarId from context (privilege gate); bind the avatar:hex link form
+            // via the shared helper. See Mcp/AGENTS.md §record-id-binding.
+            var avatarIdStr = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(context.AvatarId))!;
 
             // ── Build the table-specific query ─────────────────────────────
             var sql = string.Equals(table, "holon", StringComparison.OrdinalIgnoreCase)

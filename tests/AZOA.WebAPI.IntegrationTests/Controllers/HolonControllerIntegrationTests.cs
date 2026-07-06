@@ -199,7 +199,7 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<IEnumerable<Holon>>(response);
         result!.Result.Should().HaveCount(2);
-        result.Result.Select(h => h.Name).Should().Contain("Child1", "Child2");
+        result.Result!.Select(h => h.Name).Should().Contain("Child1", "Child2");
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<IEnumerable<Holon>>(response);
         result!.Result.Should().HaveCount(2);
-        result.Result.Select(h => h.Name).Should().ContainInOrder("Parent", "Grandparent");
+        result.Result!.Select(h => h.Name).Should().ContainInOrder("Parent", "Grandparent");
     }
 
     [Fact]
@@ -242,7 +242,7 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<IEnumerable<Holon>>(response);
         result!.Result.Should().HaveCount(2);
-        result.Result.Select(h => h.Name).Should().Contain("Child", "Grandchild");
+        result.Result!.Select(h => h.Name).Should().Contain("Child", "Grandchild");
     }
 
     /// <summary>
@@ -353,7 +353,7 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
         var allResponse = await Client.GetAsync("api/holon");
         allResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var allResult = await ReadResultAsync<IEnumerable<Holon>>(allResponse);
-        allResult!.Result.Count(h => h.Metadata.ContainsKey("cloned_from")).Should().Be(2);
+        allResult!.Result!.Count(h => h.Metadata.ContainsKey("cloned_from")).Should().Be(2);
     }
 
     [Fact]
@@ -389,7 +389,9 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var result = await response.Content.ReadFromJsonAsync<AZOAResult<bool>>(JsonOptions);
         result!.IsError.Should().BeTrue();
-        result.Message.Should().Contain("Cannot move");
+        // The manager rejects a move that would make a descendant the new parent
+        // with the cycle-detection message (HolonManager.EnsureNotDescendantAsync).
+        result.Message.Should().Contain("cycle detected");
     }
 
     // ═══════════════════════════════════════════════════════════════

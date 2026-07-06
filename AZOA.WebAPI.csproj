@@ -8,6 +8,10 @@
          .editorconfig; EnforceCodeStyleInBuild (Directory.Build.props) surfaces them.
          Packages/tests stay at warning to avoid breaking their pre-existing baseline. -->
     <WarningsAsErrors>$(WarningsAsErrors);IDE0005</WarningsAsErrors>
+    <!-- Alpha version stamp (final-hardening-cutover Phase H, H5). Bump per
+         CHANGELOG.md entry; see docs/NODE-HOST.md for the release process. -->
+    <Version>0.1.0-alpha</Version>
+    <InformationalVersion>0.1.0-alpha</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <!-- Quest models are included (no longer excluded) -->
@@ -41,7 +45,13 @@
     <PackageReference Include="Solana.Rpc" Version="8.7.0" />
     <PackageReference Include="Solana.Wallet" Version="8.7.0" />
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
-    <PackageReference Include="AutoMapper.Extensions.Microsoft.DependencyInjection" Version="12.0.1" />
+    <!-- AutoMapper 15.1.3: lowest version clearing NU1903 (GHSA-rvv3-g6hj-g44x); the
+         advisory's affected range covers ALL AutoMapper <= 15.1.2 (14.x/15.0-15.1.2
+         still flag). 14.x+ folds AddAutoMapper into the core package (former
+         .Extensions.Microsoft.DependencyInjection dropped). 15.x adds an optional
+         commercial license (unlicensed = warn-and-continue, non-blocking); a key can
+         be supplied later via AddAutoMapper(cfg => cfg.LicenseKey = ...) if desired. -->
+    <PackageReference Include="AutoMapper" Version="15.1.3" />
     <!-- Official Anthropic .NET MCP SDK (mcp-surface track). 1.3.0 latest stable
          as of 2026-05-24. ModelContextProtocol is the core; .AspNetCore wires
          the HTTP+SSE transport into the existing Kestrel pipeline so the /mcp

@@ -26,7 +26,7 @@ DEFINE FIELD IF NOT EXISTS status ON TABLE operation_log TYPE string
     DEFAULT "Pending";
 
 -- Opaque parameters bag (Dictionary<string,string>)
-DEFINE FIELD IF NOT EXISTS parameters ON TABLE operation_log TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS parameters ON TABLE operation_log TYPE option<object> FLEXIBLE;
 
 -- IMintOperation fields
 DEFINE FIELD IF NOT EXISTS token_uri ON TABLE operation_log TYPE option<string>;

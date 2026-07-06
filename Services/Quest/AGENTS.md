@@ -76,8 +76,61 @@ an exception escaping into the engine.
    then run the existing strict `StrictOptions` deserialization — absent (stripped)
    bound fields get defaults, while typos in non-bound fields still fail.
 
+## §fractionalization: Bridge / Back nodes (final-hardening D1)
+
+The flagship ArdaNova asset-fractionalization flow is **assembly over shipped
+rails** — no new value primitive. Two Tier-2 nodes wrap the real Phase-B bridge:
+
+- **`Bridge`** → `ICrossChainBridgeService.InitiateBridgeAsync` (lock/bridge an
+  asset cross-chain). Output carries the bridge transaction `Id` + `LockTxHash`.
+- **`Back`** → `ICrossChainBridgeService.ReverseBridgeAsync` (burn wrapped on
+  target, release original on source). Its `BridgeTransactionId` is normally
+  `$from`-bound to the upstream Bridge node's output `id`.
+
+**Security discipline (reviewer-checked):**
+- **No fabricated success.** Both route through the real bridge, which is
+  fail-closed for unimplemented paths (Solana lock/burn) and gated by the
+  `RealValueEnabled` kill switch. A service error maps to a Failed node.
+- **Idempotency.** Each node seeds `{runId}:{nodeId}` as the client idempotency
+  key; the bridge service avatar-namespaces it, so a re-evaluated node dedupes to
+  ONE irreversible lock/burn — no double-bridge / double-burn.
+- **Actor from run context.** The config body carries no avatar. Bridge stamps the
+  row to `context.Quest.AvatarId`; Back passes it as `callerAvatarId` so the
+  reverse is IDOR-scoped to that avatar's own rows (mismatch ⇒ "not found").
+- **`RequiresChainCapability == true`** for both — enforced at the dispatch seam
+  and pinned by `ChainCapabilityFlagInvariantTests.Tier2`.
+
+**Peg boundary (the load-bearing rule): the node MOVES value only; the tenant
+computes the peg.** AZOA holds NO peg/valuation/collateral state. A "pegged
+project token" is a plain `FungibleTokenCreate` fungible; it is pegged only in the
+tenant's ledger. The canonical fractionalization template ends with an **`Emit`**
+node that hands the peg/valuation config to the tenant (`project.token.pegged`);
+redemption + peg maintenance are the tenant's. Do NOT add peg/pricing logic to any
+node. See `frontend/src/components/quest-builder/presets.ts`
+(`fractionalize-canonical-lifecycle` + the three demonstrator presets).
+
 ## §skip-semantics
 
 See `Services/Quest/Workflow/AGENTS.md §skip-semantics` for the durable-path
 divergence (no skip seam in `QuestNodeStepHandler`; saga compensation instead).
 Follow-up track: `durable-skip-propagation`.
+
+## §quest-webhook-emit
+
+**final-hardening F3 — the generic `quest.emit` webhook.** `EmitNodeHandler` still
+serializes its tenant-shaped payload straight to `QuestNodeExecution.Output` (the
+authoritative settlement surface — no fiat/payout math in AZOA). ON TOP of that, when
+the run carries an `ActingTenantId` AND an `IQuestWebhookEmitter` is registered, the
+handler ALSO enqueues a best-effort webhook outbox event via `QuestWebhookEmitter`.
+
+- **Optional dependency.** The emitter is a nullable ctor param (default `null`) so the
+  handler stays constructable with zero args and the pure-passthrough path is preserved
+  when no tenant/emitter is present. `EmitNodeConfig.EventType` (optional) names the
+  event; it defaults to `quest.emit`.
+- **Never fails the node.** `QuestWebhookEmitter.EmitAsync` only writes an outbox row
+  (no outbound HTTP — that is the delivery worker's job) and swallows every fault,
+  including store exceptions. A webhook plumbing failure must not fail the `Emit` node.
+- **Delivery + security** live in `Services/Webhooks/AGENTS.md §quest-webhook`: a
+  parallel outbox to the consent one that reuses the shared registration store + SSRF
+  guard + HMAC signer, so a tenant's ONE endpoint receives both consent and quest.emit
+  events.

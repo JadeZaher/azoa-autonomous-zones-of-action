@@ -24,8 +24,10 @@ RUN npm install
 # Copy frontend source
 COPY frontend/ .
 
-# Build Next.js
-ENV NEXT_PUBLIC_API_URL=http://localhost:5000
+# Build Next.js. API_URL is intentionally NOT set here: the API base URL is
+# resolved at container-start/request time (see src/lib/runtime-config.ts +
+# src/app/layout.tsx), not baked into the client bundle. Only non-secret,
+# genuinely build-time NEXT_PUBLIC_* values belong in this stage.
 RUN npm run build
 
 # Stage 3: Production runtime
@@ -39,7 +41,10 @@ COPY --from=frontend-build /app/next.config.js ./
 COPY --from=frontend-build /app/public ./public
 
 ENV NODE_ENV=production
-ENV NEXT_PUBLIC_API_URL=http://azoa-api:5000
+# API_URL is read at request time (server-injected into window.__RUNTIME_CONFIG__)
+# so an operator can repoint the UI by changing this env var and restarting the
+# container — no image rebuild required. Default matches the compose network name.
+ENV API_URL=http://azoa-api:5000
 EXPOSE 3000
 
 CMD ["npm", "run", "start"]

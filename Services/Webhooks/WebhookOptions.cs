@@ -55,6 +55,13 @@ public sealed class WebhookOptions
     public int HttpTimeoutSeconds { get; set; } = 10;
 
     /// <summary>The named <see cref="System.Net.Http.IHttpClientFactory"/> client used
-    /// for delivery POSTs.</summary>
+    /// for consent-webhook delivery POSTs.</summary>
     public const string HttpClientName = "consent-webhook";
+
+    /// <summary>The named <see cref="System.Net.Http.IHttpClientFactory"/> client used
+    /// for GENERIC quest.emit webhook delivery POSTs (final-hardening F3). Registered
+    /// with the SAME SSRF-guarded, no-auto-redirect primary handler as
+    /// <see cref="HttpClientName"/> so the quest path inherits the identical outbound
+    /// SSRF posture.</summary>
+    public const string QuestHttpClientName = "quest-webhook";
 }

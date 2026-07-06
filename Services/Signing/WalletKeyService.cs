@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using Solnet.Wallet;
+using Solnet.Wallet.Bip39;
 
 namespace AZOA.WebAPI.Services.Signing;
 
@@ -47,6 +49,29 @@ public class WalletKeyService
         return AesGcmDecrypt(encryptedHex);
     }
 
+    /// <summary>
+    /// Decrypt a stored private key straight into a zeroable <see cref="byte"/> array
+    /// of the RAW key bytes — the cleartext key never materializes as an immutable
+    /// <c>string</c> (final-hardening B5). The caller MUST
+    /// <see cref="CryptographicOperations.ZeroMemory(Span{byte})"/> the returned
+    /// buffer after use. See Services/Signing/AGENTS.md §decrypt-bytes.
+    /// </summary>
+    public byte[] DecryptPrivateKeyBytes(string encryptedHex)
+    {
+        // The plaintext is the private key hex (ASCII). Decrypt into an owned byte[]
+        // (no plaintext string), then decode hex→raw bytes, zeroing the transient
+        // ASCII buffer. Only the returned raw-key buffer escapes; the caller zeroes it.
+        byte[] hexAscii = AesGcmDecryptBytes(encryptedHex);
+        try
+        {
+            return DecodeHexAsciiToRaw(hexAscii);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(hexAscii);
+        }
+    }
+
     /// <summary>Encrypt a seed phrase for storage.</summary>
     public string EncryptSeedPhrase(string seedPhrase)
     {
@@ -85,19 +110,27 @@ public class WalletKeyService
 
     private (string, string, string, string?) GenerateSolanaKeypair()
     {
-        // Solana also uses Ed25519
-        var seed = RandomNumberGenerator.GetBytes(32);
-        var privateKeyBytes = new byte[64]; // Solana private key is the full keypair
-        var publicKey = DeriveEd25519PublicKey(seed);
-        Array.Copy(seed, 0, privateKeyBytes, 0, 32);
-        Array.Copy(publicKey, 0, privateKeyBytes, 32, 32);
+        // Real Ed25519 Solana keypair via the already-referenced Solnet.Wallet
+        // (final-hardening B1). Generated from a restorable BIP39 mnemonic so the
+        // seed phrase re-imports to the same address; Solnet owns the curve math,
+        // BIP39 wordlist, and base58 address rules — no hand-rolled crypto.
+        var mnemonic = new Mnemonic(WordList.English, WordCount.Twelve);
+        var wallet = new Wallet(mnemonic);
+        var account = wallet.Account;
 
-        var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(privateKeyBytes);
-        // Solana address is the base58-encoded public key
-        var address = Base58Encode(publicKey);
-        var seedPhrase = GenerateMnemonic(seed);
+        // The persisted private key is Solnet's 64-byte secret (32-byte Ed25519
+        // seed ++ 32-byte public key). SolanaTransactionSigner reconstructs the
+        // signing account via `new Account(secret64, secret64[32..64])`, so keygen
+        // and signing share this exact representation — the round-trip test pins it.
+        var secretBytes = account.PrivateKey.KeyBytes;   // 64 bytes
+        var publicKeyBytes = account.PublicKey.KeyBytes; // 32 bytes
 
-        return (AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKey), privateKeyHex, address, seedPhrase);
+        var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(secretBytes);
+        var publicKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKeyBytes);
+        var address = account.PublicKey.Key;             // real base58-encoded public key
+        var seedPhrase = mnemonic.ToString();            // restorable 12-word BIP39 mnemonic
+
+        return (publicKeyHex, privateKeyHex, address, seedPhrase);
     }
 
     private (string, string, string, string?) GenerateEthereumKeypair()
@@ -111,28 +144,6 @@ public class WalletKeyService
         var seedPhrase = GenerateMnemonic(privateKeyBytes);
 
         return (AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKey), privateKeyHex, address, seedPhrase);
-    }
-
-    // ─── Ed25519 public key derivation (simplified) ───
-
-    private byte[] DeriveEd25519PublicKey(byte[] seed)
-    {
-        // DEPLOY-STUB (H1, see conductor/DEPLOY-STEPS-TODO.md): Solana keygen is
-        // still a placeholder. Algorand now routes through Algorand2 (real
-        // Ed25519); this HMAC derivation remains ONLY for the not-yet-real Solana
-        // path and must be replaced with the Solana SDK keypair before Solana
-        // value flow is enabled.
-        // In production, use a proper Ed25519 implementation like libsodium or BouncyCastle.
-        // For now, we use HMAC-SHA512 to derive a clamped scalar and then multiply.
-        // This is a placeholder that matches the key format — real Ed25519 requires
-        // proper scalar multiplication on Curve25519.
-        //
-        // We use SHA-512 to derive the seed as done in Ed25519:
-        using var hmac = new HMACSHA512(seed);
-        var hash = hmac.ComputeHash("ed25519 seed"u8.ToArray());
-        var publicKey = new byte[32];
-        Array.Copy(hash, 32, publicKey, 0, 32);
-        return publicKey;
     }
 
     // ─── Secp256k1 public key derivation (simplified) ───
@@ -207,6 +218,25 @@ public class WalletKeyService
 
     private string AesGcmDecrypt(string encryptedHex)
     {
+        var plaintext = AesGcmDecryptBytes(encryptedHex);
+        try
+        {
+            return System.Text.Encoding.UTF8.GetString(plaintext);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    /// <summary>
+    /// AES-256-GCM decrypt into an owned plaintext <see cref="byte"/> array — no
+    /// intermediate managed string. On a tag/format failure it throws AFTER zeroing
+    /// any transient buffer (fail-closed, no partial plaintext leak). The caller
+    /// owns and must zero the returned buffer.
+    /// </summary>
+    private byte[] AesGcmDecryptBytes(string encryptedHex)
+    {
         var data = Convert.FromHexString(encryptedHex);
         if (data.Length < 28)
             throw new InvalidOperationException("Invalid encrypted data format.");
@@ -216,12 +246,56 @@ public class WalletKeyService
         var ciphertext = data[28..];
 
         var plaintext = new byte[ciphertext.Length];
-
-        using var aes = new AesGcm(_encryptionKey, 16);
-        aes.Decrypt(nonce, ciphertext, tag, plaintext);
-
-        return System.Text.Encoding.UTF8.GetString(plaintext);
+        try
+        {
+            using var aes = new AesGcm(_encryptionKey, 16);
+            aes.Decrypt(nonce, ciphertext, tag, plaintext);
+        }
+        catch
+        {
+            // Never return a partial/garbage plaintext buffer on auth failure.
+            CryptographicOperations.ZeroMemory(plaintext);
+            throw;
+        }
+        return plaintext;
     }
+
+    /// <summary>
+    /// Decode an ASCII-hex plaintext buffer into the raw key bytes, mirroring the
+    /// custody layer's <c>FromHexOrUtf8</c> contract: a hex payload decodes to its
+    /// bytes; a non-hex payload (e.g. a mnemonic) returns its own bytes verbatim.
+    /// Neither branch allocates a plaintext string.
+    /// </summary>
+    private static byte[] DecodeHexAsciiToRaw(byte[] hexAscii)
+    {
+        if (hexAscii.Length == 0 || (hexAscii.Length % 2) != 0 || !IsAsciiHex(hexAscii))
+            return (byte[])hexAscii.Clone(); // non-hex (e.g. mnemonic bytes) — verbatim
+
+        var raw = new byte[hexAscii.Length / 2];
+        for (int i = 0; i < raw.Length; i++)
+            raw[i] = (byte)((HexNibble(hexAscii[2 * i]) << 4) | HexNibble(hexAscii[2 * i + 1]));
+        return raw;
+    }
+
+    private static bool IsAsciiHex(byte[] ascii)
+    {
+        foreach (var b in ascii)
+        {
+            bool isHex = (b >= (byte)'0' && b <= (byte)'9')
+                      || (b >= (byte)'a' && b <= (byte)'f')
+                      || (b >= (byte)'A' && b <= (byte)'F');
+            if (!isHex) return false;
+        }
+        return true;
+    }
+
+    private static int HexNibble(byte c) => c switch
+    {
+        >= (byte)'0' and <= (byte)'9' => c - (byte)'0',
+        >= (byte)'a' and <= (byte)'f' => c - (byte)'a' + 10,
+        >= (byte)'A' and <= (byte)'F' => c - (byte)'A' + 10,
+        _ => throw new FormatException("Invalid hex nibble.")
+    };
 
     // ─── Mnemonic generation (simplified BIP39-like) ───
 
@@ -501,41 +575,6 @@ public class WalletKeyService
             words[i] = Bip39Wordlist[idx];
         }
         return string.Join(' ', words);
-    }
-
-    // ─── Base58 encoding ───
-
-    private static readonly char[] Base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".ToCharArray();
-
-    private string Base58Encode(byte[] data)
-    {
-        int leadingZeros = 0;
-        while (leadingZeros < data.Length && data[leadingZeros] == 0)
-            leadingZeros++;
-
-        var size = (data.Length - leadingZeros) * 138 / 100 + 1;
-        var b58 = new byte[size];
-        for (int i = leadingZeros; i < data.Length; i++)
-        {
-            int carry = data[i];
-            for (int j = size - 1; j >= 0; j--)
-            {
-                carry += 256 * b58[j];
-                b58[j] = (byte)(carry % 58);
-                carry /= 58;
-            }
-        }
-
-        int firstNonZero = 0;
-        while (firstNonZero < size && b58[firstNonZero] == 0)
-            firstNonZero++;
-
-        var result = new char[leadingZeros + (size - firstNonZero)];
-        Array.Fill(result, '1', 0, leadingZeros);
-        for (int i = 0; i < size - firstNonZero; i++)
-            result[leadingZeros + i] = Base58Alphabet[b58[firstNonZero + i]];
-
-        return new string(result);
     }
 
     // ─── Base32 encoding ───

@@ -1,0 +1,55 @@
+name: CI
+
+# Minimal green-bar guard (final-hardening-cutover Phase H, H6). Not a
+# release/deploy pipeline — build + unit-test only. Integration tests need a
+# live SurrealDB container and are intentionally excluded here; run them
+# locally via tests/AZOA.WebAPI.IntegrationTests (see RUNBOOK.md).
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  dotnet:
+    name: .NET build + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore azoa-sleek.sln
+
+      - name: Build
+        run: dotnet build azoa-sleek.sln --configuration Release --no-restore
+
+      - name: Unit tests
+        run: dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj --configuration Release --no-build
+
+  sdk:
+    name: SDK build + vitest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/azoa-wallet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test

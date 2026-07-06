@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Mcp.Tools;
@@ -56,9 +57,11 @@ public sealed class HolonTraverseTool : IMcpTool
                 maxDepth = Math.Clamp(mdEl.GetInt32(), 1, 10);
             }
 
-            // AvatarId comes exclusively from context — privilege-escalation gate (line 58)
-            var avatarIdStr = SurrealId.ToSurrealId(context.AvatarId);
-            var holonIdStr  = SurrealId.ToSurrealId(holonId);
+            // AvatarId comes exclusively from context — privilege-escalation gate.
+            // id/link comparisons bind the `table:hex` link form: the record id and
+            // record<> link columns never equal a bare-hex string. See Mcp/AGENTS.md §record-id-binding.
+            var avatarIdStr = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(context.AvatarId))!;
+            var holonIdStr  = SurrealLink.ToLink("holon", SurrealId.ToSurrealId(holonId))!;
 
             // ── Fetch root holon ──────────────────────────────────────────
             var rootQ = SurrealQuery
@@ -101,17 +104,19 @@ public sealed class HolonTraverseTool : IMcpTool
 
             // ── Fetch peer holons ─────────────────────────────────────────
             var peers = new List<object>();
-            if (!string.IsNullOrEmpty(root.PeerHolonIds))
             {
-                // peer_holon_ids is stored as a JSON array of id strings;
-                // we decoded a comma-joined string from the POCO; parse individually.
+                // peer_holon_ids persists as a native array<string> of bare-hex ids
+                // (see SurrealHolonStore). Read it as a JSON array, not a string.
                 var peerIds = ParsePeerIds(root.PeerHolonIds);
                 foreach (var peerId in peerIds)
                 {
                     if (string.IsNullOrEmpty(peerId)) continue;
+                    // peer_holon_ids stores bare-hex ids (array<string>); bind the
+                    // `holon:hex` link form so the record-id comparison matches.
+                    var peerLink = peerId.Contains(':') ? peerId : SurrealLink.ToLink("holon", peerId);
                     var peerQ = SurrealQuery
                         .Of("SELECT id, name, description, parent_holon_id, avatar_id, provider_name, chain_id, asset_type, token_id, is_active FROM holon WHERE id = $pid")
-                        .WithParam("pid", peerId);
+                        .WithParam("pid", peerLink);
 
                     var peerRows = await context.Executor.QueryAsync<HolonPoco>(peerQ, ct);
                     if (peerRows.Count > 0)
@@ -187,26 +192,18 @@ public sealed class HolonTraverseTool : IMcpTool
     };
 
     /// <summary>
-    /// The POCO stores peer_holon_ids as a raw JSON string (e.g. <c>["abc","def"]</c>).
-    /// Parse it as an array and return the ids.
+    /// peer_holon_ids is a native SurrealDB <c>array&lt;string&gt;</c> of bare-hex ids.
+    /// Enumerate the JSON array element and return the ids.
     /// </summary>
-    private static IEnumerable<string> ParsePeerIds(string raw)
+    private static IEnumerable<string> ParsePeerIds(JsonElement? raw)
     {
-        if (string.IsNullOrWhiteSpace(raw)) yield break;
-        JsonElement el;
-        try
-        {
-            using var doc = JsonDocument.Parse(raw);
-            el = doc.RootElement.Clone();
-        }
-        catch { yield break; }
+        if (raw is not { ValueKind: JsonValueKind.Array } el) yield break;
 
-        if (el.ValueKind == JsonValueKind.Array)
-            foreach (var item in el.EnumerateArray())
-            {
-                var s = item.GetString();
-                if (!string.IsNullOrEmpty(s)) yield return s;
-            }
+        foreach (var item in el.EnumerateArray())
+        {
+            var s = item.ValueKind == JsonValueKind.String ? item.GetString() : item.GetRawText();
+            if (!string.IsNullOrEmpty(s)) yield return s;
+        }
     }
 
     private static JsonElement Error(string message, string? detail = null)
@@ -241,7 +238,7 @@ public sealed class HolonTraverseTool : IMcpTool
         [JsonPropertyName("asset_type")]      public string? AssetType      { get; set; }
         [JsonPropertyName("token_id")]        public string? TokenId        { get; set; }
         [JsonPropertyName("is_active")]       public bool    IsActive       { get; set; } = true;
-        // Stored as a JSON-encoded array string; we parse it ourselves.
-        [JsonPropertyName("peer_holon_ids")]  public string? PeerHolonIds   { get; set; }
+        // Native array<string> of bare-hex ids; enumerated in ParsePeerIds.
+        [JsonPropertyName("peer_holon_ids")]  public JsonElement? PeerHolonIds { get; set; }
     }
 }

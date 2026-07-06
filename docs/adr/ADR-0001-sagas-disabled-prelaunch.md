@@ -1,9 +1,35 @@
+---
+type: adr
+id: ADR-0001
+status: superseded
+superseded-by: final-hardening-cutover Phase A1
+date: 2026-05-18
+superseded-date: 2026-07-05
+---
+
 # ADR-0001: Sagas disabled by default pre-launch
 
-- **Status:** Accepted
+- **Status:** SUPERSEDED (2026-07-05, `final-hardening-cutover` Phase A1)
 - **Date:** 2026-05-18
 - **Deciders:** Engineering (api-safety-hardening §4 pre-launch cleanup)
 - **Related:** `conductor/tracks/api-safety-hardening/docs/GO-TO-PROD.md` §4 item 3 + hard gate #7; `conductor/tracks/durable-saga-orchestration/spec.md`
+
+> **⚠️ SUPERSEDED — 2026-07-05.** This ADR's core premise ("the saga module
+> has zero registered consumer pre-launch") is **stale**. The durable
+> **quest workflow engine** (`durable-workflow-engine`) shipped as a real saga
+> consumer: `QuestManager.StartWorkflowRunAsync` enqueues the entry node as a
+> saga step under `QuestWorkflowSaga.Name`, and dispatch happens ONLY in
+> `SagaProcessorHostedService`. With `Sagas:Enabled=false` that service
+> early-returns, so a durable run activates, enqueues its entry node, and
+> **never executes** — an inert engine (see `[[durable-quests-inert-sagas-disabled]]`).
+>
+> **New decision (Phase A1):** `SagaOptions.Enabled` now defaults to **`true`**,
+> `appsettings.json` ships `"Sagas": { "Enabled": true }`, and
+> `SagaProcessorHostedService` carries a **boot guard** that throws on startup
+> if `Sagas:Enabled=false` while any `ISagaDefinition` consumer is registered —
+> so this class of defect can never ship silently again. Rationale + activation
+> notes live in `Services/Sagas/AGENTS.md`. The rest of this document is retained
+> for historical context only; do NOT treat its decision as current.
 
 > First ADR in this repository. Architecture decisions had previously been
 > recorded as prose "Decision record" sections inside

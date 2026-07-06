@@ -41,9 +41,22 @@ public sealed class SagaProcessorHostedService : BackgroundService
     {
         if (!_options.Enabled)
         {
+            // Boot guard: a disabled processor with a registered workflow consumer
+            // means durable runs enqueue steps nobody drains — the A1 defect. Fail
+            // fast rather than ship an inert engine. See Services/Sagas/AGENTS.md.
+            using var scope = _scopeFactory.CreateScope();
+            var definitions = scope.ServiceProvider.GetServices<ISagaDefinition>();
+            var consumers = definitions.Select(d => d.Name).ToArray();
+            if (consumers.Length > 0)
+                throw new InvalidOperationException(
+                    $"Sagas:Enabled=false but {consumers.Length} saga consumer(s) are " +
+                    $"registered ({string.Join(", ", consumers)}). Durable runs would " +
+                    "enqueue steps that never execute. Set Sagas:Enabled=true (default) " +
+                    "or remove the consumer registration. See Services/Sagas/AGENTS.md.");
+
             _logger.LogInformation(
-                "Saga processor is DISABLED (Sagas:Enabled=false). The scoped " +
-                "ISagaProcessor can still be invoked directly.");
+                "Saga processor is DISABLED (Sagas:Enabled=false) and no consumer is " +
+                "registered. The scoped ISagaProcessor can still be invoked directly.");
             return;
         }
 

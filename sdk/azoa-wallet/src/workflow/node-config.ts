@@ -27,12 +27,19 @@ export interface GateCheckConfig {
 }
 
 /**
- * Emit config. Mirrors `EmitNodeConfig { JsonElement Payload }`. `payload` is an
- * opaque tenant-shaped value serialized to the node's output (AZOA holds no
- * settlement/fiat/payout state — the tenant settles).
+ * Emit config. Mirrors `EmitNodeConfig { JsonElement Payload; string? EventType }`.
+ * `payload` is an opaque tenant-shaped value serialized to the node's output (AZOA
+ * holds no settlement/fiat/payout state — the tenant settles). `eventType` is an
+ * optional free-form event name (final-hardening F3): when the run has an acting
+ * tenant with a webhook registration, the node ALSO enqueues a best-effort
+ * `quest.emit` webhook outbox event carrying this name (defaults server-side to
+ * `"quest.emit"` when omitted). The node's serialized output remains the
+ * authoritative settlement surface; the webhook is push-on-top only.
  */
 export interface EmitConfig {
   payload: unknown;
+  /** Optional tenant-defined event name echoed to the webhook receiver. */
+  eventType?: string;
 }
 
 /**
@@ -139,7 +146,10 @@ export const nodeConfig = {
 
   /** Serialize an {@link EmitConfig} to its `Config` string. */
   emit(config: EmitConfig): string {
-    return JSON.stringify({ payload: config.payload });
+    return JSON.stringify({
+      payload: config.payload,
+      ...(config.eventType !== undefined ? { eventType: config.eventType } : {}),
+    });
   },
 
   /** Serialize a {@link SwapConfig} to its `Config` string. */

@@ -348,8 +348,8 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
     private static QuestRunPoco FromDomain(QuestRun r) => new()
     {
         Id              = SurrealId.ToSurrealId(r.Id),
-        QuestId         = SurrealLink.ToLink("quest", SurrealId.ToSurrealId(r.QuestId)),
-        AvatarId        = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(r.AvatarId)),
+        QuestId         = SurrealLink.ToLink("quest", SurrealId.ToSurrealId(r.QuestId))!,
+        AvatarId        = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(r.AvatarId))!,
         // tenant-consent-delegation AC4: persist the acting tenant as a nullable
         // record<avatar> link so the seam's live consent check survives the async
         // saga hop. Mirrors SurrealBlockchainOperationStore's acting_tenant_id.

@@ -163,4 +163,41 @@ public interface ISagaStore
 
     /// <summary>Fetch a step by id (diagnostics / tests). No tracking.</summary>
     Task<SagaStepRecord?> GetAsync(Guid id, CancellationToken ct);
+
+    // ── Operator / dead-letter surface (Phase-F) ─────────────────────────────
+
+    /// <summary>
+    /// List steps in any of the supplied <paramref name="statuses"/> (operator
+    /// dead-letter inspection), newest-updated first, bounded by
+    /// <paramref name="limit"/>. Read-only; carries enough of each record
+    /// (saga/correlation/step/status/attempt/last_error) for an operator to
+    /// diagnose. The generic saga-step primitive beneath the quest-specific
+    /// reconcile board — see Services/Sagas/AGENTS.md §operator-surface.
+    /// </summary>
+    Task<IReadOnlyList<SagaStepRecord>> ListByStatusesAsync(
+        IReadOnlyCollection<StepStatus> statuses, int limit, CancellationToken ct);
+
+    /// <summary>
+    /// Operator REQUEUE: reset a <see cref="StepStatus.Parked"/> or
+    /// <see cref="StepStatus.DeadLettered"/> step back to
+    /// <see cref="StepStatus.Pending"/> (due now, lease + gate cleared) so the
+    /// processor picks it up again. Conditional on the row currently being one of
+    /// those two revivable statuses, so it is idempotent (a second requeue of an
+    /// already-Pending / already-running row affects zero rows and returns
+    /// <c>false</c>) and REFUSES to revive a terminally
+    /// <see cref="StepStatus.Cancelled"/> or already-<see cref="StepStatus.Completed"/>
+    /// step. Returns whether the conditional write applied.
+    /// </summary>
+    Task<bool> RequeueStepAsync(Guid id, CancellationToken ct);
+
+    /// <summary>
+    /// Operator CANCEL: terminally mark a <see cref="StepStatus.Parked"/>,
+    /// <see cref="StepStatus.DeadLettered"/>, or still-<see cref="StepStatus.Pending"/>
+    /// step <see cref="StepStatus.Cancelled"/> so it never retries. Conditional on
+    /// the row being in one of those non-terminal-or-dead states (an InProgress
+    /// step is being actively worked and is left to the lease; a Completed step is
+    /// done) — idempotent, and it will not un-cancel or un-complete. Returns
+    /// whether the conditional write applied.
+    /// </summary>
+    Task<bool> CancelStepAsync(Guid id, string reason, CancellationToken ct);
 }

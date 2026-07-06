@@ -137,6 +137,12 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         }
 
         var vaa = vaaResult.Result!;
+        // A VAA with no bytes or no digest is unusable proof — reject rather than
+        // persisting an empty/null proof field that later steps would trust.
+        if (string.IsNullOrWhiteSpace(vaa.VaaBytes) || string.IsNullOrWhiteSpace(vaa.Digest))
+            return Error<BridgeTransactionResult>(
+                "VAA fetch returned incomplete proof (missing VAA bytes or digest) — refusing to persist");
+
         bool saved = await _bridgeStore.SaveVaaFetchResultAsync(
             tx.Id, vaa.VaaBytes, vaa.SignatureCount, vaa.Digest, BridgeStatus.VAAReady, ct);
 
@@ -327,17 +333,17 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         if (affected != 1)
         {
             // Lost the race or not in VAAReady. Re-read to decide; never mint.
-            tx = await _bridgeStore.GetBridgeAsync(tx.Id, ct);
-            if (tx != null && (tx.Status is BridgeStatus.Redeeming or BridgeStatus.Completed))
+            BridgeTransactionResult? current = await _bridgeStore.GetBridgeAsync(tx.Id, ct);
+            if (current != null && (current.Status is BridgeStatus.Redeeming or BridgeStatus.Completed))
             {
                 await _idempotency.FailAsync(idempotencyKey,
-                    $"Concurrent redeem already advanced bridge to {tx.Status}", ct);
+                    $"Concurrent redeem already advanced bridge to {current.Status}", ct);
                 return Error<BridgeTransactionResult>(
-                    $"Bridge already being redeemed by a concurrent request (state {tx.Status}) — rejected to prevent double-mint");
+                    $"Bridge already being redeemed by a concurrent request (state {current.Status}) — rejected to prevent double-mint");
             }
 
-            var rejectMsg = tx != null
-                ? $"Bridge is in {tx.Status} state, expected VAAReady"
+            var rejectMsg = current != null
+                ? $"Bridge is in {current.Status} state, expected VAAReady"
                 : "Bridge transaction not found";
             await _idempotency.FailAsync(idempotencyKey, rejectMsg, ct);
             return Error<BridgeTransactionResult>(rejectMsg);
@@ -403,6 +409,16 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                 "VAA replay rejected for bridge {Id}: digest {Digest} consumed by a different bridge",
                 tx.Id, vaaDigest);
             return Error<BridgeTransactionResult>(replayMsg);
+        }
+
+        // VaaBytes is proven non-null upstream (RedeemWithVAAAsync guards it and
+        // the canonical digest is computed from it); guard defensively so a
+        // stale-claim resume path can never construct a VAA with null bytes.
+        if (string.IsNullOrWhiteSpace(tx.VaaBytes))
+        {
+            await FailRedeemAsync(tx.Id, "VAA bytes missing at redeem step", ct);
+            await _idempotency.FailAsync(idempotencyKey, "VAA bytes missing at redeem step", ct);
+            return Error<BridgeTransactionResult>("VAA bytes missing at redeem step — redeem rejected, no mint performed");
         }
 
         var vaaObj = new WormholeVAA
@@ -475,15 +491,15 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         }
 
         // Re-fetch final state for the response.
-        tx = await _bridgeStore.GetBridgeAsync(tx.Id, ct);
-        if (tx == null)
+        BridgeTransactionResult? finalTx = await _bridgeStore.GetBridgeAsync(tx.Id, ct);
+        if (finalTx == null)
             return Error<BridgeTransactionResult>("Bridge transaction vanished after completion");
 
         _logger.LogInformation(
             "Wormhole bridge completed: {Id} {Source}→{Target} redeemTx={TxHash}",
-            tx.Id, tx.SourceChain, tx.TargetChain, redemption.TxHash);
+            finalTx.Id, finalTx.SourceChain, finalTx.TargetChain, redemption.TxHash);
 
-        return Ok(tx, $"Wormhole bridge completed trustlessly: {tx.SourceChain} → {tx.TargetChain}");
+        return Ok(finalTx, $"Wormhole bridge completed trustlessly: {finalTx.SourceChain} → {finalTx.TargetChain}");
     }
 
     /// <summary>

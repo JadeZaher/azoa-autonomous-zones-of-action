@@ -216,6 +216,45 @@ public class KeyCustodyServiceTests
         handed!.All(b => b == 0).Should().BeTrue("the key buffer must be zeroed in finally even on signer throw");
     }
 
+    // security-review test-gap #2: the decrypt→sign→zero contract at the
+    // DecryptSignZeroAsync boundary. A throwing signer must (a) surface a clean error
+    // result, (b) leak NO key bytes into the error message, and (c) leave the very key
+    // buffer it was handed fully zeroed by the finally. This locks the core secret-
+    // hygiene invariant that the finally-zero is unconditional on the signer path.
+    [Fact]
+    public async Task DecryptSignZero_throwing_signer_returns_error_and_zeroes_key_without_leaking()
+    {
+        var keyService = KeyService(EncKeyA);
+        var avatarId = Guid.NewGuid();
+        var (wallet, clearHex) = OwnedPlatformWallet(keyService, avatarId);
+        var svc = NewService(StoreReturning(wallet), keyService);
+
+        byte[]? handed = null;
+        byte[]? capturedCopy = null;
+        var result = await svc.WithSigningKeyAsync<int>(wallet.Id, avatarId, key =>
+        {
+            handed = key;                          // SAME array the resolver zeroes
+            capturedCopy = (byte[])key.Clone();    // the real key bytes, for a leak check
+            throw new InvalidOperationException("signer detonated");
+        });
+
+        // (a) clean error result, not an exception bubbling out
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("Signing failed");
+
+        // (b) no key material in the surfaced message
+        capturedCopy.Should().NotBeNull();
+        var keyHexUpper = Convert.ToHexString(capturedCopy!);
+        var keyHexLower = keyHexUpper.ToLowerInvariant();
+        result.Message.Should().NotContain(keyHexUpper);
+        result.Message.Should().NotContain(keyHexLower);
+        result.Message.Should().NotContain(clearHex);
+
+        // (c) the handed buffer is fully zeroed by the finally, even though the signer threw
+        handed.Should().NotBeNull();
+        handed!.All(b => b == 0).Should().BeTrue("the finally must zero the key buffer on a signer throw");
+    }
+
     [Fact]
     public async Task WithSigningKeyAsync_zeroes_key_on_happy_path_too()
     {

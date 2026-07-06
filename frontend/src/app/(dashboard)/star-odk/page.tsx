@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { JsonViewer } from '@/components/shared/json-viewer'
 import { ResultDisplay } from '@/components/shared/result-display'
+import { EcosystemTreeFlow, type EcosystemTree } from '@/components/ecosystem-tree/ecosystem-tree-flow'
 import { azoa, isOk } from '@/lib/azoa'
 
 // ─── Types ───
@@ -299,6 +300,99 @@ function GenerateDAppDialog({ odkId }: { odkId: string }) {
   )
 }
 
+// ─── Ecosystem Tree Section ───
+
+/** Fetches + renders the STARODK ecosystem tree, with an inline attach form
+ * (interactive add). Read-only tree view via <EcosystemTreeFlow />. */
+function EcosystemSection({ odkId }: { odkId: string }) {
+  const [tree, setTree] = useState<EcosystemTree | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [refId, setRefId] = useState('')
+  const [parentNodeId, setParentNodeId] = useState('')
+  const [label, setLabel] = useState('')
+  const [attaching, setAttaching] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await azoa.api.request<EcosystemTree>('GET', `/api/starodk/${odkId}/ecosystem`)
+      if (isOk(result)) setTree(result.value)
+      else setError((result as { error: { message: string } }).error.message)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [odkId])
+
+  const handleAttach = async () => {
+    if (!refId.trim()) return
+    setAttaching(true)
+    setError(null)
+    try {
+      const body: Record<string, unknown> = { refId: refId.trim(), refKind: 'DappSeries' }
+      if (parentNodeId.trim()) body.parentNodeId = parentNodeId.trim()
+      if (label.trim()) body.label = label.trim()
+      const result = await azoa.api.request<EcosystemTree>(
+        'POST',
+        `/api/starodk/${odkId}/ecosystem/dapp-series`,
+        body
+      )
+      if (isOk(result)) {
+        setTree(result.value)
+        setRefId('')
+        setParentNodeId('')
+        setLabel('')
+      } else {
+        setError((result as { error: { message: string } }).error.message)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setAttaching(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">Ecosystem Tree</p>
+        <Button size="sm" variant="ghost" onClick={load} disabled={loading}>
+          {loading ? 'Loading...' : 'Refresh'}
+        </Button>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-4">
+        <Input placeholder="DappSeries ID *" value={refId} onChange={(e) => setRefId(e.target.value)} />
+        <Input placeholder="Parent node ID (optional)" value={parentNodeId} onChange={(e) => setParentNodeId(e.target.value)} />
+        <Input placeholder="Label (optional)" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <Button size="sm" onClick={handleAttach} disabled={attaching || !refId.trim()}>
+          {attaching ? 'Attaching...' : 'Attach DappSeries'}
+        </Button>
+      </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {tree ? (
+        <EcosystemTreeFlow tree={tree} />
+      ) : (
+        !loading && (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            No ecosystem yet. Attach a DappSeries to create one.
+          </p>
+        )
+      )}
+    </div>
+  )
+}
+
 // ─── Selected ODK Detail ───
 
 function OdkDetail({
@@ -397,6 +491,9 @@ function OdkDetail({
       <div className="rounded-md bg-muted p-3 text-xs">
         <JsonViewer data={odk} />
       </div>
+
+      <Separator />
+      <EcosystemSection odkId={odk.id} />
 
       {deployResult !== null && deployResult !== undefined && (
         <>

@@ -2,7 +2,7 @@
 
 **Audience:** Operators standing up and running a self-hosted AZOA node in a real
 environment.
-**Scope:** How the .NET 8 WebAPI process and the SurrealDB instance it owns are
+**Scope:** How the .NET 10 WebAPI process and the SurrealDB instance it owns are
 provisioned, configured, and booted. Data-engine reality is **SurrealDB, sole
 engine** — this guide supersedes the Postgres/EF sections in `GO-TO-PROD.md` and
 `RESIDUAL-RISK-RUNBOOK.md`, which predate the SurrealDB cutover.
@@ -14,7 +14,7 @@ engine** — this guide supersedes the Postgres/EF sections in `GO-TO-PROD.md` a
 
 An AZOA node is two cooperating processes:
 
-- **The WebAPI** — the .NET 8 ASP.NET Core host (`AZOA.WebAPI.dll`). It serves the
+- **The WebAPI** — the .NET 10 ASP.NET Core host (`AZOA.WebAPI.dll`). It serves the
   AZOA protocol (identity, quests, holons, swaps, STAR, bridge) over HTTP with
   dual auth (JWT + `X-Api-Key`).
 - **A SurrealDB instance it owns** — the sole data engine. The node reads and
@@ -31,18 +31,15 @@ network, fiat settlement partners) is reached over the network per config.
 
 ## 1. Prerequisites
 
-- **.NET 8 SDK** (build) / .NET 8 runtime (run). Any .NET 8 host works; the
-  supported deploy shapes are local `docker-compose` and Railway (see §7).
+- **.NET 10 SDK** (build) / .NET 10 runtime (run). Any .NET 10 host works; the
+  supported deploy shapes are local `docker-compose` and Railway (see §8.7).
 - **podman or Docker** — to run SurrealDB (and, for the full local stack, the
   WebAPI + frontend images). The `dev-up` scripts auto-detect `docker compose`
   v2, `docker-compose` v1, `podman-compose`, or `podman compose`.
-- **SurrealDB** — pinned image. Local/dev stack:
-  `surrealdb/surrealdb:v3.1.4` (`docker-compose.dev.yml`). The Railway prod
-  service in `RUNBOOK.md` §2 still references `surrealdb/surrealdb:v1.5.4`; the
-  1.5.4→3.x cutover is tracked at `surrealdb-major-upgrade`. **Pin the same
-  SurrealDB version your schema was generated and tested against** — a 3.x
-  instance answers `/health` but enforces stricter namespace/DDL rules than
-  1.5.x, so do not mix.
+- **SurrealDB** — pinned image, **`surrealdb/surrealdb:v3.1.4`** everywhere
+  (local `docker-compose.dev.yml` and the Railway prod service alike — the
+  1.5.4→3.x cutover, tracked at `surrealdb-major-upgrade`, is closed). **Pin
+  the same SurrealDB version your schema was generated and tested against.**
 - **Node 20+** — only if you also run the reference frontend.
 
 ---
@@ -167,6 +164,36 @@ What each network implies for the **Wormhole bridge trust root**:
 
 The faucet (`Blockchain:Faucet:Algorand:Mnemonic`) is a **secret**, testnet-only.
 
+### 4.1 Which value routes are real (read before enabling any value flow)
+
+Not every chain's value path is production-real yet. The node is built so the
+unfinished ones are **fail-closed** — they refuse rather than move value badly —
+but an operator MUST know which is which before flipping anything on:
+
+- **Algorand — real.** Real Ed25519 keygen, real server-side signing, and real
+  on-chain lock/burn/transfer/mint run end-to-end through the custodial signer.
+  This is the supported real-value chain.
+- **Solana / Wormhole / Ethereum — fail-closed, keep disabled.** These value
+  routes are **not production-complete** and MUST stay off
+  (`Blockchain__Bridge__RealValueEnabled=false`) until their follow-ups land:
+  a real Solana SPL transfer pipeline, real Wormhole VAA **sequence parsing**,
+  and real Ethereum **secp256k1** keygen/signing. Until then these paths
+  deliberately refuse to move value; do **not** set `RealValueEnabled=true` or
+  enable a non-Algorand mainnet chain expecting cross-chain value to flow.
+
+**Verify:** with `RealValueEnabled=false`, a Solana/Wormhole/ETH value attempt is
+rejected (fail-closed) rather than silently no-op'd; only Algorand real value
+transacts.
+
+**Forward-compat residual (record before you make quests shareable).** Value-node
+actor derivation currently reads the **quest definition** owner (`quest.AvatarId`).
+That is correct only while a run's actor equals the quest owner. **If quests ever
+become shareable/public** (a run driven by someone other than the quest author),
+the value-node actor MUST switch from `quest.AvatarId` to the **run** owner
+(`run.AvatarId`) so value acts as the run's driver, not the template's author.
+This is a launch-safe residual today (quests are not shareable) — flag it for the
+change that makes them so.
+
 ---
 
 ## 5. Running the node — single instance vs scale-out
@@ -275,6 +302,17 @@ cut.** If you are moving real value, do it before flipping mainnet (§8.3).
 **Verify:** with the KMS store wired, no value-bearing private key is
 recoverable from app config alone.
 
+**Key-rotation pending-key marker (persist it on a volume).** Live key rotation
+writes a **pending-key marker** (the re-wrap recovery marker) via a file store
+at `AZOA:Rotation:PendingKeyFilePath`. On an ephemeral container (Railway and
+most PaaS), point that path at a **mounted persistent volume** — otherwise a
+crash mid-rotation loses the recovery marker and the rotation cannot resume
+cleanly. Give the file **restrictive permissions**: it is a key-confirmation
+oracle (though AES-GCM makes offline guessing infeasible, treat it as sensitive).
+
+**Verify:** `AZOA:Rotation:PendingKeyFilePath` resolves to a mounted volume path
+(not container-local scratch) and the file is not world-readable.
+
 ### 8.3 Sign the mainnet enablement gate before flipping any chain to real value
 
 Before you set a chain's `Mainnet.IsEnabled=true` or `Blockchain__Bridge__RealValueEnabled=true`,
@@ -282,6 +320,10 @@ sign off a documented checklist. Do **not** flip these until every box is true:
 
 - Real on-chain signing has been verified on testnet (a real transaction signs,
   broadcasts, and confirms).
+- The chain you are enabling has a **real** value route. Today only **Algorand**
+  does; **Solana / Wormhole / Ethereum value routes are fail-closed and must stay
+  disabled** (`RealValueEnabled=false`) until their follow-ups land (§4.1). Do not
+  flip `RealValueEnabled=true` for a non-Algorand chain.
 - Production key custody is in place (§8.2).
 - Guardian sets for the target network are provisioned **and** independently
   verified (§8.7 / `GUARDIAN-SET-SETUP.md`).
@@ -358,11 +400,11 @@ host. The full Railway procedure — required env vars, entrypoint behavior, and
 the SurrealDB service definition — is in **`RUNBOOK.md` §2**.
 
 **SurrealDB version note.** Match the SurrealDB version in production to the one
-your schema was generated and tested against. Dev/local is pinned to
-`surrealdb/surrealdb:v3.1.4`, while `RUNBOOK.md` §2 still specifies the Railway
-service at `v1.5.4`. **Move the Railway SurrealDB service to `v3.1.4`** so prod
-matches dev — a 3.x instance answers `/health` but enforces stricter
-namespace/DDL rules than 1.5.x, so the two must not be mixed.
+your schema was generated and tested against. Both dev/local
+(`docker-compose.dev.yml`) and the Railway prod service (`RUNBOOK.md` §2) are
+pinned to `surrealdb/surrealdb:v3.1.4` — **verify your deploy's Railway service
+config still matches** before going live; a version mismatch across environments
+enforces different namespace/DDL strictness and is the failure mode to avoid.
 
 **Verify:** `/health` returns 200 with `storage-db` Healthy, `surrealforge
 migrate status` matches the on-disk files, and for testnet/mainnet the Guardian
@@ -377,6 +419,56 @@ the brand boundary cannot silently regress.
 
 **Verify:** the check runs as a required stage and fails the build on a
 deliberately introduced brand string.
+
+### 8.9 Mint your first operator-admin principal
+
+Operator-only endpoints are guarded by an **Operator policy** that accepts an
+`operator:admin` scope (or the legacy `role=Admin`/`is_admin` claim — see below).
+That scope is **API-key-forbidden by design** — an `X-Api-Key` principal can
+never carry it, so a leaked tenant/API key cannot reach operator surface. On a
+fresh deploy there is no admin yet, so it must be **bootstrapped once** via the
+seed mechanism below (`Services/Admin/AGENTS.md` has the full design rationale).
+
+**How it works.** `AvatarManager` stamps `operator:admin` (+ the legacy
+`role=Admin` claim) onto a JWT at login time, but ONLY for the one avatar named
+by two env vars — both required together, fail-closed if only one is set:
+
+- `AdminBootstrap__SeedEmail` — the email of the avatar to promote.
+- `AdminBootstrap__SeedSecret` — a shared secret proving you (the operator, with
+  deploy/config access) intend to arm the bootstrap. Not sent in any request —
+  it only needs to be present in the running process's config.
+
+**Step-by-step (executable as written):**
+
+1. **Register a normal account first** (`POST /api/avatar/register`) with the
+   email you want to promote — e.g. `ops@yourorg.example`. This step can happen
+   before or after step 2.
+2. **Set both env vars** on the host, then (re)start the API:
+   ```
+   AdminBootstrap__SeedEmail=ops@yourorg.example
+   AdminBootstrap__SeedSecret=<any random string you generate — e.g. `openssl rand -hex 24`>
+   ```
+   At boot, `SeedAdminHostedService` logs `Admin bootstrap is ARMED for seed
+   email ...` if both vars are set consistently. If only one is set, it logs a
+   warning in Dev/IntegrationTest — **and throws at startup in Production**
+   (fail-closed: a half-configured bootstrap must not boot silently).
+3. **Log in as that avatar** (`POST /api/avatar/login`). The returned JWT now
+   carries `scope=operator:admin` (and `role=Admin`) — use it as your Bearer
+   token against the operator endpoints.
+4. **Unset both env vars and restart** once you've minted your first admin (or
+   any subsequent admins you need). The bootstrap seam persists nothing to the
+   database — with the env vars gone, no JWT is ever stamped again until you
+   re-arm it, which is the intended one-shot shape.
+
+**Interim (unchanged, still safe):** the legacy `role=Admin` / `is_admin` claim
+path keeps working independently of the above — it was never removed. It is
+safe because only a **validly-signed admin JWT** reaches it — there is no
+API-key or unauthenticated bypass.
+
+**Verify:** a token minted via the seed path (or carrying `operator:admin`/
+`role=Admin` some other way) reaches the operator endpoints; the same request
+bearing an `X-Api-Key` (no JWT) is rejected; booting with only one of the two
+env vars set in a Production environment refuses to start.
 
 ---
 

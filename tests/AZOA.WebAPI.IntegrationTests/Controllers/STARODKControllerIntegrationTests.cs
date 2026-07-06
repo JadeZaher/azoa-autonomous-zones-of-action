@@ -129,7 +129,14 @@ public class STARODKControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Deploy_ShouldSetDeploymentConfig()
     {
-        var odk = await SeedSTARODKAsync(o => o.WithGeneratedCode("some code").Targeting("Algorand"));
+        // GeneratedCode is not a create-model field (STARODKCreateModel carries only
+        // Name/Description/PublicKey/AvatarId) — the seed builder's WithGeneratedCode
+        // is dropped on POST. GeneratedCode is set ONLY by the generate endpoint, so
+        // deploy must be preceded by a real generate (the production flow).
+        var odk = await SeedSTARODKAsync();
+        var generateRequest = new STARODKBuilder().Targeting("Algorand").BuildGenerationRequest();
+        var generateResponse = await Client.PostAsJsonAsync($"api/starodk/{odk.Id}/generate", generateRequest);
+        generateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await Client.PostAsync($"api/starodk/{odk.Id}/deploy", null);
 

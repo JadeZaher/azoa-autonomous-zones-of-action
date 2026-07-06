@@ -23,6 +23,9 @@ public sealed class QuestCatalogTool : IMcpTool
         QuestNodeType.Transfer,
         QuestNodeType.Refund,
         QuestNodeType.FungibleTokenCreate,
+        // Fractionalization rails (final-hardening D1) reach the real cross-chain bridge.
+        QuestNodeType.Bridge,
+        QuestNodeType.Back,
     };
 
     private static readonly JsonElement _inputSchema;

@@ -4,9 +4,9 @@ graph LR
     %% Regenerate with: dotnet run --project packages/SurrealForge.Schema -- flowcharts
     %% 
     %% Slices in this diagram:
-    %%   bridge: bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, operation_log, saga_steps, webhook_registration
-    %%   dapp_composition: dapp_series, dapp_series_quest
-    %%   identity: api_key, avatar, consent_audit, consent_grant, holon, kyc_document, kyc_submission, star_odk, wallet_auth_challenge, wallet_auth_claim_token
+    %%   bridge: bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, operation_log, quest_webhook_event, saga_steps, webhook_registration
+    %%   dapp_composition: dapp_series, dapp_series_quest, ecosystem, ecosystem_node
+    %%   identity: api_key, avatar, consent_audit, consent_grant, holon, holon_type_registry, kyc_document, kyc_submission, star_odk, wallet_auth_challenge, wallet_auth_claim_token
     %%   quest: executes, forked_from, quest, quest_dependency, quest_edge, quest_node, quest_node_execution, quest_run
     %%   quest_templates: quest_node_template, quest_template
     %%   wallet_nft: nft_ownership, swap_state, wallet
@@ -19,6 +19,7 @@ graph LR
     %%   consent_webhook_event.event_type: Granted, Revoked, Expired  (ConsentWebhookEvent.WebhookEventType)
     %%   consent_webhook_event.status: Pending, Delivered, DeadLettered  (ConsentWebhookEvent.DeliveryStatus)
     %%   dapp_series.status: Draft, Building, Ready, Deployed, Archived  (DappSeries.StatusKind)
+    %%   ecosystem_node.ref_kind: DappSeries, StarOdk  (EcosystemNode.RefKindValue)
     %%   idempotency_key_store.state: InProgress, Completed, Failed  (IdempotencyKeyStore.StateKind)
     %%   kyc_document.type: GOVERNMENT_ID, PASSPORT, DRIVERS_LICENSE, SELFIE, PROOF_OF_ADDRESS  (KycDocument.KycDocumentType)
     %%   kyc_submission.provider: MANUAL, VERIFF  (KycSubmission.KycProvider)
@@ -31,7 +32,8 @@ graph LR
     %%   quest_node_execution.state: Pending, Running, Succeeded, Failed, Skipped, Cancelled  (QuestNodeExecution.QuestNodeState)
     %%   quest_node_template.node_type: HolonCreate, HolonUpdate, HolonDelete, HolonGet, HolonQuery, HolonInteract, HolonGetChildren, HolonGetPeers, HolonGetAncestors, HolonGetDescendants, HolonPropagate, HolonCompose, HolonClone, HolonMoveSubtree, NftMint, NftTransfer, NftBurn, NftGet, NftQuery, NftGetMetadata, WalletCreate, WalletUpdate, WalletDelete, WalletGet, WalletQuery, WalletSetDefault, WalletGetPortfolio, StarGenerate, StarDeploy, Search, AvatarNFTGetComposite, BlockchainExecute, Condition, ComposeOutputs, GateCheck, Emit, Swap, Grant, Transfer, Refund, FungibleTokenCreate  (QuestNodeTemplate.NodeTypeKind)
     %%   quest_run.status: Pending, Running, Succeeded, Failed, Forked, Cancelled, Suspended, AwaitingSignal, AwaitingTimer, AwaitingReconciliation  (QuestRun.QuestRunStatusKind)
-    %%   saga_steps.status: Pending, InProgress, Completed, Compensating, DeadLettered, Parked  (SagaSteps.StepStatus)
+    %%   quest_webhook_event.status: Pending, Delivered, DeadLettered  (QuestWebhookEvent.DeliveryStatus)
+    %%   saga_steps.status: Pending, InProgress, Completed, Compensating, DeadLettered, Parked, Cancelled  (SagaSteps.StepStatus)
     %%   swap_state.status: Pending, Unknown, Failed, Completed, AwaitingSignature, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (SwapState.StatusKind)
     %%   wallet.wallet_type: External, Platform  (Wallet.WalletTypeKind)
 
@@ -41,6 +43,7 @@ graph LR
         consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
         idempotency_key_store["idempotency_key_store: Node"]:::nodeClass
         operation_log["operation_log: Node"]:::nodeClass
+        quest_webhook_event["quest_webhook_event: Node"]:::nodeClass
         saga_steps["saga_steps: Node"]:::nodeClass
         webhook_registration["webhook_registration: Node"]:::nodeClass
     end
@@ -48,6 +51,8 @@ graph LR
     subgraph slice_dapp_composition ["dapp_composition"]
         dapp_series["dapp_series: Node"]:::nodeClass
         dapp_series_quest["dapp_series_quest: Node"]:::nodeClass
+        ecosystem["ecosystem: Node"]:::nodeClass
+        ecosystem_node["ecosystem_node: Node"]:::nodeClass
     end
 
     subgraph slice_identity ["identity"]
@@ -56,6 +61,7 @@ graph LR
         consent_audit["consent_audit: Node"]:::nodeClass
         consent_grant["consent_grant: Node"]:::nodeClass
         holon["holon: Node"]:::nodeClass
+        holon_type_registry["holon_type_registry: Node"]:::nodeClass
         kyc_document["kyc_document: Node"]:::nodeClass
         kyc_submission["kyc_submission: Node"]:::nodeClass
         star_odk["star_odk: Node"]:::nodeClass
@@ -101,6 +107,10 @@ graph LR
     dapp_series -- "star_odk_id [N:0..1]" --> star_odk
     dapp_series_quest -- "dapp_series_id [N:1]" --> dapp_series
     dapp_series_quest -- "quest_id [N:1]" --> quest
+    ecosystem -- "avatar_id [N:1]" --> avatar
+    ecosystem -- "star_odk_id [N:1]" --> star_odk
+    ecosystem_node -- "ecosystem_id [N:1]" --> ecosystem
+    ecosystem_node -- "parent_node_id [N:0..1]" --> ecosystem_node
     holon -- "avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
@@ -132,6 +142,10 @@ graph LR
     quest_run -- "executes [N:M]" --> quest_node_execution
     quest_run -- "forked_from [N:M]" --> quest_run
     quest_run -- "parent_run_id [N:0..1]" --> quest_run
+    quest_webhook_event -- "tenant_id [N:1]" --> avatar
+    quest_webhook_event -- "quest_id [N:1]" --> quest
+    quest_webhook_event -- "node_id [N:1]" --> quest_node
+    quest_webhook_event -- "run_id [N:1]" --> quest_run
     star_odk -- "avatar_id [N:0..1]" --> avatar
     swap_state -- "avatar_id [N:1]" --> avatar
     wallet -- "avatar_id [N:1]" --> avatar

@@ -218,13 +218,10 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         var statusKind = ParseStatusKind(op.Status);
 
         // Serialize Parameters dictionary to a JsonElement? for the POCO.
-        JsonElement? parametersElement = null;
-        if (op.Parameters is { Count: > 0 })
-        {
-            var json = JsonSerializer.Serialize(op.Parameters);
-            using var doc = JsonDocument.Parse(json);
-            parametersElement = doc.RootElement.Clone();
-        }
+        // ALWAYS serialize (empty → `{}`) so the SET-based upsert REPLACES the
+        // column; see Providers/Stores/Surreal/AGENTS.md §set-omits-null.
+        JsonElement? parametersElement = JsonSerializer.SerializeToElement(
+            op.Parameters ?? new Dictionary<string, string>());
 
         // IExchange/IMint/ITransfer fields are only available on the concrete type.
         var concrete = op as BlockchainOperation;

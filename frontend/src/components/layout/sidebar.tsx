@@ -23,6 +23,9 @@ import {
   FlaskConical,
   Coins,
   Menu,
+  Database,
+  ShieldAlert,
+  GitMerge,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -61,9 +64,17 @@ const navGroups = [
     label: 'Tools',
     items: [
       { href: '/search', label: 'Search', icon: Search },
+      { href: '/holon-query', label: 'Holon Query', icon: Database },
       { href: '/quests', label: 'Quests', icon: Star },
       { href: '/star-odk', label: 'Star ODK', icon: Star },
       { href: '/api-keys', label: 'API Keys', icon: KeyRound },
+    ],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { href: '/admin/key-rotation', label: 'Key Rotation', icon: ShieldAlert },
+      { href: '/admin/sagas', label: 'Saga Console', icon: GitMerge },
     ],
   },
   {

@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 /// </summary>
 public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISolanaSPLModule
 {
-    private HttpClient _rpcHttpClient;
+    private HttpClient _rpcHttpClient = null!;
     private readonly BlockchainConfigurationManager _configManager;
     private int _requestId;
 
@@ -158,31 +158,52 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
     // ─── Token / Asset Lifecycle ───
 
+    /// <summary>
+    /// FAIL-CLOSED: no server-side SPL mint pipeline exists (no build→sign→submit; the
+    /// Solana signer is a fail-loud stub). Returns an explicit error rather than a
+    /// synthetic op-id `Ok` — a fabricated "minted" on this value path would let a durable
+    /// quest chain-action node record success with a non-chain id and mislead
+    /// reconcile-before-retry. See Providers/Blockchain/AGENTS.md §bridge.
+    /// </summary>
     public override Task<AZOAResult<string>> MintAsync(
         string tokenUri, ulong amount, string assetType, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
-        return Task.FromResult(Ok(
-            OperationIdGenerator.Generate("solana", "mint", walletAddress),
-            $"SPL token mint operation recorded for {assetType} (amount={amount}) by {walletAddress}. Requires client-side signing with Token Program."));
+        return Task.FromResult(Error<string>(
+            "Solana SPL mint is not implemented server-side: no build/sign/submit pipeline "
+            + "exists in the provider (the Solana signer is a fail-loud stub). Refusing to "
+            + "record a fake mint on a value path. Configure real Solana signing and an "
+            + "SPL-mint path before dispatching Solana mint value operations."));
     }
 
+    /// <summary>
+    /// FAIL-CLOSED: no server-side SPL burn pipeline exists — see <see cref="MintAsync"/>.
+    /// Returns an explicit error rather than a synthetic op-id `Ok` on a value path.
+    /// </summary>
     public override Task<AZOAResult<string>> BurnAsync(
         string tokenId, ulong amount, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
-        return Task.FromResult(Ok(
-            OperationIdGenerator.Generate("solana", "burn", walletAddress, tokenId, amount),
-            $"SPL token burn operation recorded for {tokenId} (amount={amount}). Requires client-side signing."));
+        return Task.FromResult(Error<string>(
+            "Solana SPL burn is not implemented server-side: no build/sign/submit pipeline "
+            + "exists in the provider (the Solana signer is a fail-loud stub). Refusing to "
+            + "record a fake burn on a value path. Configure real Solana signing and an "
+            + "SPL-burn path before dispatching Solana burn value operations."));
     }
 
+    /// <summary>
+    /// FAIL-CLOSED: no server-side SPL transfer pipeline exists — see <see cref="MintAsync"/>.
+    /// Returns an explicit error rather than a synthetic op-id `Ok` on a value path.
+    /// </summary>
     public override Task<AZOAResult<string>> TransferAsync(
         string tokenId, string fromAddress, string toAddress, ulong amount,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
-        return Task.FromResult(Ok(
-            OperationIdGenerator.Generate("solana", "transfer", fromAddress, toAddress, amount),
-            $"SPL transfer operation recorded: {amount} of {tokenId ?? "SOL"} from {fromAddress} to {toAddress}. Requires client-side signing."));
+        return Task.FromResult(Error<string>(
+            "Solana SPL transfer is not implemented server-side: no build/sign/submit "
+            + "pipeline exists in the provider (the Solana signer is a fail-loud stub). "
+            + "Refusing to record a fake transfer on a value path. Configure real Solana "
+            + "signing and an SPL-transfer path before dispatching Solana transfer value operations."));
     }
 
     public override Task<AZOAResult<string>> ExchangeAsync(
@@ -353,42 +374,63 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
     // ─── Cross-Chain Bridge ───
 
+    /// <summary>
+    /// FAIL-CLOSED: Solana bridge lock is not yet a real broadcast. The Solana
+    /// provider has no build→sign→submit pipeline (SolanaTransactionSigner is a
+    /// fail-loud stub and no custody seam is wired here), so this returns an explicit
+    /// error rather than a fabricated success on a value path (final-hardening-cutover
+    /// B2). It becomes real once the Solana signer + a provider SPL-transfer pipeline
+    /// land — see Providers/Blockchain/AGENTS.md §bridge (Solana canonical bytes).
+    /// </summary>
     public override Task<AZOAResult<string>> LockForBridgeAsync(
         string tokenId, string vaultAddress, int amount,
         string targetChain, string targetRecipient, CancellationToken ct = default)
     {
-        _logger.LogInformation(
-            "Bridge lock request: {TokenId} amount={Amount} vault={Vault} → {TargetChain}/{TargetRecipient}",
-            tokenId, amount, vaultAddress, targetChain, targetRecipient);
-
-        return Task.FromResult(Ok(
-            OperationIdGenerator.Generate("solana", "bridge_lock", vaultAddress, targetChain, targetRecipient),
-            $"Lock request recorded: {amount} of {tokenId ?? "SOL"} → vault {vaultAddress} for {targetChain} bridge to {targetRecipient}"));
+        return Task.FromResult(Error<string>(
+            "Solana bridge lock is not implemented: no Solana transaction build/sign/submit "
+            + "pipeline exists in the provider (the Solana signer is a fail-loud stub). "
+            + "Refusing to record a fake lock on a value path. Configure real Solana signing "
+            + "and an SPL-transfer path before enabling Solana as a bridge source."));
     }
 
+    /// <summary>
+    /// FAIL-CLOSED: Solana wrapped-mint is not yet a real broadcast (no signer/submit
+    /// pipeline in the provider). Returns an explicit error rather than a fabricated
+    /// success on the trusted-bridge value path (final-hardening-cutover B2) — a fake
+    /// "minted" would make the bridge report value that never landed on Solana.
+    /// See Providers/Blockchain/AGENTS.md §bridge.
+    /// </summary>
     public override Task<AZOAResult<string>> MintWrappedAsync(
         string sourceChain, string sourceTokenId, string tokenUri,
         int amount, string recipientAddress, CancellationToken ct = default)
     {
-        return Task.FromResult(Ok(
-            OperationIdGenerator.Generate("solana", "wrap", recipientAddress, sourceChain, sourceTokenId),
-            $"Wrapped mint recorded: w{sourceChain}-{sourceTokenId} for {recipientAddress}. Requires client-side SPL token mint."));
+        return Task.FromResult(Error<string>(
+            "Solana wrapped-asset mint is not implemented: no Solana transaction "
+            + "build/sign/submit pipeline exists in the provider (the Solana signer is a "
+            + "fail-loud stub). Refusing to record a fake mint on a value path. Configure "
+            + "real Solana signing and an SPL-mint path before enabling Solana as a bridge target."));
     }
 
+    /// <summary>
+    /// FAIL-CLOSED: Solana wrapped-burn is not yet a real broadcast (same reason as
+    /// <see cref="LockForBridgeAsync"/> — no signer/submit pipeline in the provider).
+    /// Returns an explicit error rather than a fabricated success on a value path
+    /// (final-hardening-cutover B2). See Providers/Blockchain/AGENTS.md §bridge.
+    /// </summary>
     public override Task<AZOAResult<string>> BurnWrappedAsync(
         string tokenId, int amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default)
     {
-        return Task.FromResult(Ok(
-            OperationIdGenerator.Generate("solana", "burn_wrap", walletAddress, tokenId, sourceChain),
-            $"Wrapped burn recorded for {tokenId} on Solana → release on {sourceChain}"));
+        return Task.FromResult(Error<string>(
+            "Solana wrapped-asset burn is not implemented: no Solana transaction "
+            + "build/sign/submit pipeline exists in the provider (the Solana signer is a "
+            + "fail-loud stub). Refusing to record a fake burn on a value path. Configure "
+            + "real Solana signing and an SPL-burn path before enabling Solana bridge reversal."));
     }
 
-    public override Task<AZOAResult<bool>> VerifyBridgeProofAsync(
-        string proofData, string sourceChain, string targetChainId, CancellationToken ct = default)
-    {
-        return Task.FromResult(Ok(true, $"Bridge proof verified for {sourceChain} → Solana"));
-    }
+    // VerifyBridgeProofAsync removed (final-hardening-cutover B2): the always-true
+    // provider verifier is gone; VAA verification is the WormholeAdapter /
+    // Secp256k1VaaSignatureVerifier path only.
 
     // ─── ISolanaMetaplexModule ───
 

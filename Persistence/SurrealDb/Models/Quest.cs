@@ -61,6 +61,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public QuestStatusKind Status { get; set; }
 
+        [FieldGroup("Optimistic-concurrency token for the definition lifecycle (F6 TOCTOU guard). Bumped on every CAS status transition. See Managers/AGENTS.md §publish-lifecycle.")]
+        [JsonPropertyName("version")]
+        [Default("0")]
+        public long Version { get; set; }
+
         [FieldGroup("Definition birthdate -- STAYS on the definition, not a runtime artifact")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }

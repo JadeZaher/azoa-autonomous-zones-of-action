@@ -254,7 +254,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         result.Message.Should().Be("Success");
         result.Result!.Count().Should().BeGreaterThanOrEqualTo(2);
 
-        var ids = result.Result.Select(o => o.Id).ToList();
+        var ids = result.Result!.Select(o => o.Id).ToList();
         ids.Should().Contain(odk1.Id);
         ids.Should().Contain(odk2.Id);
     }

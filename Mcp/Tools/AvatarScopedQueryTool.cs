@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Mcp.Tools;
@@ -131,8 +132,10 @@ public sealed class AvatarScopedQueryTool : IMcpTool
             }
 
             // ── AvatarId comes exclusively from context ────────────────────
-            // (privilege-escalation gate — line 134)
-            var avatarIdStr = SurrealId.ToSurrealId(context.AvatarId);
+            // (privilege-escalation gate). avatar_id is a record<avatar>
+            // column on every allowlisted table; bind the `avatar:hex` link form so
+            // the comparison matches. See Mcp/AGENTS.md §record-id-binding.
+            var avatarIdStr = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(context.AvatarId));
 
             // ── Build query ───────────────────────────────────────────────
             // Table name is from the allowlist — substituted via SurrealQuery.SelectAll

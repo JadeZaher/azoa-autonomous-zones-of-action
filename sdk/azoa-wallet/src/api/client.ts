@@ -521,6 +521,86 @@ export interface QuestResult {
   metadata: Record<string, string>;
   createdDate: string;
   completedDate?: string;
+  /**
+   * Optimistic-concurrency version (final-hardening F6). Bumped on every
+   * publish/unpublish transition; a stale read racing a concurrent transition
+   * surfaces as a "conflict" {@link SdkError} from {@link AzoaApiClient.publishQuest} /
+   * {@link AzoaApiClient.unpublishQuest} / workflow run-start — reload and retry.
+   */
+  version: number;
+}
+
+/** One registered entry in the opt-in Holon AssetType registry (final-hardening F5). */
+export interface HolonTypeResult {
+  id: string;
+  assetType: string;
+  description: string;
+  requiredMetadataFields?: string[];
+  isActive: boolean;
+  createdDate: string;
+  modifiedAt?: string;
+}
+
+/** Operator request body for {@link AzoaApiClient.registerHolonType}. */
+export interface HolonTypeRegisterParams {
+  assetType: string;
+  description?: string;
+  requiredMetadataFields?: string[];
+  isActive?: boolean;
+}
+
+/** Filterable statuses for {@link AzoaApiClient.listSagaDeadLetters} (SagaOperatorController). */
+export type SagaStepStatus = "DeadLettered" | "Parked" | "Cancelled";
+
+/** Query options for {@link AzoaApiClient.listSagaDeadLetters}. */
+export interface SagaDeadLetterListParams {
+  /** Defaults to `["DeadLettered"]` server-side when omitted. */
+  status?: SagaStepStatus[];
+  /** Defaults to 100 server-side when omitted. */
+  limit?: number;
+}
+
+/** Operator-facing projection of a saga step (mirrors .NET `SagaStepView`). */
+export interface SagaStepView {
+  id: string;
+  sagaName: string;
+  stepName: string;
+  correlationKey: string;
+  status: string;
+  isCompensation: boolean;
+  attemptCount: number;
+  lastError?: string;
+  gateId?: string;
+  nextRunAt: string;
+  updatedAt: string;
+}
+
+/** Result of {@link AzoaApiClient.requeueSagaStep} (bare response). */
+export interface SagaStepRequeueResult {
+  id: string;
+  status: string;
+  message: string;
+}
+
+/** Result of {@link AzoaApiClient.cancelSagaStep} (bare response). */
+export interface SagaStepCancelResult {
+  id: string;
+  status: string;
+  message: string;
+}
+
+/** Outcome of a wrapping-key rotation batch (mirrors .NET `KeyRotationReport`). Counts only — never key material. */
+export interface KeyRotationReport {
+  total: number;
+  rewrapped: number;
+  alreadyRotated: number;
+  skipped: number;
+  rolledBack: boolean;
+}
+
+/** Request body for {@link AzoaApiClient.rotateWalletKeys}. */
+export interface KeyRotationParams {
+  newEncryptionKey: string;
 }
 
 export interface QuestNodeCreateParams {
@@ -645,6 +725,18 @@ function assertUuid(id: string, paramName: string): void {
       SdkErrorCode.INVALID_INPUT,
       `Invalid ${paramName}: expected UUID format (received "${id.length > 50 ? id.slice(0, 50) + "…" : id}")`
     );
+  }
+}
+
+/**
+ * Validates a non-UUID, URL-interpolated route segment (e.g. a natural-key
+ * string like `assetType`) is a non-empty string before interpolation. The
+ * path constant itself `encodeURIComponent`s the value, so this only guards
+ * against an accidental empty segment collapsing the route.
+ */
+function assertNonEmpty(value: string, paramName: string): void {
+  if (!value || value.trim().length === 0) {
+    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: must be a non-empty string`);
   }
 }
 
@@ -969,6 +1061,73 @@ export class AzoaApiClient {
     return this.request("POST", `/api/starodk/${starodkId}/deploy`);
   }
 
+  // ─── Holon AssetType registry (HolonTypeRegistryController, final-hardening F5) ───
+  // Reads open to any authenticated caller; register/deactivate/delete are Operator-scoped.
+
+  /** Lists every registered holon type, most recent first. */
+  async listHolonTypes(): Promise<Result<HolonTypeResult[], SdkError>> {
+    return this.request("GET", API_PATHS.HOLON_TYPES_LIST);
+  }
+
+  /** Gets one registered holon type by its AssetType name. */
+  async getHolonType(assetType: string): Promise<Result<HolonTypeResult, SdkError>> {
+    assertNonEmpty(assetType, "assetType");
+    return this.request("GET", API_PATHS.HOLON_TYPES_GET(assetType));
+  }
+
+  /** Registers or re-registers a holon type. Operator-scoped. */
+  async registerHolonType(params: HolonTypeRegisterParams): Promise<Result<HolonTypeResult, SdkError>> {
+    assertNonEmpty(params.assetType, "assetType");
+    return this.request("POST", API_PATHS.HOLON_TYPES_REGISTER, params);
+  }
+
+  /** Marks a registered type inactive (validation then ignores it). Operator-scoped. */
+  async deactivateHolonType(assetType: string): Promise<Result<HolonTypeResult, SdkError>> {
+    assertNonEmpty(assetType, "assetType");
+    return this.request("POST", API_PATHS.HOLON_TYPES_DEACTIVATE(assetType));
+  }
+
+  /** Hard-deletes a holon type registration. Operator-scoped. */
+  async deleteHolonType(assetType: string): Promise<Result<{ message: string }, SdkError>> {
+    assertNonEmpty(assetType, "assetType");
+    return this.request("DELETE", API_PATHS.HOLON_TYPES_DELETE(assetType));
+  }
+
+  // ─── Saga operator dead-letter surface (SagaOperatorController, final-hardening Phase-F) ───
+  // Operator-scoped; bare response format (not AZOAResult<T>).
+
+  /** Lists saga steps parked in the dead-letter queue (default) or any of {DeadLettered, Parked, Cancelled}, newest-updated first. */
+  async listSagaDeadLetters(opts?: SagaDeadLetterListParams): Promise<Result<SagaStepView[], SdkError>> {
+    const qs = new URLSearchParams();
+    if (opts?.status) {
+      for (const s of opts.status) qs.append("status", s);
+    }
+    if (opts?.limit !== undefined) qs.set("limit", String(opts.limit));
+    const query = qs.toString();
+    return this.requestBare("GET", `${API_PATHS.SAGA_DEAD_LETTERS}${query ? `?${query}` : ""}`);
+  }
+
+  /** Requeues a Parked/DeadLettered saga step back to Pending. Operator-scoped. */
+  async requeueSagaStep(id: string): Promise<Result<SagaStepRequeueResult, SdkError>> {
+    assertUuid(id, "id");
+    return this.requestBare("POST", API_PATHS.SAGA_REQUEUE(id));
+  }
+
+  /** Terminally cancels a Pending/Parked/DeadLettered saga step so it never retries. Operator-scoped. */
+  async cancelSagaStep(id: string, reason?: string): Promise<Result<SagaStepCancelResult, SdkError>> {
+    assertUuid(id, "id");
+    return this.requestBare("POST", API_PATHS.SAGA_CANCEL(id), reason ? { reason } : undefined);
+  }
+
+  // ─── Wallet wrapping-key rotation (KeyRotationController, final-hardening B5) ───
+  // Operator-scoped; bare response format (not AZOAResult<T>).
+
+  /** Re-wraps every wallet's ciphertext under a new encryption key. Idempotent/resumable; rolls back on any failure. */
+  async rotateWalletKeys(params: KeyRotationParams): Promise<Result<KeyRotationReport, SdkError>> {
+    assertNonEmpty(params.newEncryptionKey, "newEncryptionKey");
+    return this.requestBare("POST", API_PATHS.KEY_ROTATION_ROTATE, params);
+  }
+
   // ─── Swap (SwapController) ───
 
   /**
@@ -1140,7 +1299,11 @@ export class AzoaApiClient {
 
   /**
    * Run the full validation stack and flip the quest from Draft to Active.
-   * Returns validation errors on failure (400); quest stays Draft.
+   * Returns validation errors on failure (400); quest stays Draft. Also fails
+   * (400, message containing "Publish conflict") when a concurrent
+   * publish/unpublish raced this call and won the optimistic-concurrency check
+   * on {@link QuestResult.version} (final-hardening F6) — use {@link isQuestConflict}
+   * to detect this case and prompt the caller to reload + retry.
    * See Managers/AGENTS.md §publish-lifecycle.
    */
   async publishQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
@@ -1150,14 +1313,20 @@ export class AzoaApiClient {
 
   /**
    * Flip an Active quest back to Draft so its definition can be mutated.
-   * Returns an error if any in-flight runs exist for this quest.
+   * Returns an error if any in-flight runs exist for this quest, or (message
+   * containing "Unpublish conflict") if a concurrent transition raced and won
+   * the version check (final-hardening F6) — see {@link isQuestConflict}.
    */
   async unpublishQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
     assertUuid(questId, "questId");
     return this.request("POST", API_PATHS.QUEST_UNPUBLISH(questId));
   }
 
-  /** Execute all ready nodes in the quest DAG. Returns the updated quest. */
+  /**
+   * Execute all ready nodes in the quest DAG. Returns the updated quest. Fails
+   * (400, message containing "Quest run conflict") if the quest was unpublished
+   * or modified concurrently (final-hardening F6) — see {@link isQuestConflict}.
+   */
   async executeQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
     assertUuid(questId, "questId");
     return this.request("POST", `/api/quest/${questId}/execute`);

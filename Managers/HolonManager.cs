@@ -12,9 +12,16 @@ public class HolonManager : IHolonManager
 {
     private readonly IHolonStore _holonStore;
 
-    public HolonManager(IHolonStore holonStore)
+    // Opt-in AssetType registry (final-hardening-cutover F5). Optional so unit tests
+    // that construct HolonManager with only a store keep compiling; DI always supplies
+    // it. A null registry means validation is skipped entirely (free-string behaviour).
+    // See Managers/AGENTS.md §holon-type-registry.
+    private readonly IHolonTypeRegistryManager? _typeRegistry;
+
+    public HolonManager(IHolonStore holonStore, IHolonTypeRegistryManager? typeRegistry = null)
     {
         _holonStore = holonStore;
+        _typeRegistry = typeRegistry;
     }
 
     private static bool IsOwnedBy(IHolon holon, Guid avatarId) => holon.AvatarId == avatarId;
@@ -54,6 +61,12 @@ public class HolonManager : IHolonManager
                 return new AZOAResult<IHolon> { IsError = true, Message = cycleError };
         }
 
+        // F5 opt-in AssetType validation: constrains ONLY types registered in the
+        // registry; unregistered types remain free strings.
+        var typeError = await ValidateAssetTypeAsync(holon.AssetType, holon.Metadata, request);
+        if (typeError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = typeError };
+
         return await _holonStore.UpsertAsync(holon, default);
     }
 
@@ -88,6 +101,11 @@ public class HolonManager : IHolonManager
         if (model.PeerHolonIds != null) holon.PeerHolonIds = model.PeerHolonIds;
         if (model.IsActive.HasValue) holon.IsActive = model.IsActive.Value;
         holon.ModifiedDate = DateTime.UtcNow;
+
+        // F5 opt-in AssetType validation against the post-merge type + metadata.
+        var typeError = await ValidateAssetTypeAsync(holon.AssetType, holon.Metadata, request);
+        if (typeError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = typeError };
 
         return await _holonStore.UpsertAsync(holon, default);
     }
@@ -456,5 +474,20 @@ public class HolonManager : IHolonManager
             return "Cannot set a descendant holon as parent (cycle detected).";
 
         return null;
+    }
+
+    /// <summary>
+    /// Opt-in AssetType registry hook (F5). Returns an error message when the holon's
+    /// AssetType is registered + active AND its required metadata fields are not all
+    /// present; returns null (allow) for an absent registry, an absent/unregistered/
+    /// inactive type, or a satisfied constraint. See Managers/AGENTS.md §holon-type-registry.
+    /// </summary>
+    private async Task<string?> ValidateAssetTypeAsync(
+        string? assetType, IReadOnlyDictionary<string, string>? metadata, AZOARequest? request)
+    {
+        if (_typeRegistry == null) return null; // registry not wired ⇒ free strings.
+
+        var result = await _typeRegistry.ValidateAsync(assetType, metadata, request);
+        return result.IsError ? result.Message : null;
     }
 }

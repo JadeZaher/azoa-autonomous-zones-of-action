@@ -76,10 +76,7 @@ public sealed class SurrealQuestStore : IQuestStore
         {
             var surrealId = SurrealId.ToSurrealId(id);
 
-            var headQ = SurrealQuery
-                .Of("SELECT * FROM type::record($_t, $_id)")
-                .WithParam("_t", QuestTable)
-                .WithParam("_id", surrealId);
+            var headQ = SurrealQuery.SelectById(QuestTable, surrealId);
 
             var rows = await _executor.QueryAsync<QuestPoco>(headQ, ct);
             if (rows.Count == 0)
@@ -100,9 +97,9 @@ public sealed class SurrealQuestStore : IQuestStore
     {
         try
         {
-            var q = SurrealQuery
-                .Of("SELECT * FROM quest WHERE avatar_id = $_avatar")
-                .WithParam("_avatar", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)));
+            var avatarLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
+            var q = SurrealQuery<QuestPoco>.From()
+                .Where(x => x.AvatarId == avatarLink);
 
             var rows = await _executor.QueryAsync<QuestPoco>(q, ct);
             return await HydrateManyAsync(rows, ct);
@@ -118,9 +115,9 @@ public sealed class SurrealQuestStore : IQuestStore
     {
         try
         {
-            var q = SurrealQuery
-                .Of("SELECT * FROM quest WHERE dapp_series_id = $_series")
-                .WithParam("_series", SurrealLink.ToLink("dapp_series", SurrealId.ToSurrealId(dappSeriesId)));
+            var seriesLink = SurrealLink.ToLink("dapp_series", SurrealId.ToSurrealId(dappSeriesId));
+            var q = SurrealQuery<QuestPoco>.From()
+                .Where(x => x.DappSeriesId == seriesLink);
 
             var rows = await _executor.QueryAsync<QuestPoco>(q, ct);
             return await HydrateManyAsync(rows, ct);
@@ -234,6 +231,8 @@ public sealed class SurrealQuestStore : IQuestStore
             // SurrealDB, and the post-delete absence check cannot distinguish
             // "deleted an existing row" from "never existed". Mirror the NFT/Holon
             // delete contract — a non-existent id is an error, not a success.
+            // raw: narrow `id`-only projection, not a full-row SELECT — SelectById
+            // fetches `SELECT *`; see Persistence/SurrealDb/CONVENTION.md §query-surface.
             var existsQ = SurrealQuery
                 .Of("SELECT id FROM type::record($_t, $_id)")
                 .WithParam("_t",  QuestTable)
@@ -267,6 +266,7 @@ public sealed class SurrealQuestStore : IQuestStore
             resp.EnsureAllOk();
 
             // Verify the head row is gone (returns empty set on missing row).
+            // raw: narrow `id`-only projection — see §query-surface note above.
             var verify = SurrealQuery
                 .Of("SELECT id FROM type::record($_t, $_id)")
                 .WithParam("_t",  QuestTable)
@@ -288,16 +288,79 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
+    // ── Definition lifecycle CAS (F6 TOCTOU guard) ────────────────────────────
+
+    public async Task<int> TryTransitionQuestStatusAsync(
+        Guid id, QuestStatus expected, QuestStatus next, long expectedVersion, CancellationToken ct = default)
+    {
+        try
+        {
+            var surrealId = SurrealId.ToSurrealId(id);
+
+            // Single conditional UPDATE: flip status + bump version ONLY when the
+            // row is still at (expected status, expectedVersion). A concurrent
+            // transition that already advanced status OR version yields zero
+            // affected rows — returned VERBATIM. Field names are author-controlled
+            // (allowlisted); every value is parameter-bound (SRDB0001 / G3).
+            // SurrealDB 3.x requires SET before WHERE.
+            var q = SurrealQuery
+                .Of("UPDATE type::record($_t, $_id) SET status = $_next, version = version + 1 WHERE status = $_expected AND version = $_ver RETURN AFTER")
+                .WithParam("_t",        QuestTable)
+                .WithParam("_id",       surrealId)
+                .WithParam("_next",     next.ToString())
+                .WithParam("_expected", expected.ToString())
+                .WithParam("_ver",      expectedVersion);
+
+            var response = await _executor.ExecuteAsync(q, ct);
+            if (response.Count == 0) return 0;
+            var stmt = response[0];
+            if (!stmt.IsOk) return 0;
+            return stmt.AffectedCount();
+        }
+        catch (SurrealStatementException)
+        {
+            return 0;
+        }
+    }
+
+    public async Task<int> TryConfirmQuestStateAsync(
+        Guid id, QuestStatus expected, long expectedVersion, CancellationToken ct = default)
+    {
+        try
+        {
+            var surrealId = SurrealId.ToSurrealId(id);
+
+            // Conditional no-op self-write: sets version to its own value so the
+            // row is untouched, but the WHERE predicate gates on (expected status,
+            // expectedVersion). Affected>0 proves the definition has not moved
+            // since the caller read it (closes unpublish-vs-run-start). No status
+            // change, no version bump.
+            var q = SurrealQuery
+                .Of("UPDATE type::record($_t, $_id) SET version = version WHERE status = $_expected AND version = $_ver RETURN AFTER")
+                .WithParam("_t",        QuestTable)
+                .WithParam("_id",       surrealId)
+                .WithParam("_expected", expected.ToString())
+                .WithParam("_ver",      expectedVersion);
+
+            var response = await _executor.ExecuteAsync(q, ct);
+            if (response.Count == 0) return 0;
+            var stmt = response[0];
+            if (!stmt.IsOk) return 0;
+            return stmt.AffectedCount();
+        }
+        catch (SurrealStatementException)
+        {
+            return 0;
+        }
+    }
+
     // ── QuestTemplate CRUD ────────────────────────────────────────────────────
 
     public async Task<AZOAResult<QuestTemplate>> GetQuestTemplateAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
-            var q = SurrealQuery
-                .Of("SELECT * FROM type::record($_t, $_id)")
-                .WithParam("_t",  QuestTemplateTable)
-                .WithParam("_id", SurrealId.ToSurrealId(id));
+            var q = SurrealQuery.SelectById(QuestTemplateTable, SurrealId.ToSurrealId(id));
 
             var rows = await _executor.QueryAsync<QuestTemplatePoco>(q, ct);
             return rows.Count == 0
@@ -315,7 +378,7 @@ public sealed class SurrealQuestStore : IQuestStore
     {
         try
         {
-            var q = SurrealQuery.Of("SELECT * FROM quest_template");
+            var q = SurrealQuery<QuestTemplatePoco>.From();
             var rows = await _executor.QueryAsync<QuestTemplatePoco>(q, ct);
             IEnumerable<QuestTemplate> result = rows.Select(ToDomain).ToList();
             return new AZOAResult<IEnumerable<QuestTemplate>> { Result = result, Message = "Success" };
@@ -367,7 +430,8 @@ public sealed class SurrealQuestStore : IQuestStore
             var resp = await _executor.ExecuteAsync(del, ct);
             resp.EnsureAllOk();
 
-            // Verify the head row is gone.
+            // Verify the head row is gone. raw: narrow `id`-only projection —
+            // see §query-surface note in Persistence/SurrealDb/CONVENTION.md.
             var verify = SurrealQuery
                 .Of("SELECT id FROM type::record($_t, $_id)")
                 .WithParam("_t",  QuestTemplateTable)
@@ -425,7 +489,7 @@ public sealed class SurrealQuestStore : IQuestStore
     {
         try
         {
-            var q = SurrealQuery.Of("SELECT * FROM quest_node_template");
+            var q = SurrealQuery<QuestNodeTemplatePoco>.From();
             var rows = await _executor.QueryAsync<QuestNodeTemplatePoco>(q, ct);
             IEnumerable<QuestNodeTemplate> result = rows.Select(ToDomain).ToList();
             return new AZOAResult<IEnumerable<QuestNodeTemplate>> { Result = result, Message = "Success" };
@@ -450,6 +514,9 @@ public sealed class SurrealQuestStore : IQuestStore
 
         var questLink = SurrealLink.ToLink("quest", surrealId);
 
+        // raw: both SELECTs are fused into one wire round-trip via Combine();
+        // the typed/LINQ tiers have no multi-statement combine surface — see
+        // Persistence/SurrealDb/CONVENTION.md §query-surface.
         var nodesQ = SurrealQuery
             .Of("SELECT * FROM quest_node WHERE quest_id = $_qid ORDER BY execution_order ASC")
             .WithParam("_qid", questLink);
@@ -496,6 +563,7 @@ public sealed class SurrealQuestStore : IQuestStore
         DappSeriesId = q.DappSeriesId.HasValue ? SurrealLink.ToLink("dapp_series", SurrealId.ToSurrealId(q.DappSeriesId.Value)) : null,
         Metadata     = MetadataToJsonObject(q.Metadata),
         Status       = q.Status.ToString(),
+        Version      = q.Version,
         CreatedDate  = ToUtcOffset(q.CreatedDate),
     };
 
@@ -509,6 +577,7 @@ public sealed class SurrealQuestStore : IQuestStore
         DappSeriesId = string.IsNullOrEmpty(p.DappSeriesId) ? null : FromSurrealId(SurrealLink.FromLink(p.DappSeriesId)!),
         Metadata     = MetadataFromJsonObject(p.Metadata),
         Status       = Enum.TryParse<QuestStatus>(p.Status, out var st) ? st : QuestStatus.Draft,
+        Version      = p.Version,
         CreatedDate  = p.CreatedDate.UtcDateTime,
         Nodes        = new List<QuestNode>(),
         Edges        = new List<QuestEdge>(),
@@ -768,6 +837,7 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("dapp_series_id")]  public string? DappSeriesId { get; set; }
         [JsonPropertyName("metadata")]        public JsonElement Metadata { get; set; }
         [JsonPropertyName("status")]          public string? Status { get; set; }
+        [JsonPropertyName("version")]         public long Version { get; set; }
         [JsonPropertyName("created_date")]    public DateTimeOffset CreatedDate { get; set; }
     }
 

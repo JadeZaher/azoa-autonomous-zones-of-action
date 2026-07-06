@@ -76,9 +76,13 @@ dotnet build AZOA.WebAPI.csproj -c Debug          # production API only (fast ga
 dotnet build azoa.sln    -c Debug           # whole solution (incl. test projects)
 ```
 
-- Green = **0 errors**. There are ~18 pre-existing baseline warnings
-  (SolanaProvider nullability, SearchManager, a CS1998) — not
-  regressions; do not chase them. Adding NEW warnings is a regression.
+- Green = **0 errors**. Baseline warnings = **25** (reset 2026-07-05,
+  final-hardening-cutover Phase-A2). The residual are all in the reserved
+  crypto/value files (SolanaProvider nullability, CrossChainBridgeService,
+  WalletKeyService) plus one benign `EnableGenerateDocumentationFile` MSBuild
+  note — cleared by Wave 2 of that track when it rewrites the signing/bridge
+  path. Do not chase them; adding NEW warnings elsewhere is a regression.
+  (AutoMapper was upgraded 12.0.1 → 15.1.3 to clear the NU1903 high-severity vuln.)
 - Do **not** run the frontend typecheck — it is known pre-existing
   noise. The gates are `dotnet build` + SDK `tsc` only. See memory:
   [`no-frontend-typecheck`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/no-frontend-typecheck.md).

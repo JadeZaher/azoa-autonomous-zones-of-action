@@ -26,8 +26,16 @@ namespace AZOA.WebAPI.IntegrationTests.Gates;
 ///   restore.ps1 -InputPath  &lt;path&gt; -Namespace &lt;ns&gt; -Database &lt;db&gt;
 ///               -Endpoint &lt;url&gt; -User &lt;user&gt; -Pass &lt;pass&gt; -Force
 ///
-/// Both scripts use `docker exec azoa-surrealdb surreal export/import`.
-/// The test falls back to documenting the gap if docker is not on PATH.
+/// Both scripts use `&lt;docker|podman&gt; exec azoa-dev-surrealdb surreal export/import`
+/// (auto-detected; falls back to podman if docker is not on PATH).
+///
+/// Seed data-shape contract (2026-07-06): every seeded value must satisfy its
+/// SCHEMAFULL column type. `record&lt;...&gt;` link fields (e.g. wallet.avatar_id) and
+/// `datetime` fields cannot be a bare JSON string, so they are injected as SurrealQL
+/// literals via `object::extend($body, { field: type::record(...) / type::datetime(...) })`
+/// while plain scalars stay in `$body`. `option&lt;...&gt;` fields are OMITTED when NONE —
+/// a JSON `null` coerces to NULL (rejected), whereas an absent field defaults to NONE.
+/// See tests AGENTS.md §g5-seed-shapes.
 /// </summary>
 [Trait("Category", "Gate")]
 public sealed class G5_RestoreDrillTest : IntegrationTestBase
@@ -247,6 +255,12 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
     /// </summary>
     private async Task SeedKnownRowsAcrossAllValueTablesAsync()
     {
+        // Fixed ISO-8601 timestamp for every datetime field. SCHEMAFULL datetime
+        // columns will not coerce a bare JSON string, so datetime fields are
+        // injected via object::extend using type::datetime($ts) (see below);
+        // a constant keeps the seed deterministic for the checksum round-trip.
+        var ts = DateTime.UtcNow.ToString("o");
+
         // ── wallet ────────────────────────────────────────────────────────────
         foreach (var (id, chain, addr) in new[]
         {
@@ -256,24 +270,23 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // avatar_id is record<avatar>: inject as a record-link literal
+                // (type::record) via object::extend — a bare string won't coerce.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "wallet",
                     id,
+                    avatarId = AvatarId1,
+                    ts,
                     body = new
                     {
                         id,
-                        avatar_id             = AvatarId1,
                         chain_type            = chain,
                         address               = addr,
-                        public_key            = (string?)null,
                         label                 = $"G5 Wallet {id[^2..]}",
                         is_default            = false,
                         wallet_type           = "Platform",
-                        encrypted_private_key = (string?)null,
-                        encrypted_seed_phrase = (string?)null,
-                        created_date          = DateTime.UtcNow,
                     },
                 });
         }
@@ -290,30 +303,25 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // avatar_id is record<avatar>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_at: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "bridge_tx",
                     id,
+                    avatarId = AvatarId1,
+                    ts,
                     body = new
                     {
                         id,
-                        avatar_id      = AvatarId1,
                         source_chain   = "Algorand",
                         target_chain   = "Solana",
                         source_token_id = "ASA:123",
-                        target_token_id = (string?)null,
                         source_address = $"SRC_{id[^6..]}",
                         target_address = $"TGT_{id[^6..]}",
                         amount         = "1000",
                         status         = "Initiated",
                         mode           = "Trusted",
-                        lock_tx_hash   = (string?)null,
-                        mint_tx_hash   = (string?)null,
-                        proof_data     = (string?)null,
-                        error_message  = (string?)null,
-                        created_at     = DateTime.UtcNow,
-                        completed_at   = (DateTime?)null,
                         idempotency_key = idem,
                     },
                 });
@@ -328,33 +336,28 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // avatar_id is record<avatar>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), minted_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "nft_ownership",
                     id,
+                    avatarId = AvatarId1,
+                    ts,
                     body = new
                     {
                         id,
-                        avatar_id        = AvatarId1,
                         chain_type       = "Ethereum",
                         contract_address = "0xCONTRACT_G5",
                         token_id         = tokenId,
                         token_standard   = "ERC721",
                         metadata_uri     = $"ipfs://G5/{tokenId}",
-                        image_uri        = (string?)null,
                         name             = $"G5 NFT {tokenId}",
-                        description      = (string?)null,
-                        attributes       = (object?)null,
                         royalty_percentage = 0.0m,
-                        royalty_recipient = (string?)null,
                         is_soulbound     = false,
                         is_transferable  = true,
                         is_current       = true,
-                        current_owner    = (string?)null,
                         is_active        = true,
-                        minted_date      = DateTime.UtcNow,
-                        last_transfer_date = (DateTime?)null,
                     },
                 });
         }
@@ -368,17 +371,18 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // created_date is datetime.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "operation_log",
                     id,
+                    ts,
                     body = new
                     {
                         id,
                         operation_type = opType,
                         status         = "Pending",
-                        created_date   = DateTime.UtcNow,
                     },
                 });
         }
@@ -387,17 +391,20 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         // Each row needs a unique (emitter_chain_id, emitter_address, sequence) triple.
         foreach (var (id, seq, digest) in new[]
         {
-            (VaaId1, 1001L, MakeHex32("g5-vaa-01")),
-            (VaaId2, 1002L, MakeHex32("g5-vaa-02")),
-            (VaaId3, 1003L, MakeHex32("g5-vaa-03")),
+            (VaaId1, 1001L, MakeHex64("g5-vaa-01")),
+            (VaaId2, 1002L, MakeHex64("g5-vaa-02")),
+            (VaaId3, 1003L, MakeHex64("g5-vaa-03")),
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // bridge_transaction_id is option<record<bridge_tx>>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { bridge_transaction_id: type::record('bridge_tx', $bridgeTxId), consumed_at: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "consumed_vaa_ledger",
                     id,
+                    bridgeTxId = BridgeId1,
+                    ts,
                     body = new
                     {
                         id,
@@ -405,8 +412,6 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                         emitter_chain_id       = 2,
                         emitter_address        = MakeHex64("g5-emit-01"),
                         sequence               = seq,
-                        bridge_transaction_id  = BridgeId1,
-                        consumed_at            = DateTime.UtcNow,
                     },
                 });
         }
@@ -421,11 +426,13 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // created_at / updated_at are datetime.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { created_at: type::datetime($ts), updated_at: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "idempotency_key_store",
                     id,
+                    ts,
                     body = new
                     {
                         id,
@@ -433,10 +440,6 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                         operation_type  = "bridge_redeem",
                         state           = "Completed",
                         result_payload  = "{\"ok\":true}",
-                        error           = (string?)null,
-                        created_at      = DateTime.UtcNow,
-                        updated_at      = DateTime.UtcNow,
-                        ttl_expires_at  = (DateTime?)null,
                     },
                 });
         }
@@ -450,11 +453,13 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // next_run_at / created_at / updated_at are datetime.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { next_run_at: type::datetime($ts), created_at: type::datetime($ts), updated_at: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "saga_steps",
                     id,
+                    ts,
                     body = new
                     {
                         id,
@@ -466,13 +471,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                         status               = "Pending",
                         is_compensation      = false,
                         attempt_count        = 0,
-                        next_run_at          = DateTime.UtcNow,
-                        claimed_at           = (DateTime?)null,
-                        last_error           = (string?)null,
-                        output               = (string?)null,
                         dead_lettered        = false,
-                        created_at           = DateTime.UtcNow,
-                        updated_at           = DateTime.UtcNow,
                     },
                 });
         }
@@ -487,26 +486,23 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // created_date is datetime.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "avatar",
                     id,
+                    ts,
                     body = new
                     {
                         id,
                         username      = username,
                         email,
                         password_hash = "hashed_g5_secret",
-                        title         = (string?)null,
                         first_name    = "G5",
                         last_name     = $"User_{id[^2..]}",
-                        created_date  = DateTime.UtcNow,
-                        last_beamed_in_date = (DateTime?)null,
                         is_active     = true,
                         is_verified   = false,
-                        karma         = 0,
-                        level         = 1,
                     },
                 });
         }
@@ -520,26 +516,20 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // avatar_id is option<record<avatar>>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "holon",
                     id,
+                    avatarId = AvatarId1,
+                    ts,
                     body = new
                     {
                         id,
                         name,
                         description      = $"G5 test holon {id[^2..]}",
-                        parent_holon_id  = (string?)null,
-                        avatar_id        = AvatarId1,
                         provider_name    = "SurrealDB",
-                        chain_id         = (string?)null,
-                        asset_type       = (string?)null,
-                        token_id         = (string?)null,
-                        metadata         = (object?)null,
-                        peer_holon_ids   = (string[]?)null,
-                        created_date     = DateTime.UtcNow,
-                        modified_date    = (DateTime?)null,
                         is_active        = true,
                     },
                 });
@@ -555,25 +545,20 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // avatar_id is option<record<avatar>>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "star_odk",
                     id,
+                    avatarId = AvatarId1,
+                    ts,
                     body = new
                     {
                         id,
                         name              = starName,
                         description       = $"G5 test star {id[^2..]}",
-                        public_key        = (string?)null,
-                        private_key_hash  = (string?)null,
-                        avatar_id         = AvatarId1,
-                        bound_holon_ids   = (string[]?)null,
                         target_chain      = "Solana",
-                        generated_code    = (string?)null,
-                        deployment_config = (string?)null,
-                        created_date      = DateTime.UtcNow,
-                        modified_date     = (DateTime?)null,
                         is_active         = true,
                     },
                 });
@@ -589,22 +574,20 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
+                // avatar_id is record<avatar>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "api_key",
                     id,
+                    avatarId = AvatarId1,
+                    ts,
                     body = new
                     {
                         id,
-                        avatar_id    = AvatarId1,
                         name         = $"G5 API Key {id[^2..]}",
                         key_hash     = hash,
                         key_prefix   = prefix,
-                        created_date = DateTime.UtcNow,
-                        expires_at   = (DateTime?)null,
-                        last_used_at = (DateTime?)null,
-                        revoked_at   = (DateTime?)null,
                         is_active    = true,
                         scopes       = "read,write",
                     },
@@ -792,8 +775,10 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         using var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         http.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        http.DefaultRequestHeaders.Add("NS", TestNamespace);
-        http.DefaultRequestHeaders.Add("DB", "test");
+        // SurrealDB 3.x requires "Surreal-NS"/"Surreal-DB" header names; the
+        // legacy "NS"/"DB" names are silently ignored (see IntegrationTestBase.cs:68-72).
+        http.DefaultRequestHeaders.Add("Surreal-NS", TestNamespace);
+        http.DefaultRequestHeaders.Add("Surreal-DB", "test");
         http.DefaultRequestHeaders.Add("Accept", "application/json");
 
         var content  = new StringContent(sql, System.Text.Encoding.UTF8, "text/plain");
@@ -823,12 +808,12 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
     }
 
     /// <summary>
-    /// Applies all *.surql schema files from Persistence/SurrealDb/Schemas/
+    /// Applies all *.surql schema files from Persistence/SurrealDb/Generated/Schemas/
     /// to the test namespace so that SCHEMAFULL tables accept the seed rows.
     /// </summary>
     private async Task ApplyAllSchemasAsync(string repoRoot)
     {
-        var schemaDir = Path.Combine(repoRoot, "Persistence", "SurrealDb", "Schemas");
+        var schemaDir = Path.Combine(repoRoot, "Persistence", "SurrealDb", "Generated", "Schemas");
         if (!Directory.Exists(schemaDir)) return;
 
         var credentials = Convert.ToBase64String(
@@ -841,8 +826,9 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
             ddlClient.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-            ddlClient.DefaultRequestHeaders.Add("NS", TestNamespace);
-            ddlClient.DefaultRequestHeaders.Add("DB", "test");
+            // SurrealDB 3.x requires "Surreal-NS"/"Surreal-DB" header names.
+            ddlClient.DefaultRequestHeaders.Add("Surreal-NS", TestNamespace);
+            ddlClient.DefaultRequestHeaders.Add("Surreal-DB", "test");
 
             var content  = new StringContent(ddl, System.Text.Encoding.UTF8, "text/plain");
             var response = await ddlClient.PostAsync("/sql", content);
@@ -851,12 +837,14 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
     }
 
     /// <summary>
-    /// Runs a pwsh command and returns (exitCode, stdout, stderr).
-    /// Uses pwsh.exe (PowerShell 7) on Windows; falls back to pwsh on Unix.
+    /// Runs a PowerShell command and returns (exitCode, stdout, stderr).
+    /// Prefers pwsh (PowerShell 7+, cross-platform); falls back to Windows
+    /// PowerShell 5.1 (powershell.exe) when pwsh is absent — this machine and
+    /// some CI images ship only 5.1. The backup/restore scripts are 5.1-compatible.
     /// </summary>
     private static (int ExitCode, string StdOut, string StdErr) RunPwsh(string arguments)
     {
-        var exeName = OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh";
+        var exeName = ResolvePowerShellExe();
 
         var psi = new ProcessStartInfo
         {
@@ -876,6 +864,33 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         process.WaitForExit();
 
         return (process.ExitCode, stdOut, stdErr);
+    }
+
+    /// <summary>
+    /// Resolves the PowerShell executable: pwsh (7+) if on PATH, else Windows
+    /// PowerShell 5.1 (powershell.exe) as a fallback. On non-Windows, pwsh only.
+    /// </summary>
+    private static string ResolvePowerShellExe()
+    {
+        var pwsh = OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh";
+        if (IsOnPath(pwsh)) return pwsh;
+        if (OperatingSystem.IsWindows() && IsOnPath("powershell.exe")) return "powershell.exe";
+        return pwsh; // let Process.Start throw a clear error if truly absent
+    }
+
+    /// <summary>Probes PATH (and PATHEXT on Windows) for an executable.</summary>
+    private static bool IsOnPath(string exe)
+    {
+        var pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                if (File.Exists(Path.Combine(dir.Trim(), exe))) return true;
+            }
+            catch { /* malformed PATH entry — skip */ }
+        }
+        return false;
     }
 
     /// <summary>
@@ -905,13 +920,4 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         return Convert.ToHexString(data).ToLowerInvariant(); // SHA256 = 32 bytes = 64 hex chars
     }
 
-    /// <summary>
-    /// Produces a deterministic 64-char lowercase hex string (SHA-256) for digest fields.
-    /// VAA digest fields in consumed_vaa_ledger are conventionally 64-char hex.
-    /// </summary>
-    private static string MakeHex32(string seed)
-    {
-        var data = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(seed));
-        return Convert.ToHexString(data).ToLowerInvariant();
-    }
 }

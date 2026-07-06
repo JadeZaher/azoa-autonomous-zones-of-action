@@ -1,6 +1,6 @@
-namespace AZOA.WebAPI.Mcp;
-
 using SurrealForge.Client.Query;
+
+namespace AZOA.WebAPI.Mcp;
 
 public sealed record ToolCallContext(
     Guid AvatarId,

@@ -21,6 +21,26 @@ public interface IQuestStore
     /// <summary>Deletes a quest by id.</summary>
     Task<AZOAResult<bool>> DeleteQuestAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Compare-and-swap the definition lifecycle Status (F6 TOCTOU guard).
+    /// Issues a single conditional UPDATE that flips <paramref name="expected"/> →
+    /// <paramref name="next"/> and increments <c>version</c> ONLY when the row is
+    /// still at (<paramref name="expected"/>, <paramref name="expectedVersion"/>).
+    /// Returns the affected-row count VERBATIM (0 = lost the race / stale version;
+    /// 1 = won). The store never asserts==1, retries, or read-modify-writes.
+    /// Mirrors <c>IBridgeStore.TryTransitionBridgeStatusAsync</c>.
+    /// </summary>
+    Task<int> TryTransitionQuestStatusAsync(Guid id, QuestStatus expected, QuestStatus next, long expectedVersion, CancellationToken ct = default);
+
+    /// <summary>
+    /// Confirms the quest is STILL at (<paramref name="expected"/>,
+    /// <paramref name="expectedVersion"/>) via a conditional no-op self-write,
+    /// without changing status or version. Returns the affected-row count VERBATIM
+    /// (1 = definition unchanged since the caller read it; 0 = it moved — e.g. an
+    /// unpublish raced this run-start). Closes the unpublish-vs-run-start TOCTOU.
+    /// </summary>
+    Task<int> TryConfirmQuestStateAsync(Guid id, QuestStatus expected, long expectedVersion, CancellationToken ct = default);
+
     /// <summary>Loads a single quest template by id.</summary>
     Task<AZOAResult<QuestTemplate>> GetQuestTemplateAsync(Guid id, CancellationToken ct = default);
 

@@ -515,20 +515,52 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
 
     // ─── Cross-Chain Bridge ───
 
-    public override Task<AZOAResult<string>> LockForBridgeAsync(
+    /// <summary>
+    /// Real outbound-bridge lock: a platform-signed ASA transfer of <paramref name="amount"/>
+    /// of asset <paramref name="tokenId"/> into the bridge <paramref name="vaultAddress"/>
+    /// (custodial-trusted mode). Broadcasts a real transaction and returns the on-chain
+    /// tx id; a confirm-timeout returns the tx id with the pending marker (never a fake Ok).
+    /// The vault must have opted into the ASA out-of-band. See Providers/Blockchain/AGENTS.md §bridge.
+    /// </summary>
+    public override async Task<AZOAResult<string>> LockForBridgeAsync(
         string tokenId, string vaultAddress, int amount,
         string targetChain, string targetRecipient, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(tokenId) || string.IsNullOrWhiteSpace(vaultAddress))
-            return Task.FromResult(Error<string>("Token ID and vault address are required"));
+        if (string.IsNullOrWhiteSpace(tokenId) || !ulong.TryParse(tokenId, out var assetIndex))
+            return Error<string>("A numeric asset ID is required to lock an ASA for bridging");
+        if (string.IsNullOrWhiteSpace(vaultAddress) || !ValidateAddressFormat(vaultAddress))
+            return Error<string>("A valid bridge vault address is required to lock an ASA");
+        if (amount <= 0)
+            return Error<string>("Bridge lock amount must be positive");
+
+        // Resolve the platform (custodial) signer address — the trusted bridge locks
+        // value the platform custodies. A missing platform address fails CLOSED with a
+        // clear config error rather than fabricating a lock.
+        var platformAddress = ResolvePlatformAddress();
+        if (string.IsNullOrWhiteSpace(platformAddress) || !ValidateAddressFormat(platformAddress))
+            return Error<string>(
+                "Cannot lock for bridge: no valid platform signing address is configured "
+                + "(set AZOA:Algorand:PlatformMnemonic / platform custody).");
+
+        var vault = new Address(vaultAddress);
+        var lockAmount = checked((ulong)amount);
 
         _logger.LogInformation(
-            "Bridge lock request: {TokenId} amount={Amount} vault={Vault} → {TargetChain}/{TargetRecipient}",
-            tokenId, amount, vaultAddress, targetChain, targetRecipient);
+            "Bridge lock: {Amount} of ASA {TokenId} {From} → vault {Vault} (target {TargetChain}/{TargetRecipient})",
+            amount, tokenId, platformAddress, vaultAddress, targetChain, targetRecipient);
 
-        return Task.FromResult(Ok(
-            OperationIdGenerator.Generate("algorand", "bridge_lock", vaultAddress, targetChain, targetRecipient),
-            $"Lock request recorded: {amount} of asset {tokenId} → vault {vaultAddress} for {targetChain} bridge to {targetRecipient}"));
+        return await BuildSignSubmitAsync(
+            platformAddress,
+            (paramsInfo, sender) => new AssetTransferTransaction
+            {
+                Sender = sender,
+                XferAsset = assetIndex,
+                AssetReceiver = vault,
+                AssetAmount = lockAmount,
+            },
+            opLabel: $"lock {amount} of ASA {tokenId} into bridge vault {vaultAddress} for {targetChain}",
+            signingContext: SigningContext.Platform,
+            ct: ct);
     }
 
     public override async Task<AZOAResult<string>> MintWrappedAsync(
@@ -542,21 +574,55 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             recipientAddress, recipientAddress, recipientAddress, ct);
     }
 
-    public override Task<AZOAResult<string>> BurnWrappedAsync(
+    /// <summary>
+    /// Real wrapped-asset burn (inbound reversal): destroys the platform-managed
+    /// wrapped ASA <paramref name="tokenId"/> so the original asset can be released on
+    /// <paramref name="sourceChain"/>. The wrapped ASA is minted by
+    /// <see cref="MintWrappedAsync"/> with the platform as manager/reserve, so a
+    /// platform-signed <see cref="AssetDestroyTransaction"/> is the burn primitive
+    /// (mirrors <see cref="BurnAsync"/>). Broadcasts a real tx and returns its id;
+    /// a confirm-timeout returns the tx id with the pending marker (never a fake Ok).
+    /// The platform must hold the full outstanding supply for destroy to succeed —
+    /// otherwise the tx is rejected on-chain and this returns that error (fail-loud).
+    /// See Providers/Blockchain/AGENTS.md §bridge.
+    /// </summary>
+    public override async Task<AZOAResult<string>> BurnWrappedAsync(
         string tokenId, int amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default)
     {
-        return Task.FromResult(Ok(
-            OperationIdGenerator.Generate("algorand", "burn_wrap", walletAddress, tokenId, sourceChain),
-            $"Wrapped burn request recorded for {tokenId} on Algorand → release on {sourceChain}"));
+        if (string.IsNullOrWhiteSpace(tokenId) || !ulong.TryParse(tokenId, out var assetIndex))
+            return Error<string>("A numeric wrapped-asset ID is required to burn for release");
+        if (amount <= 0)
+            return Error<string>("Wrapped burn amount must be positive");
+
+        // The wrapped ASA is platform-managed (created via MintWrappedAsync); the
+        // manager address is the platform account, derived from the same mnemonic the
+        // signer uses so Sender matches the signing key. Missing config fails CLOSED.
+        var platformAddress = ResolvePlatformAddress();
+        if (string.IsNullOrWhiteSpace(platformAddress) || !ValidateAddressFormat(platformAddress))
+            return Error<string>(
+                "Cannot burn wrapped asset: no valid platform signing address is configured "
+                + "(set AZOA:Algorand:PlatformMnemonic / platform custody).");
+
+        _logger.LogInformation(
+            "Bridge burn-wrapped: destroy ASA {TokenId} (amount={Amount}) on Algorand → release on {SourceChain} to {SourceRecipient}",
+            tokenId, amount, sourceChain, sourceRecipient);
+
+        return await BuildSignSubmitAsync(
+            platformAddress,
+            (paramsInfo, sender) => new AssetDestroyTransaction
+            {
+                Sender = sender,
+                AssetIndex = assetIndex,
+            },
+            opLabel: $"burn wrapped ASA {tokenId} → release on {sourceChain}",
+            signingContext: SigningContext.Platform,
+            ct: ct);
     }
 
-    public override Task<AZOAResult<bool>> VerifyBridgeProofAsync(
-        string proofData, string sourceChain, string targetChainId, CancellationToken ct = default)
-    {
-        // In production, verify a Wormhole VAA or LayerZero proof here.
-        return Task.FromResult(Ok(true, $"Bridge proof verified for {sourceChain} → Algorand"));
-    }
+    // VerifyBridgeProofAsync removed (final-hardening-cutover B2): the always-true
+    // provider verifier is gone; VAA verification is the WormholeAdapter /
+    // Secp256k1VaaSignatureVerifier path only.
 
     // ─── IAlgorandASAModule ───
 
@@ -1058,6 +1124,29 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         finally
         {
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    /// <summary>
+    /// Derive the platform (custodial) account address from the same platform
+    /// mnemonic the signer uses (<c>AZOA:Algorand:PlatformMnemonic</c>), so the
+    /// transaction Sender matches the key that signs it. Returns null when no
+    /// platform mnemonic is configured — the caller then fails CLOSED with a clear
+    /// config error instead of fabricating a bridge lock. Used by the bridge lock,
+    /// whose interface signature carries no explicit signer address.
+    /// </summary>
+    private string? ResolvePlatformAddress()
+    {
+        var mnemonic = _config.GetValue<string>(KeyCustodyService.PlatformMnemonicConfigPath);
+        if (string.IsNullOrWhiteSpace(mnemonic))
+            return null;
+        try
+        {
+            return new AlgoAccount(mnemonic.Trim()).Address.ToString();
+        }
+        catch
+        {
+            return null;
         }
     }
 

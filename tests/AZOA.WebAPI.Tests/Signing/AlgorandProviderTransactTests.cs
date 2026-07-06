@@ -173,6 +173,30 @@ public class AlgorandProviderTransactTests : IDisposable
     }
 
     [Fact]
+    public async Task BurnWrapped_pool_error_surfaces_as_error_not_false_pending()
+    {
+        // Test gap #3 (final-hardening-cutover G2): an on-chain rejection of the
+        // bridge burn (e.g. destroy attempted while the platform does not hold the
+        // full outstanding supply) comes back as a non-empty `pool-error` on the
+        // pending-tx read. WaitForConfirmationAsync MUST surface that as a fail-loud
+        // error — never swallow it as a still-pending / false-Ok.
+        using var _ = RunStub(
+            confirmedRound: 0,
+            assetIndex: null,
+            poolError: "TransactionPool.Remember: cannot destroy asset: creator is holding only part of the total 1000000");
+
+        var provider = NewProvider();
+        var result = await provider.BurnWrappedAsync(
+            tokenId: "12345", amount: 1, sourceChain: "Solana",
+            sourceRecipient: _platform.Address.EncodeAsString(),
+            walletAddress: _platform.Address.EncodeAsString());
+
+        result.IsError.Should().BeTrue("a pool-error rejection must surface fail-loud, not as false-pending");
+        result.Message.Should().Contain("rejected by the pool");
+        _submitCount.Should().Be(1, "the burn is broadcast exactly once before the pool rejects it");
+    }
+
+    [Fact]
     public async Task Transfer_rejects_invalid_recipient_address()
     {
         var provider = NewProvider();

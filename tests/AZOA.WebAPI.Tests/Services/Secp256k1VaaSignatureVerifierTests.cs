@@ -5,6 +5,7 @@ extern alias BCCrypto2;
 using System.Net;
 using System.Security.Cryptography;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -608,7 +609,8 @@ public class Secp256k1VaaSignatureVerifierTests
         };
         IVaaSignatureVerifier? verifier = withVerifier ? MakeVerifier(cfg) : null;
         return new WormholeAdapter(
-            http, factory.Object, Options.Create(cfg), logger.Object, verifier);
+            http, factory.Object, Options.Create(cfg), logger.Object,
+            new ConfigurationBuilder().Build(), verifier);
     }
 
     private sealed class StubHandler : HttpMessageHandler

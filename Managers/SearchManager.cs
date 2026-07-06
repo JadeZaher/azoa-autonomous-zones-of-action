@@ -209,7 +209,7 @@ public class SearchManager : ISearchManager
         {
             Result = new SearchResult
             {
-                Query = request.Query,
+                Query = request.Query ?? string.Empty,
                 TotalCount = totalCount,
                 Page = request.Page,
                 PageSize = pageSize,

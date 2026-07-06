@@ -340,6 +340,197 @@ export const QUEST_PRESETS: QuestPreset[] = [
       { from: 'gate-work', to: 'emit-sprint', condition: 'true' },
     ],
   },
+
+  // ─── Fractionalization rails (final-hardening D1 / ArdaNova asset fractionalization) ───
+  // Bridge/Back are Tier-2 chain actions on the REAL Phase-B bridge (Algorand real,
+  // Solana fail-closed). PEG MATH STAYS TENANT-SIDE: the node moves value only; the
+  // tenant computes the peg/valuation and hands it off via the Emit payload. AZOA
+  // holds NO peg/collateral/valuation state. These four presets demonstrate the
+  // composable fractionalization flow; the canonical parameterized template below
+  // stitches them into one instantiable quest.
+
+  {
+    id: 'fractionalize-bridge-to-project-token',
+    name: 'Bridge to Project Token',
+    description: 'Bridge a platform token cross-chain, then emit the peg config to the tenant. Requires a chain capability.',
+    requiresChain: true,
+    nodes: [
+      {
+        key: 'bridge',
+        nodeType: 'Bridge',
+        label: 'Bridge Platform→Project',
+        config: '{\n  "sourceChain": "Algorand",\n  "targetChain": "",\n  "tokenId": "",\n  "recipientAddress": "",\n  "amount": 1,\n  "mode": null\n}',
+        isEntry: true,
+      },
+      {
+        key: 'emit-peg',
+        nodeType: 'Emit',
+        label: 'Emit Peg Config (tenant-side)',
+        config: '{\n  "eventType": "project.token.pegged",\n  "payload": {\n    "note": "AZOA holds no peg state; tenant computes peg/valuation and settles."\n  }\n}',
+        isTerminal: true,
+      },
+    ],
+    edges: [
+      { from: 'bridge', to: 'emit-peg' },
+    ],
+  },
+
+  {
+    id: 'fractionalize-membership-mint',
+    name: 'Membership Token Mint',
+    description: 'Asset holon → membership fungible token → grant initial allocation. Requires a chain capability.',
+    requiresChain: true,
+    nodes: [
+      {
+        key: 'asset',
+        nodeType: 'HolonCreate',
+        label: 'Asset Holon',
+        config: '{\n  "name": "FractionalizedAsset",\n  "holonType": "Asset"\n}',
+        isEntry: true,
+      },
+      {
+        key: 'membership',
+        nodeType: 'FungibleTokenCreate',
+        label: 'Mint Membership Token',
+        config: '{\n  "chainType": "Algorand",\n  "name": "Membership",\n  "unitName": "MEMB",\n  "total": 1000000,\n  "decimals": 6,\n  "holonId": null\n}',
+      },
+      {
+        key: 'grant',
+        nodeType: 'Grant',
+        label: 'Grant Initial Allocation',
+        config: '{\n  "request": {\n    "name": "Membership",\n    "amount": "0"\n  },\n  "holonId": null\n}',
+        isTerminal: true,
+      },
+    ],
+    edges: [
+      { from: 'asset', to: 'membership' },
+      { from: 'membership', to: 'grant' },
+    ],
+  },
+
+  {
+    id: 'fractionalize-bridge-and-back',
+    name: 'Bridge & Back (round trip)',
+    description: 'Bridge an asset cross-chain then reverse it back to the source (redeem/release). Demonstrates the Back node. Requires a chain capability.',
+    requiresChain: true,
+    nodes: [
+      {
+        key: 'bridge',
+        nodeType: 'Bridge',
+        label: 'Bridge Out',
+        config: '{\n  "sourceChain": "Algorand",\n  "targetChain": "",\n  "tokenId": "",\n  "recipientAddress": "",\n  "amount": 1,\n  "mode": null\n}',
+        isEntry: true,
+      },
+      {
+        key: 'back',
+        nodeType: 'Back',
+        label: 'Bridge Back',
+        // BridgeTransactionId is bound from the upstream Bridge node output id
+        // ($from upstream.<nodeName>.<jsonPath> — the node name is the Bridge label/key).
+        config: '{\n  "bridgeTransactionId": { "$from": "upstream.bridge.id" },\n  "sourceRecipientAddress": ""\n}',
+        isTerminal: true,
+      },
+    ],
+    edges: [
+      { from: 'bridge', to: 'back' },
+    ],
+  },
+
+  {
+    id: 'fractionalize-investor-backing',
+    name: 'Investor Backing → Bridge',
+    description: 'Gate on backing accepted → bridge the backed platform token to the project chain → emit peg config. Requires a chain capability.',
+    requiresChain: true,
+    nodes: [
+      {
+        key: 'gate',
+        nodeType: 'GateCheck',
+        label: 'Backing Accepted?',
+        config: '{\n  "predicate": "reads.backingAccepted == true",\n  "reads": {\n    "backingAccepted": false\n  }\n}',
+        isEntry: true,
+      },
+      {
+        key: 'bridge',
+        nodeType: 'Bridge',
+        label: 'Bridge Backed Token',
+        config: '{\n  "sourceChain": "Algorand",\n  "targetChain": "",\n  "tokenId": "",\n  "recipientAddress": "",\n  "amount": 1,\n  "mode": null\n}',
+      },
+      {
+        key: 'emit-peg',
+        nodeType: 'Emit',
+        label: 'Emit Peg Config (tenant-side)',
+        config: '{\n  "eventType": "project.backed",\n  "payload": {\n    "note": "Tenant computes peg/valuation; AZOA moved value only."\n  }\n}',
+        isTerminal: true,
+      },
+    ],
+    edges: [
+      { from: 'gate', to: 'bridge', condition: 'true' },
+      { from: 'bridge', to: 'emit-peg' },
+    ],
+  },
+
+  // ─── Canonical parameterized fractionalization quest template ───
+  // The single end-to-end asset-fractionalization DAG (project-asset-fractionalization
+  // §Deliverables 3): asset holon → deed grant → membership token → bridge
+  // platform→project → pegged project token → Emit peg config to the tenant.
+  // PEG BOUNDARY: the final FungibleTokenCreate mints the project token as a plain
+  // fungible; it is "pegged" only in the tenant's ledger. The terminal Emit hands the
+  // peg/valuation config to the tenant — AZOA computes and stores NO peg. Parameterize
+  // per project by editing the node configs (chain, token name/units, recipient) before
+  // saving/instantiating.
+  {
+    id: 'fractionalize-canonical-lifecycle',
+    name: 'Asset Fractionalization (canonical)',
+    description: 'End-to-end: asset holon → deed → membership token → bridge → pegged project token → emit peg (tenant-side). The flagship fractionalization template. Requires a chain capability.',
+    requiresChain: true,
+    nodes: [
+      {
+        key: 'asset',
+        nodeType: 'HolonCreate',
+        label: 'Project Asset Holon',
+        config: '{\n  "name": "ProjectAsset",\n  "holonType": "Asset"\n}',
+        isEntry: true,
+      },
+      {
+        key: 'deed',
+        nodeType: 'Grant',
+        label: 'Grant Deed (notarize + link)',
+        config: '{\n  "request": {\n    "name": "Deed",\n    "amount": "1"\n  },\n  "holonId": null\n}',
+      },
+      {
+        key: 'membership',
+        nodeType: 'FungibleTokenCreate',
+        label: 'Membership Token',
+        config: '{\n  "chainType": "Algorand",\n  "name": "Membership",\n  "unitName": "MEMB",\n  "total": 1000000,\n  "decimals": 6,\n  "holonId": null\n}',
+      },
+      {
+        key: 'bridge',
+        nodeType: 'Bridge',
+        label: 'Bridge Platform→Project',
+        config: '{\n  "sourceChain": "Algorand",\n  "targetChain": "",\n  "tokenId": "",\n  "recipientAddress": "",\n  "amount": 1,\n  "mode": null\n}',
+      },
+      {
+        key: 'project-token',
+        nodeType: 'FungibleTokenCreate',
+        label: 'Pegged Project Token',
+        config: '{\n  "chainType": "Algorand",\n  "name": "ProjectToken",\n  "unitName": "PROJ",\n  "total": 1000000,\n  "decimals": 6,\n  "holonId": null\n}',
+      },
+      {
+        key: 'emit-peg',
+        nodeType: 'Emit',
+        label: 'Emit Peg Config → tenant',
+        config: '{\n  "eventType": "project.token.pegged",\n  "payload": {\n    "note": "AZOA holds NO peg/valuation/collateral state. Tenant computes the peg and maintains redemption."\n  }\n}',
+        isTerminal: true,
+      },
+    ],
+    edges: [
+      { from: 'asset', to: 'deed' },
+      { from: 'deed', to: 'membership' },
+      { from: 'membership', to: 'bridge' },
+      { from: 'bridge', to: 'project-token' },
+      { from: 'project-token', to: 'emit-peg' },
+    ],
+  },
 ]
 
 /** A preset is loadable only if every node type it references exists in the catalog. */

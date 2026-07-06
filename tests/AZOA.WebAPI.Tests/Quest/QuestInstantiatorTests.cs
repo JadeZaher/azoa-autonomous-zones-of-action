@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Moq;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -27,9 +26,8 @@ public class QuestInstantiatorTests
         _validatorMock.Setup(v => v.Validate(It.IsAny<QuestEntity>(), It.IsAny<bool>()))
             .Returns(new DagValidationResult { IsValid = true });
 
-        var loggerMock = new Mock<ILogger<QuestInstantiator>>();
         _instantiator = new QuestInstantiator(
-            _templateStoreMock.Object, _validatorMock.Object, loggerMock.Object);
+            _templateStoreMock.Object, _validatorMock.Object);
     }
 
     [Fact]

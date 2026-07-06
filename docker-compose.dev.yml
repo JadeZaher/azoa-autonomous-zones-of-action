@@ -145,7 +145,10 @@ services:
       # frontend container itself doesn't talk to the API directly except
       # for SSR; we keep both pointing at the same host-mapped port for
       # consistency.
-      NEXT_PUBLIC_API_URL: "http://localhost:5000"
+      # Runtime-resolved (H3): plain API_URL is read per-request by the Next.js
+      # server layer, so repointing the UI needs only a restart, not a rebuild.
+      # The former NEXT_PUBLIC_API_URL was baked at `next build` and is now dead.
+      API_URL: "http://localhost:5000"
       NODE_ENV: "production"
     ports:
       - "3000:3000"

@@ -12,7 +12,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- SagaSteps.StepStatus
-DEFINE PARAM IF NOT EXISTS $saga_steps_status VALUE ["Pending", "InProgress", "Completed", "Compensating", "DeadLettered", "Parked"];
+DEFINE PARAM IF NOT EXISTS $saga_steps_status VALUE ["Pending", "InProgress", "Completed", "Compensating", "DeadLettered", "Parked", "Cancelled"];
 
 DEFINE TABLE IF NOT EXISTS saga_steps SCHEMAFULL;
 

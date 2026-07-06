@@ -1,8 +1,20 @@
 # API Safety Hardening — Residual Risk & Operations Runbook
 
+> ⚠️ **DEPRECATED — predates the SurrealDB cutover.** This doc is dated
+> 2026-05-16 and describes the **retired Postgres/EF storage layer**
+> (`Models/ConsumedVaaRecord.cs`, migration `IX_ConsumedVaas_Digest`,
+> `ExecuteUpdateAsync`/EF conditional-update patterns). SurrealDB is now the
+> sole data engine: the VAA replay ledger is `ConsumedVaaLedger.cs` backed by
+> a SurrealQL **UNIQUE ASSERT**, not an EF index. Treat every Postgres/EF
+> reference below as historical context, not current mechanism.
+> **`docs/NODE-HOST.md` is authoritative** for current data-engine setup and
+> operator procedure. This file remains for its still-valid exactly-once
+> *reasoning* (idempotency claim → replay ledger → atomic transition → terminal
+> write) — the pattern is unchanged, only the storage engine underneath it.
+
 **Audience:** Operators/SREs running the AZOA cross-chain bridge API pre-launch.  
 **Scope:** Stuck/failed bridge transactions, idempotency record interpretation, reconciliation.  
-**Last updated:** 2026-05-16 (api-safety-hardening track, Wave 1–3 consolidated)
+**Last updated:** 2026-05-16 (api-safety-hardening track, Wave 1–3 consolidated) — **superseded by `docs/NODE-HOST.md`, see banner above**
 
 ---
 

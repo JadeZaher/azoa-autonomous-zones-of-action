@@ -42,6 +42,10 @@ DEFINE FIELD IF NOT EXISTS status ON TABLE quest TYPE string
     ASSERT $value INSIDE $quest_status
     DEFAULT "Draft";
 
+-- Optimistic-concurrency token for the definition lifecycle (F6 TOCTOU guard). Bumped on every CAS status transition. See Managers/AGENTS.md §publish-lifecycle.
+DEFINE FIELD IF NOT EXISTS version ON TABLE quest TYPE int
+    DEFAULT 0;
+
 -- Definition birthdate -- STAYS on the definition, not a runtime artifact
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE quest TYPE datetime
     READONLY;

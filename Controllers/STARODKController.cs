@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Ecosystem;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 
@@ -90,7 +91,49 @@ public class STARODKController : ControllerBase
         return TranslateUpsertResult(result);
     }
 
+    // ── Ecosystem tree (D2) ─────────────────────────────────────────────────
+
+    /// <summary>Attaches a DappSeries (or nested STARODK) as a node in this
+    /// STARODK's ecosystem tree and returns the recomposed tree. The owner is the
+    /// authenticated avatar — no owner id is read from the body (IDOR-resistant).</summary>
+    [HttpPost("{id:guid}/ecosystem/dapp-series")]
+    public async Task<ActionResult<AZOAResult<EcosystemTree>>> AddDappSeries(Guid id, [FromBody] AddDappSeriesRequest request, [FromQuery] AZOARequest? providerRequest)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _manager.AddDappSeriesAsync(id, request, avatarId.Value, providerRequest);
+        return TranslateTreeResult(result);
+    }
+
+    /// <summary>Returns this STARODK's ecosystem assembled into a parent/children
+    /// tree. Ownership is verified against the authenticated avatar.</summary>
+    [HttpGet("{id:guid}/ecosystem")]
+    public async Task<ActionResult<AZOAResult<EcosystemTree>>> GetEcosystem(Guid id, [FromQuery] AZOARequest? providerRequest)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _manager.GetEcosystemAsync(id, avatarId.Value, providerRequest);
+        return TranslateTreeResult(result);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>Same auth-prefix translation as <see cref="TranslateUpsertResult"/>,
+    /// for the <see cref="EcosystemTree"/> result shape.</summary>
+    private ActionResult<AZOAResult<EcosystemTree>> TranslateTreeResult(AZOAResult<EcosystemTree> result)
+    {
+        if (!result.IsError) return Ok(result);
+
+        if (result.Message?.StartsWith(STARODKAuthorizationError.Forbidden, StringComparison.Ordinal) == true)
+            return StatusCode(StatusCodes.Status403Forbidden, result);
+
+        if (result.Message?.StartsWith(STARODKAuthorizationError.NotFound, StringComparison.Ordinal) == true)
+            return NotFound(result);
+
+        return BadRequest(result);
+    }
 
     /// <summary>
     /// Translates a manager upsert result to the right HTTP status. The manager

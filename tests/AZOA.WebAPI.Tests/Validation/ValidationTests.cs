@@ -980,10 +980,11 @@ public class MappingProfileTests
 
     public MappingProfileTests()
     {
+        // AutoMapper 15.x: MapperConfiguration requires an ILoggerFactory.
         var config = new AutoMapper.MapperConfiguration(cfg =>
         {
             cfg.AddProfile<Mapping.AZOAMappingProfile>();
-        });
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         _mapper = config.CreateMapper();
     }
 

@@ -82,6 +82,13 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
         {
             foreach (var scope2 in apiKey.Scopes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
+                // security-review HIGH-2 (defense-in-depth): never emit an admin-only
+                // capability (e.g. operator:admin) as a scope claim from an API key,
+                // even if a forged/misconfigured key CSV contains the literal string.
+                // Operator authority must originate only from a real admin's JWT — the
+                // Operator authorization policy additionally requires the JWT scheme.
+                if (!AZOA.WebAPI.Core.AzoaScopes.IsApiKeyIssuableScope(scope2))
+                    continue;
                 claims.Add(new Claim("scope", scope2));
             }
         }

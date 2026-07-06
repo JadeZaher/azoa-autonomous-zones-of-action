@@ -232,16 +232,10 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
         return Task.FromResult(Error<string>($"{ChainType} BurnWrappedAsync not implemented"));
     }
 
-    public virtual Task<AZOAResult<bool>> VerifyBridgeProofAsync(
-        string proofData, string sourceChain, string targetChainId, CancellationToken ct = default)
-    {
-        return Task.FromResult(new AZOAResult<bool>
-        {
-            IsError = false,
-            Result = false,
-            Message = $"{ChainType} VerifyBridgeProofAsync not implemented"
-        });
-    }
+    // VerifyBridgeProofAsync removed (final-hardening-cutover B2): cross-chain proof
+    // verification lives ONLY on the hardened WormholeAdapter /
+    // Secp256k1VaaSignatureVerifier path. No provider-level verifier — an always-true
+    // one previously lied here. See Providers/Blockchain/AGENTS.md.
 
     public virtual bool SupportsBridging => false;
 

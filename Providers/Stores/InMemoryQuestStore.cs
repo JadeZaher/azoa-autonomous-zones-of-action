@@ -90,6 +90,32 @@ public sealed class InMemoryQuestStore : IQuestStore
         });
     }
 
+    // ── F6 TOCTOU compare-and-swap (definition-status version guard) ──────────
+    // In-memory CAS mirroring the SurrealQuestStore conditional-UPDATE semantics:
+    // returns the affected-row count VERBATIM (1 = won, 0 = lost the race / stale
+    // version). This shim is inert in production (SurrealQuestStore is the active
+    // binding); the faithful CAS keeps it a correct drop-in per the interface.
+    public Task<int> TryTransitionQuestStatusAsync(
+        Guid id, QuestStatus expected, QuestStatus next, long expectedVersion, CancellationToken ct = default)
+    {
+        if (_quests.TryGetValue(id, out var q) && q.Status == expected && q.Version == expectedVersion)
+        {
+            q.Status = next;
+            q.Version = expectedVersion + 1;
+            return Task.FromResult(1);
+        }
+        return Task.FromResult(0);
+    }
+
+    public Task<int> TryConfirmQuestStateAsync(
+        Guid id, QuestStatus expected, long expectedVersion, CancellationToken ct = default)
+    {
+        var ok = _quests.TryGetValue(id, out var q)
+                 && q!.Status == expected
+                 && q.Version == expectedVersion;
+        return Task.FromResult(ok ? 1 : 0);
+    }
+
     // ── QuestTemplate CRUD ────────────────────────────────────────────────────
 
     public Task<AZOAResult<QuestTemplate>> GetQuestTemplateAsync(Guid id, CancellationToken ct = default)

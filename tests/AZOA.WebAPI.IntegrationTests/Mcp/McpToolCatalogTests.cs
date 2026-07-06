@@ -264,22 +264,15 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Seed 4 wallets (2 on Algorand, 2 on Solana). Call avatar_scoped_query
-    /// table="wallet" filters={"chain_id":"algorand"}. Assert 2 rows returned.
+    /// Seed 4 holons (2 on algorand, 2 on solana). Call avatar_scoped_query
+    /// table="holon" filters={"chain_id":"algorand"}. Assert 2 rows returned.
     ///
-    /// Note: AvatarScopedQueryTool.FilterAllowlist includes "chain_id" and
-    /// "chain_type" is NOT in the allowlist (the wallet model column is chain_type
-    /// in C# but the SurrealDB field name used by SurrealWalletStore is chain_type;
-    /// however, AvatarScopedQueryTool.FilterAllowlist uses "chain_id" as the allowed
-    /// filter key). We use "chain_id" which IS in the allowlist. The wallet store
-    /// persists "chain_type" but the MCP tool query filters on whatever field name
-    /// is stored. Wallets seeded via SurrealWalletStore use the chain_type field.
-    /// We align with the FilterAllowlist by seeding holons as wallets with chain_id
-    /// set — but since SurrealWalletStore uses chain_type, we seed directly via
-    /// ExecuteSurrealSqlAsync so we can set whichever field is in the allowlist.
-    ///
-    /// Practical approach: use the "chain_id" filter which is in FilterAllowlist,
-    /// and seed wallet records with a chain_id field value via direct SurrealQL.
+    /// Why holon and not wallet: the tool's FilterAllowlist key is "chain_id", but
+    /// the SCHEMAFULL wallet table has no chain_id field (its column is chain_type,
+    /// which is NOT in the allowlist) — so a chain filter on wallet can never match.
+    /// The holon table DOES carry chain_id, so it exercises the allowlist + filter
+    /// codepath honestly. Holons are seeded via the real store so id/avatar_id take
+    /// the correct record-id / record<avatar> link shape.
     /// </summary>
     [SkippableFact]
     public async Task AvatarScopedQuery_HappyPath_ReturnsAllowlistedTableFilteredRows()
@@ -287,58 +280,29 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
-        var avatarId    = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        var avatarIdStr = avatarId.ToString("N").ToLowerInvariant();
+        var executor   = CreateExecutor();
+        var holonStore = new SurrealHolonStore(executor);
+        var avatarId   = Guid.Parse(TestAuthHandler.DefaultAvatarId);
 
-        // ── Seed wallets directly with chain_id so the FilterAllowlist key works ──
-        // The AvatarScopedQueryTool filters on "chain_id" (in FilterAllowlist).
-        // We seed wallet records that have both avatar_id and chain_id fields.
-        await ExecuteSurrealSqlAsync(
-            "CREATE wallet CONTENT { " +
-            "id: $id1, avatar_id: $aid, chain_id: 'algorand', address: $a1, label: 'W1' }",
-            new
-            {
-                id1 = $"wallet:catalog_w1_{Guid.NewGuid():N}",
-                aid = avatarIdStr,
-                a1  = $"algo_{Guid.NewGuid():N}"
-            });
-
-        await ExecuteSurrealSqlAsync(
-            "CREATE wallet CONTENT { " +
-            "id: $id2, avatar_id: $aid, chain_id: 'algorand', address: $a2, label: 'W2' }",
-            new
-            {
-                id2 = $"wallet:catalog_w2_{Guid.NewGuid():N}",
-                aid = avatarIdStr,
-                a2  = $"algo_{Guid.NewGuid():N}"
-            });
-
-        await ExecuteSurrealSqlAsync(
-            "CREATE wallet CONTENT { " +
-            "id: $id3, avatar_id: $aid, chain_id: 'solana', address: $a3, label: 'W3' }",
-            new
-            {
-                id3 = $"wallet:catalog_w3_{Guid.NewGuid():N}",
-                aid = avatarIdStr,
-                a3  = $"sol_{Guid.NewGuid():N}"
-            });
-
-        await ExecuteSurrealSqlAsync(
-            "CREATE wallet CONTENT { " +
-            "id: $id4, avatar_id: $aid, chain_id: 'solana', address: $a4, label: 'W4' }",
-            new
-            {
-                id4 = $"wallet:catalog_w4_{Guid.NewGuid():N}",
-                aid = avatarIdStr,
-                a4  = $"sol_{Guid.NewGuid():N}"
-            });
+        // ── Seed 4 chain-tagged holons (2 algorand, 2 solana) via the store ──
+        var seeds = new[]
+        {
+            NewChainHolon("ASQ-Algo-1", avatarId, "algorand"),
+            NewChainHolon("ASQ-Algo-2", avatarId, "algorand"),
+            NewChainHolon("ASQ-Sol-1",  avatarId, "solana"),
+            NewChainHolon("ASQ-Sol-2",  avatarId, "solana"),
+        };
+        foreach (var h in seeds)
+        {
+            var r = await holonStore.UpsertAsync(h);
+            r.IsError.Should().BeFalse($"seed holon {h.Name}: {r.Message}");
+        }
 
         // ── Call avatar_scoped_query with chain_id filter ─────────────────
-        var executor = CreateExecutor();
-        var tool     = new AvatarScopedQueryTool();
-        var args     = BuildArgs(new
+        var tool = new AvatarScopedQueryTool();
+        var args = BuildArgs(new
         {
-            table   = "wallet",
+            table   = "holon",
             filters = new Dictionary<string, string> { ["chain_id"] = "algorand" }
         });
         var ctx = BuildContext(avatarId, executor);
@@ -349,7 +313,7 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
 
         result.TryGetProperty("row_count", out var rowCountProp).Should().BeTrue();
         rowCountProp.GetInt32().Should().Be(2,
-            "exactly 2 wallets have chain_id='algorand' for this avatar");
+            "exactly 2 holons have chain_id='algorand' for this avatar");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -395,15 +359,18 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
             var embedding = await embedder.EmbedAsync(names[i], CancellationToken.None);
             var embJson   = JsonSerializer.Serialize(embedding);
 
-            // Persist as a holon record with the embedding field
+            // Persist as a holon record with the embedding field.
+            // id is BARE hex (CREATE prefixes → holon:hex); avatar_id is a
+            // record<avatar> link via type::record (a bare-hex string fails the
+            // SCHEMAFULL record<avatar> coercion). See tests AGENTS.md §g5-seed-shapes.
             await ExecuteSurrealSqlAsync(
                 "CREATE holon CONTENT { " +
-                "id: $hid, name: $name, avatar_id: $aid, " +
+                "id: $hid, name: $name, avatar_id: type::record('avatar', $aid), " +
                 "description: '', provider_name: 'test', is_active: true, " +
                 "created_date: time::now(), embedding: $emb }",
                 new
                 {
-                    hid  = $"holon:{hidStr}",
+                    hid  = hidStr,
                     name = names[i],
                     aid  = avatarIdStr,
                     emb  = embedding   // pass the float array as the param value
@@ -516,6 +483,18 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         ProviderName  = "test",
         IsActive      = true,
         CreatedDate   = DateTime.UtcNow
+    };
+
+    private static Holon NewChainHolon(string name, Guid avatarId, string chainId) => new()
+    {
+        Id           = Guid.NewGuid(),
+        Name         = name,
+        Description  = string.Empty,
+        AvatarId     = avatarId,
+        ProviderName = "test",
+        ChainId      = chainId,
+        IsActive     = true,
+        CreatedDate  = DateTime.UtcNow
     };
 
     private static Holon NewNft(string name, Guid avatarId, string chainId) => new()

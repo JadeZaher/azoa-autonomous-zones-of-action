@@ -127,10 +127,8 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
         var prefix     = $"VecTest2-Shared-{Guid.NewGuid():N}";
         var namesA     = new[] { $"{prefix}-A0", $"{prefix}-A1", $"{prefix}-A2" };
         var namesB     = new[] { $"{prefix}-B0", $"{prefix}-B1", $"{prefix}-B2" };
-        var holonIdsB  = new Guid[3];
-
         await SeedHolonsWithEmbeddingsAsync(namesA, avatarAStr, embedder);
-        holonIdsB = await SeedHolonsWithEmbeddingsAndReturnIdsAsync(namesB, avatarBStr, embedder);
+        var holonIdsB = await SeedHolonsWithEmbeddingsAndReturnIdsAsync(namesB, avatarBStr, embedder);
 
         // Query as A using a name that appears in BOTH name sets (closest to B0 too)
         var result = await CallVectorSearchAsync(avatarA, namesA[0], k: 10);
@@ -179,12 +177,15 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
         for (int i = 0; i < 3; i++)
         {
             var hid = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            // id BARE hex (CREATE prefixes → holon:hex); avatar_id a record<avatar>
+            // link via type::record. No embedding field → WHERE embedding IS NOT NONE
+            // filters these out. See tests AGENTS.md §g5-seed-shapes.
             await ExecuteSurrealSqlAsync(
-                "CREATE holon CONTENT { id: $hid, name: $name, avatar_id: $aid, " +
+                "CREATE holon CONTENT { id: $hid, name: $name, avatar_id: type::record('avatar', $aid), " +
                 "description: '', provider_name: 'test', is_active: true, created_date: time::now() }",
                 new
                 {
-                    hid  = $"holon:{hid}",
+                    hid,
                     name = $"VecTest3-NoEmbed-{i}-{hid}",
                     aid  = avatarIdStr
                 });
@@ -224,13 +225,15 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
             var hid       = Guid.NewGuid().ToString("N").ToLowerInvariant();
             var embedding = await embedder.EmbedAsync(name, CancellationToken.None);
 
+            // id BARE hex (CREATE prefixes → holon:hex); avatar_id a record<avatar>
+            // link via type::record. See tests AGENTS.md §g5-seed-shapes.
             await ExecuteSurrealSqlAsync(
-                "CREATE holon CONTENT { id: $hid, name: $name, avatar_id: $aid, " +
+                "CREATE holon CONTENT { id: $hid, name: $name, avatar_id: type::record('avatar', $aid), " +
                 "description: '', provider_name: 'test', is_active: true, " +
                 "created_date: time::now(), embedding: $emb }",
                 new
                 {
-                    hid  = $"holon:{hid}",
+                    hid,
                     name,
                     aid  = avatarIdStr,
                     emb  = embedding
@@ -249,13 +252,15 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
             var hidStr    = id.ToString("N").ToLowerInvariant();
             var embedding = await embedder.EmbedAsync(names[i], CancellationToken.None);
 
+            // id BARE hex (CREATE prefixes → holon:hex); avatar_id a record<avatar>
+            // link via type::record. See tests AGENTS.md §g5-seed-shapes.
             await ExecuteSurrealSqlAsync(
-                "CREATE holon CONTENT { id: $hid, name: $name, avatar_id: $aid, " +
+                "CREATE holon CONTENT { id: $hid, name: $name, avatar_id: type::record('avatar', $aid), " +
                 "description: '', provider_name: 'test', is_active: true, " +
                 "created_date: time::now(), embedding: $emb }",
                 new
                 {
-                    hid  = $"holon:{hidStr}",
+                    hid  = hidStr,
                     name = names[i],
                     aid  = avatarIdStr,
                     emb  = embedding

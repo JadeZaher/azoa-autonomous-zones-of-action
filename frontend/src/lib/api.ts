@@ -1,4 +1,8 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+import { readInitialApiUrl } from './runtime-config'
+
+// Resolved at runtime (server-injected window global), not baked at `next
+// build` — see lib/runtime-config.ts.
+const API_BASE_URL = readInitialApiUrl()
 
 export interface BlockchainResponse<T = any> {
   success: boolean

@@ -79,7 +79,13 @@ public enum QuestNodeType
     Refund,
     // fungible-token-node track: launch a fungible ASA (real total/decimals) via
     // FungibleTokenManager → IAlgorandASAModule.CreateASAAsync. RequiresChainCapability.
-    FungibleTokenCreate
+    FungibleTokenCreate,
+    // Fractionalization rails (final-hardening D1). Both route through the real
+    // Phase-B ICrossChainBridgeService (Algorand real, Solana fail-closed); actor
+    // from run context; idempotency seeded {runId}:{nodeId}. No value/peg math in
+    // the node — peg stays tenant-side (Emit). See Services/Quest/AGENTS.md §fractionalization.
+    Bridge, // lock/bridge an asset cross-chain (InitiateBridgeAsync)
+    Back    // reverse/release the bridged asset back (ReverseBridgeAsync)
 }
 
 /// <summary>

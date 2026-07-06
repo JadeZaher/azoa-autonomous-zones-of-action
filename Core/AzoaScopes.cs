@@ -20,6 +20,18 @@ public static class AzoaScopes
     /// <summary>A child credential may create/manage wallets for its avatar.</summary>
     public const string WalletManage = "wallet:manage";
 
+    /// <summary>
+    /// security-review HIGH-2: the operator/admin capability that gates the
+    /// destructive cross-avatar admin surfaces (key rotation, data backfill). It is
+    /// deliberately NOT in the API-key-issuable scope vocabulary a tenant/child key
+    /// can carry (see <see cref="IsApiKeyIssuableScope"/>): the two admin endpoints
+    /// require a JWT-authenticated identity that carries this claim, so an X-Api-Key
+    /// principal — which can only ever emit <c>scope</c> claims from its stored CSV —
+    /// can never self-assert operator authority even if it stuffed the literal string
+    /// into its scopes. Minted only for real admins by the JWT issuer.
+    /// </summary>
+    public const string Operator = "operator:admin";
+
     /// <summary>A child credential may mint/transfer NFTs for its avatar.</summary>
     public const string NftMint = "nft:mint";
 
@@ -86,6 +98,28 @@ public static class AzoaScopes
 
     private static System.Collections.Generic.IReadOnlySet<string> Set(params string[] scopes)
         => new System.Collections.Generic.HashSet<string>(scopes, StringComparer.Ordinal);
+
+    /// <summary>
+    /// security-review HIGH-2 defense-in-depth: scopes an API key must NEVER be able to
+    /// emit as a claim, regardless of what its stored <c>ApiKey.Scopes</c> CSV contains.
+    /// The <see cref="Operator"/> capability is the only such scope today — it authorizes
+    /// destructive cross-avatar admin operations and must originate ONLY from a real
+    /// admin's JWT. <c>ApiKeyAuthenticationHandler</c> filters these out at claim-emit
+    /// time so a forged/misconfigured key CSV can never satisfy the <c>Operator</c> policy.
+    /// </summary>
+    private static readonly System.Collections.Generic.IReadOnlySet<string> ApiKeyForbiddenScopes =
+        new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
+        {
+            Operator,
+        };
+
+    /// <summary>
+    /// True iff <paramref name="scope"/> may be emitted as a <c>scope</c> claim by an
+    /// API-key principal. Returns false for admin-only capabilities (see
+    /// <see cref="ApiKeyForbiddenScopes"/>) so the API-key auth handler can strip them.
+    /// </summary>
+    public static bool IsApiKeyIssuableScope(string? scope)
+        => !string.IsNullOrWhiteSpace(scope) && !ApiKeyForbiddenScopes.Contains(scope);
 
     /// <summary>
     /// S6 guardrail: true iff <paramref name="scope"/> is a legitimate signing scope

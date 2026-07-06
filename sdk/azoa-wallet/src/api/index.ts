@@ -61,6 +61,18 @@ export type {
   ApiKeyCreateParams,
   ApiKeyCreateResult,
   ApiKeyInfo,
+  // Holon AssetType registry types (final-hardening F5)
+  HolonTypeResult,
+  HolonTypeRegisterParams,
+  // Saga operator dead-letter surface (final-hardening Phase-F)
+  SagaStepStatus,
+  SagaDeadLetterListParams,
+  SagaStepView,
+  SagaStepRequeueResult,
+  SagaStepCancelResult,
+  // Wallet wrapping-key rotation (final-hardening B5)
+  KeyRotationReport,
+  KeyRotationParams,
 } from "./client.js";
 export { resolveApiPath, API_PATHS } from "./api-version.js";
 export type { ApiVersionConfig, ApiController } from "./api-version.js";

@@ -43,12 +43,21 @@ public class EmitNodeHandlerTests
     }
 
     [Fact]
-    public void EmitNodeHandler_HasNoManagerConstructorParameter()
+    public void EmitNodeHandler_IsConstructableWithNoArguments()
     {
-        // The handler must be constructable with zero arguments (no manager DI).
-        var ctor = typeof(EmitNodeHandler).GetConstructors();
-        ctor.Should().ContainSingle();
-        ctor[0].GetParameters().Should().BeEmpty();
+        // final-hardening F3: the handler now takes an OPTIONAL IQuestWebhookEmitter
+        // (nullable, default null) so it can enqueue a best-effort quest.emit webhook.
+        // The pure-passthrough contract is preserved — it must still be constructable
+        // with zero arguments, and the single constructor's only parameter is optional.
+        var ctors = typeof(EmitNodeHandler).GetConstructors();
+        ctors.Should().ContainSingle();
+        var parameters = ctors[0].GetParameters();
+        parameters.Should().ContainSingle();
+        parameters[0].IsOptional.Should().BeTrue();
+
+        // Zero-arg construction still works (the pure path — no emitter, no manager).
+        var act = () => new EmitNodeHandler();
+        act.Should().NotThrow();
     }
 
     // ── payload round-trip ───────────────────────────────────────────────

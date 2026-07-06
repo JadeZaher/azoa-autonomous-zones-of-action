@@ -19,6 +19,7 @@ import {
 } from '@azoa/sdk'
 import { buildChainRegistrations, readInitialNetwork } from './networks'
 import { readInitialDebug } from './debug'
+import { readInitialApiUrl } from './runtime-config'
 import type {
   SessionState,
   HolonResult,
@@ -55,7 +56,9 @@ const localStorageAdapter = {
 
 // ─── SDK singleton ───
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+// Resolved at runtime (server-injected window global), not baked at `next
+// build` — see lib/runtime-config.ts.
+const API_BASE_URL = readInitialApiUrl()
 
 // The initial network is read (SSR-safe) from the persisted choice so the very
 // first wallet operation already targets the right network. Runtime switching

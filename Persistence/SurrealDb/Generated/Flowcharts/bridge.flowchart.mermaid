@@ -9,6 +9,7 @@ graph LR
     consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
     idempotency_key_store["idempotency_key_store: Node"]:::nodeClass
     operation_log["operation_log: Node"]:::nodeClass
+    quest_webhook_event["quest_webhook_event: Node"]:::nodeClass
     saga_steps["saga_steps: Node"]:::nodeClass
     webhook_registration["webhook_registration: Node"]:::nodeClass
 
@@ -16,6 +17,9 @@ graph LR
     avatar["avatar: Node (external)"]:::externalNode
     consent_grant["consent_grant: Node (external)"]:::externalNode
     holon["holon: Node (external)"]:::externalNode
+    quest["quest: Node (external)"]:::externalNode
+    quest_node["quest_node: Node (external)"]:::externalNode
+    quest_run["quest_run: Node (external)"]:::externalNode
     wallet["wallet: Node (external)"]:::externalNode
 
     %% Edges (outbound from this slice)
@@ -30,6 +34,10 @@ graph LR
     operation_log -- "source_holon_id [N:0..1]" --> holon
     operation_log -- "target_holon_id [N:0..1]" --> holon
     operation_log -- "wallet_id [N:0..1]" --> wallet
+    quest_webhook_event -- "tenant_id [N:1]" --> avatar
+    quest_webhook_event -- "quest_id [N:1]" --> quest
+    quest_webhook_event -- "node_id [N:1]" --> quest_node
+    quest_webhook_event -- "run_id [N:1]" --> quest_run
     webhook_registration -- "tenant_id [N:1]" --> avatar
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;

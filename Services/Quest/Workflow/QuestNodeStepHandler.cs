@@ -186,7 +186,8 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
                     // worker, so it MUST come from the persisted run. A user-driven run
                     // has ActingTenantId = null → identical behaviour to before.
                     var originalConfig = node.Config;
-                    node.Config = bindingResult.ResolvedJson;
+                    // Ok==true (checked above) guarantees ResolvedJson is non-null.
+                    node.Config = bindingResult.ResolvedJson!;
                     try
                     {
                         var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, upstream, actingTenantId);

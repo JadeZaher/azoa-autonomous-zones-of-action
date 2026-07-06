@@ -20,14 +20,10 @@ namespace AZOA.WebAPI.Controllers;
 public class BridgeController : ControllerBase
 {
     private readonly ICrossChainBridgeService _bridgeService;
-    private readonly ILogger<BridgeController> _logger;
 
-    public BridgeController(
-        ICrossChainBridgeService bridgeService,
-        ILogger<BridgeController> logger)
+    public BridgeController(ICrossChainBridgeService bridgeService)
     {
         _bridgeService = bridgeService;
-        _logger = logger;
     }
 
     /// <summary>

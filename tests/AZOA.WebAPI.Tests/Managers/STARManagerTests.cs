@@ -13,12 +13,16 @@ namespace AZOA.WebAPI.Tests.Managers;
 public class STARManagerTests
 {
     private readonly Mock<ISTARStore> _store;
+    private readonly Mock<IEcosystemStore> _ecosystemStore;
+    private readonly Mock<IDappSeriesStore> _dappSeriesStore;
     private readonly STARManager _manager;
 
     public STARManagerTests()
     {
         _store = new Mock<ISTARStore>();
-        _manager = new STARManager(_store.Object);
+        _ecosystemStore = new Mock<IEcosystemStore>();
+        _dappSeriesStore = new Mock<IDappSeriesStore>();
+        _manager = new STARManager(_store.Object, _ecosystemStore.Object, _dappSeriesStore.Object);
     }
 
     [Fact]

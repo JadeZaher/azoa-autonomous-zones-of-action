@@ -5,6 +5,8 @@ namespace AZOA.WebAPI.Helpers;
 /// record-id rendering (32-char lowercase hex, no dashes). Promoted from the
 /// identical private forks that previously lived in every Surreal store and
 /// saga store, so the whole repo shares ONE implementation.
+/// Upstreamed to SurrealForge.Client (2026-07-06); delete this copy and use
+/// the package's SurrealForge.Client.SurrealId once the reference is ≥0.1.2.
 /// </summary>
 public static class SurrealId
 {

@@ -149,14 +149,10 @@ public sealed class SurrealStarStore : ISTARStore
     private static StarRecord ToPoco(ISTARODK odk)
     {
         // Serialize BoundHolonIds as a JSON array of "N"-formatted id strings.
-        JsonElement? boundHolonIdsJson = null;
-        if (odk.BoundHolonIds.Count > 0)
-        {
-            var idStrings = odk.BoundHolonIds.Select(SurrealId.ToSurrealId).ToList();
-            var raw       = JsonSerializer.Serialize(idStrings, SurrealJsonOptions.Default);
-            using var doc = JsonDocument.Parse(raw);
-            boundHolonIdsJson = doc.RootElement.Clone();
-        }
+        // ALWAYS serialize (empty → `[]`) so the SET-based upsert REPLACES the
+        // column; see Providers/Stores/Surreal/AGENTS.md §set-omits-null.
+        var idStrings = odk.BoundHolonIds.Select(SurrealId.ToSurrealId).ToList();
+        JsonElement? boundHolonIdsJson = JsonSerializer.SerializeToElement(idStrings, SurrealJsonOptions.Default);
 
         return new StarRecord
         {

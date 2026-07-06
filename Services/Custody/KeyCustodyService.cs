@@ -308,37 +308,35 @@ public sealed class KeyCustodyService : IKeyCustodyService
     // ─── internals ───
 
     /// <summary>
-    /// Decrypt JIT into a <see cref="byte"/> array, run <paramref name="sign"/>, and
-    /// wipe the bytes in a <c>finally</c> (even on signer throw). Returns the signer's
-    /// result wrapped in <see cref="AZOAResult{T}"/>; NEVER the key.
+    /// Decrypt JIT straight into a zeroable <see cref="byte"/> array via
+    /// <see cref="WalletKeyService.DecryptPrivateKeyBytes"/>, run
+    /// <paramref name="sign"/>, and wipe the bytes in a <c>finally</c> (even on
+    /// signer throw). Returns the signer's result wrapped in
+    /// <see cref="AZOAResult{T}"/>; NEVER the key.
     /// <para>
-    /// CAVEAT (P1): <see cref="WalletKeyService.DecryptPrivateKey"/> returns a hex
-    /// <c>string</c>, which is immutable and cannot be zeroed. We convert it to a
-    /// <see cref="byte"/> array at this boundary and zero THAT, but the intermediate
-    /// hex string survives until GC. A byte[]-returning decrypt overload on
-    /// WalletKeyService is a filed follow-up (DEPLOY-STEPS-TODO P1; owned by the
-    /// WalletKeyService owner). This is the only safe option without editing
-    /// WalletKeyService.
+    /// final-hardening B5: the cleartext key no longer materializes as an immutable
+    /// hex string on this hot path — <c>DecryptPrivateKeyBytes</c> yields the raw
+    /// key bytes directly and zeroes its own transient buffers. Only the raw-key
+    /// <see cref="byte"/> array reaches here, and it is zeroed below.
     /// </para>
     /// </summary>
     private async Task<AZOAResult<T>> DecryptSignZeroAsync<T>(string encryptedPrivateKey, Func<byte[], Task<T>> sign)
     {
         var result = new AZOAResult<T>();
 
-        string keyHex;
+        byte[] key;
         try
         {
-            keyHex = _keyService.DecryptPrivateKey(encryptedPrivateKey);
+            // Raw key bytes (no hex-string intermediate). Algorand persists the
+            // 32-byte Ed25519 seed; Solana the 64-byte secret. The signer
+            // reconstructs its chain account from these exact bytes.
+            key = _keyService.DecryptPrivateKeyBytes(encryptedPrivateKey);
         }
         catch (Exception ex)
         {
             return result.CaptureException(ex, $"Decryption failed: {ex.Message}");
         }
 
-        // Algorand2 persists the private key as hex of the raw ClearTextPrivateKey
-        // bytes (WalletKeyService.GenerateAlgorandKeypair:78). FromHexString recovers
-        // those exact bytes; the signer reconstructs `new Account(bytes)` from them.
-        byte[] key = AZOA.WebAPI.Helpers.Encoding.FromHexOrUtf8(keyHex);
         try
         {
             result.Result = await sign(key);
