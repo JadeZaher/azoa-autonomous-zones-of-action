@@ -109,7 +109,7 @@ JWT. Scopes gate capability:
   publish-only consumer that lets avatars self-run does **not** need it.
 
 The consumer's AZOA API key is a **deploy-time secret** (`AZOA_TENANT_API_KEY` in
-`DEPLOY-STEPS-TODO.md`; read on the consumer side from secret store, e.g.
+`conductor/retros/DEPLOY-STEPS-TODO.md` (retired); read on the consumer side from secret store, e.g.
 `AZOA__TenantApiKey`). **Never committed.** AZOA holds **no** payment-provider
 secret — webhook verification is the consumer's job.
 

@@ -1,0 +1,6 @@
+{
+  "id": "ops-postlaunch-hardening",
+  "status": "pending",
+  "created": "2026-07-06",
+  "description": "Post-launch ops maturity: distributed rate limiting, reconciliation tri-state, idempotency orphan settlement, health-check rewire, low-balance alerting, admin UI gaps, god-object splits, rotation volume wiring."
+}

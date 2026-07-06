@@ -58,7 +58,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
     /// <summary>
     /// Config path for the platform signing mnemonic. Aligned with the interim
     /// resolver the signing-core track shipped
-    /// (<c>AlgorandProvider.ResolveInterimKeyMaterial</c>, DEPLOY-STEPS-TODO B2) and
+    /// (<c>AlgorandProvider.ResolveInterimKeyMaterial</c>, retired deploy registry B2) and
     /// the faucet precedent (<c>Core/AlgorandFaucet.cs:45</c>), so the platform key
     /// supply is single-sourced.
     /// </summary>
@@ -258,13 +258,13 @@ public sealed class KeyCustodyService : IKeyCustodyService
         // under the NEW one, zeroing the transient cleartext buffer. Wired enough to
         // be unit-testable (value encrypted under key A decrypts after rewrap under
         // key B); the operational orchestration (dual-key window, batch, rollback) is
-        // the follow-up tracked as DEPLOY-STEPS-TODO P2 — NOT shipped here.
+        // the follow-up tracked in conductor/tracks/chain-value-routes — NOT shipped here.
         //
         // CAVEAT (P1 / string-immutability): WalletKeyService.{Decrypt,Encrypt} work
         // in hex strings, which .NET cannot reliably zero. Only the byte[] decoded
         // from the hex is wiped below; the intermediate strings live until GC. A
         // first-class byte[] decrypt/encrypt overload on WalletKeyService is the
-        // filed follow-up (Lane A owns WalletKeyService) — see DEPLOY-STEPS-TODO P1.
+        // filed follow-up (Lane A owns WalletKeyService) — see conductor/tracks/chain-value-routes.
         try
         {
             if (!string.IsNullOrEmpty(wallet.EncryptedPrivateKey))

@@ -137,7 +137,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         return client;
     }
 
-    // H4 (DEPLOY-STEPS-TODO): real SHA-512/256 checksum validation via Algorand2's
+    // H4 (retired deploy registry): real SHA-512/256 checksum validation via Algorand2's
     // Address.IsValid — replaces the prior length+charset-only regex check.
     private static bool ValidateAddressFormat(string address)
     {

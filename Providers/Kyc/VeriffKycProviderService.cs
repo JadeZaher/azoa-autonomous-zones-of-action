@@ -9,7 +9,7 @@ namespace AZOA.WebAPI.Providers.Kyc;
 /// <summary>
 /// Config-gated external KYC provider adapter. This is a deploy-stub: it is
 /// registered only when <c>Kyc:Provider == "veriff"</c> and its secrets are
-/// provisioned out-of-band (see <c>conductor/DEPLOY-STEPS-TODO.md</c>, P4).
+/// provisioned out-of-band (see <c>docs/NODE-HOST.md</c> §8, KYC provisioning).
 /// Until the real integration lands every method throws
 /// <see cref="NotImplementedException"/> with a generic message so a
 /// mis-configured deployment fails loudly rather than silently passing KYC.

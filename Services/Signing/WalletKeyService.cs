@@ -150,7 +150,7 @@ public class WalletKeyService
 
     private byte[] DeriveSecp256k1PublicKey(byte[] privateKey)
     {
-        // DEPLOY-STUB (H1, see conductor/DEPLOY-STEPS-TODO.md): Ethereum keygen is
+        // DEPLOY-STUB (see conductor/tracks/chain-value-routes/spec.md): Ethereum keygen is
         // still a placeholder (HMAC, not secp256k1). Out of scope for the
         // Algorand-first signing-core-keystone track; replace before Ethereum
         // value flow is enabled.
@@ -562,7 +562,7 @@ public class WalletKeyService
 
     private string GenerateMnemonic(byte[] seed)
     {
-        // DEPLOY-STUB (H1, see conductor/DEPLOY-STEPS-TODO.md): word-index helper
+        // DEPLOY-STUB (see conductor/tracks/chain-value-routes/spec.md): word-index helper
         // for the still-stubbed Solana/Ethereum chains only. Algorand now uses
         // Algorand2's real 25-word mnemonic (see GenerateAlgorandKeypair) and does
         // NOT call this. Replace with a real BIP39 implementation before Solana/

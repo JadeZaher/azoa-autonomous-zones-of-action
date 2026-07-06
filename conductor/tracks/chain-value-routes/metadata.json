@@ -1,0 +1,6 @@
+{
+  "id": "chain-value-routes",
+  "status": "pending",
+  "created": "2026-07-06",
+  "description": "Bring the fail-closed Solana/Wormhole/Ethereum value routes live + close custody/signature residuals (ConnectWalletAsync challenge, RewrapAsync byte[], soulbound revoke, Metaplex convert-or-delete)."
+}

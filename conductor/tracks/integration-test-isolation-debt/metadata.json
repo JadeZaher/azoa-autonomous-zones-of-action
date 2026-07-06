@@ -1,0 +1,6 @@
+{
+  "id": "integration-test-isolation-debt",
+  "status": "pending",
+  "created": "2026-07-06",
+  "description": "Retire the ~31-failure full-suite integration tail: per-test namespace isolation + Buckets A-D from INTEGRATION-TEST-PASSOFF.md; make the suite a usable CI gate."
+}

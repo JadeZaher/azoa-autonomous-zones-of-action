@@ -19,7 +19,7 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 /// </para>
 /// <para>
 /// This interface is the swap seam for the KMS/HSM mainnet gate
-/// (<c>DEPLOY-STEPS-TODO.md</c> B3): a future <c>KmsKeyCustodyService</c>
+/// (retired deploy registry B3; see <c>docs/NODE-HOST.md</c> §8): a future <c>KmsKeyCustodyService</c>
 /// implements the same interface and the signer is unchanged.
 /// </para>
 /// </summary>
@@ -116,7 +116,7 @@ public interface IKeyCustodyService
     /// FOLLOW-UP (not shipped here): the operational orchestration — a dual-key
     /// read window (accept both old and new during cutover), a batch re-wrap of
     /// every stored wallet, and rollback/abort on partial failure — is its own
-    /// track (DEPLOY-STEPS-TODO P2). This method is the per-wallet primitive only,
+    /// track (see <c>conductor/tracks/chain-value-routes/spec.md</c>). This method is the per-wallet primitive only,
     /// wired enough to be unit-testable (value encrypted under key A decrypts
     /// after re-wrap under key B).
     /// </para>

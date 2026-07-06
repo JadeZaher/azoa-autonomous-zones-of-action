@@ -217,3 +217,4 @@ conductor/.conductor_session_log
 .omc/
 .pi/
 .mdg/
+.claude/

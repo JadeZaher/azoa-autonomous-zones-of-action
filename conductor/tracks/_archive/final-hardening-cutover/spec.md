@@ -5,6 +5,7 @@ created: 2026-07-05
 status: shipped
 shipped: 2026-07-05
 phase_h_shipped: 2026-07-06
+archived: 2026-07-06
 reopened: 2026-07-05
 reopened_reason: >-
   Phase H (Alpha Gate) added after two independent fresh-eyes audits surfaced 8

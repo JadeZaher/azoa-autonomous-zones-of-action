@@ -8,7 +8,7 @@ Keep it accurate; it is read on every session.
 
 ## Container runtime
 
-This machine has **podman** (no docker). All commands below use `podman`;
+The reference dev setup uses **podman** (docker works identically). All commands below use `podman`;
 substitute `docker` if present. The compose stack defines three
 containers: `azoa-dev-surrealdb`, `azoa-dev-api`, `azoa-dev-frontend`.
 The bundled SurrealDB image is `surrealdb/surrealdb:v1.5.4`.
@@ -84,8 +84,7 @@ dotnet build azoa.sln    -c Debug           # whole solution (incl. test project
   path. Do not chase them; adding NEW warnings elsewhere is a regression.
   (AutoMapper was upgraded 12.0.1 → 15.1.3 to clear the NU1903 high-severity vuln.)
 - Do **not** run the frontend typecheck — it is known pre-existing
-  noise. The gates are `dotnet build` + SDK `tsc` only. See memory:
-  [`no-frontend-typecheck`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/no-frontend-typecheck.md).
+  noise. The gates are `dotnet build` + SDK `tsc` only.
 - No `dotnet ef` migrations on new work — EF was removed in
   surrealdb-migration. Schema changes are now decorated-POCO edits +
   re-emitting `Persistence/SurrealDb/Generated/Schemas/*.surql` via
@@ -118,19 +117,18 @@ dotnet test tests/SurrealForge.Schema.Tests/SurrealForge.Schema.Tests.csproj -c 
   and the schema-applied namespace match (the app was connecting to `azoa`
   while the harness seeded into `test{guid}`). Integration suite is now
   **216 passing / 0 skipped**; the residual ~37 are pre-existing and triaged
-  in `tests/AZOA.WebAPI.IntegrationTests/INTEGRATION-TEST-PASSOFF.md`
+  in `conductor/tracks/integration-test-isolation-debt/INTEGRATION-TEST-PASSOFF.md`
   (test-design IDOR conflicts, env/repo-layout drift, socket races) — do not
   paper these over.
 
 ## Conventions for agents
 
 - **Config-driven over hardcoded.** Tests load real
-  `appsettings.json`. See memory: [`config-driven-calls`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/config-driven-calls.md).
+  `appsettings.json`.
 - **SurrealDB sole storage engine, chain = source of truth for balances.**
-  See memory: [`data-engine-decision`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/data-engine-decision.md).
 - **Greenfield, pre-launch.** No customers, no production data. Prefer
-  clean re-architecture over compat/migration shims. Memory:
-  [`greenfield-prelaunch-no-compat`](C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/greenfield-prelaunch-no-compat.md).
+  clean re-architecture over compat/migration shims.
+  
 - **SurrealDB record lookups** use `SELECT * FROM type::record($_t, $_id)`,
   NOT `WHERE id = $id` (Thing vs string equality fails silently in
   1.5.x). See [SurrealApiKeyStore](Providers/Stores/Surreal/SurrealApiKeyStore.cs)

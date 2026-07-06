@@ -222,7 +222,7 @@ uses the real SHA-512/256 checksum (`Algorand.Address.IsValid`).
 - Custody is INTERIM: the signing key is resolved by decrypting
   `AZOA:Algorand:PlatformMnemonic` from config (no per-user ownership check). The
   production ownership-checked, KMS-backed, byte[]-zeroing resolver is the
-  `custody-key-management` track (DEPLOY-STEPS-TODO B3/P1). Mainnet stays gated (B6).
+  `custody-key-management` track (retired deploy registry item B3/P1, now `docs/NODE-HOST.md` §8). Mainnet stays gated (B6).
 - Soulbound clawback-revoke is deferred (D4 → H2); the mint path sets the platform
   as manager/freeze/clawback so revoke is a pure follow-up.
 - The TypeScript SDK provider still builds `json-descriptor`/wallet-adapter signing

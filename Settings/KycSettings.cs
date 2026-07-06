@@ -7,7 +7,7 @@ namespace AZOA.WebAPI.Settings;
 /// provider is the in-house manual reviewer, which needs no secrets. The
 /// external-provider fields are a deploy-stub — populate them from the deploy
 /// secret store and flip <see cref="Provider"/> to <c>"veriff"</c> to enable the
-/// (currently stubbed) external adapter. See conductor/DEPLOY-STEPS-TODO.md P4.
+/// (currently stubbed) external adapter. See docs/NODE-HOST.md §8 (KYC provisioning).
 /// </summary>
 public sealed class KycSettings
 {

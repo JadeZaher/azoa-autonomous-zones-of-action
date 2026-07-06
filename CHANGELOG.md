@@ -46,7 +46,7 @@ provisioning), documented in `docs/NODE-HOST.md`.
   lands — see `docs/NODE-HOST.md` §4.1.
 - KMS/HSM custody, distributed (multi-instance) rate limiting, and a few other
   post-alpha hardening items are tracked as explicit follow-ups, not silent
-  gaps — see `conductor/tracks/final-hardening-cutover/spec.md` §H-followups.
+  gaps — see `conductor/tracks/_archive/final-hardening-cutover/spec.md` §H-followups.
 
 ### Alpha-gate hardening (Phase H, this release)
 - Simulated-mode blockchain provider is now fail-fast in Production
