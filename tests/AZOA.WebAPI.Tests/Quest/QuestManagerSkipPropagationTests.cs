@@ -84,7 +84,7 @@ public class QuestManagerSkipPropagationTests
             questStore,
             runStore,
             execStore,
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(handlers),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
@@ -169,7 +169,7 @@ public class QuestManagerSkipPropagationTests
         await questStore.UpsertQuestAsync(quest);
 
         var manager = new QuestManager(
-            questStore, runStore, execStore, new QuestDagValidator(),
+            questStore, runStore, execStore, new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[]
             {
                 new ConfigurableGateCheckHandler(passes: false),
@@ -236,7 +236,7 @@ public class QuestManagerSkipPropagationTests
         await questStore.UpsertQuestAsync(quest);
 
         var manager = new QuestManager(
-            questStore, runStore, execStore, new QuestDagValidator(),
+            questStore, runStore, execStore, new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[]
             {
                 new ConfigurableGateCheckHandler(passes: false),
@@ -296,7 +296,7 @@ public class QuestManagerSkipPropagationTests
         await questStore.UpsertQuestAsync(quest);
 
         var manager = new QuestManager(
-            questStore, runStore, execStore, new QuestDagValidator(),
+            questStore, runStore, execStore, new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[]
             {
                 new AlwaysSucceedHandler(QuestNodeType.HolonGet),

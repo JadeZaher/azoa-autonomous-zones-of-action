@@ -62,7 +62,7 @@ public class GateCheckNodeHandlerTests
             State = QuestNodeState.Succeeded,
             Output = upstreamOutput
         };
-        return new QuestNodeExecutionContext(runId, gateId, quest,
+        return new QuestNodeExecutionContext(runId, gateId, quest, quest.AvatarId,
             new Dictionary<Guid, QuestNodeExecution> { [upstreamNode.Id] = exec });
     }
 
@@ -173,7 +173,7 @@ public class GateCheckNodeHandlerTests
     }
 
     private static QuestNodeExecutionContext PlainCtx(QuestEntity quest, Guid gateId) =>
-        new(Guid.NewGuid(), gateId, quest, new Dictionary<Guid, QuestNodeExecution>());
+        new(Guid.NewGuid(), gateId, quest, quest.AvatarId, new Dictionary<Guid, QuestNodeExecution>());
 
     [Fact]
     public async Task HolonState_FieldMatches_Passes()

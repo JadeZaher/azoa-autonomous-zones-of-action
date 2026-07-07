@@ -32,7 +32,7 @@ public class QuestNodeHandlerTests
 
     /// <summary>Build a context whose Quest contains <paramref name="node"/>.</summary>
     private static QuestNodeExecutionContext CtxFor(QuestNode node, Guid avatarId) =>
-        new(Guid.NewGuid(), node.Id, QuestWithAvatarAndNode(avatarId, node));
+        new(Guid.NewGuid(), node.Id, QuestWithAvatarAndNode(avatarId, node), actingAvatarId: avatarId);
 
     // ─── Holon group (IHolonManager) ───
 
@@ -320,7 +320,7 @@ public class QuestNodeHandlerTests
             State = QuestNodeState.Succeeded,
             Output = "\"value\""
         };
-        var ctx = new QuestNodeExecutionContext(runId, node.Id, quest,
+        var ctx = new QuestNodeExecutionContext(runId, node.Id, quest, quest.AvatarId,
             new Dictionary<Guid, QuestNodeExecution> { [upstreamNode.Id] = upstreamExec });
 
         var result = await handler.HandleAsync(ctx);

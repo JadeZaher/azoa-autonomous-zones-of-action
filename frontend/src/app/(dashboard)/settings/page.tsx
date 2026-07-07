@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useAzoaAuth } from '@/lib/azoa-auth'
+import { useAzoa } from '@/lib/azoa-context'
 import { azoa } from '@/lib/azoa'
 import { JsonViewer } from '@/components/shared/json-viewer'
 
@@ -20,6 +21,8 @@ function maskToken(token: string | null): string {
 
 export default function SettingsPage() {
   const { avatarId, isAuthenticated, user, logout } = useAzoaAuth()
+  const { logoutEverywhere } = useAzoa()
+  const [logoutEverywhereError, setLogoutEverywhereError] = useState<string | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [providerName, setProviderName] = useState('')
   const [saved, setSaved] = useState(false)
@@ -38,6 +41,12 @@ export default function SettingsPage() {
   }
 
   const handleClearSession = async () => { await azoa.auth.logout(); await logout() }
+
+  const handleLogoutEverywhere = async () => {
+    setLogoutEverywhereError(null)
+    const result = await logoutEverywhere()
+    if (!result.success) setLogoutEverywhereError(result.error ?? 'Failed to log out of all devices')
+  }
 
   const chainNames = azoa.wallet.chains
   const sessionState = { avatarId, isAuthenticated, user, tokenMasked: maskToken(token) }
@@ -101,7 +110,16 @@ export default function SettingsPage() {
 
       <Card className="border-destructive/30">
         <CardHeader className="pb-3"><CardTitle className="text-sm text-destructive">Danger</CardTitle></CardHeader>
-        <CardContent><Button variant="destructive" size="sm" onClick={handleClearSession}>Clear session</Button></CardContent>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="destructive" size="sm" onClick={handleClearSession}>Clear session</Button>
+            <Button variant="destructive" size="sm" onClick={handleLogoutEverywhere}>Log out of all devices</Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            "Log out of all devices" invalidates every active session token for this account, everywhere it's signed in.
+          </p>
+          {logoutEverywhereError && <p className="text-sm text-destructive">{logoutEverywhereError}</p>}
+        </CardContent>
       </Card>
 
       <Card>

@@ -363,6 +363,8 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         ForkedAtNodeId  = r.ForkedAtNodeId.HasValue  ? SurrealLink.ToLink("quest_node", SurrealId.ToSurrealId(r.ForkedAtNodeId.Value))  : null,
         ForkReason      = r.ForkReason,
         FailReason      = r.FailReason,
+        SourceQuestId   = r.SourceQuestId.HasValue   ? SurrealLink.ToLink("quest", SurrealId.ToSurrealId(r.SourceQuestId.Value))       : null,
+        OriginAvatarId  = r.OriginAvatarId.HasValue  ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(r.OriginAvatarId.Value))     : null,
     };
 
     private static QuestRun ToDomain(QuestRunPoco p) => new()
@@ -380,6 +382,8 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         ForkedAtNodeId  = string.IsNullOrEmpty(p.ForkedAtNodeId) ? null : FromSurrealIdFk(SurrealLink.FromLink(p.ForkedAtNodeId)!),
         ForkReason      = p.ForkReason,
         FailReason      = p.FailReason,
+        SourceQuestId   = string.IsNullOrEmpty(p.SourceQuestId)  ? null : FromSurrealIdFk(SurrealLink.FromLink(p.SourceQuestId)!),
+        OriginAvatarId  = string.IsNullOrEmpty(p.OriginAvatarId) ? null : FromSurrealIdFk(SurrealLink.FromLink(p.OriginAvatarId)!),
     };
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -448,6 +452,8 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         [JsonPropertyName("forked_at_node_id")] public string? ForkedAtNodeId { get; set; }
         [JsonPropertyName("fork_reason")]       public string? ForkReason { get; set; }
         [JsonPropertyName("fail_reason")]       public string? FailReason { get; set; }
+        [JsonPropertyName("source_quest_id")]   public string? SourceQuestId { get; set; }
+        [JsonPropertyName("origin_avatar_id")]  public string? OriginAvatarId { get; set; }
     }
 
     private sealed class QuestRunIdProjection

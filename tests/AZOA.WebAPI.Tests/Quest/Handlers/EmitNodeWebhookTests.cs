@@ -88,7 +88,7 @@ public class EmitNodeWebhookTests
     private static QuestNodeExecutionContext CtxFor(QuestNode node, Guid? actingTenantId)
     {
         var quest = new QuestEntity { Id = Guid.NewGuid(), AvatarId = Guid.NewGuid(), Nodes = { node } };
-        return new QuestNodeExecutionContext(Guid.NewGuid(), node.Id, quest,
+        return new QuestNodeExecutionContext(Guid.NewGuid(), node.Id, quest, quest.AvatarId,
             upstreamExecutions: null, actingTenantId: actingTenantId);
     }
 

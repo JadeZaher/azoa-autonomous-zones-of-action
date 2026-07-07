@@ -21,6 +21,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [Index("quest_run_by_avatar", Fields = new[] { "avatar_id" })]
     [Index("quest_run_by_status", Fields = new[] { "status" })]
     [Index("quest_run_by_parent", Fields = new[] { "parent_run_id" })]
+    [Index("quest_run_by_source_quest", Fields = new[] { "source_quest_id" })]
+    [Index("quest_run_by_origin_avatar", Fields = new[] { "origin_avatar_id" })]
     public partial class QuestRun : ISurrealRecord
     {
         public const string SchemaNameConst = "quest_run";
@@ -89,5 +91,13 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [FieldGroup("Free-form audit reason when a supervisor explicitly marked the run failed (distinct from internal-error path)")]
         public string? FailReason { get; set; }
+
+        [FieldGroup("Marketplace provenance: the origin quest definition this run was started from when the runner is not the quest owner (null for owner runs). See Managers/AGENTS.md §publish-lifecycle.")]
+        [References(typeof(Quest), Optional = true)]
+        public string? SourceQuestId { get; set; }
+
+        [FieldGroup("Marketplace provenance: the origin quest's owner/creator avatar when the runner is not the owner (null for owner runs).")]
+        [References(typeof(Avatar), Optional = true)]
+        public string? OriginAvatarId { get; set; }
     }
 }

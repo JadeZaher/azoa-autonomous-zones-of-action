@@ -16,4 +16,6 @@ public interface IHolon
     DateTime CreatedDate { get; set; }
     DateTime? ModifiedDate { get; set; }
     bool IsActive { get; set; }
+    Guid? SourceHolonId { get; set; }
+    Guid? OriginAvatarId { get; set; }
 }

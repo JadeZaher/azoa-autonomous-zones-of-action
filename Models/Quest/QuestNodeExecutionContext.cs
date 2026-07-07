@@ -30,12 +30,14 @@ public sealed class QuestNodeExecutionContext
         Guid runId,
         Guid nodeId,
         Quest quest,
+        Guid actingAvatarId,
         IReadOnlyDictionary<Guid, QuestNodeExecution>? upstreamExecutions = null,
         Guid? actingTenantId = null)
     {
         RunId = runId;
         NodeId = nodeId;
         Quest = quest ?? throw new ArgumentNullException(nameof(quest));
+        ActingAvatarId = actingAvatarId;
         UpstreamExecutions = upstreamExecutions ?? new Dictionary<Guid, QuestNodeExecution>();
         ActingTenantId = actingTenantId;
         Node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId)
@@ -54,6 +56,15 @@ public sealed class QuestNodeExecutionContext
 
     /// <summary>The definition node matching <see cref="NodeId"/>.</summary>
     public QuestNode Node { get; }
+
+    /// <summary>
+    /// The acting avatar — the runner. May differ from <see cref="Quest"/>.AvatarId
+    /// for marketplace runs (a non-owner running another avatar's PUBLIC quest).
+    /// ALL identity side-effects (whose wallet/key/holon/asset a node touches) run
+    /// under this avatar, NOT the quest owner. See Services/Quest/AGENTS.md
+    /// §acting-avatar (C1 authorization-inversion fix).
+    /// </summary>
+    public Guid ActingAvatarId { get; }
 
     /// <summary>
     /// Upstream node executions already produced by this run, keyed by source

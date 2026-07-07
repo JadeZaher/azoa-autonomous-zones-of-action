@@ -30,7 +30,7 @@ public class QuestManagerOnFailureTests
             questStore,
             new InMemoryQuestRunStore(),
             execStore,
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(handlers),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),

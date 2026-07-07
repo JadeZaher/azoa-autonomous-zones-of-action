@@ -57,13 +57,15 @@ public sealed class FungibleTokenCreateNodeHandler : IQuestNodeHandler
         var apiKeyId = context.RunId.ToString();
         var clientIdempotencyKey = $"{context.RunId}:{context.NodeId}";
 
-        // Actor is ALWAYS the run-context avatar; the config body avatar is ignored.
+        // Actor is ALWAYS the acting run avatar (the RUNNER); the config body avatar
+        // is ignored. C1: on a marketplace run this is the runner, not the quest
+        // owner, so the ASA is created + owned under the runner's identity.
         // tenant-consent-delegation AC4: forward the run's acting tenant so a
         // tenant-driven ASA create builds the tenant-driven SigningContext for the
         // platform-signed create and the seam's live consent gate fires
         // (null = user-driven → unchanged).
         var r = await _fungibleTokenManager.CreateAsync(
-            context.Quest.AvatarId, request, context.Quest.AvatarId,
+            context.ActingAvatarId, request, context.ActingAvatarId,
             clientIdempotencyKey, apiKeyId, context.ActingTenantId);
 
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);

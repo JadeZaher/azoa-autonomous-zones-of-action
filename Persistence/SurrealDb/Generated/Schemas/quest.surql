@@ -46,6 +46,13 @@ DEFINE FIELD IF NOT EXISTS status ON TABLE quest TYPE string
 DEFINE FIELD IF NOT EXISTS version ON TABLE quest TYPE int
     DEFAULT 0;
 
+-- Marketplace visibility: false = private (owner-only), true = published so a non-owner can start it under their own context. See Managers/AGENTS.md §publish-lifecycle.
+DEFINE FIELD IF NOT EXISTS is_public ON TABLE quest TYPE bool
+    DEFAULT false;
+
+-- Denormalised origin/creator avatar when this quest is a marketplace copy (null for first-party quests). Provenance back to the quest this was cloned/instantiated from.
+DEFINE FIELD IF NOT EXISTS origin_avatar_id ON TABLE quest TYPE option<record<avatar>>;
+
 -- Definition birthdate -- STAYS on the definition, not a runtime artifact
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE quest TYPE datetime
     READONLY;

@@ -66,6 +66,14 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Default("0")]
         public long Version { get; set; }
 
+        [FieldGroup("Marketplace visibility: false = private (owner-only), true = published so a non-owner can start it under their own context. See Managers/AGENTS.md §publish-lifecycle.")]
+        [Default("false")]
+        public bool IsPublic { get; set; }
+
+        [FieldGroup("Denormalised origin/creator avatar when this quest is a marketplace copy (null for first-party quests). Provenance back to the quest this was cloned/instantiated from.")]
+        [References(typeof(Avatar), Optional = true)]
+        public string? OriginAvatarId { get; set; }
+
         [FieldGroup("Definition birthdate -- STAYS on the definition, not a runtime artifact")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }

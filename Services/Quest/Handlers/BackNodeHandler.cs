@@ -47,7 +47,7 @@ public sealed class BackNodeHandler : IQuestNodeHandler
         // reverse a bridge it (its avatar) owns; a mismatch surfaces as "not found".
         var r = await _bridge.ReverseBridgeAsync(
             cfg.BridgeTransactionId, cfg.SourceRecipientAddress, ct,
-            clientIdempotencyKey, context.Quest.AvatarId);
+            clientIdempotencyKey, context.ActingAvatarId);
 
         var outputJson = JsonSerializer.Serialize(r.Result, QuestNodeJson.Options);
         if (r.IsError || r.Result is null) return QuestNodeResults.Fail(r.Message);

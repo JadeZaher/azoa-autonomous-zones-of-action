@@ -236,6 +236,41 @@ builder.Services.AddAuthorization(o =>
     o.AddPolicy("TenantScope", p =>
         p.RequireAssertion(ctx =>
             ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision)));
+    // DappDevelop policy (dapp-developer capability scope): gates the authoring /
+    // WRITE surfaces on Holon / Quest / DappSeries / DappComposition. Encodes the
+    // "empty CSV = full access" legacy rule so it only ever RESTRICTS a scoped key:
+    //   • JWT principals (no AuthMethod=ApiKey claim)  → PASS  (unaffected).
+    //   • API-key principals with a GENUINELY EMPTY CSV → PASS (empty CSV = full,
+    //     legacy full-access key — ApiKeyAuthenticationHandler emits zero scope claims
+    //     for an empty/whitespace CSV).
+    //   • API-key principals whose CSV was non-empty but every token was dropped as
+    //     forbidden (hardening review M3: ScopesRestricted=true marker) → DENY. This
+    //     is NOT the same as a genuinely-empty CSV and must not fall into legacy
+    //     full-access.
+    //   • API-key principals that HAVE scopes           → PASS iff dapp:develop present.
+    // Only a key that carries SOME scopes but LACKS dapp:develop is denied.
+    o.AddPolicy("DappDevelop", p =>
+        p.RequireAssertion(ctx =>
+        {
+            var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
+            var isApiKey = string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase);
+
+            // Not an API key (i.e. a JWT identity) → never restricted by this policy.
+            if (!isApiKey)
+                return true;
+
+            // CSV was non-empty but every token was dropped as forbidden (all-forbidden
+            // scope list) → must NOT be treated as legacy full-access. Deny.
+            if (string.Equals(ctx.User.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // Genuinely-empty-CSV key emits no scope claims → legacy full-access → allowed.
+            if (ctx.User.GetScopes().Count == 0)
+                return true;
+
+            // Scoped key → must explicitly carry the dapp-developer capability.
+            return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappDevelop);
+        }));
     o.AddPolicy("Operator", p =>
         p.RequireAssertion(ctx =>
         {
@@ -806,6 +841,7 @@ builder.Services.AddMcpSurface();
 
 // ─── Quest DAG system ───
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IQuestDagValidator, AZOA.WebAPI.Services.QuestDagValidator>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IQuestDagExecutabilityValidator, AZOA.WebAPI.Services.Quest.QuestDagExecutabilityValidator>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IQuestInstantiator, AZOA.WebAPI.Services.Quest.QuestInstantiator>();
 
 // Quest node handlers — exactly one per QuestNodeType. Registered Scoped: each

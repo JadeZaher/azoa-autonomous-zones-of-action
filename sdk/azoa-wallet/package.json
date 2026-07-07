@@ -1,6 +1,6 @@
 {
   "name": "azoa-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cross-platform AZOA SDK — client-side signing, multi-chain wallets, DEX, holons, and durable workflow runs",
   "type": "module",
   "main": "./dist/index.cjs",

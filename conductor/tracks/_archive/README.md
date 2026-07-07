@@ -5,6 +5,17 @@ Most were retired without shipping and remain in-tree so the design
 rationale survives; a few (see "Archived as shipped" below) shipped and
 were archived as bookkeeping once their work landed.
 
+## 2026-07-06 — Archived as shipped (bookkeeping)
+
+- **marketplace-logout-dapp-keys/** — server logout-everywhere
+  (`AuthNotBefore` bump), public quest marketplace (start-as-template with
+  runner-owned runs + `SourceQuestId`/`OriginAvatarId` provenance), holon
+  clone provenance, `dapp:develop` API-key capability scope + issuance
+  validation, avatar PII projection + KYC operator gating. Shipped; hardening
+  review caught a CRITICAL cross-avatar asset-theft bug (execution ran as the
+  quest **owner** not the **runner**) fixed before ship + regression-tested.
+  Design-of-record: `docs/logout-and-dapp-keys-design.md`.
+
 ## 2026-07-05 — Archived as shipped (bookkeeping)
 
 These tracks are **code-complete and shipped**; they were moved here once

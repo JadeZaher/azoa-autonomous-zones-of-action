@@ -20,7 +20,7 @@ public sealed class NftBurnNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<NftBurnNodeConfig>(context.Node.Config, nameof(QuestNodeType.NftBurn), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _nftManager.BurnAsync(cfg.NftId, cfg.WalletId, context.Quest.AvatarId);
+        var r = await _nftManager.BurnAsync(cfg.NftId, cfg.WalletId, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

@@ -35,6 +35,15 @@ public static class AzoaScopes
     /// <summary>A child credential may mint/transfer NFTs for its avatar.</summary>
     public const string NftMint = "nft:mint";
 
+    /// <summary>
+    /// Coarse dApp-developer capability: an API key carrying this scope may perform
+    /// the authoring/edit surfaces across the owner's holons, quests and dapp-series
+    /// (the write actions gated by the <c>DappDevelop</c> authorization policy).
+    /// Ownership is still enforced by each manager; this scope only decides whether a
+    /// scoped key is permitted to reach the write paths at all.
+    /// </summary>
+    public const string DappDevelop = "dapp:develop";
+
     // ── tenant-consent-delegation: value-signing scopes (H4) ──────────────────
     // These authorize a tenant-driven action that DECRYPTS a user's signing key.
     // They are EXCLUDED from the no-UX Participation standing grant (a value action
@@ -120,6 +129,56 @@ public static class AzoaScopes
     /// </summary>
     public static bool IsApiKeyIssuableScope(string? scope)
         => !string.IsNullOrWhiteSpace(scope) && !ApiKeyForbiddenScopes.Contains(scope);
+
+    /// <summary>
+    /// The coarse capability scopes a caller may deliberately attach to their OWN new
+    /// API key (the dapp-developer surface). This is a strict subset of the broader
+    /// self-issuance allow-list (<see cref="IsIssuableByAvatar"/>); it names only the
+    /// capability-style scopes as opposed to the fine-grained value/participation ones.
+    /// </summary>
+    public static readonly System.Collections.Generic.IReadOnlySet<string> IssuableCapabilityScopes =
+        new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
+        {
+            DappDevelop,
+        };
+
+    /// <summary>
+    /// The complete allow-list of scopes an ordinary avatar may place on a NEW API key
+    /// it creates for itself (issuance-time validation in <c>ApiKeyController.Create</c>).
+    ///
+    /// Membership rules, deliberately explicit rather than by-omission:
+    ///   • <see cref="DappDevelop"/> — the coarse dApp-developer capability (this task).
+    ///   • The value/participation signing scopes that are ALREADY intended to be
+    ///     key-carried by a tenant/child credential: wallet:manage, nft:mint,
+    ///     quest:execute, swap:sign, transfer:sign, grant:sign, token:create:sign.
+    ///   • EXCLUDES <see cref="Operator"/> — admin authority never originates from a key
+    ///     (also stripped at claim-emit time; see <see cref="ApiKeyForbiddenScopes"/>).
+    ///   • EXCLUDES <see cref="TenantProvision"/> — closing a prior gap where it was
+    ///     self-issuable purely by omission. Tenant provisioning must be granted by the
+    ///     platform, not self-asserted on a plain avatar's key.
+    /// Any scope NOT in this set is rejected at issuance.
+    /// </summary>
+    private static readonly System.Collections.Generic.IReadOnlySet<string> SelfIssuableScopes =
+        new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
+        {
+            DappDevelop,
+            WalletManage,
+            NftMint,
+            QuestExecute,
+            SwapSign,
+            TransferSign,
+            GrantSign,
+            TokenCreateSign,
+        };
+
+    /// <summary>
+    /// True iff an ordinary avatar may attach <paramref name="scope"/> to a new API key
+    /// it issues for itself. A null/blank scope is not issuable (callers treat the
+    /// empty CSV — "full access" legacy — separately, before ever calling this).
+    /// See <see cref="SelfIssuableScopes"/> for the allow-list and its rationale.
+    /// </summary>
+    public static bool IsIssuableByAvatar(string? scope)
+        => !string.IsNullOrWhiteSpace(scope) && SelfIssuableScopes.Contains(scope);
 
     /// <summary>
     /// S6 guardrail: true iff <paramref name="scope"/> is a legitimate signing scope

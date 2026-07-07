@@ -20,7 +20,7 @@ public sealed class WalletUpdateNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<WalletUpdateNodeConfig>(context.Node.Config, nameof(QuestNodeType.WalletUpdate), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _walletManager.UpdateAsync(cfg.WalletId, cfg.Model, context.Quest.AvatarId);
+        var r = await _walletManager.UpdateAsync(cfg.WalletId, cfg.Model, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

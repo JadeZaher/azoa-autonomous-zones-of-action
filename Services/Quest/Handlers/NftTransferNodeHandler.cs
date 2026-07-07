@@ -20,7 +20,7 @@ public sealed class NftTransferNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<NftTransferNodeConfig>(context.Node.Config, nameof(QuestNodeType.NftTransfer), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.Quest.AvatarId);
+        var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

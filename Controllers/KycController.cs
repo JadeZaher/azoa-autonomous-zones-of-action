@@ -17,12 +17,10 @@ namespace AZOA.WebAPI.Controllers;
 /// The manager's <see cref="KycAuthorizationError"/> message prefixes are
 /// translated to 403/404 by <see cref="TranslateResult{T}"/>.
 ///
-/// ADMIN AUTHORIZATION (D5): no named admin policy exists in Program.cs today
-/// (only a "financial" rate-limit policy + the MultiScheme auth policy). The
-/// admin endpoints are therefore gated behind <c>[Authorize]</c> + an explicit
-/// admin role/claim check (<see cref="IsAdmin"/>). This is a documented gap:
-/// once a first-class admin policy lands, replace the per-action check with
-/// <c>[Authorize(Policy = "Admin")]</c>.
+/// ADMIN AUTHORIZATION: the admin endpoints are gated with
+/// <c>[Authorize(Policy = "Operator")]</c> (see Program.cs), which rejects the
+/// ApiKey auth scheme outright and requires an explicit operator/admin
+/// role/scope on the JWT. This replaced a per-action inline admin check.
 /// </summary>
 [ApiController]
 [Route("api/kyc")]
@@ -76,22 +74,20 @@ public sealed class KycController : ControllerBase
         return TranslateResult(result);
     }
 
-    // ── Admin surface (D5 — per-action admin check, see class remarks) ─────────
+    // ── Admin surface (gated behind the Operator policy, see class remarks) ────
 
     [HttpGet("pending")]
+    [Authorize(Policy = "Operator")]
     public async Task<ActionResult<AZOAResult<IEnumerable<KycSubmissionModel>>>> GetPending(CancellationToken ct)
     {
-        if (!IsAdmin()) return Forbid();
-
         var result = await _manager.GetPendingAsync(ct);
         return TranslateResult(result);
     }
 
     [HttpPost("{id:guid}/approve")]
+    [Authorize(Policy = "Operator")]
     public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> Approve(Guid id, [FromBody] ReviewKycModel? body, CancellationToken ct)
     {
-        if (!IsAdmin()) return Forbid();
-
         var reviewerAvatarId = GetAvatarIdFromClaims();
         if (reviewerAvatarId == null) return Unauthorized();
 
@@ -100,10 +96,9 @@ public sealed class KycController : ControllerBase
     }
 
     [HttpPost("{id:guid}/reject")]
+    [Authorize(Policy = "Operator")]
     public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> Reject(Guid id, [FromBody] ReviewKycModel? body, CancellationToken ct)
     {
-        if (!IsAdmin()) return Forbid();
-
         var reviewerAvatarId = GetAvatarIdFromClaims();
         if (reviewerAvatarId == null) return Unauthorized();
 
@@ -136,15 +131,6 @@ public sealed class KycController : ControllerBase
                  ?? User.FindFirst("sub")?.Value;
         return Guid.TryParse(sub, out var id) ? id : null;
     }
-
-    /// <summary>
-    /// True when the caller carries an admin role/claim. D5 stop-gap until a
-    /// first-class admin policy exists in Program.cs.
-    /// </summary>
-    private bool IsAdmin()
-        => User.IsInRole("Admin")
-           || string.Equals(User.FindFirst("role")?.Value, "Admin", StringComparison.OrdinalIgnoreCase)
-           || string.Equals(User.FindFirst("is_admin")?.Value, "true", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Review body for the admin approve/reject endpoints. The reviewer

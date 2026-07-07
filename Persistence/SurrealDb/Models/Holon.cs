@@ -79,5 +79,13 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 15)]
         [Default("true")]
         public bool IsActive { get; set; }
+
+        [Column(Order = 16)]
+        [References(typeof(Holon), Optional = true)]
+        public string? SourceHolonId { get; set; }
+
+        [Column(Order = 17)]
+        [References(typeof(Avatar), Optional = true)]
+        public string? OriginAvatarId { get; set; }
     }
 }

@@ -103,6 +103,24 @@ public class AvatarManager : IAvatarManager
         return await _avatarStore.DeleteAsync(id, default);
     }
 
+    public async Task<AZOAResult<bool>> LogoutEverywhereAsync(Guid avatarId, CancellationToken ct = default)
+    {
+        // Subject comes from the authenticated token (controller), never a request body.
+        var existing = await _avatarStore.GetByIdAsync(avatarId, ct);
+        if (existing.IsError || existing.Result is null)
+            return new AZOAResult<bool> { IsError = true, Message = "Avatar not found." };
+
+        // The only stateless-JWT revocation lever: bump the watermark to now so every
+        // token minted before this instant fails the OnTokenValidated check (Program.cs).
+        existing.Result.AuthNotBefore = DateTime.UtcNow;
+
+        var saved = await _avatarStore.UpsertAsync(existing.Result, ct);
+        if (saved.IsError)
+            return new AZOAResult<bool> { IsError = true, Message = saved.Message };
+
+        return new AZOAResult<bool> { Result = true, Message = "Logged out of all sessions." };
+    }
+
     private string GenerateJwt(IAvatar avatar)
     {
         var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");

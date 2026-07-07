@@ -82,7 +82,7 @@ public sealed class DurableWorkflowEngineTests
             QuestStore,
             RunStore,
             ExecutionStore,
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new[] { NodeHandler }),
             SagaStore,
             WalletManager,

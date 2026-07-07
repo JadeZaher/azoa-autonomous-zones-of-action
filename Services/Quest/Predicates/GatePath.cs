@@ -8,16 +8,17 @@ namespace AZOA.WebAPI.Services.Quest.Predicates;
 /// <remarks>
 /// Grammar (closed — no arithmetic, no function calls):
 ///   path     := root "." segment ("." segment)*
-///   root     := "upstream" | "holon"
+///   root     := "upstream" | "holon" | "run"
 ///   segment  := identifier | guid-segment
 ///   guid-segment := letters + digits + hyphens (post-dot GUID-friendly rule from GatePredicateEvaluator)
-/// Binding roots in v1: "upstream" and "holon" only. "reads." is GateCheck-local
-/// and has no meaning outside a gate (V12).
+/// Binding roots: "upstream" (direct-edge source), "holon", and "run" (any prior
+/// node in the run by name). "reads." is GateCheck-local and has no meaning
+/// outside a gate (V12).
 /// </remarks>
 public static class GatePath
 {
     /// <summary>Valid root prefixes for v1 binding paths.</summary>
-    public static readonly IReadOnlyList<string> ValidRoots = ["upstream", "holon"];
+    public static readonly IReadOnlyList<string> ValidRoots = ["upstream", "holon", "run"];
 
     /// <summary>
     /// Parses a gate path string into its segments. Returns true on success;

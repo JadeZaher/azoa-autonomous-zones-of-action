@@ -45,6 +45,7 @@ import {
   type NodeCategory,
   type NodeTypeMeta,
 } from './node-catalog'
+import { getOutputShapeMirror } from './node-output-schema'
 
 /** Data stored on each edge in the canvas. */
 interface EdgeData {
@@ -99,6 +100,95 @@ function edgeStyle(type: string | undefined): Pick<Edge, 'animated' | 'style' | 
 interface PaletteEntry extends NodeTypeMeta {
   templateId?: string
   templateName?: string
+}
+
+// ─── $from binding-site collection (mirrors QuestDagExecutabilityValidator.CollectBindingSites) ───
+// Walks a node's config JSON for `{"$from": "<path>"}` objects at property-value
+// positions only; array-element occurrences are skipped (the backend rejects
+// those separately at config-validation time, not here).
+function collectBindingSites(configJson: string | undefined): Array<{ path: string }> {
+  const sites: Array<{ path: string }> = []
+  if (!configJson || !configJson.includes('"$from"')) return sites
+  let root: unknown
+  try {
+    root = JSON.parse(configJson)
+  } catch {
+    return sites
+  }
+  walkForBindings(root, sites)
+  return sites
+}
+
+function walkForBindings(node: unknown, sites: Array<{ path: string }>): void {
+  if (Array.isArray(node)) {
+    for (const elem of node) walkForBindings(elem, sites)
+    return
+  }
+  if (node && typeof node === 'object') {
+    const obj = node as Record<string, unknown>
+    const keys = Object.keys(obj)
+    for (const key of keys) {
+      const child = obj[key]
+      if (
+        child &&
+        typeof child === 'object' &&
+        !Array.isArray(child) &&
+        Object.keys(child as Record<string, unknown>).length === 1 &&
+        typeof (child as Record<string, unknown>).$from === 'string'
+      ) {
+        sites.push({ path: (child as Record<string, unknown>).$from as string })
+      } else {
+        walkForBindings(child, sites)
+      }
+    }
+  }
+}
+
+// ─── Dominator dataflow (mirrors QuestDagExecutabilityValidator.ComputeDominators) ───
+// Computes, per node id, the set of GUARANTEED ancestors (dominators, excluding
+// self): nodes present on EVERY path from an entry to it. Reuses the same
+// forward-dataflow fixpoint as the backend, over the canvas's `adj`/reverse-adj.
+function computeDominators(nodeIds: string[], preds: Map<string, string[]>): Map<string, Set<string>> {
+  const allIds = new Set(nodeIds)
+  const entryIds = new Set(nodeIds.filter((id) => (preds.get(id) ?? []).length === 0))
+
+  const dom = new Map<string, Set<string>>()
+  for (const id of nodeIds) {
+    dom.set(id, entryIds.has(id) ? new Set([id]) : new Set(allIds))
+  }
+
+  let changed = true
+  let guard = 0
+  while (changed && guard++ <= nodeIds.length + 2) {
+    changed = false
+    for (const id of nodeIds) {
+      if (entryIds.has(id)) continue
+      let intersection: Set<string> | null = null
+      for (const p of preds.get(id) ?? []) {
+        const domP = dom.get(p)
+        if (!domP) continue
+        if (intersection === null) {
+          intersection = new Set(domP)
+        } else {
+          for (const x of Array.from(intersection)) {
+            if (!domP.has(x)) intersection.delete(x)
+          }
+        }
+      }
+      intersection ??= new Set()
+      intersection.add(id)
+
+      const cur = dom.get(id)!
+      const same = cur.size === intersection.size && Array.from(cur).every((x) => intersection!.has(x))
+      if (!same) {
+        dom.set(id, intersection)
+        changed = true
+      }
+    }
+  }
+
+  for (const id of nodeIds) dom.get(id)!.delete(id)
+  return dom
 }
 
 /** Build the palette: catalog entries, augmented/overridden by API node templates. */
@@ -311,7 +401,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
           target: idByKey.get(pe.to)!,
           markerEnd: { type: MarkerType.ArrowClosed },
           ...edgeStyle(pe.edgeType),
-          data: { edgeType: pe.edgeType ?? 'Control', condition: pe.condition } satisfies EdgeData,
+          data: { edgeType: (pe.edgeType as EdgeData['edgeType']) ?? 'Control', condition: pe.condition } satisfies EdgeData,
         }))
 
       setNodes(layoutGraph(rawNodes, rawEdges) as Node<QuestNodeData>[])
@@ -447,6 +537,103 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
         text: `Node "${n.data.label}" has invalid JSON config — fix before submitting.`,
         error: true,
       })
+    }
+
+    // ── $from binding executability (mirrors QuestDagExecutabilityValidator) ──
+    // Best-effort + non-authoritative: the server is the real gate. When unsure
+    // (open schema, holon.*, deep paths, malformed config) we SKIP rather than
+    // risk a false positive — nodesWithInvalidConfig already flags bad JSON.
+    {
+      const invalidConfigIds = new Set(nodesWithInvalidConfig.map((n) => n.id))
+      const nameById = new Map(nodes.map((n) => [n.id, n.data.label]))
+      const idsByName = new Map<string, string[]>()
+      for (const n of nodes) {
+        const list = idsByName.get(n.data.label) ?? []
+        list.push(n.id)
+        idsByName.set(n.data.label, list)
+      }
+      const preds = new Map<string, string[]>(nodes.map((n) => [n.id, []]))
+      adj.forEach((targets, src) => {
+        for (const tgt of targets) preds.get(tgt)?.push(src)
+      })
+      const dominators = computeDominators(nodes.map((n) => n.id), preds)
+
+      for (const consumer of nodes) {
+        if (invalidConfigIds.has(consumer.id)) continue // already flagged; don't double-report
+        const sites = collectBindingSites(consumer.data.config)
+        if (sites.length === 0) continue
+
+        const directPredNames = new Set(
+          (preds.get(consumer.id) ?? []).map((id) => nameById.get(id)).filter((x): x is string => !!x),
+        )
+        const domNames = new Set(
+          Array.from(dominators.get(consumer.id) ?? []).map((id) => nameById.get(id)).filter((x): x is string => !!x),
+        )
+
+        for (const { path } of sites) {
+          const segments = path.split('.')
+          if (segments.length < 2) continue // malformed — grammar errors are the config validator's job
+          const [root, refName, ...rest] = segments
+
+          if (root === 'holon') continue // dynamic state — skip
+
+          if (root !== 'upstream' && root !== 'run') {
+            warnings.push({
+              text: `Node "${consumer.data.label}": "${path}" has an unrecognized binding root "${root}" (expected "upstream", "run", or "holon").`,
+              error: true,
+            })
+            continue
+          }
+
+          // Ambiguous name (duplicate labels) — skip rather than risk a false positive.
+          const candidateIds = idsByName.get(refName)
+          if (!candidateIds || candidateIds.length === 0) continue // unresolvable name — skip (server will catch it)
+          if (candidateIds.length > 1) continue
+
+          const refNode = nodes.find((n) => n.id === candidateIds[0])
+          if (!refNode) continue
+
+          if (root === 'upstream') {
+            if (!directPredNames.has(refName)) {
+              warnings.push({
+                text: `Node "${consumer.data.label}": upstream binding "${path}" references "${refName}" which is not a direct predecessor.`,
+                error: true,
+              })
+              continue
+            }
+          } else {
+            // root === 'run'
+            if (!domNames.has(refName)) {
+              warnings.push({
+                text: `Node "${consumer.data.label}": run binding "${path}" references "${refName}", which is not guaranteed to run before it (not on every path) — its output may be absent.`,
+                error: true,
+              })
+              continue
+            }
+          }
+
+          // ── Field presence (best-effort; skip on open schema or ambiguity) ──
+          const shape = getOutputShapeMirror(refNode.data.nodeType)
+          if (shape.open) continue // opaque output — ancestry alone gates it
+
+          if (rest.length === 0) continue // no field segment to check — nothing more to say
+
+          const fieldSeg = rest[0]
+          const matchedKey = Object.keys(shape.fields).find(
+            (f) => f.toLowerCase() === fieldSeg.toLowerCase(),
+          )
+          if (!matchedKey) {
+            warnings.push({
+              text: `Node "${consumer.data.label}": "${path}" — field "${fieldSeg}" is not in the output of "${refName}".`,
+              error: true,
+            })
+            continue
+          }
+          // Deep paths into a "deep" (Object/Array) field are admitted with no
+          // further checks (unknown nested shape); scalar fields with extra
+          // segments are also skipped client-side (never false-positive).
+        }
+      }
     }
 
     // Reachability + cycle detection via BFS from marked entries.

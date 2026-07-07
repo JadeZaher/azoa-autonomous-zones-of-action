@@ -40,4 +40,10 @@ public class Quest
     /// Bumped on every CAS status transition; see Managers/AGENTS.md §publish-lifecycle.
     /// </summary>
     public long Version { get; set; }
+
+    /// <summary>Marketplace visibility. Private (owner-only) by default; published quests can be started by non-owners.</summary>
+    public bool IsPublic { get; set; }
+
+    /// <summary>Origin/creator avatar when this quest is a marketplace copy; null for first-party quests.</summary>
+    public Guid? OriginAvatarId { get; set; }
 }

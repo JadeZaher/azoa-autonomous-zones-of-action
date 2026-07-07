@@ -141,7 +141,7 @@ public class ComposedDagDeterminismTests
         var execStore = new InMemoryQuestNodeExecutionStore();
         var manager = new QuestManager(
             store, new InMemoryQuestRunStore(), execStore,
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant }),
             new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
             BlockchainProviderFactoryFakes.Returning(),
@@ -200,7 +200,7 @@ public class ComposedDagDeterminismTests
             store.UpsertQuestAsync(quest).GetAwaiter().GetResult();
             var execStore = new InMemoryQuestNodeExecutionStore();
             var manager = new QuestManager(
-                store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(),
+                store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(), new QuestDagExecutabilityValidator(),
                 new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant }),
                 new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
             BlockchainProviderFactoryFakes.Returning(),
@@ -260,7 +260,7 @@ public class ComposedDagDeterminismTests
         await store.UpsertQuestAsync(quest);
         var execStore = new InMemoryQuestNodeExecutionStore();
         var manager = new QuestManager(
-            store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(),
+            store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, refund }),
             new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
             BlockchainProviderFactoryFakes.Returning(),
@@ -319,7 +319,7 @@ public class ComposedDagDeterminismTests
         await store.UpsertQuestAsync(quest);
         var execStore = new InMemoryQuestNodeExecutionStore();
         var manager = new QuestManager(
-            store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(),
+            store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, refund }),
             new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
             BlockchainProviderFactoryFakes.Returning(),

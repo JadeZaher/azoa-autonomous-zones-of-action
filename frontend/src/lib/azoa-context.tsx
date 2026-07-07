@@ -62,6 +62,7 @@ export interface AzoaState {
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   register: (params: { username: string; email: string; password: string }) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
+  logoutEverywhere: () => Promise<{ success: boolean; error?: string }>
   refreshProfile: () => Promise<void>
   refreshWallets: () => Promise<void>
   setDefaultWallet: (walletId: string) => Promise<void>
@@ -165,6 +166,17 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await azoa.auth.logout()
     setUser(null); setWallets([]); setWalletsError(null)
+  }, [])
+
+  /**
+   * Server-side "logout everywhere": invalidates every live JWT for this
+   * avatar, then clears the local session (same effect as `logout` locally).
+   */
+  const logoutEverywhere = useCallback(async () => {
+    const result = await azoa.auth.logoutEverywhere()
+    setUser(null); setWallets([]); setWalletsError(null)
+    if (isOk(result)) return { success: true }
+    return { success: false, error: result.error.message }
   }, [])
 
   const setDefaultWallet = useCallback(async (walletId: string) => {
@@ -317,10 +329,10 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AzoaState>(() => ({
     user, isAuthenticated: azoa.auth.isAuthenticated, authLoading, avatarId,
     wallets, walletsLoading, walletsError, defaultWallet,
-    login, register, logout, refreshProfile, refreshWallets, setDefaultWallet, addWallet, removeWallet,
+    login, register, logout, logoutEverywhere, refreshProfile, refreshWallets, setDefaultWallet, addWallet, removeWallet,
     generateWallet, connectExternalWallet, exportWallet,
     browserWalletAvailable, getBrowserWalletAddress, connectBrowserWallet,
-  }), [user, authLoading, avatarId, wallets, walletsLoading, walletsError, defaultWallet, login, register, logout, refreshProfile, refreshWallets, setDefaultWallet, addWallet, removeWallet, generateWallet, connectExternalWallet, exportWallet, browserWalletAvailable, getBrowserWalletAddress, connectBrowserWallet])
+  }), [user, authLoading, avatarId, wallets, walletsLoading, walletsError, defaultWallet, login, register, logout, logoutEverywhere, refreshProfile, refreshWallets, setDefaultWallet, addWallet, removeWallet, generateWallet, connectExternalWallet, exportWallet, browserWalletAvailable, getBrowserWalletAddress, connectBrowserWallet])
 
   return <AzoaContext.Provider value={value}>{children}</AzoaContext.Provider>
 }

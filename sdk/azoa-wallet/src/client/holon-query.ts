@@ -32,6 +32,18 @@ export interface HolonResult {
   isActive: boolean;
   createdDate?: string;
   modifiedDate?: string;
+  /** Clone provenance: the holon this one was cloned from. Undefined for non-clones. */
+  sourceHolonId?: string;
+  /** Clone provenance: the owning avatar of the source holon at clone time. Undefined for non-clones. */
+  originAvatarId?: string;
+}
+
+/** Request body for {@link HolonQueryBuilder.clone}. Mirrors .NET `HolonCloneRequest`. */
+export interface HolonCloneParams {
+  /** Name for the cloned holon. Defaults server-side to the original name + " (Copy)". */
+  name?: string;
+  /** If true, clone the entire subtree (all descendants become children of the clone). */
+  includeSubtree?: boolean;
 }
 
 /**
@@ -149,6 +161,16 @@ export class HolonQueryBuilder {
   /** Get composite view. */
   async getComposite(id: string): Promise<Result<unknown, SdkError>> {
     return this.api.request<unknown>("GET", API_PATHS.HOLON_COMPOSE(id));
+  }
+
+  /**
+   * Clone a holon (optionally with its subtree). The clone is a new holon
+   * owned by the caller, unbound from the source's on-chain asset (tokenId is
+   * reset), carrying provenance back to the source via
+   * {@link HolonResult.sourceHolonId} / {@link HolonResult.originAvatarId}.
+   */
+  async clone(id: string, params?: HolonCloneParams): Promise<Result<HolonResult, SdkError>> {
+    return this.api.request<HolonResult>("POST", API_PATHS.HOLON_CLONE(id), params ?? {});
   }
 
   /** Create a new holon. */

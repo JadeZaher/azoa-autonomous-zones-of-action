@@ -74,4 +74,10 @@ public class QuestRun
     /// <see cref="QuestRunStatus.Failed"/> via node failure).
     /// </summary>
     public string? FailReason { get; set; }
+
+    /// <summary>Marketplace provenance: the origin quest this run was started from when the runner is not the quest owner. Null for owner runs.</summary>
+    public Guid? SourceQuestId { get; set; }
+
+    /// <summary>Marketplace provenance: the origin quest's owner/creator avatar when the runner is not the owner. Null for owner runs.</summary>
+    public Guid? OriginAvatarId { get; set; }
 }

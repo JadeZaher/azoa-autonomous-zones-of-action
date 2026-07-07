@@ -21,4 +21,6 @@ public class Holon : IHolon, INft
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime? ModifiedDate { get; set; }
     public bool IsActive { get; set; } = true;
+    public Guid? SourceHolonId { get; set; }
+    public Guid? OriginAvatarId { get; set; }
 }

@@ -40,7 +40,7 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
         // tenant-consent-delegation AC4: forward the run's acting tenant so a
         // tenant-driven grant stamps it on the op and the signing seam's consent
         // gate fires (null = user-driven → unchanged).
-        var r = await _nftManager.MintAsync(cfg.Request, context.Quest.AvatarId, actingTenantId: context.ActingTenantId);
+        var r = await _nftManager.MintAsync(cfg.Request, context.ActingAvatarId, actingTenantId: context.ActingTenantId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
 
         // The op can be non-null even on failure: a broadcast-then-confirmation-

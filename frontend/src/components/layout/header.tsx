@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogOut } from 'lucide-react'
+import { LogOut, ShieldOff } from 'lucide-react'
 import { MobileSidebar } from './sidebar'
 import { NetworkSwitcher } from '@/components/network-switcher'
 import { DebugSwitcher } from '@/components/debug-switcher'
@@ -18,7 +18,7 @@ import { DebugSwitcher } from '@/components/debug-switcher'
 interface HeaderProps {}
 
 export function Header() {
-  const { user, logout, defaultWallet } = useAzoa()
+  const { user, logout, logoutEverywhere, defaultWallet } = useAzoa()
 
   const initials = user?.username
     ? user.username.slice(0, 2).toUpperCase()
@@ -57,6 +57,10 @@ export function Header() {
           <DropdownMenuItem onClick={() => logout()}>
             <LogOut className="mr-2 h-4 w-4" />
             Sign out
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => logoutEverywhere()} variant="destructive">
+            <ShieldOff className="mr-2 h-4 w-4" />
+            Log out of all devices
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

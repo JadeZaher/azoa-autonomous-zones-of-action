@@ -51,6 +51,12 @@ DEFINE FIELD IF NOT EXISTS fork_reason ON TABLE quest_run TYPE option<string>;
 -- Free-form audit reason when a supervisor explicitly marked the run failed (distinct from internal-error path)
 DEFINE FIELD IF NOT EXISTS fail_reason ON TABLE quest_run TYPE option<string>;
 
+-- Marketplace provenance: the origin quest definition this run was started from when the runner is not the quest owner (null for owner runs). See Managers/AGENTS.md §publish-lifecycle.
+DEFINE FIELD IF NOT EXISTS source_quest_id ON TABLE quest_run TYPE option<record<quest>>;
+
+-- Marketplace provenance: the origin quest's owner/creator avatar when the runner is not the owner (null for owner runs).
+DEFINE FIELD IF NOT EXISTS origin_avatar_id ON TABLE quest_run TYPE option<record<avatar>>;
+
 -- ── Indexes ──────────────────────────────────────────────────
 
 DEFINE INDEX IF NOT EXISTS quest_run_by_quest
@@ -68,3 +74,11 @@ DEFINE INDEX IF NOT EXISTS quest_run_by_status
 DEFINE INDEX IF NOT EXISTS quest_run_by_parent
     ON TABLE quest_run
     FIELDS parent_run_id;
+
+DEFINE INDEX IF NOT EXISTS quest_run_by_source_quest
+    ON TABLE quest_run
+    FIELDS source_quest_id;
+
+DEFINE INDEX IF NOT EXISTS quest_run_by_origin_avatar
+    ON TABLE quest_run
+    FIELDS origin_avatar_id;

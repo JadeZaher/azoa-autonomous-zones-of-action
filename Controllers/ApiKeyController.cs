@@ -38,6 +38,26 @@ public class ApiKeyController : ControllerBase
         if (avatarId == Guid.Empty)
             return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
 
+        // Validate requested scopes at issuance. An empty/null CSV is the legacy
+        // "full access" key and is allowed unchanged; any explicit scope must be in the
+        // self-issuable allow-list (AzoaScopes.IsIssuableByAvatar) — this closes the
+        // gap where e.g. tenant:provision or operator:admin could be self-attached.
+        if (!string.IsNullOrWhiteSpace(request.Scopes))
+        {
+            var rejected = request.Scopes
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(s => !AzoaScopes.IsIssuableByAvatar(s))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            if (rejected.Count > 0)
+                return BadRequest(new AZOAResult<object>
+                {
+                    IsError = true,
+                    Message = $"The following scope(s) may not be issued on your own key: {string.Join(", ", rejected)}.",
+                });
+        }
+
         var rawKey = ApiKeyAuthenticationHandler.GenerateRawKey();
         var keyHash = ApiKeyAuthenticationHandler.HashKey(rawKey);
 

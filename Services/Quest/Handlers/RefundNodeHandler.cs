@@ -52,7 +52,7 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
         // tenant-consent-delegation AC4: forward the run's acting tenant so a
         // tenant-driven refund (reverse transfer) stamps it on the op for the
         // seam's consent gate.
-        var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.Quest.AvatarId, actingTenantId: context.ActingTenantId);
+        var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.ActingAvatarId, actingTenantId: context.ActingTenantId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
 
         // Forward the broadcast tx hash on BOTH outcomes (a refund is a reverse

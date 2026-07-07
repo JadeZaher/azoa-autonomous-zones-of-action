@@ -30,7 +30,7 @@ public class Tier2ChainNodeHandlerTests
         new() { Id = Guid.NewGuid(), NodeType = type, Config = config };
 
     private static QuestNodeExecutionContext CtxFor(QuestNode node, Guid avatarId) =>
-        new(Guid.NewGuid(), node.Id, QuestWithAvatarAndNode(avatarId, node));
+        new(Guid.NewGuid(), node.Id, QuestWithAvatarAndNode(avatarId, node), actingAvatarId: avatarId);
 
     // ─── T5 Swap ───
 

@@ -564,6 +564,8 @@ public sealed class SurrealQuestStore : IQuestStore
         Metadata     = MetadataToJsonObject(q.Metadata),
         Status       = q.Status.ToString(),
         Version      = q.Version,
+        IsPublic     = q.IsPublic,
+        OriginAvatarId = q.OriginAvatarId.HasValue ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(q.OriginAvatarId.Value)) : null,
         CreatedDate  = ToUtcOffset(q.CreatedDate),
     };
 
@@ -578,6 +580,8 @@ public sealed class SurrealQuestStore : IQuestStore
         Metadata     = MetadataFromJsonObject(p.Metadata),
         Status       = Enum.TryParse<QuestStatus>(p.Status, out var st) ? st : QuestStatus.Draft,
         Version      = p.Version,
+        IsPublic     = p.IsPublic,
+        OriginAvatarId = string.IsNullOrEmpty(p.OriginAvatarId) ? null : FromSurrealId(SurrealLink.FromLink(p.OriginAvatarId)!),
         CreatedDate  = p.CreatedDate.UtcDateTime,
         Nodes        = new List<QuestNode>(),
         Edges        = new List<QuestEdge>(),
@@ -838,6 +842,8 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("metadata")]        public JsonElement Metadata { get; set; }
         [JsonPropertyName("status")]          public string? Status { get; set; }
         [JsonPropertyName("version")]         public long Version { get; set; }
+        [JsonPropertyName("is_public")]       public bool IsPublic { get; set; }
+        [JsonPropertyName("origin_avatar_id")] public string? OriginAvatarId { get; set; }
         [JsonPropertyName("created_date")]    public DateTimeOffset CreatedDate { get; set; }
     }
 

@@ -54,7 +54,7 @@ public sealed class BridgeNodeHandler : IQuestNodeHandler
         // Back node's reverse can be IDOR-scoped to the same owner.
         var r = await _bridge.InitiateBridgeAsync(
             cfg.SourceChain, cfg.TargetChain, cfg.TokenId,
-            cfg.RecipientAddress, context.Quest.AvatarId, cfg.Amount,
+            cfg.RecipientAddress, context.ActingAvatarId, cfg.Amount,
             mode, ct, clientIdempotencyKey);
 
         var outputJson = JsonSerializer.Serialize(r.Result, QuestNodeJson.Options);

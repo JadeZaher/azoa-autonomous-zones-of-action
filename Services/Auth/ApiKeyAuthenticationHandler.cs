@@ -80,7 +80,9 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
 
         if (!string.IsNullOrEmpty(apiKey.Scopes))
         {
-            foreach (var scope2 in apiKey.Scopes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            var rawTokens = apiKey.Scopes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var emittedCount = 0;
+            foreach (var scope2 in rawTokens)
             {
                 // security-review HIGH-2 (defense-in-depth): never emit an admin-only
                 // capability (e.g. operator:admin) as a scope claim from an API key,
@@ -90,7 +92,16 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
                 if (!AZOA.WebAPI.Core.AzoaScopes.IsApiKeyIssuableScope(scope2))
                     continue;
                 claims.Add(new Claim("scope", scope2));
+                emittedCount++;
             }
+
+            // hardening review M3: a CSV that was non-empty (rawTokens.Length > 0) but
+            // whose every token got dropped as forbidden must NOT be indistinguishable
+            // from a genuinely-empty CSV — the latter is legacy "full access" in the
+            // DappDevelop policy. Mark this case explicitly so the policy can deny it
+            // instead of silently granting full access to an all-forbidden-scope key.
+            if (rawTokens.Length > 0 && emittedCount == 0)
+                claims.Add(new Claim("ScopesRestricted", "true"));
         }
 
         var identity = new ClaimsIdentity(claims, SchemeName);

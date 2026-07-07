@@ -380,9 +380,14 @@ public class HolonManager : IHolonManager
             ChainId = original.ChainId,
             AssetType = original.AssetType,
             TokenId = null, // cloned holon is not the same on-chain asset
-            Metadata = new Dictionary<string, string>(original.Metadata) { ["cloned_from"] = original.Id.ToString() },
+            // cross-avatar clone omits private_* metadata keys — see hardening review M2.
+            Metadata = CloneMetadataWithoutPrivateKeys(original.Metadata, original.Id),
             PeerHolonIds = new List<Guid>(original.PeerHolonIds),
-            IsActive = original.IsActive
+            IsActive = original.IsActive,
+            // Clone provenance: link back to the source holon and its owner (the
+            // cross-avatar template mechanic — caller becomes owner via AvatarId above).
+            SourceHolonId = original.Id,
+            OriginAvatarId = original.AvatarId
         };
 
         idMap[original.Id] = clone.Id;
@@ -416,9 +421,13 @@ public class HolonManager : IHolonManager
                         ChainId = child.ChainId,
                         AssetType = child.AssetType,
                         TokenId = null,
-                        Metadata = new Dictionary<string, string>(child.Metadata) { ["cloned_from"] = child.Id.ToString() },
+                        // cross-avatar clone omits private_* metadata keys — see hardening review M2.
+                        Metadata = CloneMetadataWithoutPrivateKeys(child.Metadata, child.Id),
                         PeerHolonIds = new List<Guid>(),
-                        IsActive = child.IsActive
+                        IsActive = child.IsActive,
+                        // Clone provenance: link back to the source child + its owner.
+                        SourceHolonId = child.Id,
+                        OriginAvatarId = child.AvatarId
                     };
 
                     idMap[child.Id] = childClone.Id;
@@ -429,6 +438,21 @@ public class HolonManager : IHolonManager
         }
 
         return new AZOAResult<IHolon> { Result = clone, Message = "Holon cloned." };
+    }
+
+    /// <summary>
+    /// Copies metadata for a clone, unconditionally dropping any key starting with
+    /// "private_" (case-insensitive) and stamping "cloned_from" provenance.
+    /// Cross-avatar clone is an intentionally open template mechanic, so private_*
+    /// keys must never leak into a non-owner's copy — see hardening review M2.
+    /// </summary>
+    private static Dictionary<string, string> CloneMetadataWithoutPrivateKeys(Dictionary<string, string> source, Guid sourceHolonId)
+    {
+        var copy = source
+            .Where(kv => !kv.Key.StartsWith("private_", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+        copy["cloned_from"] = sourceHolonId.ToString();
+        return copy;
     }
 
     public async Task<AZOAResult<bool>> MoveSubtreeAsync(Guid id, Guid newParentId, Guid? avatarId = null, AZOARequest? request = null)

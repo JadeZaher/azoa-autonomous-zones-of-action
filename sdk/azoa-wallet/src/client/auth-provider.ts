@@ -124,4 +124,18 @@ export class AzoaAuthProvider {
   async logout(): Promise<void> {
     await this.session.logout();
   }
+
+  /**
+   * Server-side "logout everywhere": invalidates every live JWT for this
+   * avatar (bumps its AuthNotBefore watermark), then clears the local
+   * session. Use this over {@link logout} for a "log out of all devices"
+   * action or when the token may have leaked.
+   */
+  async logoutEverywhere(): Promise<Result<boolean, SdkError>> {
+    const result = await this.api.logoutEverywhere();
+    if (!result.ok) return result;
+
+    await this.session.logout();
+    return result;
+  }
 }

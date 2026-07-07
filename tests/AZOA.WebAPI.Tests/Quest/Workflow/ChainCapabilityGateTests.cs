@@ -52,7 +52,7 @@ public sealed class ChainCapabilityGateTests
 
         public QuestManager NewManager() => new(
             QuestStore, RunStore, ExecutionStore,
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new[] { NodeHandler }),
             SagaStore, WalletManager,
             BlockchainProviderFactoryFakes.Returning(),

@@ -39,19 +39,35 @@ public class AvatarController : ControllerBase
 
     [HttpGet("{id:guid}")]
     [Authorize]
-    public async Task<ActionResult<AZOAResult<IAvatar>>> Get(Guid id, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<object>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
         var result = await _manager.GetAsync(id, request);
-        if (result.IsError || result.Result == null) return NotFound(result);
-        return Ok(result);
+        if (result.IsError || result.Result == null)
+        {
+            return NotFound(new AZOAResult<object> { IsError = result.IsError, Message = result.Message });
+        }
+
+        var callerId = GetAvatarIdFromClaims();
+        var isSelf = callerId.HasValue && callerId.Value == id;
+        var projected = isSelf ? (object)result.Result : PublicAvatarInfo.From(result.Result);
+
+        return Ok(new AZOAResult<object> { IsError = false, Message = result.Message, Result = projected });
     }
 
+    // Marketplace directory: public projections only (no PII). Full records are
+    // only ever available via self-get above.
     [HttpGet]
     [Authorize]
-    public async Task<ActionResult<AZOAResult<IEnumerable<IAvatar>>>> GetAll([FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<PublicAvatarInfo>>>> GetAll([FromQuery] AZOARequest? request)
     {
         var result = await _manager.GetAllAsync(request);
-        return Ok(result);
+        if (result.IsError || result.Result == null)
+        {
+            return Ok(new AZOAResult<IEnumerable<PublicAvatarInfo>> { IsError = result.IsError, Message = result.Message });
+        }
+
+        var projected = result.Result.Select(PublicAvatarInfo.From);
+        return Ok(new AZOAResult<IEnumerable<PublicAvatarInfo>> { IsError = false, Message = result.Message, Result = projected });
     }
 
     [HttpPut("{id:guid}")]
@@ -76,6 +92,23 @@ public class AvatarController : ControllerBase
         var result = await _manager.DeleteAsync(id, avatarId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
         return Ok(new AZOAResponse { Message = "Avatar deleted." });
+    }
+
+    /// <summary>
+    /// Server-side "logout everywhere": invalidates every live JWT for the
+    /// authenticated avatar by bumping its AuthNotBefore watermark. The subject is
+    /// taken from the token (never the body) per the IDOR rule.
+    /// </summary>
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> LogoutEverywhere()
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var result = await _manager.LogoutEverywhereAsync(avatarId.Value, HttpContext.RequestAborted);
+        if (result.IsError) return NotFound(result);
+        return Ok(result);
     }
 
     private Guid? GetAvatarIdFromClaims()

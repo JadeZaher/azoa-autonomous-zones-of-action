@@ -100,7 +100,7 @@ public sealed class ReconcileBeforeRetryWiringTests
             BlockchainProviderFactoryFakes.Returning(ChainConfirmation.Unknown);
 
         public QuestManager NewManager() => new(
-            QuestStore, RunStore, ExecutionStore, new QuestDagValidator(),
+            QuestStore, RunStore, ExecutionStore, new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { NodeHandler }),
             SagaStore, WalletManager, ProviderFactory,
             BindingResolverFakes.PassThrough());

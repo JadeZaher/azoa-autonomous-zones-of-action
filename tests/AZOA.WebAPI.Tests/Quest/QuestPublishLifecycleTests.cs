@@ -34,7 +34,7 @@ public class QuestPublishLifecycleTests
             questStore,
             runStore,
             new InMemoryQuestNodeExecutionStore(),
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),

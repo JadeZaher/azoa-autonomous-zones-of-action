@@ -32,7 +32,7 @@ public class QuestPublishConcurrencyTests
             questStore,
             runStore,
             new InMemoryQuestNodeExecutionStore(),
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { new ConditionNodeHandler() }),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),

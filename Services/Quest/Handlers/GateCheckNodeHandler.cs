@@ -121,17 +121,18 @@ public sealed class GateCheckNodeHandler : IQuestNodeHandler
 
         // Holon-state resolver (§8.1): read each configured holon's CURRENT state
         // and key it as holon.<id> so the predicate can compare holon.<id>.<field>
-        // directly. OWNER-SCOPED: a tenant-authored predicate may only name holons
-        // owned by the run owner (context.Quest.AvatarId). A holon owned by any other
-        // avatar is rejected with the SAME error as not-found so existence cannot be
-        // probed across tenants. Fail closed on a missing/unreadable/non-owned holon:
-        // the gate must never silently pass when the lifecycle state it gates on
-        // cannot be read.
+        // directly. RUNNER-SCOPED: a predicate may only name holons owned by the
+        // acting avatar (the RUNNER — context.ActingAvatarId, C1/H1). A holon owned
+        // by any other avatar (including the quest owner on a marketplace run) is
+        // rejected with the SAME error as not-found so existence cannot be probed
+        // across avatars. Fail closed on a missing/unreadable/non-owned holon: the
+        // gate must never silently pass when the lifecycle state it gates on cannot
+        // be read.
         foreach (var holonId in cfg.Holons)
         {
             var holonResult = await _holonManager.GetAsync(holonId);
             if (holonResult.IsError || holonResult.Result is null
-                || holonResult.Result.AvatarId != context.Quest.AvatarId)
+                || holonResult.Result.AvatarId != context.ActingAvatarId)
                 throw new GatePredicateException($"holon '{holonId}' not found or unreadable");
 
             scope[$"holon.{holonId}"] = HolonStateJson(holonResult.Result);

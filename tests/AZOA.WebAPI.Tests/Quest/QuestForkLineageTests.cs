@@ -72,7 +72,7 @@ public class QuestForkLineageTests
         var runs = new InMemoryQuestRunStore();
         var execs = new InMemoryQuestNodeExecutionStore();
         var registry = new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { new ConditionNodeHandler() });
-        var manager = new QuestManager(store.Object, runs, execs, new QuestDagValidator(), registry, new InMemorySagaStore(), WalletManagerMocks.Empty(), BlockchainProviderFactoryFakes.Returning(), BindingResolverFakes.PassThrough());
+        var manager = new QuestManager(store.Object, runs, execs, new QuestDagValidator(), new QuestDagExecutabilityValidator(), registry, new InMemorySagaStore(), WalletManagerMocks.Empty(), BlockchainProviderFactoryFakes.Returning(), BindingResolverFakes.PassThrough());
 
         return (manager, runs, execs, quest);
     }
@@ -353,7 +353,7 @@ public class QuestForkLineageTests
             store.Object,
             runsStore,
             execStore,
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),

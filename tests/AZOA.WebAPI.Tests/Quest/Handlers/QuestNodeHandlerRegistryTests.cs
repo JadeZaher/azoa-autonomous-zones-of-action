@@ -93,6 +93,7 @@ public class QuestNodeHandlerRegistryTests
             new InMemoryQuestRunStore(),
             execStore,
             validator.Object,
+            new Mock<IQuestDagExecutabilityValidator>().Object,
             emptyRegistry,
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),

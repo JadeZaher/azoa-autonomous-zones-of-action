@@ -528,6 +528,60 @@ export interface QuestResult {
    * {@link AzoaApiClient.unpublishQuest} / workflow run-start — reload and retry.
    */
   version: number;
+  /**
+   * Marketplace visibility. When true and the quest is Active, a non-owner
+   * may start it (see {@link AzoaApiClient.executeQuest}) — the run is
+   * created under the caller's own avatar, linked back to the origin quest.
+   */
+  isPublic: boolean;
+  /**
+   * Origin/creator avatar when this quest is a marketplace copy instantiated
+   * from a template (set to the template author's avatar id). Undefined for
+   * first-party quests created directly via {@link AzoaApiClient.createQuest}.
+   */
+  originAvatarId?: string;
+}
+
+/** Lifecycle status of a single {@link QuestRunResult} (one execution attempt of a Quest). */
+export type QuestRunStatus =
+  | "Pending"
+  | "Running"
+  | "Succeeded"
+  | "Failed"
+  | "Forked"
+  | "Cancelled"
+  | "Suspended"
+  | "AwaitingSignal"
+  | "AwaitingTimer"
+  | "AwaitingReconciliation";
+
+/**
+ * One execution attempt of a {@link QuestResult} definition (mirrors .NET
+ * `QuestRun`). Returned by {@link AzoaApiClient.executeQuest}. Per-node
+ * runtime state lives on {@link QuestNodeResult}, queryable separately by run id.
+ */
+export interface QuestRunResult {
+  id: string;
+  questId: string;
+  avatarId: string;
+  actingTenantId?: string;
+  status: QuestRunStatus;
+  startedAt: string;
+  endedAt?: string;
+  parentRunId?: string;
+  forkedAtNodeId?: string;
+  forkReason?: string;
+  failReason?: string;
+  /**
+   * Marketplace provenance: the origin quest this run was started from when
+   * the runner is not the quest owner. Undefined for owner runs.
+   */
+  sourceQuestId?: string;
+  /**
+   * Marketplace provenance: the origin quest's owner/creator avatar when the
+   * runner is not the owner. Undefined for owner runs.
+   */
+  originAvatarId?: string;
 }
 
 /** One registered entry in the opt-in Holon AssetType registry (final-hardening F5). */
@@ -624,12 +678,16 @@ export interface QuestCreateParams {
   description?: string;
   nodes: QuestNodeCreateParams[];
   edges: QuestEdgeCreateParams[];
+  /** Marketplace visibility. Defaults to false (private, owner-only) server-side. */
+  isPublic?: boolean;
 }
 
 export interface QuestUpdateParams {
   name?: string;
   description?: string;
   status?: QuestStatus;
+  /** Marketplace visibility toggle. Omit to leave unchanged. */
+  isPublic?: boolean;
 }
 
 export interface QuestTemplateResult {
@@ -799,6 +857,15 @@ export class AzoaApiClient {
   }): Promise<Result<AvatarResponse, SdkError>> {
     // .NET returns AZOAResult<IAvatar>
     return this.request("POST", "/api/avatar/register", params);
+  }
+
+  /**
+   * Server-side "logout everywhere": invalidates every live JWT for the
+   * authenticated avatar (bumps AuthNotBefore server-side). The subject is
+   * taken from the bearer token, never a URL/body param.
+   */
+  async logoutEverywhere(): Promise<Result<boolean, SdkError>> {
+    return this.request("POST", API_PATHS.AVATAR_LOGOUT);
   }
 
   async getAvatar(avatarId: string): Promise<Result<AvatarResponse, SdkError>> {
@@ -1323,11 +1390,16 @@ export class AzoaApiClient {
   }
 
   /**
-   * Execute all ready nodes in the quest DAG. Returns the updated quest. Fails
-   * (400, message containing "Quest run conflict") if the quest was unpublished
-   * or modified concurrently (final-hardening F6) — see {@link isQuestConflict}.
+   * Execute all ready nodes in the quest DAG. Returns the produced
+   * {@link QuestRunResult} (one execution attempt) — NOT the quest
+   * definition. Fails (400, message containing "Quest run conflict") if the
+   * quest was unpublished or modified concurrently (final-hardening F6) —
+   * see {@link isQuestConflict}. A non-owner may call this on a
+   * `isPublic` quest (quest-marketplace-provenance); the resulting run is
+   * owned by the caller and carries {@link QuestRunResult.sourceQuestId} /
+   * {@link QuestRunResult.originAvatarId} back to the quest owner.
    */
-  async executeQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
+  async executeQuest(questId: string): Promise<Result<QuestRunResult, SdkError>> {
     assertUuid(questId, "questId");
     return this.request("POST", `/api/quest/${questId}/execute`);
   }

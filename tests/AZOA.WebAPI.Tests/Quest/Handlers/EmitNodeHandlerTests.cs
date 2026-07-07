@@ -24,7 +24,8 @@ public class EmitNodeHandlerTests
 
     private static QuestNodeExecutionContext CtxFor(QuestNode node, Guid avatarId) =>
         new(Guid.NewGuid(), node.Id,
-            new QuestEntity { Id = Guid.NewGuid(), AvatarId = avatarId, Nodes = { node } });
+            new QuestEntity { Id = Guid.NewGuid(), AvatarId = avatarId, Nodes = { node } },
+            actingAvatarId: avatarId);
 
     // ── metadata / SPI assertions ────────────────────────────────────────
 

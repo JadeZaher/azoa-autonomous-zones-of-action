@@ -23,6 +23,7 @@ public class QuestController : ControllerBase
     // ─── Quest CRUD ───
 
     [HttpPost]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<Quest>>> Create([FromBody] QuestCreateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -60,6 +61,7 @@ public class QuestController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<Quest>>> Update(Guid id, [FromBody] QuestUpdateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -72,6 +74,7 @@ public class QuestController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -286,6 +289,7 @@ public class QuestController : ControllerBase
     // ─── Templates ───
 
     [HttpPost("templates")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<QuestTemplate>>> CreateTemplate([FromBody] QuestTemplateCreateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -327,6 +331,7 @@ public class QuestController : ControllerBase
     // ─── Node Templates ───
 
     [HttpPost("node-templates")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<QuestNodeTemplate>>> CreateNodeTemplate([FromBody] QuestNodeTemplateCreateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();

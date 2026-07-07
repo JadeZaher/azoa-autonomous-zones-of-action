@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import {
   Table,
@@ -102,6 +103,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
   const [name, setName] = useState('')
   const [expiresInDays, setExpiresInDays] = useState('')
   const [scopes, setScopes] = useState('')
+  const [dappDevelop, setDappDevelop] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -110,9 +112,12 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
     setLoading(true)
     setError(null)
 
+    const scopeList = scopes.split(',').map((s) => s.trim()).filter(Boolean)
+    if (dappDevelop && !scopeList.includes('dapp:develop')) scopeList.push('dapp:develop')
+
     const body: Record<string, unknown> = { name }
     if (expiresInDays.trim()) body.expiresInDays = parseInt(expiresInDays, 10)
-    if (scopes.trim()) body.scopes = scopes.split(',').map((s) => s.trim()).filter(Boolean)
+    if (scopeList.length > 0) body.scopes = scopeList
 
     const res = await azoa.api.request('POST', '/api/apikey', body)
 
@@ -121,6 +126,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
       setName('')
       setExpiresInDays('')
       setScopes('')
+      setDappDevelop(false)
     } else {
       setError(res.error.message)
     }
@@ -167,6 +173,11 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
               />
             </div>
           </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={dappDevelop} onCheckedChange={(v) => setDappDevelop(!!v)} />
+            Develop dApps (edit holons, quests, STAR-ODKs)
+          </label>
 
           <Button type="submit" disabled={loading || !name.trim()}>
             {loading ? 'Creating...' : 'Create API Key'}

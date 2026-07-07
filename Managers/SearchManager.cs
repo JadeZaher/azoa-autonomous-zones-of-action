@@ -51,11 +51,13 @@ public class SearchManager : ISearchManager
                     Id = a.Id,
                     EntityType = SearchableEntityType.Avatar,
                     Title = a.Username,
-                    Description = $"{a.Email}",
-                    Highlight = FindHighlight(a.Username, a.Email, query),
+                    Description = a.Title ?? string.Empty,
+                    // Marketplace search is public — no PII (email/real name) may
+                    // appear in results, and MatchesAvatar no longer matches on email
+                    // either (hardening review M1: was an account-enumeration oracle).
+                    Highlight = FindHighlight(a.Username, a.Title ?? string.Empty, query),
                     Fields = new Dictionary<string, object>
                     {
-                        ["Email"] = a.Email,
                         ["IsActive"] = a.IsActive
                     },
                     CreatedDate = a.CreatedDate
@@ -249,7 +251,10 @@ public class SearchManager : ISearchManager
     {
         if (!string.IsNullOrEmpty(query))
         {
-            if (!ContainsText(a.Username, query) && !ContainsText(a.Email, query))
+            // Email is intentionally excluded from matching (hardening review M1):
+            // this is a public marketplace search, and matching on email turns it
+            // into an account-enumeration oracle even though email isn't echoed back.
+            if (!ContainsText(a.Username, query) && !ContainsText(a.Title ?? string.Empty, query))
                 return false;
         }
         if (request.AvatarId.HasValue && a.Id != request.AvatarId.Value) return false;

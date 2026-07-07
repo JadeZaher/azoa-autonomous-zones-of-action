@@ -20,7 +20,7 @@ public sealed class HolonCloneNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<HolonCloneNodeConfig>(context.Node.Config, nameof(QuestNodeType.HolonClone), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _holonManager.CloneAsync(cfg.HolonId, cfg.Request, context.Quest.AvatarId);
+        var r = await _holonManager.CloneAsync(cfg.HolonId, cfg.Request, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

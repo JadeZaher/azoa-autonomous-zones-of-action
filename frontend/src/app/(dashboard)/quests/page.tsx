@@ -18,6 +18,7 @@ import { useAzoa } from '@/lib/azoa-context'
 import { DagFlow } from '@/components/quest-builder/dag-flow'
 import { QuestCanvas, type BuiltGraph, type NodeTemplateMeta } from '@/components/quest-builder/quest-canvas'
 import { NodeTemplateCreator } from '@/components/quest-builder/node-template-creator'
+import { RunPanel } from '@/components/quest-builder/run-panel'
 
 // ─── Types ───
 
@@ -26,6 +27,8 @@ interface Quest {
   name: string
   description?: string
   status: string
+  avatarId: string
+  isPublic: boolean
   nodes: Array<{ id: string; name: string; nodeType: string; state: string; executionOrder: number; isEntry: boolean; isTerminal: boolean; output?: string; error?: string }>
   edges: Array<{ id: string; sourceNodeId: string; targetNodeId: string; edgeType: string; condition?: string }>
   dependencies: unknown[]
@@ -128,7 +131,7 @@ function QuestList() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionResult, setActionResult] = useState<unknown>(null)
   const [actionLoading, setActionLoading] = useState(false)
-  const [detailTab, setDetailTab] = useState<'dag' | 'actions' | 'raw'>('dag')
+  const [detailTab, setDetailTab] = useState<'dag' | 'runs' | 'actions' | 'raw'>('dag')
 
   const loadQuests = useCallback(async () => {
     if (!avatarId) return
@@ -221,6 +224,7 @@ function QuestList() {
                     <div className="flex gap-2 border-b pb-px">
                       {([
                         { id: 'dag', label: 'DAG View' },
+                        { id: 'runs', label: 'Runs' },
                         { id: 'actions', label: 'Actions' },
                         { id: 'raw', label: 'Raw JSON' },
                       ] as const).map((t) => (
@@ -243,8 +247,26 @@ function QuestList() {
                       <DagFlow nodes={selected.nodes} edges={selected.edges} />
                     )}
 
+                    {detailTab === 'runs' && (
+                      <RunPanel questId={selected.id} quest={selected} />
+                    )}
+
                     {detailTab === 'actions' && (
                       <div className="flex flex-col gap-3">
+                        {/* ─── Marketplace visibility ─── */}
+                        <label className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={selected.isPublic}
+                            disabled={actionLoading}
+                            onCheckedChange={(v) =>
+                              runAction('Update visibility', () =>
+                                azoa.api.request('PUT', `/api/quest/${selected.id}`, { isPublic: !!v }),
+                              )
+                            }
+                          />
+                          Publish to marketplace (let other avatars start this quest)
+                        </label>
+                        <Separator />
                         {/* ─── Lifecycle actions (G1) ─── */}
                         <div className="flex flex-wrap gap-2">
                           {selected.status === 'Draft' && (
@@ -277,14 +299,6 @@ function QuestList() {
                           </Button>
                           <Button
                             size="sm"
-                            disabled={actionLoading || selected.status !== 'Active'}
-                            title={selected.status !== 'Active' ? 'Publish the quest before executing' : undefined}
-                            onClick={() => runAction('Execute', () => azoa.api.request('POST', `/api/quest/${selected.id}/execute`))}
-                          >
-                            Execute Quest
-                          </Button>
-                          <Button
-                            size="sm"
                             variant="destructive"
                             disabled={actionLoading}
                             onClick={() => runAction('Delete', () => azoa.api.request('DELETE', `/api/quest/${selected.id}`))}
@@ -299,7 +313,7 @@ function QuestList() {
                         )}
                         {selected.status === 'Active' && (
                           <p className="text-xs text-muted-foreground">
-                            This quest is <strong>Active</strong> — unpublish it to edit nodes or edges.
+                            This quest is <strong>Active</strong> — unpublish it to edit nodes or edges. Start a durable run from the <strong>Runs</strong> tab.
                           </p>
                         )}
                         {/* Render server validation errors as a readable list (G1) */}
@@ -336,6 +350,7 @@ function QuestBuilder({ onCreated }: { onCreated: () => void }) {
   const { templates, reload } = useNodeTemplates()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [isPublic, setIsPublic] = useState(false)
   const [result, setResult] = useState<unknown>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -355,6 +370,7 @@ function QuestBuilder({ onCreated }: { onCreated: () => void }) {
           description: description.trim() || undefined,
           nodes: graph.nodes,
           edges: graph.edges,
+          isPublic,
         })
         if (isOk(res)) {
           setResult(res.value)
@@ -368,7 +384,7 @@ function QuestBuilder({ onCreated }: { onCreated: () => void }) {
         setSubmitting(false)
       }
     },
-    [name, description, onCreated],
+    [name, description, isPublic, onCreated],
   )
 
   return (
@@ -390,6 +406,11 @@ function QuestBuilder({ onCreated }: { onCreated: () => void }) {
           <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional" />
         </div>
       </div>
+
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox checked={isPublic} onCheckedChange={(v) => setIsPublic(!!v)} />
+        Publish to marketplace (other avatars can start this quest once it's Active)
+      </label>
 
       <QuestCanvas nodeTemplates={templates} onSubmit={handleSubmit} submitting={submitting} submitLabel="Create Quest" />
 
@@ -626,6 +647,112 @@ function NodeTemplates() {
   )
 }
 
+// ─── Start a Public Quest (non-owner) ───
+
+/**
+ * Lets a caller load someone else's PUBLISHED PUBLIC quest by id (e.g. from a
+ * shared link) and start it under their own avatar. Mirrors the backend's
+ * `LoadStartableQuestAsync` marketplace rule: owner-or-(public && Active).
+ */
+function StartPublicQuest() {
+  const { avatarId } = useAzoa()
+  const [questId, setQuestId] = useState('')
+  const [quest, setQuest] = useState<Quest | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
+  const [startResult, setStartResult] = useState<unknown>(null)
+
+  const handleLoad = async () => {
+    if (!questId.trim()) return
+    setLoading(true)
+    setLoadError(null)
+    setQuest(null)
+    setStartResult(null)
+    setStartError(null)
+    const result = await azoa.api.request<Quest>('GET', `/api/quest/${questId.trim()}`)
+    if (isOk(result)) setQuest(result.value)
+    else setLoadError(result.error.message)
+    setLoading(false)
+  }
+
+  const handleStart = async () => {
+    if (!quest) return
+    setStarting(true)
+    setStartError(null)
+    setStartResult(null)
+    const result = await azoa.api.request('POST', `/api/quest/${quest.id}/execute`)
+    if (isOk(result)) setStartResult(result.value)
+    else setStartError(result.error.message)
+    setStarting(false)
+  }
+
+  const isOwner = quest != null && quest.avatarId === avatarId
+
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border bg-card p-4">
+      <div>
+        <h3 className="text-sm font-semibold">Start a Public Quest</h3>
+        <p className="text-sm text-muted-foreground">
+          Paste the ID of a quest someone shared with you. Only quests published to the marketplace can be started this way.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1.5 sm:max-w-md">
+        <Label htmlFor="public-quest-id">Quest ID</Label>
+        <div className="flex gap-2">
+          <Input
+            id="public-quest-id"
+            value={questId}
+            onChange={(e) => setQuestId(e.target.value)}
+            placeholder="e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          />
+          <Button onClick={handleLoad} disabled={loading || !questId.trim()}>
+            {loading ? 'Loading...' : 'Load'}
+          </Button>
+        </div>
+      </div>
+
+      {loadError && <ErrorBanner message={loadError} onRetry={handleLoad} />}
+
+      {quest && (
+        <div className="flex flex-col gap-3 rounded-md border p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{quest.name}</p>
+              {quest.description && <p className="text-xs text-muted-foreground">{quest.description}</p>}
+            </div>
+            {statusBadge(quest.status)}
+          </div>
+
+          {isOwner ? (
+            <p className="text-xs text-muted-foreground">
+              You own this quest — start it from the <strong>My Quests</strong> tab instead.
+            </p>
+          ) : quest.isPublic && quest.status === 'Active' ? (
+            <Button size="sm" disabled={starting} onClick={handleStart}>
+              {starting ? 'Starting...' : 'Start this quest'}
+            </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              This quest isn't published for execution yet.
+            </p>
+          )}
+
+          {startError && <p className="text-sm text-destructive">{startError}</p>}
+          {startResult !== null && startResult !== undefined && (
+            <div>
+              <Separator />
+              <ResultDisplay result={startResult} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Page ───
 
 export default function QuestsPage() {
@@ -640,6 +767,7 @@ export default function QuestsPage() {
   const tabs = [
     { id: 'quests', label: 'My Quests' },
     { id: 'create', label: 'Builder' },
+    { id: 'start-public', label: 'Start a Quest' },
     { id: 'templates', label: 'Quest Templates' },
     { id: 'node-templates', label: 'Node Templates' },
   ] as const
@@ -676,6 +804,7 @@ export default function QuestsPage() {
       <div>
         {tab === 'quests' && <QuestList key={refreshKey} />}
         {tab === 'create' && <QuestBuilder onCreated={onQuestCreated} />}
+        {tab === 'start-public' && <StartPublicQuest />}
         {tab === 'templates' && <QuestTemplates />}
         {tab === 'node-templates' && <NodeTemplates />}
       </div>

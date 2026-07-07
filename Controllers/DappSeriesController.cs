@@ -39,6 +39,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<DappSeries>>> Create(
         [FromBody] DappSeriesCreateModel model, CancellationToken ct)
     {
@@ -50,6 +51,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<DappSeries>>> Update(
         Guid id, [FromBody] DappSeriesUpdateModel model, CancellationToken ct)
     {
@@ -61,6 +63,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -84,6 +87,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpPost("{seriesId:guid}/quests")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<DappSeriesQuest>>> AddQuest(
         Guid seriesId, [FromBody] DappSeriesAddQuestModel model, CancellationToken ct)
     {
@@ -95,6 +99,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpDelete("{seriesId:guid}/quests/{questId:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> RemoveQuest(Guid seriesId, Guid questId, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -105,6 +110,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpPut("{seriesId:guid}/quests/{questId:guid}/order")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<DappSeriesQuest>>> ReorderQuest(
         Guid seriesId, Guid questId, [FromBody] DappSeriesReorderQuestModel model, CancellationToken ct)
     {
@@ -116,6 +122,7 @@ public class DappSeriesController : ControllerBase
     }
 
     [HttpPut("{seriesId:guid}/quests/{questId:guid}/mappings")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<DappSeriesQuest>>> UpdateMappings(
         Guid seriesId, Guid questId, [FromBody] DappSeriesUpdateMappingsModel model, CancellationToken ct)
     {

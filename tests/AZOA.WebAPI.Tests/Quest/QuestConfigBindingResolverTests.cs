@@ -94,7 +94,7 @@ public class QuestConfigBindingResolverTests
 
         var r = await MakeResolver().TryResolveAsync(
             cfg, node, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None);
+            new Dictionary<Guid, QuestNodeExecution>(), AvatarId, CancellationToken.None);
 
         r.Ok.Should().BeTrue();
         r.ResolvedJson.Should().Be(cfg);
@@ -111,7 +111,7 @@ public class QuestConfigBindingResolverTests
 
         var r = await MakeResolver().TryResolveAsync(
             cfg, node, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None);
+            new Dictionary<Guid, QuestNodeExecution>(), AvatarId, CancellationToken.None);
 
         r.Ok.Should().BeTrue();
     }
@@ -131,7 +131,8 @@ public class QuestConfigBindingResolverTests
         var upstreamExecs = new Dictionary<Guid, QuestNodeExecution> { [sourceId] = exec };
 
         var r = await MakeResolver().TryResolveAsync(
-            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None);
+            target.Config, target, quest, upstreamExecs,
+            new Dictionary<Guid, QuestNodeExecution>(), AvatarId, CancellationToken.None);
 
         r.Ok.Should().BeTrue(because: r.Error ?? "no error");
         var doc = JsonDocument.Parse(r.ResolvedJson!);
@@ -151,7 +152,8 @@ public class QuestConfigBindingResolverTests
         var upstreamExecs = new Dictionary<Guid, QuestNodeExecution> { [sourceId] = exec };
 
         var r = await MakeResolver().TryResolveAsync(
-            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None);
+            target.Config, target, quest, upstreamExecs,
+            new Dictionary<Guid, QuestNodeExecution>(), AvatarId, CancellationToken.None);
 
         r.Ok.Should().BeTrue(because: r.Error ?? "no error");
         var doc = JsonDocument.Parse(r.ResolvedJson!);
@@ -173,7 +175,8 @@ public class QuestConfigBindingResolverTests
         var upstreamExecs = new Dictionary<Guid, QuestNodeExecution> { [sourceId] = exec };
 
         var r = await MakeResolver().TryResolveAsync(
-            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None);
+            target.Config, target, quest, upstreamExecs,
+            new Dictionary<Guid, QuestNodeExecution>(), AvatarId, CancellationToken.None);
 
         r.Ok.Should().BeFalse();
         r.Error.Should().Contain("nonExistent");
@@ -192,7 +195,8 @@ public class QuestConfigBindingResolverTests
         var upstreamExecs = new Dictionary<Guid, QuestNodeExecution> { [sourceId] = exec };
 
         var r = await MakeResolver().TryResolveAsync(
-            target.Config, target, quest, upstreamExecs, AvatarId, CancellationToken.None);
+            target.Config, target, quest, upstreamExecs,
+            new Dictionary<Guid, QuestNodeExecution>(), AvatarId, CancellationToken.None);
 
         r.Ok.Should().BeFalse();
         r.Error.Should().Contain("otherNode");
@@ -213,7 +217,7 @@ public class QuestConfigBindingResolverTests
 
         var r = await new QuestConfigBindingResolver(holonManager).TryResolveAsync(
             cfg, target, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None);
+            new Dictionary<Guid, QuestNodeExecution>(), AvatarId, CancellationToken.None);
 
         r.Ok.Should().BeTrue(because: r.Error ?? "no error");
         var doc = JsonDocument.Parse(r.ResolvedJson!);
@@ -235,7 +239,7 @@ public class QuestConfigBindingResolverTests
 
         var r = await new QuestConfigBindingResolver(holonManager).TryResolveAsync(
             cfg, target, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None);
+            new Dictionary<Guid, QuestNodeExecution>(), AvatarId, CancellationToken.None);
 
         r.Ok.Should().BeFalse();
         r.Error.Should().Contain("not found or not accessible");
@@ -251,7 +255,7 @@ public class QuestConfigBindingResolverTests
 
         var r = await MakeResolver().TryResolveAsync(
             cfg, target, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            AvatarId, CancellationToken.None);
+            new Dictionary<Guid, QuestNodeExecution>(), AvatarId, CancellationToken.None);
 
         r.Ok.Should().BeFalse();
         r.Error.Should().Contain("not found or not accessible");
@@ -317,5 +321,7 @@ public class QuestConfigBindingResolverTests
         public DateTime CreatedDate { get; set; }
         public DateTime? ModifiedDate { get; set; }
         public bool IsActive { get; set; }
+        public Guid? SourceHolonId { get; set; }
+        public Guid? OriginAvatarId { get; set; }
     }
 }

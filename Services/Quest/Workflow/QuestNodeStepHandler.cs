@@ -141,8 +141,19 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         var execution = claim.Result;
         await ProjectRunStatusAsync(p.RunId, QuestRunStatus.Running, ct);
 
+        // C1/H1: the acting avatar is the RUNNER (run.AvatarId), which may differ
+        // from quest.AvatarId on a marketplace run. Load the run once here so the
+        // capability gate, $from binding, and node context all derive identity from
+        // it — never from the quest owner. Fail closed if the run can't be loaded.
+        var runResult = await _runStore.GetByIdAsync(p.RunId, ct);
+        if (runResult.IsError || runResult.Result is null)
+            return StepResult.Fail(
+                $"Run {p.RunId} not loadable for node {p.NodeId}: {runResult.Message}");
+        var run = runResult.Result;
+        var actingAvatarId = run.AvatarId;
+
         // ── 3. Dispatch the node handler ──────────────────────────────────────
-        var upstream = await LoadUpstreamAsync(quest, p.NodeId, p.RunId, ct);
+        var (upstream, allRunExecutions) = await LoadRunExecutionsAsync(quest, p.NodeId, p.RunId, ct);
         QuestNodeHandlerResult result;
         // Whether the dispatched node is a chain-action node: only such nodes go
         // through reconcile-before-retry on failure (a non-chain node has no tx to
@@ -153,7 +164,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
             result = QuestNodeHandlerResult.Fail($"Unsupported node type: {node.NodeType}");
         }
         else if ((handlerRequiresChain = handler.RequiresChainCapability)
-            && !await ChainCapabilityGate.HasWalletBoundAsync(_walletManager, quest.AvatarId, ct))
+            && !await ChainCapabilityGate.HasWalletBoundAsync(_walletManager, actingAvatarId, ct))
         {
             // D1 pre-execution capability gate — fails closed (no broadcast):
             // a chain-requiring node may not run unless the actor has a wallet
@@ -164,12 +175,12 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         else
         {
             // FR-1 ($from binding) — resolve before handler dispatch (durable path).
-            // See Services/Quest/AGENTS.md §output-binding.
-            var runForTenant = await _runStore.GetByIdAsync(p.RunId, ct);
-            var actingTenantId = runForTenant.Result?.ActingTenantId;
+            // See Services/Quest/AGENTS.md §output-binding. H1: holon-scoped binding
+            // reads resolve against the RUNNER (actingAvatarId), not the quest owner.
+            var actingTenantId = run.ActingTenantId;
 
             var bindingResult = await _bindingResolver.TryResolveAsync(
-                node.Config, node, quest, upstream, quest.AvatarId, ct);
+                node.Config, node, quest, upstream, allRunExecutions, actingAvatarId, ct);
 
             if (!bindingResult.Ok)
             {
@@ -190,7 +201,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
                     node.Config = bindingResult.ResolvedJson!;
                     try
                     {
-                        var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, upstream, actingTenantId);
+                        var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, actingAvatarId, upstream, actingTenantId);
                         result = await handler.HandleAsync(nodeCtx, ct);
                     }
                     finally
@@ -599,25 +610,29 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
             idemKey, SagaStep<QuestStepPayload>.Serialize(nextPayload), ct);
     }
 
-    private async Task<IReadOnlyDictionary<Guid, QuestNodeExecution>> LoadUpstreamAsync(
-        Models.Quest.Quest quest, Guid nodeId, Guid runId, CancellationToken ct)
+    /// <summary>
+    /// Loads, in one store round-trip, both the direct-upstream execution map
+    /// (incoming-edge sources, for the <c>upstream.</c> root) and the full
+    /// run-execution map keyed by node id (for the run-scoped <c>run.</c> root).
+    /// See Services/Quest/AGENTS.md §output-binding.
+    /// </summary>
+    private async Task<(IReadOnlyDictionary<Guid, QuestNodeExecution> Upstream,
+                        IReadOnlyDictionary<Guid, QuestNodeExecution> AllByNode)>
+        LoadRunExecutionsAsync(Models.Quest.Quest quest, Guid nodeId, Guid runId, CancellationToken ct)
     {
         var upstream = new Dictionary<Guid, QuestNodeExecution>();
-        var incoming = quest.Edges.Where(e => e.TargetNodeId == nodeId).ToList();
-        if (incoming.Count == 0)
-            return upstream;
 
         var all = await _executionStore.GetByRunIdAsync(runId, ct);
         if (all.IsError || all.Result is null)
-            return upstream;
+            return (upstream, new Dictionary<Guid, QuestNodeExecution>());
 
         var byNode = all.Result.ToDictionary(e => e.NodeId);
-        foreach (var edge in incoming)
+        foreach (var edge in quest.Edges.Where(e => e.TargetNodeId == nodeId))
         {
             if (byNode.TryGetValue(edge.SourceNodeId, out var exec))
                 upstream[edge.SourceNodeId] = exec;
         }
-        return upstream;
+        return (upstream, byNode);
     }
 
     /// <summary>

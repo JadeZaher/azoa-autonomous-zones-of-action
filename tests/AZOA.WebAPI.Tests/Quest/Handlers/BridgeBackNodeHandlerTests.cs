@@ -30,7 +30,7 @@ public class BridgeBackNodeHandlerTests
         new() { Id = Guid.NewGuid(), NodeType = type, Config = config };
 
     private static QuestNodeExecutionContext CtxFor(QuestNode node, Guid avatarId, Guid runId) =>
-        new(runId, node.Id, QuestWithAvatarAndNode(avatarId, node));
+        new(runId, node.Id, QuestWithAvatarAndNode(avatarId, node), actingAvatarId: avatarId);
 
     // ─── Bridge ───
 

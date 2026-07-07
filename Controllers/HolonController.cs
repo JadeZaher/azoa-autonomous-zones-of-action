@@ -38,6 +38,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Create([FromBody] HolonCreateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -50,6 +51,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Update(Guid id, [FromBody] HolonUpdateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -62,6 +64,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -74,6 +77,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost("{id:guid}/interact")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Interact(Guid id, [FromBody] HolonInteractionRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -86,6 +90,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost("{id:guid}/mint")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Mint(Guid id, [FromBody] MintRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _blockchainManager.BuildAndExecuteAsync(builder =>
@@ -99,6 +104,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost("{id:guid}/exchange")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Exchange(Guid id, [FromBody] ExchangeRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _blockchainManager.BuildAndExecuteAsync(builder =>
@@ -147,6 +153,7 @@ public class HolonController : ControllerBase
     // ─── Holonic functionality — operations across the holarchy ───
 
     [HttpPost("{id:guid}/propagate")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<int>>> Propagate(Guid id, [FromBody] HolonPropagateRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -167,6 +174,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost("{id:guid}/clone")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Clone(Guid id, [FromBody] HolonCloneRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -179,6 +187,7 @@ public class HolonController : ControllerBase
     }
 
     [HttpPost("{id:guid}/move")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<bool>>> MoveSubtree(Guid id, [FromBody] MoveSubtreeRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();

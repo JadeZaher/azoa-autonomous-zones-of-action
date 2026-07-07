@@ -31,6 +31,7 @@ public class QuestManager : IQuestManager
     private readonly IQuestRunStore _runStore;
     private readonly IQuestNodeExecutionStore _executionStore;
     private readonly IQuestDagValidator _dagValidator;
+    private readonly IQuestDagExecutabilityValidator _executabilityValidator;
     private readonly IQuestNodeHandlerRegistry _registry;
     private readonly ISagaStore _sagaStore;
     private readonly IWalletManager _walletManager;
@@ -49,6 +50,7 @@ public class QuestManager : IQuestManager
         IQuestRunStore runStore,
         IQuestNodeExecutionStore executionStore,
         IQuestDagValidator dagValidator,
+        IQuestDagExecutabilityValidator executabilityValidator,
         IQuestNodeHandlerRegistry registry,
         ISagaStore sagaStore,
         IWalletManager walletManager,
@@ -59,6 +61,7 @@ public class QuestManager : IQuestManager
         _runStore = runStore;
         _executionStore = executionStore;
         _dagValidator = dagValidator;
+        _executabilityValidator = executabilityValidator;
         _registry = registry;
         _sagaStore = sagaStore;
         _walletManager = walletManager;
@@ -78,6 +81,34 @@ public class QuestManager : IQuestManager
         if (questResult.Result.AvatarId != avatarId)
             return new AZOAResult<Quest> { IsError = true, Message = "Quest is owned by a different avatar." };
         return questResult;
+    }
+
+    /// <summary>
+    /// Loads a quest for a run-start (marketplace mechanic): the OWNER may start
+    /// any of their own quests; a NON-owner may start it only when it is published
+    /// (<see cref="Quest.IsPublic"/>) AND Active. Returns the quest and whether the
+    /// caller is the owner, or an error result to surface verbatim. Private quests
+    /// stay owner-only; a non-owner sees the same "not found"-style rejection to
+    /// avoid leaking existence of private quests.
+    /// See Managers/AGENTS.md §publish-lifecycle.
+    /// </summary>
+    private async Task<(AZOAResult<Quest> result, bool isOwner)> LoadStartableQuestAsync(Guid questId, Guid avatarId)
+    {
+        var questResult = await _questStore.GetQuestAsync(questId);
+        if (questResult.IsError || questResult.Result == null)
+            return (new AZOAResult<Quest> { IsError = true, Message = questResult.Message ?? "Quest not found." }, false);
+
+        var quest = questResult.Result;
+        if (quest.AvatarId == avatarId)
+            return (questResult, true);
+
+        // Non-owner path: only published (public + Active) quests are startable.
+        if (!quest.IsPublic)
+            return (new AZOAResult<Quest> { IsError = true, Message = "Quest not found." }, false);
+        if (quest.Status != QuestStatus.Active)
+            return (new AZOAResult<Quest> { IsError = true, Message = "Quest is not published for execution." }, false);
+
+        return (questResult, false);
     }
 
     /// <summary>
@@ -106,6 +137,7 @@ public class QuestManager : IQuestManager
             Name = model.Name,
             Description = model.Description,
             AvatarId = avatarId,
+            IsPublic = model.IsPublic,
             CreatedDate = DateTime.UtcNow
         };
 
@@ -154,7 +186,16 @@ public class QuestManager : IQuestManager
 
     public async Task<AZOAResult<Quest>> GetAsync(Guid id, Guid avatarId, AZOARequest? request = null)
     {
-        return await LoadOwnedQuestAsync(id, avatarId);
+        // Owner may always read; a non-owner may read a PUBLIC quest (read-only) so
+        // it can be fetched and started under their own context. Private quests stay
+        // owner-only and surface the same "different avatar" rejection.
+        var questResult = await _questStore.GetQuestAsync(id);
+        if (questResult.IsError || questResult.Result == null)
+            return new AZOAResult<Quest> { IsError = true, Message = questResult.Message ?? "Quest not found." };
+        var quest = questResult.Result;
+        if (quest.AvatarId == avatarId || quest.IsPublic)
+            return questResult;
+        return new AZOAResult<Quest> { IsError = true, Message = "Quest is owned by a different avatar." };
     }
 
     public async Task<AZOAResult<IEnumerable<Quest>>> GetByAvatarAsync(Guid avatarId, AZOARequest? request = null)
@@ -170,6 +211,9 @@ public class QuestManager : IQuestManager
         var quest = existing.Result;
         if (model.Name != null) quest.Name = model.Name;
         if (model.Description != null) quest.Description = model.Description;
+        // Owner-only visibility toggle (LoadOwnedQuestAsync above already enforced
+        // ownership → IDOR-safe). Null leaves the flag unchanged.
+        if (model.IsPublic.HasValue) quest.IsPublic = model.IsPublic.Value;
         // model.Status is intentionally ignored — runtime status moved to
         // QuestRun.Status (see ADR §2.2). The field on QuestUpdateModel is
         // retained for API back-compat but has no effect on the definition.
@@ -214,6 +258,14 @@ public class QuestManager : IQuestManager
         var configError = ValidateNodeConfigs(quest);
         if (configError != null)
             return new AZOAResult<Quest> { IsError = true, Message = $"Publish failed — node config invalid: {configError}" };
+
+        // Executability gate: reject if any $from binding input won't be satisfiable
+        // at runtime (unreachable source, absent output field, provable scalar type
+        // mismatch). Runs LAST so structural DAG / transition / config errors surface
+        // first. See Services/Quest/AGENTS.md §executability-validation.
+        var execResult = _executabilityValidator.Validate(quest);
+        if (!execResult.IsValid)
+            return new AZOAResult<Quest> { IsError = true, Message = $"Publish failed — binding not executable: {string.Join("; ", execResult.Errors)}" };
 
         // F6 TOCTOU guard: flip Draft → Active via compare-and-swap on the version
         // we read above. This is the serialization point — two concurrent publishes
@@ -298,6 +350,10 @@ public class QuestManager : IQuestManager
     /// </summary>
     private string? ValidateNodeConfigs(Quest quest)
     {
+        // run.<name> is run-scoped (any node in the quest), not edge-scoped, so
+        // it validates against the full node-name set rather than direct upstreams.
+        var allNodeNames = quest.Nodes.Select(n => n.Name).ToHashSet();
+
         foreach (var node in quest.Nodes)
         {
             // Build the set of direct upstream node names (sources of incoming edges).
@@ -308,7 +364,7 @@ public class QuestManager : IQuestManager
                 .Cast<string>()
                 .ToHashSet();
 
-            var err = QuestNodeConfigRegistry.Validate(node.NodeType, node.Config, directUpstreamNames);
+            var err = QuestNodeConfigRegistry.Validate(node.NodeType, node.Config, directUpstreamNames, allNodeNames);
             if (err != null)
                 return $"Node '{node.Name}' ({node.NodeType}): {err}";
         }
@@ -369,12 +425,17 @@ public class QuestManager : IQuestManager
 
     public async Task<AZOAResult<QuestRun>> ExecuteAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null)
     {
-        var owned = await LoadOwnedQuestAsync(questId, avatarId);
-        if (owned.IsError || owned.Result == null)
-            return new AZOAResult<QuestRun> { IsError = true, Message = owned.Message };
+        // Marketplace mechanic: the owner may run their own quest; a non-owner may
+        // run it only when it is published (public + Active). Provenance back to the
+        // origin quest/creator is stamped on the run below for the non-owner path.
+        var (startable, isOwner) = await LoadStartableQuestAsync(questId, avatarId);
+        if (startable.IsError || startable.Result == null)
+            return new AZOAResult<QuestRun> { IsError = true, Message = startable.Message };
 
         // FR-2 (quest-dag-semantic-hardening): require Active status before execution.
-        if (owned.Result.Status != QuestStatus.Active)
+        // (The non-owner path already enforced Active in LoadStartableQuestAsync; this
+        // keeps the owner path's original gate + error message intact.)
+        if (startable.Result.Status != QuestStatus.Active)
             return new AZOAResult<QuestRun> { IsError = true, Message = "Quest must be published (Active) before it can be executed. Call POST /{id}/publish first." };
 
         // Validate DAG first (also assigns ExecutionOrder onto definition nodes).
@@ -409,14 +470,21 @@ public class QuestManager : IQuestManager
             };
 
         // Create the QuestRun upfront — Pending → Running on first node claim.
+        // The run is ALWAYS stamped to the RUNNER (avatarId), not the quest owner —
+        // on the owner path they are equal; on the non-owner (marketplace) path the
+        // runner gets a run under their own context with provenance back to origin.
         var run = new QuestRun
         {
             Id = Guid.NewGuid(),
             QuestId = quest.Id,
-            AvatarId = quest.AvatarId,
+            AvatarId = avatarId,
             // tenant-consent-delegation AC4: stamp the acting tenant from the
             // activating principal so Tier-2 nodes carry it to the signing seam.
             ActingTenantId = actingTenantId,
+            // Marketplace provenance: null on the owner path, origin quest + creator
+            // on the non-owner path.
+            SourceQuestId = isOwner ? null : quest.Id,
+            OriginAvatarId = isOwner ? null : quest.AvatarId,
             Status = QuestRunStatus.Pending,
             StartedAt = DateTime.UtcNow
         };
@@ -548,8 +616,11 @@ public class QuestManager : IQuestManager
 
             // FR-1 ($from binding) — resolve before handler dispatch.
             // See Services/Quest/AGENTS.md §output-binding.
+            // C1/H1: identity side-effects and holon-scoped $from binding resolve
+            // against the RUNNER (run.AvatarId), never the quest owner. On the owner
+            // path run.AvatarId == quest.AvatarId, so behaviour is unchanged.
             var bindingResult = await _bindingResolver.TryResolveAsync(
-                node.Config, node, quest, upstream, quest.AvatarId, CancellationToken.None);
+                node.Config, node, quest, upstream, executionsByNode, run.AvatarId, CancellationToken.None);
 
             QuestNodeHandlerResult result;
             if (!bindingResult.Ok)
@@ -561,7 +632,7 @@ public class QuestManager : IQuestManager
                 result = QuestNodeResults.Fail($"Unsupported node type: {node.NodeType}");
             }
             else if (handler.RequiresChainCapability
-                && !await ChainCapabilityGate.HasWalletBoundAsync(_walletManager, quest.AvatarId))
+                && !await ChainCapabilityGate.HasWalletBoundAsync(_walletManager, run.AvatarId))
             {
                 // D1 pre-execution capability gate — fails closed (no broadcast):
                 // a chain-requiring node may not run unless the actor has a wallet
@@ -580,7 +651,7 @@ public class QuestManager : IQuestManager
                     node.Config = bindingResult.ResolvedJson!;
                     try
                     {
-                        var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstream, run.ActingTenantId);
+                        var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, run.AvatarId, upstream, run.ActingTenantId);
                         result = await handler.HandleAsync(ctx);
                     }
                     finally
@@ -678,9 +749,11 @@ public class QuestManager : IQuestManager
         await _executionStore.CreateAsync(execution);
 
         // FR-1 ($from binding) — resolve before handler dispatch (single-node path).
+        // Single-node path is owner-only (LoadOwnedQuestAsync), so run.AvatarId ==
+        // quest.AvatarId here; use run.AvatarId for parity with the multi-node path.
         var bindingResultSingle = await _bindingResolver.TryResolveAsync(
             node.Config, node, quest, new Dictionary<Guid, QuestNodeExecution>(),
-            quest.AvatarId, CancellationToken.None);
+            new Dictionary<Guid, QuestNodeExecution>(), run.AvatarId, CancellationToken.None);
 
         QuestNodeHandlerResult result;
         if (!bindingResultSingle.Ok)
@@ -700,7 +773,7 @@ public class QuestManager : IQuestManager
                 node.Config = bindingResultSingle.ResolvedJson!;
                 try
                 {
-                    var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, upstreamExecutions: null, run.ActingTenantId);
+                    var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, run.AvatarId, upstreamExecutions: null, actingTenantId: run.ActingTenantId);
                     result = await handler.HandleAsync(ctx);
                 }
                 finally
@@ -983,6 +1056,9 @@ public class QuestManager : IQuestManager
             Description = template.Description,
             AvatarId = avatarId,
             TemplateId = templateId,
+            // Denormalise origin onto the copy: the template's author is the creator
+            // this instantiated quest descends from (marketplace provenance).
+            OriginAvatarId = template.AuthorAvatarId,
             CreatedDate = DateTime.UtcNow
         };
 
@@ -1552,12 +1628,15 @@ public class QuestManager : IQuestManager
     /// </summary>
     public async Task<AZOAResult<QuestRun>> StartWorkflowRunAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null)
     {
-        var owned = await LoadOwnedQuestAsync(questId, avatarId);
-        if (owned.IsError || owned.Result == null)
-            return new AZOAResult<QuestRun> { IsError = true, Message = owned.Message };
+        // Marketplace mechanic (durable path): owner may start their own quest; a
+        // non-owner may start it only when published (public + Active). Provenance is
+        // stamped on the run below, mirroring the legacy ExecuteAsync path.
+        var (startable, isOwner) = await LoadStartableQuestAsync(questId, avatarId);
+        if (startable.IsError || startable.Result == null)
+            return new AZOAResult<QuestRun> { IsError = true, Message = startable.Message };
 
         // FR-2: require Active status before starting a durable workflow run.
-        if (owned.Result.Status != QuestStatus.Active)
+        if (startable.Result.Status != QuestStatus.Active)
             return new AZOAResult<QuestRun> { IsError = true, Message = "Quest must be published (Active) before a workflow run can be started. Call POST /{id}/publish first." };
 
         var validationResult = await ValidateDAGAsync(questId, request);
@@ -1610,13 +1689,19 @@ public class QuestManager : IQuestManager
         {
             Id = Guid.NewGuid(),
             QuestId = quest.Id,
-            AvatarId = quest.AvatarId,
+            // Stamp the run to the RUNNER (marketplace mechanic) — owner path: equal;
+            // non-owner path: runner's own context with provenance back to origin.
+            AvatarId = avatarId,
             // tenant-consent-delegation AC4: persist the acting tenant on the
             // durable run so it survives the async saga-worker hop and reaches the
             // Tier-2 node handlers via the QuestNodeExecutionContext. This is the
             // keystone — the durable path is where the acting tenant would otherwise
             // be lost (no ambient principal on the saga worker).
             ActingTenantId = actingTenantId,
+            // Marketplace provenance: null on owner path, origin quest + creator on
+            // the non-owner path.
+            SourceQuestId = isOwner ? null : quest.Id,
+            OriginAvatarId = isOwner ? null : quest.AvatarId,
             Status = QuestRunStatus.Pending,
             StartedAt = DateTime.UtcNow
         };

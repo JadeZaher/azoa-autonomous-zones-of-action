@@ -20,7 +20,9 @@ public sealed class HolonDeleteNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<IdConfig>(context.Node.Config, nameof(QuestNodeType.HolonDelete), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _holonManager.DeleteAsync(cfg.Id);
+        // C1: scope the delete to the acting avatar (the RUNNER) so a marketplace
+        // run can only delete the runner's own holons — never the quest owner's.
+        var r = await _holonManager.DeleteAsync(cfg.Id, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

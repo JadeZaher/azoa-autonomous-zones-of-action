@@ -73,7 +73,7 @@ public class QuestManagerSubResourceTests
             questStore,
             runStore,
             execStore,
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
@@ -213,7 +213,7 @@ public class QuestManagerSubResourceTests
 
         var manager = new QuestManager(
             questStore, runStore, execStore,
-            new QuestDagValidator(),
+            new QuestDagValidator(), new QuestDagExecutabilityValidator(),
             new QuestNodeHandlerRegistry(Array.Empty<IQuestNodeHandler>()),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),

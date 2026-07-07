@@ -104,13 +104,19 @@ public static class QuestNodeConfigRegistry
     /// When non-null (publish-time), every upstream.&lt;name&gt; prefix must
     /// be in this set. Pass null at definition-time (edges may not exist yet).
     /// </param>
+    /// <param name="allNodeNames">
+    /// When non-null (publish-time), every run.&lt;name&gt; prefix must name a
+    /// node that exists ANYWHERE in the quest (run.-root is run-scoped, not
+    /// edge-scoped). Pass null at definition-time (grammar-only check still runs).
+    /// </param>
     public static string? Validate(
         QuestNodeType nodeType,
         string? configJson,
-        IReadOnlySet<string>? directUpstreamNames = null)
+        IReadOnlySet<string>? directUpstreamNames = null,
+        IReadOnlySet<string>? allNodeNames = null)
     {
         // Step 1: binding structural check + path grammar.
-        var bindingErr = ValidateBindings(configJson, directUpstreamNames);
+        var bindingErr = ValidateBindings(configJson, directUpstreamNames, allNodeNames);
         if (bindingErr is not null) return bindingErr;
 
         // Step 2: strict round-trip on the $from-stripped shadow (V1).
@@ -143,7 +149,10 @@ public static class QuestNodeConfigRegistry
     /// Validates $from binding syntax in <paramref name="configJson"/>.
     /// Returns null on success, or an error string on first violation.
     /// </summary>
-    private static string? ValidateBindings(string? configJson, IReadOnlySet<string>? directUpstreamNames)
+    private static string? ValidateBindings(
+        string? configJson,
+        IReadOnlySet<string>? directUpstreamNames,
+        IReadOnlySet<string>? allNodeNames = null)
     {
         var structErr = QuestConfigBindingResolver.FindAndValidateBindings(configJson, out var paths);
         if (structErr is not null) return structErr;
@@ -164,6 +173,18 @@ public static class QuestNodeConfigRegistry
                 if (directUpstreamNames is not null && !directUpstreamNames.Contains(segments[1]))
                     return $"$from '{path}': upstream node '{segments[1]}' is not a direct upstream " +
                            "of this node (must be a source of an incoming edge).";
+            }
+            else if (root == "run")
+            {
+                if (segments.Count < 3)
+                    return $"$from '{path}': run path requires at least 3 segments.";
+
+                // run.-root is intentionally broader than upstream.-root: any prior
+                // node in the run, not just a direct predecessor. We can only check
+                // that the named node EXISTS in the quest (ancestry/type checking is
+                // the separate executability validator's job).
+                if (allNodeNames is not null && !allNodeNames.Contains(segments[1]))
+                    return $"$from '{path}': run node '{segments[1]}' does not exist in this quest.";
             }
             else if (root == "holon")
             {

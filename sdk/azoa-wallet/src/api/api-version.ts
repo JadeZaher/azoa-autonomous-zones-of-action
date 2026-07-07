@@ -64,6 +64,9 @@ export const API_PATHS = {
   // Avatar
   AVATAR_REGISTER: "/api/avatar/register",
   AVATAR_LOGIN: "/api/avatar/login",
+  // Server-side "logout everywhere": bumps AuthNotBefore, invalidating all
+  // outstanding JWTs for the avatar (not just the local session).
+  AVATAR_LOGOUT: "/api/avatar/logout",
   AVATAR_GET: (id: string) => `/api/avatar/${id}`,
   AVATAR_LIST: "/api/avatar",
   AVATAR_UPDATE: (id: string) => `/api/avatar/${id}`,
@@ -82,6 +85,7 @@ export const API_PATHS = {
   HOLON_MINT: (id: string) => `/api/holon/${id}/mint`,
   HOLON_EXCHANGE: (id: string) => `/api/holon/${id}/exchange`,
   HOLON_COMPOSE: (id: string) => `/api/holon/${id}/compose`,
+  HOLON_CLONE: (id: string) => `/api/holon/${id}/clone`,
 
   // Wallet
   WALLET_GET: (id: string) => `/api/wallet/${id}`,

@@ -8,6 +8,9 @@ public class QuestCreateModel
     public string? Description { get; set; }
     public List<QuestNodeCreateModel> Nodes { get; set; } = new();
     public List<QuestEdgeCreateModel> Edges { get; set; } = new();
+
+    /// <summary>Marketplace visibility. Defaults to false (private, owner-only). When true, non-owners can start this quest under their own context once it is published (Active).</summary>
+    public bool IsPublic { get; set; }
 }
 
 public class QuestUpdateModel
@@ -22,6 +25,9 @@ public class QuestUpdateModel
     /// still enforces enum validity for clients still sending it.
     /// </summary>
     public QuestStatus? Status { get; set; }
+
+    /// <summary>Marketplace visibility toggle. Null = leave unchanged; owner-only (IDOR-safe like the rest of the update surface).</summary>
+    public bool? IsPublic { get; set; }
 }
 
 /// <summary>

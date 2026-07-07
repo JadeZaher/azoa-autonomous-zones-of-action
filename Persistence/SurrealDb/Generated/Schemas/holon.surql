@@ -32,6 +32,8 @@ DEFINE FIELD IF NOT EXISTS created_date ON TABLE holon TYPE datetime
 DEFINE FIELD IF NOT EXISTS modified_date ON TABLE holon TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS is_active ON TABLE holon TYPE bool
     DEFAULT true;
+DEFINE FIELD IF NOT EXISTS source_holon_id ON TABLE holon TYPE option<record<holon>>;
+DEFINE FIELD IF NOT EXISTS origin_avatar_id ON TABLE holon TYPE option<record<avatar>>;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

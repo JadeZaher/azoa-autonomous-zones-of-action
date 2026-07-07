@@ -20,7 +20,9 @@ public sealed class HolonUpdateNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<HolonUpdateNodeConfig>(context.Node.Config, nameof(QuestNodeType.HolonUpdate), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _holonManager.UpdateAsync(cfg.HolonId, cfg.Model);
+        // C1: scope the update to the acting avatar (the RUNNER) so a marketplace
+        // run can only mutate the runner's own holons — never the quest owner's.
+        var r = await _holonManager.UpdateAsync(cfg.HolonId, cfg.Model, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

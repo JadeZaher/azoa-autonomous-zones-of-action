@@ -33,6 +33,11 @@ public sealed class QuestConfigBindingResolver
     /// <param name="upstreamExecutions">
     /// Incoming-edge source executions keyed by node id. May be empty for entry nodes.
     /// </param>
+    /// <param name="allRunExecutions">
+    /// EVERY execution in the run so far, keyed by node id — the scope for the
+    /// run-scoped <c>run.&lt;nodeName&gt;</c> root (any prior node's output by name,
+    /// not just direct-edge predecessors). May be empty for entry nodes.
+    /// </param>
     /// <param name="avatarId">Run avatar: holon reads are owner-scoped to this avatar.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
@@ -44,6 +49,7 @@ public sealed class QuestConfigBindingResolver
         QuestNode node,
         QuestModel quest,
         IReadOnlyDictionary<Guid, QuestNodeExecution> upstreamExecutions,
+        IReadOnlyDictionary<Guid, QuestNodeExecution> allRunExecutions,
         Guid avatarId,
         CancellationToken ct)
     {
@@ -70,9 +76,12 @@ public sealed class QuestConfigBindingResolver
             return BindingResolveResult.Pass(configJson);
         }
 
-        // Build the scope lazily: upstream outputs by "upstream.<nodeName>" +
-        // holons lazily by "holon.<id>" on first demand.
+        // Build one combined scope: "upstream.<nodeName>" (direct-edge sources)
+        // + "run.<nodeName>" (any prior node in the run) + holons lazily by
+        // "holon.<id>" on first demand.
         var upstreamScope = BuildUpstreamScope(node, quest, upstreamExecutions);
+        foreach (var (key, value) in BuildRunScope(quest, allRunExecutions))
+            upstreamScope[key] = value;
         var holonCache = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
 
         var (ok, error) = await ResolveNodeAsync(root, upstreamScope, holonCache, avatarId, ct);
@@ -153,6 +162,39 @@ public sealed class QuestConfigBindingResolver
             {
                 // Unparseable upstream output — skip it; a $from that references
                 // it will fail at resolution time with a descriptive error.
+            }
+        }
+
+        return scope;
+    }
+
+    /// <summary>
+    /// Builds run scope: "run.&lt;nodeName&gt;" → parsed JSON element for EVERY
+    /// node in the run whose execution has non-empty parseable Output (not just
+    /// direct-edge sources). Mirrors <see cref="BuildUpstreamScope"/> over all
+    /// executions. See Services/Quest/AGENTS.md §output-binding.
+    /// </summary>
+    private static Dictionary<string, JsonElement> BuildRunScope(
+        QuestModel quest,
+        IReadOnlyDictionary<Guid, QuestNodeExecution> allRunExecutions)
+    {
+        var scope = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var runNode in quest.Nodes)
+        {
+            if (!allRunExecutions.TryGetValue(runNode.Id, out var exec)
+                || string.IsNullOrWhiteSpace(exec.Output))
+                continue;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(exec.Output);
+                scope[$"run.{runNode.Name}"] = doc.RootElement.Clone();
+            }
+            catch (JsonException)
+            {
+                // Unparseable output — skip it; a $from that references it will
+                // fail at resolution time with a descriptive error.
             }
         }
 
@@ -263,6 +305,26 @@ public sealed class QuestConfigBindingResolver
             var scopeKey = $"upstream.{segments[1]}";
             if (!upstreamScope.TryGetValue(scopeKey, out element))
                 return (null, $"$from '{path}': upstream node '{segments[1]}' not found in scope or has no output.");
+
+            for (var i = 2; i < segments.Count; i++)
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                    return (null, $"$from '{path}': cannot read member '{segments[i]}' from a non-object at segment {i}.");
+                if (!element.TryGetProperty(segments[i], out var child))
+                    return (null, $"$from '{path}': member '{segments[i]}' not found.");
+                element = child;
+            }
+            return (element, null);
+        }
+
+        if (root == "run")
+        {
+            if (segments.Count < 3)
+                return (null, $"$from '{path}': run path requires at least 3 segments (run.<node>.<field>).");
+
+            var scopeKey = $"run.{segments[1]}";
+            if (!upstreamScope.TryGetValue(scopeKey, out element))
+                return (null, $"$from '{path}': run node '{segments[1]}' not found in scope or has no output.");
 
             for (var i = 2; i < segments.Count; i++)
             {
