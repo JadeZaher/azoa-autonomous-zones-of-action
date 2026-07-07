@@ -322,7 +322,22 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     [setNodes, setEdges],
   )
 
+  // Conditional edge with empty condition is a server hard-reject (FR-1c / FR-8b).
+  const conditionalEdgeMissingCondition = useMemo(() =>
+    edges.filter((e) => (e.data as EdgeData)?.edgeType === 'Conditional' && !((e.data as EdgeData)?.condition ?? '').trim()),
+  [edges])
+
+  // Any node with invalid JSON config blocks submit (G3 — config validity pre-submit).
+  const nodesWithInvalidConfig = useMemo(() =>
+    nodes.filter((n) => {
+      try { JSON.parse(n.data.config || '{}'); return false } catch { return true }
+    }),
+  [nodes])
+
   // ─── Serialize and submit ───
+  // NOTE: the two useMemos above MUST stay before this callback — its dependency
+  // array references them, and a const in the temporal dead zone throws
+  // ReferenceError on every render if declared later.
   const handleSubmit = useCallback(() => {
     // Hard blocks: invalid config JSON or Conditional edges missing condition
     // will be rejected by the server anyway — surface them here first.
@@ -360,18 +375,6 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       return false
     }
   }, [selectedNode])
-
-  // Conditional edge with empty condition is a server hard-reject (FR-1c / FR-8b).
-  const conditionalEdgeMissingCondition = useMemo(() =>
-    edges.filter((e) => (e.data as EdgeData)?.edgeType === 'Conditional' && !((e.data as EdgeData)?.condition ?? '').trim()),
-  [edges])
-
-  // Any node with invalid JSON config blocks submit (G3 — config validity pre-submit).
-  const nodesWithInvalidConfig = useMemo(() =>
-    nodes.filter((n) => {
-      try { JSON.parse(n.data.config || '{}'); return false } catch { return true }
-    }),
-  [nodes])
 
   // ─── Client-side DAG pre-check ───
   // Mirrors the backend QuestDagValidator rules so the user sees structural
