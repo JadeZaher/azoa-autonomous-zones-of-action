@@ -7,6 +7,7 @@ graph LR
     executes["executes: Node"]:::nodeClass
     forked_from["forked_from: Node"]:::nodeClass
     quest["quest: Node"]:::nodeClass
+    quest_access_request["quest_access_request: Node"]:::nodeClass
     quest_dependency["quest_dependency: Node"]:::nodeClass
     quest_edge["quest_edge: Node"]:::nodeClass
     quest_node["quest_node: Node"]:::nodeClass
@@ -24,6 +25,9 @@ graph LR
     quest -- "avatar_id [N:1]" --> avatar
     quest -- "dapp_series_id [N:0..1]" --> dapp_series
     quest -- "template_id [N:0..1]" --> quest_template
+    quest_access_request -- "decided_by_avatar_id [N:0..1]" --> avatar
+    quest_access_request -- "requester_avatar_id [N:1]" --> avatar
+    quest_access_request -- "quest_id [N:1]" --> quest
     quest_dependency -- "depends_on_quest_id [N:1]" --> quest
     quest_dependency -- "quest_id [N:1]" --> quest
     quest_dependency -- "depends_on_node_id [N:0..1]" --> quest_node

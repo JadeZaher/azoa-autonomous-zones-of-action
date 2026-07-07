@@ -557,6 +557,119 @@ public class QuestController : ControllerBase
         return Ok(result);
     }
 
+    // ─── Invitations + access requests (quest-invitations-approval) ───
+    // Run-authorization is orthogonal to IsPublic (discoverability). Owner routes
+    // reject non-owners; requester routes reject other requesters; body-supplied
+    // avatar is ignored. See Managers/AGENTS.md §quest-invitations.
+
+    /// <summary>Owner sets the run-access mode (Open ↔ InviteOnly) + optionally seeds the invite list.</summary>
+    [HttpPut("{id:guid}/run-access")]
+    [Authorize(Policy = "DappDevelop")]
+    public async Task<ActionResult<AZOAResult<Quest>>> SetRunAccess(Guid id, [FromBody] QuestRunAccessRequest body, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<Quest> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.SetRunAccessAsync(id, avatarId.Value, body.RunAccess, body.InvitedAvatarIds, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>Owner directly invites an avatar (no request needed; idempotent).</summary>
+    [HttpPost("{id:guid}/invite")]
+    [Authorize(Policy = "DappDevelop")]
+    public async Task<ActionResult<AZOAResult<Quest>>> Invite(Guid id, [FromBody] QuestInviteRequest body, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<Quest> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.InviteAvatarAsync(id, avatarId.Value, body.AvatarId, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>Owner revokes an invite (no-op when absent; in-flight runs unaffected).</summary>
+    [HttpDelete("{id:guid}/invite/{avatarId:guid}")]
+    [Authorize(Policy = "DappDevelop")]
+    public async Task<ActionResult<AZOAResult<Quest>>> RevokeInvite(Guid id, Guid avatarId, [FromQuery] AZOARequest? request)
+    {
+        var callerId = GetAvatarIdFromClaims();
+        if (callerId == null)
+            return Unauthorized(new AZOAResult<Quest> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.RevokeInviteAsync(id, callerId.Value, avatarId, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>Any viewer opens a Pending access request for an InviteOnly quest (idempotent).</summary>
+    [HttpPost("{id:guid}/access-requests")]
+    public async Task<ActionResult<AZOAResult<QuestAccessRequest>>> RequestAccess(Guid id, [FromBody] QuestAccessOpenRequest body, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<QuestAccessRequest> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.RequestAccessAsync(id, avatarId.Value, body?.Message, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>Owner approval queue: the quest's access requests, optionally status-filtered.</summary>
+    [HttpGet("{id:guid}/access-requests")]
+    public async Task<ActionResult<AZOAResult<IEnumerable<QuestAccessRequest>>>> ListAccessRequests(Guid id, [FromQuery] QuestAccessRequestStatus? status, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<IEnumerable<QuestAccessRequest>> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.ListAccessRequestsAsync(id, avatarId.Value, status, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>Owner approves (mints invite) or rejects a Pending access request.</summary>
+    [HttpPost("access-requests/{requestId:guid}/decision")]
+    [Authorize(Policy = "DappDevelop")]
+    public async Task<ActionResult<AZOAResult<QuestAccessRequest>>> DecideAccessRequest(Guid requestId, [FromBody] QuestAccessDecisionRequest body, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<QuestAccessRequest> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.DecideAccessRequestAsync(requestId, avatarId.Value, body.Approve, body.Reason, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>Requester withdraws their own Pending access request.</summary>
+    [HttpPost("access-requests/{requestId:guid}/withdraw")]
+    public async Task<ActionResult<AZOAResult<QuestAccessRequest>>> WithdrawAccessRequest(Guid requestId, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<QuestAccessRequest> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.WithdrawAccessRequestAsync(requestId, avatarId.Value, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>Requester's own outbound access requests, optionally status-filtered.</summary>
+    [HttpGet("access-requests/mine")]
+    public async Task<ActionResult<AZOAResult<IEnumerable<QuestAccessRequest>>>> ListMyAccessRequests([FromQuery] QuestAccessRequestStatus? status, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<IEnumerable<QuestAccessRequest>> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.ListMyAccessRequestsAsync(avatarId.Value, status, request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
     private Guid? GetAvatarIdFromClaims()
     {
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value

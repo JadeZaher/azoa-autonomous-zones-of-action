@@ -147,6 +147,19 @@ export const API_PATHS = {
   // `AwaitingReconciliation` run against chain truth; NEVER re-broadcasts.
   QUEST_RUN_RECONCILE: (runId: string) => `/api/quest/runs/${runId}/reconcile`,
 
+  // Invite-gated quests + request/approval flow (quest-invitations-approval).
+  // Run-access is orthogonal to `IsPublic` discoverability: an Open quest runs
+  // for any viewer; an InviteOnly quest runs only for owner + invited avatars.
+  // Owner-scoped: run-access mode, direct invite/revoke, approval queue.
+  QUEST_RUN_ACCESS: (questId: string) => `/api/quest/${questId}/run-access`,
+  QUEST_INVITE: (questId: string) => `/api/quest/${questId}/invite`,
+  QUEST_INVITE_REVOKE: (questId: string, avatarId: string) => `/api/quest/${questId}/invite/${avatarId}`,
+  QUEST_ACCESS_REQUESTS: (questId: string) => `/api/quest/${questId}/access-requests`,
+  // Requester-scoped: decide (owner), withdraw (requester), my outbound requests.
+  QUEST_ACCESS_REQUEST_DECISION: (requestId: string) => `/api/quest/access-requests/${requestId}/decision`,
+  QUEST_ACCESS_REQUEST_WITHDRAW: (requestId: string) => `/api/quest/access-requests/${requestId}/withdraw`,
+  QUEST_ACCESS_REQUESTS_MINE: "/api/quest/access-requests/mine",
+
   // Tenant onboarding (tenant-onboarding) — child credential issuance the
   // `forActor` actor abstraction threads (tenant acts FOR a child avatar).
   TENANT_CHILD_CREDENTIAL: (avatarId: string) => `/api/tenant/avatars/${avatarId}/credential`,

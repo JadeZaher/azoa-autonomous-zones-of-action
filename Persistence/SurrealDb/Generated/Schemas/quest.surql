@@ -11,6 +11,8 @@
 
 -- Quest.QuestStatusKind
 DEFINE PARAM IF NOT EXISTS $quest_status VALUE ["Draft", "Active", "Completed", "Failed", "Archived"];
+-- Quest.QuestRunAccessKind
+DEFINE PARAM IF NOT EXISTS $quest_run_access VALUE ["Open", "InviteOnly"];
 
 DEFINE TABLE IF NOT EXISTS quest SCHEMAFULL;
 
@@ -55,6 +57,14 @@ DEFINE FIELD IF NOT EXISTS origin_avatar_id ON TABLE quest TYPE option<record<av
 
 -- Content hash of the node/edge graph as of the last publish (bait-and-switch guard). Null while never published; recomputed on every PublishAsync. Stamped onto each quest_run at start so a run is bound to the exact graph revision the runner saw. See Managers/AGENTS.md §published-version-hash.
 DEFINE FIELD IF NOT EXISTS published_version_hash ON TABLE quest TYPE option<string>;
+
+-- Run-authorization dimension, orthogonal to is_public (discoverability). Open = anyone who can view may run; InviteOnly = owner + invited_avatar_ids only. See Persistence/SurrealDb/Models/AGENTS.md §quest-access-request.
+DEFINE FIELD IF NOT EXISTS run_access ON TABLE quest TYPE string
+    ASSERT $value INSIDE $quest_run_access
+    DEFAULT "Open";
+
+-- Approved invite set for InviteOnly quests (avatar-id hex); owner is always implicitly invited.
+DEFINE FIELD IF NOT EXISTS invited_avatar_ids ON TABLE quest TYPE option<array<string>>;
 
 -- Definition birthdate -- STAYS on the definition, not a runtime artifact
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE quest TYPE datetime

@@ -30,6 +30,7 @@ public class QuestManager : IQuestManager
     private readonly IQuestStore _questStore;
     private readonly IQuestRunStore _runStore;
     private readonly IQuestNodeExecutionStore _executionStore;
+    private readonly IQuestAccessRequestStore _accessRequestStore;
     private readonly IQuestDagValidator _dagValidator;
     private readonly IQuestDagExecutabilityValidator _executabilityValidator;
     private readonly IQuestNodeHandlerRegistry _registry;
@@ -63,11 +64,16 @@ public class QuestManager : IQuestManager
         // Optional so the ~10 unit-test fixtures that construct QuestManager with the
         // 10 positional deps keep compiling; DI always supplies the real config in
         // production. Null ⇒ default QuestRunQuotaOptions. See §quest-run-quota.
-        Microsoft.Extensions.Configuration.IConfiguration? configuration = null)
+        Microsoft.Extensions.Configuration.IConfiguration? configuration = null,
+        // Optional (like configuration) so existing positional test fixtures compile.
+        // DI always supplies the real store; the invitation surface faults with a
+        // clear message when it is absent. See §quest-invitations.
+        IQuestAccessRequestStore? accessRequestStore = null)
     {
         _questStore = questStore;
         _runStore = runStore;
         _executionStore = executionStore;
+        _accessRequestStore = accessRequestStore!;
         _dagValidator = dagValidator;
         _executabilityValidator = executabilityValidator;
         _registry = registry;
@@ -118,6 +124,12 @@ public class QuestManager : IQuestManager
             return (new AZOAResult<Quest> { IsError = true, Message = "Quest not found." }, false);
         if (quest.Status != QuestStatus.Active)
             return (new AZOAResult<Quest> { IsError = true, Message = "Quest is not published for execution." }, false);
+
+        // Run-authorization gate (quest-invitations-approval): an InviteOnly quest is
+        // viewable by any non-owner (GetAsync unchanged) but startable/forkable only by
+        // the owner + InvitedAvatarIds. See Managers/AGENTS.md §quest-invitations.
+        if (quest.RunAccess == QuestRunAccess.InviteOnly && !quest.InvitedAvatarIds.Contains(avatarId))
+            return (new AZOAResult<Quest> { IsError = true, Message = "This quest requires an invitation — request access." }, false);
 
         return (questResult, false);
     }
@@ -552,7 +564,9 @@ public class QuestManager : IQuestManager
 
         // final-hardening F4: enforce quest dependencies at run start (fail-closed).
         // Rejected BEFORE any run/exec rows are written — no orphaned run on rejection.
-        var depGate = await EnforceDependenciesAsync(questId, avatarId, request);
+        // Uses the already-authorized quest (startable.Result) so a non-owner
+        // marketplace run isn't rejected by owner-scoped dependency reads.
+        var depGate = await EnforceDependenciesAsync(startable.Result, request);
         if (depGate is not null)
             return depGate;
 
@@ -976,6 +990,22 @@ public class QuestManager : IQuestManager
         // inherits that same quest revision.
         var forkQuotaGate = await EnforceRunQuotaAsync(parent.QuestId, avatarId, isOwner: parent.AvatarId == quest.AvatarId);
         if (forkQuotaGate != null) return forkQuotaGate;
+
+        // Run-authorization gate (quest-invitations-approval): a fork RE-RUNS the
+        // quest's nodes, so it is gated exactly like a fresh start. A non-owner runner
+        // on an InviteOnly quest who is no longer invited cannot fork. (An in-flight run
+        // that has already started is unaffected — only NEW starts/forks are gated;
+        // see Managers/AGENTS.md §quest-invitations.)
+        if (parent.AvatarId != quest.AvatarId
+            && quest.RunAccess == QuestRunAccess.InviteOnly
+            && !quest.InvitedAvatarIds.Contains(parent.AvatarId))
+        {
+            return new AZOAResult<QuestRun>
+            {
+                IsError = true,
+                Message = "This quest requires an invitation — request access."
+            };
+        }
 
         // Create the child run with lineage fields populated.
         var child = new QuestRun
@@ -1574,22 +1604,43 @@ public class QuestManager : IQuestManager
 
     public async Task<AZOAResult<DependencyCheckResult>> CheckDependenciesAsync(Guid questId, Guid avatarId, AZOARequest? request = null)
     {
+        // Public manual-check endpoint: OWNER-scoped (IDOR — a caller may only probe
+        // the dependency state of their OWN quest). The run-start enforcement path
+        // uses CheckDependencySatisfactionAsync directly on an already-authorized quest.
         var questResult = await LoadOwnedQuestAsync(questId, avatarId);
         if (questResult.IsError || questResult.Result == null)
             return new AZOAResult<DependencyCheckResult> { IsError = true, Message = questResult.Message };
 
-        var quest = questResult.Result;
-        var unsatisfied = new List<Guid>();
+        var (check, fault) = await CheckDependencySatisfactionAsync(questResult.Result);
+        if (fault != null)
+            return new AZOAResult<DependencyCheckResult> { IsError = true, Message = $"Dependency check failed (fail-closed): {fault}" };
 
+        return new AZOAResult<DependencyCheckResult> { Result = check, Message = "Success" };
+    }
+
+    /// <summary>
+    /// Computes dependency satisfaction for an ALREADY-AUTHORIZED quest (any Succeeded
+    /// run of each depended-on quest). No ownership scoping — the caller must have
+    /// established run-authorization first (LoadStartableQuestAsync / LoadOwnedQuestAsync).
+    /// Single source of truth shared by the manual check endpoint and the run-start gate.
+    /// </summary>
+    private async Task<(DependencyCheckResult result, string? fault)> CheckDependencySatisfactionAsync(Quest quest)
+    {
+        var unsatisfied = new List<Guid>();
         foreach (var dep in quest.Dependencies)
         {
             var runs = await _runStore.GetByQuestIdAsync(dep.DependsOnQuestId);
+            // Fail closed on a store FAULT: a read error is NOT "unsatisfied" — we
+            // cannot prove satisfaction, so surface it distinctly (the run-start gate
+            // rejects with a fault message rather than a misleading "not satisfied").
+            if (runs.IsError)
+                return (default!, $"dependency read for quest {dep.DependsOnQuestId} failed: {runs.Message}");
             var anySucceeded = runs.Result?.Any(r => r.Status == QuestRunStatus.Succeeded) ?? false;
             if (!anySucceeded)
                 unsatisfied.Add(dep.Id);
         }
 
-        var check = new DependencyCheckResult
+        var result = new DependencyCheckResult
         {
             AllSatisfied = unsatisfied.Count == 0,
             UnsatisfiedDependencyIds = unsatisfied,
@@ -1597,8 +1648,7 @@ public class QuestManager : IQuestManager
                 ? "All dependencies satisfied."
                 : $"{unsatisfied.Count} dependency(ies) not yet satisfied."
         };
-
-        return new AZOAResult<DependencyCheckResult> { Result = check, Message = "Success" };
+        return (result, null);
     }
 
     /// <summary>
@@ -1613,27 +1663,24 @@ public class QuestManager : IQuestManager
     /// a null return means the run may proceed. See <c>Managers/AGENTS.md</c>
     /// §quest-dependency-enforcement.
     /// </summary>
-    private async Task<AZOAResult<QuestRun>?> EnforceDependenciesAsync(Guid questId, Guid avatarId, AZOARequest? request)
+    private async Task<AZOAResult<QuestRun>?> EnforceDependenciesAsync(Quest quest, AZOARequest? request)
     {
-        var depCheck = await CheckDependenciesAsync(questId, avatarId, request);
-        if (depCheck.IsError || depCheck.Result == null)
-        {
-            // A faulted dependency check fails the run closed — we cannot prove the
-            // dependencies are satisfied, so we must not start the run.
-            return new AZOAResult<QuestRun>
-            {
-                IsError = true,
-                Message = $"Dependency check failed; run rejected (fail-closed): {depCheck.Message}"
-            };
-        }
+        // Runs on an ALREADY-AUTHORIZED quest (LoadStartableQuestAsync ran upstream),
+        // so it computes satisfaction directly — NOT via the owner-scoped
+        // CheckDependenciesAsync, which would reject a non-owner marketplace run.
+        var (depCheck, fault) = await CheckDependencySatisfactionAsync(quest);
 
-        if (!depCheck.Result.AllSatisfied)
+        // Fail closed on a store fault (distinct from an unsatisfied dependency).
+        if (fault != null)
+            return new AZOAResult<QuestRun> { IsError = true, Message = $"Dependency check failed; run rejected (fail-closed): {fault}" };
+
+        if (!depCheck.AllSatisfied)
         {
             return new AZOAResult<QuestRun>
             {
                 IsError = true,
-                Message = $"Quest {questId} cannot start: {depCheck.Result.Message} " +
-                          $"Unsatisfied dependency ids: [{string.Join(", ", depCheck.Result.UnsatisfiedDependencyIds)}]. " +
+                Message = $"Quest {quest.Id} cannot start: {depCheck.Message} " +
+                          $"Unsatisfied dependency ids: [{string.Join(", ", depCheck.UnsatisfiedDependencyIds)}]. " +
                           "Each depended-on quest must have at least one Succeeded run first."
             };
         }
@@ -1810,7 +1857,9 @@ public class QuestManager : IQuestManager
         // final-hardening F4: enforce quest dependencies at run start (fail-closed).
         // Rejected BEFORE the run + per-node executions are written and before the entry
         // node is enqueued as a saga step — no orphaned durable run on rejection.
-        var depGate = await EnforceDependenciesAsync(questId, avatarId, request);
+        // Uses the already-authorized quest (startable.Result) so a non-owner
+        // marketplace run isn't rejected by owner-scoped dependency reads.
+        var depGate = await EnforceDependenciesAsync(startable.Result, request);
         if (depGate is not null)
             return depGate;
 
@@ -2046,6 +2095,194 @@ public class QuestManager : IQuestManager
             Result = results,
             Message = $"Swept {results.Count} run(s) awaiting reconciliation."
         };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // INVITATIONS + ACCESS REQUESTS (quest-invitations-approval)
+    // Run-authorization (RunAccess/InvitedAvatarIds) is orthogonal to IsPublic.
+    // State machine, idempotency, and revoked-mid-run semantics live in
+    // Managers/AGENTS.md §quest-invitations.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>Owner sets the run-access mode + optionally seeds the invite list. Owner-only.</summary>
+    public async Task<AZOAResult<Quest>> SetRunAccessAsync(Guid questId, Guid ownerAvatarId, QuestRunAccess runAccess, IEnumerable<Guid>? invitedAvatarIds = null, AZOARequest? request = null)
+    {
+        var questResult = await LoadOwnedQuestAsync(questId, ownerAvatarId);
+        if (questResult.IsError || questResult.Result == null)
+            return questResult;
+
+        var quest = questResult.Result;
+        quest.RunAccess = runAccess;
+        if (invitedAvatarIds != null)
+            // Seed replaces the invite set; owner is always implicitly invited so it is never listed.
+            quest.InvitedAvatarIds = invitedAvatarIds.Where(id => id != ownerAvatarId).Distinct().ToList();
+
+        return await _questStore.UpsertQuestAsync(quest);
+    }
+
+    /// <summary>Owner directly adds an invite (idempotent add). Owner-only.</summary>
+    public async Task<AZOAResult<Quest>> InviteAvatarAsync(Guid questId, Guid ownerAvatarId, Guid targetAvatarId, AZOARequest? request = null)
+    {
+        var questResult = await LoadOwnedQuestAsync(questId, ownerAvatarId);
+        if (questResult.IsError || questResult.Result == null)
+            return questResult;
+
+        var quest = questResult.Result;
+        if (targetAvatarId == ownerAvatarId)
+            return new AZOAResult<Quest> { IsError = true, Message = "Owner is always implicitly invited; no invite needed." };
+
+        if (!quest.InvitedAvatarIds.Contains(targetAvatarId))
+        {
+            quest.InvitedAvatarIds.Add(targetAvatarId);
+            return await _questStore.UpsertQuestAsync(quest);
+        }
+
+        // Idempotent: already invited — no write, return current state.
+        return questResult;
+    }
+
+    /// <summary>Owner removes an invite (no-op when absent). In-flight runs are unaffected. Owner-only.</summary>
+    public async Task<AZOAResult<Quest>> RevokeInviteAsync(Guid questId, Guid ownerAvatarId, Guid targetAvatarId, AZOARequest? request = null)
+    {
+        var questResult = await LoadOwnedQuestAsync(questId, ownerAvatarId);
+        if (questResult.IsError || questResult.Result == null)
+            return questResult;
+
+        var quest = questResult.Result;
+        if (quest.InvitedAvatarIds.Remove(targetAvatarId))
+            return await _questStore.UpsertQuestAsync(quest);
+
+        // Idempotent no-op: not invited — nothing to remove.
+        return questResult;
+    }
+
+    /// <summary>Any viewer (owner||IsPublic) opens a Pending access request; idempotent per (quest, requester). Rejects owner/already-invited.</summary>
+    public async Task<AZOAResult<QuestAccessRequest>> RequestAccessAsync(Guid questId, Guid requesterAvatarId, string? message = null, AZOARequest? request = null)
+    {
+        var questResult = await _questStore.GetQuestAsync(questId);
+        if (questResult.IsError || questResult.Result == null)
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = questResult.Message ?? "Quest not found." };
+
+        var quest = questResult.Result;
+
+        // View gate mirrors GetAsync (owner || IsPublic): a non-viewer cannot even learn the quest exists.
+        var isOwner = quest.AvatarId == requesterAvatarId;
+        if (!isOwner && !quest.IsPublic)
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = "Quest not found." };
+
+        if (isOwner)
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = "You own this quest — no access request needed." };
+        if (quest.RunAccess != QuestRunAccess.InviteOnly)
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = "This quest is open — anyone may run it, no access request needed." };
+        if (quest.InvitedAvatarIds.Contains(requesterAvatarId))
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = "You are already invited — no access request needed." };
+
+        // Idempotency: ≤1 Pending per (quest, requester). A live Pending is returned as-is;
+        // a prior Rejected/Withdrawn does NOT block a fresh Pending. A store FAULT (IsError)
+        // fails CLOSED — never fall through to CreateAsync, which would open a duplicate
+        // Pending (the store returns a non-error null Result for the genuine not-found case).
+        var existing = await _accessRequestStore.GetPendingForQuestAndRequesterAsync(questId, requesterAvatarId);
+        if (existing.IsError)
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = $"Access-request lookup failed; not opening a new request (fail-closed): {existing.Message}" };
+        if (existing.Result != null)
+            return existing;
+
+        var accessRequest = new QuestAccessRequest
+        {
+            Id = Guid.NewGuid(),
+            QuestId = questId,
+            RequesterAvatarId = requesterAvatarId,
+            Status = QuestAccessRequestStatus.Pending,
+            Message = message,
+            CreatedAt = DateTime.UtcNow
+        };
+        return await _accessRequestStore.CreateAsync(accessRequest);
+    }
+
+    /// <summary>Owner approval queue: all requests for a quest, optionally status-filtered. Owner-only.</summary>
+    public async Task<AZOAResult<IEnumerable<QuestAccessRequest>>> ListAccessRequestsAsync(Guid questId, Guid ownerAvatarId, QuestAccessRequestStatus? status = null, AZOARequest? request = null)
+    {
+        var questResult = await LoadOwnedQuestAsync(questId, ownerAvatarId);
+        if (questResult.IsError || questResult.Result == null)
+            return new AZOAResult<IEnumerable<QuestAccessRequest>> { IsError = true, Message = questResult.Message };
+
+        return await _accessRequestStore.GetByQuestAsync(questId, status);
+    }
+
+    /// <summary>Owner approves (appends requester to InvitedAvatarIds) or rejects a Pending request. Scoped by the request's quest owner.</summary>
+    public async Task<AZOAResult<QuestAccessRequest>> DecideAccessRequestAsync(Guid requestId, Guid ownerAvatarId, bool approve, string? reason = null, AZOARequest? request = null)
+    {
+        var reqResult = await _accessRequestStore.GetByIdAsync(requestId);
+        if (reqResult.IsError || reqResult.Result == null)
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = reqResult.Message ?? "Access request not found." };
+
+        var accessRequest = reqResult.Result;
+
+        // IDOR: the caller must own the request's quest.
+        var questResult = await LoadOwnedQuestAsync(accessRequest.QuestId, ownerAvatarId);
+        if (questResult.IsError || questResult.Result == null)
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = questResult.Message };
+
+        // Terminal-state immutability (the store enforces no status-CAS — WE enforce it).
+        if (accessRequest.Status != QuestAccessRequestStatus.Pending)
+            return new AZOAResult<QuestAccessRequest>
+            {
+                IsError = true,
+                Message = $"Cannot decide access request {requestId}: status is {accessRequest.Status} (only Pending requests are decidable)."
+            };
+
+        accessRequest.Status = approve ? QuestAccessRequestStatus.Approved : QuestAccessRequestStatus.Rejected;
+        accessRequest.DecisionReason = reason;
+        accessRequest.DecidedAt = DateTime.UtcNow;
+        accessRequest.DecidedByAvatarId = ownerAvatarId;
+
+        if (approve)
+        {
+            // Approve mints an invitation: append the requester to InvitedAvatarIds.
+            var quest = questResult.Result;
+            if (!quest.InvitedAvatarIds.Contains(accessRequest.RequesterAvatarId))
+            {
+                quest.InvitedAvatarIds.Add(accessRequest.RequesterAvatarId);
+                var upsert = await _questStore.UpsertQuestAsync(quest);
+                if (upsert.IsError)
+                    return new AZOAResult<QuestAccessRequest> { IsError = true, Message = $"Failed to persist invite: {upsert.Message}" };
+            }
+        }
+
+        return await _accessRequestStore.UpdateAsync(accessRequest);
+    }
+
+    /// <summary>Requester withdraws their own Pending request. Scoped by requester identity.</summary>
+    public async Task<AZOAResult<QuestAccessRequest>> WithdrawAccessRequestAsync(Guid requestId, Guid requesterAvatarId, AZOARequest? request = null)
+    {
+        var reqResult = await _accessRequestStore.GetByIdAsync(requestId);
+        if (reqResult.IsError || reqResult.Result == null)
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = reqResult.Message ?? "Access request not found." };
+
+        var accessRequest = reqResult.Result;
+
+        // IDOR: only the requester may withdraw their own request.
+        if (accessRequest.RequesterAvatarId != requesterAvatarId)
+            return new AZOAResult<QuestAccessRequest> { IsError = true, Message = "Access request belongs to a different avatar." };
+
+        if (accessRequest.Status != QuestAccessRequestStatus.Pending)
+            return new AZOAResult<QuestAccessRequest>
+            {
+                IsError = true,
+                Message = $"Cannot withdraw access request {requestId}: status is {accessRequest.Status} (only Pending requests are withdrawable)."
+            };
+
+        accessRequest.Status = QuestAccessRequestStatus.Withdrawn;
+        accessRequest.DecidedAt = DateTime.UtcNow;
+        accessRequest.DecidedByAvatarId = requesterAvatarId;
+
+        return await _accessRequestStore.UpdateAsync(accessRequest);
+    }
+
+    /// <summary>Requester's own outbound requests across any quest, optionally status-filtered.</summary>
+    public async Task<AZOAResult<IEnumerable<QuestAccessRequest>>> ListMyAccessRequestsAsync(Guid requesterAvatarId, QuestAccessRequestStatus? status = null, AZOARequest? request = null)
+    {
+        return await _accessRequestStore.GetByRequesterAsync(requesterAvatarId, status);
     }
 
     /// <summary>

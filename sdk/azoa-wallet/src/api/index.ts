@@ -57,6 +57,14 @@ export type {
   QuestNodeTemplateCreateParams,
   QuestNodeCreateParams,
   QuestEdgeCreateParams,
+  // Quest invitations + request/approval types (quest-invitations-approval)
+  QuestRunAccess,
+  QuestAccessRequestStatus,
+  QuestAccessRequest,
+  SetRunAccessRequest,
+  InviteAvatarRequest,
+  RequestAccessBody,
+  DecideAccessRequestBody,
   // ApiKey types
   ApiKeyCreateParams,
   ApiKeyCreateResult,

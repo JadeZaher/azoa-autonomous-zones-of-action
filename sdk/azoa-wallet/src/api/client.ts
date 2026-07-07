@@ -580,6 +580,66 @@ export interface QuestRunResult {
   originAvatarId?: string;
 }
 
+// ─── Quest invitations + request/approval (quest-invitations-approval) ───
+
+/**
+ * Run-authorization mode for a quest, orthogonal to `isPublic` discoverability
+ * (mirrors C# `Models/Quest/QuestRunAccess`). `Open` = anyone who can view may
+ * run/fork (today's default); `InviteOnly` = only owner + invited avatars may
+ * run/fork, though the quest stays viewable.
+ */
+export type QuestRunAccess = "Open" | "InviteOnly";
+
+/**
+ * Lifecycle status of a {@link QuestAccessRequest} (mirrors C#
+ * `Models/Quest/QuestAccessRequestStatus`). Terminal states
+ * (`Approved | Rejected | Withdrawn`) are immutable; a re-request after a
+ * terminal state opens a fresh `Pending`.
+ */
+export type QuestAccessRequestStatus = "Pending" | "Approved" | "Rejected" | "Withdrawn";
+
+/**
+ * A self-service request by a non-invited avatar to run an `InviteOnly` quest
+ * (mirrors .NET `QuestAccessRequest`). Owner approval appends the requester to
+ * the quest's invited set; reject/withdraw closes it.
+ */
+export interface QuestAccessRequest {
+  id: string;
+  questId: string;
+  requesterAvatarId: string;
+  status: QuestAccessRequestStatus;
+  message?: string;
+  decisionReason?: string;
+  createdAt: string;
+  decidedAt?: string;
+  decidedByAvatarId?: string;
+}
+
+/** Request body for {@link AzoaApiClient.setQuestRunAccess}. */
+export interface SetRunAccessRequest {
+  runAccess: QuestRunAccess;
+  /** Optionally seed the invite list when switching to `InviteOnly`. */
+  invitedAvatarIds?: string[];
+}
+
+/** Request body for {@link AzoaApiClient.inviteAvatar}. */
+export interface InviteAvatarRequest {
+  avatarId: string;
+}
+
+/** Request body for {@link AzoaApiClient.requestQuestAccess}. */
+export interface RequestAccessBody {
+  /** Optional note from the requester to the owner. */
+  message?: string;
+}
+
+/** Request body for {@link AzoaApiClient.decideAccessRequest}. */
+export interface DecideAccessRequestBody {
+  approve: boolean;
+  /** Optional reason recorded on the decision (approve or reject). */
+  reason?: string;
+}
+
 /** One registered entry in the opt-in Holon AssetType registry (final-hardening F5). */
 export interface HolonTypeResult {
   id: string;
@@ -1491,6 +1551,76 @@ export class AzoaApiClient {
     assertUuid(questId, "questId");
     assertUuid(nodeId, "nodeId");
     return this.request("POST", `/api/quest/${questId}/nodes/${nodeId}/execute`);
+  }
+
+  // ─── Quest Invitations + Request/Approval (quest-invitations-approval) ───
+
+  /**
+   * Owner-only: set the run-authorization mode (`Open` ↔ `InviteOnly`) and
+   * optionally seed the invite list. Orthogonal to marketplace visibility
+   * ({@link QuestResult.isPublic}) — an `InviteOnly` quest stays viewable but
+   * runs/forks only for owner + invited avatars.
+   */
+  async setQuestRunAccess(questId: string, body: SetRunAccessRequest): Promise<Result<QuestResult, SdkError>> {
+    assertUuid(questId, "questId");
+    if (body.invitedAvatarIds) {
+      for (const id of body.invitedAvatarIds) assertUuid(id, "invitedAvatarId");
+    }
+    return this.request("PUT", API_PATHS.QUEST_RUN_ACCESS(questId), body);
+  }
+
+  /** Owner-only: directly invite an avatar to run an `InviteOnly` quest (no request needed). */
+  async inviteAvatar(questId: string, avatarId: string): Promise<Result<QuestResult, SdkError>> {
+    assertUuid(questId, "questId");
+    assertUuid(avatarId, "avatarId");
+    return this.request("POST", API_PATHS.QUEST_INVITE(questId), { avatarId } as InviteAvatarRequest);
+  }
+
+  /** Owner-only: revoke an avatar's invitation. In-flight runs are unaffected; new starts are gated. */
+  async revokeInvite(questId: string, avatarId: string): Promise<Result<QuestResult, SdkError>> {
+    assertUuid(questId, "questId");
+    assertUuid(avatarId, "avatarId");
+    return this.request("DELETE", API_PATHS.QUEST_INVITE_REVOKE(questId, avatarId));
+  }
+
+  /**
+   * Open (or return the existing) Pending access request for an `InviteOnly`
+   * quest the caller can view. Idempotent per (quest, requester): re-requesting
+   * while Pending returns the same request; re-requesting after a terminal state
+   * opens a fresh Pending. Rejected server-side for owner / already-invited.
+   */
+  async requestQuestAccess(questId: string, message?: string): Promise<Result<QuestAccessRequest, SdkError>> {
+    assertUuid(questId, "questId");
+    return this.request("POST", API_PATHS.QUEST_ACCESS_REQUESTS(questId), { message } as RequestAccessBody);
+  }
+
+  /** Owner-only: list the approval queue for a quest, optionally filtered by status. */
+  async listAccessRequests(questId: string, status?: QuestAccessRequestStatus): Promise<Result<QuestAccessRequest[], SdkError>> {
+    assertUuid(questId, "questId");
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    return this.request("GET", `${API_PATHS.QUEST_ACCESS_REQUESTS(questId)}${query}`);
+  }
+
+  /**
+   * Owner-only: approve (append requester to the invited set) or reject a
+   * Pending request. Scoped by the request's quest owner; terminal requests are
+   * immutable.
+   */
+  async decideAccessRequest(requestId: string, approve: boolean, reason?: string): Promise<Result<QuestAccessRequest, SdkError>> {
+    assertUuid(requestId, "requestId");
+    return this.request("POST", API_PATHS.QUEST_ACCESS_REQUEST_DECISION(requestId), { approve, reason } as DecideAccessRequestBody);
+  }
+
+  /** Requester-only: withdraw the caller's own Pending request. */
+  async withdrawAccessRequest(requestId: string): Promise<Result<QuestAccessRequest, SdkError>> {
+    assertUuid(requestId, "requestId");
+    return this.request("POST", API_PATHS.QUEST_ACCESS_REQUEST_WITHDRAW(requestId));
+  }
+
+  /** Requester-only: list the caller's own outbound access requests, optionally filtered by status. */
+  async listMyAccessRequests(status?: QuestAccessRequestStatus): Promise<Result<QuestAccessRequest[], SdkError>> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    return this.request("GET", `${API_PATHS.QUEST_ACCESS_REQUESTS_MINE}${query}`);
   }
 
   // ─── Quest Templates ───

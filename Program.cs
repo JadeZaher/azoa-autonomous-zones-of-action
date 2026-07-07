@@ -505,6 +505,10 @@ builder.Services.AddScoped<IQuestNodeExecutionStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealQuestNodeExecutionStore>();
 // </quest-temporal-fork-model>
 
+// quest-invitations-approval: request/approval flow store for invite-gated quests.
+builder.Services.AddScoped<IQuestAccessRequestStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealQuestAccessRequestStore>();
+
 // ─── user-self-sovereignty: consent + wallet-auth + webhook stores ───────────
 // user-sovereign-identity: wallet-challenge auth nonce + tenant claim-invite token.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthChallengeStore,

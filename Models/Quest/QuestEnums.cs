@@ -130,3 +130,21 @@ public enum QuestDependencyType
     Required,
     Optional
 }
+
+/// <summary>Run-authorization dimension, orthogonal to Quest.IsPublic (discoverability). See Persistence/SurrealDb/Models/AGENTS.md §quest-access-request.</summary>
+public enum QuestRunAccess
+{
+    /// <summary>Anyone who can view the quest may run/fork it (today's behavior).</summary>
+    Open,
+    /// <summary>Only the owner + Quest.InvitedAvatarIds may run/fork it.</summary>
+    InviteOnly
+}
+
+/// <summary>Lifecycle of a QuestAccessRequest. Approved/Rejected/Withdrawn are terminal + immutable. See Persistence/SurrealDb/Models/AGENTS.md §quest-access-request.</summary>
+public enum QuestAccessRequestStatus
+{
+    Pending,
+    Approved,
+    Rejected,
+    Withdrawn
+}

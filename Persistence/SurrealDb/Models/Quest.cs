@@ -4,6 +4,7 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
@@ -77,6 +78,15 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Content hash of the node/edge graph as of the last publish (bait-and-switch guard). Null while never published; recomputed on every PublishAsync. Stamped onto each quest_run at start so a run is bound to the exact graph revision the runner saw. See Managers/AGENTS.md §published-version-hash.")]
         public string? PublishedVersionHash { get; set; }
 
+        [FieldGroup("Run-authorization dimension, orthogonal to is_public (discoverability). Open = anyone who can view may run; InviteOnly = owner + invited_avatar_ids only. See Persistence/SurrealDb/Models/AGENTS.md §quest-access-request.")]
+        [Inside("Open", "InviteOnly")]
+        [Default("\"Open\"")]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public QuestRunAccessKind RunAccess { get; set; }
+
+        [FieldGroup("Approved invite set for InviteOnly quests (avatar-id hex); owner is always implicitly invited.")]
+        public IReadOnlyList<string>? InvitedAvatarIds { get; set; }
+
         [FieldGroup("Definition birthdate -- STAYS on the definition, not a runtime artifact")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }
@@ -90,6 +100,13 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             Completed,
             Failed,
             Archived
+        }
+
+        /// <summary>Mirrors the domain QuestRunAccess enum. [Inside] values must stay in sync with QuestRunAccess in Models/Quest/QuestEnums.cs.</summary>
+        public enum QuestRunAccessKind
+        {
+            Open,
+            InviteOnly
         }
     }
 }

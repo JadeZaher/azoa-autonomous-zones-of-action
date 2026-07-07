@@ -144,6 +144,34 @@ New entity `QuestAccessRequest`:
   invite-gate, the request state machine (idempotency + terminal immutability), and
   IDOR scoping. Goldens regenerated, not hand-edited.
 
+## Review follow-ups (deferred — need a status-CAS store primitive)
+
+Surfaced by the fable code-review of the shipped implementation; both are
+concurrency/consistency edges that want a compare-and-set store path (mirror the
+existing `Core/Surreal/SurrealTransientConflict.cs` pattern), so deferred to
+`ops-postlaunch-hardening` rather than bolted on here:
+
+- **Approve is not atomic across two stores.** `DecideAccessRequestAsync` appends the
+  requester to `Quest.InvitedAvatarIds` (quest upsert) BEFORE flipping the request to
+  `Approved` (request update). A failure of the second write leaves the avatar invited
+  with a still-`Pending` request. Fix: write the request status first, or a
+  compensating/atomic path.
+- **Terminal-state guard is read-check-write, not CAS.** `Decide`/`Withdraw` load the
+  request, assert `Status == Pending`, then update — with no status-CAS and no version
+  on `QuestAccessRequest`, two concurrent Decide+Withdraw calls can both pass the guard.
+  Fix: a conditional UPDATE (`WHERE status = 'Pending'`) + retry on the documented
+  3.x txn-conflict.
+- **≤1-Pending relies on manager read-then-create, not a DB constraint.** Concurrent
+  `RequestAccess` calls can still race two Pending rows in. A unique index or conditional
+  CREATE on (quest_id, requester_avatar_id, status='Pending') would close it at the store.
+  (The store-fault fall-through — a fault opening a duplicate — WAS fixed: the pending
+  lookup now returns a non-error null for genuine not-found, and the manager fails closed
+  on a real fault.)
+
+FIXED in the shipped implementation (from the same review): RequestAccess now rejects on
+an Open quest ("no request needed"); the run-start dependency check fails closed on a
+store fault with a distinct message (was masking faults as "unsatisfied").
+
 ## Out of scope (follow-ups)
 - Notifications/email on request/approval (event only; delivery later).
 - Bulk invite / invite-by-link tokens.

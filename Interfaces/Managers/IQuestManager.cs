@@ -141,4 +141,33 @@ public interface IQuestManager
     /// context) — the per-run re-probe is the same chain-truth logic as
     /// <see cref="ReconcileRunAsync"/>. Returns one result per run swept.</summary>
     Task<AZOAResult<IEnumerable<QuestReconciliationResult>>> SweepReconciliationAsync(AZOARequest? request = null);
+
+    // ── Invitations + access requests (quest-invitations-approval) ──
+    // Run-authorization (RunAccess/InvitedAvatarIds) is orthogonal to IsPublic
+    // (discoverability). All ops are IDOR-scoped: owner ops via LoadOwnedQuest,
+    // requester ops by requester identity. See Managers/AGENTS.md §quest-invitations.
+
+    /// <summary>Owner sets the run-access mode + optionally seeds the invite list. Owner-only.</summary>
+    Task<AZOAResult<Quest>> SetRunAccessAsync(Guid questId, Guid ownerAvatarId, QuestRunAccess runAccess, IEnumerable<Guid>? invitedAvatarIds = null, AZOARequest? request = null);
+
+    /// <summary>Owner directly adds an invite (idempotent add). Owner-only.</summary>
+    Task<AZOAResult<Quest>> InviteAvatarAsync(Guid questId, Guid ownerAvatarId, Guid targetAvatarId, AZOARequest? request = null);
+
+    /// <summary>Owner removes an invite (no-op when absent). In-flight runs are unaffected. Owner-only.</summary>
+    Task<AZOAResult<Quest>> RevokeInviteAsync(Guid questId, Guid ownerAvatarId, Guid targetAvatarId, AZOARequest? request = null);
+
+    /// <summary>Any viewer (owner||IsPublic) opens a Pending access request. Idempotent per (quest, requester): a live Pending is returned; a prior terminal request does not block a fresh one. Rejects owner/already-invited.</summary>
+    Task<AZOAResult<QuestAccessRequest>> RequestAccessAsync(Guid questId, Guid requesterAvatarId, string? message = null, AZOARequest? request = null);
+
+    /// <summary>Owner approval queue: all requests for a quest, optionally status-filtered. Owner-only.</summary>
+    Task<AZOAResult<IEnumerable<QuestAccessRequest>>> ListAccessRequestsAsync(Guid questId, Guid ownerAvatarId, QuestAccessRequestStatus? status = null, AZOARequest? request = null);
+
+    /// <summary>Owner approves (appends requester to InvitedAvatarIds) or rejects a Pending request. Scoped by the request's quest owner. Terminal-state transitions rejected.</summary>
+    Task<AZOAResult<QuestAccessRequest>> DecideAccessRequestAsync(Guid requestId, Guid ownerAvatarId, bool approve, string? reason = null, AZOARequest? request = null);
+
+    /// <summary>Requester withdraws their own Pending request. Scoped by requester identity. Terminal-state transitions rejected.</summary>
+    Task<AZOAResult<QuestAccessRequest>> WithdrawAccessRequestAsync(Guid requestId, Guid requesterAvatarId, AZOARequest? request = null);
+
+    /// <summary>Requester's own outbound requests across any quest, optionally status-filtered.</summary>
+    Task<AZOAResult<IEnumerable<QuestAccessRequest>>> ListMyAccessRequestsAsync(Guid requesterAvatarId, QuestAccessRequestStatus? status = null, AZOARequest? request = null);
 }

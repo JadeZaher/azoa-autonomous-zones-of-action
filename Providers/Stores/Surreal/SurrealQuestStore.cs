@@ -586,6 +586,10 @@ public sealed class SurrealQuestStore : IQuestStore
         IsPublic     = q.IsPublic,
         OriginAvatarId = q.OriginAvatarId.HasValue ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(q.OriginAvatarId.Value)) : null,
         PublishedVersionHash = q.PublishedVersionHash,
+        RunAccess    = q.RunAccess.ToString(),
+        InvitedAvatarIds = q.InvitedAvatarIds
+            .Select(a => SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(a))!)
+            .ToList(),
         CreatedDate  = ToUtcOffset(q.CreatedDate),
     };
 
@@ -603,6 +607,11 @@ public sealed class SurrealQuestStore : IQuestStore
         IsPublic     = p.IsPublic,
         OriginAvatarId = string.IsNullOrEmpty(p.OriginAvatarId) ? null : FromSurrealId(SurrealLink.FromLink(p.OriginAvatarId)!),
         PublishedVersionHash = string.IsNullOrEmpty(p.PublishedVersionHash) ? null : p.PublishedVersionHash,
+        RunAccess    = Enum.TryParse<QuestRunAccess>(p.RunAccess, out var ra) ? ra : QuestRunAccess.Open,
+        InvitedAvatarIds = (p.InvitedAvatarIds ?? new List<string>())
+            .Select(a => FromSurrealId(SurrealLink.FromLink(a)!))
+            .Where(g => g != Guid.Empty)
+            .ToList(),
         CreatedDate  = p.CreatedDate.UtcDateTime,
         Nodes        = new List<QuestNode>(),
         Edges        = new List<QuestEdge>(),
@@ -866,6 +875,8 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("is_public")]       public bool IsPublic { get; set; }
         [JsonPropertyName("origin_avatar_id")] public string? OriginAvatarId { get; set; }
         [JsonPropertyName("published_version_hash")] public string? PublishedVersionHash { get; set; }
+        [JsonPropertyName("run_access")]      public string? RunAccess { get; set; }
+        [JsonPropertyName("invited_avatar_ids")] public List<string>? InvitedAvatarIds { get; set; }
         [JsonPropertyName("created_date")]    public DateTimeOffset CreatedDate { get; set; }
     }
 

@@ -49,4 +49,10 @@ public class Quest
 
     /// <summary>Content hash of the node/edge graph as of the last publish (bait-and-switch guard). Null while never published; recomputed on every PublishAsync. See Managers/AGENTS.md §published-version-hash.</summary>
     public string? PublishedVersionHash { get; set; }
+
+    /// <summary>Run-authorization dimension, orthogonal to IsPublic (discoverability). Open = anyone who can view may run; InviteOnly = owner + InvitedAvatarIds only. See Persistence/SurrealDb/Models/AGENTS.md §quest-access-request.</summary>
+    public QuestRunAccess RunAccess { get; set; } = QuestRunAccess.Open;
+
+    /// <summary>Approved invite set for InviteOnly quests; owner is always implicitly invited.</summary>
+    public List<Guid> InvitedAvatarIds { get; set; } = new();
 }

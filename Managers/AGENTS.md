@@ -157,12 +157,20 @@ registry ⇒ validation skipped entirely (pure free-string behaviour).
 ## §quest-dependency-enforcement
 
 **final-hardening F4 — dependencies are ENFORCED at run start (fail-closed).**
-`QuestManager.CheckDependenciesAsync` (the manual check endpoint) is unchanged and stays
-the single source of truth for what "satisfied" means: each `QuestDependency` is
-satisfied iff the depended-on quest has ≥1 `Succeeded` run. `EnforceDependenciesAsync`
-wraps it and is called on BOTH run-start paths — `ExecuteAsync` (legacy) and
-`StartWorkflowRunAsync` (durable) — AFTER DAG validation and BEFORE any run/exec rows are
-written, so an unsatisfied dependency rejects the run cleanly with no orphaned run.
+`QuestManager.CheckDependencySatisfactionAsync(quest)` is the single source of truth for
+what "satisfied" means: each `QuestDependency` is satisfied iff the depended-on quest has
+≥1 `Succeeded` run. It takes an ALREADY-AUTHORIZED quest and does NO ownership scoping.
+Two callers:
+- `CheckDependenciesAsync(questId, avatarId)` — the public manual-check endpoint —
+  OWNER-scopes first (`LoadOwnedQuestAsync`, IDOR) then delegates.
+- `EnforceDependenciesAsync(quest, request)` — the run-start gate — passes the quest
+  already authorized by `LoadStartableQuestAsync`, so a NON-OWNER marketplace run is not
+  rejected. **Bug fixed (quest-invitations-approval):** the gate previously routed through
+  the owner-scoped `CheckDependenciesAsync`, so ANY non-owner run of a public quest failed
+  with "Quest is owned by a different avatar" (fail-closed) — it broke marketplace runs, not
+  just invite-gated ones. Called on BOTH run-start paths (`ExecuteAsync` legacy +
+  `StartWorkflowRunAsync` durable) AFTER DAG validation and BEFORE any run/exec rows are
+  written, so an unsatisfied dependency rejects cleanly with no orphaned run.
 
 - **Fail-closed.** A faulted dependency check (not just an unsatisfied one) also rejects
   the run — we must not start when we cannot prove the dependencies hold.
@@ -318,3 +326,58 @@ run can be replayed against the exact bytes) is a follow-up; this ships the hash
 run-stamping + surfacing, which makes tampering DETECTABLE and binds runs — the
 correctness floor. Recomputation on republish is intentional (the new hash IS the new
 version identity).
+
+## §quest-invitations — invite-gated quests + request/approve flow
+
+*Track: quest-invitations-approval.* Adds a **run-authorization** dimension
+(`Quest.RunAccess`) orthogonal to `IsPublic` (discoverability). `Open` = today's
+behaviour (anyone who can view may run/fork). `InviteOnly` = only the owner +
+`Quest.InvitedAvatarIds` may run/fork; the quest stays fully **viewable** by any
+non-owner (marketplace + node graph + economic preview) — invite gating restricts
+*running*, never *viewing*. `GetAsync` is unchanged (`owner || IsPublic`).
+
+### The single run-start chokepoint
+`LoadStartableQuestAsync` gates BOTH `ExecuteAsync` and `StartWorkflowRunAsync`. After
+the `IsPublic` + `Active` checks it adds: non-owner + `RunAccess == InviteOnly` +
+requester ∉ `InvitedAvatarIds` → reject "This quest requires an invitation — request
+access." The owner path (early return) is untouched — an owner always runs their own
+quest regardless of `RunAccess`.
+
+`ForkAsync` re-runs the quest's nodes, so it carries the SAME gate (checked on the
+RUN's avatar, `parent.AvatarId`, not the caller) alongside the fork run-quota gate.
+
+**Revoked-mid-run semantics (decided):** the gate fires only on NEW starts/forks. An
+in-flight run whose avatar lost their invitation is *not* torn down — it may finish and
+even fork from its still-Running state, because the fork gate reads the live
+`InvitedAvatarIds` but the parent run was already authorized at start. Revocation blocks
+*future* starts, not the current run. (If a harder "revoke kills in-flight" is ever
+needed, gate the per-node step handler too — deliberately out of scope here.)
+
+### Request/approval state machine (`QuestAccessRequest`)
+`Pending → Approved` (owner; appends `RequesterAvatarId` to `InvitedAvatarIds`),
+`Pending → Rejected` (owner), `Pending → Withdrawn` (requester). Approved/Rejected/
+Withdrawn are **terminal + immutable** — the store has NO status-CAS, so the manager
+enforces `Status == Pending` before every transition and rejects a terminal→* move.
+
+**Idempotency (≤1 Pending per (quest, requester)):** `RequestAccessAsync` first calls
+`GetPendingForQuestAndRequesterAsync`; a live Pending is returned as-is (idempotent), so
+a double-submit never opens two rows. A prior Rejected/Withdrawn does NOT block — a fresh
+Pending opens. Owner-requesting or already-invited → rejected at the manager with a clear
+message (no request needed).
+
+### IDOR scoping
+- Owner ops (`SetRunAccess`, `Invite`, `RevokeInvite`, `ListAccessRequests`) go through
+  `LoadOwnedQuestAsync` — a non-owner gets the owner-mismatch rejection.
+- `DecideAccessRequestAsync` loads the request, then `LoadOwnedQuestAsync` on the
+  request's quest — a non-owner of THAT quest cannot decide it (cross-quest IDOR closed).
+- `WithdrawAccessRequestAsync` verifies `request.RequesterAvatarId == caller` — one
+  requester cannot withdraw another's request.
+- Controller reads the caller from the JWT (`GetAvatarIdFromClaims`); any body-supplied
+  avatar is ignored (`Invite` body carries the *target*, not the actor).
+
+Owner is always implicitly invited — never stored in `InvitedAvatarIds` (`SetRunAccess`
+seed + `InviteAvatar` filter the owner out). Invite add/revoke are idempotent (add skips
+a duplicate write; revoke no-ops when absent).
+
+### DI owed
+`Program.cs` must register the store: `builder.Services.AddScoped<IQuestAccessRequestStore, SurrealQuestAccessRequestStore>();` (the concrete store is owned by the persistence worker). `QuestManager` takes it as an OPTIONAL trailing ctor param (like `IConfiguration`) so the positional unit-test fixtures keep compiling; DI always supplies the real store.

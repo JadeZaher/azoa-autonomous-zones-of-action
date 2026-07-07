@@ -19,6 +19,11 @@ import { DagFlow } from '@/components/quest-builder/dag-flow'
 import { QuestCanvas, type BuiltGraph, type NodeTemplateMeta } from '@/components/quest-builder/quest-canvas'
 import { NodeTemplateCreator } from '@/components/quest-builder/node-template-creator'
 import { RunPanel } from '@/components/quest-builder/run-panel'
+import { OwnerAccessControls } from '@/components/quest-access/owner-access-controls'
+import { MarketplaceAccessAction } from '@/components/quest-access/marketplace-access-action'
+import { MyRequestsPanel } from '@/components/quest-access/my-requests-panel'
+import { RunAccessBadge } from '@/components/quest-access/access-badge'
+import type { QuestRunAccess } from 'azoa-sdk'
 
 // ─── Types ───
 
@@ -29,6 +34,8 @@ interface Quest {
   status: string
   avatarId: string
   isPublic: boolean
+  runAccess?: QuestRunAccess
+  invitedAvatarIds?: string[]
   originAvatarId?: string
   nodes: Array<{ id: string; name: string; nodeType: string; state: string; executionOrder: number; isEntry: boolean; isTerminal: boolean; output?: string; error?: string }>
   edges: Array<{ id: string; sourceNodeId: string; targetNodeId: string; edgeType: string; condition?: string }>
@@ -212,6 +219,7 @@ function QuestList() {
                 <span className="hidden text-xs text-muted-foreground sm:inline">
                   {q.nodes?.length ?? 0} nodes · {q.edges?.length ?? 0} edges
                 </span>
+                {q.runAccess === 'InviteOnly' && <RunAccessBadge runAccess={q.runAccess} />}
                 {statusBadge(q.status)}
               </button>
 
@@ -267,6 +275,14 @@ function QuestList() {
                           />
                           Publish to marketplace (let other avatars start this quest)
                         </label>
+                        <Separator />
+                        {/* ─── Run-access: Open ↔ InviteOnly + invites + approval queue ─── */}
+                        <OwnerAccessControls
+                          questId={selected.id}
+                          runAccess={selected.runAccess}
+                          invitedAvatarIds={selected.invitedAvatarIds ?? []}
+                          onChanged={() => loadQuest(selected.id)}
+                        />
                         <Separator />
                         {/* ─── Lifecycle actions (G1) ─── */}
                         <div className="flex flex-wrap gap-2">
@@ -754,7 +770,10 @@ function StartPublicQuest() {
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium">{q.name}</p>
-                {statusBadge(q.status)}
+                <div className="flex shrink-0 items-center gap-1">
+                  <RunAccessBadge runAccess={q.runAccess} />
+                  {statusBadge(q.status)}
+                </div>
               </div>
               {q.description && (
                 <p className="line-clamp-2 text-xs text-muted-foreground">{q.description}</p>
@@ -804,9 +823,15 @@ function StartPublicQuest() {
               You own this quest — start it from the <strong>My Quests</strong> tab instead.
             </p>
           ) : quest.isPublic && quest.status === 'Active' ? (
-            <Button size="sm" disabled={starting} onClick={handleStart}>
-              {starting ? 'Starting...' : 'Start this quest'}
-            </Button>
+            <MarketplaceAccessAction
+              quest={quest}
+              avatarId={avatarId}
+              renderRunAction={() => (
+                <Button size="sm" disabled={starting} onClick={handleStart}>
+                  {starting ? 'Starting...' : 'Start this quest'}
+                </Button>
+              )}
+            />
           ) : (
             <p className="text-xs text-muted-foreground">
               This quest isn't published for execution yet.
@@ -841,6 +866,7 @@ export default function QuestsPage() {
     { id: 'quests', label: 'My Quests' },
     { id: 'create', label: 'Builder' },
     { id: 'start-public', label: 'Start a Quest' },
+    { id: 'my-requests', label: 'My Requests' },
     { id: 'templates', label: 'Quest Templates' },
     { id: 'node-templates', label: 'Node Templates' },
   ] as const
@@ -878,6 +904,7 @@ export default function QuestsPage() {
         {tab === 'quests' && <QuestList key={refreshKey} />}
         {tab === 'create' && <QuestBuilder onCreated={onQuestCreated} />}
         {tab === 'start-public' && <StartPublicQuest />}
+        {tab === 'my-requests' && <MyRequestsPanel />}
         {tab === 'templates' && <QuestTemplates />}
         {tab === 'node-templates' && <NodeTemplates />}
       </div>

@@ -77,6 +77,14 @@ export type {
   NftHolding,
   // Quest + Holon AssetType registry (final-hardening Phase C)
   QuestResult,
+  // Quest invitations + request/approval (quest-invitations-approval)
+  QuestRunAccess,
+  QuestAccessRequestStatus,
+  QuestAccessRequest,
+  SetRunAccessRequest,
+  InviteAvatarRequest,
+  RequestAccessBody,
+  DecideAccessRequestBody,
   HolonTypeResult,
   HolonTypeRegisterParams,
   // ApiKey scope discovery (dapp-developer-experience audit)
