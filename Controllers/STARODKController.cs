@@ -24,7 +24,9 @@ public class STARODKController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AZOAResult<ISTARODK>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _manager.GetAsync(id, request);
+        // Owner-or-public read scope: a non-owner cannot read another tenant's private
+        // STAR ODK by id (manager returns "not found" rather than confirming it).
+        var result = await _manager.GetAsync(id, GetAvatarIdFromClaims(), request);
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
@@ -32,7 +34,7 @@ public class STARODKController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AZOAResult<IEnumerable<ISTARODK>>>> GetAll([FromQuery] AZOARequest? request)
     {
-        var result = await _manager.GetAllAsync(request);
+        var result = await _manager.GetAllAsync(GetAvatarIdFromClaims(), request);
         return Ok(result);
     }
 

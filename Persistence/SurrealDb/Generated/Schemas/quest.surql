@@ -53,6 +53,9 @@ DEFINE FIELD IF NOT EXISTS is_public ON TABLE quest TYPE bool
 -- Denormalised origin/creator avatar when this quest is a marketplace copy (null for first-party quests). Provenance back to the quest this was cloned/instantiated from.
 DEFINE FIELD IF NOT EXISTS origin_avatar_id ON TABLE quest TYPE option<record<avatar>>;
 
+-- Content hash of the node/edge graph as of the last publish (bait-and-switch guard). Null while never published; recomputed on every PublishAsync. Stamped onto each quest_run at start so a run is bound to the exact graph revision the runner saw. See Managers/AGENTS.md §published-version-hash.
+DEFINE FIELD IF NOT EXISTS published_version_hash ON TABLE quest TYPE option<string>;
+
 -- Definition birthdate -- STAYS on the definition, not a runtime artifact
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE quest TYPE datetime
     READONLY;

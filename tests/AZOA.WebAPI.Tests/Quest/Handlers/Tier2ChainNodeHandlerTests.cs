@@ -217,19 +217,43 @@ public class Tier2ChainNodeHandlerTests
     {
         var runAvatar = Guid.NewGuid();
         var nftId = Guid.NewGuid();
+        var debitWalletId = Guid.NewGuid();
         var mgr = new Mock<INftManager>();
-        mgr.Setup(m => m.GetAsync(nftId, It.IsAny<AZOARequest?>()))
+        mgr.Setup(m => m.GetAsync(nftId, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
            .ReturnsAsync(new AZOAResult<INft> { Result = new Holon { Id = nftId, AssetType = "NFT" } });
         mgr.Setup(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), runAvatar, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
            .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
+        // Drain-vector guard: a Refund may ONLY reverse a REAL succeeded upstream
+        // Transfer of the same NftId in this run. Build that upstream Transfer node +
+        // a Succeeded execution and thread it through UpstreamExecutions.
+        var transferCfg = new TransferNodeConfig
+        {
+            NftId = nftId,
+            Request = new NftTransferRequest { WalletId = debitWalletId, TargetAvatarId = Guid.NewGuid() }
+        };
+        var transferNode = NodeWith(QuestNodeType.Transfer, JsonSerializer.Serialize(transferCfg));
+        var refundCfg = new RefundNodeConfig { NftId = nftId, Request = new NftTransferRequest { TargetAvatarId = Guid.NewGuid() } };
+        var refundNode = NodeWith(QuestNodeType.Refund, JsonSerializer.Serialize(refundCfg));
+
+        var quest = new QuestEntity { Id = Guid.NewGuid(), AvatarId = runAvatar, Nodes = { transferNode, refundNode } };
+        var upstream = new Dictionary<Guid, QuestNodeExecution>
+        {
+            [transferNode.Id] = new QuestNodeExecution { State = QuestNodeState.Succeeded }
+        };
+        var ctx = new QuestNodeExecutionContext(
+            Guid.NewGuid(), refundNode.Id, quest, actingAvatarId: runAvatar, upstreamExecutions: upstream);
+
         var handler = new RefundNodeHandler(mgr.Object);
-        var cfg = new RefundNodeConfig { NftId = nftId, Request = new NftTransferRequest { TargetAvatarId = Guid.NewGuid() } };
-        var node = NodeWith(QuestNodeType.Refund, JsonSerializer.Serialize(cfg));
-        var result = await handler.HandleAsync(CtxFor(node, runAvatar));
+        var result = await handler.HandleAsync(ctx);
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), runAvatar, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Once);
+        // Reversal is DERIVED from the debit: recipient forced to the run actor,
+        // wallet reused from the upstream Transfer — never cfg.Request's direction.
+        mgr.Verify(m => m.TransferAsync(
+            nftId,
+            It.Is<NftTransferRequest>(r => r.TargetAvatarId == runAvatar && r.WalletId == debitWalletId),
+            runAvatar, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Once);
     }
 
     [Fact]
@@ -237,7 +261,7 @@ public class Tier2ChainNodeHandlerTests
     {
         var nftId = Guid.NewGuid();
         var mgr = new Mock<INftManager>();
-        mgr.Setup(m => m.GetAsync(nftId, It.IsAny<AZOARequest?>()))
+        mgr.Setup(m => m.GetAsync(nftId, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
            .ReturnsAsync(new AZOAResult<INft>
            {
                Result = new Holon

@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace AZOA.WebAPI.Core;
 
 /// <summary>
@@ -179,6 +181,30 @@ public static class AzoaScopes
     /// </summary>
     public static bool IsIssuableByAvatar(string? scope)
         => !string.IsNullOrWhiteSpace(scope) && SelfIssuableScopes.Contains(scope);
+
+    /// <summary>Human-readable one-liner per self-issuable scope, for the key-issuance discovery surface.</summary>
+    private static readonly System.Collections.Generic.IReadOnlyDictionary<string, string> ScopeDescriptions =
+        new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [DappDevelop]     = "Author/edit holons, quests, and dApp-series (the dApp-developer write surface).",
+            [WalletManage]    = "Create and manage wallets.",
+            [NftMint]         = "Mint, transfer, and burn NFTs.",
+            [QuestExecute]    = "Execute quests (non-value participation).",
+            [SwapSign]        = "Sign a token swap with the avatar's key.",
+            [TransferSign]    = "Sign a value transfer with the avatar's key.",
+            [GrantSign]       = "Sign a grant/mint-to-actor.",
+            [TokenCreateSign] = "Sign a fungible-token (ASA) create.",
+        };
+
+    /// <summary>
+    /// The self-issuable scopes paired with a human description — the source of truth for
+    /// the <c>GET /api/apikey/scopes</c> discovery endpoint. Ordered by
+    /// <see cref="SelfIssuableScopes"/> insertion so the UI renders them stably.
+    /// </summary>
+    public static System.Collections.Generic.IReadOnlyList<(string Scope, string Description)> IssuableScopeCatalog()
+        => SelfIssuableScopes
+            .Select(s => (Scope: s, Description: ScopeDescriptions.TryGetValue(s, out var d) ? d : s))
+            .ToList();
 
     /// <summary>
     /// S6 guardrail: true iff <paramref name="scope"/> is a legitimate signing scope

@@ -40,7 +40,7 @@ public class STARODKControllerTests
     public async Task Get_Existing_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.GetAsync(id, It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
 
         var result = await _controller.Get(id, null);
@@ -52,7 +52,7 @@ public class STARODKControllerTests
     public async Task Get_NonExisting_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.GetAsync(id, It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Result = null });
 
         var result = await _controller.Get(id, null);
@@ -63,7 +63,7 @@ public class STARODKControllerTests
     [Fact]
     public async Task GetAll_ReturnsOk()
     {
-        _manager.Setup(m => m.GetAllAsync(It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.GetAllAsync(It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = Array.Empty<ISTARODK>() });
 
         var result = await _controller.GetAll(null);

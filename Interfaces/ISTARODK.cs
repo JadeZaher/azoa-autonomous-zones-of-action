@@ -15,4 +15,6 @@ public interface ISTARODK
     DateTime CreatedDate { get; set; }
     DateTime? ModifiedDate { get; set; }
     bool IsActive { get; set; }
+    /// <summary>Owner opt-in: makes this STAR ODK dApp definition readable cross-avatar as a marketplace template.</summary>
+    bool IsPublic { get; set; }
 }

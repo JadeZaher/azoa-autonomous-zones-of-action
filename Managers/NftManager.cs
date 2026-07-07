@@ -24,7 +24,13 @@ public class NftManager : INftManager
         _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
     }
 
-    public async Task<AZOAResult<INft>> GetAsync(Guid id, AZOARequest? request = null)
+    // Cross-tenant read scope: an NFT (a Holon with AssetType=="NFT") is readable iff
+    // the caller owns it OR the underlying holon is IsPublic. A null callerAvatarId
+    // fails closed (public-only). See Controllers/AGENTS.md §cross-tenant-read-scope.
+    private static bool CanRead(IHolon holon, Guid? callerAvatarId) =>
+        callerAvatarId.HasValue && holon.AvatarId == callerAvatarId.Value || holon.IsPublic;
+
+    public async Task<AZOAResult<INft>> GetAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null)
     {
         var result = await _holonStore.GetByIdAsync(id, default);
         if (result.IsError || result.Result == null) return new AZOAResult<INft> { IsError = true, Message = result.Message };
@@ -32,16 +38,24 @@ public class NftManager : INftManager
         if (!string.Equals(result.Result.AssetType, "NFT", StringComparison.OrdinalIgnoreCase))
             return new AZOAResult<INft> { IsError = true, Message = "Holon is not an NFT." };
 
+        // Own-or-public gate: don't confirm a private NFT's existence to a non-owner.
+        if (!CanRead(result.Result, callerAvatarId))
+            return new AZOAResult<INft> { IsError = true, Message = "NFT not found." };
+
         return new AZOAResult<INft> { Result = (INft)result.Result, Message = "Success" };
     }
 
-    public async Task<AZOAResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, Guid? callerAvatarId = null, AZOARequest? request = null)
     {
         var all = await _holonStore.QueryAsync(null, default);
         if (all.IsError || all.Result == null) return new AZOAResult<IEnumerable<INft>> { IsError = true, Message = all.Message };
 
         var filtered = all.Result
-            .Where(h => string.Equals(h.AssetType, "NFT", StringComparison.OrdinalIgnoreCase));
+            .Where(h => string.Equals(h.AssetType, "NFT", StringComparison.OrdinalIgnoreCase))
+            // Force owner-or-public FIRST — the caller-supplied query.OwnerAvatarId can
+            // only ever narrow WITHIN what the caller may already read (no cross-tenant
+            // enumeration by supplying another avatar's id).
+            .Where(h => CanRead(h, callerAvatarId));
 
         if (query.OwnerAvatarId.HasValue)
             filtered = filtered.Where(h => h.AvatarId == query.OwnerAvatarId.Value);

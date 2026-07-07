@@ -21,7 +21,7 @@ public sealed class HolonQueryNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<HolonQueryRequest>(context.Node.Config, nameof(QuestNodeType.HolonQuery), out var query, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _holonManager.QueryAsync(query);
+        var r = await _holonManager.QueryAsync(query, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

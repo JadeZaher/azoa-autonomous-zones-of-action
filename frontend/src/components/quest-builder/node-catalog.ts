@@ -84,7 +84,9 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   // ─── Control ───
   { type: 'Condition', category: 'Control', label: 'Condition', description: 'Legacy branch (prefer GateCheck)', defaultConfig: J({ expression: '' }) },
   { type: 'ComposeOutputs', category: 'Control', label: 'Compose Outputs', description: 'Merge outputs of upstream nodes', defaultConfig: J({ sources: [] }) },
-  { type: 'GateCheck', category: 'Control', label: 'Gate Check', description: 'Tier-1 gate predicate (supersedes Condition)', defaultConfig: J({ expression: '' }) },
+  // GateCheck contract is { predicate, reads } (Models/Quest/NodeConfigs.cs GateCheckNodeConfig),
+  // mirroring every preset (presets.ts §5.2). NOT { expression } — that was the legacy Condition shape.
+  { type: 'GateCheck', category: 'Control', label: 'Gate Check', description: 'Tier-1 gate predicate (supersedes Condition)', defaultConfig: J({ predicate: '', reads: {} }) },
   // eventType (final-hardening F3) is the free-form quest.emit webhook event name;
   // it is a top-level sibling of payload on the wire (Models/Quest/NodeConfigs.cs
   // EmitNodeConfig.EventType), NOT nested inside payload. Defaults server-side to

@@ -56,5 +56,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [Default("true")]
         public bool IsActive { get; set; }
+
+        [Default("false")]
+        public bool IsPublic { get; set; }
     }
 }

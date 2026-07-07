@@ -110,6 +110,25 @@ public sealed class SurrealQuestStore : IQuestStore
         }
     }
 
+    public async Task<AZOAResult<IEnumerable<Quest>>> GetPublicQuestsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            // Marketplace discovery: only owner-opted-in public quests. Status is
+            // filtered to Active by the caller (QuestManager) since status lives on
+            // QuestRun, not the Quest row.
+            var q = SurrealQuery<QuestPoco>.From()
+                .Where(x => x.IsPublic == true);
+
+            var rows = await _executor.QueryAsync<QuestPoco>(q, ct);
+            return await HydrateManyAsync(rows, ct);
+        }
+        catch (Exception ex)
+        {
+            return Err<IEnumerable<Quest>>($"SurrealQuestStore.GetPublicQuestsAsync failed: {ex.Message}");
+        }
+    }
+
     public async Task<AZOAResult<IEnumerable<Quest>>> GetQuestsByDappSeriesAsync(
         Guid dappSeriesId, CancellationToken ct = default)
     {
@@ -566,6 +585,7 @@ public sealed class SurrealQuestStore : IQuestStore
         Version      = q.Version,
         IsPublic     = q.IsPublic,
         OriginAvatarId = q.OriginAvatarId.HasValue ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(q.OriginAvatarId.Value)) : null,
+        PublishedVersionHash = q.PublishedVersionHash,
         CreatedDate  = ToUtcOffset(q.CreatedDate),
     };
 
@@ -582,6 +602,7 @@ public sealed class SurrealQuestStore : IQuestStore
         Version      = p.Version,
         IsPublic     = p.IsPublic,
         OriginAvatarId = string.IsNullOrEmpty(p.OriginAvatarId) ? null : FromSurrealId(SurrealLink.FromLink(p.OriginAvatarId)!),
+        PublishedVersionHash = string.IsNullOrEmpty(p.PublishedVersionHash) ? null : p.PublishedVersionHash,
         CreatedDate  = p.CreatedDate.UtcDateTime,
         Nodes        = new List<QuestNode>(),
         Edges        = new List<QuestEdge>(),
@@ -844,6 +865,7 @@ public sealed class SurrealQuestStore : IQuestStore
         [JsonPropertyName("version")]         public long Version { get; set; }
         [JsonPropertyName("is_public")]       public bool IsPublic { get; set; }
         [JsonPropertyName("origin_avatar_id")] public string? OriginAvatarId { get; set; }
+        [JsonPropertyName("published_version_hash")] public string? PublishedVersionHash { get; set; }
         [JsonPropertyName("created_date")]    public DateTimeOffset CreatedDate { get; set; }
     }
 

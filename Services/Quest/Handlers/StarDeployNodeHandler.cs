@@ -20,7 +20,7 @@ public sealed class StarDeployNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<IdConfig>(context.Node.Config, nameof(QuestNodeType.StarDeploy), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _starManager.DeployAsync(cfg.Id);
+        var r = await _starManager.DeployAsync(cfg.Id, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

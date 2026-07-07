@@ -34,6 +34,8 @@ DEFINE FIELD IF NOT EXISTS is_active ON TABLE holon TYPE bool
     DEFAULT true;
 DEFINE FIELD IF NOT EXISTS source_holon_id ON TABLE holon TYPE option<record<holon>>;
 DEFINE FIELD IF NOT EXISTS origin_avatar_id ON TABLE holon TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS is_public ON TABLE holon TYPE bool
+    DEFAULT false;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

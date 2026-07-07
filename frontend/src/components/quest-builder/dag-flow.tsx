@@ -110,13 +110,20 @@ export function DagFlow({ nodes, edges }: { nodes: RunNode[]; edges: RunEdge[] }
 
 function toFlowEdge(e: RunEdge): Edge {
   const conditional = e.edgeType === 'Conditional'
+  const onFailure = e.edgeType === 'OnFailure'
+  // OnFailure = red dashed error-routing edge (mirrors quest-canvas edgeStyle).
+  const style = conditional
+    ? { stroke: '#f59e0b', strokeDasharray: '5 5' }
+    : onFailure
+    ? { stroke: '#ef4444', strokeDasharray: '4 4' }
+    : { stroke: '#94a3b8' }
   return {
     id: e.id,
     source: e.sourceNodeId,
     target: e.targetNodeId,
-    label: conditional ? (e.condition ?? 'if') : undefined,
+    label: conditional ? (e.condition ?? 'if') : onFailure ? 'on failure' : undefined,
     animated: conditional,
-    style: conditional ? { stroke: '#f59e0b', strokeDasharray: '5 5' } : { stroke: '#94a3b8' },
+    style,
     markerEnd: { type: MarkerType.ArrowClosed },
   }
 }

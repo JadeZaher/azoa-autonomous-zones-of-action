@@ -35,10 +35,10 @@ public class QuestInstantiator : IQuestInstantiator
         // Validate parameters against template's parameter schema
         ValidateParameters(parametersJson, template.Parameters);
 
-        // Parse parameters
+        // Parse parameters. Duplicate object keys (System.Text.Json keeps both)
+        // would throw out of ToDictionary -> reject them cleanly instead.
         using var paramsDoc = JsonDocument.Parse(parametersJson);
-        var parameters = paramsDoc.RootElement.EnumerateObject()
-            .ToDictionary(p => p.Name, p => p.ToString());
+        var parameters = BuildParameters(paramsDoc.RootElement);
 
         // Create new Quest. Status moved to QuestRun (see quest-temporal-fork-model ADR §2.2).
         var quest = new QuestEntity
@@ -129,6 +129,10 @@ public class QuestInstantiator : IQuestInstantiator
         using var paramsDoc = JsonDocument.Parse(parametersJson);
         using var schemaDoc = JsonDocument.Parse(schemaJson);
 
+        // Reject duplicate parameter keys outright so validation (first-match
+        // TryGetProperty) and the later dictionary build share one semantics.
+        EnsureNoDuplicateKeys(paramsDoc.RootElement);
+
         if (schemaDoc.RootElement.TryGetProperty("required", out var required))
         {
             foreach (var reqProp in required.EnumerateArray())
@@ -140,6 +144,31 @@ public class QuestInstantiator : IQuestInstantiator
                         $"Required parameter '{propName}' not provided.");
                 }
             }
+        }
+    }
+
+    /// <summary>Builds the param dictionary, rejecting duplicate object keys.</summary>
+    private static Dictionary<string, string> BuildParameters(JsonElement root)
+    {
+        var parameters = new Dictionary<string, string>();
+        if (root.ValueKind != JsonValueKind.Object) return parameters;
+        foreach (var p in root.EnumerateObject())
+        {
+            if (!parameters.TryAdd(p.Name, p.ToString()))
+                throw new InvalidOperationException($"Duplicate parameter key '{p.Name}' in parametersJson.");
+        }
+        return parameters;
+    }
+
+    /// <summary>Throws if the parameters object carries the same key twice.</summary>
+    private static void EnsureNoDuplicateKeys(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object) return;
+        var seen = new HashSet<string>();
+        foreach (var p in root.EnumerateObject())
+        {
+            if (!seen.Add(p.Name))
+                throw new InvalidOperationException($"Duplicate parameter key '{p.Name}' in parametersJson.");
         }
     }
 

@@ -20,7 +20,8 @@ public sealed class HolonPropagateNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<HolonPropagateNodeConfig>(context.Node.Config, nameof(QuestNodeType.HolonPropagate), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _holonManager.PropagateAsync(cfg.HolonId, cfg.Request);
+        // C-2: scope to the runner (ActingAvatarId) so a marketplace run cannot propagate over a victim's holon by GUID.
+        var r = await _holonManager.PropagateAsync(cfg.HolonId, cfg.Request, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

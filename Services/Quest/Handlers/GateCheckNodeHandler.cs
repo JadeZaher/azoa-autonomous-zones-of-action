@@ -88,7 +88,9 @@ public sealed class GateCheckNodeHandler : IQuestNodeHandler
     /// <summary>
     /// Builds the evaluator scope: upstream node outputs keyed by
     /// <c>upstream.&lt;nodeName&gt;</c> (parsed from each predecessor's
-    /// <see cref="QuestNodeExecution.Output"/>), injected reads keyed by
+    /// <see cref="QuestNodeExecution.Output"/>), ANY prior run node's output keyed
+    /// by <c>run.&lt;nodeName&gt;</c> (from <c>context.AllRunExecutions</c>, mirroring
+    /// <c>QuestConfigBindingResolver.BuildRunScope</c>), injected reads keyed by
     /// <c>reads.&lt;name&gt;</c>, and holon lifecycle state keyed by
     /// <c>holon.&lt;id&gt;</c> for each configured holon id.
     /// </summary>
@@ -114,6 +116,23 @@ public sealed class GateCheckNodeHandler : IQuestNodeHandler
             }
         }
 
+        // Run-scoped root: "run.<nodeName>" → any prior node's parseable output by
+        // name (not just direct-edge sources). Mirrors QuestConfigBindingResolver.
+        // BuildRunScope exactly so a gate predicate and a $from binding resolve the
+        // SAME root — the grammar (GatePath.ValidRoots) accepts "run" for both, so
+        // the runtime scope must too (else a parseable, publish-passing predicate
+        // fails closed at runtime). Last-writer-wins is fine: publish rejects
+        // duplicate node names.
+        foreach (var runNode in context.Quest.Nodes)
+        {
+            if (context.AllRunExecutions.TryGetValue(runNode.Id, out var runExec)
+                && !string.IsNullOrWhiteSpace(runExec.Output)
+                && TryParseJson(runExec.Output, out var runElement))
+            {
+                scope[$"run.{runNode.Name}"] = runElement;
+            }
+        }
+
         foreach (var (name, value) in cfg.Reads)
         {
             scope[$"reads.{name}"] = value;
@@ -130,7 +149,10 @@ public sealed class GateCheckNodeHandler : IQuestNodeHandler
         // be read.
         foreach (var holonId in cfg.Holons)
         {
-            var holonResult = await _holonManager.GetAsync(holonId);
+            // Scope the read to the runner; the explicit AvatarId check below stays as
+            // defense-in-depth (owner-STRICT: a public holon owned by another avatar is
+            // still rejected — a predicate may only name the runner's own holons).
+            var holonResult = await _holonManager.GetAsync(holonId, context.ActingAvatarId);
             if (holonResult.IsError || holonResult.Result is null
                 || holonResult.Result.AvatarId != context.ActingAvatarId)
                 throw new GatePredicateException($"holon '{holonId}' not found or unreadable");

@@ -17,4 +17,5 @@ public class STARODK : ISTARODK
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime? ModifiedDate { get; set; }
     public bool IsActive { get; set; } = true;
+    public bool IsPublic { get; set; } = false;
 }

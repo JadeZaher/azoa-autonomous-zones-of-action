@@ -123,6 +123,14 @@ public sealed class DappCompositionManager : IDappCompositionManager
         if (questLoad.Result.AvatarId != avatarId)
             return Fail<DappSeriesQuest>("Forbidden: quest is owned by a different avatar.");
 
+        // (series, quest) is logically unique -- a second add would create a
+        // duplicate row that later crashes the ToDictionary(e => e.QuestIdGuid)
+        // validation paths. Reject up front.
+        var existing = await _seriesStore.GetQuestsBySeriesAsync(seriesId, ct);
+        if (existing.IsError || existing.Result is null) return Fail<DappSeriesQuest>(existing.Message);
+        if (existing.Result.Any(e => e.QuestIdGuid == model.QuestId))
+            return Fail<DappSeriesQuest>($"Quest {model.QuestId} is already in series {seriesId}.");
+
         var entry = DappSeriesQuest.NewEntry(seriesId, model.QuestId, model.Order, model.InputMappings);
         return await _seriesStore.UpsertSeriesQuestAsync(entry, ct);
     }
@@ -206,6 +214,22 @@ public sealed class DappCompositionManager : IDappCompositionManager
         if (entries.Count == 0)
             return Fail<CompositionValidationResult>("Series has no quests to compose.");
 
+        // Pre-existing duplicate (series, quest) rows are a corrupt-state error,
+        // not a crash: surface a clean validation failure instead of letting the
+        // downstream ToDictionary(e => e.QuestIdGuid) throw ArgumentException.
+        var duplicateQuestIds = entries
+            .GroupBy(e => e.QuestIdGuid)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        if (duplicateQuestIds.Count > 0)
+        {
+            var duplicateReport = new CompositionValidationResult { InputMappingConsistency = false, NoCircularDependencies = false };
+            foreach (var dupId in duplicateQuestIds)
+                duplicateReport.Diagnostics.Add($"Quest {dupId} appears more than once in the series; remove the duplicate entry.");
+            return new AZOAResult<CompositionValidationResult> { Result = duplicateReport, Message = "One or more validation rules failed." };
+        }
+
         var report = new CompositionValidationResult();
 
         // Load each quest definition once. The QuestIdGuid accessor handles
@@ -220,6 +244,8 @@ public sealed class DappCompositionManager : IDappCompositionManager
                 report.Diagnostics.Add($"Quest {questGuid} not found.");
                 continue;
             }
+            // Indexer assignment is last-writer-wins, consistent with OrderByQuestId
+            // below; ValidateAsync rejects duplicate rows earlier regardless.
             quests[questGuid] = qLoad.Result;
         }
 
@@ -304,7 +330,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
             BoundHolonIds = manifest.BoundHolonIds,
             Config = manifest.Config,
         };
-        var generated = await _starManager.GenerateAsync(starUpsert.Result.Id, generationRequest);
+        var generated = await _starManager.GenerateAsync(starUpsert.Result.Id, generationRequest, avatarId);
         if (generated.IsError || generated.Result is null) return Fail<ISTARODK>(generated.Message);
 
         series.StarOdkIdGuid = generated.Result.Id;
@@ -332,7 +358,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         // ISTARManager.DeployAsync surface does not yet accept per-call target
         // overrides -- if a different chain is needed, re-run Generate with an
         // updated TargetChain on the series. Tracked as a follow-up.
-        var deployed = await _starManager.DeployAsync(starId.Value);
+        var deployed = await _starManager.DeployAsync(starId.Value, avatarId);
         if (deployed.IsError || deployed.Result is null) return Fail<ISTARODK>(deployed.Message);
 
         series.Status = DappSeries.StatusKind.Deployed;
@@ -403,7 +429,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         List<DappSeriesQuest> entries, Dictionary<Guid, QuestDef> quests, CompositionValidationResult report)
     {
         report.InputMappingConsistency = true;
-        var orderByQuestId = entries.ToDictionary(e => e.QuestIdGuid, e => (int)e.Order);
+        var orderByQuestId = OrderByQuestId(entries);
 
         foreach (var entry in entries)
         {
@@ -464,7 +490,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         List<DappSeriesQuest> entries, Dictionary<Guid, QuestDef> quests, CompositionValidationResult report)
     {
         report.NoCircularDependencies = true;
-        var orderByQuestId = entries.ToDictionary(e => e.QuestIdGuid, e => (int)e.Order);
+        var orderByQuestId = OrderByQuestId(entries);
 
         foreach (var (questGuid, quest) in quests)
         {
@@ -499,6 +525,15 @@ public sealed class DappCompositionManager : IDappCompositionManager
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    // Duplicate-tolerant order lookup: last-writer-wins on (series, quest)
+    // collisions so a corrupt duplicate row never throws out of ToDictionary.
+    private static Dictionary<Guid, int> OrderByQuestId(IEnumerable<DappSeriesQuest> entries)
+    {
+        var map = new Dictionary<Guid, int>();
+        foreach (var e in entries) map[e.QuestIdGuid] = (int)e.Order;
+        return map;
+    }
 
     private static IEnumerable<Guid> ExtractBoundHolonIds(IEnumerable<QuestDef> quests)
     {

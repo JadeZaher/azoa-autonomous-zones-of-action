@@ -29,6 +29,7 @@ interface Quest {
   status: string
   avatarId: string
   isPublic: boolean
+  originAvatarId?: string
   nodes: Array<{ id: string; name: string; nodeType: string; state: string; executionOrder: number; isEntry: boolean; isTerminal: boolean; output?: string; error?: string }>
   edges: Array<{ id: string; sourceNodeId: string; targetNodeId: string; edgeType: string; condition?: string }>
   dependencies: unknown[]
@@ -650,9 +651,11 @@ function NodeTemplates() {
 // ─── Start a Public Quest (non-owner) ───
 
 /**
- * Lets a caller load someone else's PUBLISHED PUBLIC quest by id (e.g. from a
- * shared link) and start it under their own avatar. Mirrors the backend's
- * `LoadStartableQuestAsync` marketplace rule: owner-or-(public && Active).
+ * Marketplace browse + start. Fetches the public quest catalog on mount
+ * (`azoa.api.listPublicQuests()` → GET /api/quest/public) and renders it as a
+ * selectable card grid; clicking a card loads it into the start flow. A manual
+ * id-paste remains as a fallback. Mirrors the backend's `LoadStartableQuestAsync`
+ * marketplace rule: owner-or-(public && Active).
  */
 function StartPublicQuest() {
   const { avatarId } = useAzoa()
@@ -663,6 +666,23 @@ function StartPublicQuest() {
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const [startResult, setStartResult] = useState<unknown>(null)
+
+  const [catalog, setCatalog] = useState<Quest[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(true)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+
+  const loadCatalog = useCallback(async () => {
+    setCatalogLoading(true)
+    setCatalogError(null)
+    const result = await azoa.api.listPublicQuests()
+    if (isOk(result)) setCatalog(result.value as unknown as Quest[])
+    else setCatalogError(result.error.message)
+    setCatalogLoading(false)
+  }, [])
+
+  useEffect(() => {
+    loadCatalog()
+  }, [loadCatalog])
 
   const handleLoad = async () => {
     if (!questId.trim()) return
@@ -675,6 +695,15 @@ function StartPublicQuest() {
     if (isOk(result)) setQuest(result.value)
     else setLoadError(result.error.message)
     setLoading(false)
+  }
+
+  /** Select a quest from the browse grid — loads it straight into the start flow. */
+  const handleSelect = (q: Quest) => {
+    setQuestId(q.id)
+    setQuest(q)
+    setLoadError(null)
+    setStartResult(null)
+    setStartError(null)
   }
 
   const handleStart = async () => {
@@ -693,14 +722,58 @@ function StartPublicQuest() {
   return (
     <div className="flex flex-col gap-4 rounded-lg border bg-card p-4">
       <div>
-        <h3 className="text-sm font-semibold">Start a Public Quest</h3>
+        <h3 className="text-sm font-semibold">Public Quest Marketplace</h3>
         <p className="text-sm text-muted-foreground">
-          Paste the ID of a quest someone shared with you. Only quests published to the marketplace can be started this way.
+          Browse quests published to the marketplace and start one under your own avatar.
         </p>
       </div>
 
+      {/* Browse grid */}
+      {catalogLoading ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <CardContent className="h-24 pt-6" />
+            </Card>
+          ))}
+        </div>
+      ) : catalogError ? (
+        <ErrorBanner message={catalogError} onRetry={loadCatalog} />
+      ) : catalog.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No public quests published yet.</p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {catalog.map((q) => (
+            <button
+              key={q.id}
+              type="button"
+              onClick={() => handleSelect(q)}
+              className={`flex flex-col gap-2 rounded-md border p-3 text-left transition-colors hover:border-primary/60 hover:bg-accent ${
+                quest?.id === q.id ? 'border-primary bg-accent' : ''
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-medium">{q.name}</p>
+                {statusBadge(q.status)}
+              </div>
+              {q.description && (
+                <p className="line-clamp-2 text-xs text-muted-foreground">{q.description}</p>
+              )}
+              {q.originAvatarId && (
+                <p className="text-[10px] text-muted-foreground">
+                  by <code className="font-mono">{q.originAvatarId.slice(0, 8)}…</code>
+                </p>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <Separator />
+
+      {/* Manual id-paste fallback */}
       <div className="flex flex-col gap-1.5 sm:max-w-md">
-        <Label htmlFor="public-quest-id">Quest ID</Label>
+        <Label htmlFor="public-quest-id">Or paste a Quest ID</Label>
         <div className="flex gap-2">
           <Input
             id="public-quest-id"

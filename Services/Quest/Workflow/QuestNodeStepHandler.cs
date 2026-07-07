@@ -201,7 +201,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
                     node.Config = bindingResult.ResolvedJson!;
                     try
                     {
-                        var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, actingAvatarId, upstream, actingTenantId);
+                        var nodeCtx = new QuestNodeExecutionContext(p.RunId, p.NodeId, quest, actingAvatarId, upstream, actingTenantId, allRunExecutions);
                         result = await handler.HandleAsync(nodeCtx, ct);
                     }
                     finally

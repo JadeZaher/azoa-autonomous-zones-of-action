@@ -25,7 +25,9 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.GetAsync(id, request);
+        // Owner-or-public read scope: thread the authenticated avatar so a non-owner
+        // cannot read another tenant's private holon by id.
+        var result = await _holonManager.GetAsync(id, GetAvatarIdFromClaims(), request);
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
@@ -33,7 +35,7 @@ public class HolonController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> Query([FromQuery] HolonQueryRequest query, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.QueryAsync(query, request);
+        var result = await _holonManager.QueryAsync(query, GetAvatarIdFromClaims(), request);
         return Ok(result);
     }
 
@@ -122,14 +124,14 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}/children")]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetChildren(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.GetChildrenAsync(id, request);
+        var result = await _holonManager.GetChildrenAsync(id, GetAvatarIdFromClaims(), request);
         return Ok(result);
     }
 
     [HttpGet("{id:guid}/peers")]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetPeers(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.GetPeersAsync(id, request);
+        var result = await _holonManager.GetPeersAsync(id, GetAvatarIdFromClaims(), request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }
@@ -137,7 +139,7 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}/ancestors")]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetAncestors(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.GetAncestorsAsync(id, request);
+        var result = await _holonManager.GetAncestorsAsync(id, GetAvatarIdFromClaims(), request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }
@@ -145,7 +147,7 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}/descendants")]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetDescendants(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.GetDescendantsAsync(id, request);
+        var result = await _holonManager.GetDescendantsAsync(id, GetAvatarIdFromClaims(), request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }
@@ -168,7 +170,7 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}/compose")]
     public async Task<ActionResult<AZOAResult<HolonComposition>>> Compose(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.ComposeAsync(id, request);
+        var result = await _holonManager.ComposeAsync(id, GetAvatarIdFromClaims(), request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }

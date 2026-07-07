@@ -365,6 +365,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         FailReason      = r.FailReason,
         SourceQuestId   = r.SourceQuestId.HasValue   ? SurrealLink.ToLink("quest", SurrealId.ToSurrealId(r.SourceQuestId.Value))       : null,
         OriginAvatarId  = r.OriginAvatarId.HasValue  ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(r.OriginAvatarId.Value))     : null,
+        PublishedVersionHash = r.PublishedVersionHash,
     };
 
     private static QuestRun ToDomain(QuestRunPoco p) => new()
@@ -384,6 +385,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         FailReason      = p.FailReason,
         SourceQuestId   = string.IsNullOrEmpty(p.SourceQuestId)  ? null : FromSurrealIdFk(SurrealLink.FromLink(p.SourceQuestId)!),
         OriginAvatarId  = string.IsNullOrEmpty(p.OriginAvatarId) ? null : FromSurrealIdFk(SurrealLink.FromLink(p.OriginAvatarId)!),
+        PublishedVersionHash = string.IsNullOrEmpty(p.PublishedVersionHash) ? null : p.PublishedVersionHash,
     };
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -454,6 +456,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         [JsonPropertyName("fail_reason")]       public string? FailReason { get; set; }
         [JsonPropertyName("source_quest_id")]   public string? SourceQuestId { get; set; }
         [JsonPropertyName("origin_avatar_id")]  public string? OriginAvatarId { get; set; }
+        [JsonPropertyName("published_version_hash")] public string? PublishedVersionHash { get; set; }
     }
 
     private sealed class QuestRunIdProjection

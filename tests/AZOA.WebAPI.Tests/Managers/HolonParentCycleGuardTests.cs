@@ -19,6 +19,11 @@ public class HolonParentCycleGuardTests
     private readonly Mock<IHolonStore> _store = new();
     private readonly HolonManager _manager;
 
+    // Fail-closed ownership guard (see Managers/AGENTS.md §fail-closed-avatar):
+    // mutating calls now require the caller's avatar to own the target holon.
+    // Fixtures are tagged with Owner and Owner is passed as the acting avatarId.
+    private static readonly Guid Owner = Guid.NewGuid();
+
     public HolonParentCycleGuardTests()
     {
         _manager = new HolonManager(_store.Object);
@@ -67,7 +72,7 @@ public class HolonParentCycleGuardTests
 
     private void SetupExisting(Guid holonId)
     {
-        var holon = new Holon { Id = holonId, Name = "Existing" };
+        var holon = new Holon { Id = holonId, Name = "Existing", AvatarId = Owner };
         _store
             .Setup(s => s.GetByIdAsync(holonId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
@@ -175,7 +180,7 @@ public class HolonParentCycleGuardTests
         var result = await _manager.InteractAsync(rootId, new HolonInteractionRequest
         {
             NewParentHolonId = grandChildId,
-        });
+        }, Owner);
 
         result.IsError.Should().BeTrue("InteractAsync must guard cycle on NewParentHolonId (AC-6b)");
         result.Message.Should().ContainEquivalentOf("cycle");
@@ -189,7 +194,7 @@ public class HolonParentCycleGuardTests
         SetupUpsertPassthrough();
 
         // No NewParentHolonId — cycle guard must NOT be called; request passes.
-        var result = await _manager.InteractAsync(holonId, new HolonInteractionRequest());
+        var result = await _manager.InteractAsync(holonId, new HolonInteractionRequest(), Owner);
 
         result.IsError.Should().BeFalse("no reparent means no cycle check needed");
     }
@@ -208,7 +213,7 @@ public class HolonParentCycleGuardTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>() });
 
-        var result = await _manager.MoveSubtreeAsync(holonId, holonId);
+        var result = await _manager.MoveSubtreeAsync(holonId, holonId, Owner);
 
         result.IsError.Should().BeTrue("a holon cannot be its own parent (self-parent cycle)");
         result.Message.Should().ContainEquivalentOf("own parent");
@@ -225,7 +230,7 @@ public class HolonParentCycleGuardTests
         SetupExisting(rootId);
         SetupUpsertPassthrough();
 
-        var result = await _manager.MoveSubtreeAsync(rootId, grandChildId);
+        var result = await _manager.MoveSubtreeAsync(rootId, grandChildId, Owner);
 
         result.IsError.Should().BeTrue("MoveSubtreeAsync must guard cycle (original precedent)");
         result.Message.Should().ContainEquivalentOf("cycle");

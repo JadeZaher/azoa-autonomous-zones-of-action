@@ -24,7 +24,9 @@ graph LR
     consent_grant -- "grantor_avatar_id [N:1]" --> avatar
     consent_grant -- "tenant_id [N:1]" --> avatar
     holon -- "avatar_id [N:0..1]" --> avatar
+    holon -- "origin_avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
+    holon -- "source_holon_id [N:0..1]" --> holon
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
     star_odk -- "avatar_id [N:0..1]" --> avatar

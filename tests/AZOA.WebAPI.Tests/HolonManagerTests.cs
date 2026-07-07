@@ -14,6 +14,11 @@ public class HolonManagerTests
     private readonly Mock<IHolonStore> _store;
     private readonly HolonManager _manager;
 
+    // Owner-or-public read scope: reads now require the caller's avatar id (see
+    // Controllers/AGENTS.md §cross-tenant-read-scope). Tests exercise the OWNER path
+    // by tagging fixtures with Owner and passing Owner as callerAvatarId.
+    private static readonly Guid Owner = Guid.NewGuid();
+
     public HolonManagerTests()
     {
         _store = new Mock<IHolonStore>();
@@ -61,7 +66,8 @@ public class HolonManagerTests
         {
             Id = Guid.NewGuid(),
             PeerHolonIds = new List<Guid>(),
-            Metadata = new Dictionary<string, string>()
+            Metadata = new Dictionary<string, string>(),
+            AvatarId = Owner
         };
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
@@ -74,7 +80,7 @@ public class HolonManagerTests
             SetMetadata = new Dictionary<string, string> { ["key"] = "value" }
         };
 
-        var result = await _manager.InteractAsync(holon.Id, request);
+        var result = await _manager.InteractAsync(holon.Id, request, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result!.PeerHolonIds.Should().HaveCount(1);
@@ -88,7 +94,7 @@ public class HolonManagerTests
         _store.Setup(p => p.QueryAsync(query, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon>() });
 
-        var result = await _manager.QueryAsync(query);
+        var result = await _manager.QueryAsync(query, Owner);
 
         result.IsError.Should().BeFalse();
     }
@@ -110,11 +116,11 @@ public class HolonManagerTests
     public async Task GetChildrenAsync_ShouldReturnSubHolons()
     {
         var parentId = Guid.NewGuid();
-        var child = new Holon { Id = Guid.NewGuid(), ParentHolonId = parentId, Name = "Child" };
+        var child = new Holon { Id = Guid.NewGuid(), ParentHolonId = parentId, Name = "Child", AvatarId = Owner };
         _store.Setup(p => p.QueryAsync(It.Is<HolonQueryRequest>(q => q.ParentHolonId == parentId), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { child } });
 
-        var result = await _manager.GetChildrenAsync(parentId);
+        var result = await _manager.GetChildrenAsync(parentId, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().HaveCount(1);
@@ -125,15 +131,15 @@ public class HolonManagerTests
     public async Task GetPeersAsync_ShouldReturnLinkedPeers()
     {
         var peerId = Guid.NewGuid();
-        var holon = new Holon { Id = Guid.NewGuid(), PeerHolonIds = new List<Guid> { peerId } };
-        var peer = new Holon { Id = peerId, Name = "Peer" };
+        var holon = new Holon { Id = Guid.NewGuid(), PeerHolonIds = new List<Guid> { peerId }, AvatarId = Owner };
+        var peer = new Holon { Id = peerId, Name = "Peer", AvatarId = Owner };
 
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
         _store.Setup(p => p.QueryAsync(null, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { peer, new Holon { Id = Guid.NewGuid() } } });
 
-        var result = await _manager.GetPeersAsync(holon.Id);
+        var result = await _manager.GetPeersAsync(holon.Id, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().HaveCount(1);
@@ -143,11 +149,11 @@ public class HolonManagerTests
     [Fact]
     public async Task GetPeersAsync_NoPeers_ReturnsEmpty()
     {
-        var holon = new Holon { Id = Guid.NewGuid(), PeerHolonIds = new List<Guid>() };
+        var holon = new Holon { Id = Guid.NewGuid(), PeerHolonIds = new List<Guid>(), AvatarId = Owner };
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
 
-        var result = await _manager.GetPeersAsync(holon.Id);
+        var result = await _manager.GetPeersAsync(holon.Id, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().BeEmpty();
@@ -156,9 +162,9 @@ public class HolonManagerTests
     [Fact]
     public async Task GetAncestorsAsync_ShouldWalkParentChain()
     {
-        var grandparent = new Holon { Id = Guid.NewGuid(), Name = "Grandparent", ParentHolonId = null };
-        var parent = new Holon { Id = Guid.NewGuid(), Name = "Parent", ParentHolonId = grandparent.Id };
-        var child = new Holon { Id = Guid.NewGuid(), Name = "Child", ParentHolonId = parent.Id };
+        var grandparent = new Holon { Id = Guid.NewGuid(), Name = "Grandparent", ParentHolonId = null, AvatarId = Owner };
+        var parent = new Holon { Id = Guid.NewGuid(), Name = "Parent", ParentHolonId = grandparent.Id, AvatarId = Owner };
+        var child = new Holon { Id = Guid.NewGuid(), Name = "Child", ParentHolonId = parent.Id, AvatarId = Owner };
 
         _store.Setup(p => p.GetByIdAsync(child.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = child });
@@ -167,7 +173,7 @@ public class HolonManagerTests
         _store.Setup(p => p.GetByIdAsync(grandparent.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = grandparent });
 
-        var result = await _manager.GetAncestorsAsync(child.Id);
+        var result = await _manager.GetAncestorsAsync(child.Id, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().HaveCount(2);
@@ -177,8 +183,8 @@ public class HolonManagerTests
     [Fact]
     public async Task GetAncestorsAsync_CycleGuard_StopsAtLoop()
     {
-        var a = new Holon { Id = Guid.NewGuid(), Name = "A" };
-        var b = new Holon { Id = Guid.NewGuid(), Name = "B", ParentHolonId = a.Id };
+        var a = new Holon { Id = Guid.NewGuid(), Name = "A", AvatarId = Owner };
+        var b = new Holon { Id = Guid.NewGuid(), Name = "B", ParentHolonId = a.Id, AvatarId = Owner };
         a.ParentHolonId = b.Id; // cycle
 
         _store.Setup(p => p.GetByIdAsync(b.Id, It.IsAny<CancellationToken>()))
@@ -186,7 +192,7 @@ public class HolonManagerTests
         _store.Setup(p => p.GetByIdAsync(a.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = a });
 
-        var result = await _manager.GetAncestorsAsync(b.Id);
+        var result = await _manager.GetAncestorsAsync(b.Id, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().HaveCount(1);
@@ -195,10 +201,13 @@ public class HolonManagerTests
     [Fact]
     public async Task GetDescendantsAsync_ShouldTraverseSubtree()
     {
-        var root = new Holon { Id = Guid.NewGuid(), Name = "Root" };
-        var child = new Holon { Id = Guid.NewGuid(), Name = "Child", ParentHolonId = root.Id };
-        var grandchild = new Holon { Id = Guid.NewGuid(), Name = "Grandchild", ParentHolonId = child.Id };
+        var root = new Holon { Id = Guid.NewGuid(), Name = "Root", AvatarId = Owner };
+        var child = new Holon { Id = Guid.NewGuid(), Name = "Child", ParentHolonId = root.Id, AvatarId = Owner };
+        var grandchild = new Holon { Id = Guid.NewGuid(), Name = "Grandchild", ParentHolonId = child.Id, AvatarId = Owner };
 
+        // Anchor ownership check loads the root by id before traversing.
+        _store.Setup(p => p.GetByIdAsync(root.Id, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IHolon> { Result = root });
         _store.Setup(p => p.QueryAsync(It.Is<HolonQueryRequest>(q => q.ParentHolonId == root.Id), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { child } });
         _store.Setup(p => p.QueryAsync(It.Is<HolonQueryRequest>(q => q.ParentHolonId == child.Id), It.IsAny<CancellationToken>()))
@@ -206,7 +215,7 @@ public class HolonManagerTests
         _store.Setup(p => p.QueryAsync(It.Is<HolonQueryRequest>(q => q.ParentHolonId == grandchild.Id), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>() });
 
-        var result = await _manager.GetDescendantsAsync(root.Id);
+        var result = await _manager.GetDescendantsAsync(root.Id, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().HaveCount(2);
@@ -218,9 +227,9 @@ public class HolonManagerTests
     [Fact]
     public async Task PropagateAsync_ShouldSetIsActiveOnSubtree()
     {
-        var root = new Holon { Id = Guid.NewGuid(), Name = "Root", IsActive = true };
-        var child = new Holon { Id = Guid.NewGuid(), Name = "Child", ParentHolonId = root.Id, IsActive = true };
-        var grandchild = new Holon { Id = Guid.NewGuid(), Name = "Grandchild", ParentHolonId = child.Id, IsActive = true };
+        var root = new Holon { Id = Guid.NewGuid(), Name = "Root", IsActive = true, AvatarId = Owner };
+        var child = new Holon { Id = Guid.NewGuid(), Name = "Child", ParentHolonId = root.Id, IsActive = true, AvatarId = Owner };
+        var grandchild = new Holon { Id = Guid.NewGuid(), Name = "Grandchild", ParentHolonId = child.Id, IsActive = true, AvatarId = Owner };
 
         _store.Setup(p => p.GetByIdAsync(root.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = root });
@@ -238,7 +247,7 @@ public class HolonManagerTests
                  .ReturnsAsync((IHolon h, CancellationToken _) => new AZOAResult<IHolon> { Result = h });
 
         var request = new HolonPropagateRequest { Property = "IsActive", Value = false, IncludeSelf = true };
-        var result = await _manager.PropagateAsync(root.Id, request);
+        var result = await _manager.PropagateAsync(root.Id, request, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().Be(3);
@@ -250,9 +259,9 @@ public class HolonManagerTests
     [Fact]
     public async Task ComposeAsync_ShouldComputeSubtreeStats()
     {
-        var root = new Holon { Id = Guid.NewGuid(), Name = "Album", AssetType = "Collection", IsActive = true, CreatedDate = DateTime.UtcNow.AddDays(-2) };
-        var child = new Holon { Id = Guid.NewGuid(), Name = "Track1", AssetType = "NFT", ChainId = "algo", IsActive = true, CreatedDate = DateTime.UtcNow.AddDays(-1), Metadata = new Dictionary<string, string> { ["genre"] = "ambient" } };
-        var grandchild = new Holon { Id = Guid.NewGuid(), Name = "Stem1", AssetType = "Audio", ChainId = "algo", IsActive = true, CreatedDate = DateTime.UtcNow, Metadata = new Dictionary<string, string> { ["genre"] = "ambient" } };
+        var root = new Holon { Id = Guid.NewGuid(), Name = "Album", AssetType = "Collection", IsActive = true, CreatedDate = DateTime.UtcNow.AddDays(-2), AvatarId = Owner };
+        var child = new Holon { Id = Guid.NewGuid(), Name = "Track1", AssetType = "NFT", ChainId = "algo", IsActive = true, CreatedDate = DateTime.UtcNow.AddDays(-1), Metadata = new Dictionary<string, string> { ["genre"] = "ambient" }, AvatarId = Owner };
+        var grandchild = new Holon { Id = Guid.NewGuid(), Name = "Stem1", AssetType = "Audio", ChainId = "algo", IsActive = true, CreatedDate = DateTime.UtcNow, Metadata = new Dictionary<string, string> { ["genre"] = "ambient" }, AvatarId = Owner };
 
         _store.Setup(p => p.GetByIdAsync(root.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = root });
@@ -263,7 +272,7 @@ public class HolonManagerTests
         _store.Setup(p => p.QueryAsync(It.Is<HolonQueryRequest>(q => q.ParentHolonId == grandchild.Id), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>() });
 
-        var result = await _manager.ComposeAsync(root.Id);
+        var result = await _manager.ComposeAsync(root.Id, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().NotBeNull();
@@ -280,7 +289,9 @@ public class HolonManagerTests
     [Fact]
     public async Task CloneAsync_ShouldCreateCopyWithoutSubtree()
     {
-        var original = new Holon { Id = Guid.NewGuid(), Name = "Original", Description = "Desc", IsActive = true, Metadata = new Dictionary<string, string>(), PeerHolonIds = new List<Guid>() };
+        // Cross-avatar clone is the marketplace TEMPLATE mechanic: a non-owner may only
+        // clone a PUBLIC holon (H-2 gate). Mark it public to exercise that path.
+        var original = new Holon { Id = Guid.NewGuid(), Name = "Original", Description = "Desc", IsActive = true, IsPublic = true, Metadata = new Dictionary<string, string>(), PeerHolonIds = new List<Guid>() };
         _store.Setup(p => p.GetByIdAsync(original.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = original });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
@@ -298,7 +309,7 @@ public class HolonManagerTests
     [Fact]
     public async Task MoveSubtreeAsync_ShouldUpdateParent()
     {
-        var holon = new Holon { Id = Guid.NewGuid(), Name = "Moving", ParentHolonId = Guid.NewGuid() };
+        var holon = new Holon { Id = Guid.NewGuid(), Name = "Moving", ParentHolonId = Guid.NewGuid(), AvatarId = Owner };
         var newParent = Guid.NewGuid();
 
         _store.Setup(p => p.QueryAsync(It.Is<HolonQueryRequest>(q => q.ParentHolonId == holon.Id), It.IsAny<CancellationToken>()))
@@ -308,7 +319,7 @@ public class HolonManagerTests
         _store.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IHolon h, CancellationToken _) => new AZOAResult<IHolon> { Result = h });
 
-        var result = await _manager.MoveSubtreeAsync(holon.Id, newParent);
+        var result = await _manager.MoveSubtreeAsync(holon.Id, newParent, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().BeTrue();
@@ -318,15 +329,15 @@ public class HolonManagerTests
     [Fact]
     public async Task MoveSubtreeAsync_CyclePrevention_ReturnsError()
     {
-        var a = new Holon { Id = Guid.NewGuid(), Name = "A" };
-        var b = new Holon { Id = Guid.NewGuid(), Name = "B", ParentHolonId = a.Id };
+        var a = new Holon { Id = Guid.NewGuid(), Name = "A", AvatarId = Owner };
+        var b = new Holon { Id = Guid.NewGuid(), Name = "B", ParentHolonId = a.Id, AvatarId = Owner };
 
         _store.Setup(p => p.QueryAsync(It.Is<HolonQueryRequest>(q => q.ParentHolonId == a.Id), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { b } });
         _store.Setup(p => p.QueryAsync(It.Is<HolonQueryRequest>(q => q.ParentHolonId == b.Id), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>() });
 
-        var result = await _manager.MoveSubtreeAsync(a.Id, b.Id);
+        var result = await _manager.MoveSubtreeAsync(a.Id, b.Id, Owner);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().ContainEquivalentOf("cycle");

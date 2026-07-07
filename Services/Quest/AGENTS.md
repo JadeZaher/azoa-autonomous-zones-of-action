@@ -127,6 +127,22 @@ one key, string value). Extra keys = error; array-element position = error (V1).
   (typed fields + Metadata overlay, same as `GateCheckNodeHandler.HolonStateJson`).
 - `reads.` root is GateCheck-local only and is NOT valid in $from paths (V12).
 
+### §gate-predicate: run. in GateCheck predicates
+
+`run.<nodeName>.<field>` is valid in GateCheck **gate predicates**, not just $from
+bindings. `GateCheckNodeHandler.BuildScopeAsync` builds the `run.` scope from
+`context.AllRunExecutions` (every run execution, keyed by node id), mirroring
+`QuestConfigBindingResolver.BuildRunScope` (name → latest parseable output,
+last-writer-wins; publish rejects duplicate node names). Both executors thread the
+same raw executions into `QuestNodeExecutionContext.AllRunExecutions`
+(`QuestManager.ExecuteAsync` → `executionsByNode`; `QuestNodeStepHandler` →
+`allRunExecutions`). A `run.<node>` with no execution yet resolves to no scope key,
+so the evaluator throws unknown-path → gate fails CLOSED (same as a missing
+`upstream.`). WHY: `GatePath.ValidRoots` accepts `run` for the shared grammar, so
+the runtime scope must accept it too — a parseable, publish-passing predicate that
+fails closed at runtime with "unknown path" was a trap (grammar and runtime MUST
+accept the same roots).
+
 **Runtime resolution** runs as a pre-pass in `QuestConfigBindingResolver.TryResolveAsync`
 at BOTH dispatch seams:
 - Legacy: `QuestManager.ExecuteAsync` node loop (before handler dispatch).
@@ -274,3 +290,68 @@ handler ALSO enqueues a best-effort webhook outbox event via `QuestWebhookEmitte
   parallel outbox to the consent one that reuses the shared registration store + SSRF
   guard + HMAC signer, so a tenant's ONE endpoint receives both consent and quest.emit
   events.
+
+## §economic-manifest — value-moving-node disclosure for marketplace runs
+
+`QuestEconomicManifestBuilder.Build(quest, registry, versionHash)` produces the
+`QuestEconomicManifest` (`Models/Quest/QuestEconomicManifest.cs`) that the run-start
+consent gate and the `PreviewRunAsync` surface both consume. See
+`Managers/AGENTS.md §economic-consent` for how the manager wires it.
+
+- **What counts as economic.** `IsEconomicNode` returns true when the node's
+  registered handler declares `RequiresChainCapability` (the authoritative signal —
+  Swap/Grant/Transfer/Refund/FungibleTokenCreate/Bridge/Back), OR the node type is in
+  the explicit `EconomicNodeTypes` set (adds the NFT mint/transfer/burn types; also
+  defence-in-depth if a type ever ships without a registered handler). Union of the
+  two, so a value-mover can never slip past both checks.
+- **Ordering.** Nodes are listed in `ExecutionOrder` (run order) so the caller reads
+  the manifest top-to-bottom exactly as the run would fire them. The caller runs the
+  DAG validator first (which assigns `ExecutionOrder`); `PreviewRunAsync` does so
+  itself.
+- **Best-effort disclosure, never throws.** `ExtractDisclosure` recursively scans the
+  node's raw config JSON for the first destination-ish key
+  (`recipientAddress`/`targetChain`/`toAddress`/…) and amount-ish key
+  (`amount`/`total`/`quantity`), case-insensitive. An unparseable config yields
+  `(null, null)` but the node STILL appears in the manifest — its *presence* is the
+  load-bearing disclosure; its params are a bonus. Never fail manifest building on a
+  malformed config.
+- **Hash binding.** The manifest carries the quest's `PublishedVersionHash` so a
+  disclosure is tied to the exact graph revision
+  (`Managers/AGENTS.md §published-version-hash`).
+
+## §refund-linkage — a Refund may only reverse a real upstream debit (HIGH)
+
+`RefundNodeHandler` used to be a second, attacker-directed `Transfer`: it moved
+`RefundNodeConfig.NftId` to `RefundNodeConfig.Request.TargetAvatarId`, both
+creator-authored, with no check that any debit had actually occurred. On a public
+marketplace run that let a creator publish a benign-looking "Refund" node that
+drained the runner's asset out of order.
+
+The guard: a Refund now REQUIRES a succeeded upstream `Transfer` node in the SAME
+run whose `NftId` equals the refund's `NftId` (`TryFindReversibleTransfer`, walking
+`context.UpstreamExecutions` mapped back to `context.Quest.Nodes` for the node type).
+No matching upstream debit ⇒ fail closed (`NoUpstreamDebitMessage`). The reversal is
+DERIVED from that debit, not from config: recipient is forced to
+`context.ActingAvatarId` (the run actor = the Transfer's original sender) and the
+wallet is reused from the debit; `cfg.Request` contributes only the memo. So
+`cfg.Request.TargetAvatarId` can no longer redirect the asset.
+
+Deferred follow-ups (not blocking):
+- **Grant reversal.** A `Grant` is a mint-to-actor with no pre-existing `NftId`/prior
+  owner, so there is no specific-asset debit to reverse; Grant is intentionally NOT
+  matched. A real Grant-refund needs the minted asset id read back from the Grant
+  execution output (not structured for that today).
+- **`RefundsNodeId` disambiguation.** Matching by `NftId` is unambiguous only when a
+  single upstream Transfer moved that asset. An optional `Guid? RefundsNodeId` on
+  `RefundNodeConfig` would pin the refund to a specific Transfer node (and let the
+  publish-time executability validator verify the link statically).
+
+## QuestInstantiator — duplicate parameter keys are rejected
+
+`InstantiateAsync` parses user-supplied `parametersJson`. System.Text.Json
+preserves duplicate object keys, so `{"x":1,"x":2}` used to throw
+`ArgumentException` out of `ToDictionary` and surface as a 500. Both the
+validate path (`EnsureNoDuplicateKeys`, called from `ValidateParameters`) and
+the dictionary build (`BuildParameters`) now reject duplicate keys outright
+with a clean `InvalidOperationException` — one consistent rule so the
+first-match `TryGetProperty` validation and the dictionary never disagree.

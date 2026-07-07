@@ -50,6 +50,12 @@ interface ApiKeyInfo {
   isRevoked: boolean
 }
 
+/** One self-issuable scope with its description (from GET /api/apikey/scopes). */
+interface ApiKeyScopeInfo {
+  scope: string
+  description: string
+}
+
 // ─── Helpers ───
 
 function formatDate(dateStr: string | null): string {
@@ -102,22 +108,47 @@ function CopyButton({ text }: { text: string }) {
 function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) => void }) {
   const [name, setName] = useState('')
   const [expiresInDays, setExpiresInDays] = useState('')
-  const [scopes, setScopes] = useState('')
-  const [dappDevelop, setDappDevelop] = useState(false)
+  const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [scopeCatalog, setScopeCatalog] = useState<ApiKeyScopeInfo[]>([])
+  const [scopesLoading, setScopesLoading] = useState(true)
+
+  // Fetch the self-issuable scope vocabulary on mount to drive the checkboxes.
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      const res = await azoa.api.listIssuableScopes()
+      if (!active) return
+      if (isOk(res)) setScopeCatalog(res.value)
+      setScopesLoading(false)
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const toggleScope = (scope: string, checked: boolean) => {
+    setSelectedScopes((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(scope)
+      else next.delete(scope)
+      return next
+    })
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
-    const scopeList = scopes.split(',').map((s) => s.trim()).filter(Boolean)
-    if (dappDevelop && !scopeList.includes('dapp:develop')) scopeList.push('dapp:develop')
+    // No boxes checked = empty CSV = legacy full access. Otherwise the CSV of picks.
+    const scopeList = Array.from(selectedScopes)
 
     const body: Record<string, unknown> = { name }
     if (expiresInDays.trim()) body.expiresInDays = parseInt(expiresInDays, 10)
-    if (scopeList.length > 0) body.scopes = scopeList
+    if (scopeList.length > 0) body.scopes = scopeList.join(',')
 
     const res = await azoa.api.request('POST', '/api/apikey', body)
 
@@ -125,8 +156,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
       onCreated(res.value)
       setName('')
       setExpiresInDays('')
-      setScopes('')
-      setDappDevelop(false)
+      setSelectedScopes(new Set())
     } else {
       setError(res.error.message)
     }
@@ -141,7 +171,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="key-name">Key Name</Label>
               <Input
@@ -163,21 +193,35 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
                 placeholder="Never"
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="key-scopes">Scopes</Label>
-              <Input
-                id="key-scopes"
-                value={scopes}
-                onChange={(e) => setScopes(e.target.value)}
-                placeholder="read,write — leave empty for full access"
-              />
-            </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={dappDevelop} onCheckedChange={(v) => setDappDevelop(!!v)} />
-            Develop dApps (edit holons, quests, STAR-ODKs)
-          </label>
+          <div className="space-y-2">
+            <Label>Scopes</Label>
+            <p className="text-xs text-muted-foreground">
+              Leave all unchecked for a full-access key. Check specific scopes to restrict this key.
+            </p>
+            {scopesLoading ? (
+              <p className="text-xs text-muted-foreground">Loading scopes…</p>
+            ) : scopeCatalog.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No self-issuable scopes available.</p>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {scopeCatalog.map((s) => (
+                  <label key={s.scope} className="flex items-start gap-2 text-sm">
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={selectedScopes.has(s.scope)}
+                      onCheckedChange={(v) => toggleScope(s.scope, !!v)}
+                    />
+                    <span>
+                      <code className="font-mono text-xs">{s.scope}</code>
+                      <span className="block text-xs text-muted-foreground">{s.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
 
           <Button type="submit" disabled={loading || !name.trim()}>
             {loading ? 'Creating...' : 'Create API Key'}
@@ -268,13 +312,33 @@ function ConfirmDialog({
 
 // ─── Key List ───
 
-function KeyList({ keys, onRefresh }: { keys: ApiKeyInfo[]; loading: boolean; onRefresh: () => void }) {
+function KeyList({
+  keys,
+  onRefresh,
+  onRotated,
+}: {
+  keys: ApiKeyInfo[]
+  loading: boolean
+  onRefresh: () => void
+  onRotated: (key: CreateApiKeyResponse) => void
+}) {
   const [error, setError] = useState<string | null>(null)
 
   const handleRevoke = async (id: string) => {
     setError(null)
     const res = await azoa.api.request('POST', `/api/apikey/${id}/revoke`)
     if (isOk(res)) {
+      onRefresh()
+    } else {
+      setError(res.error.message)
+    }
+  }
+
+  const handleRotate = async (id: string) => {
+    setError(null)
+    const res = await azoa.api.rotateApiKey(id)
+    if (isOk(res)) {
+      onRotated(res.value as unknown as CreateApiKeyResponse)
       onRefresh()
     } else {
       setError(res.error.message)
@@ -353,14 +417,24 @@ function KeyList({ keys, onRefresh }: { keys: ApiKeyInfo[]; loading: boolean; on
                     </TableCell>
                     <TableCell className="text-right">
                       {status === 'active' && (
-                        <ConfirmDialog
-                          title="Revoke API Key"
-                          description={`Are you sure you want to revoke "${key.name}"? This key will immediately stop working.`}
-                          confirmLabel="Revoke"
-                          triggerVariant="outline"
-                          triggerLabel="Revoke"
-                          onConfirm={() => handleRevoke(key.id)}
-                        />
+                        <div className="flex justify-end gap-2">
+                          <ConfirmDialog
+                            title="Rotate API Key"
+                            description={`Rotate "${key.name}"? A new key inheriting its name, scopes, and expiry is minted and shown once; this key is immediately revoked.`}
+                            confirmLabel="Rotate"
+                            triggerVariant="outline"
+                            triggerLabel="Rotate"
+                            onConfirm={() => handleRotate(key.id)}
+                          />
+                          <ConfirmDialog
+                            title="Revoke API Key"
+                            description={`Are you sure you want to revoke "${key.name}"? This key will immediately stop working.`}
+                            confirmLabel="Revoke"
+                            triggerVariant="outline"
+                            triggerLabel="Revoke"
+                            onConfirm={() => handleRevoke(key.id)}
+                          />
+                        </div>
                       )}
                       {(status === 'revoked' || status === 'expired') && (
                         <ConfirmDialog
@@ -417,7 +491,7 @@ export default function ApiKeysPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight tracking-tight">API Keys</h1>
+        <h1 className="text-lg font-semibold tracking-tight">API Keys</h1>
         <p className="text-sm text-muted-foreground">
           Create and manage API keys for programmatic access to the AZOA API
         </p>
@@ -446,7 +520,7 @@ export default function ApiKeysPage() {
             <CardContent className="pt-6 text-sm text-destructive">{error}</CardContent>
           </Card>
         ) : (
-          <KeyList keys={keys} loading={loading} onRefresh={fetchKeys} />
+          <KeyList keys={keys} loading={loading} onRefresh={fetchKeys} onRotated={setNewKey} />
         )}
       </div>
     </div>

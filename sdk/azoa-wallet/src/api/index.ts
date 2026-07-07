@@ -61,6 +61,15 @@ export type {
   ApiKeyCreateParams,
   ApiKeyCreateResult,
   ApiKeyInfo,
+  ApiKeyScope,
+  ApiKeyScopeInfo,
+  // DappSeries types (DappSeriesController)
+  DappSeriesStatus,
+  DappSeriesResult,
+  DappSeriesCreateParams,
+  DappSeriesUpdateParams,
+  DappSeriesQuestResult,
+  DappSeriesAddQuestParams,
   // Holon AssetType registry types (final-hardening F5)
   HolonTypeResult,
   HolonTypeRegisterParams,

@@ -166,6 +166,115 @@ public class AvatarNFTControllerIntegrationTests : IntegrationTestBase
         result.Result.Should().Contain(b => b.HolonId == holon.Id && b.Role == "owner");
     }
 
+    // ── IDOR: cross-avatar bind + read (audit fix) ────────────────────────────
+
+    [Fact]
+    public async Task BindHolonToAvatarNFTAsync_WithHolonOwnedByDifferentAvatar_ShouldReject()
+    {
+        // Attacker mints their own NFT.
+        var mintResponse = await Client.PostAsJsonAsync("/api/AvatarNFT/mint",
+            ValidMint("Attacker NFT"), JsonOptions);
+        mintResponse.EnsureSuccessStatusCode();
+        var attackerNft = (await ReadResultAsync<AvatarNFT>(mintResponse))!.Result!;
+
+        // Victim (a different avatar) owns the holon under attack.
+        var victimAvatarId = Guid.Parse("c4444444-4444-4444-4444-444444444444");
+        using var victimClient = Factory.CreateAuthenticatedClientForAvatar(victimAvatarId);
+        var victimHolonResponse = await victimClient.PostAsJsonAsync("/api/holon",
+            new HolonCreateModel { Name = "VictimHolon", Description = "owned by victim" }, JsonOptions);
+        victimHolonResponse.EnsureSuccessStatusCode();
+        var victimHolon = (await victimHolonResponse.Content.ReadFromJsonAsync<AZOAResult<Holon>>(JsonOptions))!.Result!;
+
+        // Attacker (default Client / DefaultAvatarId) tries to bind the victim's holon to their own NFT.
+        var response = await Client.PostAsJsonAsync(
+            $"/api/AvatarNFT/{attackerNft.Id}/holons/{victimHolon.Id}/bind",
+            new HolonNFTBindingModel { Role = "owner", PermissionLevel = "full" }, JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "a caller must not be able to bind a holon they do not own to their own AvatarNFT (bind-target IDOR)");
+        var result = await response.Content.ReadFromJsonAsync<AZOAResult<HolonNFTBinding>>(JsonOptions);
+        result!.IsError.Should().BeTrue();
+        result.Message.Should().Contain("different avatar");
+    }
+
+    [Fact]
+    public async Task BindWalletToAvatarNFTAsync_WithWalletOwnedByDifferentAvatar_ShouldReject()
+    {
+        var mintResponse = await Client.PostAsJsonAsync("/api/AvatarNFT/mint",
+            ValidMint("Attacker Wallet NFT"), JsonOptions);
+        mintResponse.EnsureSuccessStatusCode();
+        var attackerNft = (await ReadResultAsync<AvatarNFT>(mintResponse))!.Result!;
+
+        var victimAvatarId = Guid.Parse("c5555555-5555-5555-5555-555555555555");
+        using var victimClient = Factory.CreateAuthenticatedClientForAvatar(victimAvatarId);
+        var walletAddr = "victim" + Guid.NewGuid().ToString("N")[..8];
+        var victimWalletResponse = await victimClient.PostAsJsonAsync("/api/wallet",
+            new WalletCreateModel { ChainType = "Solana", Address = walletAddr }, JsonOptions);
+        victimWalletResponse.EnsureSuccessStatusCode();
+        var victimWallet = (await victimWalletResponse.Content.ReadFromJsonAsync<AZOAResult<Wallet>>(JsonOptions))!.Result!;
+
+        var response = await Client.PostAsJsonAsync(
+            $"/api/AvatarNFT/{attackerNft.Id}/wallets/{victimWallet.Id}/bind",
+            new WalletNFTBindingModel { BindingType = "primary" }, JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "a caller must not be able to bind a wallet they do not own to their own AvatarNFT (bind-target IDOR)");
+        var result = await response.Content.ReadFromJsonAsync<AZOAResult<WalletNFTBinding>>(JsonOptions);
+        result!.IsError.Should().BeTrue();
+        result.Message.Should().Contain("different avatar");
+    }
+
+    [Fact]
+    public async Task GetAvatarNFTAsync_WithNFTOwnedByDifferentAvatar_ShouldReturnForbidden()
+    {
+        var mintResponse = await Client.PostAsJsonAsync("/api/AvatarNFT/mint",
+            ValidMint("Private NFT"), JsonOptions);
+        mintResponse.EnsureSuccessStatusCode();
+        var nft = (await ReadResultAsync<AvatarNFT>(mintResponse))!.Result!;
+
+        var otherAvatarId = Guid.Parse("c6666666-6666-6666-6666-666666666666");
+        using var otherClient = Factory.CreateAuthenticatedClientForAvatar(otherAvatarId);
+
+        var response = await otherClient.GetAsync($"/api/AvatarNFT/{nft.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "a foreign avatar must not be able to read another avatar's AvatarNFT by id (read-scoping IDOR)");
+    }
+
+    [Fact]
+    public async Task GetAvatarNFTsByAvatarAsync_WithForeignAvatarId_ShouldReturnForbidden()
+    {
+        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
+        var otherAvatarId = Guid.Parse("c7777777-7777-7777-7777-777777777777");
+        using var otherClient = Factory.CreateAuthenticatedClientForAvatar(otherAvatarId);
+
+        var response = await otherClient.GetAsync($"/api/AvatarNFT/avatar/{avatarId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "a caller must not be able to list another avatar's AvatarNFTs via an arbitrary route avatarId");
+    }
+
+    [Fact]
+    public async Task GetHolonBindingsAsync_WithNFTOwnedByDifferentAvatar_ShouldReturnForbidden()
+    {
+        var mintResponse = await Client.PostAsJsonAsync("/api/AvatarNFT/mint",
+            ValidMint("Private Bound NFT"), JsonOptions);
+        mintResponse.EnsureSuccessStatusCode();
+        var nft = (await ReadResultAsync<AvatarNFT>(mintResponse))!.Result!;
+
+        var holon = await SeedHolonAsync(h => h.WithName("PrivateBoundHolon"));
+        await Client.PostAsJsonAsync($"/api/AvatarNFT/{nft.Id}/holons/{holon.Id}/bind",
+            new HolonNFTBindingModel { Role = "owner", PermissionLevel = "full" }, JsonOptions);
+
+        var otherAvatarId = Guid.Parse("c8888888-8888-8888-8888-888888888888");
+        using var otherClient = Factory.CreateAuthenticatedClientForAvatar(otherAvatarId);
+
+        var response = await otherClient.GetAsync($"/api/AvatarNFT/{nft.Id}/holons");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "a foreign avatar must not be able to enumerate another avatar's holon bindings");
+    }
+
     // ── Verify access ─────────────────────────────────────────────────────────
 
     [Fact]

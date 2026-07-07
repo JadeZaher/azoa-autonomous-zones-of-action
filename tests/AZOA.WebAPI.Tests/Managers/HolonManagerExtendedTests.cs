@@ -14,6 +14,10 @@ public class HolonManagerExtendedTests
     private readonly Mock<IHolonStore> _store;
     private readonly HolonManager _manager;
 
+    // Owner-or-public read scope (see Controllers/AGENTS.md §cross-tenant-read-scope):
+    // read tests tag fixtures with Owner and pass Owner as callerAvatarId.
+    private static readonly Guid Owner = Guid.NewGuid();
+
     public HolonManagerExtendedTests()
     {
         _store = new Mock<IHolonStore>();
@@ -23,11 +27,11 @@ public class HolonManagerExtendedTests
     [Fact]
     public async Task GetAsync_Existing_ReturnsHolon()
     {
-        var holon = new Holon { Id = Guid.NewGuid(), Name = "Test" };
+        var holon = new Holon { Id = Guid.NewGuid(), Name = "Test", AvatarId = Owner };
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
 
-        var result = await _manager.GetAsync(holon.Id);
+        var result = await _manager.GetAsync(holon.Id, Owner);
 
         result.Result!.Name.Should().Be("Test");
     }
@@ -49,10 +53,10 @@ public class HolonManagerExtendedTests
         _store.Setup(p => p.QueryAsync((HolonQueryRequest?)null, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>>
                  {
-                     Result = new[] { new Holon { Name = "A" }, new Holon { Name = "B" } }
+                     Result = new[] { new Holon { Name = "A", AvatarId = Owner }, new Holon { Name = "B", AvatarId = Owner } }
                  });
 
-        var result = await _manager.GetAllAsync();
+        var result = await _manager.GetAllAsync(Owner);
 
         result.Result.Should().HaveCount(2);
     }
@@ -125,7 +129,7 @@ public class HolonManagerExtendedTests
     [Fact]
     public async Task InteractAsync_ShouldChangeParent()
     {
-        var holon = new Holon { Id = Guid.NewGuid(), ParentHolonId = null };
+        var holon = new Holon { Id = Guid.NewGuid(), ParentHolonId = null, AvatarId = Owner };
         var newParent = Guid.NewGuid();
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
@@ -137,7 +141,7 @@ public class HolonManagerExtendedTests
         _store.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IHolon h, CancellationToken _) => new AZOAResult<IHolon> { Result = h });
 
-        var result = await _manager.InteractAsync(holon.Id, new HolonInteractionRequest { NewParentHolonId = newParent });
+        var result = await _manager.InteractAsync(holon.Id, new HolonInteractionRequest { NewParentHolonId = newParent }, Owner);
 
         result.Result!.ParentHolonId.Should().Be(newParent);
     }
@@ -146,13 +150,13 @@ public class HolonManagerExtendedTests
     public async Task InteractAsync_ShouldRemovePeers()
     {
         var peer = Guid.NewGuid();
-        var holon = new Holon { Id = Guid.NewGuid(), PeerHolonIds = new List<Guid> { peer } };
+        var holon = new Holon { Id = Guid.NewGuid(), PeerHolonIds = new List<Guid> { peer }, AvatarId = Owner };
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IHolon h, CancellationToken _) => new AZOAResult<IHolon> { Result = h });
 
-        var result = await _manager.InteractAsync(holon.Id, new HolonInteractionRequest { RemovePeerHolonIds = new List<Guid> { peer } });
+        var result = await _manager.InteractAsync(holon.Id, new HolonInteractionRequest { RemovePeerHolonIds = new List<Guid> { peer } }, Owner);
 
         result.Result!.PeerHolonIds.Should().BeEmpty();
     }
@@ -160,13 +164,13 @@ public class HolonManagerExtendedTests
     [Fact]
     public async Task InteractAsync_ShouldRemoveMetadataKeys()
     {
-        var holon = new Holon { Id = Guid.NewGuid(), Metadata = new Dictionary<string, string> { ["a"] = "1", ["b"] = "2" } };
+        var holon = new Holon { Id = Guid.NewGuid(), Metadata = new Dictionary<string, string> { ["a"] = "1", ["b"] = "2" }, AvatarId = Owner };
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IHolon h, CancellationToken _) => new AZOAResult<IHolon> { Result = h });
 
-        var result = await _manager.InteractAsync(holon.Id, new HolonInteractionRequest { RemoveMetadataKeys = new List<string> { "a" } });
+        var result = await _manager.InteractAsync(holon.Id, new HolonInteractionRequest { RemoveMetadataKeys = new List<string> { "a" } }, Owner);
 
         result.Result!.Metadata.Should().NotContainKey("a");
         result.Result.Metadata.Should().ContainKey("b");
@@ -176,9 +180,9 @@ public class HolonManagerExtendedTests
     public async Task QueryAsync_WithNoFilters_ShouldReturnAll()
     {
         _store.Setup(p => p.QueryAsync(It.IsAny<HolonQueryRequest>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { new Holon(), new Holon() } });
+                 .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { new Holon { AvatarId = Owner }, new Holon { AvatarId = Owner } } });
 
-        var result = await _manager.QueryAsync(new HolonQueryRequest());
+        var result = await _manager.QueryAsync(new HolonQueryRequest(), Owner);
 
         result.Result.Should().HaveCount(2);
     }

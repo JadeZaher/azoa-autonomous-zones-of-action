@@ -20,7 +20,7 @@ public sealed class NftGetNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<IdConfig>(context.Node.Config, nameof(QuestNodeType.NftGet), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _nftManager.GetAsync(cfg.Id);
+        var r = await _nftManager.GetAsync(cfg.Id, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

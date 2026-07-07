@@ -60,6 +60,16 @@ public sealed class InMemoryQuestStore : IQuestStore
         });
     }
 
+    public Task<AZOAResult<IEnumerable<Quest>>> GetPublicQuestsAsync(CancellationToken ct = default)
+    {
+        var matches = _quests.Values.Where(q => q.IsPublic).ToList();
+        return Task.FromResult(new AZOAResult<IEnumerable<Quest>>
+        {
+            Result = matches,
+            Message = "Success",
+        });
+    }
+
     public Task<AZOAResult<IEnumerable<Quest>>> GetQuestsByDappSeriesAsync(
         Guid dappSeriesId, CancellationToken ct = default)
     {

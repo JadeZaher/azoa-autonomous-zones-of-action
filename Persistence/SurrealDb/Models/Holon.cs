@@ -87,5 +87,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 17)]
         [References(typeof(Avatar), Optional = true)]
         public string? OriginAvatarId { get; set; }
+
+        [Column(Order = 18)]
+        [Default("false")]
+        public bool IsPublic { get; set; }
     }
 }

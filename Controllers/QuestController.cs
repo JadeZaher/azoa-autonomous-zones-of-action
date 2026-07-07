@@ -47,6 +47,15 @@ public class QuestController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Marketplace browse: public + published quests any authenticated avatar may fork/start.</summary>
+    [HttpGet("public")]
+    public async Task<ActionResult<AZOAResult<IEnumerable<Quest>>>> ListPublic([FromQuery] AZOARequest? request)
+    {
+        var result = await _questManager.ListPublicAsync(request);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
     [HttpGet("avatar/{avatarId:guid}")]
     public async Task<ActionResult<AZOAResult<IEnumerable<Quest>>>> GetByAvatar(Guid avatarId, [FromQuery] AZOARequest? request)
     {
@@ -133,7 +142,7 @@ public class QuestController : ControllerBase
     // ─── Execution ───
 
     [HttpPost("{id:guid}/execute")]
-    public async Task<ActionResult<AZOAResult<QuestRun>>> Execute(Guid id, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<QuestRun>>> Execute(Guid id, [FromQuery] AZOARequest? request, [FromQuery] bool acknowledgeEconomicEffects = false)
     {
         // Returns the produced QuestRun (one execution attempt). Runtime state
         // — per-node State/Output/Error — lives on the per-(run, node)
@@ -146,7 +155,26 @@ public class QuestController : ControllerBase
         // the act_as_tenant claim; thread it onto the run so a Tier-2 economic node
         // stamps it on the BlockchainOperation and the signing seam's consent gate
         // fires. A plain user principal yields null → no behavioural change.
-        var result = await _questManager.ExecuteAsync(id, avatarId.Value, request, User.GetActingTenantId());
+        // acknowledgeEconomicEffects: runner consent to the disclosed value-moving
+        // manifest on a non-owner marketplace run (see /preview) — see Managers/AGENTS.md §economic-consent.
+        var result = await _questManager.ExecuteAsync(id, avatarId.Value, request, User.GetActingTenantId(), acknowledgeEconomicEffects);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Pre-commit disclosure: the value-moving-node manifest a runner would trigger
+    /// by starting this quest, so a marketplace runner sees "this quest moves assets"
+    /// BEFORE committing. See Managers/AGENTS.md §economic-consent.
+    /// </summary>
+    [HttpGet("{id:guid}/preview")]
+    public async Task<ActionResult<AZOAResult<QuestEconomicManifest>>> PreviewRun(Guid id, [FromQuery] AZOARequest? request)
+    {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null)
+            return Unauthorized(new AZOAResult<QuestEconomicManifest> { IsError = true, Message = "Invalid token." });
+
+        var result = await _questManager.PreviewRunAsync(id, avatarId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -198,7 +226,7 @@ public class QuestController : ControllerBase
     /// suspending at manual/gate/timer nodes.
     /// </summary>
     [HttpPost("{id:guid}/start-workflow")]
-    public async Task<ActionResult<AZOAResult<QuestRun>>> StartWorkflow(Guid id, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<QuestRun>>> StartWorkflow(Guid id, [FromQuery] AZOARequest? request, [FromQuery] bool acknowledgeEconomicEffects = false)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
@@ -207,7 +235,9 @@ public class QuestController : ControllerBase
         // tenant-consent-delegation AC4: the durable path — persist the acting
         // tenant from the principal onto the run so it survives the async saga hop
         // to the Tier-2 node handlers. Null for a plain user → no behaviour change.
-        var result = await _questManager.StartWorkflowRunAsync(id, avatarId.Value, request, User.GetActingTenantId());
+        // acknowledgeEconomicEffects: runner consent to the disclosed manifest on a
+        // non-owner marketplace run (see /preview) — see Managers/AGENTS.md §economic-consent.
+        var result = await _questManager.StartWorkflowRunAsync(id, avatarId.Value, request, User.GetActingTenantId(), acknowledgeEconomicEffects);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }

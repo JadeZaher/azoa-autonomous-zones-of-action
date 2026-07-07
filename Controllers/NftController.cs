@@ -31,7 +31,9 @@ public class NftController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AZOAResult<NftResult>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _nftManager.GetAsync(id, request);
+        // Owner-or-public read scope: a non-owner cannot read another tenant's private
+        // NFT by id (manager returns "not found" rather than confirming it).
+        var result = await _nftManager.GetAsync(id, GetAvatarIdFromClaims(), request);
         if (result.IsError || result.Result == null) return NotFound(result);
 
         var nftResult = MapToNftResult(result.Result);
@@ -41,7 +43,7 @@ public class NftController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AZOAResult<IEnumerable<NftResult>>>> Query([FromQuery] NftQueryRequest query, [FromQuery] AZOARequest? request)
     {
-        var result = await _nftManager.QueryAsync(query, request);
+        var result = await _nftManager.QueryAsync(query, GetAvatarIdFromClaims(), request);
         if (result.IsError || result.Result == null) return Ok(new AZOAResult<IEnumerable<NftResult>> { IsError = true, Message = result.Message });
 
         var mapped = result.Result.Select(MapToNftResult).ToList();
@@ -54,6 +56,13 @@ public class NftController : ControllerBase
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
             return Unauthorized(new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
+
+        if (!HasSigningScope(AzoaScopes.NftMint))
+            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<IBlockchainOperation>
+            {
+                IsError = true,
+                Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to mint an NFT."
+            });
 
         var result = await _nftManager.MintAsync(request, avatarId.Value, providerRequest);
         if (!result.IsError) return Ok(result);
@@ -95,6 +104,13 @@ public class NftController : ControllerBase
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
             return Unauthorized(new AZOAResult<FungibleTokenResult> { IsError = true, Message = "Invalid token." });
+
+        if (!HasSigningScope(AzoaScopes.NftMint))
+            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<FungibleTokenResult>
+            {
+                IsError = true,
+                Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to launch a fungible token."
+            });
 
         // The manager partitions the idempotency namespace by this id. An API-key
         // principal carries an ApiKeyId claim; a JWT self-run (the frontend test
@@ -164,6 +180,13 @@ public class NftController : ControllerBase
         if (avatarId == null)
             return Unauthorized(new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
 
+        if (!HasSigningScope(AzoaScopes.TransferSign))
+            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<IBlockchainOperation>
+            {
+                IsError = true,
+                Message = $"Caller lacks the '{AzoaScopes.TransferSign}' scope required to transfer an NFT."
+            });
+
         var result = await _nftManager.TransferAsync(id, request, avatarId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
@@ -175,6 +198,14 @@ public class NftController : ControllerBase
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
             return Unauthorized(new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
+
+        // Burn maps to nft:mint per AzoaScopes.OperationScopeMap.
+        if (!HasSigningScope(AzoaScopes.NftMint))
+            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<IBlockchainOperation>
+            {
+                IsError = true,
+                Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to burn an NFT."
+            });
 
         var result = await _nftManager.BurnAsync(id, request.WalletId, avatarId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
@@ -218,6 +249,22 @@ public class NftController : ControllerBase
             ModifiedDate = holon.ModifiedDate,
             IsActive = holon.IsActive
         };
+    }
+
+    /// <summary>
+    /// True iff the caller may perform a <paramref name="scope"/>-gated signing action.
+    /// Mirrors the DappDevelop policy's "empty CSV = legacy full access" rule so a
+    /// scoped API key is RESTRICTED without locking out JWT owners or full-access keys.
+    /// See Controllers/AGENTS.md §per-endpoint-signing-scope.
+    /// </summary>
+    private bool HasSigningScope(string scope)
+    {
+        var isApiKey = string.Equals(User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase);
+        if (!isApiKey) return true;                                        // JWT owner → unaffected.
+        if (string.Equals(User.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
+            return false;                                                 // all-forbidden CSV → not full access.
+        if (User.GetScopes().Count == 0) return true;                     // empty CSV → legacy full access.
+        return User.HasScope(scope);                                      // scoped key → must carry the scope.
     }
 
     private Guid? GetAvatarIdFromClaims()

@@ -23,4 +23,5 @@ public class Holon : IHolon, INft
     public bool IsActive { get; set; } = true;
     public Guid? SourceHolonId { get; set; }
     public Guid? OriginAvatarId { get; set; }
+    public bool IsPublic { get; set; } = false;
 }

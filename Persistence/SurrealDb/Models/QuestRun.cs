@@ -99,5 +99,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Marketplace provenance: the origin quest's owner/creator avatar when the runner is not the owner (null for owner runs).")]
         [References(typeof(Avatar), Optional = true)]
         public string? OriginAvatarId { get; set; }
+
+        [FieldGroup("The quest's published_version_hash at the instant this run STARTED -- binds the run to the exact graph revision the runner saw/consented to. A run whose stamp no longer matches the live quest is detectable evidence of an unpublish->edit->republish bait-and-switch. See Managers/AGENTS.md §published-version-hash.")]
+        public string? PublishedVersionHash { get; set; }
     }
 }

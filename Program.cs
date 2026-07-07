@@ -288,6 +288,12 @@ builder.Services.AddAuthorization(o =>
         }));
 });
 
+// Actionable authorization failures (DX audit): a denied scoped API key gets a JSON
+// body naming the missing dapp:develop scope instead of a bare 403. The interface
+// lives in Microsoft.AspNetCore.Authorization (NOT the .Policy sub-namespace).
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler,
+    AZOA.WebAPI.Services.Auth.ActionableAuthorizationResultHandler>();
+
 // ─── Rate limiting + per-API-key metering (api-safety-hardening task 18) ───
 // Built-in ASP.NET Core 8 rate limiting (Microsoft.AspNetCore.RateLimiting —
 // part of the Web shared framework, NO NuGet package required).

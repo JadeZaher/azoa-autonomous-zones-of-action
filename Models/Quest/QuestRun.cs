@@ -80,4 +80,13 @@ public class QuestRun
 
     /// <summary>Marketplace provenance: the origin quest's owner/creator avatar when the runner is not the owner. Null for owner runs.</summary>
     public Guid? OriginAvatarId { get; set; }
+
+    /// <summary>
+    /// The quest's <see cref="Quest.PublishedVersionHash"/> at the instant this run
+    /// STARTED — binds the run to the exact graph revision the runner saw/consented to.
+    /// A later unpublish→edit→republish changes the quest's hash, so a run's stamp no
+    /// longer matching the live quest is detectable evidence of a bait-and-switch.
+    /// See Managers/AGENTS.md §published-version-hash.
+    /// </summary>
+    public string? PublishedVersionHash { get; set; }
 }

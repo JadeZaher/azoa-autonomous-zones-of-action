@@ -57,6 +57,9 @@ DEFINE FIELD IF NOT EXISTS source_quest_id ON TABLE quest_run TYPE option<record
 -- Marketplace provenance: the origin quest's owner/creator avatar when the runner is not the owner (null for owner runs).
 DEFINE FIELD IF NOT EXISTS origin_avatar_id ON TABLE quest_run TYPE option<record<avatar>>;
 
+-- The quest's published_version_hash at the instant this run STARTED -- binds the run to the exact graph revision the runner saw/consented to. A run whose stamp no longer matches the live quest is detectable evidence of an unpublish->edit->republish bait-and-switch. See Managers/AGENTS.md §published-version-hash.
+DEFINE FIELD IF NOT EXISTS published_version_hash ON TABLE quest_run TYPE option<string>;
+
 -- ── Indexes ──────────────────────────────────────────────────
 
 DEFINE INDEX IF NOT EXISTS quest_run_by_quest

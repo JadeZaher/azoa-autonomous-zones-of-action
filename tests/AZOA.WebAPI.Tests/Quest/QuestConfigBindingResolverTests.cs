@@ -51,14 +51,17 @@ public class QuestConfigBindingResolverTests
     private static IHolonManager MakeHolonManager(IHolon? holon = null, Guid? holonId = null)
     {
         var mock = new Mock<IHolonManager>();
+        // Owner-or-public read scope threads a callerAvatarId now; the resolver's own
+        // AvatarId post-check does the owner-strict filtering, so the mock matches any
+        // caller id and returns the seeded holon verbatim.
         if (holon is not null && holonId is not null)
         {
-            mock.Setup(m => m.GetAsync(holonId.Value, null))
+            mock.Setup(m => m.GetAsync(holonId.Value, It.IsAny<Guid?>(), It.IsAny<AZOA.WebAPI.Models.Requests.AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
         }
         else
         {
-            mock.Setup(m => m.GetAsync(It.IsAny<Guid>(), null))
+            mock.Setup(m => m.GetAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOA.WebAPI.Models.Requests.AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<IHolon> { IsError = true, Message = "not found" });
         }
         return mock.Object;
@@ -323,5 +326,6 @@ public class QuestConfigBindingResolverTests
         public bool IsActive { get; set; }
         public Guid? SourceHolonId { get; set; }
         public Guid? OriginAvatarId { get; set; }
+        public bool IsPublic { get; set; }
     }
 }

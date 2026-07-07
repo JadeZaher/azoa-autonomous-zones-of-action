@@ -93,6 +93,21 @@ public class ApiKeyController : ControllerBase
     }
 
     /// <summary>
+    /// List the scopes an avatar may self-issue on a new key, each with a human
+    /// description. Drives the key-creation UI's scope checkboxes. Any authenticated
+    /// avatar may read this — it exposes only the public scope vocabulary.
+    /// </summary>
+    [HttpGet("scopes")]
+    public IActionResult IssuableScopes()
+    {
+        var scopes = AzoaScopes.IssuableScopeCatalog()
+            .Select(s => new ApiKeyScopeInfo { Scope = s.Scope, Description = s.Description })
+            .ToList();
+
+        return Ok(new AZOAResult<List<ApiKeyScopeInfo>> { IsError = false, Message = "OK", Result = scopes });
+    }
+
+    /// <summary>
     /// List all API keys for the authenticated avatar (keys are never shown, only prefixes).
     /// </summary>
     [HttpGet]
@@ -135,6 +150,62 @@ public class ApiKeyController : ControllerBase
             return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
 
         return Ok(new AZOAResult<object> { IsError = false, Message = "API key revoked." });
+    }
+
+    /// <summary>
+    /// Rotate an API key: mint a NEW key inheriting the old key's name, scopes, and
+    /// expiry window, revoke the old key, and return the new raw key ONCE (same shape
+    /// as Create). Scoped to (id, authenticated avatar) — an avatar may only rotate
+    /// its OWN key.
+    /// </summary>
+    [HttpPost("{id:guid}/rotate")]
+    public async Task<IActionResult> Rotate(Guid id)
+    {
+        var avatarId = GetAvatarId();
+        if (avatarId == Guid.Empty)
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
+
+        var existing = await _store.GetByIdForAvatarAsync(id, avatarId, HttpContext.RequestAborted);
+        if (existing is null)
+            return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
+
+        var rawKey = ApiKeyAuthenticationHandler.GenerateRawKey();
+        var keyHash = ApiKeyAuthenticationHandler.HashKey(rawKey);
+
+        // Inherit the remaining expiry window (relative to now), not the original
+        // absolute instant, so a rotated key isn't born already-expired.
+        DateTime? expiresAt = existing.ExpiresAt.HasValue
+            ? (existing.ExpiresAt.Value > DateTime.UtcNow ? existing.ExpiresAt.Value : DateTime.UtcNow)
+            : null;
+
+        var apiKey = new ApiKey
+        {
+            AvatarId = avatarId,
+            Name = existing.Name,
+            KeyHash = keyHash,
+            KeyPrefix = rawKey[..16],
+            ExpiresAt = expiresAt,
+            Scopes = existing.Scopes,
+        };
+
+        await _store.CreateAsync(apiKey, HttpContext.RequestAborted);
+        await _store.RevokeAsync(id, avatarId, DateTime.UtcNow, HttpContext.RequestAborted);
+
+        return Ok(new AZOAResult<CreateApiKeyResponse>
+        {
+            IsError = false,
+            Message = "API key rotated. Store the new key securely — it will not be shown again. The old key is revoked.",
+            Result = new CreateApiKeyResponse
+            {
+                Id = apiKey.Id,
+                Name = apiKey.Name,
+                Key = rawKey,
+                KeyPrefix = apiKey.KeyPrefix,
+                ExpiresAt = apiKey.ExpiresAt,
+                Scopes = apiKey.Scopes,
+                CreatedDate = apiKey.CreatedDate,
+            }
+        });
     }
 
     /// <summary>
@@ -189,4 +260,11 @@ public class ApiKeyInfo
     public DateTime? RevokedAt { get; set; }
     public bool IsActive { get; set; }
     public string? Scopes { get; set; }
+}
+
+/// <summary>One self-issuable scope with its human description (key-issuance discovery surface).</summary>
+public class ApiKeyScopeInfo
+{
+    public string Scope { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
 }

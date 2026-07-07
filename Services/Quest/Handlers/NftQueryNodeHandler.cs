@@ -20,7 +20,7 @@ public sealed class NftQueryNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<NftQueryRequest>(context.Node.Config, nameof(QuestNodeType.NftQuery), out var query, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _nftManager.QueryAsync(query);
+        var r = await _nftManager.QueryAsync(query, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

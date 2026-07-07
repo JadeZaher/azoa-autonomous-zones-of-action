@@ -41,7 +41,7 @@ public class HolonControllerTests
     public async Task Get_Existing_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _holonManager.Setup(m => m.GetAsync(id, It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IHolon> { Result = new Holon() });
 
         var result = await _controller.Get(id, null);
@@ -53,7 +53,7 @@ public class HolonControllerTests
     public async Task Get_NonExisting_ReturnsNotFound()
     {
         var id = Guid.NewGuid();
-        _holonManager.Setup(m => m.GetAsync(id, It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IHolon> { IsError = true, Result = null });
 
         var result = await _controller.Get(id, null);
@@ -64,7 +64,7 @@ public class HolonControllerTests
     [Fact]
     public async Task Query_ReturnsOk()
     {
-        _holonManager.Setup(m => m.QueryAsync(It.IsAny<HolonQueryRequest>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.QueryAsync(It.IsAny<HolonQueryRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>() });
 
         var result = await _controller.Query(new HolonQueryRequest(), null);
@@ -217,7 +217,7 @@ public class HolonControllerTests
     [Fact]
     public async Task GetChildren_ReturnsOk()
     {
-        _holonManager.Setup(m => m.GetChildrenAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.GetChildrenAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { new Holon() } });
 
         var result = await _controller.GetChildren(Guid.NewGuid(), null);
@@ -228,7 +228,7 @@ public class HolonControllerTests
     [Fact]
     public async Task GetPeers_Success_ReturnsOk()
     {
-        _holonManager.Setup(m => m.GetPeersAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.GetPeersAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { new Holon() } });
 
         var result = await _controller.GetPeers(Guid.NewGuid(), null);
@@ -239,7 +239,7 @@ public class HolonControllerTests
     [Fact]
     public async Task GetPeers_Error_ReturnsNotFound()
     {
-        _holonManager.Setup(m => m.GetPeersAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.GetPeersAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { IsError = true });
 
         var result = await _controller.GetPeers(Guid.NewGuid(), null);
@@ -250,7 +250,7 @@ public class HolonControllerTests
     [Fact]
     public async Task GetAncestors_Success_ReturnsOk()
     {
-        _holonManager.Setup(m => m.GetAncestorsAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.GetAncestorsAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { new Holon() } });
 
         var result = await _controller.GetAncestors(Guid.NewGuid(), null);
@@ -261,7 +261,7 @@ public class HolonControllerTests
     [Fact]
     public async Task GetAncestors_Error_ReturnsNotFound()
     {
-        _holonManager.Setup(m => m.GetAncestorsAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.GetAncestorsAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { IsError = true });
 
         var result = await _controller.GetAncestors(Guid.NewGuid(), null);
@@ -272,7 +272,7 @@ public class HolonControllerTests
     [Fact]
     public async Task GetDescendants_Success_ReturnsOk()
     {
-        _holonManager.Setup(m => m.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { new Holon() } });
 
         var result = await _controller.GetDescendants(Guid.NewGuid(), null);
@@ -283,7 +283,7 @@ public class HolonControllerTests
     [Fact]
     public async Task GetDescendants_Error_ReturnsNotFound()
     {
-        _holonManager.Setup(m => m.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.GetDescendantsAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { IsError = true });
 
         var result = await _controller.GetDescendants(Guid.NewGuid(), null);
@@ -318,7 +318,7 @@ public class HolonControllerTests
     [Fact]
     public async Task Compose_Success_ReturnsOk()
     {
-        _holonManager.Setup(m => m.ComposeAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.ComposeAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<HolonComposition> { Result = new HolonComposition() });
 
         var result = await _controller.Compose(Guid.NewGuid(), null);
@@ -329,7 +329,7 @@ public class HolonControllerTests
     [Fact]
     public async Task Compose_NotFound_ReturnsNotFound()
     {
-        _holonManager.Setup(m => m.ComposeAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
+        _holonManager.Setup(m => m.ComposeAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
                      .ReturnsAsync(new AZOAResult<HolonComposition> { IsError = true });
 
         var result = await _controller.Compose(Guid.NewGuid(), null);

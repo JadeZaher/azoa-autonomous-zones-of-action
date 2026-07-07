@@ -12,6 +12,9 @@ public interface IQuestStore
     /// <summary>Loads all quests owned by an avatar.</summary>
     Task<AZOAResult<IEnumerable<Quest>>> GetQuestsByAvatarAsync(Guid avatarId, CancellationToken ct = default);
 
+    /// <summary>Loads all quests the owner opted into the public marketplace (IsPublic=true). Status filtered by the caller.</summary>
+    Task<AZOAResult<IEnumerable<Quest>>> GetPublicQuestsAsync(CancellationToken ct = default);
+
     /// <summary>Loads all quests belonging to a dapp series.</summary>
     Task<AZOAResult<IEnumerable<Quest>>> GetQuestsByDappSeriesAsync(Guid dappSeriesId, CancellationToken ct = default);
 

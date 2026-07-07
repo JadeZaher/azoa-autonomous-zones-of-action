@@ -49,7 +49,10 @@ import { getOutputShapeMirror } from './node-output-schema'
 
 /** Data stored on each edge in the canvas. */
 interface EdgeData {
-  edgeType?: 'Control' | 'Conditional'
+  // Mirrors backend QuestEdgeType (Control | Conditional | OnFailure). OnFailure is
+  // a first-class error-routing edge; it is NOT a Control edge (see dominator/fan-out
+  // logic below, which keys on edgeType === 'Control' exactly).
+  edgeType?: 'Control' | 'Conditional' | 'OnFailure'
   condition?: string
 }
 
@@ -93,6 +96,9 @@ const nextId = () => `n${++idCounter}_${Math.round(performance.now())}`
 function edgeStyle(type: string | undefined): Pick<Edge, 'animated' | 'style' | 'label'> {
   if (type === 'Conditional') {
     return { animated: true, style: { stroke: '#f59e0b', strokeDasharray: '5 5' } }
+  }
+  if (type === 'OnFailure') {
+    return { animated: false, style: { stroke: '#ef4444', strokeDasharray: '4 4' } }
   }
   return { animated: false, style: { stroke: '#94a3b8' } }
 }
@@ -228,7 +234,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
   const [paletteFilter, setPaletteFilter] = useState('')
   const wrapperRef = useRef<HTMLDivElement>(null)
   const rfInstance = useRef<ReactFlowInstance<Node<QuestNodeData>, Edge> | null>(null)
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, setCenter } = useReactFlow()
 
   const palette = useMemo(() => buildPalette(nodeTemplates), [nodeTemplates])
 
@@ -267,13 +273,20 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       const id = nextId()
       const pos = position ?? { x: 120 + nodes.length * 30, y: 80 + nodes.length * 30 }
       const isFirst = nodes.length === 0
+      // Auto-uniquify the label: node names are the binding key ($from "upstream.<name>"),
+      // and the server rejects duplicate names at publish. Append " 2"/" 3"/… on collision.
+      const baseLabel = entry.templateName ?? entry.label
+      const existing = new Set(nodes.map((n) => n.data.label))
+      let label = baseLabel
+      let suffix = 2
+      while (existing.has(label)) label = `${baseLabel} ${suffix++}`
       setNodes((nds) =>
         nds.concat({
           id,
           type: 'quest',
           position: pos,
           data: {
-            label: entry.templateName ?? entry.label,
+            label,
             nodeType: entry.type,
             config: entry.defaultConfig,
             isEntry: isFirst,
@@ -474,7 +487,9 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
   //
   // Warning levels: { text, error: true } = blocks publish/submit on the server.
   const dagWarnings = useMemo(() => {
-    const warnings: Array<{ text: string; error?: boolean }> = []
+    // nodeIds: the canvas node ids this warning is "about", used to (a) paint an
+    // authoring-warning ring on the offending node and (b) click-to-center from the list.
+    const warnings: Array<{ text: string; error?: boolean; nodeIds?: string[] }> = []
     if (nodes.length === 0) return warnings
 
     const ids = new Set(nodes.map((n) => n.id))
@@ -486,7 +501,10 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       if (!ids.has(e.source) || !ids.has(e.target)) continue
       incoming.set(e.target, (incoming.get(e.target) ?? 0) + 1)
       outgoing.set(e.source, (outgoing.get(e.source) ?? 0) + 1)
-      if ((e.data as EdgeData)?.edgeType !== 'Conditional') {
+      // Fan-out / dominators key on Control ONLY — mirrors the backend validator
+      // (QuestDagValidator fan-out + QuestDagExecutabilityValidator dominators use
+      // EdgeType==Control exclusively). OnFailure and Conditional are excluded.
+      if ((e.data as EdgeData)?.edgeType === 'Control') {
         controlOut.set(e.source, (controlOut.get(e.source) ?? 0) + 1)
       }
       adj.get(e.source)!.push(e.target)
@@ -501,14 +519,20 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     }
     const unmarkedRoots = roots.filter((n) => !n.data.isEntry)
     if (unmarkedRoots.length > 0) {
-      warnings.push({ text: `Orphan (no incoming edge, not Entry): ${unmarkedRoots.map((n) => n.data.label).join(', ')}.` })
+      warnings.push({
+        text: `Orphan (no incoming edge, not Entry): ${unmarkedRoots.map((n) => n.data.label).join(', ')}.`,
+        nodeIds: unmarkedRoots.map((n) => n.id),
+      })
     }
     if (markedTerminals.length === 0) {
       warnings.push({ text: `No node is marked as Terminal. Mark a leaf node's "Terminal" flag in the inspector.` })
     }
     const terminalNotLeaf = markedTerminals.filter((n) => (outgoing.get(n.id) ?? 0) > 0)
     if (terminalNotLeaf.length > 0) {
-      warnings.push({ text: `Marked Terminal but has outgoing edges: ${terminalNotLeaf.map((n) => n.data.label).join(', ')}.` })
+      warnings.push({
+        text: `Marked Terminal but has outgoing edges: ${terminalNotLeaf.map((n) => n.data.label).join(', ')}.`,
+        nodeIds: terminalNotLeaf.map((n) => n.id),
+      })
     }
 
     // Fan-out: >1 outgoing Control edge from any node. Durable engine rejects at
@@ -518,6 +542,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       warnings.push({
         text: `Fan-out on "${n.data.label}" (${controlOut.get(n.id)} outgoing Control edges) — won't publish; durable engine requires a single Control successor.`,
         error: true,
+        nodeIds: [n.id],
       })
     }
 
@@ -528,6 +553,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       warnings.push({
         text: `Conditional edge from "${src?.data.label ?? e.source}" → "${tgt?.data.label ?? e.target}" has no condition text — server will reject this edge.`,
         error: true,
+        nodeIds: [e.source, e.target].filter((id) => ids.has(id)),
       })
     }
 
@@ -536,6 +562,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       warnings.push({
         text: `Node "${n.data.label}" has invalid JSON config — fix before submitting.`,
         error: true,
+        nodeIds: [n.id],
       })
     }
 
@@ -552,11 +579,36 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
         list.push(n.id)
         idsByName.set(n.data.label, list)
       }
+
+      // Duplicate labels: server rejects at publish, and the binding checker below
+      // silently skips ambiguous names — so surface it explicitly (error-level).
+      // forEach (not for..of) — Map iteration needs downlevelIteration under this tsconfig.
+      idsByName.forEach((dupIds, name) => {
+        if (dupIds.length > 1) {
+          warnings.push({
+            text: `Duplicate node name "${name}" (×${dupIds.length}) — bindings are ambiguous and publish will fail. Rename so every node is unique.`,
+            error: true,
+            nodeIds: dupIds,
+          })
+        }
+      })
+      // ALL-edge predecessors: upstream-scope mirror (BuildUpstreamScope walks EVERY
+      // incoming edge regardless of type). directPredNames uses this — intentional.
       const preds = new Map<string, string[]>(nodes.map((n) => [n.id, []]))
       adj.forEach((targets, src) => {
         for (const tgt of targets) preds.get(tgt)?.push(src)
       })
-      const dominators = computeDominators(nodes.map((n) => n.id), preds)
+      // Control-ONLY predecessors: dominators are computed over the Control spine only
+      // (mirrors backend QuestDagExecutabilityValidator.ComputeDominators, which
+      // traverses EdgeType==Control exclusively). Conditional/OnFailure edges do NOT
+      // contribute a guaranteed-ancestry path.
+      const controlPreds = new Map<string, string[]>(nodes.map((n) => [n.id, []]))
+      for (const e of edges) {
+        if (!ids.has(e.source) || !ids.has(e.target)) continue
+        if ((e.data as EdgeData)?.edgeType !== 'Control') continue
+        controlPreds.get(e.target)?.push(e.source)
+      }
+      const dominators = computeDominators(nodes.map((n) => n.id), controlPreds)
 
       for (const consumer of nodes) {
         if (invalidConfigIds.has(consumer.id)) continue // already flagged; don't double-report
@@ -581,6 +633,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
             warnings.push({
               text: `Node "${consumer.data.label}": "${path}" has an unrecognized binding root "${root}" (expected "upstream", "run", or "holon").`,
               error: true,
+              nodeIds: [consumer.id],
             })
             continue
           }
@@ -598,6 +651,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
               warnings.push({
                 text: `Node "${consumer.data.label}": upstream binding "${path}" references "${refName}" which is not a direct predecessor.`,
                 error: true,
+                nodeIds: [consumer.id],
               })
               continue
             }
@@ -607,6 +661,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
               warnings.push({
                 text: `Node "${consumer.data.label}": run binding "${path}" references "${refName}", which is not guaranteed to run before it (not on every path) — its output may be absent.`,
                 error: true,
+                nodeIds: [consumer.id],
               })
               continue
             }
@@ -626,6 +681,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
             warnings.push({
               text: `Node "${consumer.data.label}": "${path}" — field "${fieldSeg}" is not in the output of "${refName}".`,
               error: true,
+              nodeIds: [consumer.id],
             })
             continue
           }
@@ -652,7 +708,10 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     if (markedEntries.length > 0) {
       const unreachable = nodes.filter((n) => !reachable.has(n.id))
       if (unreachable.length > 0) {
-        warnings.push({ text: `Not reachable from an Entry node: ${unreachable.map((n) => n.data.label).join(', ')}.` })
+        warnings.push({
+          text: `Not reachable from an Entry node: ${unreachable.map((n) => n.data.label).join(', ')}.`,
+          nodeIds: unreachable.map((n) => n.id),
+        })
       }
     }
 
@@ -674,7 +733,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
 
     // Skip-cascade advisory: remind authors that a failed/skipped node cascades
     // through the entire downstream Control chain, not just one hop.
-    if (edges.some((e) => (e.data as EdgeData)?.edgeType !== 'Conditional')) {
+    if (edges.some((e) => (e.data as EdgeData)?.edgeType === 'Control')) {
       warnings.push({
         text: 'Skip cascades: if any node fails or is skipped, ALL downstream Control-chain nodes are also skipped (not just the next hop).',
       })
@@ -682,6 +741,35 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
 
     return warnings
   }, [nodes, edges, conditionalEdgeMissingCondition, nodesWithInvalidConfig])
+
+  // Per-node warning membership: the union of every warning's nodeIds. Drives the
+  // authoring-warning ring on the node card.
+  const warningNodeIds = useMemo(() => {
+    const set = new Set<string>()
+    for (const w of dagWarnings) for (const id of w.nodeIds ?? []) set.add(id)
+    return set
+  }, [dagWarnings])
+
+  // Nodes handed to ReactFlow, with the derived hasWarning flag merged in. Kept
+  // separate from `nodes` state so flagging never triggers a state-update loop.
+  const flowNodes = useMemo(
+    () => nodes.map((n) => (warningNodeIds.has(n.id) === !!n.data.hasWarning
+      ? n
+      : { ...n, data: { ...n.data, hasWarning: warningNodeIds.has(n.id) } })),
+    [nodes, warningNodeIds],
+  )
+
+  // Center + select a node from a warning list item (React Flow flow-coords).
+  const focusNode = useCallback(
+    (nodeId: string) => {
+      const n = nodes.find((x) => x.id === nodeId)
+      if (!n) return
+      setSelectedId(nodeId)
+      setSelectedEdgeId(null)
+      setCenter(n.position.x + 100, n.position.y + 40, { zoom: 1.2, duration: 400 })
+    },
+    [nodes, setCenter],
+  )
 
   return (
     <div className="flex h-[640px] gap-3">
@@ -741,7 +829,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
       {/* ─── Canvas ─── */}
       <div ref={wrapperRef} className="relative flex-1 overflow-hidden rounded-md border">
         <ReactFlow
-          nodes={nodes}
+          nodes={flowNodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
@@ -895,12 +983,27 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
           </div>
           {dagWarnings.length > 0 && (
             <ul className="space-y-0.5 rounded border border-amber-500/40 bg-amber-50 p-1.5 text-[10px] dark:bg-amber-900/20">
-              {dagWarnings.map((w, i) => (
-                <li key={i} className={`flex gap-1 ${w.error ? 'text-red-700 dark:text-red-400' : 'text-amber-800 dark:text-amber-300'}`}>
-                  <span aria-hidden>{w.error ? '✕' : '⚠'}</span>
-                  <span>{w.text}</span>
-                </li>
-              ))}
+              {dagWarnings.map((w, i) => {
+                const target = w.nodeIds?.find((id) => nodes.some((n) => n.id === id))
+                const color = w.error ? 'text-red-700 dark:text-red-400' : 'text-amber-800 dark:text-amber-300'
+                return (
+                  <li key={i} className={`flex gap-1 ${color}`}>
+                    <span aria-hidden>{w.error ? '✕' : '⚠'}</span>
+                    {target ? (
+                      <button
+                        type="button"
+                        onClick={() => focusNode(target)}
+                        className="text-left underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                        title="Jump to the offending node"
+                      >
+                        {w.text}
+                      </button>
+                    ) : (
+                      <span>{w.text}</span>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           )}
           <Button
@@ -951,7 +1054,7 @@ function EdgeInspector({ edge, onPatch, onDelete }: EdgeInspectorProps) {
       <div className="space-y-1.5">
         <Label className="text-xs">Edge Type</Label>
         <div className="flex gap-2">
-          {(['Control', 'Conditional'] as const).map((t) => (
+          {(['Control', 'Conditional', 'OnFailure'] as const).map((t) => (
             <button
               key={t}
               type="button"

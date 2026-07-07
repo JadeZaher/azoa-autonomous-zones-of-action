@@ -157,6 +157,9 @@ dev stack, see [`docs/NODE-HOST.md`](docs/NODE-HOST.md).
 ## Docs
 
 - `PROVIDERS.md` — API surface and provider architecture
+- `docs/DAPP-DEVELOPER-GUIDE.md` — Quickstart for building a dApp on an Azoa node
+  you don't operate (issue a `dapp:develop` key, point the SDK at the node, ship a
+  first series + quest to the marketplace)
 - `API_SYNC.md` — Controller ↔ SDK regression mapping; read before shipping
   controller changes
 - `DEVELOPMENT.md` — Developer setup, dev-up variants, conventions,

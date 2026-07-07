@@ -18,4 +18,6 @@ public interface IHolon
     bool IsActive { get; set; }
     Guid? SourceHolonId { get; set; }
     Guid? OriginAvatarId { get; set; }
+    /// <summary>Owner opt-in: makes this holon readable/clonable cross-avatar as a marketplace template.</summary>
+    bool IsPublic { get; set; }
 }

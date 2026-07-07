@@ -28,6 +28,7 @@ export type {
   WorkflowRunResult,
   WorkflowNodeExecution,
   WorkflowExecutionState,
+  WorkflowReconciliationResult,
   AdvanceParams,
   SignalParams,
   StartRunParams,

@@ -112,7 +112,9 @@ graph LR
     ecosystem_node -- "ecosystem_id [N:1]" --> ecosystem
     ecosystem_node -- "parent_node_id [N:0..1]" --> ecosystem_node
     holon -- "avatar_id [N:0..1]" --> avatar
+    holon -- "origin_avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
+    holon -- "source_holon_id [N:0..1]" --> holon
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
     nft_ownership -- "avatar_id [N:1]" --> avatar
@@ -122,6 +124,7 @@ graph LR
     operation_log -- "source_holon_id [N:0..1]" --> holon
     operation_log -- "target_holon_id [N:0..1]" --> holon
     operation_log -- "wallet_id [N:0..1]" --> wallet
+    quest -- "origin_avatar_id [N:0..1]" --> avatar
     quest -- "avatar_id [N:1]" --> avatar
     quest -- "dapp_series_id [N:0..1]" --> dapp_series
     quest -- "template_id [N:0..1]" --> quest_template
@@ -136,7 +139,9 @@ graph LR
     quest_node_execution -- "node_id [N:1]" --> quest_node
     quest_node_execution -- "run_id [N:1]" --> quest_run
     quest_run -- "acting_tenant_id [N:0..1]" --> avatar
+    quest_run -- "origin_avatar_id [N:0..1]" --> avatar
     quest_run -- "avatar_id [N:1]" --> avatar
+    quest_run -- "source_quest_id [N:0..1]" --> quest
     quest_run -- "quest_id [N:1]" --> quest
     quest_run -- "forked_at_node_id [N:0..1]" --> quest_node
     quest_run -- "executes [N:M]" --> quest_node_execution

@@ -17,6 +17,8 @@ export interface QuestNodeData {
   state?: string
   output?: string
   error?: string
+  /** Authoring-time: this node is referenced by a DAG warning (builder only). */
+  hasWarning?: boolean
   [key: string]: unknown
 }
 
@@ -37,10 +39,13 @@ function QuestNodeInner({ data, selected }: NodeProps) {
   const cat = categoryFor(d.nodeType)
   const colors = CATEGORY_COLOR[cat]
   const ring = d.state ? STATE_RING[d.state] ?? '' : ''
+  // Authoring-warning ring (amber, dashed) — distinct from the runtime STATE_RING.
+  // Runtime state takes visual precedence when both are present (run view).
+  const warnRing = !d.state && d.hasWarning ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-background' : ''
 
   return (
     <div
-      className={`min-w-[180px] max-w-[240px] rounded-md border border-l-4 bg-card shadow-sm transition-shadow ${colors.border} ${ring} ${selected ? 'ring-2 ring-primary' : ''}`}
+      className={`min-w-[180px] max-w-[240px] rounded-md border border-l-4 bg-card shadow-sm transition-shadow ${colors.border} ${ring} ${warnRing} ${selected ? 'ring-2 ring-primary' : ''}`}
     >
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !bg-muted-foreground" />
 

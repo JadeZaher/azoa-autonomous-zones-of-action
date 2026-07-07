@@ -245,7 +245,8 @@ public sealed class SurrealHolonStore : IHolonStore
                              : null,
             IsActive       = h.IsActive,
             SourceHolonId  = h.SourceHolonId.HasValue ? SurrealLink.ToLink(HolonPoco.HolonTable, SurrealId.ToSurrealId(h.SourceHolonId.Value)) : null,
-            OriginAvatarId = h.OriginAvatarId.HasValue ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(h.OriginAvatarId.Value)) : null
+            OriginAvatarId = h.OriginAvatarId.HasValue ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(h.OriginAvatarId.Value)) : null,
+            IsPublic       = h.IsPublic
         };
     }
 
@@ -297,7 +298,8 @@ public sealed class SurrealHolonStore : IHolonStore
             ModifiedDate  = p.ModifiedDate?.UtcDateTime,
             IsActive      = p.IsActive,
             SourceHolonId = p.SourceHolonId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(p.SourceHolonId)!) : null,
-            OriginAvatarId = p.OriginAvatarId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(p.OriginAvatarId)!) : null
+            OriginAvatarId = p.OriginAvatarId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(p.OriginAvatarId)!) : null,
+            IsPublic      = p.IsPublic
         };
     }
 
@@ -376,5 +378,9 @@ public sealed class SurrealHolonStore : IHolonStore
         [Column(Type = "option<record<avatar>>")]
         [JsonPropertyName("origin_avatar_id")]
         public string? OriginAvatarId { get; set; }
+
+        [Column(Type = "bool")]
+        [JsonPropertyName("is_public")]
+        public bool IsPublic { get; set; }
     }
 }

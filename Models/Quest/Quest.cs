@@ -46,4 +46,7 @@ public class Quest
 
     /// <summary>Origin/creator avatar when this quest is a marketplace copy; null for first-party quests.</summary>
     public Guid? OriginAvatarId { get; set; }
+
+    /// <summary>Content hash of the node/edge graph as of the last publish (bait-and-switch guard). Null while never published; recomputed on every PublishAsync. See Managers/AGENTS.md §published-version-hash.</summary>
+    public string? PublishedVersionHash { get; set; }
 }

@@ -16,10 +16,11 @@
 /**
  * Lifecycle position of a single durable {@link WorkflowRunResult}.
  *
- * Mirrors the C# `QuestRunStatus` enum 1:1 (member-for-member). The three
- * non-terminal awaiting states — `Suspended` / `AwaitingSignal` / `AwaitingTimer` —
- * are what the run driver's `.onSuspend(cb)` reacts to; the terminal set is
- * `Succeeded` / `Failed` / `Forked` / `Cancelled` (`QuestRunStatusExtensions.IsTerminal`).
+ * Mirrors the C# `QuestRunStatus` enum 1:1 (member-for-member). The four
+ * non-terminal awaiting states — `Suspended` / `AwaitingSignal` / `AwaitingTimer` /
+ * `AwaitingReconciliation` — are what the run driver's `.onSuspend(cb)` reacts to;
+ * the terminal set is `Succeeded` / `Failed` / `Forked` / `Cancelled`
+ * (`QuestRunStatusExtensions.IsTerminal`).
  */
 export type WorkflowRunStatus =
   /** Run created; no node has been claimed yet. */
@@ -39,13 +40,21 @@ export type WorkflowRunStatus =
   /** Parked at a GATE node awaiting `signal(runId, gateId, payload)`. Non-terminal. */
   | "AwaitingSignal"
   /** Parked at a WAIT node until a timer becomes due (fires via the saga trigger). Non-terminal. */
-  | "AwaitingTimer";
+  | "AwaitingTimer"
+  /**
+   * Parked after a chain-action node failed with an indeterminate (Pending/Unknown)
+   * on-chain confirmation; a reconciliation re-probe (`reconcileRun`) or operator
+   * sweep re-checks chain truth and resumes or fails it. NEVER auto-retried.
+   * Non-terminal.
+   */
+  | "AwaitingReconciliation";
 
 /** The non-terminal "the run is parked, intervene to resume" states. */
 export const AWAITING_STATUSES: readonly WorkflowRunStatus[] = [
   "Suspended",
   "AwaitingSignal",
   "AwaitingTimer",
+  "AwaitingReconciliation",
 ];
 
 /** The terminal states a run can never transition out of. */
@@ -195,6 +204,29 @@ export interface ChildCredentialResult {
   expiresAt: string;
   /** Scopes actually delegated (intersection of requested ∩ tenant's own). */
   scopes: string[];
+}
+
+/**
+ * Outcome of a reconciliation re-probe over a run parked in
+ * `AwaitingReconciliation` — the `POST /api/quest/runs/{runId}/reconcile` response.
+ * Mirrors `Models/Quest/QuestReconciliationResult.cs`. NEVER re-broadcasts; a
+ * Confirmed tx reconciles to success (no re-mint), a FailedOnChain node is released
+ * to retry/compensation, and an indeterminate node stays parked.
+ */
+export interface WorkflowReconciliationResult {
+  /** The run that was re-probed. */
+  runId: string;
+  /**
+   * The run's status AFTER the re-probe — still `AwaitingReconciliation` when at
+   * least one node remained indeterminate, else `Running` once the engine resumes.
+   */
+  status: WorkflowRunStatus;
+  /** Nodes whose tx was Confirmed and reconciled to Succeeded (no re-mint). */
+  reconciledConfirmed: number;
+  /** Nodes whose tx was FailedOnChain and handed back to retry/compensation. */
+  releasedFailedOnChain: number;
+  /** Nodes still indeterminate (Pending/Unknown) — left parked for the next sweep. */
+  stillIndeterminate: number;
 }
 
 /** Per-call options for value-moving advances (`.step` / `.signal`). */

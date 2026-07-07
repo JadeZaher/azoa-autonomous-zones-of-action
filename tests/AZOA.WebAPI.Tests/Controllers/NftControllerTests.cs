@@ -47,7 +47,7 @@ public class NftControllerTests
         mockNft.SetupGet(n => n.AssetType).Returns("NFT");
         mockNft.SetupGet(n => n.CreatedDate).Returns(DateTime.UtcNow);
         mockNft.SetupGet(n => n.Metadata).Returns(new Dictionary<string, string>());
-        _nftManager.Setup(m => m.GetAsync(id, null))
+        _nftManager.Setup(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
             .ReturnsAsync(new AZOAResult<INft> { Result = mockNft.Object });
 
         var result = await _controller.Get(id, null);
@@ -58,7 +58,7 @@ public class NftControllerTests
     [Fact]
     public async Task Get_NotFound_ReturnsNotFound()
     {
-        _nftManager.Setup(m => m.GetAsync(It.IsAny<Guid>(), null))
+        _nftManager.Setup(m => m.GetAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
             .ReturnsAsync(new AZOAResult<INft> { IsError = true });
 
         var result = await _controller.Get(Guid.NewGuid(), null);
@@ -69,7 +69,7 @@ public class NftControllerTests
     [Fact]
     public async Task Query_ReturnsOk()
     {
-        _nftManager.Setup(m => m.QueryAsync(It.IsAny<NftQueryRequest>(), null))
+        _nftManager.Setup(m => m.QueryAsync(It.IsAny<NftQueryRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
             .ReturnsAsync(new AZOAResult<IEnumerable<INft>> { Result = Enumerable.Empty<INft>() });
 
         var result = await _controller.Query(new NftQueryRequest(), null);

@@ -81,9 +81,8 @@ public sealed class FungibleTokenCreateNodeHandler : IQuestNodeHandler
             if (tokenId is not null || chainId is not null)
             {
                 var update = new HolonUpdateModel { TokenId = tokenId, ChainId = chainId };
-                // Trusted internal path (no avatar scoping) — quest node handlers run
-                // unscoped, matching GrantNodeHandler / HolonUpdateNodeHandler.
-                var link = await _holonManager.UpdateAsync(holonId, update);
+                // C-1: scope the holon link to the runner (ActingAvatarId) so a marketplace run cannot touch the quest owner's or a third party's holons.
+                var link = await _holonManager.UpdateAsync(holonId, update, context.ActingAvatarId);
                 if (link.IsError) return QuestNodeResults.Fail(link.Message);
             }
         }

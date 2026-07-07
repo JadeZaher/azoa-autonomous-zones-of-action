@@ -36,12 +36,14 @@ public class NftManagerTests
     [Fact]
     public async Task GetAsync_NftFound_ReturnsSuccess()
     {
+        var owner = Guid.NewGuid();
         var id = Guid.NewGuid();
-        var nft = CreateNftMock(id, "NFT1");
+        var nft = CreateNftMock(id, "NFT1", avatarId: owner);
         _holonStore.Setup(p => p.GetByIdAsync(id, default))
             .ReturnsAsync(new AZOAResult<IHolon> { Result = nft });
 
-        var result = await _manager.GetAsync(id);
+        // Owner-or-public read scope: owner reads their own NFT.
+        var result = await _manager.GetAsync(id, owner);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().NotBeNull();
@@ -81,7 +83,9 @@ public class NftManagerTests
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { nft1, nft2 } });
 
-        var result = await _manager.QueryAsync(new NftQueryRequest { OwnerAvatarId = avatarId });
+        // Caller is avatarId: owner-or-public scope already drops nft2 (private, other
+        // owner); the OwnerAvatarId filter narrows within the readable set.
+        var result = await _manager.QueryAsync(new NftQueryRequest { OwnerAvatarId = avatarId }, avatarId);
 
         result.Result.Should().ContainSingle();
     }
@@ -89,12 +93,13 @@ public class NftManagerTests
     [Fact]
     public async Task QueryAsync_FiltersByChainId()
     {
-        var nft1 = CreateNftMock(Guid.NewGuid(), "A", "NFT", chainId: "solana");
-        var nft2 = CreateNftMock(Guid.NewGuid(), "B", "NFT", chainId: "algorand");
+        var owner = Guid.NewGuid();
+        var nft1 = CreateNftMock(Guid.NewGuid(), "A", "NFT", owner, chainId: "solana");
+        var nft2 = CreateNftMock(Guid.NewGuid(), "B", "NFT", owner, chainId: "algorand");
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { nft1, nft2 } });
 
-        var result = await _manager.QueryAsync(new NftQueryRequest { ChainId = "solana" });
+        var result = await _manager.QueryAsync(new NftQueryRequest { ChainId = "solana" }, owner);
 
         result.Result.Should().ContainSingle();
     }
@@ -102,12 +107,13 @@ public class NftManagerTests
     [Fact]
     public async Task QueryAsync_FiltersNonNfts()
     {
-        var nft = CreateNftMock(Guid.NewGuid(), "NFT", "NFT");
-        var holon = CreateNftMock(Guid.NewGuid(), "Doc", "Document");
+        var owner = Guid.NewGuid();
+        var nft = CreateNftMock(Guid.NewGuid(), "NFT", "NFT", owner);
+        var holon = CreateNftMock(Guid.NewGuid(), "Doc", "Document", owner);
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { nft, holon } });
 
-        var result = await _manager.QueryAsync(new NftQueryRequest());
+        var result = await _manager.QueryAsync(new NftQueryRequest(), owner);
 
         result.Result.Should().ContainSingle();
     }

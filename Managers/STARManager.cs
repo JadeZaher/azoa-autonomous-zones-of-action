@@ -28,15 +28,32 @@ public class STARManager : ISTARManager
         _dappSeriesStore = dappSeriesStore;
     }
 
-    public async Task<AZOAResult<ISTARODK>> GetAsync(Guid id, AZOARequest? request = null)
+    public async Task<AZOAResult<ISTARODK>> GetAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null)
     {
-        return await _starStore.GetByIdAsync(id, default);
+        var result = await _starStore.GetByIdAsync(id, default);
+        if (result.IsError || result.Result == null) return result;
+        // Own-or-public read scope: don't confirm a private STAR ODK's existence to a
+        // non-owner. See Controllers/AGENTS.md §cross-tenant-read-scope.
+        if (!CanRead(result.Result, callerAvatarId))
+            return new AZOAResult<ISTARODK> { IsError = true, Message = "STAR ODK not found." };
+        return result;
     }
 
-    public async Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(Guid? callerAvatarId = null, AZOARequest? request = null)
     {
-        return await _starStore.GetAllAsync(default);
+        var result = await _starStore.GetAllAsync(default);
+        if (result.IsError || result.Result == null) return result;
+        return new AZOAResult<IEnumerable<ISTARODK>>
+        {
+            Result = result.Result.Where(s => CanRead(s, callerAvatarId)).ToList(),
+            Message = result.Message
+        };
     }
+
+    // Cross-tenant read scope: a STAR ODK is readable iff the caller owns it OR it is
+    // IsPublic. A null callerAvatarId fails closed (public-only).
+    private static bool CanRead(ISTARODK record, Guid? callerAvatarId) =>
+        callerAvatarId.HasValue && record.AvatarId == callerAvatarId.Value || record.IsPublic;
 
     public async Task<AZOAResult<ISTARODK>> CreateOrUpdateAsync(
         STARODKCreateModel model,
@@ -102,7 +119,8 @@ public class STARManager : ISTARManager
     {
         var existing = await _starStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
-        if (avatarId.HasValue && !IsOwnedBy(existing.Result, avatarId.Value))
+        // Fail-closed: a mutating call with no acting avatar is a wiring bug, not an admin escape hatch.
+        if (!avatarId.HasValue || !IsOwnedBy(existing.Result, avatarId.Value))
             return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different avatar.");
 
         var odk = (STARODK)existing.Result;
@@ -118,7 +136,8 @@ public class STARManager : ISTARManager
     {
         var existing = await _starStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
-        if (avatarId.HasValue && !IsOwnedBy(existing.Result, avatarId.Value))
+        // Fail-closed: a mutating call with no acting avatar is a wiring bug, not an admin escape hatch.
+        if (!avatarId.HasValue || !IsOwnedBy(existing.Result, avatarId.Value))
             return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different avatar.");
 
         var odk = (STARODK)existing.Result;

@@ -79,6 +79,16 @@ export type {
   QuestResult,
   HolonTypeResult,
   HolonTypeRegisterParams,
+  // ApiKey scope discovery (dapp-developer-experience audit)
+  ApiKeyScope,
+  ApiKeyScopeInfo,
+  // DappSeries CRUD (DappSeriesController)
+  DappSeriesStatus,
+  DappSeriesResult,
+  DappSeriesCreateParams,
+  DappSeriesUpdateParams,
+  DappSeriesQuestResult,
+  DappSeriesAddQuestParams,
   // Admin surfaces: saga operator dead-letters + key rotation (final-hardening Wave6)
   SagaStepStatus,
   SagaDeadLetterListParams,
@@ -119,6 +129,7 @@ export type {
   WorkflowRunResult,
   WorkflowNodeExecution,
   WorkflowExecutionState,
+  WorkflowReconciliationResult,
   AdvanceParams,
   SignalParams,
   StartRunParams,

@@ -28,11 +28,13 @@ public class STARManagerTests
     [Fact]
     public async Task GetAsync_Existing_ReturnsODK()
     {
-        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test" };
+        var owner = Guid.NewGuid();
+        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test", AvatarId = owner };
         _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<ISTARODK> { Result = odk });
 
-        var result = await _manager.GetAsync(odk.Id);
+        // Owner-or-public read scope: owner reads their own STAR ODK.
+        var result = await _manager.GetAsync(odk.Id, owner);
 
         result.Result.Should().NotBeNull();
         result.Result!.Name.Should().Be("Test");
@@ -52,13 +54,14 @@ public class STARManagerTests
     [Fact]
     public async Task GetAllAsync_ReturnsList()
     {
+        var owner = Guid.NewGuid();
         _store.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>>
                  {
-                     Result = new[] { new STARODK { Name = "A" }, new STARODK { Name = "B" } }
+                     Result = new[] { new STARODK { Name = "A", AvatarId = owner }, new STARODK { Name = "B", AvatarId = owner } }
                  });
 
-        var result = await _manager.GetAllAsync();
+        var result = await _manager.GetAllAsync(owner);
 
         result.Result.Should().HaveCount(2);
     }
@@ -201,14 +204,15 @@ public class STARManagerTests
     [Fact]
     public async Task GenerateAsync_ShouldSetGeneratedCode()
     {
-        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test" };
+        var owner = Guid.NewGuid();
+        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test", AvatarId = owner };
         _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<ISTARODK> { Result = odk });
         _store.Setup(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((ISTARODK s, CancellationToken _) => new AZOAResult<ISTARODK> { Result = s });
 
         var request = new STARDappGenerationRequest { TargetChain = "Solana", BoundHolonIds = new List<Guid> { Guid.NewGuid() } };
-        var result = await _manager.GenerateAsync(odk.Id, request);
+        var result = await _manager.GenerateAsync(odk.Id, request, owner);
 
         result.IsError.Should().BeFalse();
         result.Result!.GeneratedCode.Should().NotBeNullOrEmpty();
@@ -229,13 +233,14 @@ public class STARManagerTests
     [Fact]
     public async Task DeployAsync_ShouldSetDeploymentConfig()
     {
-        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test", GeneratedCode = "code", TargetChain = "Algorand" };
+        var owner = Guid.NewGuid();
+        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test", GeneratedCode = "code", TargetChain = "Algorand", AvatarId = owner };
         _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<ISTARODK> { Result = odk });
         _store.Setup(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((ISTARODK s, CancellationToken _) => new AZOAResult<ISTARODK> { Result = s });
 
-        var result = await _manager.DeployAsync(odk.Id);
+        var result = await _manager.DeployAsync(odk.Id, owner);
 
         result.IsError.Should().BeFalse();
         result.Result!.DeploymentConfig.Should().NotBeNullOrEmpty();
@@ -244,11 +249,12 @@ public class STARManagerTests
     [Fact]
     public async Task DeployAsync_WithoutGeneration_ShouldReturnError()
     {
-        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test" };
+        var owner = Guid.NewGuid();
+        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test", AvatarId = owner };
         _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<ISTARODK> { Result = odk });
 
-        var result = await _manager.DeployAsync(odk.Id);
+        var result = await _manager.DeployAsync(odk.Id, owner);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("must be generated");

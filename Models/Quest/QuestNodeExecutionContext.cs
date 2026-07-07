@@ -32,7 +32,8 @@ public sealed class QuestNodeExecutionContext
         Quest quest,
         Guid actingAvatarId,
         IReadOnlyDictionary<Guid, QuestNodeExecution>? upstreamExecutions = null,
-        Guid? actingTenantId = null)
+        Guid? actingTenantId = null,
+        IReadOnlyDictionary<Guid, QuestNodeExecution>? allRunExecutions = null)
     {
         RunId = runId;
         NodeId = nodeId;
@@ -40,6 +41,7 @@ public sealed class QuestNodeExecutionContext
         ActingAvatarId = actingAvatarId;
         UpstreamExecutions = upstreamExecutions ?? new Dictionary<Guid, QuestNodeExecution>();
         ActingTenantId = actingTenantId;
+        AllRunExecutions = allRunExecutions ?? new Dictionary<Guid, QuestNodeExecution>();
         Node = quest.Nodes.FirstOrDefault(n => n.Id == nodeId)
             ?? throw new ArgumentException(
                 $"Node {nodeId} not found in quest {quest.Id}.", nameof(nodeId));
@@ -71,6 +73,16 @@ public sealed class QuestNodeExecutionContext
     /// node id. Empty when no upstream nodes have completed (e.g. entry nodes).
     /// </summary>
     public IReadOnlyDictionary<Guid, QuestNodeExecution> UpstreamExecutions { get; }
+
+    /// <summary>
+    /// EVERY execution produced by this run so far, keyed by source node id — the
+    /// scope for the run-scoped <c>run.&lt;nodeName&gt;</c> root (any prior node's
+    /// output by name, not just direct-edge predecessors). Same raw material the
+    /// binding resolver builds <c>run.</c> scope from, so gate predicates and $from
+    /// bindings resolve the identical root. Empty for entry nodes. See
+    /// Services/Quest/AGENTS.md §gate-predicate.
+    /// </summary>
+    public IReadOnlyDictionary<Guid, QuestNodeExecution> AllRunExecutions { get; }
 
     /// <summary>
     /// The tenant that drove the owning <see cref="QuestRun"/> via a tenant-driven

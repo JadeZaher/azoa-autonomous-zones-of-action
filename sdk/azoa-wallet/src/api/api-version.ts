@@ -28,6 +28,7 @@ export type ApiController =
   | "starodk"
   | "quest"
   | "apikey"
+  | "dappseries"
   | "tenant"
   | "holontypes"
   | "sagaoperator"
@@ -125,6 +126,9 @@ export const API_PATHS = {
   SWAP_QUOTE: "/api/swap/quote",
   SWAP_EXECUTE: "/api/swap/execute",
 
+  // Marketplace browse: public + Active quests any authenticated avatar may fork/start.
+  QUEST_PUBLIC: "/api/quest/public",
+
   // Quest definition lifecycle (quest-dag-semantic-hardening FR-2 / FR-8).
   QUEST_PUBLISH: (questId: string) => `/api/quest/${questId}/publish`,
   QUEST_UNPUBLISH: (questId: string) => `/api/quest/${questId}/unpublish`,
@@ -137,6 +141,11 @@ export const API_PATHS = {
   QUEST_RUN_SIGNAL: (runId: string) => `/api/quest/runs/${runId}/signal`,
   QUEST_RUN_STATUS: (runId: string) => `/api/quest/runs/${runId}`,
   QUEST_RUN_EXECUTION_STATE: (runId: string) => `/api/quest/runs/${runId}/execution-state`,
+  // All runs of a quest definition (`ListRunsByQuest`); avatar-scoped read.
+  QUEST_RUNS_BY_QUEST: (questId: string) => `/api/quest/${questId}/runs`,
+  // Per-run reconciliation re-probe (reconcile-before-retry §7). Un-parks an
+  // `AwaitingReconciliation` run against chain truth; NEVER re-broadcasts.
+  QUEST_RUN_RECONCILE: (runId: string) => `/api/quest/runs/${runId}/reconcile`,
 
   // Tenant onboarding (tenant-onboarding) — child credential issuance the
   // `forActor` actor abstraction threads (tenant acts FOR a child avatar).
@@ -158,4 +167,21 @@ export const API_PATHS = {
 
   // Wallet wrapping-key rotation (KeyRotationController, final-hardening B5). Operator-scoped.
   KEY_ROTATION_ROTATE: "/api/admin/key-rotation/rotate",
+
+  // API-key issuance discovery + rotation (dapp-developer-experience audit).
+  // `scopes` lists the self-issuable scope vocabulary; `rotate` mints a successor key.
+  APIKEY_SCOPES: "/api/apikey/scopes",
+  APIKEY_ROTATE: (id: string) => `/api/apikey/${id}/rotate`,
+
+  // DappSeries CRUD + quest management (DappSeriesController). Reads open to any
+  // authenticated caller; writes are dapp:develop-gated (developer-experience audit).
+  DAPP_SERIES_LIST: "/api/dapp-series",
+  DAPP_SERIES_GET: (id: string) => `/api/dapp-series/${id}`,
+  DAPP_SERIES_CREATE: "/api/dapp-series",
+  DAPP_SERIES_UPDATE: (id: string) => `/api/dapp-series/${id}`,
+  DAPP_SERIES_DELETE: (id: string) => `/api/dapp-series/${id}`,
+  DAPP_SERIES_QUESTS: (seriesId: string) => `/api/dapp-series/${seriesId}/quests`,
+  DAPP_SERIES_QUEST_REMOVE: (seriesId: string, questId: string) => `/api/dapp-series/${seriesId}/quests/${questId}`,
+  DAPP_SERIES_QUEST_ORDER: (seriesId: string, questId: string) => `/api/dapp-series/${seriesId}/quests/${questId}/order`,
+  DAPP_SERIES_QUEST_MAPPINGS: (seriesId: string, questId: string) => `/api/dapp-series/${seriesId}/quests/${questId}/mappings`,
 } as const;

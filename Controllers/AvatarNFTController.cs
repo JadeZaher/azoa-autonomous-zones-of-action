@@ -32,20 +32,36 @@ public class AvatarNFTController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetAvatarNFT(Guid id)
     {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
         var result = await _avatarNFTService.GetAvatarNFTAsync(id);
-        return result.IsError ? NotFound(result) : Ok(result);
+        if (result.IsError) return NotFound(result);
+        if (result.Result?.AvatarId != avatarId.Value) return StatusCode(StatusCodes.Status403Forbidden);
+
+        return Ok(result);
     }
 
     [HttpGet("by-token/{chainType}/{contractAddress}/{tokenId}")]
     public async Task<IActionResult> GetAvatarNFTByTokenId(string chainType, string contractAddress, string tokenId)
     {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
         var result = await _avatarNFTService.GetAvatarNFTByTokenIdAsync(chainType, contractAddress, tokenId);
-        return result.IsError ? NotFound(result) : Ok(result);
+        if (result.IsError) return NotFound(result);
+        if (result.Result?.AvatarId != avatarId.Value) return StatusCode(StatusCodes.Status403Forbidden);
+
+        return Ok(result);
     }
 
     [HttpGet("avatar/{avatarId}")]
     public async Task<IActionResult> GetAvatarNFTsByAvatar(Guid avatarId)
     {
+        var callerId = GetAvatarIdFromClaims();
+        if (callerId == null) return Unauthorized();
+        if (avatarId != callerId.Value) return StatusCode(StatusCodes.Status403Forbidden);
+
         var result = await _avatarNFTService.GetAvatarNFTsByAvatarAsync(avatarId);
         return result.IsError ? NotFound(result) : Ok(result);
     }
@@ -83,6 +99,13 @@ public class AvatarNFTController : ControllerBase
     [HttpGet("{avatarNFTId}/holons")]
     public async Task<IActionResult> GetHolonBindings(Guid avatarNFTId)
     {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var nftResult = await _avatarNFTService.GetAvatarNFTAsync(avatarNFTId);
+        if (nftResult.IsError) return NotFound(nftResult);
+        if (nftResult.Result?.AvatarId != avatarId.Value) return StatusCode(StatusCodes.Status403Forbidden);
+
         var result = await _avatarNFTService.GetHolonBindingsAsync(avatarNFTId);
         return result.IsError ? NotFound(result) : Ok(result);
     }
@@ -120,6 +143,13 @@ public class AvatarNFTController : ControllerBase
     [HttpGet("{avatarNFTId}/wallets")]
     public async Task<IActionResult> GetWalletBindings(Guid avatarNFTId)
     {
+        var avatarId = GetAvatarIdFromClaims();
+        if (avatarId == null) return Unauthorized();
+
+        var nftResult = await _avatarNFTService.GetAvatarNFTAsync(avatarNFTId);
+        if (nftResult.IsError) return NotFound(nftResult);
+        if (nftResult.Result?.AvatarId != avatarId.Value) return StatusCode(StatusCodes.Status403Forbidden);
+
         var result = await _avatarNFTService.GetWalletBindingsAsync(avatarNFTId);
         return result.IsError ? NotFound(result) : Ok(result);
     }

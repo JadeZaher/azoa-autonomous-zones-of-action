@@ -11,10 +11,14 @@ namespace AZOA.WebAPI.Services.Avatar;
 public class AvatarNFTService : IAvatarNFTService
 {
     private readonly INftStore _nftStore;
+    private readonly IHolonStore _holonStore;
+    private readonly IWalletStore _walletStore;
 
-    public AvatarNFTService(INftStore nftStore)
+    public AvatarNFTService(INftStore nftStore, IHolonStore holonStore, IWalletStore walletStore)
     {
         _nftStore = nftStore;
+        _holonStore = holonStore;
+        _walletStore = walletStore;
     }
 
     // ─── Avatar NFT CRUD ───
@@ -109,6 +113,13 @@ public class AvatarNFTService : IAvatarNFTService
         if (ownership != null)
             return new AZOAResult<IHolonNFTBinding> { IsError = true, Message = ownership };
 
+        // Bind target must also belong to the caller — otherwise a victim's holon can be bound to an attacker's NFT.
+        var holonResult = await _holonStore.GetByIdAsync(holonId, default);
+        if (holonResult.IsError || holonResult.Result == null)
+            return new AZOAResult<IHolonNFTBinding> { IsError = true, Message = holonResult.Message ?? "Holon not found." };
+        if (holonResult.Result.AvatarId != avatarId)
+            return new AZOAResult<IHolonNFTBinding> { IsError = true, Message = "Target holon is owned by a different avatar." };
+
         var binding = new HolonNFTBinding
         {
             HolonId = holonId,
@@ -172,6 +183,13 @@ public class AvatarNFTService : IAvatarNFTService
         var ownership = await VerifyNftOwnedByAsync(avatarNFTId, avatarId);
         if (ownership != null)
             return new AZOAResult<IWalletNFTBinding> { IsError = true, Message = ownership };
+
+        // Bind target must also belong to the caller — otherwise a victim's wallet can be bound to an attacker's NFT.
+        var walletResult = await _walletStore.GetByIdAsync(walletId, default);
+        if (walletResult.IsError || walletResult.Result == null)
+            return new AZOAResult<IWalletNFTBinding> { IsError = true, Message = walletResult.Message ?? "Wallet not found." };
+        if (walletResult.Result.AvatarId != avatarId)
+            return new AZOAResult<IWalletNFTBinding> { IsError = true, Message = "Target wallet is owned by a different avatar." };
 
         var binding = new WalletNFTBinding
         {

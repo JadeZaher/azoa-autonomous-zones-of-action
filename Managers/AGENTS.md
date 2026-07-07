@@ -206,3 +206,91 @@ descriptor (`GenerateDappCode` shape) across the whole tree depth-first
 records the target chain but does NOT itself move value; real cross-chain value in
 the composed tree flows through the Phase-B bridge — **Algorand real, Solana
 fail-closed**. Do not claim end-to-end Solana ecosystem value works.
+
+## §quest-run-quota — marketplace run-start quota (treasury/runner-drain guard)
+
+**Problem.** A public quest's run-start mints a fresh `RunId` every time, so the
+per-`(run, node)` idempotency surface does nothing against unbounded *fresh* runs:
+a hostile (or buggy) client can spin up arbitrarily many marketplace runs of one
+quest and drain whatever the quest's economic nodes move.
+
+**Guard.** `QuestManager.EnforceRunQuotaAsync(questId, avatarId, isOwner)` is called
+on BOTH run-start seams (`ExecuteAsync` + `StartWorkflowRunAsync`) right after the
+startable-quest load and BEFORE any run/exec rows are written — a breach rejects
+cleanly with no orphaned run. It counts the avatar's NON-terminal runs of that quest
+(`IQuestRunStore.GetByQuestIdAsync` filtered by `AvatarId` + `!Status.IsTerminal()`)
+and rejects when the count ≥ the configured ceiling.
+
+**Config-driven** (`Quest` section, bound once at construction into
+`QuestRunQuotaOptions` — user global rule: config over hardcoded):
+
+| Key | Meaning |
+|---|---|
+| `Quest:MaxRunsPerAvatarPerQuest` | Non-owner ceiling of concurrent non-terminal runs per quest. `<= 0` disables the quota. |
+| `Quest:OwnerLimitMultiplier` | Owner's ceiling = base × this. `<= 0` ⇒ owner exempt (unbounded). |
+
+**Fail-closed.** A faulted run-store count rejects the start (we cannot prove the
+avatar is under quota). Owner running their own quest is not draining a foreign
+treasury, so they get the multiplied (or unbounded) ceiling.
+
+## §economic-consent — pre-run disclosure + consent gate for marketplace runs
+
+**Problem (CRITICAL enabling gap).** A public quest's `Transfer`/`Swap`/`Grant`/
+`Refund`/`FungibleTokenCreate`/`Bridge`/… nodes auto-fire against the RUNNER (the
+`ActingAvatarId` invariant — side-effects run as the runner, not the owner) with no
+disclosure. A non-owner could commit a run without ever seeing that it moves their
+assets.
+
+**Manifest.** `QuestEconomicManifestBuilder.Build` (see
+`Services/Quest/AGENTS.md §economic-manifest`) walks the DAG in `ExecutionOrder` and
+lists every value-moving node (a node whose registered handler declares
+`RequiresChainCapability`, OR whose type is in the explicit economic set) with a
+best-effort declared destination/amount. Surfaced two ways:
+
+- **Preview** — `PreviewRunAsync(questId, avatarId)` returns the manifest for a
+  startable quest (scoped exactly like a run-start) so the frontend can disclose
+  "this quest moves assets" BEFORE the runner commits. (Controller wiring to a
+  `GET …/preview` route is a follow-up owed to the controller owner.)
+- **Consent gate** — `EnforceEconomicConsent(quest, isOwner, acknowledgeEconomicEffects)`
+  on BOTH run-start seams. For a NON-owner run whose manifest has ≥1 economic node,
+  the start is rejected unless `acknowledgeEconomicEffects == true`. Owner runs are
+  exempt (they authored the quest). The flag is a new optional param on
+  `ExecuteAsync` / `StartWorkflowRunAsync` (defaults false → existing callers
+  unchanged); the controller currently always passes the default, so the gate is
+  **fully enforced at the manager** but the runner-facing "I acknowledge" toggle is a
+  controller/frontend follow-up.
+
+**Scope note / deferred.** This ships the manifest + the acknowledge-flag gate + the
+preview surface — the smallest honest thing that closes "no consent surface exists".
+A *persisted* consent-grant (an auditable record that avatar X acknowledged manifest
+hash H at time T) is deliberately deferred as a follow-up; the acknowledge flag is
+transient per-call today.
+
+## §published-version-hash — immutable published quest version (bait-and-switch guard)
+
+**Problem.** A creator could `unpublish → edit a benign node into a Transfer →
+republish` under the SAME quest id that runners already trust, with no visible change
+of identity.
+
+**Guard.** `PublishAsync` computes a stable content hash of the node/edge graph
+(`QuestPublishedVersion.ComputeHash` — SHA-256 over id-sorted node
+type/name/entry/terminal/config + endpoint-sorted edge shape) and stores it on
+`Quest.PublishedVersionHash`. Every run-start stamps the quest's current hash onto
+`QuestRun.PublishedVersionHash`, binding the run to the exact revision the runner
+saw/consented to. A later edit + republish recomputes a DIFFERENT hash, so:
+
+- the hash is exposed on the quest (and thus on marketplace listing reads) — a
+  changed hash is a visible new version, not a silent mutation;
+- a historical run whose stamp no longer equals the live quest's hash is detectable
+  evidence of a post-hoc tamper.
+
+**Persistence.** `published_version_hash` is a plain `option<string>` column on both
+`quest` and `quest_run` (not an FK). Mapped in `SurrealQuestStore` /
+`SurrealQuestRunStore`; POCOs + goldens updated. Null while a quest was never
+published.
+
+**Deferred.** Full immutable-snapshot STORAGE of the whole published graph (so an old
+run can be replayed against the exact bytes) is a follow-up; this ships the hash +
+run-stamping + surfacing, which makes tampering DETECTABLE and binds runs — the
+correctness floor. Recomputation on republish is intentional (the new hash IS the new
+version identity).

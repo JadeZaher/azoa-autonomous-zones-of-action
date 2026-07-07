@@ -2,17 +2,27 @@ using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
 
 /// <summary>
 /// Handles <see cref="QuestNodeType.Refund"/> — Tier-2 chain action (D7).
-/// Mechanically a reverse <see cref="INftManager.TransferAsync"/>: the
-/// <see cref="RefundNodeConfig.Request"/> already carries the reversed direction
-/// (recipient = original sender), set by the saga/tenant. Kept distinct from
-/// <see cref="QuestNodeType.Transfer"/> by node type so the Track-2 saga can
+/// Mechanically a reverse <see cref="INftManager.TransferAsync"/>, but the reversal
+/// is DERIVED from a real upstream <see cref="QuestNodeType.Transfer"/> that debited
+/// exactly this <c>NftId</c> earlier in the SAME run — never trusted from
+/// caller-authored <see cref="RefundNodeConfig.Request"/> direction. Kept distinct
+/// from <see cref="QuestNodeType.Transfer"/> by node type so the Track-2 saga can
 /// declare "compensation = the Refund node". Actor is taken from the run context.
+/// <para>
+/// Drain-vector guard (HIGH): a Refund may ONLY reverse a debit that actually
+/// happened upstream. If no succeeded upstream Transfer moved this NftId, the node
+/// fails closed — a Refund can no longer be used as an out-of-order, no-prior-debit
+/// drain. The reversal recipient is forced to the debit's original sender (the run
+/// actor who ran the Transfer), so cfg.Request.TargetAvatarId cannot redirect it.
+/// See Services/Quest/AGENTS.md §refund-linkage.
+/// </para>
 /// <para>
 /// Soulbound assets fail closed: a true clawback of a non-transferable asset
 /// needs a clawback primitive (deferred to H2 / signing D7), so the reversal is
@@ -43,16 +53,35 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
         // returns a soulbound error — that flag lives only on AvatarNFT). So we
         // read the asset and inspect its metadata for a truthy soulbound marker.
         // If set, fail closed BEFORE attempting any transfer (clawback deferred).
-        var nft = await _nftManager.GetAsync(cfg.NftId);
+        var nft = await _nftManager.GetAsync(cfg.NftId, context.ActingAvatarId);
         if (nft.IsError) return QuestNodeResults.Fail(nft.Message);
         if (nft.Result is { } asset && IsSoulbound(asset.Metadata))
             return QuestNodeResults.Fail(ClawbackDeferredMessage);
+
+        // Drain-vector guard (HIGH): a Refund may only reverse a debit that ACTUALLY
+        // happened upstream in THIS run. Require a succeeded upstream Transfer that
+        // moved exactly cfg.NftId; refuse (fail closed) otherwise. This removes the
+        // out-of-order / no-prior-debit drain where a Refund is just a second
+        // attacker-directed Transfer.
+        if (!TryFindReversibleTransfer(context, cfg.NftId, out var debit, out var debitError))
+            return QuestNodeResults.Fail(debitError);
+
+        // Derive the reversal from the real debit — NOT from cfg.Request's direction.
+        // The upstream Transfer ran under this run's actor (recipient = original
+        // sender), so the reversal returns the asset to that actor; the wallet is
+        // reused from the debit. cfg.Request supplies only the (optional) memo.
+        var reversal = new NftTransferRequest
+        {
+            TargetAvatarId = context.ActingAvatarId,
+            WalletId = debit.Request.WalletId,
+            Memo = cfg.Request.Memo,
+        };
 
         // Actor is ALWAYS the run-context avatar; the config body avatar is ignored.
         // tenant-consent-delegation AC4: forward the run's acting tenant so a
         // tenant-driven refund (reverse transfer) stamps it on the op for the
         // seam's consent gate.
-        var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.ActingAvatarId, actingTenantId: context.ActingTenantId);
+        var r = await _nftManager.TransferAsync(cfg.NftId, reversal, context.ActingAvatarId, actingTenantId: context.ActingTenantId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
 
         // Forward the broadcast tx hash on BOTH outcomes (a refund is a reverse
@@ -65,6 +94,36 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
 
         if (r.IsError) return QuestNodeResults.Fail(r.Message, txHash: opTxHash, chainType: opChainType ?? "Algorand");
         return QuestNodeResults.Ok(outputJson, txHash: opTxHash, chainType: opChainType ?? "Algorand");
+    }
+
+    private const string NoUpstreamDebitMessage =
+        "refund refused — no succeeded upstream Transfer in this run debited this asset; " +
+        "a Refund may only reverse a real prior debit (drain-vector guard)";
+
+    /// <summary>Finds a succeeded upstream Transfer that debited <paramref name="nftId"/> in this run.</summary>
+    private static bool TryFindReversibleTransfer(
+        QuestNodeExecutionContext context, Guid nftId, out TransferNodeConfig debit, out string error)
+    {
+        debit = default!;
+        error = NoUpstreamDebitMessage;
+
+        foreach (var (sourceNodeId, exec) in context.UpstreamExecutions)
+        {
+            if (exec.State != QuestNodeState.Succeeded) continue;
+
+            var srcNode = context.Quest.Nodes.FirstOrDefault(n => n.Id == sourceNodeId);
+            if (srcNode is null || srcNode.NodeType != QuestNodeType.Transfer) continue;
+
+            if (!QuestNodeConfig.TryDeserialize<TransferNodeConfig>(
+                    srcNode.Config, nameof(QuestNodeType.Transfer), out var cfg, out _))
+                continue;
+            if (cfg.NftId != nftId) continue;
+
+            debit = cfg;
+            error = string.Empty;
+            return true;
+        }
+        return false;
     }
 
     private static bool IsSoulbound(Dictionary<string, string> metadata)

@@ -21,8 +21,12 @@ public static class STARODKAuthorizationError
 
 public interface ISTARManager
 {
-    Task<AZOAResult<ISTARODK>> GetAsync(Guid id, AZOARequest? request = null);
-    Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(AZOARequest? request = null);
+    // callerAvatarId scopes READS to owner-or-public: a record is returned iff
+    // record.AvatarId == callerAvatarId || record.IsPublic. Null fails closed
+    // (public-only). Single-get of a non-owned/non-private record returns a
+    // "not found"-style result. See Controllers/AGENTS.md §cross-tenant-read-scope.
+    Task<AZOAResult<ISTARODK>> GetAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null);
+    Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(Guid? callerAvatarId = null, AZOARequest? request = null);
 
     /// <summary>
     /// Creates a new STARODK or updates an existing one, scoped to the

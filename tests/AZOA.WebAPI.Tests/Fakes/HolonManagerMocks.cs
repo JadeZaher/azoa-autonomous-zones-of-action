@@ -31,8 +31,8 @@ public static class HolonManagerMocks
     {
         var byId = holons.ToDictionary(h => h.Id);
         var mock = new Mock<IHolonManager>();
-        mock.Setup(m => m.GetAsync(It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
-            .ReturnsAsync((Guid id, AZOARequest? _) => byId.TryGetValue(id, out var h)
+        mock.Setup(m => m.GetAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+            .ReturnsAsync((Guid id, Guid? _, AZOARequest? __) => byId.TryGetValue(id, out var h)
                 ? new AZOAResult<IHolon> { Result = h }
                 : new AZOAResult<IHolon> { IsError = true, Message = $"Holon {id} not found." });
         return mock.Object;

@@ -25,6 +25,7 @@ import type { QuestFactory } from "./run.js";
 import type {
   WorkflowRunResult,
   WorkflowExecutionState,
+  WorkflowReconciliationResult,
   AdvanceOptions,
   ChildCredentialResult,
 } from "./types.js";
@@ -104,6 +105,36 @@ export class WorkflowClient {
     return this.api.request<WorkflowExecutionState>(
       "GET",
       API_PATHS.QUEST_RUN_EXECUTION_STATE(runId)
+    );
+  }
+
+  /**
+   * List every run of a quest definition (`GET /api/quest/{questId}/runs`),
+   * avatar-scoped, typed as {@link WorkflowRunResult}[] (each `status` is a
+   * {@link import("./types.js").WorkflowRunStatus}). `assertUuid`-guarded.
+   */
+  listRuns(questId: string): Promise<Result<WorkflowRunResult[], SdkError>> {
+    assertUuid(questId, "questId");
+    return this.api.request<WorkflowRunResult[]>(
+      "GET",
+      API_PATHS.QUEST_RUNS_BY_QUEST(questId)
+    );
+  }
+
+  /**
+   * Re-probe a run parked in `AwaitingReconciliation`
+   * (`POST /api/quest/runs/{runId}/reconcile`, reconcile-before-retry §7). Re-checks
+   * chain truth: a Confirmed tx reconciles to success (NO re-mint) and resumes the
+   * DAG, a FailedOnChain node is released to retry/compensation, an indeterminate
+   * node stays parked. NEVER re-broadcasts. Avatar-scoped; `assertUuid`-guarded.
+   */
+  reconcileRun(
+    runId: string
+  ): Promise<Result<WorkflowReconciliationResult, SdkError>> {
+    assertUuid(runId, "runId");
+    return this.api.request<WorkflowReconciliationResult>(
+      "POST",
+      API_PATHS.QUEST_RUN_RECONCILE(runId)
     );
   }
 

@@ -20,7 +20,8 @@ public sealed class HolonInteractNodeHandler : IQuestNodeHandler
     {
         if (!QuestNodeConfig.TryDeserialize<HolonInteractNodeConfig>(context.Node.Config, nameof(QuestNodeType.HolonInteract), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
-        var r = await _holonManager.InteractAsync(cfg.HolonId, cfg.Request);
+        // C-2: scope to the runner (ActingAvatarId) so a marketplace run cannot mutate a victim's holon by GUID.
+        var r = await _holonManager.InteractAsync(cfg.HolonId, cfg.Request, context.ActingAvatarId);
         var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);

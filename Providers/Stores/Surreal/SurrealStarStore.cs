@@ -172,7 +172,8 @@ public sealed class SurrealStarStore : ISTARStore
                                ? new DateTimeOffset(
                                      DateTime.SpecifyKind(odk.ModifiedDate.Value, DateTimeKind.Utc))
                                : null,
-            IsActive         = odk.IsActive
+            IsActive         = odk.IsActive,
+            IsPublic         = odk.IsPublic
         };
     }
 
@@ -206,7 +207,8 @@ public sealed class SurrealStarStore : ISTARStore
             DeploymentConfig = p.DeploymentConfig,
             CreatedDate      = p.CreatedDate.UtcDateTime,
             ModifiedDate     = p.ModifiedDate?.UtcDateTime,
-            IsActive         = p.IsActive
+            IsActive         = p.IsActive,
+            IsPublic         = p.IsPublic
         };
     }
 
@@ -270,5 +272,9 @@ public sealed class SurrealStarStore : ISTARStore
         [Column(Type = "bool")]
         [JsonPropertyName("is_active")]
         public bool IsActive { get; set; } = true;
+
+        [Column(Type = "bool")]
+        [JsonPropertyName("is_public")]
+        public bool IsPublic { get; set; }
     }
 }

@@ -74,6 +74,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [References(typeof(Avatar), Optional = true)]
         public string? OriginAvatarId { get; set; }
 
+        [FieldGroup("Content hash of the node/edge graph as of the last publish (bait-and-switch guard). Null while never published; recomputed on every PublishAsync. Stamped onto each quest_run at start so a run is bound to the exact graph revision the runner saw. See Managers/AGENTS.md §published-version-hash.")]
+        public string? PublishedVersionHash { get; set; }
+
         [FieldGroup("Definition birthdate -- STAYS on the definition, not a runtime artifact")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }

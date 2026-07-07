@@ -29,7 +29,7 @@ public class SearchManager : ISearchManager
         _starStore = starStore;
     }
 
-    public async Task<AZOAResult<SearchResult>> SearchAsync(SearchRequest request, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<SearchResult>> SearchAsync(SearchRequest request, Guid? callerAvatarId, AZOARequest? providerRequest = null)
     {
         // Clamp page size
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
@@ -37,6 +37,14 @@ public class SearchManager : ISearchManager
         var hits = new List<SearchHit>();
         var facets = new List<SearchFacet>();
         var query = request.Query?.ToLowerInvariant() ?? string.Empty;
+
+        // Cross-tenant isolation: the caller may NOT enumerate another avatar's
+        // private data. Sensitive entity types are force-scoped to callerAvatarId
+        // and the caller-supplied request.AvatarId is IGNORED for them. Avatars are
+        // the one intentionally-public type (already PII-free — see Avatar section).
+        // A null callerAvatarId fails closed (no sensitive rows returned at all).
+        // Holon/STARODK additionally surface IsPublic rows via the owner-or-public
+        // predicate below so the marketplace stays discoverable.
 
         // ─── Search Avatars ───
         if (request.EntityTypes.HasFlag(SearchableEntityType.Avatar))
@@ -71,7 +79,9 @@ public class SearchManager : ISearchManager
             var holons = await _holonStore.QueryAsync(null, default);
             if (!holons.IsError && holons.Result != null)
             {
-                var filtered = holons.Result.Where(h => MatchesHolon(h, query, request));
+                var filtered = holons.Result
+                    .Where(h => callerAvatarId.HasValue && h.AvatarId == callerAvatarId.Value || h.IsPublic)
+                    .Where(h => MatchesHolon(h, query, request));
                 facets.Add(new SearchFacet { EntityType = SearchableEntityType.Holon, Count = filtered.Count(), Label = "Holons" });
                 hits.AddRange(filtered.Select(h => new SearchHit
                 {
@@ -92,12 +102,10 @@ public class SearchManager : ISearchManager
             }
         }
 
-        // ─── Search Wallets ───
-        if (request.EntityTypes.HasFlag(SearchableEntityType.Wallet))
+        // ─── Search Wallets (H-2: sensitive — ALWAYS caller-scoped; never GetAllAsync) ───
+        if (request.EntityTypes.HasFlag(SearchableEntityType.Wallet) && callerAvatarId.HasValue)
         {
-            var walletsResult = request.AvatarId.HasValue
-                ? await _walletStore.GetByAvatarAsync(request.AvatarId.Value, default)
-                : await _walletStore.GetAllAsync(default);
+            var walletsResult = await _walletStore.GetByAvatarAsync(callerAvatarId.Value, default);
 
             if (!walletsResult.IsError && walletsResult.Result != null)
             {
@@ -121,31 +129,11 @@ public class SearchManager : ISearchManager
             }
         }
 
-        // ─── Search Blockchain Operations ───
-        if (request.EntityTypes.HasFlag(SearchableEntityType.BlockchainOperation))
+        // ─── Search Blockchain Operations (H-2: sensitive — ALWAYS caller-scoped; the all-avatars iteration is removed) ───
+        if (request.EntityTypes.HasFlag(SearchableEntityType.BlockchainOperation) && callerAvatarId.HasValue)
         {
-            IEnumerable<IBlockchainOperation> ops;
-            if (request.AvatarId.HasValue)
-            {
-                var opsResult = await _blockchainOperationStore.GetByAvatarAsync(request.AvatarId.Value, default);
-                ops = opsResult.Result ?? Enumerable.Empty<IBlockchainOperation>();
-            }
-            else
-            {
-                // Load all by iterating avatars (store doesn't expose a load-all for blockchain operations)
-                var allOps = new List<IBlockchainOperation>();
-                var avatars = await _avatarStore.GetAllAsync(default);
-                if (!avatars.IsError && avatars.Result != null)
-                {
-                    foreach (var avatar in avatars.Result)
-                    {
-                        var opsResult = await _blockchainOperationStore.GetByAvatarAsync(avatar.Id, default);
-                        if (!opsResult.IsError && opsResult.Result != null)
-                            allOps.AddRange(opsResult.Result);
-                    }
-                }
-                ops = allOps;
-            }
+            var opsResult = await _blockchainOperationStore.GetByAvatarAsync(callerAvatarId.Value, default);
+            IEnumerable<IBlockchainOperation> ops = opsResult.Result ?? Enumerable.Empty<IBlockchainOperation>();
 
             var filteredOps = ops.Where(o => MatchesBlockchainOp(o, query, request));
             facets.Add(new SearchFacet { EntityType = SearchableEntityType.BlockchainOperation, Count = filteredOps.Count(), Label = "Operations" });
@@ -171,7 +159,9 @@ public class SearchManager : ISearchManager
             var stars = await _starStore.GetAllAsync(default);
             if (!stars.IsError && stars.Result != null)
             {
-                var filtered = stars.Result.Where(s => MatchesSTARODK(s, query, request));
+                var filtered = stars.Result
+                    .Where(s => callerAvatarId.HasValue && s.AvatarId == callerAvatarId.Value || s.IsPublic)
+                    .Where(s => MatchesSTARODK(s, query, request));
                 facets.Add(new SearchFacet { EntityType = SearchableEntityType.STARODK, Count = filtered.Count(), Label = "STAR ODKs" });
                 hits.AddRange(filtered.Select(s => new SearchHit
                 {
@@ -222,25 +212,33 @@ public class SearchManager : ISearchManager
         };
     }
 
-    public async Task<AZOAResult<List<SearchFacet>>> GetFacetsAsync(AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<List<SearchFacet>>> GetFacetsAsync(Guid? callerAvatarId, AZOARequest? providerRequest = null)
     {
         var facets = new List<SearchFacet>();
 
+        // Avatars are the one public type — global count is fine.
         var avatars = await _avatarStore.GetAllAsync(default);
         if (!avatars.IsError && avatars.Result != null)
             facets.Add(new SearchFacet { EntityType = SearchableEntityType.Avatar, Count = avatars.Result.Count(), Label = "Avatars" });
 
+        // Holon/STARODK counts: caller-owned OR public (mirror SearchAsync scoping — no global leak).
         var holons = await _holonStore.QueryAsync(null, default);
         if (!holons.IsError && holons.Result != null)
-            facets.Add(new SearchFacet { EntityType = SearchableEntityType.Holon, Count = holons.Result.Count(), Label = "Holons" });
+            facets.Add(new SearchFacet { EntityType = SearchableEntityType.Holon, Label = "Holons",
+                Count = holons.Result.Count(h => callerAvatarId.HasValue && h.AvatarId == callerAvatarId.Value || h.IsPublic) });
 
-        var wallets = await _walletStore.GetAllAsync(default);
-        if (!wallets.IsError && wallets.Result != null)
-            facets.Add(new SearchFacet { EntityType = SearchableEntityType.Wallet, Count = wallets.Result.Count(), Label = "Wallets" });
+        // Wallets: strictly the caller's own (never public).
+        if (callerAvatarId.HasValue)
+        {
+            var wallets = await _walletStore.GetByAvatarAsync(callerAvatarId.Value, default);
+            if (!wallets.IsError && wallets.Result != null)
+                facets.Add(new SearchFacet { EntityType = SearchableEntityType.Wallet, Count = wallets.Result.Count(), Label = "Wallets" });
+        }
 
         var stars = await _starStore.GetAllAsync(default);
         if (!stars.IsError && stars.Result != null)
-            facets.Add(new SearchFacet { EntityType = SearchableEntityType.STARODK, Count = stars.Result.Count(), Label = "STAR ODKs" });
+            facets.Add(new SearchFacet { EntityType = SearchableEntityType.STARODK, Label = "STAR ODKs",
+                Count = stars.Result.Count(s => callerAvatarId.HasValue && s.AvatarId == callerAvatarId.Value || s.IsPublic) });
 
         return new AZOAResult<List<SearchFacet>> { Result = facets, Message = "Facets computed." };
     }

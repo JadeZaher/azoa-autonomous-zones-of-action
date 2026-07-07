@@ -386,7 +386,9 @@ public sealed class QuestConfigBindingResolver
         if (!Guid.TryParse(idStr, out var holonId))
             return (false, $"$from '{path}': holon id '{idStr}' is not a valid GUID.");
 
-        var result = await _holonManager.GetAsync(holonId);
+        // Scope the read to the acting avatar; the explicit AvatarId check below stays
+        // as defense-in-depth (owner-STRICT — a $from binding may only name owned holons).
+        var result = await _holonManager.GetAsync(holonId, avatarId);
         if (result.IsError || result.Result is null || result.Result.AvatarId != avatarId)
         {
             // Not-found indistinguishable from non-owned (privacy posture same as GateCheck).

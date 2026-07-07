@@ -79,12 +79,25 @@ public class ComposedDagDeterminismTests
     private static (RefundNodeHandler Handler, Mock<INftManager> Nft) NewRefund(Guid nftId)
     {
         var nft = new Mock<INftManager>();
-        nft.Setup(m => m.GetAsync(nftId, It.IsAny<AZOARequest?>()))
+        nft.Setup(m => m.GetAsync(nftId, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
            .ReturnsAsync(new AZOAResult<INft> { Result = new Holon { Id = nftId, AssetType = "NFT" } });
         nft.Setup(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
            .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
         return (new RefundNodeHandler(nft.Object), nft);
     }
+
+    // A succeeded upstream Transfer of nftId is now REQUIRED before a Refund may
+    // reverse it (drain-vector guard). The fallback branch becomes swap → transfer → refund.
+    private static (TransferNodeHandler Handler, Mock<INftManager> Nft) NewTransfer(Guid nftId)
+    {
+        var nft = new Mock<INftManager>();
+        nft.Setup(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
+           .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
+        return (new TransferNodeHandler(nft.Object), nft);
+    }
+
+    private static string TransferConfig(Guid nftId) =>
+        JsonSerializer.Serialize(new TransferNodeConfig { NftId = nftId, Request = new NftTransferRequest() });
 
     // The gate reads the upstream Swap node's serialized AZOAResult<SwapQuoteResponse>.
     // QuestNodeJson.Options applies NO naming policy ⇒ PascalCase members; the
@@ -233,12 +246,14 @@ public class ComposedDagDeterminismTests
         var nftId = Guid.NewGuid();
         var (swap, _) = NewSwap(0.9);            // 0.9 ≥ 0.5 ⇒ gate Fail
         var (grant, grantNft) = NewGrant();
+        var (transfer, _) = NewTransfer(nftId);  // real upstream debit the refund reverses
         var (refund, refundNft) = NewRefund(nftId);
         var gate = new GateCheckNodeHandler(HolonManagerMocks.Empty());
 
         var swapNode = Node(QuestNodeType.Swap, "Swap", SwapConfig(), entry: true);
         var gateNode = Node(QuestNodeType.GateCheck, "Gate", GateConfig());
         var grantNode = Node(QuestNodeType.Grant, "Grant", GrantConfig(), terminal: true);   // success path
+        var transferNode = Node(QuestNodeType.Transfer, "Transfer", TransferConfig(nftId));   // debits nftId
         var refundNode = Node(QuestNodeType.Refund, "Refund", RefundConfig(nftId), terminal: true); // on-fail path
 
         var quest = new QuestEntity
@@ -247,12 +262,13 @@ public class ComposedDagDeterminismTests
             Name = "gate-refund-on-fail",
             AvatarId = AvatarId,
             Status = QuestStatus.Active,   // B6: must be Active to execute
-            Nodes = new List<QuestNode> { swapNode, gateNode, grantNode, refundNode },
+            Nodes = new List<QuestNode> { swapNode, gateNode, grantNode, transferNode, refundNode },
             Edges = new List<QuestEdge>
             {
-                Edge(swapNode, gateNode),    // swap → gate
-                Edge(gateNode, grantNode),   // gate → grant (success path; skipped on gate Fail)
-                Edge(swapNode, refundNode),  // swap → refund (fallback; runs because swap succeeded)
+                Edge(swapNode, gateNode),        // swap → gate
+                Edge(gateNode, grantNode),       // gate → grant (success path; skipped on gate Fail)
+                Edge(swapNode, transferNode),    // swap → transfer (the debit the refund reverses)
+                Edge(transferNode, refundNode),  // transfer → refund (fallback; runs because transfer succeeded)
             },
         };
 
@@ -261,7 +277,7 @@ public class ComposedDagDeterminismTests
         var execStore = new InMemoryQuestNodeExecutionStore();
         var manager = new QuestManager(
             store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(), new QuestDagExecutabilityValidator(),
-            new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, refund }),
+            new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, transfer, refund }),
             new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
             BlockchainProviderFactoryFakes.Returning(),
             BindingResolverFakes.PassThrough());
@@ -276,7 +292,7 @@ public class ComposedDagDeterminismTests
         State(swapNode).Should().Be(QuestNodeState.Succeeded);
         State(gateNode).Should().Be(QuestNodeState.Failed, "0.9 ≥ 0.5 ⇒ predicate not met");
         State(grantNode).Should().Be(QuestNodeState.Skipped, "gate Fail skips the success path");
-        State(refundNode).Should().Be(QuestNodeState.Succeeded, "the on-fail refund branch runs");
+        State(refundNode).Should().Be(QuestNodeState.Succeeded, "the on-fail refund branch runs (reversing the upstream Transfer)");
 
         grantNft.Verify(m => m.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
             Times.Never, "the success-path mint never broadcasts on gate Fail");
@@ -294,24 +310,27 @@ public class ComposedDagDeterminismTests
         var nftId = Guid.NewGuid();
         var (swap, _) = NewSwap(0.1);            // 0.1 < 0.5 ⇒ gate Pass
         var (grant, grantNft) = NewGrant();
+        var (transfer, _) = NewTransfer(nftId);  // real upstream debit the refund reverses
         var (refund, _) = NewRefund(nftId);
         var gate = new GateCheckNodeHandler(HolonManagerMocks.Empty());
 
         var swapNode = Node(QuestNodeType.Swap, "Swap", SwapConfig(), entry: true);
         var gateNode = Node(QuestNodeType.GateCheck, "Gate", GateConfig());
         var grantNode = Node(QuestNodeType.Grant, "Grant", GrantConfig(), terminal: true);
+        var transferNode = Node(QuestNodeType.Transfer, "Transfer", TransferConfig(nftId));
         var refundNode = Node(QuestNodeType.Refund, "Refund", RefundConfig(nftId), terminal: true);
 
         var quest = new QuestEntity
         {
             Id = Guid.NewGuid(), Name = "gate-pass", AvatarId = AvatarId,
             Status = QuestStatus.Active,   // B6: must be Active to execute
-            Nodes = new List<QuestNode> { swapNode, gateNode, grantNode, refundNode },
+            Nodes = new List<QuestNode> { swapNode, gateNode, grantNode, transferNode, refundNode },
             Edges = new List<QuestEdge>
             {
                 Edge(swapNode, gateNode),
                 Edge(gateNode, grantNode),
-                Edge(swapNode, refundNode),
+                Edge(swapNode, transferNode),
+                Edge(transferNode, refundNode),
             },
         };
 
@@ -320,7 +339,7 @@ public class ComposedDagDeterminismTests
         var execStore = new InMemoryQuestNodeExecutionStore();
         var manager = new QuestManager(
             store, new InMemoryQuestRunStore(), execStore, new QuestDagValidator(), new QuestDagExecutabilityValidator(),
-            new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, refund }),
+            new QuestNodeHandlerRegistry(new IQuestNodeHandler[] { swap, gate, grant, transfer, refund }),
             new InMemorySagaStore(), WalletManagerMocks.WithOneWallet(),
             BlockchainProviderFactoryFakes.Returning(),
             BindingResolverFakes.PassThrough());

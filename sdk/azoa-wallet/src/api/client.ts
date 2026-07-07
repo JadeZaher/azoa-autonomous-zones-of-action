@@ -3,6 +3,7 @@ import { ok, err } from "../core/result.js";
 import { SdkError, SdkErrorCode } from "../core/errors.js";
 import type { SdkErrorDetail } from "../core/errors.js";
 import { API_PATHS } from "./api-version.js";
+import type { WorkflowRunStatus } from "../workflow/types.js";
 
 export interface AzoaApiConfig {
   baseUrl: string;
@@ -542,18 +543,13 @@ export interface QuestResult {
   originAvatarId?: string;
 }
 
-/** Lifecycle status of a single {@link QuestRunResult} (one execution attempt of a Quest). */
-export type QuestRunStatus =
-  | "Pending"
-  | "Running"
-  | "Succeeded"
-  | "Failed"
-  | "Forked"
-  | "Cancelled"
-  | "Suspended"
-  | "AwaitingSignal"
-  | "AwaitingTimer"
-  | "AwaitingReconciliation";
+/**
+ * Lifecycle status of a single {@link QuestRunResult} (one execution attempt of a
+ * Quest). Single source of truth: this is the {@link WorkflowRunStatus} union from
+ * `workflow/types.ts` (both mirror C# `Models/Quest/QuestRunStatus.cs` 1:1) — the
+ * alias keeps the two public surfaces from drifting apart.
+ */
+export type QuestRunStatus = WorkflowRunStatus;
 
 /**
  * One execution attempt of a {@link QuestResult} definition (mirrors .NET
@@ -772,6 +768,82 @@ export interface ApiKeyInfo {
   revokedAt?: string;
   isActive: boolean;
   scopes?: string;
+}
+
+/**
+ * The scopes an ordinary avatar may deliberately attach to its OWN new API key
+ * (the self-issuable vocabulary — mirrors .NET AzoaScopes.SelfIssuableScopes). An
+ * empty CSV still means legacy "full access"; these are the explicit opt-in scopes.
+ */
+export type ApiKeyScope =
+  | "dapp:develop"
+  | "wallet:manage"
+  | "nft:mint"
+  | "quest:execute"
+  | "swap:sign"
+  | "transfer:sign"
+  | "grant:sign"
+  | "token:create:sign";
+
+/** One self-issuable scope with its human description (mirrors .NET ApiKeyScopeInfo). */
+export interface ApiKeyScopeInfo {
+  scope: ApiKeyScope;
+  description: string;
+}
+
+// ─── DappSeries types matching .NET DTOs (DappSeriesController) ───
+
+/** DappSeries lifecycle status (mirrors .NET DappSeries.StatusKind). */
+export type DappSeriesStatus = "Draft" | "Building" | "Ready" | "Deployed" | "Archived";
+
+/** A linked series of quest DAGs that compose into a deployable dApp (mirrors .NET DappSeries). */
+export interface DappSeriesResult {
+  id: string;
+  name: string;
+  description?: string;
+  avatarId: string;
+  status: DappSeriesStatus;
+  /** Cross-quest deployment settings (string→string map), serialized as JSON on the row. */
+  sharedConfig?: unknown;
+  starOdkId?: string;
+  targetChain?: string;
+  /** Composed DappManifest as a JSON string (null until ComposeAsync runs). */
+  manifest?: string;
+  createdDate: string;
+  deployedDate?: string;
+}
+
+/** Body for {@link AzoaApiClient.createDappSeries} (mirrors .NET DappSeriesCreateModel). */
+export interface DappSeriesCreateParams {
+  name: string;
+  description?: string;
+}
+
+/** Body for {@link AzoaApiClient.updateDappSeries} (mirrors .NET DappSeriesUpdateModel). */
+export interface DappSeriesUpdateParams {
+  name?: string;
+  description?: string;
+  targetChain?: string;
+  sharedConfig?: Record<string, string>;
+}
+
+/** One ordered quest entry inside a series (mirrors .NET DappSeriesQuest). */
+export interface DappSeriesQuestResult {
+  id: string;
+  dappSeriesId: string;
+  questId: string;
+  /** 1-indexed execution order within the series. */
+  order: number;
+  /** JSON array of InputMapping entries; null when no cross-quest flow. */
+  inputMappings?: string;
+}
+
+/** Body for {@link AzoaApiClient.addSeriesQuest} (mirrors .NET DappSeriesAddQuestModel). */
+export interface DappSeriesAddQuestParams {
+  questId: string;
+  order: number;
+  /** JSON array of InputMapping entries; omit when no cross-quest flow. */
+  inputMappings?: string;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1346,6 +1418,16 @@ export class AzoaApiClient {
     return this.request("GET", `/api/quest/avatar/${avatarId}`);
   }
 
+  /**
+   * Marketplace browse: list every public + Active quest any authenticated avatar
+   * may fork/start (maps to `GET /api/quest/public`, QuestController.ListPublic). A
+   * non-owner starts one via {@link executeQuest}; the run is owned by the caller and
+   * carries provenance back to the origin quest ({@link QuestRunResult.originAvatarId}).
+   */
+  async listPublicQuests(): Promise<Result<QuestResult[], SdkError>> {
+    return this.request("GET", API_PATHS.QUEST_PUBLIC);
+  }
+
   /** Update quest metadata or status. */
   async updateQuest(questId: string, params: QuestUpdateParams): Promise<Result<QuestResult, SdkError>> {
     assertUuid(questId, "questId");
@@ -1469,6 +1551,92 @@ export class AzoaApiClient {
   async deleteApiKey(keyId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(keyId, "keyId");
     return this.request("DELETE", `/api/apikey/${keyId}`);
+  }
+
+  /**
+   * List the scopes an avatar may self-issue on a new key, each with a human
+   * description (maps to `GET /api/apikey/scopes`). Drives the key-creation scope
+   * picker. An empty CSV still means legacy "full access" — these are the opt-in scopes.
+   */
+  async listIssuableScopes(): Promise<Result<ApiKeyScopeInfo[], SdkError>> {
+    return this.request("GET", API_PATHS.APIKEY_SCOPES);
+  }
+
+  /**
+   * Rotate an API key: mints a NEW key inheriting the old key's name, scopes, and
+   * expiry, revokes the old key, and returns the new raw key ONCE (maps to
+   * `POST /api/apikey/{id}/rotate`). Scoped to the caller's own key.
+   */
+  async rotateApiKey(keyId: string): Promise<Result<ApiKeyCreateResult, SdkError>> {
+    assertUuid(keyId, "keyId");
+    return this.request("POST", API_PATHS.APIKEY_ROTATE(keyId));
+  }
+
+  // ─── DappSeries (DappSeriesController) ───
+  // Reads open to any authenticated caller; writes are dapp:develop-gated. A denied
+  // scoped key returns an actionable 403 body naming the missing scope.
+
+  /** List the caller's dApp-series, optionally filtered by status. */
+  async listDappSeries(status?: DappSeriesStatus): Promise<Result<DappSeriesResult[], SdkError>> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    return this.request("GET", `${API_PATHS.DAPP_SERIES_LIST}${query}`);
+  }
+
+  /** Get one dApp-series by id (owner-scoped). */
+  async getDappSeries(id: string): Promise<Result<DappSeriesResult, SdkError>> {
+    assertUuid(id, "dappSeriesId");
+    return this.request("GET", API_PATHS.DAPP_SERIES_GET(id));
+  }
+
+  /** Create a new dApp-series. Requires the `dapp:develop` scope on a scoped key. */
+  async createDappSeries(params: DappSeriesCreateParams): Promise<Result<DappSeriesResult, SdkError>> {
+    return this.request("POST", API_PATHS.DAPP_SERIES_CREATE, params);
+  }
+
+  /** Update dApp-series metadata / shared config. Requires the `dapp:develop` scope. */
+  async updateDappSeries(id: string, params: DappSeriesUpdateParams): Promise<Result<DappSeriesResult, SdkError>> {
+    assertUuid(id, "dappSeriesId");
+    return this.request("PUT", API_PATHS.DAPP_SERIES_UPDATE(id), params);
+  }
+
+  /** Delete a dApp-series. Requires the `dapp:develop` scope. */
+  async deleteDappSeries(id: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(id, "dappSeriesId");
+    return this.request("DELETE", API_PATHS.DAPP_SERIES_DELETE(id));
+  }
+
+  /** List the ordered quest entries in a dApp-series. */
+  async listSeriesQuests(seriesId: string): Promise<Result<DappSeriesQuestResult[], SdkError>> {
+    assertUuid(seriesId, "dappSeriesId");
+    return this.request("GET", API_PATHS.DAPP_SERIES_QUESTS(seriesId));
+  }
+
+  /** Add a quest to a dApp-series at a given order. Requires the `dapp:develop` scope. */
+  async addSeriesQuest(seriesId: string, params: DappSeriesAddQuestParams): Promise<Result<DappSeriesQuestResult, SdkError>> {
+    assertUuid(seriesId, "dappSeriesId");
+    assertUuid(params.questId, "questId");
+    return this.request("POST", API_PATHS.DAPP_SERIES_QUESTS(seriesId), params);
+  }
+
+  /** Remove a quest from a dApp-series. Requires the `dapp:develop` scope. */
+  async removeSeriesQuest(seriesId: string, questId: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(seriesId, "dappSeriesId");
+    assertUuid(questId, "questId");
+    return this.request("DELETE", API_PATHS.DAPP_SERIES_QUEST_REMOVE(seriesId, questId));
+  }
+
+  /** Change a quest's 1-indexed order within a series. Requires the `dapp:develop` scope. */
+  async reorderSeriesQuest(seriesId: string, questId: string, newOrder: number): Promise<Result<DappSeriesQuestResult, SdkError>> {
+    assertUuid(seriesId, "dappSeriesId");
+    assertUuid(questId, "questId");
+    return this.request("PUT", API_PATHS.DAPP_SERIES_QUEST_ORDER(seriesId, questId), { newOrder });
+  }
+
+  /** Update a quest's cross-quest input mappings (JSON array). Requires the `dapp:develop` scope. */
+  async updateSeriesMappings(seriesId: string, questId: string, inputMappings: string | null): Promise<Result<DappSeriesQuestResult, SdkError>> {
+    assertUuid(seriesId, "dappSeriesId");
+    assertUuid(questId, "questId");
+    return this.request("PUT", API_PATHS.DAPP_SERIES_QUEST_MAPPINGS(seriesId, questId), { inputMappings });
   }
 
   /**

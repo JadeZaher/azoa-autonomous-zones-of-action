@@ -10,6 +10,8 @@ public interface IQuestManager
     Task<AZOAResult<Quest>> CreateAsync(QuestCreateModel model, Guid avatarId, AZOARequest? request = null);
     Task<AZOAResult<Quest>> GetAsync(Guid id, Guid avatarId, AZOARequest? request = null);
     Task<AZOAResult<IEnumerable<Quest>>> GetByAvatarAsync(Guid avatarId, AZOARequest? request = null);
+    /// <summary>Public + published (Active) quests for marketplace discovery/forking.</summary>
+    Task<AZOAResult<IEnumerable<Quest>>> ListPublicAsync(AZOARequest? request = null);
     Task<AZOAResult<Quest>> UpdateAsync(Guid id, QuestUpdateModel model, Guid avatarId, AZOARequest? request = null);
     Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid avatarId, AZOARequest? request = null);
 
@@ -29,8 +31,19 @@ public interface IQuestManager
     // QuestRun so the Tier-2 economic node handlers can stamp it on the produced
     // BlockchainOperation and the custody signing seam's live consent check fires.
     // Null (the default) = user-driven; behaves exactly as before (no regression).
-    Task<AZOAResult<QuestRun>> ExecuteAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null);
+    // Marketplace guards (see Managers/AGENTS.md §quest-run-quota + §economic-consent):
+    // a per-(avatar,quest) run-start quota rejects treasury/runner-drain re-runs, and a
+    // NON-owner run containing value-moving nodes is rejected unless
+    // acknowledgeEconomicEffects == true (the runner consented to the disclosed manifest).
+    // Both default off/false so existing callers are unchanged; owner runs are exempt from
+    // the consent gate and get a higher/unbounded quota ceiling.
+    Task<AZOAResult<QuestRun>> ExecuteAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null, bool acknowledgeEconomicEffects = false);
     Task<AZOAResult<QuestNodeExecution>> ExecuteNodeAsync(Guid questId, Guid nodeId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null);
+
+    /// <summary>Pre-run disclosure: the value-moving-node manifest a caller sees BEFORE
+    /// committing a marketplace run, so they can consent knowingly. Scoped like a
+    /// run-start. See Managers/AGENTS.md §economic-consent.</summary>
+    Task<AZOAResult<QuestEconomicManifest>> PreviewRunAsync(Guid questId, Guid avatarId, AZOARequest? request = null);
 
     // Fork — creates a child run branched from `runId` at `atNodeId`. Parent
     // must be Running. See ADR §2.3 for state-machine semantics.
@@ -98,7 +111,7 @@ public interface IQuestManager
     /// executions, then enqueue the entry node as the first saga step. Returns
     /// immediately with the run in its initial (Pending/Running) state — the
     /// engine advances it asynchronously.</summary>
-    Task<AZOAResult<QuestRun>> StartWorkflowRunAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null);
+    Task<AZOAResult<QuestRun>> StartWorkflowRunAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null, bool acknowledgeEconomicEffects = false);
 
     /// <summary>The <c>step(nodeId)</c> primitive: resume a SUSPENDED
     /// manual-advance run from <paramref name="fromNodeId"/> into its successor.

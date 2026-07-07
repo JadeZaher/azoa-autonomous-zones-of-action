@@ -38,6 +38,10 @@ public class QuestManager : IQuestManager
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly QuestConfigBindingResolver _bindingResolver;
 
+    // Config-bound marketplace guards (see Managers/AGENTS.md §quest-run-quota
+    // and §economic-consent). Materialized once from IConfiguration at construction.
+    private readonly QuestRunQuotaOptions _runQuota;
+
     // Semantic transition-legality layer (smart-gates-holon-state §8.2), invoked
     // ALONGSIDE the structural Kahn validator — never replacing it. Stateless with
     // the default project-lifecycle map; constructing it here keeps the DI signature
@@ -55,7 +59,11 @@ public class QuestManager : IQuestManager
         ISagaStore sagaStore,
         IWalletManager walletManager,
         IBlockchainProviderFactory chainFactory,
-        QuestConfigBindingResolver bindingResolver)
+        QuestConfigBindingResolver bindingResolver,
+        // Optional so the ~10 unit-test fixtures that construct QuestManager with the
+        // 10 positional deps keep compiling; DI always supplies the real config in
+        // production. Null ⇒ default QuestRunQuotaOptions. See §quest-run-quota.
+        Microsoft.Extensions.Configuration.IConfiguration? configuration = null)
     {
         _questStore = questStore;
         _runStore = runStore;
@@ -67,6 +75,9 @@ public class QuestManager : IQuestManager
         _walletManager = walletManager;
         _chainFactory = chainFactory;
         _bindingResolver = bindingResolver;
+        _runQuota = configuration is null
+            ? new QuestRunQuotaOptions()
+            : QuestRunQuotaOptions.FromConfiguration(configuration);
     }
 
     /// <summary>
@@ -109,6 +120,78 @@ public class QuestManager : IQuestManager
             return (new AZOAResult<Quest> { IsError = true, Message = "Quest is not published for execution." }, false);
 
         return (questResult, false);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // MARKETPLACE RUN-START GUARDS (per-(avatar,quest) quota + economic consent).
+    // Both run-start seams (ExecuteAsync + StartWorkflowRunAsync) call these BEFORE
+    // any run/exec rows are written — a breach rejects cleanly with no orphaned run.
+    // See Managers/AGENTS.md §quest-run-quota and §economic-consent.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Per-(avatar, quest) run-start quota guard (treasury/runner drain). Rejects a
+    /// new start when the avatar already holds the configured max NON-terminal runs
+    /// of this quest. Config-driven; owner gets a higher (or unbounded) ceiling.
+    /// Returns an error result on breach, or null to proceed. See §quest-run-quota.
+    /// </summary>
+    private async Task<AZOAResult<QuestRun>?> EnforceRunQuotaAsync(Guid questId, Guid avatarId, bool isOwner)
+    {
+        var limit = _runQuota.EffectiveLimit(isOwner);
+        if (limit is null)
+            return null; // quota disabled / caller exempt
+
+        // Count this avatar's non-terminal runs of THIS quest from the run store.
+        var runsResult = await _runStore.GetByQuestIdAsync(questId);
+        if (runsResult.IsError)
+            // Fail closed: we cannot prove the avatar is under quota, so reject.
+            return new AZOAResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Run-start quota check failed; run rejected (fail-closed): {runsResult.Message}"
+            };
+
+        var active = (runsResult.Result ?? Enumerable.Empty<QuestRun>())
+            .Count(r => r.AvatarId == avatarId && !r.Status.IsTerminal());
+
+        if (active >= limit.Value)
+            return new AZOAResult<QuestRun>
+            {
+                IsError = true,
+                Message = $"Run-start quota exceeded: avatar already has {active} active run(s) of quest {questId} " +
+                          $"(limit {limit.Value}). Let existing runs reach a terminal state before starting another."
+            };
+
+        return null;
+    }
+
+    /// <summary>
+    /// Economic-consent gate for a NON-owner (marketplace) run. Computes the
+    /// value-moving-node manifest and, when any economic node is present, requires
+    /// <paramref name="acknowledgeEconomicEffects"/> to be true. Owner runs are
+    /// exempt (they authored the quest). Returns an error on an un-acknowledged
+    /// economic run, or null to proceed. See §economic-consent.
+    /// </summary>
+    private AZOAResult<QuestRun>? EnforceEconomicConsent(Quest quest, bool isOwner, bool acknowledgeEconomicEffects)
+    {
+        if (isOwner)
+            return null; // owner authored the quest — no external disclosure needed
+
+        var manifest = QuestEconomicManifestBuilder.Build(quest, _registry, quest.PublishedVersionHash);
+        if (!manifest.HasEconomicNodes)
+            return null; // nothing moves value — no consent required
+
+        if (acknowledgeEconomicEffects)
+            return null; // runner explicitly acknowledged the disclosed effects
+
+        var summary = string.Join(", ", manifest.Entries.Select(e => $"{e.NodeType} '{e.NodeName}'"));
+        return new AZOAResult<QuestRun>
+        {
+            IsError = true,
+            Message = "This quest moves assets on your behalf and requires explicit consent. " +
+                      $"Value-moving nodes: [{summary}]. Preview them via the run-preview surface, " +
+                      "then re-start with acknowledgeEconomicEffects=true to proceed."
+        };
     }
 
     /// <summary>
@@ -196,6 +279,20 @@ public class QuestManager : IQuestManager
         if (quest.AvatarId == avatarId || quest.IsPublic)
             return questResult;
         return new AZOAResult<Quest> { IsError = true, Message = "Quest is owned by a different avatar." };
+    }
+
+    /// <summary>
+    /// Marketplace discovery: quests any avatar may fork/start — public AND published
+    /// (Active). The browse surface for the start-as-template mechanic; without it a
+    /// public quest is only reachable if its id was shared out-of-band. Mirrors the
+    /// non-owner gate in <see cref="LoadStartableQuestAsync"/> (IsPublic && Active).
+    /// </summary>
+    public async Task<AZOAResult<IEnumerable<Quest>>> ListPublicAsync(AZOARequest? request = null)
+    {
+        var all = await _questStore.GetPublicQuestsAsync();
+        if (all.IsError || all.Result == null) return all;
+        var published = all.Result.Where(q => q.Status == QuestStatus.Active);
+        return new AZOAResult<IEnumerable<Quest>> { Result = published, Message = "Public quests." };
     }
 
     public async Task<AZOAResult<IEnumerable<Quest>>> GetByAvatarAsync(Guid avatarId, AZOARequest? request = null)
@@ -289,6 +386,11 @@ public class QuestManager : IQuestManager
         // store, whose CAS mutated the same instance.
         quest.Status  = QuestStatus.Active;
         quest.Version = expectedVersion + 1;
+        // Bait-and-switch guard: snapshot a stable content hash of the node/edge
+        // graph being published. Runs bind to this exact revision; a later
+        // unpublish→edit→republish recomputes it, so a mismatch is detectable.
+        // See Managers/AGENTS.md §published-version-hash.
+        quest.PublishedVersionHash = QuestPublishedVersion.ComputeHash(quest);
         var upsert = await _questStore.UpsertQuestAsync(quest);
         if (upsert.IsError)
             return new AZOAResult<Quest> { IsError = true, Message = upsert.Message };
@@ -423,7 +525,7 @@ public class QuestManager : IQuestManager
     // EXECUTION
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<AZOAResult<QuestRun>> ExecuteAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null)
+    public async Task<AZOAResult<QuestRun>> ExecuteAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null, bool acknowledgeEconomicEffects = false)
     {
         // Marketplace mechanic: the owner may run their own quest; a non-owner may
         // run it only when it is published (public + Active). Provenance back to the
@@ -431,6 +533,11 @@ public class QuestManager : IQuestManager
         var (startable, isOwner) = await LoadStartableQuestAsync(questId, avatarId);
         if (startable.IsError || startable.Result == null)
             return new AZOAResult<QuestRun> { IsError = true, Message = startable.Message };
+
+        // Marketplace guard 1 — per-(avatar,quest) run-start quota (treasury/runner drain).
+        var quotaGate = await EnforceRunQuotaAsync(questId, avatarId, isOwner);
+        if (quotaGate is not null)
+            return quotaGate;
 
         // FR-2 (quest-dag-semantic-hardening): require Active status before execution.
         // (The non-owner path already enforced Active in LoadStartableQuestAsync; this
@@ -454,6 +561,13 @@ public class QuestManager : IQuestManager
             return new AZOAResult<QuestRun> { IsError = true, Message = questResult.Message };
 
         var quest = questResult.Result;
+
+        // Marketplace guard 2 — economic-consent gate. DAG validation above assigned
+        // ExecutionOrder, so the manifest lists value-moving nodes in run order. A
+        // non-owner run containing economic nodes is rejected unless acknowledged.
+        var consentGate = EnforceEconomicConsent(quest, isOwner, acknowledgeEconomicEffects);
+        if (consentGate is not null)
+            return consentGate;
 
         // F6 TOCTOU guard: confirm the definition is STILL Active at the version we
         // just read before we commit a run against it. This closes unpublish racing
@@ -485,6 +599,8 @@ public class QuestManager : IQuestManager
             // on the non-owner path.
             SourceQuestId = isOwner ? null : quest.Id,
             OriginAvatarId = isOwner ? null : quest.AvatarId,
+            // Bind the run to the exact published graph revision (bait-and-switch guard).
+            PublishedVersionHash = quest.PublishedVersionHash,
             Status = QuestRunStatus.Pending,
             StartedAt = DateTime.UtcNow
         };
@@ -651,7 +767,7 @@ public class QuestManager : IQuestManager
                     node.Config = bindingResult.ResolvedJson!;
                     try
                     {
-                        var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, run.AvatarId, upstream, run.ActingTenantId);
+                        var ctx = new QuestNodeExecutionContext(run.Id, node.Id, quest, run.AvatarId, upstream, run.ActingTenantId, executionsByNode);
                         result = await handler.HandleAsync(ctx);
                     }
                     finally
@@ -1525,6 +1641,28 @@ public class QuestManager : IQuestManager
         return await LoadOwnedRunAsync(runId, avatarId);
     }
 
+    /// <summary>
+    /// Pre-run disclosure: the value-moving-node manifest a caller sees BEFORE
+    /// committing a marketplace run, so they can consent knowingly. Scoped exactly
+    /// like a run-start (owner may preview their own; a non-owner may preview a
+    /// published quest). ExecutionOrder is (re)assigned so the manifest lists nodes
+    /// in run order. See Managers/AGENTS.md §economic-consent.
+    /// </summary>
+    public async Task<AZOAResult<QuestEconomicManifest>> PreviewRunAsync(Guid questId, Guid avatarId, AZOARequest? request = null)
+    {
+        var (startable, _) = await LoadStartableQuestAsync(questId, avatarId);
+        if (startable.IsError || startable.Result == null)
+            return new AZOAResult<QuestEconomicManifest> { IsError = true, Message = startable.Message };
+
+        var quest = startable.Result;
+        // Assign ExecutionOrder for run-order manifest listing (best-effort — an
+        // invalid DAG still yields a manifest, just unordered).
+        _dagValidator.Validate(quest);
+
+        var manifest = QuestEconomicManifestBuilder.Build(quest, _registry, quest.PublishedVersionHash);
+        return new AZOAResult<QuestEconomicManifest> { Result = manifest, Message = "Run preview computed." };
+    }
+
     public async Task<AZOAResult<IEnumerable<QuestRun>>> ListRunsByQuestAsync(Guid questId, Guid avatarId, AZOARequest? request = null)
     {
         var owned = await LoadOwnedQuestAsync(questId, avatarId);
@@ -1626,7 +1764,7 @@ public class QuestManager : IQuestManager
     /// saga processor advances the DAG asynchronously, suspending at
     /// manual/gate/timer nodes (durable-workflow-engine D1, Phase 2).
     /// </summary>
-    public async Task<AZOAResult<QuestRun>> StartWorkflowRunAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null)
+    public async Task<AZOAResult<QuestRun>> StartWorkflowRunAsync(Guid questId, Guid avatarId, AZOARequest? request = null, Guid? actingTenantId = null, bool acknowledgeEconomicEffects = false)
     {
         // Marketplace mechanic (durable path): owner may start their own quest; a
         // non-owner may start it only when published (public + Active). Provenance is
@@ -1634,6 +1772,11 @@ public class QuestManager : IQuestManager
         var (startable, isOwner) = await LoadStartableQuestAsync(questId, avatarId);
         if (startable.IsError || startable.Result == null)
             return new AZOAResult<QuestRun> { IsError = true, Message = startable.Message };
+
+        // Marketplace guard 1 — per-(avatar,quest) run-start quota (treasury/runner drain).
+        var quotaGate = await EnforceRunQuotaAsync(questId, avatarId, isOwner);
+        if (quotaGate is not null)
+            return quotaGate;
 
         // FR-2: require Active status before starting a durable workflow run.
         if (startable.Result.Status != QuestStatus.Active)
@@ -1666,6 +1809,14 @@ public class QuestManager : IQuestManager
         if (questResult.IsError || questResult.Result == null)
             return new AZOAResult<QuestRun> { IsError = true, Message = questResult.Message };
         var quest = questResult.Result;
+
+        // Marketplace guard 2 — economic-consent gate (durable path). Mirrors
+        // ExecuteAsync: a non-owner run containing value-moving nodes is rejected
+        // unless the runner acknowledged the disclosed effects. ValidateDAGAsync above
+        // assigned ExecutionOrder so the manifest lists nodes in run order.
+        var consentGate = EnforceEconomicConsent(quest, isOwner, acknowledgeEconomicEffects);
+        if (consentGate is not null)
+            return consentGate;
 
         var entry = ResolveEntryNode(quest);
         if (entry is null)
@@ -1702,6 +1853,8 @@ public class QuestManager : IQuestManager
             // the non-owner path.
             SourceQuestId = isOwner ? null : quest.Id,
             OriginAvatarId = isOwner ? null : quest.AvatarId,
+            // Bind the run to the exact published graph revision (bait-and-switch guard).
+            PublishedVersionHash = quest.PublishedVersionHash,
             Status = QuestRunStatus.Pending,
             StartedAt = DateTime.UtcNow
         };

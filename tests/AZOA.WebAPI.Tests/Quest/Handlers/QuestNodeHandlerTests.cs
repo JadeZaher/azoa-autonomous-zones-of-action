@@ -223,7 +223,7 @@ public class QuestNodeHandlerTests
     public async Task SearchNodeHandler_InvokesSearch_AndMapsSuccess()
     {
         var mgr = new Mock<ISearchManager>();
-        mgr.Setup(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<AZOARequest?>()))
+        mgr.Setup(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
            .ReturnsAsync(new AZOAResult<SearchResult> { Result = new SearchResult() });
 
         var handler = new SearchNodeHandler(mgr.Object);
@@ -233,7 +233,7 @@ public class QuestNodeHandlerTests
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<AZOARequest?>()), Times.Once);
+        mgr.Verify(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()), Times.Once);
     }
 
     // ─── Avatar NFT (IAvatarNFTService) ───
