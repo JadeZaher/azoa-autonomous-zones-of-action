@@ -1,0 +1,50 @@
+{
+  "$comment": "Azoa node — Railway template blueprint. Describes the 3-service topology validated in production (JadeZaher/azoa-autonomous-zones-of-action). Use this as the source of truth when publishing the one-click template via Railway's dashboard 'Create Template from Project' flow, or when standing a node up by hand per deploy/railway/DEPLOY.md.",
+  "name": "Azoa Node",
+  "description": "A self-hostable Azoa node: .NET 10 WebAPI backend + Next.js frontend + SurrealDB. Blockchain honesty posture — Algorand real value LIVE; Solana/Wormhole/Ethereum fail-closed and disabled by default.",
+  "repo": "JadeZaher/azoa-autonomous-zones-of-action",
+  "services": [
+    {
+      "name": "surrealdb",
+      "source": { "template": "surrealdb-3x" },
+      "notes": "Provision from the public SurrealDB 3.x template (railway.com/deploy/surrealdb-3x). Ships image + start command + a /data volume. Exposes SURREAL_USER / SURREAL_PASS / SURREAL_HTTP_PRIVATE_URL that the backend references.",
+      "volume": { "mountPath": "/data" }
+    },
+    {
+      "name": "azoa-api",
+      "source": { "repo": "JadeZaher/azoa-autonomous-zones-of-action", "branch": "main" },
+      "build": { "dockerfilePath": "Dockerfile" },
+      "deploy": { "healthcheckPath": "/health", "healthcheckTimeout": 300 },
+      "variables": {
+        "ASPNETCORE_ENVIRONMENT": "Production",
+        "RAILWAY_DOCKERFILE_PATH": "Dockerfile",
+        "SurrealDb__Endpoint": "${{surrealdb.SURREAL_HTTP_PRIVATE_URL}}",
+        "SurrealDb__Namespace": "azoa",
+        "SurrealDb__Database": "azoa",
+        "SurrealDb__User": "${{surrealdb.SURREAL_USER}}",
+        "SurrealDb__Password": "${{surrealdb.SURREAL_PASS}}",
+        "SurrealDb__G1DurabilityAcknowledged": "true",
+        "SURREALFORGE_URL": "${{surrealdb.SURREAL_HTTP_PRIVATE_URL}}",
+        "SURREALFORGE_NS": "azoa",
+        "SURREALFORGE_DB": "azoa",
+        "SURREALFORGE_USER": "${{surrealdb.SURREAL_USER}}",
+        "SURREALFORGE_PASS": "${{surrealdb.SURREAL_PASS}}",
+        "Jwt__Key": "${{secret(48)}}",
+        "AZOA__WalletEncryptionKey": "${{secret(32)}}",
+        "Cors__AllowedOrigins__0": "https://${{azoa-frontend.RAILWAY_PUBLIC_DOMAIN}}"
+      },
+      "domain": true
+    },
+    {
+      "name": "azoa-frontend",
+      "source": { "repo": "JadeZaher/azoa-autonomous-zones-of-action", "branch": "main" },
+      "build": { "dockerfilePath": "frontend/Dockerfile", "$comment": "Stage 1 of frontend/Dockerfile builds the @azoa/sdk (npx tsup) then the Next.js app — no separate SDK step needed." },
+      "variables": {
+        "NODE_ENV": "production",
+        "RAILWAY_DOCKERFILE_PATH": "frontend/Dockerfile",
+        "API_URL": "https://${{azoa-api.RAILWAY_PUBLIC_DOMAIN}}"
+      },
+      "domain": true
+    }
+  ]
+}
