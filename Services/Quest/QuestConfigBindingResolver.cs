@@ -133,9 +133,12 @@ public sealed class QuestConfigBindingResolver
 
     /// <summary>
     /// Builds upstream scope: "upstream.&lt;nodeName&gt;" → parsed JSON element
-    /// for each incoming-edge source that has non-empty Output.
+    /// for each incoming-edge source that has non-empty Output. Shared with
+    /// <c>GateCheckNodeHandler</c> so a $from binding and a gate predicate build
+    /// the SAME scope (single source of truth). See Services/Quest/AGENTS.md
+    /// §gate-predicate.
     /// </summary>
-    private static Dictionary<string, JsonElement> BuildUpstreamScope(
+    internal static Dictionary<string, JsonElement> BuildUpstreamScope(
         QuestNode node,
         QuestModel quest,
         IReadOnlyDictionary<Guid, QuestNodeExecution> upstreamExecutions)
@@ -172,9 +175,10 @@ public sealed class QuestConfigBindingResolver
     /// Builds run scope: "run.&lt;nodeName&gt;" → parsed JSON element for EVERY
     /// node in the run whose execution has non-empty parseable Output (not just
     /// direct-edge sources). Mirrors <see cref="BuildUpstreamScope"/> over all
-    /// executions. See Services/Quest/AGENTS.md §output-binding.
+    /// executions. Shared with <c>GateCheckNodeHandler</c> (single source of truth).
+    /// See Services/Quest/AGENTS.md §output-binding, §gate-predicate.
     /// </summary>
-    private static Dictionary<string, JsonElement> BuildRunScope(
+    internal static Dictionary<string, JsonElement> BuildRunScope(
         QuestModel quest,
         IReadOnlyDictionary<Guid, QuestNodeExecution> allRunExecutions)
     {

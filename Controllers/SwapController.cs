@@ -32,7 +32,7 @@ public class SwapController : ControllerBase
     [EnableRateLimiting("financial")]
     public async Task<ActionResult<AZOAResult<SwapQuoteResponse>>> ExecuteSwap([FromBody] SwapExecuteRequest request)
     {
-        if (!HasSigningScope(AzoaScopes.SwapSign))
+        if (!User.HasSigningScope(AzoaScopes.SwapSign))
             return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<SwapQuoteResponse>
             {
                 IsError = true,
@@ -64,21 +64,5 @@ public class SwapController : ControllerBase
                 return key.Trim();
         }
         return null;
-    }
-
-    /// <summary>
-    /// True iff the caller may perform a <paramref name="scope"/>-gated signing action.
-    /// Mirrors the DappDevelop policy's "empty CSV = legacy full access" rule so a
-    /// scoped API key is RESTRICTED without locking out JWT owners or full-access keys.
-    /// See Controllers/AGENTS.md §per-endpoint-signing-scope.
-    /// </summary>
-    private bool HasSigningScope(string scope)
-    {
-        var isApiKey = string.Equals(User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase);
-        if (!isApiKey) return true;                                        // JWT owner → unaffected.
-        if (string.Equals(User.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
-            return false;                                                 // all-forbidden CSV → not full access.
-        if (User.GetScopes().Count == 0) return true;                     // empty CSV → legacy full access.
-        return User.HasScope(scope);                                      // scoped key → must carry the scope.
     }
 }

@@ -1,6 +1,6 @@
 {
   "name": "azoa-sdk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Cross-platform AZOA SDK — client-side signing, multi-chain wallets, DEX, holons, and durable workflow runs",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -43,7 +43,11 @@
       "require": "./dist/workflow/index.cjs"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -65,12 +69,24 @@
     "react-native-get-random-values": "^1.11.0"
   },
   "peerDependenciesMeta": {
-    "algosdk": { "optional": true },
-    "@solana/web3.js": { "optional": true },
-    "@solana/spl-token": { "optional": true },
-    "@noble/curves": { "optional": true },
-    "@tinymanorg/tinyman-js-sdk": { "optional": true },
-    "react-native-get-random-values": { "optional": true }
+    "algosdk": {
+      "optional": true
+    },
+    "@solana/web3.js": {
+      "optional": true
+    },
+    "@solana/spl-token": {
+      "optional": true
+    },
+    "@noble/curves": {
+      "optional": true
+    },
+    "@tinymanorg/tinyman-js-sdk": {
+      "optional": true
+    },
+    "react-native-get-random-values": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "typescript": "^5.4.0",

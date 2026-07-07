@@ -168,6 +168,7 @@ public class QuestController : ControllerBase
     /// BEFORE committing. See Managers/AGENTS.md §economic-consent.
     /// </summary>
     [HttpGet("{id:guid}/preview")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("financial")]
     public async Task<ActionResult<AZOAResult<QuestEconomicManifest>>> PreviewRun(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();

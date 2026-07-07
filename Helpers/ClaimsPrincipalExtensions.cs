@@ -55,6 +55,25 @@ public static class ClaimsPrincipalExtensions
     }
 
     /// <summary>
+    /// Financial-endpoint signing-scope gate (mirrors the shipped <c>DappDevelop</c>
+    /// authorization policy exactly). Returns true — i.e. the caller MAY perform the
+    /// value-moving action — unless the principal is a SCOPED API key that lacks
+    /// <paramref name="scope"/>. JWT owners and empty-CSV legacy full-access keys are
+    /// never blocked; only a key that carries SOME scopes but not the required signing
+    /// one is denied. Centralized here so the three financial controllers can't drift.
+    /// See Controllers/AGENTS.md.
+    /// </summary>
+    public static bool HasSigningScope(this ClaimsPrincipal principal, string scope)
+    {
+        var isApiKey = string.Equals(principal.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase);
+        if (!isApiKey) return true;                                        // JWT owner → unaffected.
+        if (string.Equals(principal.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
+            return false;                                                 // all-forbidden CSV → not full access.
+        if (principal.GetScopes().Count == 0) return true;                // empty CSV → legacy full access.
+        return principal.HasScope(scope);                                 // scoped key → must carry the scope.
+    }
+
+    /// <summary>
     /// tenant-consent-delegation C1/AC4: reads the <c>act_as_tenant</c> claim
     /// (<see cref="Managers.TenantManager.ActAsTenantClaim"/>) that
     /// <c>TenantManager.IssueChildCredentialAsync</c> stamps on a tenant-driven child

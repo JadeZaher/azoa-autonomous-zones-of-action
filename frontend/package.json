@@ -22,7 +22,7 @@
     "algosdk": "^3.5.2",
     "autoprefixer": "^10.4.16",
     "axios": "^1.6.0",
-    "azoa-sdk": "^0.2.0",
+    "azoa-sdk": "^0.2.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "eslint": "^8",

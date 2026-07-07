@@ -219,14 +219,19 @@ public class Tier2ChainNodeHandlerTests
         var nftId = Guid.NewGuid();
         var debitWalletId = Guid.NewGuid();
         var mgr = new Mock<INftManager>();
-        mgr.Setup(m => m.GetAsync(nftId, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+        // R1 guard: the soulbound read MUST be unscoped (callerAvatarId == null).
+        // A runner-scoped read fails after the Transfer reassigned holon.AvatarId to
+        // the recipient — modelled here by returning the NFT ONLY for the null caller.
+        mgr.Setup(m => m.GetAsync(nftId, null, It.IsAny<AZOARequest?>()))
            .ReturnsAsync(new AZOAResult<INft> { Result = new Holon { Id = nftId, AssetType = "NFT" } });
+        mgr.Setup(m => m.GetAsync(nftId, It.Is<Guid?>(a => a != null), It.IsAny<AZOARequest?>()))
+           .ReturnsAsync(new AZOAResult<INft> { IsError = true, Message = "NFT not found." });
         mgr.Setup(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), runAvatar, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
            .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
         // Drain-vector guard: a Refund may ONLY reverse a REAL succeeded upstream
         // Transfer of the same NftId in this run. Build that upstream Transfer node +
-        // a Succeeded execution and thread it through UpstreamExecutions.
+        // a Succeeded execution and thread it through the run executions.
         var transferCfg = new TransferNodeConfig
         {
             NftId = nftId,
@@ -237,12 +242,16 @@ public class Tier2ChainNodeHandlerTests
         var refundNode = NodeWith(QuestNodeType.Refund, JsonSerializer.Serialize(refundCfg));
 
         var quest = new QuestEntity { Id = Guid.NewGuid(), AvatarId = runAvatar, Nodes = { transferNode, refundNode } };
-        var upstream = new Dictionary<Guid, QuestNodeExecution>
+        // The linkage scans AllRunExecutions (run-wide); the real executors populate
+        // it as a superset of UpstreamExecutions. A direct-predecessor Transfer lands
+        // in both, so seed both here.
+        var executions = new Dictionary<Guid, QuestNodeExecution>
         {
             [transferNode.Id] = new QuestNodeExecution { State = QuestNodeState.Succeeded }
         };
         var ctx = new QuestNodeExecutionContext(
-            Guid.NewGuid(), refundNode.Id, quest, actingAvatarId: runAvatar, upstreamExecutions: upstream);
+            Guid.NewGuid(), refundNode.Id, quest, actingAvatarId: runAvatar,
+            upstreamExecutions: executions, allRunExecutions: executions);
 
         var handler = new RefundNodeHandler(mgr.Object);
         var result = await handler.HandleAsync(ctx);
@@ -250,6 +259,58 @@ public class Tier2ChainNodeHandlerTests
         result.IsError.Should().BeFalse();
         // Reversal is DERIVED from the debit: recipient forced to the run actor,
         // wallet reused from the upstream Transfer — never cfg.Request's direction.
+        mgr.Verify(m => m.TransferAsync(
+            nftId,
+            It.Is<NftTransferRequest>(r => r.TargetAvatarId == runAvatar && r.WalletId == debitWalletId),
+            runAvatar, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RefundNodeHandler_ReversesMultiHopTransfer_NotJustDirectPredecessor()
+    {
+        // R2 guard: the debit may sit MANY hops upstream (Transfer → GateCheck →
+        // Refund). The linkage scans AllRunExecutions (run-wide), NOT UpstreamExecutions
+        // (direct edges only). Here the Transfer is threaded through allRunExecutions
+        // but deliberately NOT through upstreamExecutions — the refund must still find
+        // it. A direct-edge-only scan would fail closed on this valid quest.
+        var runAvatar = Guid.NewGuid();
+        var nftId = Guid.NewGuid();
+        var debitWalletId = Guid.NewGuid();
+        var mgr = new Mock<INftManager>();
+        mgr.Setup(m => m.GetAsync(nftId, null, It.IsAny<AZOARequest?>()))
+           .ReturnsAsync(new AZOAResult<INft> { Result = new Holon { Id = nftId, AssetType = "NFT" } });
+        mgr.Setup(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), runAvatar, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
+           .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
+
+        var transferCfg = new TransferNodeConfig
+        {
+            NftId = nftId,
+            Request = new NftTransferRequest { WalletId = debitWalletId, TargetAvatarId = Guid.NewGuid() }
+        };
+        var transferNode = NodeWith(QuestNodeType.Transfer, JsonSerializer.Serialize(transferCfg));
+        var gateNode = NodeWith(QuestNodeType.GateCheck, "{}");
+        var refundCfg = new RefundNodeConfig { NftId = nftId, Request = new NftTransferRequest { TargetAvatarId = Guid.NewGuid() } };
+        var refundNode = NodeWith(QuestNodeType.Refund, JsonSerializer.Serialize(refundCfg));
+
+        var quest = new QuestEntity { Id = Guid.NewGuid(), AvatarId = runAvatar, Nodes = { transferNode, gateNode, refundNode } };
+        // Refund's DIRECT predecessor is the GateCheck; the Transfer is one hop further.
+        var upstream = new Dictionary<Guid, QuestNodeExecution>
+        {
+            [gateNode.Id] = new QuestNodeExecution { State = QuestNodeState.Succeeded }
+        };
+        var allRun = new Dictionary<Guid, QuestNodeExecution>
+        {
+            [transferNode.Id] = new QuestNodeExecution { State = QuestNodeState.Succeeded },
+            [gateNode.Id] = new QuestNodeExecution { State = QuestNodeState.Succeeded }
+        };
+        var ctx = new QuestNodeExecutionContext(
+            Guid.NewGuid(), refundNode.Id, quest, actingAvatarId: runAvatar,
+            upstreamExecutions: upstream, allRunExecutions: allRun);
+
+        var handler = new RefundNodeHandler(mgr.Object);
+        var result = await handler.HandleAsync(ctx);
+
+        result.IsError.Should().BeFalse();
         mgr.Verify(m => m.TransferAsync(
             nftId,
             It.Is<NftTransferRequest>(r => r.TargetAvatarId == runAvatar && r.WalletId == debitWalletId),

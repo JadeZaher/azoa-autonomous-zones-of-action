@@ -26,10 +26,20 @@ public static class QuestEconomicManifestBuilder
         QuestNodeType.NftTransfer, QuestNodeType.NftMint, QuestNodeType.NftBurn,
     };
 
-    /// <summary>True if this node moves value (registry capability flag OR the explicit economic set).</summary>
-    public static bool IsEconomicNode(QuestNode node, IQuestNodeHandlerRegistry registry) =>
-        EconomicNodeTypes.Contains(node.NodeType)
-        || (registry.TryGet(node.NodeType, out var handler) && handler.RequiresChainCapability);
+    /// <summary>
+    /// True if this node moves value. Fail-CLOSED: economic when the type is in the
+    /// explicit set, OR its registered handler declares <c>RequiresChainCapability</c>,
+    /// OR the type has NO registered handler at all (unclassifiable → treated as
+    /// economic so a new/unregistered value-node cannot silently escape the consent
+    /// disclosure). The consent gate is an allowlist of KNOWN-safe nodes, not a
+    /// denylist of known-economic ones.
+    /// </summary>
+    public static bool IsEconomicNode(QuestNode node, IQuestNodeHandlerRegistry registry)
+    {
+        if (EconomicNodeTypes.Contains(node.NodeType)) return true;
+        if (!registry.TryGet(node.NodeType, out var handler)) return true; // unclassifiable ⇒ fail closed
+        return handler.RequiresChainCapability;
+    }
 
     /// <summary>Compute the manifest for a quest in topological (ExecutionOrder) order.</summary>
     public static QuestEconomicManifest Build(QuestDef quest, IQuestNodeHandlerRegistry registry, string? versionHash)

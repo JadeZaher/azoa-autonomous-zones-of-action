@@ -78,6 +78,12 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Tracks the currently-shown quest id. attachRun captures quest.id at call time
+  // and bails its setRun/removeItem continuation if the quest switched while the
+  // status fetch was in flight — otherwise a resolved run could land on the wrong
+  // quest (this component instance is reused across quests, no upstream `key`).
+  const questIdRef = useRef(quest.id)
+
   const clearPoll = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current)
@@ -139,23 +145,27 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
   // Re-attach a persisted run on mount: fetch its current status; clear the key if
   // the run is terminal or the fetch 404s (stale/deleted). Also load run history.
   const attachRun = useCallback(async (runId: string) => {
+    const forQuestId = quest.id
     setAttaching(true)
     setError(null)
     try {
       const res = await azoa.workflow.getRunStatus(runId)
+      // Bail if the quest switched while the fetch was in flight — the resolved
+      // run belongs to a quest that's no longer shown.
+      if (questIdRef.current !== forQuestId) return
       if (isOk(res)) {
         setRun(res.value)
         setExecState(null)
         setSelectedNodeId(null)
         if (isTerminal(res.value.status) && typeof window !== 'undefined') {
-          window.localStorage.removeItem(runKey(quest.id))
+          window.localStorage.removeItem(runKey(forQuestId))
         }
       } else if (typeof window !== 'undefined') {
         // 404 / gone — drop the stale key silently.
-        window.localStorage.removeItem(runKey(quest.id))
+        window.localStorage.removeItem(runKey(forQuestId))
       }
     } finally {
-      setAttaching(false)
+      if (questIdRef.current === forQuestId) setAttaching(false)
     }
   }, [quest.id])
 
@@ -164,6 +174,7 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
   // run for THIS quest (if any) and hydrate the history list.
   useEffect(() => {
     if (typeof window === 'undefined') return
+    questIdRef.current = quest.id // current quest generation — attachRun guards on this
     setRun(null)
     setExecState(null)
     setSelectedNodeId(null)

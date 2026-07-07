@@ -266,6 +266,30 @@ A *persisted* consent-grant (an auditable record that avatar X acknowledged mani
 hash H at time T) is deliberately deferred as a follow-up; the acknowledge flag is
 transient per-call today.
 
+## §dapp-series-duplicates — (series, quest) row uniqueness in DappCompositionManager
+
+A `DappSeriesQuest` row is logically unique per `(seriesId, questId)`, but the store
+does not enforce it — so a duplicate row is a corrupt-state possibility the manager
+must tolerate WITHOUT crashing. The hazard: several validators key entries by
+`QuestIdGuid` via `ToDictionary(e => e.QuestIdGuid)`, which throws
+`ArgumentException` on a duplicate key and surfaces as a 500.
+
+Three coordinated guards keep the whole surface duplicate-safe:
+
+1. **`AddQuestAsync` rejects up front.** Before inserting, it checks the existing
+   series entries and refuses a second add of the same quest — the primary
+   prevention (a duplicate row should never be created through the normal path).
+2. **`ValidateAsync` surfaces pre-existing duplicates as a clean validation
+   failure**, not a crash: it `GroupBy(QuestIdGuid)` and reports each duplicated
+   quest as a diagnostic (`InputMappingConsistency`/`NoCircularDependencies` set
+   false), instead of letting the downstream `ToDictionary` throw. This catches
+   corrupt rows that predate guard #1 or were written out-of-band.
+3. **`OrderByQuestId` is duplicate-tolerant** by construction: it builds the lookup
+   with an indexer loop (`map[e.QuestIdGuid] = order`), last-writer-wins, so even
+   an unexpected duplicate never throws out of the order lookup. Consistent with the
+   `quests[questGuid] = …` indexer assignment in `ValidateAsync` (also
+   last-writer-wins), which `ValidateAsync`'s duplicate rejection makes moot anyway.
+
 ## §published-version-hash — immutable published quest version (bait-and-switch guard)
 
 **Problem.** A creator could `unpublish → edit a benign node into a Transfer →

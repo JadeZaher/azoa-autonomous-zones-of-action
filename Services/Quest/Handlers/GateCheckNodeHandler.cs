@@ -86,52 +86,23 @@ public sealed class GateCheckNodeHandler : IQuestNodeHandler
     }
 
     /// <summary>
-    /// Builds the evaluator scope: upstream node outputs keyed by
-    /// <c>upstream.&lt;nodeName&gt;</c> (parsed from each predecessor's
-    /// <see cref="QuestNodeExecution.Output"/>), ANY prior run node's output keyed
-    /// by <c>run.&lt;nodeName&gt;</c> (from <c>context.AllRunExecutions</c>, mirroring
-    /// <c>QuestConfigBindingResolver.BuildRunScope</c>), injected reads keyed by
-    /// <c>reads.&lt;name&gt;</c>, and holon lifecycle state keyed by
-    /// <c>holon.&lt;id&gt;</c> for each configured holon id.
+    /// Builds the evaluator scope: <c>upstream.&lt;nodeName&gt;</c> +
+    /// <c>run.&lt;nodeName&gt;</c> roots built by the SHARED resolver helpers
+    /// (<c>QuestConfigBindingResolver.BuildUpstreamScope</c>/<c>BuildRunScope</c>),
+    /// merged with gate-local <c>reads.&lt;name&gt;</c> and
+    /// <c>holon.&lt;id&gt;</c> keys. See Services/Quest/AGENTS.md §gate-predicate.
     /// </summary>
     private async Task<Dictionary<string, JsonElement>> BuildScopeAsync(
         QuestNodeExecutionContext context, GateCheckNodeConfig cfg, CancellationToken ct)
     {
-        var scope = new Dictionary<string, JsonElement>();
+        // OrdinalIgnoreCase so merged upstream./run./reads./holon. lookups behave
+        // uniformly (matches the resolver's case-insensitive scope dicts).
+        var scope = new Dictionary<string, JsonElement>(
+            QuestConfigBindingResolver.BuildUpstreamScope(context.Node, context.Quest, context.UpstreamExecutions),
+            StringComparer.OrdinalIgnoreCase);
 
-        var incomingNodeIds = context.Quest.Edges
-            .Where(e => e.TargetNodeId == context.NodeId)
-            .Select(e => e.SourceNodeId)
-            .ToHashSet();
-
-        foreach (var sourceNode in context.Quest.Nodes.Where(n => incomingNodeIds.Contains(n.Id)))
-        {
-            if (context.UpstreamExecutions.TryGetValue(sourceNode.Id, out var exec)
-                && !string.IsNullOrWhiteSpace(exec.Output))
-            {
-                if (TryParseJson(exec.Output, out var element))
-                {
-                    scope[$"upstream.{sourceNode.Name}"] = element;
-                }
-            }
-        }
-
-        // Run-scoped root: "run.<nodeName>" → any prior node's parseable output by
-        // name (not just direct-edge sources). Mirrors QuestConfigBindingResolver.
-        // BuildRunScope exactly so a gate predicate and a $from binding resolve the
-        // SAME root — the grammar (GatePath.ValidRoots) accepts "run" for both, so
-        // the runtime scope must too (else a parseable, publish-passing predicate
-        // fails closed at runtime). Last-writer-wins is fine: publish rejects
-        // duplicate node names.
-        foreach (var runNode in context.Quest.Nodes)
-        {
-            if (context.AllRunExecutions.TryGetValue(runNode.Id, out var runExec)
-                && !string.IsNullOrWhiteSpace(runExec.Output)
-                && TryParseJson(runExec.Output, out var runElement))
-            {
-                scope[$"run.{runNode.Name}"] = runElement;
-            }
-        }
+        foreach (var (key, value) in QuestConfigBindingResolver.BuildRunScope(context.Quest, context.AllRunExecutions))
+            scope[key] = value;
 
         foreach (var (name, value) in cfg.Reads)
         {
@@ -195,20 +166,5 @@ public sealed class GateCheckNodeHandler : IQuestNodeHandler
         var json = JsonSerializer.Serialize(state, QuestNodeJson.Options);
         using var doc = JsonDocument.Parse(json);
         return doc.RootElement.Clone();
-    }
-
-    private static bool TryParseJson(string json, out JsonElement element)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            element = doc.RootElement.Clone();
-            return true;
-        }
-        catch (JsonException)
-        {
-            element = default;
-            return false;
-        }
     }
 }

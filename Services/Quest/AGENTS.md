@@ -130,11 +130,20 @@ one key, string value). Extra keys = error; array-element position = error (V1).
 ### §gate-predicate: run. in GateCheck predicates
 
 `run.<nodeName>.<field>` is valid in GateCheck **gate predicates**, not just $from
-bindings. `GateCheckNodeHandler.BuildScopeAsync` builds the `run.` scope from
-`context.AllRunExecutions` (every run execution, keyed by node id), mirroring
-`QuestConfigBindingResolver.BuildRunScope` (name → latest parseable output,
-last-writer-wins; publish rejects duplicate node names). Both executors thread the
-same raw executions into `QuestNodeExecutionContext.AllRunExecutions`
+bindings. `GateCheckNodeHandler.BuildScopeAsync` no longer hand-copies the scope
+loops — it builds the `upstream.` and `run.` roots by calling the SHARED
+`internal static` helpers `QuestConfigBindingResolver.BuildUpstreamScope`/
+`BuildRunScope` directly, then merges its own gate-local `reads.`/`holon.` keys on
+top. This is the single source of truth: a gate predicate and a `$from` binding
+resolve the SAME root, so divergence is impossible by construction. (Previously the
+handler kept an inlined copy of both loops, and the copy used a case-SENSITIVE
+`Dictionary` while the resolver used `StringComparer.OrdinalIgnoreCase` — so a
+`run.Mint.x` predicate against a node named `mint` resolved in `$from` but failed
+CLOSED in a gate. The handler's merged scope dict is now `OrdinalIgnoreCase` too, so
+all four roots look up uniformly.) The helpers preserve exact semantics:
+empty-`Output` skip, last-writer-wins (publish rejects duplicate node names),
+permissive JSON parse (unparseable output skipped). Both executors thread the same
+raw executions into `QuestNodeExecutionContext.UpstreamExecutions`/`AllRunExecutions`
 (`QuestManager.ExecuteAsync` → `executionsByNode`; `QuestNodeStepHandler` →
 `allRunExecutions`). A `run.<node>` with no execution yet resolves to no scope key,
 so the evaluator throws unknown-path → gate fails CLOSED (same as a missing
@@ -327,14 +336,24 @@ creator-authored, with no check that any debit had actually occurred. On a publi
 marketplace run that let a creator publish a benign-looking "Refund" node that
 drained the runner's asset out of order.
 
-The guard: a Refund now REQUIRES a succeeded upstream `Transfer` node in the SAME
+The guard: a Refund now REQUIRES a succeeded `Transfer` node earlier in the SAME
 run whose `NftId` equals the refund's `NftId` (`TryFindReversibleTransfer`, walking
-`context.UpstreamExecutions` mapped back to `context.Quest.Nodes` for the node type).
-No matching upstream debit ⇒ fail closed (`NoUpstreamDebitMessage`). The reversal is
-DERIVED from that debit, not from config: recipient is forced to
-`context.ActingAvatarId` (the run actor = the Transfer's original sender) and the
-wallet is reused from the debit; `cfg.Request` contributes only the memo. So
-`cfg.Request.TargetAvatarId` can no longer redirect the asset.
+`context.AllRunExecutions` — the run-wide map, NOT `UpstreamExecutions` — mapped back
+to `context.Quest.Nodes` for the node type). AllRunExecutions is load-bearing: the
+debit may sit any number of hops upstream (e.g. `Transfer → GateCheck → Refund`), and
+`UpstreamExecutions` holds only DIRECT-edge predecessors, so scanning it would fail
+closed on a legitimate multi-hop refund. No matching debit ⇒ fail closed
+(`NoUpstreamDebitMessage`). The reversal is DERIVED from that debit, not from config:
+recipient is forced to `context.ActingAvatarId` (the run actor = the Transfer's
+original sender) and the wallet is reused from the debit; `cfg.Request` contributes
+only the memo. So `cfg.Request.TargetAvatarId` can no longer redirect the asset.
+
+The soulbound-check read is an UNSCOPED trusted read (`GetAsync(nftId,
+callerAvatarId: null)`), NOT runner-scoped. By the time a Refund runs, the upstream
+Transfer has already reassigned the NFT's `holon.AvatarId` to the recipient
+(`NftManager.TransferAsync`), so a runner-scoped read would fail the owner-or-public
+gate and abort every legitimate refund. The drain-vector guard above — not the read's
+ownership scope — is what authorizes the reversal.
 
 Deferred follow-ups (not blocking):
 - **Grant reversal.** A `Grant` is a mint-to-actor with no pre-existing `NftId`/prior

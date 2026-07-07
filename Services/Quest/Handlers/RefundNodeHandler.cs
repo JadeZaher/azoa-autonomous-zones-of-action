@@ -48,12 +48,13 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
         if (!QuestNodeConfig.TryDeserialize<RefundNodeConfig>(context.Node.Config, nameof(QuestNodeType.Refund), out var cfg, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
 
-        // Soulbound detection: the NFT is a Holon (AssetType="NFT") and the
-        // Holon-based INftManager.TransferAsync has no soulbound concept (it never
-        // returns a soulbound error — that flag lives only on AvatarNFT). So we
-        // read the asset and inspect its metadata for a truthy soulbound marker.
-        // If set, fail closed BEFORE attempting any transfer (clawback deferred).
-        var nft = await _nftManager.GetAsync(cfg.NftId, context.ActingAvatarId);
+        // Soulbound detection reads the asset to inspect metadata (see AGENTS.md
+        // §refund-linkage). This is an UNSCOPED trusted read (callerAvatarId: null):
+        // by the time a Refund runs, the upstream Transfer has reassigned the NFT's
+        // holon.AvatarId to the recipient, so the runner no longer owns it — a
+        // runner-scoped read would return "not found" and abort every legitimate
+        // refund. The drain-vector guard below (not this read) is what authorizes it.
+        var nft = await _nftManager.GetAsync(cfg.NftId, callerAvatarId: null);
         if (nft.IsError) return QuestNodeResults.Fail(nft.Message);
         if (nft.Result is { } asset && IsSoulbound(asset.Metadata))
             return QuestNodeResults.Fail(ClawbackDeferredMessage);
@@ -100,14 +101,17 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
         "refund refused — no succeeded upstream Transfer in this run debited this asset; " +
         "a Refund may only reverse a real prior debit (drain-vector guard)";
 
-    /// <summary>Finds a succeeded upstream Transfer that debited <paramref name="nftId"/> in this run.</summary>
+    /// <summary>Finds a succeeded Transfer that debited <paramref name="nftId"/> anywhere earlier in this run.</summary>
     private static bool TryFindReversibleTransfer(
         QuestNodeExecutionContext context, Guid nftId, out TransferNodeConfig debit, out string error)
     {
         debit = default!;
         error = NoUpstreamDebitMessage;
 
-        foreach (var (sourceNodeId, exec) in context.UpstreamExecutions)
+        // Scan ALL run executions, not just direct-edge predecessors: the debit may
+        // sit any number of hops upstream (e.g. Transfer → GateCheck → Refund), so
+        // UpstreamExecutions (direct edges only) would fail closed on a valid refund.
+        foreach (var (sourceNodeId, exec) in context.AllRunExecutions)
         {
             if (exec.State != QuestNodeState.Succeeded) continue;
 

@@ -257,11 +257,15 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     (patch: Partial<EdgeData>) => {
       if (!selectedEdgeId) return
       setEdges((eds) =>
-        eds.map((e) =>
-          e.id === selectedEdgeId
-            ? { ...e, data: { ...(e.data as EdgeData), ...patch }, ...(edgeStyle(patch.edgeType ?? (e.data as EdgeData)?.edgeType ?? 'Control')) }
-            : e,
-        ),
+        eds.map((e) => {
+          if (e.id !== selectedEdgeId) return e
+          const nextData: EdgeData = { ...(e.data as EdgeData), ...patch }
+          // Non-Conditional edges must not carry condition text (backend rejects it).
+          if (patch.edgeType !== undefined && patch.edgeType !== 'Conditional') {
+            nextData.condition = undefined
+          }
+          return { ...e, data: nextData, ...edgeStyle(nextData.edgeType ?? 'Control') } as Edge
+        }),
       )
     },
     [selectedEdgeId, setEdges],

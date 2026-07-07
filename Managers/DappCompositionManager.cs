@@ -123,9 +123,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         if (questLoad.Result.AvatarId != avatarId)
             return Fail<DappSeriesQuest>("Forbidden: quest is owned by a different avatar.");
 
-        // (series, quest) is logically unique -- a second add would create a
-        // duplicate row that later crashes the ToDictionary(e => e.QuestIdGuid)
-        // validation paths. Reject up front.
+        // Reject a duplicate (series, quest) up front. See Managers/AGENTS.md §dapp-series-duplicates.
         var existing = await _seriesStore.GetQuestsBySeriesAsync(seriesId, ct);
         if (existing.IsError || existing.Result is null) return Fail<DappSeriesQuest>(existing.Message);
         if (existing.Result.Any(e => e.QuestIdGuid == model.QuestId))
@@ -214,9 +212,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         if (entries.Count == 0)
             return Fail<CompositionValidationResult>("Series has no quests to compose.");
 
-        // Pre-existing duplicate (series, quest) rows are a corrupt-state error,
-        // not a crash: surface a clean validation failure instead of letting the
-        // downstream ToDictionary(e => e.QuestIdGuid) throw ArgumentException.
+        // Pre-existing duplicate rows → clean validation failure, not a crash. See Managers/AGENTS.md §dapp-series-duplicates.
         var duplicateQuestIds = entries
             .GroupBy(e => e.QuestIdGuid)
             .Where(g => g.Count() > 1)
@@ -526,8 +522,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    // Duplicate-tolerant order lookup: last-writer-wins on (series, quest)
-    // collisions so a corrupt duplicate row never throws out of ToDictionary.
+    // Duplicate-tolerant order lookup (last-writer-wins). See Managers/AGENTS.md §dapp-series-duplicates.
     private static Dictionary<Guid, int> OrderByQuestId(IEnumerable<DappSeriesQuest> entries)
     {
         var map = new Dictionary<Guid, int>();

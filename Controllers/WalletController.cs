@@ -167,7 +167,7 @@ public class WalletController : ControllerBase
         if (avatarId == null)
             return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Invalid token." });
 
-        if (!HasSigningScope(AzoaScopes.WalletManage))
+        if (!User.HasSigningScope(AzoaScopes.WalletManage))
             return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<object>
             {
                 IsError = true,
@@ -232,19 +232,4 @@ public class WalletController : ControllerBase
         return Guid.TryParse(sub, out var id) ? id : null;
     }
 
-    /// <summary>
-    /// True iff the caller may perform a <paramref name="scope"/>-gated signing action.
-    /// Mirrors the DappDevelop policy's "empty CSV = legacy full access" rule so a
-    /// scoped API key is RESTRICTED without locking out JWT owners or full-access keys.
-    /// See Controllers/AGENTS.md §per-endpoint-signing-scope.
-    /// </summary>
-    private bool HasSigningScope(string scope)
-    {
-        var isApiKey = string.Equals(User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase);
-        if (!isApiKey) return true;                                        // JWT owner → unaffected.
-        if (string.Equals(User.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
-            return false;                                                 // all-forbidden CSV → not full access.
-        if (User.GetScopes().Count == 0) return true;                     // empty CSV → legacy full access.
-        return User.HasScope(scope);                                      // scoped key → must carry the scope.
-    }
 }

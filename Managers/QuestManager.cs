@@ -968,6 +968,15 @@ public class QuestManager : IQuestManager
         }
         var forkPoint = forkPointNode.ExecutionOrder;
 
+        // A fork mints a NEW non-terminal run, so it counts against the per-(avatar,
+        // quest) quota — otherwise fork is an unbounded run-multiplication bypass of
+        // the treasury/drain guard the run-start seams enforce (see Managers/AGENTS.md
+        // §quest-run-quota). Consent is NOT re-checked: the parent run already
+        // disclosed + acknowledged the economic manifest at start, and the fork
+        // inherits that same quest revision.
+        var forkQuotaGate = await EnforceRunQuotaAsync(parent.QuestId, avatarId, isOwner: parent.AvatarId == quest.AvatarId);
+        if (forkQuotaGate != null) return forkQuotaGate;
+
         // Create the child run with lineage fields populated.
         var child = new QuestRun
         {
