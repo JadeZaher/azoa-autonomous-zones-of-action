@@ -404,14 +404,14 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
     const markedTerminals = nodes.filter((n) => n.data.isTerminal)
 
     if (markedEntries.length === 0) {
-      warnings.push({ text: 'No node is marked as Entry. Mark the starting node's "Entry" flag in the inspector.' })
+      warnings.push({ text: `No node is marked as Entry. Mark the starting node's "Entry" flag in the inspector.` })
     }
     const unmarkedRoots = roots.filter((n) => !n.data.isEntry)
     if (unmarkedRoots.length > 0) {
       warnings.push({ text: `Orphan (no incoming edge, not Entry): ${unmarkedRoots.map((n) => n.data.label).join(', ')}.` })
     }
     if (markedTerminals.length === 0) {
-      warnings.push({ text: 'No node is marked as Terminal. Mark a leaf node's "Terminal" flag in the inspector.' })
+      warnings.push({ text: `No node is marked as Terminal. Mark a leaf node's "Terminal" flag in the inspector.` })
     }
     const terminalNotLeaf = markedTerminals.filter((n) => (outgoing.get(n.id) ?? 0) > 0)
     if (terminalNotLeaf.length > 0) {
@@ -693,7 +693,7 @@ function QuestCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = '
               <p className="text-xs text-muted-foreground">
                 {readOnly
                   ? 'This quest is Active — unpublish it before making changes.'
-                  : 'Select a node to edit its config or click an edge to change its type. Drag from a node's bottom handle to another node's top handle to create an edge.'}
+                  : `Select a node to edit its config or click an edge to change its type. Drag from a node's bottom handle to another node's top handle to create an edge.`}
               </p>
             )}
           </div>
