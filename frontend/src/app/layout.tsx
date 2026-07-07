@@ -14,6 +14,13 @@ export const metadata: Metadata = {
   description: 'Avatar NFT & Blockchain Platform',
 }
 
+// Force per-request rendering so resolveServerApiUrl() reads the live
+// process.env.API_URL at request time. Without this Next.js statically
+// pre-renders the layout at build time (when API_URL is unset), baking the
+// localhost fallback into window.__RUNTIME_CONFIG__ — the runtime-config seam
+// only works if the layout is dynamic. See src/lib/runtime-config.ts.
+export const dynamic = 'force-dynamic'
+
 // Server Component: re-reads process.env on every request, so this is the
 // seam that makes the API URL runtime-resolvable (see lib/runtime-config.ts).
 export default function RootLayout({
