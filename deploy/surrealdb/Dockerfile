@@ -1,17 +1,16 @@
 # SurrealDB v3.1.4 for Railway — wraps the official image with a start command
-# that persists to the mounted /data volume. Root creds come from
-# SURREAL_USER / SURREAL_PASS env vars (set on the service).
+# that persists to the mounted /data volume.
 #
-# Binds a FIXED internal port 8000 (not Railway's $PORT): SurrealDB is a private
-# backing service reached only over Railway's private network at
-# `surrealdb.railway.internal:8000` by the backend — it has no public HTTP
-# surface, so it does not need to answer on the platform-assigned $PORT.
+# The official surrealdb/surrealdb image is DISTROLESS (no /bin/sh), so CMD must
+# be exec-form (JSON array) — a shell-form CMD would try /bin/sh and fail to
+# boot. The image entrypoint is `/surreal`, so CMD supplies only the args.
+#
+# Root creds are read by SurrealDB from the SURREAL_USER / SURREAL_PASS env vars
+# set on the Railway service (so they are not baked into the image). Binds a
+# fixed internal port 8000 — SurrealDB is a private backing service reached only
+# at `surrealdb.railway.internal:8000`, with no public HTTP surface.
 FROM surrealdb/surrealdb:v3.1.4
 
 EXPOSE 8000
 
-# Official image entrypoint is `/surreal`; CMD supplies the args. Shell form so
-# $SURREAL_USER / $SURREAL_PASS expand at runtime. RocksDB on the /data volume.
-CMD start --log info --bind 0.0.0.0:8000 \
-    --user "${SURREAL_USER:-root}" --pass "${SURREAL_PASS:-root}" \
-    rocksdb:/data/azoa.db
+CMD ["start", "--log", "info", "--bind", "0.0.0.0:8000", "rocksdb:/data/azoa.db"]
