@@ -1,27 +1,15 @@
 # ─── AZOA Frontend (Next.js) ───
+# The @azoa SDK is consumed from npm as `azoa-sdk` (see frontend/package.json),
+# so there is no local SDK build step — `npm install` pulls the published
+# package. Build context can be the repo root or frontend/; only frontend/ is used.
 
-# Stage 1: Build the SDK
-FROM node:20-alpine AS sdk-build
-WORKDIR /sdk
-COPY sdk/azoa-wallet/package.json sdk/azoa-wallet/tsconfig.json sdk/azoa-wallet/tsup.config.ts ./
-RUN npm install
-COPY sdk/azoa-wallet/src ./src
-RUN npx tsup
-
-# Stage 2: Build the frontend
+# Stage 1: Build the frontend
 FROM node:20-alpine AS frontend-build
 WORKDIR /app
 
-# Copy SDK build output (needed for the local file: link)
-COPY --from=sdk-build /sdk /sdk
-
-# Copy frontend package.json and install deps
 COPY frontend/package.json ./
-# Rewrite the local SDK path for container context
-RUN sed -i 's|"file:../sdk/azoa-wallet"|"file:/sdk"|' package.json
 RUN npm install
 
-# Copy frontend source
 COPY frontend/ .
 
 # Build Next.js. API_URL is intentionally NOT set here: the API base URL is
@@ -30,7 +18,7 @@ COPY frontend/ .
 # genuinely build-time NEXT_PUBLIC_* values belong in this stage.
 RUN npm run build
 
-# Stage 3: Production runtime
+# Stage 2: Production runtime
 FROM node:20-alpine AS runtime
 WORKDIR /app
 

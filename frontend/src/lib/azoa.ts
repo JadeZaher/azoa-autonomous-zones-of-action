@@ -4,7 +4,7 @@
  * AZOA SDK integration for the frontend.
  *
  * Replaces the hand-rolled BlockchainApiClient and mock auth with
- * the @azoa/sdk AzoaClient, providing:
+ * the azoa-sdk AzoaClient, providing:
  * - Real API calls to the .NET backend
  * - Session management with localStorage
  * - Multi-chain wallet with client-side signing
@@ -16,7 +16,7 @@ import {
   AzoaClient,
   isOk,
   isErr,
-} from '@azoa/sdk'
+} from 'azoa-sdk'
 import { buildChainRegistrations, readInitialNetwork } from './networks'
 import { readInitialDebug } from './debug'
 import { readInitialApiUrl } from './runtime-config'
@@ -29,7 +29,7 @@ import type {
   AuthProfile,
   Result,
   SdkError,
-} from '@azoa/sdk'
+} from 'azoa-sdk'
 
 /** Placeholder type for avatar API responses (not exported by SDK) */
 export type AvatarResponse = {

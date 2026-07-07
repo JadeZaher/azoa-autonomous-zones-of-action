@@ -14,8 +14,8 @@
  * ever registered, so operations can never span devnet/testnet/mainnet.
  */
 
-import { AlgorandProvider, SolanaProvider } from '@azoa/sdk'
-import type { ChainProviderRegistration, ChainNetwork } from '@azoa/sdk'
+import { AlgorandProvider, SolanaProvider } from 'azoa-sdk'
+import type { ChainProviderRegistration, ChainNetwork } from 'azoa-sdk'
 
 export type NetworkEnv = 'devnet' | 'testnet' | 'mainnet'
 

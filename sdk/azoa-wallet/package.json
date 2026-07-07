@@ -1,5 +1,5 @@
 {
-  "name": "@azoa/sdk",
+  "name": "azoa-sdk",
   "version": "0.1.0",
   "description": "Cross-platform AZOA SDK — client-side signing, multi-chain wallets, DEX, holons, and durable workflow runs",
   "type": "module",

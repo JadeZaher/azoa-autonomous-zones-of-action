@@ -6,7 +6,7 @@ An Azoa node is three Railway services:
 |---|---|---|
 | **SurrealDB** | Sole storage engine (v3.x) with a persistent `/data` volume | Public template [`surrealdb-3x`](https://railway.com/deploy/surrealdb-3x) |
 | **azoa-api** | .NET 10 WebAPI backend | This repo, root `Dockerfile` |
-| **azoa-frontend** | Next.js 14 dashboard (bundles the `@azoa/sdk` build in its Dockerfile) | This repo, `frontend/Dockerfile` |
+| **azoa-frontend** | Next.js 14 dashboard (installs the published `azoa-sdk` from npm) | This repo, `frontend/Dockerfile` |
 
 The exact, production-validated wiring is in [`template.json`](./template.json).
 
@@ -49,7 +49,7 @@ names, sources, and the `${{service.VAR}}` references must match).
    boot if CORS origins are empty in Production). Generate a public domain.
 
 3. **azoa-frontend** — create from this repo with `frontend/Dockerfile`; its build
-   compiles the SDK (`npx tsup`) then the Next.js app. Set `API_URL` to the
+   installs the published `azoa-sdk` from npm then builds the Next.js app. Set `API_URL` to the
    backend's **public** domain (resolved at request time into
    `window.__RUNTIME_CONFIG__`, so the browser calls the right host). Generate a
    public domain.

@@ -3,7 +3,7 @@
 // Operator console for wallet wrapping-key rotation (KeyRotationController) — re-wraps every wallet's ciphertext under a new key. Dangerous/irreversible-in-effect; gated behind type-to-confirm.
 import { useState, useCallback } from 'react'
 import { azoa, isOk } from '@/lib/azoa'
-import type { KeyRotationReport } from '@azoa/sdk'
+import type { KeyRotationReport } from 'azoa-sdk'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'

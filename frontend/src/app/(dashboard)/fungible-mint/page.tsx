@@ -5,7 +5,7 @@
  *
  * The frontend IS the test harness for this track (there is no vitest/playwright
  * suite for the app). This page drives the new backend surface end-to-end against
- * the running .NET API via the @azoa/sdk singleton:
+ * the running .NET API via the azoa-sdk singleton:
  *
  *   (a) generate a custodial wallet (UNGATED — wallet-generate needs no KYC, §11.4);
  *   (b) attempt a one-shot fungible-mint and surface the KYC_FORBIDDEN 403 when the
@@ -34,7 +34,7 @@ import type {
   PortfolioResult,
   PortfolioAsset,
   FungibleTokenResult,
-} from '@azoa/sdk'
+} from 'azoa-sdk'
 import { Coins, Wallet, ShieldAlert, RefreshCw } from 'lucide-react'
 
 function truncate(addr: string, chars = 6): string {

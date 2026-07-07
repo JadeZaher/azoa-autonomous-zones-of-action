@@ -22,8 +22,8 @@ const nextConfig = {
   images: {
     domains: ['localhost'],
   },
-  // Transpile the local SDK package for Next.js bundling
-  transpilePackages: ['@azoa/sdk'],
+  // Transpile the published SDK package for Next.js bundling
+  transpilePackages: ['azoa-sdk'],
   webpack: (config) => {
     // Ensure the SDK's dependencies resolve from the frontend's node_modules
     // so that @noble/curves/ed25519 subpath imports work correctly

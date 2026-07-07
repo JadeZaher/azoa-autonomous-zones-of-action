@@ -3,7 +3,7 @@
 // Saga dead-letter operator console — inspect, requeue, and cancel stuck saga steps (SagaOperatorController).
 import { useState, useCallback, useEffect } from 'react'
 import { azoa, isOk } from '@/lib/azoa'
-import type { SagaStepView, SagaStepStatus } from '@azoa/sdk'
+import type { SagaStepView, SagaStepStatus } from 'azoa-sdk'
 import { toast } from 'sonner'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'

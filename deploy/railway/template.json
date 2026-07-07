@@ -38,7 +38,7 @@
     {
       "name": "azoa-frontend",
       "source": { "repo": "JadeZaher/azoa-autonomous-zones-of-action", "branch": "main" },
-      "build": { "dockerfilePath": "frontend/Dockerfile", "$comment": "Stage 1 of frontend/Dockerfile builds the @azoa/sdk (npx tsup) then the Next.js app — no separate SDK step needed." },
+      "build": { "dockerfilePath": "frontend/Dockerfile", "$comment": "frontend/Dockerfile installs the published azoa-sdk from npm (frontend/package.json) and builds the Next.js app — no local SDK build step." },
       "variables": {
         "NODE_ENV": "production",
         "RAILWAY_DOCKERFILE_PATH": "frontend/Dockerfile",
