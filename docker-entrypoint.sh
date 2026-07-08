@@ -52,7 +52,8 @@ if [ "${AZOA_SKIP_MIGRATIONS:-0}" != "1" ]; then
         --database "$SURREAL_DB" \
         --schemas-dir /app/persistence/SurrealDb/Generated/Schemas \
         --migrations-dir /app/persistence/SurrealDb/Migrations \
-        --applied-by "azoa-api/docker-entrypoint"
+        --applied-by "azoa-api/docker-entrypoint" \
+        --force
 else
     echo "[entrypoint] AZOA_SKIP_MIGRATIONS=1 -- skipping migration step."
 fi
