@@ -873,28 +873,20 @@ builder.Services.AddScoped<IQuestNodeHandlerRegistry, QuestNodeHandlerRegistry>(
 builder.Services.AddAzoaObservability(builder.Configuration);
 builder.Services.AddAzoaHealthChecks();
 
-builder.Services.AddCors(options =>
+// Validate Cors:AllowedOrigins in Production at startup
+if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("IntegrationTest"))
 {
-    options.AddPolicy("Default", policy =>
-    {
-        if (builder.Environment.IsDevelopment()
-            || builder.Environment.IsEnvironment("IntegrationTest"))
-        {
-            policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
-        }
-        else
-        {
-            var origins = builder.Configuration
-                .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
-            if (origins.Length == 0)
-                throw new InvalidOperationException(
-                    "Cors:AllowedOrigins is empty outside Development. Set the allowed " +
-                    "origin list via the Cors__AllowedOrigins__0 (etc.) environment " +
-                    "variables before starting in Production.");
-            policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
-        }
-    });
-});
+    var origins = builder.Configuration
+        .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+    if (origins.Length == 0)
+        throw new InvalidOperationException(
+            "Cors:AllowedOrigins is empty outside Development. Set the allowed " +
+            "origin list via the Cors__AllowedOrigins__0 (etc.) environment " +
+            "variables before starting in Production.");
+}
+
+builder.Services.AddSingleton<Microsoft.AspNetCore.Cors.Infrastructure.ICorsPolicyProvider, AZOA.WebAPI.Middleware.DynamicCorsPolicyProvider>();
+builder.Services.AddCors();
 
 var app = builder.Build();
 

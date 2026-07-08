@@ -62,5 +62,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [FieldGroup("Optional comma-separated scopes (empty/NONE = full access)")]
         public string? Scopes { get; set; }
+
+        [FieldGroup("Optional comma-separated allowed origins (empty/NONE = all allowed)")]
+        public string? AllowedOrigins { get; set; }
     }
 }

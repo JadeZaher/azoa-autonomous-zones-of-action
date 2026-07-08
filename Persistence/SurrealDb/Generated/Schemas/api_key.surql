@@ -46,6 +46,9 @@ DEFINE FIELD IF NOT EXISTS is_active ON TABLE api_key TYPE bool
 -- Optional comma-separated scopes (empty/NONE = full access)
 DEFINE FIELD IF NOT EXISTS scopes ON TABLE api_key TYPE option<string>;
 
+-- Optional comma-separated allowed origins (empty/NONE = all allowed)
+DEFINE FIELD IF NOT EXISTS allowed_origins ON TABLE api_key TYPE option<string>;
+
 -- ── Indexes ──────────────────────────────────────────────────
 
 DEFINE INDEX IF NOT EXISTS api_key_unique_hash

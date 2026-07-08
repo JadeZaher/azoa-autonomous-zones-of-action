@@ -23,8 +23,13 @@ public class ApiKey
     public bool IsActive { get; set; } = true;
 
     /// <summary>
-    /// Optional: comma-separated list of allowed scopes (e.g., "read,write,admin").
-    /// Empty means full access.
+    /// Optional: comma-separated list of scopes.
     /// </summary>
     public string? Scopes { get; set; }
+
+    /// <summary>
+    /// Optional: comma-separated list of allowed origins (e.g., "https://dapp1.com,https://dapp2.com").
+    /// Empty means all origins are allowed.
+    /// </summary>
+    public string? AllowedOrigins { get; set; }
 }

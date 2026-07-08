@@ -88,14 +88,14 @@ the responsibility pattern above end to end.
 
 ## Status
 
-Pre-launch. The **user-self-sovereignty** initiative has shipped: end users own
-their avatars (wallet-challenge login, ed25519), and a tenant may act for a user
-only within a live, revocable `ConsentGrant`; the signing custody seam
-(`KeyCustodyService`) is consent-gated and fails closed. A security review of the
-auth + custody surface is still owed, and the cross-chain bridge value-transfer
-primitives are not yet safe for real value. 916 unit tests green (2026-06-22);
-integration tests run against a persistent podman SurrealDB. See
-`conductor/tracks.md` for the full catalog.
+Pre-launch (Alpha Gate). The core platform features have been shipped and hardened:
+- **User Self-Sovereignty & Consent Delegation**: Shipped and code-complete. End users own their avatars (wallet-challenge login, ed25519), and tenants can only act on behalf of an avatar under a live, revocable `ConsentGrant`. The security review has been completed and all findings remediated (commit `10e5dad`).
+- **Durable Quests & Stepwise Execution**: Shipped. Features stepwise saga execution (`QuestNodeStepHandler`), run-scoped variable data bindings (`run.<node>.<field>`), control-cascade skips (failed check nodes stop downstream payout chains), and publish-time semantic/executability validation.
+- **Visual Quest Builder**: Shipped. Replaced the legacy JSON textarea builder with an interactive drag-and-drop React Flow builder interface in the Next.js frontend.
+- **SurrealDB Persistence Cutover**: Shipped. SurrealDB is the sole persistent data engine backing the WebAPI, operating with RocksDB-backed G1 durability.
+- **API Key Scopes & Allowed Origins**: Dynamic CORS allowed origins per API key is implemented / in-flight to secure public and developer-scoped SDK requests.
+
+The solution contains 1,330 unit tests (1,329 passing / 1 skipped) and 216 passing integration tests running under isolated namespaces. Real value transfers on Solana/Wormhole routes remain disabled (`RealValueEnabled=false` safety switch) pending upcoming chain-value-routes work. See `conductor/tracks.md` for the full roadmap.
 
 ## Under the hood
 
@@ -164,6 +164,8 @@ dev stack, see [`docs/NODE-HOST.md`](docs/NODE-HOST.md).
   controller changes
 - `DEVELOPMENT.md` — Developer setup, dev-up variants, conventions,
   troubleshooting
+- `docs/DEV-DOCS.md` — Core developer documentation outlining the system
+  architecture, service workflows, persistence patterns, and directory conventions
 - `RUNBOOK.md` — Operations: local stack control, production deploy, diagnostics
 - `docs/NODE-HOST.md` — Node host setup: self-hosting an AZOA node (WebAPI +
   SurrealDB)

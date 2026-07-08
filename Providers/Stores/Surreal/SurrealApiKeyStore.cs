@@ -179,38 +179,40 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
 
     private static ApiKeyPoco FromDomain(ApiKey k) => new()
     {
-        Id          = SurrealId.ToSurrealId(k.Id),
-        AvatarId    = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(k.AvatarId)) ?? string.Empty,
-        Name        = k.Name ?? string.Empty,
-        KeyHash     = k.KeyHash ?? string.Empty,
-        KeyPrefix   = k.KeyPrefix ?? string.Empty,
-        CreatedDate = new DateTimeOffset(DateTime.SpecifyKind(k.CreatedDate, DateTimeKind.Utc)),
-        ExpiresAt   = k.ExpiresAt.HasValue
-                      ? new DateTimeOffset(DateTime.SpecifyKind(k.ExpiresAt.Value, DateTimeKind.Utc))
-                      : null,
-        LastUsedAt  = k.LastUsedAt.HasValue
-                      ? new DateTimeOffset(DateTime.SpecifyKind(k.LastUsedAt.Value, DateTimeKind.Utc))
-                      : null,
-        RevokedAt   = k.RevokedAt.HasValue
-                      ? new DateTimeOffset(DateTime.SpecifyKind(k.RevokedAt.Value, DateTimeKind.Utc))
-                      : null,
-        IsActive    = k.IsActive,
-        Scopes      = k.Scopes,
+        Id             = SurrealId.ToSurrealId(k.Id),
+        AvatarId       = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(k.AvatarId)) ?? string.Empty,
+        Name           = k.Name ?? string.Empty,
+        KeyHash        = k.KeyHash ?? string.Empty,
+        KeyPrefix      = k.KeyPrefix ?? string.Empty,
+        CreatedDate    = new DateTimeOffset(DateTime.SpecifyKind(k.CreatedDate, DateTimeKind.Utc)),
+        ExpiresAt      = k.ExpiresAt.HasValue
+                         ? new DateTimeOffset(DateTime.SpecifyKind(k.ExpiresAt.Value, DateTimeKind.Utc))
+                         : null,
+        LastUsedAt     = k.LastUsedAt.HasValue
+                         ? new DateTimeOffset(DateTime.SpecifyKind(k.LastUsedAt.Value, DateTimeKind.Utc))
+                         : null,
+        RevokedAt      = k.RevokedAt.HasValue
+                         ? new DateTimeOffset(DateTime.SpecifyKind(k.RevokedAt.Value, DateTimeKind.Utc))
+                         : null,
+        IsActive       = k.IsActive,
+        Scopes         = k.Scopes,
+        AllowedOrigins = k.AllowedOrigins,
     };
 
     private static ApiKey ToDomain(ApiKeyPoco p) => new()
     {
-        Id          = SurrealId.FromSurrealId(p.Id),
-        AvatarId    = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
-        Name        = p.Name ?? string.Empty,
-        KeyHash     = p.KeyHash ?? string.Empty,
-        KeyPrefix   = p.KeyPrefix ?? string.Empty,
-        CreatedDate = p.CreatedDate.UtcDateTime,
-        ExpiresAt   = p.ExpiresAt?.UtcDateTime,
-        LastUsedAt  = p.LastUsedAt?.UtcDateTime,
-        RevokedAt   = p.RevokedAt?.UtcDateTime,
-        IsActive    = p.IsActive,
-        Scopes      = p.Scopes,
+        Id             = SurrealId.FromSurrealId(p.Id),
+        AvatarId       = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+        Name           = p.Name ?? string.Empty,
+        KeyHash        = p.KeyHash ?? string.Empty,
+        KeyPrefix      = p.KeyPrefix ?? string.Empty,
+        CreatedDate    = p.CreatedDate.UtcDateTime,
+        ExpiresAt      = p.ExpiresAt?.UtcDateTime,
+        LastUsedAt     = p.LastUsedAt?.UtcDateTime,
+        RevokedAt      = p.RevokedAt?.UtcDateTime,
+        IsActive       = p.IsActive,
+        Scopes         = p.Scopes,
+        AllowedOrigins = p.AllowedOrigins,
     };
 
     // ── POCO (private) ────────────────────────────────────────────────────────
@@ -225,16 +227,17 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     {
         public string SchemaName => Table;
 
-        [JsonPropertyName("id")]            public string Id          { get; set; } = string.Empty;
-        [JsonPropertyName("avatar_id")]     public string AvatarId    { get; set; } = string.Empty;
-        [JsonPropertyName("name")]          public string? Name       { get; set; }
-        [JsonPropertyName("key_hash")]      public string KeyHash     { get; set; } = string.Empty;
-        [JsonPropertyName("key_prefix")]    public string? KeyPrefix  { get; set; }
-        [JsonPropertyName("created_date")]  public DateTimeOffset CreatedDate { get; set; }
-        [JsonPropertyName("expires_at")]    public DateTimeOffset? ExpiresAt  { get; set; }
-        [JsonPropertyName("last_used_at")]  public DateTimeOffset? LastUsedAt { get; set; }
-        [JsonPropertyName("revoked_at")]    public DateTimeOffset? RevokedAt  { get; set; }
-        [JsonPropertyName("is_active")]     public bool IsActive       { get; set; }
-        [JsonPropertyName("scopes")]        public string? Scopes      { get; set; }
+        [JsonPropertyName("id")]              public string Id          { get; set; } = string.Empty;
+        [JsonPropertyName("avatar_id")]       public string AvatarId    { get; set; } = string.Empty;
+        [JsonPropertyName("name")]            public string? Name       { get; set; }
+        [JsonPropertyName("key_hash")]        public string KeyHash     { get; set; } = string.Empty;
+        [JsonPropertyName("key_prefix")]      public string? KeyPrefix  { get; set; }
+        [JsonPropertyName("created_date")]    public DateTimeOffset CreatedDate { get; set; }
+        [JsonPropertyName("expires_at")]      public DateTimeOffset? ExpiresAt  { get; set; }
+        [JsonPropertyName("last_used_at")]    public DateTimeOffset? LastUsedAt { get; set; }
+        [JsonPropertyName("revoked_at")]      public DateTimeOffset? RevokedAt  { get; set; }
+        [JsonPropertyName("is_active")]       public bool IsActive       { get; set; }
+        [JsonPropertyName("scopes")]          public string? Scopes      { get; set; }
+        [JsonPropertyName("allowed_origins")] public string? AllowedOrigins { get; set; }
     }
 }

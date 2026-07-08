@@ -71,6 +71,7 @@ public class ApiKeyController : ControllerBase
                 ? DateTime.UtcNow.AddDays(request.ExpiresInDays.Value)
                 : null,
             Scopes = request.Scopes,
+            AllowedOrigins = request.AllowedOrigins,
         };
 
         await _store.CreateAsync(apiKey, HttpContext.RequestAborted);
@@ -87,6 +88,7 @@ public class ApiKeyController : ControllerBase
                 KeyPrefix = apiKey.KeyPrefix,
                 ExpiresAt = apiKey.ExpiresAt,
                 Scopes = apiKey.Scopes,
+                AllowedOrigins = apiKey.AllowedOrigins,
                 CreatedDate = apiKey.CreatedDate,
             }
         });
@@ -130,6 +132,7 @@ public class ApiKeyController : ControllerBase
             RevokedAt = k.RevokedAt,
             IsActive = k.IsActive,
             Scopes = k.Scopes,
+            AllowedOrigins = k.AllowedOrigins,
         }).ToList();
 
         return Ok(new AZOAResult<List<ApiKeyInfo>> { IsError = false, Message = "OK", Result = keys });
@@ -186,6 +189,7 @@ public class ApiKeyController : ControllerBase
             KeyPrefix = rawKey[..16],
             ExpiresAt = expiresAt,
             Scopes = existing.Scopes,
+            AllowedOrigins = existing.AllowedOrigins,
         };
 
         await _store.CreateAsync(apiKey, HttpContext.RequestAborted);
@@ -203,6 +207,7 @@ public class ApiKeyController : ControllerBase
                 KeyPrefix = apiKey.KeyPrefix,
                 ExpiresAt = apiKey.ExpiresAt,
                 Scopes = apiKey.Scopes,
+                AllowedOrigins = apiKey.AllowedOrigins,
                 CreatedDate = apiKey.CreatedDate,
             }
         });
@@ -233,6 +238,7 @@ public class CreateApiKeyRequest
     public string Name { get; set; } = string.Empty;
     public int? ExpiresInDays { get; set; }
     public string? Scopes { get; set; }
+    public string? AllowedOrigins { get; set; }
 }
 
 public class CreateApiKeyResponse
@@ -246,6 +252,7 @@ public class CreateApiKeyResponse
     public string KeyPrefix { get; set; } = string.Empty;
     public DateTime? ExpiresAt { get; set; }
     public string? Scopes { get; set; }
+    public string? AllowedOrigins { get; set; }
     public DateTime CreatedDate { get; set; }
 }
 
@@ -260,6 +267,7 @@ public class ApiKeyInfo
     public DateTime? RevokedAt { get; set; }
     public bool IsActive { get; set; }
     public string? Scopes { get; set; }
+    public string? AllowedOrigins { get; set; }
 }
 
 /// <summary>One self-issuable scope with its human description (key-issuance discovery surface).</summary>

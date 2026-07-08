@@ -91,7 +91,7 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
                 // Operator authorization policy additionally requires the JWT scheme.
                 if (!AZOA.WebAPI.Core.AzoaScopes.IsApiKeyIssuableScope(scope2))
                     continue;
-                claims.Add(new Claim("scope", scope2));
+                claims.Add(new System.Security.Claims.Claim("scope", scope2));
                 emittedCount++;
             }
 
@@ -101,7 +101,7 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
             // DappDevelop policy. Mark this case explicitly so the policy can deny it
             // instead of silently granting full access to an all-forbidden-scope key.
             if (rawTokens.Length > 0 && emittedCount == 0)
-                claims.Add(new Claim("ScopesRestricted", "true"));
+                claims.Add(new System.Security.Claims.Claim("ScopesRestricted", "true"));
         }
 
         var identity = new ClaimsIdentity(claims, SchemeName);
