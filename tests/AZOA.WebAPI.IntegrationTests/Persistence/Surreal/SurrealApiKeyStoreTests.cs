@@ -223,6 +223,65 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
         after.LastUsedAt!.Value.Should().BeCloseTo(ts, TimeSpan.FromSeconds(2));
     }
 
+    // ── scope CSV round-trip (regression: colon-shaped scopes) ───────────────────
+
+    // Root-cause regression guard. On SurrealDB 3.x the api_key.scopes field was
+    // TYPE option<string> (`none | string`); a colon-shaped CSV value like
+    // "dapp:develop,dapp:manage" was mis-coerced into the union as a record-id
+    // (table:id) and the CREATE failed with:
+    //   Couldn't coerce value for field `scopes`: Expected `none | string`
+    //   but found `dapp:develop`
+    // The field is now TYPE string (empty "" = full access). This test would have
+    // caught the production bug — the pre-existing suite only ever wrote the
+    // colon-FREE CSV "read,write", which never triggers record-id detection.
+    [SkippableFact]
+    public async Task Create_WithColonBearingScopesAndOrigins_RoundTripsIntact()
+    {
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
+
+        var owner = Guid.NewGuid();
+        var key = NewApiKey(avatarId: owner);
+        key.Scopes = "dapp:develop,dapp:manage";
+        key.AllowedOrigins = "https://x.example:443,https://y.example:8443";
+
+        await _store.CreateAsync(key, CancellationToken.None);
+
+        var byHash = await _store.GetByHashAsync(key.KeyHash, CancellationToken.None);
+        byHash.Should().NotBeNull();
+        byHash!.Scopes.Should().Be("dapp:develop,dapp:manage",
+            "colon-shaped scope CSV must persist verbatim, not be coerced to a record-id");
+        byHash.AllowedOrigins.Should().Be("https://x.example:443,https://y.example:8443",
+            "colon/URL-bearing allowed_origins CSV must persist verbatim");
+
+        // Same value must survive the record-id read path too.
+        var byId = await _store.GetByIdForAvatarAsync(key.Id, owner, CancellationToken.None);
+        byId.Should().NotBeNull();
+        byId!.Scopes.Should().Be("dapp:develop,dapp:manage");
+        byId.AllowedOrigins.Should().Be("https://x.example:443,https://y.example:8443");
+    }
+
+    // The "empty/NONE scopes = full-access legacy key" invariant: a domain-null
+    // Scopes/AllowedOrigins persists as "" and reads back as null (not ""), so the
+    // full-access carve-out in ApiKeyController / ApiKeyAuthenticationHandler /
+    // AzoaScopes keeps working after the option<string> -> string schema change.
+    [SkippableFact]
+    public async Task Create_WithNullScopes_RoundTripsAsNull_FullAccessLegacyPreserved()
+    {
+        Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
+
+        var owner = Guid.NewGuid();
+        var key = NewApiKey(avatarId: owner);
+        key.Scopes = null;
+        key.AllowedOrigins = null;
+
+        await _store.CreateAsync(key, CancellationToken.None);
+
+        var hit = await _store.GetByHashAsync(key.KeyHash, CancellationToken.None);
+        hit.Should().NotBeNull();
+        hit!.Scopes.Should().BeNull("empty stored scopes must read back as domain null = full access");
+        hit.AllowedOrigins.Should().BeNull("empty stored allowed_origins must read back as domain null = all allowed");
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static ApiKey NewApiKey(

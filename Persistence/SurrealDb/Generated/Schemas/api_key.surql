@@ -43,11 +43,13 @@ DEFINE FIELD IF NOT EXISTS revoked_at ON TABLE api_key TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS is_active ON TABLE api_key TYPE bool
     DEFAULT true;
 
--- Optional comma-separated scopes (empty/NONE = full access)
-DEFINE FIELD IF NOT EXISTS scopes ON TABLE api_key TYPE option<string>;
+-- Scope tokens (empty array = full access)
+DEFINE FIELD IF NOT EXISTS scopes ON TABLE api_key TYPE array<string>
+    DEFAULT [];
 
--- Optional comma-separated allowed origins (empty/NONE = all allowed)
-DEFINE FIELD IF NOT EXISTS allowed_origins ON TABLE api_key TYPE option<string>;
+-- Allowed origins (empty array = all allowed)
+DEFINE FIELD IF NOT EXISTS allowed_origins ON TABLE api_key TYPE array<string>
+    DEFAULT [];
 
 -- ── Indexes ──────────────────────────────────────────────────
 

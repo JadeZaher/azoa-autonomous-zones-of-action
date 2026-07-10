@@ -95,20 +95,51 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
 
         var poco = FromDomain(apiKey);
 
-        var q = SurrealQuery
-            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
+        // Capture the real (possibly colon-shaped) tokens for the UPDATE, then blank
+        // them on the CONTENT body: a plain [] coerces fine, but a colon-shaped
+        // element would be mis-coerced into a record-id by SurrealDB 3.x during
+        // CONTENT coercion (it parses any string matching record-id grammar — e.g.
+        // "dapp:develop", "https://x:443" — as a thing, truncating at the first
+        // token). The follow-up UPDATE writes them back with an explicit
+        // <array<string>> cast that forces each element to a strand. A single CREATE
+        // cannot mix CONTENT with a trailing SET, hence the CREATE + UPDATE split.
+        var scopeTokens = poco.Scopes;
+        var originTokens = poco.AllowedOrigins;
+        poco.Scopes = new List<string>();
+        poco.AllowedOrigins = new List<string>();
+
+        // Row body via CONTENT $_body — the POCO omits null optionals (expires_at,
+        // last_used_at, revoked_at) so they land as NONE.
+        var create = SurrealQuery
+            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN NONE")
             .WithParam("_t", Table)
             .WithParam("_id", poco.Id)
             .WithParam("_body", poco);
 
-        var response = await _executor.ExecuteAsync(q, ct);
-        if (!response[0].IsOk)
+        var createResponse = await _executor.ExecuteAsync(create, ct);
+        if (!createResponse[0].IsOk)
         {
             // Surface the DB error (notably the unique-hash-index violation) as a
             // domain InvalidOperationException with a store-prefixed message, the
             // contract callers and tests expect — not the raw transport exception.
             throw new InvalidOperationException(
-                $"SurrealApiKeyStore.CreateAsync failed: {response[0].ErrorText}");
+                $"SurrealApiKeyStore.CreateAsync failed: {createResponse[0].ErrorText}");
+        }
+
+        var setScopes = SurrealQuery
+            .Of("""
+                UPDATE type::record($_t, $_id) SET scopes = <array<string>>$_scopes, allowed_origins = <array<string>>$_origins RETURN NONE
+                """)
+            .WithParam("_t", Table)
+            .WithParam("_id", poco.Id)
+            .WithParam("_scopes", scopeTokens)
+            .WithParam("_origins", originTokens);
+
+        var setResponse = await _executor.ExecuteAsync(setScopes, ct);
+        if (!setResponse[0].IsOk)
+        {
+            throw new InvalidOperationException(
+                $"SurrealApiKeyStore.CreateAsync failed: {setResponse[0].ErrorText}");
         }
     }
 
@@ -195,8 +226,11 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
                          ? new DateTimeOffset(DateTime.SpecifyKind(k.RevokedAt.Value, DateTimeKind.Utc))
                          : null,
         IsActive       = k.IsActive,
-        Scopes         = k.Scopes,
-        AllowedOrigins = k.AllowedOrigins,
+        // Domain CSV (null == "no restriction / full access") splits into a token
+        // array. Empty/null CSV => empty array, the stored full-access sentinel.
+        // Elements are cast to <string> at write time (see CreateAsync).
+        Scopes         = SplitCsv(k.Scopes),
+        AllowedOrigins = SplitCsv(k.AllowedOrigins),
     };
 
     private static ApiKey ToDomain(ApiKeyPoco p) => new()
@@ -211,9 +245,24 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         LastUsedAt     = p.LastUsedAt?.UtcDateTime,
         RevokedAt      = p.RevokedAt?.UtcDateTime,
         IsActive       = p.IsActive,
-        Scopes         = p.Scopes,
-        AllowedOrigins = p.AllowedOrigins,
+        // An empty stored array (the full-access sentinel) maps back to domain
+        // null so the "empty/NONE scopes = full-access legacy key" rule in
+        // ApiKeyController, ApiKeyAuthenticationHandler and AzoaScopes still holds
+        // unchanged; a populated array joins back into the CSV domain contract.
+        Scopes         = JoinCsv(p.Scopes),
+        AllowedOrigins = JoinCsv(p.AllowedOrigins),
     };
+
+    // Domain CSV (nullable) <-> stored token array boundary. Empty/whitespace CSV
+    // and empty array both mean "full access"; we normalise to empty array on
+    // write and to null on read so the legacy sentinel survives the round trip.
+    private static List<string> SplitCsv(string? csv)
+        => string.IsNullOrWhiteSpace(csv)
+            ? new List<string>()
+            : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    private static string? JoinCsv(IReadOnlyList<string>? tokens)
+        => tokens is null || tokens.Count == 0 ? null : string.Join(',', tokens);
 
     // ── POCO (private) ────────────────────────────────────────────────────────
 
@@ -237,7 +286,13 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         [JsonPropertyName("last_used_at")]    public DateTimeOffset? LastUsedAt { get; set; }
         [JsonPropertyName("revoked_at")]      public DateTimeOffset? RevokedAt  { get; set; }
         [JsonPropertyName("is_active")]       public bool IsActive       { get; set; }
-        [JsonPropertyName("scopes")]          public string? Scopes      { get; set; }
-        [JsonPropertyName("allowed_origins")] public string? AllowedOrigins { get; set; }
+        // array<string> (empty array = full access). On WRITE the CONTENT body
+        // carries these as EMPTY arrays (a plain [] coerces fine); the real,
+        // possibly colon-shaped tokens are written by a follow-up UPDATE with an
+        // explicit <array<string>> cast so values like "dapp:develop" or
+        // "https://x:443" are not mis-coerced into a record-id by SurrealDB 3.x.
+        // On READ (SELECT *) these deserialize straight from the array columns.
+        [JsonPropertyName("scopes")]          public List<string> Scopes         { get; set; } = new();
+        [JsonPropertyName("allowed_origins")] public List<string> AllowedOrigins { get; set; } = new();
     }
 }

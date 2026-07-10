@@ -60,10 +60,18 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Default("true")]
         public bool IsActive { get; set; }
 
-        [FieldGroup("Optional comma-separated scopes (empty/NONE = full access)")]
-        public string? Scopes { get; set; }
+        // array<string> (empty array = full access), NOT a CSV string. SurrealDB
+        // 3.x coerces a scalar string matching record-id grammar ("dapp:develop")
+        // into a thing and truncates at the first token; an array<string> is
+        // coerced per-element and the store writes each element via a <string>
+        // cast so colon-shaped scopes survive. The store joins/splits at the CSV
+        // domain boundary (Models/ApiKey.cs keeps the CSV string? contract).
+        [FieldGroup("Scope tokens (empty array = full access)")]
+        [Default("[]")]
+        public IReadOnlyList<string> Scopes { get; set; } = System.Array.Empty<string>();
 
-        [FieldGroup("Optional comma-separated allowed origins (empty/NONE = all allowed)")]
-        public string? AllowedOrigins { get; set; }
+        [FieldGroup("Allowed origins (empty array = all allowed)")]
+        [Default("[]")]
+        public IReadOnlyList<string> AllowedOrigins { get; set; } = System.Array.Empty<string>();
     }
 }
