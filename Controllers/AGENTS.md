@@ -91,3 +91,38 @@ may name only the runner's OWN holons, never a public one owned by someone else)
   UNFILTERED subtree walk (`CollectDescendantsAsync`) — a cycle can run through a
   private cross-tenant descendant, so the guard must see the full tree.
 - Holon `Clone` cross-avatar template mechanic — already own-or-public gated.
+
+## §dapp-composition-rbac
+
+`DappSeriesController` and `DappCompositionController` intentionally split the
+surface into two buckets:
+
+- **Read paths** (`GET /api/dapp-series`, `GET /api/dapp-series/{id}`,
+  `GET /api/dapp-series/{id}/quests`, `GET /api/dapp-series/{id}/validate`,
+  `GET /api/dapp-series/{id}/manifest`, `GET /api/dapp-series/{id}/status`) are
+  ordinary authenticated-avatar reads. They rely on manager ownership checks and
+  must remain reachable without the `DappDevelop` policy.
+- **Write paths** (`POST/PUT/DELETE` series + quest mutations, plus
+  `/compose`, `/generate`, `/deploy`) are DApp-authoring actions. Series/quest
+  mutations keep `Authorize(Policy = "DappDevelop")`; lifecycle actions
+  (`/compose`, `/generate`, `/deploy`) use `Authorize(Policy = "DappManage")`.
+  API-key policies require both the key scope and the owning avatar's current
+  DApp role, so a stale key cannot keep DApp authority after a role downgrade.
+
+## avatar-dapp-rbac — role-assignment endpoint (`AvatarController`)
+
+- `PUT api/avatar/{id}/dapp-role` sets an avatar's `DappRole`. Target id is the
+  ROUTE id, never the body (IDOR rule). Body is `AvatarRoleAssignmentModel { Role }`.
+- Method-level `[Authorize]` only (both JWT and API-key principals may authenticate);
+  authority is decided in the manager from two controller-computed flags:
+  - `ActingIsOperator()` mirrors the `Operator` policy EXACTLY (JWT-only floor +
+    explicit operator:admin/Admin signal). Operator may assign ANY role incl.
+    manager — this is the operator-bootstrap path that creates the first manager.
+  - `User.HasDappManagerRole()` (the CURRENT `dapp_role` claim, which the real
+    ApiKey handler re-reads from the owner's live store role) — a manager may grant
+    only developer/user, never manager/operator. Using the role claim (not
+    scope-or-role) keeps a stale-scope key fail-closed after a demotion.
+- CRITICAL: operator:admin can NEVER be assigned. `AzoaDappRoles.IsAssignableRole`
+  rejects anything outside dapp:user/developer/manager BEFORE authority is checked,
+  so no request can set a role that yields operator:admin.
+- Denials return 403 (Forbidden); an unknown target returns 404.

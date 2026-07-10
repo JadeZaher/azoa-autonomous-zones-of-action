@@ -55,6 +55,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Default("false")]
         public bool IsVerified { get; set; }
 
+        [Required(NotEmpty = true)]
+        [Default("\"dapp:user\"")]
+        public string DappRole { get; set; } = "dapp:user";
+
         [References(typeof(Avatar), Optional = true)]
         public string? OwnerTenantId { get; set; }
 

@@ -121,6 +121,52 @@ public class AvatarManager : IAvatarManager
         return new AZOAResult<bool> { Result = true, Message = "Logged out of all sessions." };
     }
 
+    public async Task<AZOAResult<IAvatar>> AssignDappRoleAsync(
+        Guid targetAvatarId, string role, bool actingIsOperator, bool actingCanManage, CancellationToken ct = default)
+    {
+        // Reject any value outside the canonical dapp:user/developer/manager set BEFORE
+        // touching authority — an operator:admin-yielding value can never persist.
+        if (!AzoaDappRoles.IsAssignableRole(role))
+            return new AZOAResult<IAvatar>
+            {
+                IsError = true,
+                Message = $"'{role}' is not an assignable DApp role. Allowed: {string.Join(", ", AzoaDappRoles.AssignableRoles)}."
+            };
+
+        var normalized = AzoaDappRoles.Normalize(role);
+
+        // Authority ladder (fail-closed): operator may set anything (incl. manager, the
+        // bootstrap path); a manager may set only developer/user; everyone else denied.
+        if (actingIsOperator)
+        {
+            // full authority
+        }
+        else if (actingCanManage)
+        {
+            if (string.Equals(normalized, AzoaDappRoles.Manager, StringComparison.OrdinalIgnoreCase))
+                return new AZOAResult<IAvatar>
+                {
+                    IsError = true,
+                    Message = "A DApp manager may grant only developer or user roles; assigning manager requires an operator."
+                };
+        }
+        else
+        {
+            return new AZOAResult<IAvatar>
+            {
+                IsError = true,
+                Message = "Only an operator or a DApp manager may assign DApp roles."
+            };
+        }
+
+        var existing = await _avatarStore.GetByIdAsync(targetAvatarId, ct);
+        if (existing.IsError || existing.Result is null)
+            return new AZOAResult<IAvatar> { IsError = true, Message = "Avatar not found." };
+
+        existing.Result.DappRole = normalized;
+        return await _avatarStore.UpsertAsync(existing.Result, ct);
+    }
+
     private string GenerateJwt(IAvatar avatar)
     {
         var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
@@ -134,6 +180,8 @@ public class AvatarManager : IAvatarManager
             new Claim(ClaimTypes.Name, avatar.Username),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        StampDappRoleClaims(avatar, claims);
 
         StampOperatorAdminIfSeeded(avatar, claims);
 
@@ -184,5 +232,21 @@ public class AvatarManager : IAvatarManager
         claims.Add(new Claim("scope", AzoaScopes.Operator));
         claims.Add(new Claim("role", "Admin"));
         claims.Add(new Claim(ClaimTypes.Role, "Admin"));
+    }
+
+    private static void StampDappRoleClaims(IAvatar avatar, List<Claim> claims)
+    {
+        var role = AzoaDappRoles.Normalize(avatar.DappRole);
+        claims.Add(new Claim("dapp_role", role));
+
+        if (AzoaDappRoles.CanDevelop(role))
+        {
+            claims.Add(new Claim("scope", AzoaScopes.DappDevelop));
+        }
+
+        if (AzoaDappRoles.CanManage(role))
+        {
+            claims.Add(new Claim("scope", AzoaScopes.DappManage));
+        }
     }
 }

@@ -30,6 +30,10 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
 
     public const string AuthHeaderName   = "X-Test-Auth";
     public const string AvatarHeaderName = "X-Test-Avatar-Id";
+    public const string DappRoleHeaderName = "X-Test-Dapp-Role";
+    // avatar-dapp-rbac: when "true", stamp operator:admin + role=Admin so a test can
+    // exercise operator-gated surfaces (the Operator policy + the role-assign path).
+    public const string OperatorHeaderName = "X-Test-Operator";
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -37,6 +41,8 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
             return Task.FromResult(AuthenticateResult.NoResult());
 
         var avatarId = ResolveAvatarId();
+
+        var dappRole = ResolveDappRole();
 
         var claims = new List<Claim>
         {
@@ -48,8 +54,17 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
             // (e.g. AvatarNFTController.MintAvatarNFT) read it directly via
             // Guid.Parse(FindFirst("AvatarId")). Emit it so the test principal
             // matches production claim shape (absence caused Guid.Parse("") 500s).
-            new("AvatarId", avatarId)
+            new("AvatarId", avatarId),
+            new("dapp_role", dappRole)
         };
+
+        if (Request.Headers.TryGetValue(OperatorHeaderName, out var op)
+            && string.Equals(op.ToString(), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            claims.Add(new Claim("scope", AZOA.WebAPI.Core.AzoaScopes.Operator));
+            claims.Add(new Claim("role", "Admin"));
+            claims.Add(new Claim(ClaimTypes.Role, "Admin"));
+        }
 
         var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);
@@ -66,5 +81,17 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
             return parsed.ToString();
         }
         return DefaultAvatarId;
+    }
+
+    private string ResolveDappRole()
+    {
+        if (Request.Headers.TryGetValue(DappRoleHeaderName, out var raw))
+            return AZOA.WebAPI.Core.AzoaDappRoles.Normalize(raw.ToString());
+
+        // FOLLOW-UP (avatar-dapp-rbac review): defaulting to the most-privileged role
+        // masks DappDevelop/DappManage gate regressions. Flipping to User cascades into
+        // ~57 Seed* call sites + 15 direct authoring POSTs (base Client seeds via this),
+        // so it's deferred to a dedicated churn track rather than done here.
+        return AZOA.WebAPI.Core.AzoaDappRoles.Manager;
     }
 }

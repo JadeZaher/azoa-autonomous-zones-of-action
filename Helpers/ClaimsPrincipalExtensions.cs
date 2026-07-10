@@ -32,6 +32,47 @@ public static class ClaimsPrincipalExtensions
         return false;
     }
 
+    public static bool HasDappDevelopAccess(this ClaimsPrincipal principal)
+    {
+        if (principal is null)
+            return false;
+
+        if (principal.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappDevelop))
+            return true;
+
+        return principal.HasDappDeveloperRole();
+    }
+
+    public static bool HasDappManageAccess(this ClaimsPrincipal principal)
+    {
+        if (principal is null)
+            return false;
+
+        if (principal.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappManage))
+            return true;
+
+        return principal.HasDappManagerRole();
+    }
+
+    public static bool HasDappDeveloperRole(this ClaimsPrincipal principal)
+        => AZOA.WebAPI.Core.AzoaDappRoles.CanDevelop(principal?.FindFirst("dapp_role")?.Value);
+
+    public static bool HasDappManagerRole(this ClaimsPrincipal principal)
+        => AZOA.WebAPI.Core.AzoaDappRoles.CanManage(principal?.FindFirst("dapp_role")?.Value);
+
+    public static bool CanSelfIssueApiKeyScope(this ClaimsPrincipal principal, string scope)
+    {
+        if (!AZOA.WebAPI.Core.AzoaScopes.IsIssuableByAvatar(scope))
+            return false;
+
+        return scope switch
+        {
+            AZOA.WebAPI.Core.AzoaScopes.DappDevelop => principal.HasDappDeveloperRole(),
+            AZOA.WebAPI.Core.AzoaScopes.DappManage => principal.HasDappManagerRole(),
+            _ => true,
+        };
+    }
+
     /// <summary>
     /// Returns every <c>scope</c> claim value the principal carries, de-duplicated
     /// and trimmed. Used by the credential-issuer to compute the

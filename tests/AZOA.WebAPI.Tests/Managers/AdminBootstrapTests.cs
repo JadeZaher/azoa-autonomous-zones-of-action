@@ -106,6 +106,57 @@ public class AdminBootstrapTests
     }
 
     [Fact]
+    public async Task Login_WithDeveloperRole_EmitsDappDevelopClaims()
+    {
+        var avatar = MakeAvatar("dev@azoa.test");
+        avatar.DappRole = AzoaDappRoles.Developer;
+        var store = MakeStore(avatar);
+        var manager = MakeManager(store, "Development");
+
+        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+
+        result.IsError.Should().BeFalse();
+        var token = Decode(result.Result!);
+        token.Claims.Should().Contain(c => c.Type == "dapp_role" && c.Value == AzoaDappRoles.Developer);
+        token.Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.DappDevelop);
+        token.Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.DappManage);
+    }
+
+    [Fact]
+    public async Task Login_WithManagerRole_EmitsDevelopAndManageClaims()
+    {
+        var avatar = MakeAvatar("manager@azoa.test");
+        avatar.DappRole = AzoaDappRoles.Manager;
+        var store = MakeStore(avatar);
+        var manager = MakeManager(store, "Development");
+
+        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+
+        result.IsError.Should().BeFalse();
+        var token = Decode(result.Result!);
+        token.Claims.Should().Contain(c => c.Type == "dapp_role" && c.Value == AzoaDappRoles.Manager);
+        token.Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.DappDevelop);
+        token.Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.DappManage);
+        token.Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.Operator);
+    }
+
+    [Fact]
+    public async Task Login_WithPlainUserRole_EmitsNoDappAuthority()
+    {
+        var avatar = MakeAvatar("user@azoa.test");
+        var store = MakeStore(avatar);
+        var manager = MakeManager(store, "Development");
+
+        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+
+        result.IsError.Should().BeFalse();
+        var token = Decode(result.Result!);
+        token.Claims.Should().Contain(c => c.Type == "dapp_role" && c.Value == AzoaDappRoles.User);
+        token.Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.DappDevelop);
+        token.Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.DappManage);
+    }
+
+    [Fact]
     public async Task Login_WithPartialSeedConfig_InDevelopment_SkipsSafely()
     {
         var avatar = MakeAvatar("admin@azoa.test");

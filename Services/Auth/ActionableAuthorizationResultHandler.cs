@@ -31,15 +31,27 @@ public sealed class ActionableAuthorizationResultHandler : IAuthorizationMiddlew
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             context.Response.ContentType = "application/json";
+            var missingScope = RequiredDappScope(context);
             await context.Response.WriteAsJsonAsync(new
             {
                 isError = true,
-                message = $"This API key lacks the '{AzoaScopes.DappDevelop}' scope required to author "
-                        + "holons/quests/dApp-series. Rotate the key with that scope.",
+                message = $"This API key lacks the '{missingScope}' scope or owning-avatar role required "
+                        + "for this dApp operation. Rotate the key after updating the avatar role.",
             });
             return;
         }
 
         await _default.HandleAsync(next, context, policy, authorizeResult);
+    }
+
+    private static string RequiredDappScope(HttpContext context)
+    {
+        var policies = context.GetEndpoint()?
+            .Metadata.GetOrderedMetadata<IAuthorizeData>()
+            .Select(a => a.Policy);
+
+        return policies?.Contains("DappManage", StringComparer.Ordinal) == true
+            ? AzoaScopes.DappManage
+            : AzoaScopes.DappDevelop;
     }
 }

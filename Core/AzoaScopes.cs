@@ -46,6 +46,12 @@ public static class AzoaScopes
     /// </summary>
     public const string DappDevelop = "dapp:develop";
 
+    /// <summary>
+    /// DApp lifecycle-management capability. Managers can compose, generate,
+    /// deploy, and later grant DApp-local memberships without becoming operators.
+    /// </summary>
+    public const string DappManage = "dapp:manage";
+
     // ── tenant-consent-delegation: value-signing scopes (H4) ──────────────────
     // These authorize a tenant-driven action that DECRYPTS a user's signing key.
     // They are EXCLUDED from the no-UX Participation standing grant (a value action
@@ -142,14 +148,15 @@ public static class AzoaScopes
         new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
         {
             DappDevelop,
+            DappManage,
         };
 
     /// <summary>
-    /// The complete allow-list of scopes an ordinary avatar may place on a NEW API key
-    /// it creates for itself (issuance-time validation in <c>ApiKeyController.Create</c>).
+    /// The scope vocabulary that can appear on self-issued API keys before caller-role
+    /// filtering. <c>ApiKeyController.Create</c> applies the current-principal check.
     ///
     /// Membership rules, deliberately explicit rather than by-omission:
-    ///   • <see cref="DappDevelop"/> — the coarse dApp-developer capability (this task).
+    ///   • <see cref="DappDevelop"/> and <see cref="DappManage"/> — role-bound dApp capabilities.
     ///   • The value/participation signing scopes that are ALREADY intended to be
     ///     key-carried by a tenant/child credential: wallet:manage, nft:mint,
     ///     quest:execute, swap:sign, transfer:sign, grant:sign, token:create:sign.
@@ -164,6 +171,7 @@ public static class AzoaScopes
         new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
         {
             DappDevelop,
+            DappManage,
             WalletManage,
             NftMint,
             QuestExecute,
@@ -173,20 +181,29 @@ public static class AzoaScopes
             TokenCreateSign,
         };
 
+    private static readonly System.Collections.Generic.IReadOnlySet<string> RoleBoundDappScopes =
+        new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
+        {
+            DappDevelop,
+            DappManage,
+        };
+
     /// <summary>
-    /// True iff an ordinary avatar may attach <paramref name="scope"/> to a new API key
-    /// it issues for itself. A null/blank scope is not issuable (callers treat the
-    /// empty CSV — "full access" legacy — separately, before ever calling this).
-    /// See <see cref="SelfIssuableScopes"/> for the allow-list and its rationale.
+    /// True iff <paramref name="scope"/> is part of the self-issued API-key vocabulary.
+    /// Caller-specific role filtering is applied by <c>CanSelfIssueApiKeyScope</c>.
     /// </summary>
     public static bool IsIssuableByAvatar(string? scope)
         => !string.IsNullOrWhiteSpace(scope) && SelfIssuableScopes.Contains(scope);
+
+    public static bool IsRoleBoundDappScope(string? scope)
+        => !string.IsNullOrWhiteSpace(scope) && RoleBoundDappScopes.Contains(scope);
 
     /// <summary>Human-readable one-liner per self-issuable scope, for the key-issuance discovery surface.</summary>
     private static readonly System.Collections.Generic.IReadOnlyDictionary<string, string> ScopeDescriptions =
         new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal)
         {
             [DappDevelop]     = "Author/edit holons, quests, and dApp-series (the dApp-developer write surface).",
+            [DappManage]      = "Manage DApp lifecycle actions such as compose, generate, deploy, and membership.",
             [WalletManage]    = "Create and manage wallets.",
             [NftMint]         = "Mint, transfer, and burn NFTs.",
             [QuestExecute]    = "Execute quests (non-value participation).",

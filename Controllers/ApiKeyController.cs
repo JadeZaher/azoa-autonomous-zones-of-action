@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Services.Auth;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
@@ -38,15 +39,13 @@ public class ApiKeyController : ControllerBase
         if (avatarId == Guid.Empty)
             return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
 
-        // Validate requested scopes at issuance. An empty/null CSV is the legacy
-        // "full access" key and is allowed unchanged; any explicit scope must be in the
-        // self-issuable allow-list (AzoaScopes.IsIssuableByAvatar) — this closes the
-        // gap where e.g. tenant:provision or operator:admin could be self-attached.
+        // Validate requested scopes at issuance. Empty/null keeps the legacy full-key
+        // shape; explicit scopes must be self-issuable by the caller's current role.
         if (!string.IsNullOrWhiteSpace(request.Scopes))
         {
             var rejected = request.Scopes
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(s => !AzoaScopes.IsIssuableByAvatar(s))
+                .Where(s => !User.CanSelfIssueApiKeyScope(s))
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
 
@@ -103,7 +102,13 @@ public class ApiKeyController : ControllerBase
     public IActionResult IssuableScopes()
     {
         var scopes = AzoaScopes.IssuableScopeCatalog()
-            .Select(s => new ApiKeyScopeInfo { Scope = s.Scope, Description = s.Description })
+            .Where(s => User.CanSelfIssueApiKeyScope(s.Scope))
+            .Select(s => new ApiKeyScopeInfo
+            {
+                Scope = s.Scope,
+                Description = s.Description,
+                IsSelfIssuable = true,
+            })
             .ToList();
 
         return Ok(new AZOAResult<List<ApiKeyScopeInfo>> { IsError = false, Message = "OK", Result = scopes });
@@ -275,4 +280,5 @@ public class ApiKeyScopeInfo
 {
     public string Scope { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public bool IsSelfIssuable { get; set; }
 }

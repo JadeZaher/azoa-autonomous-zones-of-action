@@ -216,6 +216,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
                                : null,
         IsActive         = a.IsActive,
         IsVerified       = a.IsVerified,
+        DappRole         = AZOA.WebAPI.Core.AzoaDappRoles.Normalize(a.DappRole),
         // owner_tenant_id is a record<avatar> link; encode the same way the
         // ApiKey store encodes avatar_id. null tenant => null link column.
         OwnerTenantId    = a.OwnerTenantId.HasValue
@@ -244,6 +245,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
         LastBeamedInDate = p.LastBeamedInDate?.UtcDateTime,
         IsActive         = p.IsActive,
         IsVerified       = p.IsVerified,
+        DappRole         = AZOA.WebAPI.Core.AzoaDappRoles.Normalize(p.DappRole),
         OwnerTenantId    = string.IsNullOrEmpty(p.OwnerTenantId)
                                ? null
                                : Guid.ParseExact(SurrealLink.FromLink(p.OwnerTenantId)!, "N"),

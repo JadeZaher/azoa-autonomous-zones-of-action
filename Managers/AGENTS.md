@@ -381,3 +381,14 @@ a duplicate write; revoke no-ops when absent).
 
 ### DI owed
 `Program.cs` must register the store: `builder.Services.AddScoped<IQuestAccessRequestStore, SurrealQuestAccessRequestStore>();` (the concrete store is owned by the persistence worker). `QuestManager` takes it as an OPTIONAL trailing ctor param (like `IConfiguration`) so the positional unit-test fixtures keep compiling; DI always supplies the real store.
+
+## avatar-dapp-rbac — `AvatarManager.AssignDappRoleAsync`
+
+- Persists a target avatar's `DappRole` through `IAvatarStore.UpsertAsync`
+  (`UpdateAsync` deliberately never touches DappRole — role changes go only through
+  this dedicated, authority-gated path).
+- Authority ladder (fail-closed): operator sets anything incl. manager (bootstrap);
+  a manager sets only developer/user; everyone else denied. Role validated against
+  the `AzoaDappRoles` allowlist first, so an operator:admin-yielding value is
+  impossible. Authority is passed as `bool actingIsOperator, bool actingCanManage`
+  (computed by the controller from claims) to keep the manager free of ClaimsPrincipal.

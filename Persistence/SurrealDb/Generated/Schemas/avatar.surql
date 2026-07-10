@@ -25,6 +25,9 @@ DEFINE FIELD IF NOT EXISTS is_active ON TABLE avatar TYPE bool
     DEFAULT true;
 DEFINE FIELD IF NOT EXISTS is_verified ON TABLE avatar TYPE bool
     DEFAULT false;
+DEFINE FIELD IF NOT EXISTS dapp_role ON TABLE avatar TYPE string
+    ASSERT $value != NONE AND $value != ""
+    DEFAULT "dapp:user";
 DEFINE FIELD IF NOT EXISTS owner_tenant_id ON TABLE avatar TYPE option<record<avatar>>;
 DEFINE FIELD IF NOT EXISTS external_user_id ON TABLE avatar TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS external_ref ON TABLE avatar TYPE option<string>;

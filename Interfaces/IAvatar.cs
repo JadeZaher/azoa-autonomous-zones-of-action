@@ -16,6 +16,7 @@ public interface IAvatar
     DateTime? LastBeamedInDate { get; set; }
     bool IsActive { get; set; }
     bool IsVerified { get; set; }
+    string DappRole { get; set; }
 
     // Tenant ownership (tenant-onboarding). OwnerTenantId is the provisioning
     // tenant principal's avatar id (self-FK); null = not tenant-managed.

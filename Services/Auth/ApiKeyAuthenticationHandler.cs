@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Stores;
 
 namespace AZOA.WebAPI.Services.Auth;
@@ -59,6 +60,15 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
             return AuthenticateResult.Fail("API key has expired.");
         }
 
+        var avatarStore = scope.ServiceProvider.GetRequiredService<IAvatarStore>();
+        var avatar = await avatarStore.GetByIdAsync(apiKey.AvatarId, Context.RequestAborted);
+        if (avatar.IsError || avatar.Result is null || !avatar.Result.IsActive)
+        {
+            return AuthenticateResult.Fail("API key avatar is not active.");
+        }
+
+        var dappRole = AzoaDappRoles.Normalize(avatar.Result.DappRole);
+
         // Update last_used timestamp on a detached scope so a slow / failing
         // DB write never blocks (or fails) the request being authenticated.
         // TouchLastUsedAsync contract: must not throw — see IApiKeyStore.
@@ -76,6 +86,7 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
             new("AvatarId", apiKey.AvatarId.ToString()),
             new("ApiKeyId", apiKey.Id.ToString()),
             new("AuthMethod", "ApiKey"),
+            new("dapp_role", dappRole),
         };
 
         if (!string.IsNullOrEmpty(apiKey.Scopes))

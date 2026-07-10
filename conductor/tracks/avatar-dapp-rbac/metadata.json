@@ -1,0 +1,15 @@
+{
+  "id": "avatar-dapp-rbac",
+  "description": "In-flight alpha track: explicit avatar-level RBAC for DApp economies. Ordinary avatars can use/run DApps; DApp developers can author with dapp:develop; DApp managers can manage DApp lifecycle/membership with dapp:manage; platform operators remain JWT-only operator:admin. Tightens DApp policies so logged-in JWT avatars are not implicitly DApp authors and API-key DApp scopes remain bounded by the owning avatar's current role.",
+  "type": "feature",
+  "created_at": "2026-07-10T00:00:00Z",
+  "status": "in_progress",
+  "horizon": "alpha",
+  "phase": "implementation swarm started",
+  "blocks": [],
+  "depends_on": [
+    "user-sovereign-identity",
+    "tenant-consent-delegation",
+    "dapp-composition"
+  ]
+}

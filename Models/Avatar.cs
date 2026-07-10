@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Core;
 
 namespace AZOA.WebAPI.Models;
 
@@ -15,6 +16,7 @@ public class Avatar : IAvatar
     public DateTime? LastBeamedInDate { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsVerified { get; set; }
+    public string DappRole { get; set; } = AzoaDappRoles.User;
 
     // ── Tenant ownership (tenant-onboarding) ──────────────────────────────────
     // OwnerTenantId is the avatar id of the tenant principal that provisioned

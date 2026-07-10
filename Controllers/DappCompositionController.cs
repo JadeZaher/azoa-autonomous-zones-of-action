@@ -24,7 +24,7 @@ public class DappCompositionController : ControllerBase
     public DappCompositionController(IDappCompositionManager manager) => _manager = manager;
 
     [HttpPost("compose")]
-    [Authorize(Policy = "DappDevelop")]
+    [Authorize(Policy = "DappManage")]
     public async Task<ActionResult<AZOAResult<DappManifest>>> Compose(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -65,7 +65,7 @@ public class DappCompositionController : ControllerBase
     }
 
     [HttpPost("generate")]
-    [Authorize(Policy = "DappDevelop")]
+    [Authorize(Policy = "DappManage")]
     public async Task<ActionResult<AZOAResult<ISTARODK>>> Generate(Guid id, CancellationToken ct)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -76,7 +76,7 @@ public class DappCompositionController : ControllerBase
     }
 
     [HttpPost("deploy")]
-    [Authorize(Policy = "DappDevelop")]
+    [Authorize(Policy = "DappManage")]
     public async Task<ActionResult<AZOAResult<ISTARODK>>> Deploy(
         Guid id, [FromQuery] string? targetOverride, CancellationToken ct)
     {

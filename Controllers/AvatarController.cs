@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
@@ -111,10 +113,53 @@ public class AvatarController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// avatar-dapp-rbac: assign an avatar's DApp role. The target id is the ROUTE id
+    /// (never the body). Authority: an operator (JWT-only operator:admin) may assign any
+    /// role incl. manager (the operator-bootstrap path); a DApp manager may assign only
+    /// developer/user. Ordinary users and developers are denied by the manager.
+    /// operator:admin can never be assigned — DappRole only ranges over the
+    /// AzoaDappRoles allowlist. See Controllers/AGENTS.md §avatar-dapp-rbac.
+    /// </summary>
+    [HttpPut("{id:guid}/dapp-role")]
+    [Authorize]
+    public async Task<ActionResult<AZOAResult<IAvatar>>> AssignDappRole(
+        Guid id, [FromBody] AvatarRoleAssignmentModel model)
+    {
+        // Manager authority is the CURRENT dapp_role signal (the real ApiKey handler
+        // stamps this from the owner's live store role), NOT scope-or-role — so a
+        // stale-scope key whose owner was demoted cannot grant roles.
+        var result = await _manager.AssignDappRoleAsync(
+            id, model.Role, ActingIsOperator(), User.HasDappManagerRole(), HttpContext.RequestAborted);
+
+        if (result.IsError)
+            return result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true
+                ? NotFound(result)
+                : StatusCode(StatusCodes.Status403Forbidden, result);
+
+        return Ok(result);
+    }
+
     private Guid? GetAvatarIdFromClaims()
     {
         var sub = User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User?.FindFirst("sub")?.Value;
         return Guid.TryParse(sub, out var id) ? id : null;
+    }
+
+    /// <summary>
+    /// Mirrors the "Operator" authorization policy (Program.cs): operator authority is
+    /// JWT-only (an API-key principal is rejected outright) AND requires an explicit
+    /// admin signal. Kept in lock-step with that policy — see Controllers/AGENTS.md.
+    /// </summary>
+    private bool ActingIsOperator()
+    {
+        if (string.Equals(User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return User.HasScope(AzoaScopes.Operator)
+            || User.IsInRole("Admin")
+            || string.Equals(User.FindFirst("role")?.Value, "Admin", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(User.FindFirst("is_admin")?.Value, "true", StringComparison.OrdinalIgnoreCase);
     }
 }

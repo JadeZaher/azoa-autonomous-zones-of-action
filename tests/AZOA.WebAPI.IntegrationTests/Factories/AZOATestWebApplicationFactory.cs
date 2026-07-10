@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Auth;
 
 namespace AZOA.WebAPI.IntegrationTests.Factories;
 
@@ -48,6 +50,10 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>Database the app + harness agree on (created by IntegrationTestBase).</summary>
     public const string TestDatabase = "test";
 
+    /// <summary>Forwarding policy scheme (test-only) that routes X-Api-Key requests to
+    /// the real ApiKey handler and everything else to TestAuthHandler.</summary>
+    private const string TestAuthForwardScheme = "TestAuthForward";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("IntegrationTest");
@@ -86,16 +92,32 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureTestServices(services =>
         {
-            // Replace the real auth pipeline with the test-only handler.
-            // All requests that include the X-Test-Auth: true header are
-            // automatically authenticated as the default test avatar.
+            // Add the test-only handler alongside the REAL schemes registered in
+            // Program.cs (JWT, ApiKey, MultiScheme). Re-calling AddAuthentication
+            // reconfigures the options delegate without clearing the existing
+            // SchemeMap, so ApiKeyAuthenticationHandler survives and can be exercised.
+            //
+            // avatar-dapp-rbac AC3 (keystone): the default scheme is a FORWARDING
+            // policy scheme so an X-Api-Key request routes to the REAL
+            // ApiKeyAuthenticationHandler (which re-reads the owner's CURRENT DappRole),
+            // while every other request routes to TestAuthHandler (the JWT-equivalent
+            // fake). This is what lets the stale-scope revocation test hit real auth
+            // enforcement instead of the always-manager test principal.
             services.AddAuthentication(options =>
             {
-                options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
-                options.DefaultChallengeScheme    = TestAuthHandler.SchemeName;
+                options.DefaultScheme             = TestAuthForwardScheme;
+                options.DefaultAuthenticateScheme = TestAuthForwardScheme;
+                options.DefaultChallengeScheme    = TestAuthForwardScheme;
             })
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                TestAuthHandler.SchemeName, _ => { });
+                TestAuthHandler.SchemeName, _ => { })
+            .AddPolicyScheme(TestAuthForwardScheme, TestAuthForwardScheme, options =>
+            {
+                options.ForwardDefaultSelector = context =>
+                    context.Request.Headers.ContainsKey("X-Api-Key")
+                        ? ApiKeyAuthenticationHandler.SchemeName
+                        : TestAuthHandler.SchemeName;
+            });
 
             // Wave 2 placeholder: when Worker B's ISurrealDbRepository is
             // registered in Program.cs, add any test-overrides here.
@@ -104,10 +126,12 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// Create an HTTP client pre-configured with the test-auth header.
-    public HttpClient CreateAuthenticatedClient()
+    public HttpClient CreateAuthenticatedClient(string? dappRole = AzoaDappRoles.Manager)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
+        if (!string.IsNullOrWhiteSpace(dappRole))
+            client.DefaultRequestHeaders.Add(TestAuthHandler.DappRoleHeaderName, dappRole);
         return client;
     }
 
@@ -116,11 +140,42 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     /// IDOR / multi-tenant integration tests that need to act as Avatar A in
     /// one request and Avatar B in the next.
     /// </summary>
-    public HttpClient CreateAuthenticatedClientForAvatar(Guid avatarId)
+    public HttpClient CreateAuthenticatedClientForAvatar(Guid avatarId, string? dappRole = AzoaDappRoles.Manager)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
         client.DefaultRequestHeaders.Add(TestAuthHandler.AvatarHeaderName, avatarId.ToString());
+        if (!string.IsNullOrWhiteSpace(dappRole))
+            client.DefaultRequestHeaders.Add(TestAuthHandler.DappRoleHeaderName, dappRole);
+        return client;
+    }
+
+    /// <summary>
+    /// avatar-dapp-rbac: an operator-authenticated client (JWT-equivalent scheme with
+    /// operator:admin + role=Admin stamped). Used to exercise operator-gated surfaces
+    /// and the role-assignment bootstrap path. Optionally pins an avatar id.
+    /// </summary>
+    public HttpClient CreateOperatorClient(Guid? avatarId = null)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
+        client.DefaultRequestHeaders.Add(TestAuthHandler.OperatorHeaderName, "true");
+        if (avatarId.HasValue)
+            client.DefaultRequestHeaders.Add(TestAuthHandler.AvatarHeaderName, avatarId.Value.ToString());
+        return client;
+    }
+
+    /// <summary>
+    /// avatar-dapp-rbac AC3 (keystone): an HTTP client that authenticates via the REAL
+    /// ApiKeyAuthenticationHandler using a genuinely-minted raw key (X-Api-Key header, no
+    /// X-Test-Auth). The forwarding policy scheme routes it to the real handler, which
+    /// re-reads the owner avatar's CURRENT DappRole — so a key minted while the owner was
+    /// a developer is correctly denied after the owner is demoted.
+    /// </summary>
+    public HttpClient CreateApiKeyClient(string rawKey)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", rawKey);
         return client;
     }
 }
