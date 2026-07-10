@@ -76,6 +76,20 @@ public class DappCompositionManagerTests
     }
 
     [Fact]
+    public async Task ListAsync_ReturnsOnlyTheCallingAvatarsSeries()
+    {
+        var otherAvatar = Guid.NewGuid();
+        var mine = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Mine" });
+        await _manager.CreateAsync(otherAvatar, new DappSeriesCreateModel { Name = "Theirs" });
+
+        var list = await _manager.ListAsync(_avatarId);
+
+        list.IsError.Should().BeFalse();
+        list.Result.Should().ContainSingle(s => s.IdGuid == mine.Result!.IdGuid);
+        list.Result.Should().NotContain(s => s.AvatarIdGuid == otherAvatar);
+    }
+
+    [Fact]
     public async Task DeleteAsync_BlocksDeletionOfReadySeries()
     {
         var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Promote" });
@@ -87,6 +101,21 @@ public class DappCompositionManagerTests
 
         del.IsError.Should().BeTrue();
         del.Message.Should().Contain("archive");
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RejectsCrossAvatarWrites()
+    {
+        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Owned" });
+        var seriesId = create.Result!.IdGuid;
+
+        var result = await _manager.UpdateAsync(seriesId, Guid.NewGuid(), new DappSeriesUpdateModel
+        {
+            Name = "Intruder edit",
+        });
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("Forbidden");
     }
 
     // ── Validator 1: All Quests Completed ─────────────────────────────────────

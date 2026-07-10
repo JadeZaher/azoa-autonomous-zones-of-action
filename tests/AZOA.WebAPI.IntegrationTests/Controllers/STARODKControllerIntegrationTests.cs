@@ -270,10 +270,14 @@ public class STARODKControllerIntegrationTests : IntegrationTestBase
         resultA.Result.Description.Should().Be("A's Foo");
         resultB.Result.Description.Should().Be("B's Foo");
 
-        // A's view of /api/starodk now lists at least its own record with original data preserved.
+        // Each avatar's scoped list shows its own record with original data preserved.
         var listResponse = await Client.GetAsync("api/starodk");
         var list = await ReadResultAsync<IEnumerable<STARODK>>(listResponse);
         list!.Result.Should().Contain(s => s.Id == resultA.Result.Id && s.Description == "A's Foo");
-        list.Result.Should().Contain(s => s.Id == resultB.Result.Id && s.Description == "B's Foo");
+        list.Result.Should().NotContain(s => s.Id == resultB.Result.Id);
+
+        var listResponseB = await clientB.GetAsync("api/starodk");
+        var listB = await ReadResultAsync<IEnumerable<STARODK>>(listResponseB);
+        listB!.Result.Should().Contain(s => s.Id == resultB.Result.Id && s.Description == "B's Foo");
     }
 }

@@ -5,6 +5,10 @@ using AZOA.WebAPI.IntegrationTests.Builders;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Providers.Stores.Surreal;
+using SurrealForge.Client;
+using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.IntegrationTests;
 
@@ -73,6 +77,21 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
             _surrealDirectClient.DefaultRequestHeaders.Add("Accept", "application/json");
             return _surrealDirectClient;
         }
+    }
+
+    protected static Task<ISurrealExecutor> CreateExecutorAsync(string ns)
+    {
+        var options = new SurrealConnectionOptions
+        {
+            Endpoint  = SurrealTestDefaults.Endpoint,
+            Namespace = ns,
+            Database  = "test",
+            User      = SurrealTestDefaults.User,
+            Password  = SurrealTestDefaults.Password,
+        };
+
+        var connection = new HttpSurrealConnection(new HttpClient(), options);
+        return Task.FromResult<ISurrealExecutor>(new DefaultSurrealExecutor(connection));
     }
 
     protected IntegrationTestBase(AZOATestWebApplicationFactory factory)
@@ -422,13 +441,18 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
     protected async Task<BlockchainOperation> SeedBlockchainOperationAsync(
         Action<BlockchainOperationBuilder>? configure = null)
     {
-        // BlockchainOperation is created by controller actions (mint/bridge/etc.),
-        // not by a dedicated seed endpoint. Return a stub so tests that need
-        // a pre-existing operation can seed via the mint endpoint.
-        // Full seeding will be enabled in wave 2 when the SurrealDB adapter is wired.
         var builder = new BlockchainOperationBuilder();
         configure?.Invoke(builder);
-        return await Task.FromResult(builder.Build());
+        var operation = builder.Build();
+        operation.AvatarId ??= Guid.Parse(TestAuthHandler.DefaultAvatarId);
+
+        var executor = await CreateExecutorAsync(TestNamespace);
+        var store = new SurrealBlockchainOperationStore(executor);
+        var result = await store.UpsertAsync(operation);
+        if (result.IsError || result.Result is null)
+            throw new InvalidOperationException($"BlockchainOperation seed failed: {result.Message}");
+
+        return (BlockchainOperation)result.Result;
     }
 
     /// <summary>

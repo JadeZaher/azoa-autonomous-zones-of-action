@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -286,6 +287,38 @@ public class DappSeriesControllerIntegrationTests : IntegrationTestBase
         var unauthClient = Factory.CreateClient();
         var response = await unauthClient.PostAsJsonAsync("api/dapp-series", UniqueCreateModel(), JsonOptions);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Create_AsPlainDappUser_ShouldReturnForbidden()
+    {
+        using var plainUser = Factory.CreateAuthenticatedClient(AzoaDappRoles.User);
+
+        var response = await plainUser.PostAsJsonAsync("api/dapp-series", UniqueCreateModel(), JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Read_AsPlainDappUser_ShouldRemainAllowed()
+    {
+        var series = await SeedSeriesAsync();
+        using var plainUser = Factory.CreateAuthenticatedClient(AzoaDappRoles.User);
+
+        var response = await plainUser.GetAsync($"api/dapp-series/{series.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Compose_AsDeveloperWithoutManagerRole_ShouldReturnForbidden()
+    {
+        var series = await SeedSeriesAsync();
+        using var developer = Factory.CreateAuthenticatedClient(AzoaDappRoles.Developer);
+
+        var response = await developer.PostAsync($"api/dapp-series/{series.Id}/compose", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     // ═══════════════════════════════════════════════════════════════

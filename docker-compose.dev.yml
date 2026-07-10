@@ -155,6 +155,27 @@ services:
     networks:
       - azoa-dev
 
+  fiat-sidecar:
+    build:
+      context: .
+      dockerfile: fiat-sidecar/Dockerfile
+    container_name: azoa-dev-fiat-sidecar
+    restart: unless-stopped
+    depends_on:
+      azoa-api:
+        condition: service_healthy
+    environment:
+      AZOA_API_URL: "http://azoa-api:5000"
+      AZOA_API_KEY: "dev_tenant_key" # Replace with real key
+      STRIPE_SECRET_KEY: "sk_test_123"
+      STRIPE_WEBHOOK_SECRET: "whsec_123"
+      SUCCESS_URL: "http://localhost:3000/success"
+      CANCEL_URL: "http://localhost:3000/cancel"
+    ports:
+      - "4000:4000"
+    networks:
+      - azoa-dev
+
 volumes:
   surrealdb_data:
     driver: local

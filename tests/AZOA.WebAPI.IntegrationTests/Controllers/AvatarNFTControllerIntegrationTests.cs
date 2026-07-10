@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using AZOA.WebAPI.IntegrationTests.Builders;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
@@ -181,7 +182,11 @@ public class AvatarNFTControllerIntegrationTests : IntegrationTestBase
         var victimAvatarId = Guid.Parse("c4444444-4444-4444-4444-444444444444");
         using var victimClient = Factory.CreateAuthenticatedClientForAvatar(victimAvatarId);
         var victimHolonResponse = await victimClient.PostAsJsonAsync("/api/holon",
-            new HolonCreateModel { Name = "VictimHolon", Description = "owned by victim" }, JsonOptions);
+            new HolonBuilder()
+                .WithName(($"VictimHolon{Guid.NewGuid():N}")[..24])
+                .WithDescription("owned by victim")
+                .BuildCreateModel(),
+            JsonOptions);
         victimHolonResponse.EnsureSuccessStatusCode();
         var victimHolon = (await victimHolonResponse.Content.ReadFromJsonAsync<AZOAResult<Holon>>(JsonOptions))!.Result!;
 

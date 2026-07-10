@@ -2,14 +2,10 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FluentAssertions;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SurrealForge.Client;
-using SurrealForge.Client.Connection;
 using SurrealForge.Client.Idempotency;
-using SurrealForge.Client.Query;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Core.Idempotency;
@@ -201,20 +197,14 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
                     // bridge-safety-hardening: enable real-value so non-simulated routes
                     // reach the idempotency+consumed-VAA gate (the subject under test).
                     ["Blockchain:Bridge:RealValueEnabled"]  = "true",
+                    ["AZOA:DebugErrors"]                    = "true",
+                    ["RateLimiting:Global:PermitLimit"]     = "1000",
+                    ["RateLimiting:Financial:PermitLimit"]  = "1000",
                 });
             });
 
             builder.ConfigureTestServices(services =>
             {
-                // Re-apply test auth (WithWebHostBuilder rebuilds the pipeline).
-                services.AddAuthentication(options =>
-                {
-                    options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
-                    options.DefaultChallengeScheme    = TestAuthHandler.SchemeName;
-                })
-                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                    TestAuthHandler.SchemeName, _ => { });
-
                 // Replace IWormholeAdapter with a thread-safe counting stub.
                 var existing = services
                     .Where(d => d.ServiceType == typeof(IWormholeAdapter))
@@ -228,10 +218,11 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
         client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
 
         // ── 3. Seed a VAAReady bridge row directly into the test namespace ────
-        const string vaaBytes    = "VkFBLXNhZmV0eS1oYXJkZW5pbmctY29uY3VycmVudA=="; // unique base64
         const string emitterAddr = "0000000000000000000000000000000000000000000000000000000000000002";
         var bridgeId = $"bsh_br_{Guid.NewGuid():N}";
-        var avatarId = Guid.NewGuid();
+        var vaaBytes = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"VAA-safety-hardening-concurrent-{bridgeId}"));
+        var wormholeSequence = BitConverter.ToInt64(Guid.NewGuid().ToByteArray(), 0) & long.MaxValue;
+        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
 
         var executor    = await CreateExecutorAsync(testNs);
         var bridgeStore = new SurrealBridgeStore(executor);
@@ -252,7 +243,7 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
             VaaSignatureCount        = 13,
             WormholeEmitterChainId   = 1,
             WormholeEmitterAddress   = emitterAddr,
-            WormholeSequence         = 9002,
+            WormholeSequence         = wormholeSequence,
             CreatedAt                = DateTime.UtcNow,
             IdempotencyKey           = $"idem_{bridgeId}",
         });
@@ -284,8 +275,11 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
         try
         {
             // (a) Exactly one on-chain adapter call.
+            var responseSummary = await SummarizeResponsesAsync(responses);
+            var finalBridgeAtAssertion = await bridgeStore.GetBridgeAsync(bridgeId);
             wormholeStub.RedeemCallCount.Should().Be(1,
-                "the idempotency claim + consumed-VAA UNIQUE insert elect exactly one caller "
+                $"FinalBridge={finalBridgeAtAssertion?.Status.ToString() ?? "<missing>"}; responses={responseSummary}; "
+                + "the idempotency claim + consumed-VAA UNIQUE insert elect exactly one caller "
                 + "to perform the on-chain redemption; the second concurrent call must be "
                 + "parked or replay-returned without calling the adapter again");
 
@@ -320,6 +314,18 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
     }
 
     // ── Test 3: Idempotency claim race (store-level) ──────────────────────────
+
+    private static async Task<string> SummarizeResponsesAsync(IEnumerable<HttpResponseMessage> responses)
+    {
+        var items = new List<string>();
+        foreach (var response in responses.Take(5))
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            if (body.Length > 240) body = body[..240];
+            items.Add($"{(int)response.StatusCode}:{response.StatusCode}:{body}");
+        }
+        return items.Count == 0 ? "<none>" : string.Join(" | ", items);
+    }
 
     /// <summary>
     /// Two concurrent <see cref="SurrealIdempotencyStore.TryClaimAsync"/> calls
@@ -418,25 +424,6 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
     /// </summary>
     private async Task<SurrealBridgeStore> CreateBridgeStoreAsync()
         => new SurrealBridgeStore(await CreateExecutorAsync(TestNamespace));
-
-    /// <summary>
-    /// Builds a <see cref="ISurrealExecutor"/> scoped to the given namespace +
-    /// "test" database. Mirrors G2's static helper (promoted here as instance
-    /// helper to share TestNamespace).
-    /// </summary>
-    private static Task<ISurrealExecutor> CreateExecutorAsync(string ns)
-    {
-        var options = new SurrealConnectionOptions
-        {
-            Endpoint  = SurrealTestDefaults.Endpoint,
-            Namespace = ns,
-            Database  = "test",
-            User      = SurrealTestDefaults.User,
-            Password  = SurrealTestDefaults.Password,
-        };
-        var connection = new HttpSurrealConnection(new HttpClient(), options);
-        return Task.FromResult<ISurrealExecutor>(new DefaultSurrealExecutor(connection));
-    }
 
     /// <summary>Minimal bridge row factory for round-trip tests.</summary>
     private static BridgeTransactionResult NewBridge(

@@ -333,8 +333,8 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
                 System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
             countClient.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-            countClient.DefaultRequestHeaders.Add("NS", TestNamespace);
-            countClient.DefaultRequestHeaders.Add("DB", "test");
+            countClient.DefaultRequestHeaders.Add("Surreal-NS", TestNamespace);
+            countClient.DefaultRequestHeaders.Add("Surreal-DB", "test");
             countClient.DefaultRequestHeaders.Add("Accept", "application/json");
 
             // Literal constant SELECT — no user input interpolated (G3 compliant)

@@ -193,97 +193,70 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
 
     private async Task BootstrapSchemaAsync()
     {
-        using var ddlClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
-        var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
-        ddlClient.DefaultRequestHeaders.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        ddlClient.DefaultRequestHeaders.Add("NS", _testNamespace);
-        ddlClient.DefaultRequestHeaders.Add("DB", "test");
+        await ExecuteRootSqlAsync($"DEFINE NAMESPACE IF NOT EXISTS {_testNamespace}");
+        await ExecuteScopedSqlAsync("DEFINE DATABASE IF NOT EXISTS test");
 
-        const string ddl = """
-            DEFINE NAMESPACE IF NOT EXISTS $ns;
-            USE NS $ns DB test;
-            DEFINE DATABASE IF NOT EXISTS test;
+        var repoRoot = FindRepoRoot();
+        if (repoRoot is null) return;
 
-            -- wallet (010)
-            DEFINE TABLE IF NOT EXISTS wallet SCHEMAFULL;
-            DEFINE FIELD IF NOT EXISTS id                    ON wallet TYPE string;
-            DEFINE FIELD IF NOT EXISTS avatar_id             ON wallet TYPE string;
-            DEFINE FIELD IF NOT EXISTS chain_type            ON wallet TYPE string;
-            DEFINE FIELD IF NOT EXISTS address               ON wallet TYPE string;
-            DEFINE FIELD IF NOT EXISTS public_key            ON wallet TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS label                 ON wallet TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS is_default            ON wallet TYPE bool DEFAULT false;
-            DEFINE FIELD IF NOT EXISTS wallet_type           ON wallet TYPE string;
-            DEFINE FIELD IF NOT EXISTS encrypted_private_key ON wallet TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS encrypted_seed_phrase ON wallet TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS created_date          ON wallet TYPE datetime;
+        var schemaDir = Path.Combine(repoRoot, "Persistence", "SurrealDb", "Generated", "Schemas");
+        if (!Directory.Exists(schemaDir)) return;
 
-            -- bridge_tx (020)
-            DEFINE TABLE IF NOT EXISTS bridge_tx SCHEMAFULL;
-            DEFINE FIELD IF NOT EXISTS id               ON bridge_tx TYPE string;
-            DEFINE FIELD IF NOT EXISTS avatar_id        ON bridge_tx TYPE string;
-            DEFINE FIELD IF NOT EXISTS source_chain     ON bridge_tx TYPE string;
-            DEFINE FIELD IF NOT EXISTS target_chain     ON bridge_tx TYPE string;
-            DEFINE FIELD IF NOT EXISTS source_token_id  ON bridge_tx TYPE string;
-            DEFINE FIELD IF NOT EXISTS target_token_id  ON bridge_tx TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS source_address   ON bridge_tx TYPE string;
-            DEFINE FIELD IF NOT EXISTS target_address   ON bridge_tx TYPE string;
-            DEFINE FIELD IF NOT EXISTS amount           ON bridge_tx TYPE string;
-            DEFINE FIELD IF NOT EXISTS status           ON bridge_tx TYPE string;
-            DEFINE FIELD IF NOT EXISTS mode             ON bridge_tx TYPE string DEFAULT "Trusted";
-            DEFINE FIELD IF NOT EXISTS lock_tx_hash     ON bridge_tx TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS mint_tx_hash     ON bridge_tx TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS proof_data       ON bridge_tx TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS error_message    ON bridge_tx TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS created_at       ON bridge_tx TYPE datetime;
-            DEFINE FIELD IF NOT EXISTS completed_at     ON bridge_tx TYPE option<datetime>;
-            DEFINE FIELD IF NOT EXISTS wormhole_emitter_chain_id ON bridge_tx TYPE option<int>;
-            DEFINE FIELD IF NOT EXISTS wormhole_emitter_address  ON bridge_tx TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS wormhole_sequence         ON bridge_tx TYPE option<int>;
-            DEFINE FIELD IF NOT EXISTS vaa_bytes                 ON bridge_tx TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS vaa_signature_count       ON bridge_tx TYPE option<int>;
-            DEFINE FIELD IF NOT EXISTS redemption_tx_hash        ON bridge_tx TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS idempotency_key           ON bridge_tx TYPE option<string>;
-
-            -- saga_steps (080)
-            DEFINE TABLE IF NOT EXISTS saga_steps SCHEMAFULL;
-            DEFINE FIELD IF NOT EXISTS id                   ON saga_steps TYPE string;
-            DEFINE FIELD IF NOT EXISTS correlation_key      ON saga_steps TYPE string;
-            DEFINE FIELD IF NOT EXISTS saga_name            ON saga_steps TYPE string;
-            DEFINE FIELD IF NOT EXISTS step_name            ON saga_steps TYPE string;
-            DEFINE FIELD IF NOT EXISTS step_idempotency_key ON saga_steps TYPE string;
-            DEFINE FIELD IF NOT EXISTS payload              ON saga_steps TYPE string;
-            DEFINE FIELD IF NOT EXISTS status               ON saga_steps TYPE string DEFAULT "Pending";
-            DEFINE FIELD IF NOT EXISTS is_compensation      ON saga_steps TYPE bool DEFAULT false;
-            DEFINE FIELD IF NOT EXISTS attempt_count        ON saga_steps TYPE int DEFAULT 0;
-            DEFINE FIELD IF NOT EXISTS next_run_at          ON saga_steps TYPE datetime;
-            DEFINE FIELD IF NOT EXISTS claimed_at           ON saga_steps TYPE option<datetime>;
-            DEFINE FIELD IF NOT EXISTS last_error           ON saga_steps TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS output               ON saga_steps TYPE option<string>;
-            DEFINE FIELD IF NOT EXISTS dead_lettered        ON saga_steps TYPE bool DEFAULT false;
-            DEFINE FIELD IF NOT EXISTS created_at           ON saga_steps TYPE datetime;
-            DEFINE FIELD IF NOT EXISTS updated_at           ON saga_steps TYPE datetime;
-            DEFINE INDEX IF NOT EXISTS saga_steps_due_scan ON saga_steps FIELDS status, next_run_at
-            """;
-
-        var content = new StringContent(ddl, System.Text.Encoding.UTF8, "text/plain");
-        _ = await ddlClient.PostAsync("/sql", content);
+        foreach (var file in Directory.GetFiles(schemaDir, "*.surql").OrderBy(f => f))
+            await ExecuteScopedSqlAsync(await File.ReadAllTextAsync(file));
     }
 
     private async Task DropNamespaceAsync()
     {
-        using var dropClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
+        await ExecuteRootSqlAsync($"REMOVE NAMESPACE IF EXISTS {_testNamespace}");
+    }
+
+    private static async Task ExecuteRootSqlAsync(string sql)
+    {
+        using var client = RootClient();
+        var response = await client.PostAsync("/sql",
+            new StringContent(sql, System.Text.Encoding.UTF8, "text/plain"));
+        response.EnsureSuccessStatusCode();
+        await EnsureSurrealOkAsync(response);
+    }
+
+    private async Task ExecuteScopedSqlAsync(string sql)
+    {
+        using var client = RootClient();
+        client.DefaultRequestHeaders.Add("Surreal-NS", _testNamespace);
+        client.DefaultRequestHeaders.Add("Surreal-DB", "test");
+        var response = await client.PostAsync("/sql",
+            new StringContent(sql, System.Text.Encoding.UTF8, "text/plain"));
+        response.EnsureSuccessStatusCode();
+        await EnsureSurrealOkAsync(response);
+    }
+
+    private static HttpClient RootClient()
+    {
+        var client = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
         var credentials = Convert.ToBase64String(
             System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
-        dropClient.DefaultRequestHeaders.Authorization =
+        client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        dropClient.DefaultRequestHeaders.Add("NS", _testNamespace);
-        dropClient.DefaultRequestHeaders.Add("DB", "test");
+        return client;
+    }
 
-        const string removeSql = "REMOVE NAMESPACE $ns";
-        _ = await dropClient.PostAsync("/sql",
-            new StringContent(removeSql, System.Text.Encoding.UTF8, "text/plain"));
+    private static async Task EnsureSurrealOkAsync(HttpResponseMessage response)
+    {
+        var payload = await response.Content.ReadAsStringAsync();
+        if (payload.Contains("\"status\":\"ERR\"", StringComparison.Ordinal))
+            throw new InvalidOperationException($"SurrealQL statement failed: {payload}");
+    }
+
+    private static string? FindRepoRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current != null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "AZOA.WebAPI.csproj")))
+                return current.FullName;
+            current = current.Parent;
+        }
+        return null;
     }
 }

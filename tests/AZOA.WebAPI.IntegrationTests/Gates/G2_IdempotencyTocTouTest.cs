@@ -1,13 +1,10 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using SurrealForge.Client;
-using SurrealForge.Client.Connection;
-using SurrealForge.Client.Query;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Interfaces;
@@ -39,7 +36,10 @@ namespace AZOA.WebAPI.IntegrationTests.Gates;
 [Trait("Category", "Gate")]
 public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
 {
-    private readonly JsonSerializerOptions _jsonOpts = new(JsonSerializerDefaults.Web);
+    private readonly JsonSerializerOptions _jsonOpts = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
 
     public G2_IdempotencyTocTouTest(AZOATestWebApplicationFactory factory)
         : base(factory)
@@ -97,23 +97,14 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
                     // vacuously pass. The subject under test IS the idempotency+VAA gate,
                     // not the kill switch — enable real-value to reach that seam.
                     ["Blockchain:Bridge:RealValueEnabled"] = "true",
+                    ["AZOA:DebugErrors"] = "true",
+                    ["RateLimiting:Global:PermitLimit"] = "1000",
+                    ["RateLimiting:Financial:PermitLimit"] = "1000",
                 });
             });
 
             builder.ConfigureTestServices(services =>
             {
-                // Re-apply the test-auth handler (the derived factory starts from
-                // the base factory's ConfigureWebHost, which already installs it,
-                // but WithWebHostBuilder creates a new builder chain so we must
-                // re-register to keep authentication working).
-                services.AddAuthentication(options =>
-                {
-                    options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
-                    options.DefaultChallengeScheme    = TestAuthHandler.SchemeName;
-                })
-                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                    TestAuthHandler.SchemeName, _ => { });
-
                 // Replace the real WormholeAdapter with our counting stub so
                 // on-chain redemptions are observable without a real Guardian network.
                 // AddHttpClient<IWormholeAdapter, WormholeAdapter> adds both a typed
@@ -135,10 +126,11 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
         // The bridge must have valid VaaBytes so the service can derive the
         // canonical VAA digest (SHA-256 over the base64-decoded bytes). We use
         // the same base64 payload as the unit tests.
-        const string vaaBytes     = "VkFBLWcyLWlkZW1wb3RlbmN5LWdhdGU="; // arbitrary valid base64
         const string emitterAddr  = "0000000000000000000000000000000000000000000000000000000000000001";
         var bridgeId = $"g2_bridge_{Guid.NewGuid():N}";
-        var avatarId = Guid.NewGuid();
+        var vaaBytes = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"VAA-g2-idempotency-gate-{bridgeId}"));
+        var wormholeSequence = BitConverter.ToInt64(Guid.NewGuid().ToByteArray(), 0) & long.MaxValue;
+        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
 
         var executor = await CreateExecutorAsync(testNs);
         var bridgeStore = new SurrealBridgeStore(executor);
@@ -159,7 +151,7 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
             VaaSignatureCount     = 13,
             WormholeEmitterChainId   = 1,
             WormholeEmitterAddress   = emitterAddr,
-            WormholeSequence         = 9001,
+            WormholeSequence         = wormholeSequence,
             CreatedAt             = DateTime.UtcNow,
             IdempotencyKey        = $"idem_{bridgeId}",
         });
@@ -176,7 +168,7 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
         // All 50 share the same Idempotency-Key so the idempotency store elects
         // exactly one winner. The parallel section is wrapped in try/finally so
         // cleanup + assertions run even when some tasks throw.
-        const string sharedIdempotencyKey = "gate-g2-concurrent-redeem-idem-key-001";
+        var sharedIdempotencyKey = $"gate-g2-concurrent-redeem-{Guid.NewGuid():N}";
         const int concurrency = 50;
 
         HttpResponseMessage[] responses = Array.Empty<HttpResponseMessage>();
@@ -204,8 +196,11 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
             // ── 6. Assertions ─────────────────────────────────────────────────
 
             // (a) Exactly one wormhole redemption call reached the chain.
+            var responseSummary = await SummarizeResponsesAsync(responses);
+            var finalBridgeAtAssertion = await bridgeStore.GetBridgeAsync(bridgeId);
             redeemCallCount().Should().Be(1,
-                "the idempotency gate (IIdempotencyStore.TryClaimAsync) plus the "
+                $"FinalBridge={finalBridgeAtAssertion?.Status.ToString() ?? "<missing>"}; responses={responseSummary}; "
+                + "the idempotency gate (IIdempotencyStore.TryClaimAsync) plus the "
                 + "atomic VAAReady→Redeeming transition must elect exactly one "
                 + "caller to perform the on-chain redemption — this is G2");
 
@@ -229,10 +224,12 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
             successResponses.Should().NotBeEmpty(
                 "at minimum the single winning caller must receive HTTP 200");
 
+            var successBodies = new List<BridgeTransactionResult>();
             foreach (var successResp in successResponses)
             {
                 var body = await successResp.Content.ReadFromJsonAsync<BridgeTransactionResult>(_jsonOpts);
                 body.Should().NotBeNull();
+                successBodies.Add(body!);
                 body!.Status.Should().Be(BridgeStatus.Completed,
                     "every successful response is either the winner or an idempotent "
                     + "replay of the SAME single mint — the status must be Completed");
@@ -240,9 +237,8 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
 
             // No response must carry a DIFFERENT mint tx hash (that would evidence
             // a second distinct chain effect).
-            var distinctHashes = successResponses
-                .Select(async r => (await r.Content.ReadFromJsonAsync<BridgeTransactionResult>(_jsonOpts))?.RedemptionTxHash)
-                .Select(t => t.GetAwaiter().GetResult())
+            var distinctHashes = successBodies
+                .Select(b => b.RedemptionTxHash)
                 .Where(h => h is not null)
                 .Distinct()
                 .ToList();
@@ -260,6 +256,18 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
     }
 
     // ── Test 2 ────────────────────────────────────────────────────────────────
+
+    private static async Task<string> SummarizeResponsesAsync(IEnumerable<HttpResponseMessage> responses)
+    {
+        var items = new List<string>();
+        foreach (var response in responses.Take(5))
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            if (body.Length > 240) body = body[..240];
+            items.Add($"{(int)response.StatusCode}:{response.StatusCode}:{body}");
+        }
+        return items.Count == 0 ? "<none>" : string.Join(" | ", items);
+    }
 
     /// <summary>
     /// 20 concurrent <see cref="ISagaStore.TryClaimDueStepAsync"/> calls on the
@@ -355,28 +363,6 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Build an <see cref="ISurrealExecutor"/> scoped to the given SurrealDB
-    /// namespace + "test" database. Mirrors the pattern established in
-    /// <see cref="Persistence.Surreal.SurrealBridgeStoreTests"/>.
-    /// </summary>
-    private static Task<ISurrealExecutor> CreateExecutorAsync(string ns)
-    {
-        var options = new SurrealConnectionOptions
-        {
-            Endpoint  = SurrealTestDefaults.Endpoint,
-            Namespace = ns,
-            Database  = "test",
-            User      = SurrealTestDefaults.User,
-            Password  = SurrealTestDefaults.Password,
-        };
-
-        var http       = new HttpClient();
-        var connection = new HttpSurrealConnection(http, options);
-        var executor   = new DefaultSurrealExecutor(connection);
-        return Task.FromResult<ISurrealExecutor>(executor);
-    }
 
     /// <summary>
     /// Applies the minimal <c>saga_steps</c> DDL to the given test namespace,

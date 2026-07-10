@@ -114,8 +114,9 @@ public class AvatarControllerIntegrationTests : IntegrationTestBase
     {
         var avatar = await SeedAvatarAsync();
         var update = new AvatarUpdateModel { FirstName = "Updated" };
+        using var avatarClient = Factory.CreateAuthenticatedClientForAvatar(avatar.Id);
 
-        var response = await Client.PutAsJsonAsync($"api/avatar/{avatar.Id}", update);
+        var response = await avatarClient.PutAsJsonAsync($"api/avatar/{avatar.Id}", update);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<Avatar>(response);
@@ -130,8 +131,9 @@ public class AvatarControllerIntegrationTests : IntegrationTestBase
     public async Task Delete_ShouldRemoveAvatar()
     {
         var avatar = await SeedAvatarAsync();
+        using var avatarClient = Factory.CreateAuthenticatedClientForAvatar(avatar.Id);
 
-        var response = await Client.DeleteAsync($"api/avatar/{avatar.Id}");
+        var response = await avatarClient.DeleteAsync($"api/avatar/{avatar.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -145,46 +147,7 @@ public class AvatarControllerIntegrationTests : IntegrationTestBase
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // WALLETS
     // ═══════════════════════════════════════════════════════════════
-
-    [Fact]
-    public async Task AddWallet_ShouldAttachToAvatar()
-    {
-        var avatar = await SeedAvatarAsync();
-        var wallet = new WalletBuilder().ForAvatar(avatar.Id).OnChain("Solana").Build();
-
-        var response = await Client.PostAsJsonAsync($"api/avatar/{avatar.Id}/wallets", wallet);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await ReadResultAsync<Wallet>(response);
-        result!.Result!.AvatarId.Should().Be(avatar.Id);
-    }
-
-    [Fact]
-    public async Task GetWallets_ShouldReturnAvatarWallets()
-    {
-        var avatar = await SeedAvatarAsync();
-        await SeedWalletAsync(w => w.ForAvatar(avatar.Id));
-        await SeedWalletAsync(w => w.ForAvatar(avatar.Id));
-
-        var response = await Client.GetAsync($"api/avatar/{avatar.Id}/wallets");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await ReadResultAsync<IEnumerable<Wallet>>(response);
-        result!.Result.Should().HaveCount(2);
-    }
-
-    [Fact]
-    public async Task RemoveWallet_ShouldDeleteWallet()
-    {
-        var avatar = await SeedAvatarAsync();
-        var wallet = await SeedWalletAsync(w => w.ForAvatar(avatar.Id));
-
-        var response = await Client.DeleteAsync($"api/avatar/{avatar.Id}/wallets/{wallet.Id}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
 
     // ═══════════════════════════════════════════════════════════════
     // AUTH

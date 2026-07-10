@@ -99,7 +99,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
         var seedWallet = await SeedWalletAsync(w =>
             w.ForAvatar(Guid.Parse(TestAuthHandler.DefaultAvatarId))
              .OnChain("Algorand")
-             .WithAddress($"g3_seed_{Guid.NewGuid():N}")
+             .WithAddress($"g3seed{Guid.NewGuid():N}")
              .WithLabel("G3-Seed"));
 
         var countBefore = await QueryWalletCountAsync();
@@ -268,7 +268,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
     /// If the analyzer csproj is absent on disk, the test is skipped defensively;
     /// Tests 1 and 2 remain the load-bearing G3 assertions.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     [Trait("Category", "Gate")]
     public async Task G3_AnalyzerSRDB0001_FiresOnInterpolatedSurrealQl()
     {
@@ -342,8 +342,8 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
                 System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
             countClient.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-            countClient.DefaultRequestHeaders.Add("NS", TestNamespace);
-            countClient.DefaultRequestHeaders.Add("DB", "test");
+            countClient.DefaultRequestHeaders.Add("Surreal-NS", TestNamespace);
+            countClient.DefaultRequestHeaders.Add("Surreal-DB", "test");
             countClient.DefaultRequestHeaders.Add("Accept", "application/json");
 
             // Literal constant SELECT — no user input interpolated.

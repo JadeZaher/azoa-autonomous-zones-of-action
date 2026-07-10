@@ -304,4 +304,88 @@ public class ClaimsPrincipalScopeTests
         var p = PrincipalWith(AzoaScopes.WalletManage);
         p.GetActingTenantId().Should().BeNull();
     }
+
+    [Fact]
+    public void HasDappDevelopAccess_True_WhenRoleIsDeveloper()
+    {
+        var p = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim("dapp_role", AzoaDappRoles.Developer) }, "Test"));
+        p.HasDappDevelopAccess().Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasDappManageAccess_False_WhenRoleIsDeveloper()
+    {
+        var p = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim("dapp_role", AzoaDappRoles.Developer) }, "Test"));
+        p.HasDappManageAccess().Should().BeFalse();
+    }
+
+    [Fact]
+    public void HasDappManageAccess_True_WhenRoleIsManager()
+    {
+        var p = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim("dapp_role", AzoaDappRoles.Manager) }, "Test"));
+        p.HasDappManageAccess().Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasDappDevelopAccess_False_WhenPlainUser()
+    {
+        var p = PrincipalWith(AzoaScopes.WalletManage);
+        p.HasDappDevelopAccess().Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanSelfIssueApiKeyScope_DeniesDappScopesForPlainUser()
+    {
+        var p = PrincipalWith(AzoaScopes.WalletManage);
+        p.CanSelfIssueApiKeyScope(AzoaScopes.DappDevelop).Should().BeFalse();
+        p.CanSelfIssueApiKeyScope(AzoaScopes.DappManage).Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanSelfIssueApiKeyScope_DeniesStaleDappScopeWhenRoleWasDowngraded()
+    {
+        var p = new ClaimsPrincipal(new ClaimsIdentity(
+            new[]
+            {
+                new Claim("dapp_role", AzoaDappRoles.User),
+                new Claim("scope", AzoaScopes.DappDevelop),
+                new Claim("scope", AzoaScopes.DappManage),
+            }, "Test"));
+
+        p.CanSelfIssueApiKeyScope(AzoaScopes.DappDevelop).Should().BeFalse();
+        p.CanSelfIssueApiKeyScope(AzoaScopes.DappManage).Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanSelfIssueApiKeyScope_AllowsDeveloperScopeOnlyForDeveloper()
+    {
+        var p = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim("dapp_role", AzoaDappRoles.Developer) }, "Test"));
+        p.CanSelfIssueApiKeyScope(AzoaScopes.DappDevelop).Should().BeTrue();
+        p.CanSelfIssueApiKeyScope(AzoaScopes.DappManage).Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanSelfIssueApiKeyScope_AllowsBothDappScopesForManager()
+    {
+        var p = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim("dapp_role", AzoaDappRoles.Manager) }, "Test"));
+        p.CanSelfIssueApiKeyScope(AzoaScopes.DappDevelop).Should().BeTrue();
+        p.CanSelfIssueApiKeyScope(AzoaScopes.DappManage).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanSelfIssueApiKeyScope_NeverAllowsOperator()
+    {
+        var p = new ClaimsPrincipal(new ClaimsIdentity(
+            new[]
+            {
+                new Claim("dapp_role", AzoaDappRoles.Manager),
+                new Claim("scope", AzoaScopes.Operator),
+            }, "Test"));
+        p.CanSelfIssueApiKeyScope(AzoaScopes.Operator).Should().BeFalse();
+    }
 }

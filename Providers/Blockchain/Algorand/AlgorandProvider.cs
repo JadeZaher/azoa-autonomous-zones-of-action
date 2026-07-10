@@ -32,6 +32,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     // misleading nullable annotation (the field is never observably null).
     private HttpClient _algodHttpClient = null!;
     private HttpClient? _indexerHttpClient;
+    private readonly HttpMessageHandler? _httpMessageHandler;
     private readonly BlockchainConfigurationManager _configManager;
 
     // Signing seam (signing-core-keystone). The provider builds canonical
@@ -92,7 +93,8 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         WalletKeyService? keyService,
         IKeyCustodyService? custodyService,
         IServiceScopeFactory? custodyScopeFactory,
-        IAlgorandFaucet? faucet = null)
+        IAlgorandFaucet? faucet = null,
+        HttpMessageHandler? httpMessageHandler = null)
         : base(config, logger)
     {
         _configManager = new BlockchainConfigurationManager(config);
@@ -101,6 +103,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         _custodyService = custodyService;
         _custodyScopeFactory = custodyScopeFactory;
         _faucet = faucet;
+        _httpMessageHandler = httpMessageHandler;
 
         var network = _configManager.GetDefaultNetwork(ChainType);
         var networkConfig = _configManager.GetNetworkConfig(ChainType, network);
@@ -129,9 +132,13 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             : null;
     }
 
-    private static HttpClient CreateHttpClient(string baseUrl, string? apiToken, int? timeoutMs)
+    private HttpClient CreateHttpClient(string baseUrl, string? apiToken, int? timeoutMs)
     {
-        var client = new HttpClient { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMilliseconds(timeoutMs ?? 30000) };
+        var client = _httpMessageHandler is null
+            ? new HttpClient()
+            : new HttpClient(_httpMessageHandler, disposeHandler: false);
+        client.BaseAddress = new Uri(baseUrl);
+        client.Timeout = TimeSpan.FromMilliseconds(timeoutMs ?? 30000);
         if (!string.IsNullOrWhiteSpace(apiToken))
             client.DefaultRequestHeaders.Add("X-Algo-API-Token", apiToken);
         return client;

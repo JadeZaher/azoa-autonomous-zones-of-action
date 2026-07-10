@@ -97,6 +97,24 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     /// Test 2: TryClaimAsync second time same key → loses, returns existing record.
     /// </summary>
     [SkippableFact]
+    public async Task TryClaim_KeyContainingColon_WinsAndRoundTrips()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var key = $"a1111111111111111111111111111111:bridge-redeem:{Guid.NewGuid():N}";
+
+        var claim = await _store.TryClaimAsync(key, "bridge_redeem", CancellationToken.None);
+        await _store.CompleteAsync(key, """{"tx":"ok"}""", CancellationToken.None);
+        var record = await _store.GetAsync(key, CancellationToken.None);
+
+        claim.Won.Should().BeTrue("colon-bearing keys must remain valid opaque strings");
+        claim.Record.Key.Should().Be(key);
+        record.Should().NotBeNull();
+        record!.Key.Should().Be(key);
+        record.State.Should().Be(IdempotencyState.Completed);
+    }
+
+    [SkippableFact]
     public async Task TryClaim_SecondTime_SameKey_Loses()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);

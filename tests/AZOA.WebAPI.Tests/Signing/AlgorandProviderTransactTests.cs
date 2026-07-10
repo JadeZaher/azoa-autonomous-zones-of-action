@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
@@ -20,10 +19,8 @@ namespace AZOA.WebAPI.Tests.Signing;
 /// extraction on mint and that a post-broadcast failure is NOT auto-retried
 /// (RetrySafety.Broadcast — double-spend guard).
 /// </summary>
-public class AlgorandProviderTransactTests : IDisposable
+public class AlgorandProviderTransactTests
 {
-    private readonly HttpListener _listener;
-    private readonly string _baseUrl;
     private readonly AlgoAccount _platform = new();
 
     // Recorded server-side state for assertions.
@@ -32,17 +29,7 @@ public class AlgorandProviderTransactTests : IDisposable
     // Captures the raw msgpack body POSTed to /v2/transactions for wire-byte assertions.
     private volatile byte[]? _lastSubmittedBody;
 
-    public AlgorandProviderTransactTests()
-    {
-        // Bind to a free loopback port.
-        var port = GetFreePort();
-        _baseUrl = $"http://127.0.0.1:{port}/";
-        _listener = new HttpListener();
-        _listener.Prefixes.Add(_baseUrl);
-        _listener.Start();
-    }
-
-    private AlgorandProvider NewProvider()
+    private AlgorandProvider NewProvider(HttpMessageHandler? handler = null)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -52,23 +39,31 @@ public class AlgorandProviderTransactTests : IDisposable
                 ["Blockchain:DefaultNetwork"] = "devnet",
                 ["Blockchain:Chains:0:ChainType"] = "Algorand",
                 ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
-                ["Blockchain:Chains:0:Devnet:NodeUrl"] = _baseUrl,
-                ["Blockchain:Chains:0:Devnet:TimeoutMs"] = "5000",
+                ["Blockchain:Chains:0:Devnet:NodeUrl"] = "http://algod.test/",
+                ["Blockchain:Chains:0:Devnet:TimeoutMs"] = "1000",
             })
             .Build();
 
         var keyService = new AZOA.WebAPI.Services.Signing.WalletKeyService(config);
         var signerFactory = new TransactionSignerFactory(new[] { new AlgorandTransactionSigner() });
-        return new AlgorandProvider(config, NullLogger<AlgorandProvider>.Instance, signerFactory, keyService);
+        return new AlgorandProvider(
+            config,
+            NullLogger<AlgorandProvider>.Instance,
+            signerFactory,
+            keyService,
+            custodyService: null,
+            custodyScopeFactory: null,
+            faucet: null,
+            httpMessageHandler: handler);
     }
 
     [Fact]
     public async Task CreateASA_builds_signs_submits_and_extracts_real_asset_id()
     {
         const long assetId = 7777;
-        using var _ = RunStub(confirmedRound: 42, assetIndex: assetId, poolError: null);
+        using var stub = RunStub(confirmedRound: 42, assetIndex: assetId, poolError: null);
 
-        var provider = NewProvider();
+        var provider = NewProvider(stub);
         var result = await provider.CreateASAAsync(
             "Test Asset", "TST", total: 1000, decimals: 0,
             _platform.Address.EncodeAsString(), _platform.Address.EncodeAsString(),
@@ -84,9 +79,9 @@ public class AlgorandProviderTransactTests : IDisposable
     public async Task Mint_delegates_to_CreateASA_and_returns_asset_id()
     {
         const long assetId = 9001;
-        using var _ = RunStub(confirmedRound: 10, assetIndex: assetId, poolError: null);
+        using var stub = RunStub(confirmedRound: 10, assetIndex: assetId, poolError: null);
 
-        var provider = NewProvider();
+        var provider = NewProvider(stub);
         var result = await provider.MintAsync(
             "ipfs://meta", amount: 1, assetType: "BADGE",
             _platform.Address.EncodeAsString());
@@ -99,9 +94,9 @@ public class AlgorandProviderTransactTests : IDisposable
     public async Task Soulbound_mint_succeeds_and_is_fully_parameterized()
     {
         const long assetId = 555;
-        using var _ = RunStub(confirmedRound: 5, assetIndex: assetId, poolError: null);
+        using var stub = RunStub(confirmedRound: 5, assetIndex: assetId, poolError: null);
 
-        var provider = NewProvider();
+        var provider = NewProvider(stub);
         var result = await provider.CreateSoulboundAsaAsync(
             name: "Caller Supplied Name", unitName: "SBT",
             platformAddress: _platform.Address.EncodeAsString(),
@@ -131,9 +126,9 @@ public class AlgorandProviderTransactTests : IDisposable
     {
         const ulong tokenId = 12345UL;
         const ulong transferAmount = 1UL;
-        using var _ = RunStub(confirmedRound: 3, assetIndex: null, poolError: null);
+        using var stub = RunStub(confirmedRound: 3, assetIndex: null, poolError: null);
 
-        var provider = NewProvider();
+        var provider = NewProvider(stub);
         var toAddr = _platform.Address.EncodeAsString();
         var result = await provider.TransferAsync(
             tokenId: tokenId.ToString(),
@@ -162,9 +157,9 @@ public class AlgorandProviderTransactTests : IDisposable
     {
         // Stub returns 500 on submit. RetrySafety.Broadcast must NOT retry an
         // ambiguous post-send 5xx — exactly one submit attempt is made.
-        using var _ = RunStub(confirmedRound: 1, assetIndex: 1, poolError: null, failSubmitWith: 500);
+        using var stub = RunStub(confirmedRound: 1, assetIndex: 1, poolError: null, failSubmitWith: 500);
 
-        var provider = NewProvider();
+        var provider = NewProvider(stub);
         var result = await provider.TransferAsync(
             "12345", _platform.Address.EncodeAsString(), _platform.Address.EncodeAsString(), 1);
 
@@ -180,12 +175,12 @@ public class AlgorandProviderTransactTests : IDisposable
         // full outstanding supply) comes back as a non-empty `pool-error` on the
         // pending-tx read. WaitForConfirmationAsync MUST surface that as a fail-loud
         // error — never swallow it as a still-pending / false-Ok.
-        using var _ = RunStub(
+        using var stub = RunStub(
             confirmedRound: 0,
             assetIndex: null,
             poolError: "TransactionPool.Remember: cannot destroy asset: creator is holding only part of the total 1000000");
 
-        var provider = NewProvider();
+        var provider = NewProvider(stub);
         var result = await provider.BurnWrappedAsync(
             tokenId: "12345", amount: 1, sourceChain: "Solana",
             sourceRecipient: _platform.Address.EncodeAsString(),
@@ -208,119 +203,83 @@ public class AlgorandProviderTransactTests : IDisposable
 
     // ─── In-process Algod stub ───
 
-    private IDisposable RunStub(long confirmedRound, long? assetIndex, string? poolError, int? failSubmitWith = null)
+    private StubScope RunStub(long confirmedRound, long? assetIndex, string? poolError, int? failSubmitWith = null) =>
+        new(this, confirmedRound, assetIndex, poolError, failSubmitWith);
+
+    private static HttpResponseMessage JsonResponse(object body, Dictionary<string, object?>? extra = null)
     {
-        var cts = new CancellationTokenSource();
-        var loop = Task.Run(async () =>
-        {
-            while (!cts.IsCancellationRequested)
-            {
-                HttpListenerContext ctx;
-                try { ctx = await _listener.GetContextAsync(); }
-                catch { break; }
-
-                var path = ctx.Request.Url!.AbsolutePath;
-                try
-                {
-                    if (path.EndsWith("/v2/transactions/params"))
-                    {
-                        WriteJson(ctx, new
-                        {
-                            fee = 0,
-                            @class = "",
-                        }, extra: new Dictionary<string, object?>
-                        {
-                            ["min-fee"] = 1000,
-                            ["last-round"] = 100,
-                            ["genesis-id"] = "devnet-v1.0",
-                            ["genesis-hash"] = _lastGenesisHashB64,
-                        });
-                    }
-                    else if (path == "/v2/transactions")
-                    {
-                        // Capture the raw msgpack body for wire-byte assertions.
-                        using var ms = new System.IO.MemoryStream();
-                        await ctx.Request.InputStream.CopyToAsync(ms);
-                        _lastSubmittedBody = ms.ToArray();
-
-                        Interlocked.Increment(ref _submitCount);
-                        if (failSubmitWith.HasValue)
-                        {
-                            ctx.Response.StatusCode = failSubmitWith.Value;
-                            ctx.Response.Close();
-                        }
-                        else
-                        {
-                            WriteJson(ctx, new { txId = "STUBTXID" });
-                        }
-                    }
-                    else if (path.Contains("/v2/transactions/pending/"))
-                    {
-                        WriteJson(ctx, new { }, extra: new Dictionary<string, object?>
-                        {
-                            ["confirmed-round"] = confirmedRound,
-                            ["asset-index"] = assetIndex,
-                            ["pool-error"] = poolError ?? "",
-                        });
-                    }
-                    else
-                    {
-                        ctx.Response.StatusCode = 404;
-                        ctx.Response.Close();
-                    }
-                }
-                catch
-                {
-                    try { ctx.Response.Abort(); } catch { /* ignore */ }
-                }
-            }
-        });
-
-        return new StubScope(cts, loop);
-    }
-
-    private static void WriteJson(HttpListenerContext ctx, object body, Dictionary<string, object?>? extra = null)
-    {
-        // Merge into a single JSON object (the typed body fields are placeholders;
-        // the Algod field names live in `extra`).
         var dict = new Dictionary<string, object?>();
         foreach (var p in body.GetType().GetProperties())
             dict[p.Name] = p.GetValue(body);
         if (extra != null)
             foreach (var kv in extra) dict[kv.Key] = kv.Value;
 
-        var json = JsonSerializer.Serialize(dict);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-        ctx.Response.ContentType = "application/json";
-        ctx.Response.StatusCode = 200;
-        ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
-        ctx.Response.Close();
+        var content = new StringContent(JsonSerializer.Serialize(dict), System.Text.Encoding.UTF8);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
     }
 
-    private static int GetFreePort()
+    private sealed class StubScope : HttpMessageHandler
     {
-        var l = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        l.Start();
-        var port = ((IPEndPoint)l.LocalEndpoint).Port;
-        l.Stop();
-        return port;
-    }
+        private readonly AlgorandProviderTransactTests _owner;
+        private readonly long _confirmedRound;
+        private readonly long? _assetIndex;
+        private readonly string? _poolError;
+        private readonly int? _failSubmitWith;
 
-    public void Dispose()
-    {
-        try { _listener.Stop(); _listener.Close(); } catch { /* ignore */ }
-    }
-
-    private sealed class StubScope : IDisposable
-    {
-        private readonly CancellationTokenSource _cts;
-        private readonly Task _loop;
-        public StubScope(CancellationTokenSource cts, Task loop) { _cts = cts; _loop = loop; }
-        public void Dispose()
+        public StubScope(
+            AlgorandProviderTransactTests owner,
+            long confirmedRound,
+            long? assetIndex,
+            string? poolError,
+            int? failSubmitWith)
         {
-            _cts.Cancel();
-            try { _loop.Wait(TimeSpan.FromSeconds(2)); } catch { /* ignore */ }
-            _cts.Dispose();
+            _owner = owner;
+            _confirmedRound = confirmedRound;
+            _assetIndex = assetIndex;
+            _poolError = poolError;
+            _failSubmitWith = failSubmitWith;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/v2/transactions/params", StringComparison.Ordinal))
+            {
+                return JsonResponse(new { fee = 0, @class = "" }, extra: new Dictionary<string, object?>
+                {
+                    ["min-fee"] = 1000,
+                    ["last-round"] = 100,
+                    ["genesis-id"] = "devnet-v1.0",
+                    ["genesis-hash"] = _owner._lastGenesisHashB64,
+                });
+            }
+
+            if (path == "/v2/transactions")
+            {
+                _owner._lastSubmittedBody = request.Content is null
+                    ? Array.Empty<byte>()
+                    : await request.Content.ReadAsByteArrayAsync(cancellationToken);
+
+                Interlocked.Increment(ref _owner._submitCount);
+                return _failSubmitWith.HasValue
+                    ? new HttpResponseMessage((HttpStatusCode)_failSubmitWith.Value)
+                    : JsonResponse(new { txId = "STUBTXID" });
+            }
+
+            if (path.Contains("/v2/transactions/pending/", StringComparison.Ordinal))
+            {
+                return JsonResponse(new { }, extra: new Dictionary<string, object?>
+                {
+                    ["confirmed-round"] = _confirmedRound,
+                    ["asset-index"] = _assetIndex,
+                    ["pool-error"] = _poolError ?? "",
+                });
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
     }
 }
