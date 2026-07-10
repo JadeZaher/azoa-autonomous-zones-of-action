@@ -44,6 +44,17 @@ export interface AvatarResponse {
   isActive: boolean;
 }
 
+/**
+ * Assignable DApp role — the closed allowlist the `PUT /api/avatar/{id}/dapp-role`
+ * endpoint accepts (mirrors `Core/AzoaDappRoles.cs`). `operator:admin` is
+ * deliberately absent: operator authority is a JWT-only scope, never a DApp role,
+ * so no value assignable here can yield operator privileges.
+ */
+export type DappRole = "dapp:user" | "dapp:developer" | "dapp:manager";
+
+/** Runtime allowlist backing {@link DappRole}; kept in lock-step with the backend. */
+export const DAPP_ROLES: readonly DappRole[] = ["dapp:user", "dapp:developer", "dapp:manager"] as const;
+
 export interface NftResult {
   id: string;
   name: string;
@@ -831,12 +842,13 @@ export interface ApiKeyInfo {
 }
 
 /**
- * The scopes an ordinary avatar may deliberately attach to its OWN new API key
- * (the self-issuable vocabulary — mirrors .NET AzoaScopes.SelfIssuableScopes). An
- * empty CSV still means legacy "full access"; these are the explicit opt-in scopes.
+ * The self-issuable scopes an ordinary avatar may attach to its own new API key
+ * (mirrors .NET AzoaScopes.SelfIssuableScopes). An empty CSV still means legacy
+ * "full access"; these are the explicit opt-in scopes.
  */
-export type ApiKeyScope =
+export type SelfIssuableApiKeyScope =
   | "dapp:develop"
+  | "dapp:manage"
   | "wallet:manage"
   | "nft:mint"
   | "quest:execute"
@@ -845,10 +857,41 @@ export type ApiKeyScope =
   | "grant:sign"
   | "token:create:sign";
 
-/** One self-issuable scope with its human description (mirrors .NET ApiKeyScopeInfo). */
-export interface ApiKeyScopeInfo {
-  scope: ApiKeyScope;
+/** One self-issuable API-key scope with its human description. */
+export interface SelfIssuableApiKeyScopeInfo {
+  scope: string;
   description: string;
+  isSelfIssuable: boolean;
+}
+
+/** Backwards-compatible alias for existing SDK consumers. */
+export type ApiKeyScope = SelfIssuableApiKeyScope;
+
+/** Backwards-compatible alias for existing SDK consumers. */
+export type ApiKeyScopeInfo = SelfIssuableApiKeyScopeInfo;
+
+// ─── Allocation types (Fiat Stripe Bridge) ───
+
+export interface AllocationRequest {
+  kind: "Mint" | "Transfer";
+  chainType: string;
+  amount: string;
+  name?: string;
+  description?: string;
+  assetId?: string;
+  assetRecordId?: string;
+  metadata?: Record<string, string>;
+  memo?: string;
+}
+
+export interface AllocationResult {
+  avatarId: string;
+  walletId: string;
+  walletAddress: string;
+  walletProvisioned: boolean;
+  operationId?: string;
+  replayed: boolean;
+  idempotencyKey: string;
 }
 
 // ─── DappSeries types matching .NET DTOs (DappSeriesController) ───
@@ -1020,6 +1063,28 @@ export class AzoaApiClient {
   async deleteAvatar(avatarId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(avatarId, "avatarId");
     return this.request("DELETE", `/api/avatar/${avatarId}`);
+  }
+
+  /**
+   * avatar-dapp-rbac: assign the target avatar's DApp role. The target is the
+   * route id (uuid-asserted). `role` is validated against the {@link DAPP_ROLES}
+   * allowlist client-side; `operator:admin` is not assignable here. Authority is
+   * enforced server-side (operator may grant any role incl. manager; a
+   * dapp:manager may grant only developer/user; otherwise 403). Maps to
+   * `PUT /api/avatar/{id}/dapp-role`, returns the updated avatar.
+   */
+  async assignDappRole(avatarId: string, role: DappRole): Promise<Result<AvatarResponse, SdkError>> {
+    assertUuid(avatarId, "avatarId");
+    const path = API_PATHS.AVATAR_DAPP_ROLE(avatarId);
+    if (!(DAPP_ROLES as readonly string[]).includes(role)) {
+      return err(
+        new SdkError(
+          SdkErrorCode.INVALID_INPUT,
+          `assignDappRole PUT ${path}: invalid role "${role}" — expected one of ${DAPP_ROLES.join(", ")}`
+        )
+      );
+    }
+    return this.request("PUT", path, { role });
   }
 
   // ─── NFT ───
@@ -1325,6 +1390,33 @@ export class AzoaApiClient {
   async rotateWalletKeys(params: KeyRotationParams): Promise<Result<KeyRotationReport, SdkError>> {
     assertNonEmpty(params.newEncryptionKey, "newEncryptionKey");
     return this.requestBare("POST", API_PATHS.KEY_ROTATION_ROTATE, params);
+  }
+
+  // ─── Allocation (Fiat Stripe Bridge) ───
+
+  /**
+   * Executes an idempotent fiat-allocation bridge call (Mint or Transfer).
+   *
+   * @param avatarId The target avatar receiving the asset
+   * @param request The allocation details (amount, chain, kind, etc.)
+   * @param idempotencyKey The stable per-payment key (e.g. Stripe PaymentIntent ID). If omitted, a deterministic key is generated based on the request content.
+   */
+  async allocate(
+    avatarId: string,
+    request: AllocationRequest,
+    idempotencyKey?: string
+  ): Promise<Result<AllocationResult, SdkError>> {
+    const headers: Record<string, string> = {};
+    if (idempotencyKey) {
+      headers["Idempotency-Key"] = idempotencyKey;
+    }
+    return this.request<AllocationResult>(
+      "POST",
+      `/api/allocation/${avatarId}`,
+      request,
+      false,
+      headers
+    );
   }
 
   // ─── Swap (SwapController) ───
@@ -1688,8 +1780,13 @@ export class AzoaApiClient {
    * description (maps to `GET /api/apikey/scopes`). Drives the key-creation scope
    * picker. An empty CSV still means legacy "full access" — these are the opt-in scopes.
    */
-  async listIssuableScopes(): Promise<Result<ApiKeyScopeInfo[], SdkError>> {
+  async listSelfIssuableApiKeyScopes(): Promise<Result<SelfIssuableApiKeyScopeInfo[], SdkError>> {
     return this.request("GET", API_PATHS.APIKEY_SCOPES);
+  }
+
+  /** Backwards-compatible alias for {@link listSelfIssuableApiKeyScopes}. */
+  async listIssuableScopes(): Promise<Result<SelfIssuableApiKeyScopeInfo[], SdkError>> {
+    return this.listSelfIssuableApiKeyScopes();
   }
 
   /**
@@ -1703,8 +1800,7 @@ export class AzoaApiClient {
   }
 
   // ─── DappSeries (DappSeriesController) ───
-  // Reads open to any authenticated caller; writes are dapp:develop-gated. A denied
-  // scoped key returns an actionable 403 body naming the missing scope.
+  // Reads are authenticated-avatar reads; authoring writes require dapp:develop.
 
   /** List the caller's dApp-series, optionally filtered by status. */
   async listDappSeries(status?: DappSeriesStatus): Promise<Result<DappSeriesResult[], SdkError>> {

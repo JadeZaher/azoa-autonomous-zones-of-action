@@ -72,6 +72,10 @@ export const API_PATHS = {
   AVATAR_LIST: "/api/avatar",
   AVATAR_UPDATE: (id: string) => `/api/avatar/${id}`,
   AVATAR_DELETE: (id: string) => `/api/avatar/${id}`,
+  // avatar-dapp-rbac: assign an avatar's DApp role. Operator (JWT operator:admin)
+  // may assign any role incl. manager; a dapp:manager may assign only
+  // developer/user. operator:admin is never assignable via this route.
+  AVATAR_DAPP_ROLE: (id: string) => `/api/avatar/${id}/dapp-role`,
 
   // Holon
   HOLON_GET: (id: string) => `/api/holon/${id}`,
@@ -186,8 +190,8 @@ export const API_PATHS = {
   APIKEY_SCOPES: "/api/apikey/scopes",
   APIKEY_ROTATE: (id: string) => `/api/apikey/${id}/rotate`,
 
-  // DappSeries CRUD + quest management (DappSeriesController). Reads open to any
-  // authenticated caller; writes are dapp:develop-gated (developer-experience audit).
+  // DappSeries CRUD + quest management. Reads are authenticated-avatar reads;
+  // authoring writes require dapp:develop, lifecycle writes require dapp:manage.
   DAPP_SERIES_LIST: "/api/dapp-series",
   DAPP_SERIES_GET: (id: string) => `/api/dapp-series/${id}`,
   DAPP_SERIES_CREATE: "/api/dapp-series",

@@ -51,9 +51,10 @@ interface ApiKeyInfo {
 }
 
 /** One self-issuable scope with its description (from GET /api/apikey/scopes). */
-interface ApiKeyScopeInfo {
+interface SelfIssuableApiKeyScopeInfo {
   scope: string
   description: string
+  isSelfIssuable: boolean
 }
 
 // ─── Helpers ───
@@ -112,14 +113,14 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [scopeCatalog, setScopeCatalog] = useState<ApiKeyScopeInfo[]>([])
+  const [scopeCatalog, setScopeCatalog] = useState<SelfIssuableApiKeyScopeInfo[]>([])
   const [scopesLoading, setScopesLoading] = useState(true)
 
   // Fetch the self-issuable scope vocabulary on mount to drive the checkboxes.
   useEffect(() => {
     let active = true
     ;(async () => {
-      const res = await azoa.api.listIssuableScopes()
+      const res = await azoa.api.listSelfIssuableApiKeyScopes()
       if (!active) return
       if (isOk(res)) setScopeCatalog(res.value)
       setScopesLoading(false)
@@ -198,7 +199,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
           <div className="space-y-2">
             <Label>Scopes</Label>
             <p className="text-xs text-muted-foreground">
-              Leave all unchecked for a full-access key. Check specific scopes to restrict this key.
+              Leave all unchecked for a full-access key. DApp roles control which authoring and management scopes appear here.
             </p>
             {scopesLoading ? (
               <p className="text-xs text-muted-foreground">Loading scopes…</p>
