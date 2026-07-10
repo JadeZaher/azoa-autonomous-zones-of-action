@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using SurrealForge.Client;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Interfaces.Stores;

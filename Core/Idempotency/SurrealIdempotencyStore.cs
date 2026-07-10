@@ -1,103 +1,70 @@
-using SurrealForge.Client.Query;
-using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Idempotency;
-using PkgIdempotency = SurrealForge.Client.Idempotency;
+using SurrealForge.Client.Query;
+using PackageLedger = SurrealForge.Client.Idempotency.SurrealIdempotencyLedger;
+using PackageOptions = SurrealForge.Client.Idempotency.IdempotencyLedgerOptions;
+using PackageRecord = SurrealForge.Client.Idempotency.IdempotencyRecord;
+using PackageState = SurrealForge.Client.Idempotency.IdempotencyState;
 
 namespace AZOA.WebAPI.Core.Idempotency;
 
 /// <summary>
-/// SurrealDB-backed <see cref="IIdempotencyStore"/>.
-///
-/// This type is a THIN ADAPTER. All SurrealDB work — the insert-wins claim,
-/// the UNIQUE-violation race handling, the conditional state-transition
-/// UPDATEs, and the deterministic record-id encoding — lives in the reusable
-/// package primitive
-/// <see cref="SurrealForge.Client.Idempotency.SurrealIdempotencyLedger"/>.
-/// This class only:
-/// <list type="bullet">
-///   <item>implements the WebAPI domain contract
-///         <see cref="IIdempotencyStore"/>;</item>
-///   <item>maps between the package record/state types and the WebAPI domain
-///         <see cref="IdempotencyRecord"/> / <see cref="IdempotencyState"/> /
-///         <see cref="IdempotencyClaim"/>.</item>
-/// </list>
-///
-/// The public behaviour is identical to the prior hand-rolled implementation;
-/// see <see cref="SurrealForge.Client.Idempotency.SurrealIdempotencyLedger"/>
-/// for the atomicity model and state-transition guard documentation.
+/// SurrealDB-backed <see cref="IIdempotencyStore"/>. Thin adapter over the
+/// package <see cref="PackageLedger"/> (which owns the claim/complete/fail/get
+/// SurrealDB machinery, transient-conflict retry, and colon-key encoding) —
+/// this type only maps between the package record shape and AZOA's domain
+/// <see cref="IdempotencyRecord"/>. See <c>Core/Idempotency/AGENTS.md</c>.
 /// </summary>
 public sealed class SurrealIdempotencyStore : IIdempotencyStore
 {
-    private const string Table = "idempotency_key_store";
-
-    private readonly PkgIdempotency.SurrealIdempotencyLedger _ledger;
+    private readonly PackageLedger _ledger;
 
     public SurrealIdempotencyStore(ISurrealExecutor executor)
     {
-        if (executor is null) throw new ArgumentNullException(nameof(executor));
-        _ledger = new PkgIdempotency.SurrealIdempotencyLedger(executor, Table);
+        // Preserve the historical AZOA behaviour: retry on SurrealDB 3.x
+        // transient write-write conflicts, and base64url-encode colon-bearing
+        // keys. Both are the package's config knobs, turned on here.
+        _ledger = new PackageLedger(executor, new PackageOptions
+        {
+            RetryOnTransientConflict = true,
+            EncodeColonKeys          = true,
+        });
     }
 
-    // SurrealDB 3.x (RocksDB) surfaces concurrent single-winner claim collisions
-    // as a RETRYABLE "Transaction conflict: Resource busy" error instead of
-    // serializing them the way 1.5.x did (see memory [[surrealdb-3x-upgrade-progress]]).
-    // The bounded retry lives in the shared SurrealTransientConflict primitive so
-    // the saga single-winner claim can reuse the identical contract; on retry the
-    // winner's row already exists, so the loser resolves cleanly to Won=false via
-    // the ledger's existing-record path.
+    public async Task<IdempotencyClaim> TryClaimAsync(string key, string operationType, CancellationToken ct)
+    {
+        var claim = await _ledger.TryClaimAsync(key, operationType, ct);
+        return new IdempotencyClaim(claim.Won, ToDomain(claim.Record));
+    }
 
-    /// <inheritdoc />
-    public Task<IdempotencyClaim> TryClaimAsync(
-        string key,
-        string operationType,
-        CancellationToken ct)
-        => SurrealTransientConflict.RetryOnConflictAsync(async () =>
-        {
-            var claim = await _ledger.TryClaimAsync(key, operationType, ct);
-            return new IdempotencyClaim(claim.Won, ToDomain(claim.Record));
-        }, ct);
-
-    /// <inheritdoc />
     public Task CompleteAsync(string key, string resultPayload, CancellationToken ct)
         => _ledger.CompleteAsync(key, resultPayload, ct);
 
-    /// <inheritdoc />
     public Task FailAsync(string key, string error, CancellationToken ct)
         => _ledger.FailAsync(key, error, ct);
 
-    /// <inheritdoc />
     public async Task<IdempotencyRecord?> GetAsync(string key, CancellationToken ct)
     {
         var record = await _ledger.GetAsync(key, ct);
-        return record is not null ? ToDomain(record) : null;
+        return record is null ? null : ToDomain(record);
     }
 
-    /// <summary>
-    /// Derives the SurrealDB record id from an idempotency key. Delegates to the
-    /// package primitive so the encoding stays in one place.
-    /// </summary>
-    public static string DeterministicId(string key)
-        => PkgIdempotency.SurrealIdempotencyLedger.DeterministicId(key);
+    /// <summary>Deterministic SurrealDB record id for a key (SHA-256 hex).</summary>
+    public static string DeterministicId(string key) => PackageLedger.DeterministicId(key);
 
-    // ── Mapping: package record/state → WebAPI domain record/state ────────────
-
-    private static IdempotencyRecord ToDomain(PkgIdempotency.IdempotencyRecord r) => new()
+    private static IdempotencyRecord ToDomain(PackageRecord r) => new()
     {
         Key           = r.Key,
         OperationType = r.OperationType,
-        State         = ToDomain(r.State),
+        State         = r.State switch
+        {
+            PackageState.Completed => IdempotencyState.Completed,
+            PackageState.Failed    => IdempotencyState.Failed,
+            _                      => IdempotencyState.InProgress,
+        },
         ResultPayload = r.ResultPayload,
         Error         = r.Error,
         CreatedAt     = r.CreatedAt,
         UpdatedAt     = r.UpdatedAt,
-    };
-
-    private static IdempotencyState ToDomain(PkgIdempotency.IdempotencyState state) => state switch
-    {
-        PkgIdempotency.IdempotencyState.InProgress => IdempotencyState.InProgress,
-        PkgIdempotency.IdempotencyState.Completed  => IdempotencyState.Completed,
-        PkgIdempotency.IdempotencyState.Failed     => IdempotencyState.Failed,
-        _                                          => IdempotencyState.InProgress
     };
 }

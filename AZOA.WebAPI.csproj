@@ -78,7 +78,7 @@
                                   analyzer asset, so PrivateAssets=all.
        ═══════════════════════════════════════════════════════════════ -->
   <ItemGroup>
-    <PackageReference Include="SurrealForge.Client" Version="0.1.1" />
+    <PackageReference Include="SurrealForge.Client" Version="0.2.0" />
     <PackageReference Include="SurrealForge.Schema" Version="0.1.1" />
     <!-- Analyzer ships as an analyzer asset in the package; PrivateAssets=all
          keeps it from flowing to downstream consumers of this project. -->

@@ -1,7 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SurrealForge.Client;
 using SurrealForge.Client.Query;
-using AZOA.WebAPI.Core.Surreal;
+using SurrealForge.Client.Idempotency;
 using AZOA.WebAPI.Models.Sagas;
 
 namespace AZOA.WebAPI.Sagas;

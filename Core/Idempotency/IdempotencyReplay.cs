@@ -1,77 +1,36 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using System.Security.Cryptography;
-using System.Text.Json;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
+using PackageReplay = SurrealForge.Client.Idempotency.IdempotencyReplay;
+using PackageRecord = SurrealForge.Client.Idempotency.IdempotencyRecord;
+using PackageState = SurrealForge.Client.Idempotency.IdempotencyState;
 
 namespace AZOA.WebAPI.Core.Idempotency;
 
 /// <summary>
-/// Shared, behavior-preserving idempotency-replay machinery extracted from the
-/// per-request managers (<c>AllocationManager</c>, <c>FungibleTokenManager</c>).
-/// Every piece here is value-moving safety-critical: the content-hash key, the
-/// replay state machine, and the JSON round-trip are reproduced VERBATIM from
-/// the original inlined copies. The per-request canonical-field projection
-/// (which fields are hashed) and the exact message text / result type stay with
-/// each manager and are threaded in as parameters/callbacks.
+/// AZOA-side idempotency-replay shim. All machinery lives in the package
+/// (<see cref="PackageReplay"/>); this shim only binds the generic replay state
+/// machine to AZOA's <see cref="AZOAResult{T}"/> envelope and maps the domain
+/// <see cref="IdempotencyRecord"/> onto the package record. See
+/// <c>Core/Idempotency/AGENTS.md</c>.
 /// </summary>
 public static class IdempotencyReplay
 {
-    /// <summary>
-    /// Deterministic content-hash tail of an idempotency key: SHA-256 over the
-    /// already-canonicalised <paramref name="canonical"/> string, rendered as
-    /// lowercase hex. This is the bare hash (no <c>op_…</c> prefix, no
-    /// per-component escaping) — distinct from <see cref="OperationIdGenerator"/>,
-    /// which formats a prefixed, separately-escaped operation id. Callers build
-    /// the canonical string (e.g. <c>string.Join('|', fields…)</c>) so the field
-    /// projection stays per-request.
-    /// </summary>
-    public static string ContentHash(string canonical)
-    {
-        var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
-    /// <summary>
-    /// JSON options used for the replay round-trip. Web defaults, matching the
-    /// original per-manager <c>ReplayJson</c>.
-    /// </summary>
-    public static readonly JsonSerializerOptions ReplayJson = new(JsonSerializerDefaults.Web);
+    /// <summary>Deterministic content-hash tail of an idempotency key.</summary>
+    public static string ContentHash(string canonical) => PackageReplay.ContentHash(canonical);
 
     /// <summary>Serialize a completed result for caching on the idempotency record.</summary>
-    public static string SerializeForReplay<T>(T result)
-        => JsonSerializer.Serialize(result, ReplayJson);
+    public static string SerializeForReplay<T>(T result) => PackageReplay.SerializeForReplay(result);
 
-    /// <summary>
-    /// Deserialize a cached replay payload, swallowing malformed JSON (returns
-    /// <c>null</c>) exactly as the original per-manager helpers did.
-    /// </summary>
+    /// <summary>Deserialize a cached replay payload (returns null on malformed JSON).</summary>
     public static T? DeserializeForReplay<T>(string payload) where T : class
-    {
-        try { return JsonSerializer.Deserialize<T>(payload, ReplayJson); }
-        catch (JsonException) { return null; }
-    }
+        => PackageReplay.DeserializeForReplay<T>(payload);
 
     /// <summary>
-    /// The replay state machine shared by the per-request managers, generic over
-    /// the result type <typeparamref name="T"/>. Behavior is identical to the
-    /// original inlined <c>ReplayFromRecord</c>:
-    /// <list type="bullet">
-    /// <item><see cref="IdempotencyState.Completed"/> with a payload that
-    /// deserializes ⇒ success carrying the cached result (after
-    /// <paramref name="markReplayed"/>) and <paramref name="replaySuccessMessage"/>;
-    /// if the payload cannot be replayed ⇒ failure with
-    /// <paramref name="replayDeserializeFailedMessage"/>.</item>
-    /// <item><see cref="IdempotencyState.Failed"/> ⇒ failure with the recorded
-    /// <see cref="IdempotencyRecord.Error"/>, or <paramref name="originalFailedMessage"/>
-    /// when none was recorded.</item>
-    /// <item>InProgress / Completed-without-payload (default) ⇒ failure with
-    /// <paramref name="inProgressMessage"/>.</item>
-    /// </list>
-    /// The caller supplies the type-specific deserialize, the replayed-flag
-    /// mutation, and every message string so the exact wording and result shape
-    /// are preserved per manager.
+    /// Replay state machine bound to <see cref="AZOAResult{T}"/>. Behaviour is
+    /// unchanged from the original inlined version; the package supplies the
+    /// state machine and this call supplies the AZOAResult factory.
     /// </summary>
     public static AZOAResult<T> ReplayFromRecord<T>(
         IdempotencyRecord record,
@@ -82,34 +41,30 @@ public static class IdempotencyReplay
         string originalFailedMessage,
         string inProgressMessage)
         where T : class
+        => PackageReplay.ReplayFromRecord<T, AZOAResult<T>>(
+            ToPackage(record),
+            onSuccess: (r, msg) => new AZOAResult<T> { Result = r, Message = msg },
+            onError:   msg      => new AZOAResult<T> { IsError = true, Message = msg },
+            deserialize,
+            markReplayed,
+            replaySuccessMessage,
+            replayDeserializeFailedMessage,
+            originalFailedMessage,
+            inProgressMessage);
+
+    private static PackageRecord ToPackage(IdempotencyRecord r) => new()
     {
-        switch (record.State)
+        Key           = r.Key,
+        OperationType = r.OperationType,
+        State         = r.State switch
         {
-            case IdempotencyState.Completed when !string.IsNullOrEmpty(record.ResultPayload):
-                var replayed = deserialize(record.ResultPayload!);
-                if (replayed is not null)
-                {
-                    markReplayed(replayed);
-                    return new AZOAResult<T>
-                    {
-                        Result = replayed,
-                        Message = replaySuccessMessage
-                    };
-                }
-                return new AZOAResult<T> { IsError = true, Message = replayDeserializeFailedMessage };
-
-            case IdempotencyState.Failed:
-                return new AZOAResult<T>
-                {
-                    IsError = true,
-                    Message = string.IsNullOrEmpty(record.Error) ? originalFailedMessage : record.Error!
-                };
-
-            default:
-                // InProgress (or Completed with no payload): the original effect
-                // is not yet known to have settled. Do NOT re-execute; surface a
-                // retryable in-progress state.
-                return new AZOAResult<T> { IsError = true, Message = inProgressMessage };
-        }
-    }
+            IdempotencyState.Completed => PackageState.Completed,
+            IdempotencyState.Failed    => PackageState.Failed,
+            _                          => PackageState.InProgress,
+        },
+        ResultPayload = r.ResultPayload,
+        Error         = r.Error,
+        CreatedAt     = r.CreatedAt,
+        UpdatedAt     = r.UpdatedAt,
+    };
 }

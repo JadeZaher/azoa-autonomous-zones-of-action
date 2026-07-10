@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Quest;

@@ -10,6 +10,13 @@ SurrealDB-backed store. SurrealDB is the sole storage engine.
 
 ## §transient-conflict — optimistic-concurrency retry (`SurrealTransientConflict`)
 
+> **Moved to the package.** `SurrealTransientConflict` now lives in
+> `SurrealForge.Client.Idempotency` (SurrealForge ≥ 0.2.0). AZOA no longer
+> carries a local copy — import `SurrealForge.Client.Idempotency` and use the
+> package type. The contract below is unchanged and documents why the seam
+> exists; the ledger also exposes it as a config knob
+> (`IdempotencyLedgerOptions.RetryOnTransientConflict`).
+
 SurrealDB **3.x** (RocksDB) changed how it handles concurrent writers that
 contend the same row under a conditional `UPDATE`. On **1.5.x** those writes
 serialized transparently; on **3.x** the engine surfaces a **retryable**
