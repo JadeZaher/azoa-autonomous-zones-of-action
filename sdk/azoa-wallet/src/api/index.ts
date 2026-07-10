@@ -1,13 +1,18 @@
-export { AzoaApiClient } from "./client.js";
+export { AzoaApiClient, DAPP_ROLES } from "./client.js";
 export type {
   AzoaApiConfig,
   AvatarResponse,
+  // avatar-dapp-rbac: assignable DApp role allowlist
+  DappRole,
   NftResult,
   NftMetadata,
   NftMintParams,
   NftTransferParams,
   NftBurnParams,
   NftQueryParams,
+  // Allocation types (Fiat Stripe Bridge)
+  AllocationRequest,
+  AllocationResult,
   // Fungible mint (fungible-mint-and-render-model)
   FungibleMintParams,
   FungibleTokenResult,
@@ -69,6 +74,8 @@ export type {
   ApiKeyCreateParams,
   ApiKeyCreateResult,
   ApiKeyInfo,
+  SelfIssuableApiKeyScope,
+  SelfIssuableApiKeyScopeInfo,
   ApiKeyScope,
   ApiKeyScopeInfo,
   // DappSeries types (DappSeriesController)

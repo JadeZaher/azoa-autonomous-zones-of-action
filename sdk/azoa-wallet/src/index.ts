@@ -61,9 +61,12 @@ export type { TinymanConfig, AlgodClientConfig } from "./dex/tinyman.js";
 export type { JupiterConfig } from "./dex/jupiter.js";
 
 // API client
-export { AzoaApiClient } from "./api/index.js";
+export { AzoaApiClient, DAPP_ROLES } from "./api/index.js";
 export type {
   AzoaApiConfig,
+  // avatar-dapp-rbac: assignable DApp role allowlist + avatar DTO
+  AvatarResponse,
+  DappRole,
   NftQueryParams,
   SwapQuoteParams,
   SwapExecuteParams,
@@ -88,6 +91,8 @@ export type {
   HolonTypeResult,
   HolonTypeRegisterParams,
   // ApiKey scope discovery (dapp-developer-experience audit)
+  SelfIssuableApiKeyScope,
+  SelfIssuableApiKeyScopeInfo,
   ApiKeyScope,
   ApiKeyScopeInfo,
   // DappSeries CRUD (DappSeriesController)

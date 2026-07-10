@@ -8,6 +8,7 @@ export default defineConfig({
     "dex/index": "src/dex/index.ts",
     "api/index": "src/api/index.ts",
     "client/index": "src/client/index.ts",
+    "orchestration/index": "src/orchestration/index.ts",
     "workflow/index": "src/workflow/index.ts",
   },
   format: ["esm", "cjs"],
