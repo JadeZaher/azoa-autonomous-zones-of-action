@@ -1,0 +1,20 @@
+{
+  "id": "node-conformance-manifest",
+  "description": "Federation-v2 L0 local-only slice: serialize real G-gate evidence into a canonical signed node descriptor and conformance manifest, expose it over well-known HTTPS, and verify it independently without activating Holochain or cross-node federation.",
+  "type": "feature",
+  "created_at": "2026-07-11T00:00:00Z",
+  "status": "pending",
+  "horizon": "alpha",
+  "phase": "not started",
+  "blocks": [
+    "commons-dotnet-packages",
+    "commons-node-integration"
+  ],
+  "depends_on": [
+    "final-hardening-cutover"
+  ],
+  "related": [
+    "federation-v2",
+    "node-operator-governance"
+  ]
+}

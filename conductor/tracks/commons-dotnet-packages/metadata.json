@@ -1,0 +1,19 @@
+{
+  "id": "commons-dotnet-packages",
+  "description": "Publishable pure-managed .NET Commons/Holochain package family with strict Contracts, Client, and optional Runtime boundaries; compatibility-gated wire protocol, deterministic packaging, API baselines, signed artifacts, SBOM, provenance, and clean NuGet consumer validation.",
+  "type": "feature",
+  "created_at": "2026-07-11T00:00:00Z",
+  "status": "deferred",
+  "horizon": "v2",
+  "phase": "design and release gates captured; DHT implementation activation-gated",
+  "blocks": [
+    "commons-node-integration"
+  ],
+  "depends_on": [
+    "federation-v2",
+    "node-conformance-manifest"
+  ],
+  "related": [
+    "node-operator-governance"
+  ]
+}

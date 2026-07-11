@@ -1,3 +1,7 @@
+---
+type: tracks-catalog
+---
+
 # Tracks
 
 > **Developer setup lives in [DEVELOPMENT.md](../DEVELOPMENT.md)**;
@@ -13,6 +17,7 @@
 | Track | Summary |
 |---|---|
 | [avatar-dapp-rbac](tracks/avatar-dapp-rbac/spec.md) | Explicit avatar-level RBAC for DApp economies: ordinary avatars can use/run DApps; DApp developers can author via `dapp:develop`; DApp managers can manage lifecycle/membership via `dapp:manage`; platform operators remain JWT-only `operator:admin`. Tightens DApp policies so logged-in avatars are not implicitly authors and API-key DApp scopes stay bounded by the owning avatar's current role. |
+| [node-operator-governance](tracks/node-operator-governance/spec.md) | Phase 1 in progress: JWT-only `node:govern`, dynamic chain/asset policy, immutable audit, and versioned fee schedules are present. Allocation Mint/Transfer now pin and replay fee-adjusted net amounts with fail-closed quoting and concurrency-safe schedule updates. Direct NFT, Swap, QuestComplete, and FederationPublish consumers remain before Phase 1 exit; Phase 2 federation rules stay hard-gated on federation-v2. |
 
 
 ## Pending (post-launch backlog — consolidated 2026-07-06)
@@ -26,6 +31,7 @@
 | [integration-test-isolation-debt](tracks/integration-test-isolation-debt/spec.md) | Retire the ~31-failure full-suite integration tail: per-test namespace isolation, Bucket A IDOR test-design fixes, Bucket B env/repo-layout drift, Bucket C pooled `IHttpClientFactory` + visibility ordering, Bucket D factory re-registration + peer-removal diagnostic. |
 | [ops-postlaunch-hardening](tracks/ops-postlaunch-hardening/spec.md) | Multi-instance/ops maturity: distributed rate limiting, reconciliation tri-state (`Confirmed/Dropped/Pending`), orphaned idempotency settlement, provider-health check rewire-or-drop, low-balance alerting, saga-operator + key-rotation admin UI pages, god-object splits (QuestManager, CrossChainBridgeService). |
 | [quest-invitations-approval](tracks/quest-invitations-approval/spec.md) | Invite-gated quests: add a `RunAccess` (Open \| InviteOnly) dimension + `InvitedAvatarIds` orthogonal to `IsPublic` (discoverability). A public InviteOnly quest is viewable by all but runnable only by owner + invited. Request→approval flow (`QuestAccessRequest` state machine), owner approval queue, direct invite/revoke. Gate lands in `LoadStartableQuestAsync` + `ForkAsync`. Backend + SDK + frontend (marketplace badges, request button, approval panel, my-requests). |
+| [node-conformance-manifest](tracks/node-conformance-manifest/spec.md) | Federation-v2 L0 local-only slice: serialize real gate evidence, sign a canonical node descriptor/conformance manifest, expose it over well-known HTTPS, and verify it independently. Explicitly no Holochain runtime, DHT publication, peers, federation rules, or cross-node resolution. |
 
 ## Deferred (horizon work — captured design, NOT active)
 
@@ -33,10 +39,15 @@
 > **activation gate**. They are not started and should not be, until their gate is
 > met. Kept here (not in Shipped, not in flight) so the roadmap is honest about
 > what's coming without implying work is underway.
+>
+> **Current federation decision:** Holochain-first Commons DHT, with only opted-in
+> public facts. The older ActivityPub/static-directory wording in the historical
+> federation summary is superseded by the linked spec and 2026-07-10 review.
 
 | Track | Horizon | Summary |
 |---|---|---|
-| [federation-v2](tracks/federation-v2/spec.md) | v2 | **Deferred — design captured 2026-07-05.** Let sovereign AZOA nodes interoperate **without any node surrendering custody, data control, or autonomy**. ActivityPub-shaped (signed documents, not consensus); **value is never federated** — the chain settles between nodes ([[data-engine-decision]]). Four additive layers on existing primitives: **L0** signed `/.well-known/azoa-node.json` node descriptor + **G-gate conformance manifest** (the standardizable artifact — turns G1–G7 into a public node-operator standard; alpha-cheap ~1–2d, worth landing early); **L1** verifiable cross-node holon references (`azoa://{node}/holon/{id}` resolve→verify→cache, fail-closed on tamper, **no DB replication**; `HolonTypeRegistry` is the shared schema contract); **L2** discovery (static peers → optional directory nodes → never DHT); **L3** identity portability (same self-sovereign avatar across nodes with per-node revocable consent — reuses [[user-sovereign-identity]] + [[consent-gate-architecture]]). **Activation gate:** ≥3 independent production operators **and** ≥1 real cross-node use case — federating earlier is a protocol with one implementer. Non-goals: global consensus, shared DB, hub SaaS, federating value. |
+| [federation-v2](tracks/federation-v2/spec.md) | v2 | **Deferred — Holochain-first design captured.** Sovereign nodes publish only opted-in public facts to an `AZOA.Commons` hApp; private SurrealDB state, custody, PII, and value never enter the DHT. L0 local conformance may proceed through `node-conformance-manifest`; runtime/client/DNA/node integration remains gated on ≥3 independent production operators and ≥1 real cross-node use case. |
+| [commons-dotnet-packages](tracks/commons-dotnet-packages/spec.md) | v2 | **Deferred package family for the separate `AZOA.Commons` repository.** Pure-managed Contracts, typed Commons client with internal Holochain transport, and optional runtime supervisor; deterministic/source-linked NuGet delivery with compatibility, signing, SBOM, provenance, and clean-consumer gates. DHT-bound implementation inherits federation-v2's activation gate. |
 
 ## Archived without absorption / tabled
 

@@ -1,0 +1,21 @@
+{
+  "id": "node-operator-governance",
+  "description": "A THIRD capability tier for node operators: node:govern -- ECONOMIC governance of the node's own ecosystem, distinct from operator:admin (destructive platform-infra admin: key rotation, backfill; JWT-only, never key-issuable) and dapp:manage/dapp:develop (DApp authoring). node:govern gates four PARAMETER/CONFIG surfaces (not engines): (1) fee schedules -- operator sets the fees the node charges for mint/transfer/swap/quest-completion/federation-publish, modeled on the fiat-stripe-bridge TOKENS_PER_CENT operator-authoritative price schedule (server-side, never client-supplied); fees SETTLE ON-CHAIN to a node treasury wallet or as a fee-adjusted AllocationManager mint, NEVER as an off-chain balance (honors data-engine-decision), applied inside the idempotency claim so redelivery never double-charges; (2) federation rules -- which holons/quests/templates federate, peer allow/deny, per-peer G-suite conformance thresholds (the 'set the federation rules' half federation-v2's thin 3-function operator surface left out; config records the federation-v2 client reads); (3) ecosystem incentives -- a BOUNDED parameter set (quest-completion bonus, referral, staking-style) read by existing Tier-2 economic nodes, NOT a rules DSL; (4) governance parameters -- chain allowlist, asset-type allowlist, membership/onboarding rules. node:govern is JWT-ONLY (on ApiKeyForbiddenScopes, absent from SelfIssuableScopes), granted per-node by the node's owner; on a single-operator sovereign node the operator identity implicitly carries it. Kept a SEPARATE scope from operator:admin so economic governance can be delegated without handing over destructive infra keys. THE CRUX -- the interop constraint: operators set ARBITRARY LOCAL rules, but a rule crosses a node boundary only when (a) it conforms to the core protocol (G-suite conformance + versioned HolonType vocab + agent-signing format) AND (b) peers mutually opt in; local sovereignty is unconstrained, cross-node collaboration is interop-gated and voluntary, no global governor. Reuses the avatar-dapp-rbac scope-manager+policy machinery. Phase 1 (alpha-cheap, may land during alpha hardening): the scope + single-node NodeFeeSchedule + NodeGovernanceParameters (chain/asset allowlists). Phase 2 (HARD-GATED on federation-v2's own gate: >=3 operators + >=1 real cross-node use case): federation rules, peer policies, ecosystem-incentive params.",
+  "type": "feature",
+  "created_at": "2026-07-10T00:00:00Z",
+  "status": "in_progress",
+  "horizon": "alpha-partial",
+  "phase": "Phase 1 auth guardrail plus dynamic chain/asset governance parameters and immutable audit are in progress/partly landed; fee schedules next; Phase 2 gated on federation-v2",
+  "blocks": [],
+  "depends_on": [
+    "avatar-dapp-rbac",
+    "final-hardening-cutover"
+  ],
+  "related": [
+    "federation-v2",
+    "fiat-stripe-bridge",
+    "data-engine-decision",
+    "tenant-consent-delegation",
+    "consent-gate-architecture"
+  ]
+}
