@@ -15,6 +15,8 @@ namespace AZOA.WebAPI.Middleware
     /// </summary>
     public class DynamicCorsPolicyProvider : ICorsPolicyProvider
     {
+        public const string PublicTransparencyPolicy = "PublicTransparency";
+
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IHostEnvironment _env;
         private readonly IConfiguration _config;
@@ -46,6 +48,15 @@ namespace AZOA.WebAPI.Middleware
         /// </summary>
         public async Task<CorsPolicy?> GetPolicyAsync(HttpContext context, string? policyName)
         {
+            if (string.Equals(policyName, PublicTransparencyPolicy, StringComparison.Ordinal))
+            {
+                var publicPolicy = new CorsPolicy();
+                publicPolicy.Origins.Add("*");
+                publicPolicy.Headers.Add("*");
+                publicPolicy.Methods.Add(HttpMethods.Get);
+                return publicPolicy;
+            }
+
             var requestOrigin = context.Request.Headers["Origin"].FirstOrDefault();
 
             var policy = new CorsPolicy();

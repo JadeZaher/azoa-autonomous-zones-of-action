@@ -28,6 +28,12 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        if (Context.GetEndpoint()?.Metadata
+                .GetMetadata<CredentialFreePublicEndpointAttribute>() is not null)
+        {
+            return AuthenticateResult.NoResult();
+        }
+
         if (!Request.Headers.TryGetValue(HeaderName, out var apiKeyValues))
         {
             return AuthenticateResult.NoResult();

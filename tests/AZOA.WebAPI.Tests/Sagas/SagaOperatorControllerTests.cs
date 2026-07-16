@@ -31,8 +31,11 @@ public sealed class SagaOperatorControllerTests
     {
         var enq = await _store.EnqueueAsync("S", "s", $"corr-{Guid.NewGuid():N}",
             $"idem-{Guid.NewGuid():N}", "{}", false, Ct);
-        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), Ct);
-        await _store.DeadLetterStepAsync(enq.Id, "boom", Ct);
+        var claimed = await _store.TryClaimDueStepAsync(
+            enq.Id, DateTime.UtcNow.AddSeconds(5), Ct);
+        claimed.Should().NotBeNull();
+        await _store.DeadLetterStepAsync(
+            enq.Id, claimed!.ClaimedAt!.Value, "boom", Ct);
         return enq;
     }
 

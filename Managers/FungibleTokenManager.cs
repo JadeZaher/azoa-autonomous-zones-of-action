@@ -9,6 +9,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Governance;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -24,6 +25,7 @@ namespace AZOA.WebAPI.Managers;
 public sealed class FungibleTokenManager : IFungibleTokenManager
 {
     private const string OperationType = "fungible_token_create";
+    private const string UnexpectedFailureMessage = "Fungible token creation failed unexpectedly.";
 
     /// <summary>Algorand ASA decimals are constrained to 0..19 by the protocol.</summary>
     private const int MaxDecimals = 19;
@@ -33,19 +35,22 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
     private readonly IWalletStore _walletStore;
     private readonly IBlockchainProviderFactory _providerFactory;
     private readonly IIdempotencyStore _idempotencyStore;
+    private readonly INodeGovernanceGuard _nodeGovernance;
 
     public FungibleTokenManager(
         IKycGateService kycGate,
         IWalletManager walletManager,
         IWalletStore walletStore,
         IBlockchainProviderFactory providerFactory,
-        IIdempotencyStore idempotencyStore)
+        IIdempotencyStore idempotencyStore,
+        INodeGovernanceGuard? nodeGovernance = null)
     {
         _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
         _walletManager = walletManager ?? throw new ArgumentNullException(nameof(walletManager));
         _walletStore = walletStore ?? throw new ArgumentNullException(nameof(walletStore));
         _providerFactory = providerFactory ?? throw new ArgumentNullException(nameof(providerFactory));
         _idempotencyStore = idempotencyStore ?? throw new ArgumentNullException(nameof(idempotencyStore));
+        _nodeGovernance = nodeGovernance ?? NodeGovernanceGuard.Unrestricted;
     }
 
     /// <inheritdoc />
@@ -58,15 +63,22 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         Guid? actingTenantId = null)
     {
         if (request is null)
-            return Fail("Fungible token request is required.");
+            return AZOAResult<FungibleTokenResult>.Failure("Fungible token request is required.");
         if (string.IsNullOrWhiteSpace(request.ChainType))
-            return Fail("ChainType is required.");
+            return AZOAResult<FungibleTokenResult>.Failure("ChainType is required.");
         if (string.IsNullOrWhiteSpace(request.Name))
-            return Fail("Token name is required.");
+            return AZOAResult<FungibleTokenResult>.Failure("Token name is required.");
         if (string.IsNullOrWhiteSpace(request.UnitName))
-            return Fail("Token unit name is required.");
+            return AZOAResult<FungibleTokenResult>.Failure("Token unit name is required.");
         if (string.IsNullOrWhiteSpace(apiKeyId))
-            return Fail("Caller API key context is required.");
+            return AZOAResult<FungibleTokenResult>.Failure("Caller API key context is required.");
+
+        var governance = await _nodeGovernance.EnsureAllowedAsync(
+            request.ChainType,
+            NodeGovernanceAssetTypes.FungibleToken,
+            "fungible-token:create");
+        if (governance.IsError)
+            return AZOAResult<FungibleTokenResult>.Failure(governance.Message);
 
         // ── Step 1: idempotency key ───────────────────────────────────────────
         // Client key wins; absent ⇒ deterministic content key over the token
@@ -82,6 +94,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         if (!claim.Won)
             return ReplayFromRecord(claim.Record, idempotencyKey);
 
+        var effectMayHaveStarted = false;
         try
         {
             // ── Step 3: KYC gate (fail-closed) ────────────────────────────────
@@ -90,7 +103,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             if (gate.IsError)
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, gate.Message, CancellationToken.None);
-                return Fail(gate.Message);
+                return AZOAResult<FungibleTokenResult>.Failure(gate.Message);
             }
 
             // ── Step 4: validate supply + decimals — reject BEFORE any broadcast.
@@ -99,7 +112,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             if (!TryValidateSupply(request, out var supplyError))
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, supplyError, CancellationToken.None);
-                return Fail(supplyError);
+                return AZOAResult<FungibleTokenResult>.Failure(supplyError);
             }
 
             // ── Step 5: provision-if-absent ───────────────────────────────────
@@ -107,7 +120,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             if (wallet is null)
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, walletError, CancellationToken.None);
-                return Fail(walletError);
+                return AZOAResult<FungibleTokenResult>.Failure(walletError);
             }
 
             // ── Step 6: resolve the Algorand ASA capability module ────────────
@@ -117,7 +130,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             if (!TryGetAsaModule(request.ChainType, out var asa, out var moduleError))
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, moduleError, CancellationToken.None);
-                return Fail(moduleError);
+                return AZOAResult<FungibleTokenResult>.Failure(moduleError);
             }
 
             // ── Step 7: create the fungible ASA (the irreversible effect) ─────
@@ -130,6 +143,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             var signingContext = actingTenantId is { } tenant && tenant != Guid.Empty
                 ? SigningContext.Platform.ActingAs(tenant, AzoaScopes.TokenCreateSign, avatarId)
                 : SigningContext.Platform;
+            effectMayHaveStarted = true;
             var asaResult = await asa!.CreateASAAsync(
                 request.Name,
                 request.UnitName,
@@ -147,7 +161,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             {
                 var msg = asaResult.IsError ? asaResult.Message : "Fungible token creation produced no asset id.";
                 await _idempotencyStore.FailAsync(idempotencyKey, msg, CancellationToken.None);
-                return Fail(msg);
+                return AZOAResult<FungibleTokenResult>.Failure(msg);
             }
 
             var result = new FungibleTokenResult
@@ -169,10 +183,10 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         }
         catch (Exception ex)
         {
-            // The claim is owned; mark it failed so a retry with the same key is not
-            // stuck as a perpetual in-progress duplicate.
-            await _idempotencyStore.FailAsync(idempotencyKey, ex.Message, CancellationToken.None);
-            return new AZOAResult<FungibleTokenResult>().CaptureException(ex, "Fungible token creation failed.");
+            if (!effectMayHaveStarted)
+                await IdempotencyClaimRecovery.TryFailAsync(
+                    _idempotencyStore, idempotencyKey, UnexpectedFailureMessage, ex);
+            throw;
         }
     }
 
@@ -228,9 +242,9 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             }
             return true;
         }
-        catch (Exception ex)
+        catch (BlockchainProviderNotFoundException)
         {
-            error = $"Failed to resolve a fungible-token provider for chain '{chainType}': {ex.Message}";
+            error = $"No fungible-token provider is available for chain '{chainType}'.";
             return false;
         }
     }
@@ -317,6 +331,4 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
     private static FungibleTokenResult? DeserializeForReplay(string payload)
         => IdempotencyReplay.DeserializeForReplay<FungibleTokenResult>(payload);
 
-    private static AZOAResult<FungibleTokenResult> Fail(string message)
-        => new() { IsError = true, Message = message };
 }

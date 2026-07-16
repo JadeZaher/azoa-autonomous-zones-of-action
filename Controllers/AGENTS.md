@@ -126,3 +126,35 @@ surface into two buckets:
   rejects anything outside dapp:user/developer/manager BEFORE authority is checked,
   so no request can set a role that yields operator:admin.
 - Denials return 403 (Forbidden); an unknown target returns 404.
+
+## node-operator-governance
+
+`NodeGovernanceController` (`/api/node-governance`) is guarded by the dedicated
+`NodeGovern` policy, not the broader `Operator` policy. The capability is
+JWT-only and is stamped only by the sovereign operator bootstrap path; API keys
+cannot mint or satisfy it. The controller never accepts an actor id in the body:
+updates source the actor from claims and pass it to `NodeGovernanceManager`,
+which writes the parameter row and audit row together.
+
+Fee routes (`fee-schedule`, `fee-audit`) use the same policy and actor rules.
+`NodeFeeScheduleUpdateRequest.ExpectedVersion` is the optimistic-concurrency
+token. An identical retry is a no-op success; a stale version that requests
+different values returns a conflict-shaped manager error and writes no audit.
+
+Treasury routes (`treasury/{chain}/{network}`, `treasury`, `treasury-audit`)
+also use `NodeGovern`. Treasury destinations are separate, versioned policy
+records per chain/network rather than fee-schedule fields. PUT takes the actor
+only from claims, maps stale differing `ExpectedVersion` writes to HTTP 409, and
+keeps provider/address validation in `NodeTreasuryManager`. An identical address
+retry is an idempotent success and does not append another audit row.
+
+`NodeTransparencyController` is the deliberately separate anonymous read surface
+at `/api/node-transparency`. It has no mutation actions and does not reuse the
+operator DTOs. The global IP-partitioned rate limiter still applies (trusted
+forwarder configuration remains a deployment gate), responses are short-cache
+ETagged, and `SuppressDebugExceptionDetails` guarantees that an
+unexpected failure stays generic even when a development node enables verbose
+errors. Its named, credential-free CORS policy allows any browser origin and
+short-circuits API-key lookup; arbitrary `X-Api-Key` values neither change the
+anonymous IP partition nor trigger a pre-limit store read. The operator
+controller remains `NodeGovern`-protected.

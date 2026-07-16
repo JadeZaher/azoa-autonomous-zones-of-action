@@ -23,6 +23,8 @@ related:
   - data-engine-decision           # chain is settlement source-of-truth; fees never become off-chain balance authority
   - tenant-consent-delegation      # per-scope grant discipline the govern scope inherits
   - consent-gate-architecture      # single custody chokepoint; fee accrual never bypasses it
+  - node-public-governance-transparency # public sanitized current/audit reads
+  - node-egress-fees              # separately deferred network-egress pricing
 ---
 
 # Track: node-operator-governance
@@ -144,6 +146,10 @@ swap, quest completion, federation publication.** This is a `NodeFeeSchedule` co
 - **Guardrail:** fee changes are versioned + audited (an immutable `node_fee_audit` trail,
   mirroring `consent_audit`); a fee schedule change is never retroactive to an in-flight
   idempotency claim.
+- **Treasury routing is separate policy.** A versioned destination is scoped by canonical
+  chain/network, validated by that provider, and audited independently from fee pricing. A
+  settlement freezes the destination address and version inside its durable claim, so a
+  treasury rotation cannot redirect an already-claimed fee.
 
 ### 2. Federation rules  *(deferred; Phase 2 — gated on federation-v2)*
 
@@ -265,6 +271,8 @@ be imposed on a peer, and a peer can never be dragged into an economy it didn't 
    the node treasury (or as a fee-adjusted allocation), never as an off-chain balance; a
    redelivered idempotent request never double-charges; changes are audited and non-retroactive
    to in-flight claims.
+   A chain/network treasury destination is separately versioned, provider-validated, audited,
+   and pinned by any settlement that consumes it.
 5. **Governance parameters (Phase 1):** an operator can set a chain-allowlist and an
    asset-type-allowlist through the `NodeGovern` surface; every edit writes an immutable
    audit row; an action targeting a disallowed chain/asset-type is rejected fail-closed.

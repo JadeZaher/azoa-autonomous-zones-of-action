@@ -165,6 +165,23 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
         return client;
     }
 
+    public HttpClient CreateOperatorOnlyClient(Guid? avatarId = null)
+    {
+        var client = CreateOperatorClient(avatarId);
+        client.DefaultRequestHeaders.Add(TestAuthHandler.OperatorOnlyHeaderName, "true");
+        return client;
+    }
+
+    public HttpClient CreateNodeGovernClient(Guid? avatarId = null)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
+        client.DefaultRequestHeaders.Add(TestAuthHandler.NodeGovernHeaderName, "true");
+        if (avatarId.HasValue)
+            client.DefaultRequestHeaders.Add(TestAuthHandler.AvatarHeaderName, avatarId.Value.ToString());
+        return client;
+    }
+
     /// <summary>
     /// avatar-dapp-rbac AC3 (keystone): an HTTP client that authenticates via the REAL
     /// ApiKeyAuthenticationHandler using a genuinely-minted raw key (X-Api-Key header, no

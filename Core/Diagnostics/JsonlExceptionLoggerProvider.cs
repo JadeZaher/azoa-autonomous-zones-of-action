@@ -8,10 +8,11 @@ namespace AZOA.WebAPI.Core.Diagnostics;
 /// per category name. The underlying <see cref="JsonlExceptionWriter"/> is injected via
 /// constructor and must be registered as a singleton before this provider is added.
 /// </summary>
-public sealed class JsonlExceptionLoggerProvider : ILoggerProvider
+public sealed class JsonlExceptionLoggerProvider : ILoggerProvider, ISupportExternalScope
 {
     private readonly JsonlExceptionWriter _writer;
     private readonly JsonlExceptionLoggerOptions _options;
+    private IExternalScopeProvider _scopeProvider = new LoggerExternalScopeProvider();
 
     public JsonlExceptionLoggerProvider(
         JsonlExceptionWriter writer,
@@ -23,7 +24,11 @@ public sealed class JsonlExceptionLoggerProvider : ILoggerProvider
 
     /// <inheritdoc/>
     public ILogger CreateLogger(string categoryName)
-        => new JsonlExceptionLogger(categoryName, _writer, _options);
+        => new JsonlExceptionLogger(categoryName, _writer, _options, _scopeProvider);
+
+    /// <inheritdoc/>
+    public void SetScopeProvider(IExternalScopeProvider scopeProvider)
+        => _scopeProvider = scopeProvider ?? throw new ArgumentNullException(nameof(scopeProvider));
 
     /// <inheritdoc/>
     public void Dispose() { /* writer lifetime managed by IHostedService */ }

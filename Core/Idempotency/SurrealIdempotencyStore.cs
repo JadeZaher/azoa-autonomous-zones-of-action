@@ -52,6 +52,20 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore
     /// <summary>Deterministic SurrealDB record id for a key (SHA-256 hex).</summary>
     public static string DeterministicId(string key) => PackageLedger.DeterministicId(key);
 
+    /// <summary>Matches this adapter's configured colon-safe ledger key encoding.</summary>
+    internal static string EncodeKeyForConfiguredLedger(string key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        if (key.IndexOf(':') < 0)
+            return key;
+
+        var payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(key))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+        return "__sf_idem_b64__" + payload;
+    }
+
     private static IdempotencyRecord ToDomain(PackageRecord r) => new()
     {
         Key           = r.Key,

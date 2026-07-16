@@ -434,6 +434,109 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
 
     // ── Infrastructure ────────────────────────────────────────────────────────
 
+    [SkippableFact]
+    public async Task NftTransferReservation_ConcurrentClaimsOneWinner_FinalizesIdempotently()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var source = Guid.NewGuid();
+        var targetA = Guid.NewGuid();
+        var targetB = Guid.NewGuid();
+        var holon = new Holon
+        {
+            Id = Guid.NewGuid(),
+            AvatarId = source,
+            Name = "Reserved NFT",
+            ProviderName = "SurrealProvider",
+            AssetType = "NFT",
+            IsActive = true,
+            CreatedDate = DateTime.UtcNow,
+        };
+        await _store.UpsertAsync(holon);
+
+        var claimA = _store.TryReserveNftTransferAsync(holon.Id, source, targetA, "settlement-a");
+        var claimB = _store.TryReserveNftTransferAsync(holon.Id, source, targetB, "settlement-b");
+        var claims = await Task.WhenAll(claimA, claimB);
+
+        claims.Should().OnlyContain(result => !result.IsError);
+        claims.Count(result => result.Result).Should().Be(1);
+
+        var winnerIsA = claims[0].Result;
+        var winningTarget = winnerIsA ? targetA : targetB;
+        var winningKey = winnerIsA ? "settlement-a" : "settlement-b";
+        var losingTarget = winnerIsA ? targetB : targetA;
+        var losingKey = winnerIsA ? "settlement-b" : "settlement-a";
+
+        var executor = new DefaultSurrealExecutor(_connection);
+        var reservationTimeQuery = SurrealQuery
+            .Of("SELECT transfer_reserved_at FROM type::record($_t, $_id)")
+            .WithParam("_t", "holon")
+            .WithParam("_id", holon.Id.ToString("N"));
+        var reservedAt = (await executor.QuerySingleAsync<TransferReservationProjection>(
+            reservationTimeQuery)).TransferReservedAt;
+        var reservationReplay = await _store.TryReserveNftTransferAsync(
+            holon.Id, source, winningTarget, winningKey);
+        var replayedReservedAt = (await executor.QuerySingleAsync<TransferReservationProjection>(
+            reservationTimeQuery)).TransferReservedAt;
+        reservationReplay.Result.Should().BeTrue();
+        replayedReservedAt.Should().Be(reservedAt,
+            "idempotent reservation replay must not refresh the original timestamp");
+
+        var loserRetry = await _store.TryReserveNftTransferAsync(
+            holon.Id, source, losingTarget, losingKey);
+        loserRetry.Result.Should().BeFalse();
+
+        var keyReuseWithDifferentTarget = await _store.TryReserveNftTransferAsync(
+            holon.Id, source, losingTarget, winningKey);
+        keyReuseWithDifferentTarget.Result.Should().BeFalse(
+            "a settlement key cannot be rebound to different economics");
+
+        var finalized = await _store.FinalizeReservedNftTransferAsync(
+            holon.Id, source, winningTarget, winningKey);
+        var replay = await _store.FinalizeReservedNftTransferAsync(
+            holon.Id, source, winningTarget, winningKey);
+
+        finalized.Result.Should().BeTrue();
+        replay.Result.Should().BeTrue();
+        (await _store.GetByIdAsync(holon.Id)).Result!.AvatarId.Should().Be(winningTarget);
+
+        var historicalKeyReuse = await _store.TryReserveNftTransferAsync(
+            holon.Id, winningTarget, Guid.NewGuid(), winningKey);
+        historicalKeyReuse.Result.Should().BeFalse(
+            "one settlement key cannot authorize a later transfer of the same NFT");
+    }
+
+    [SkippableFact]
+    public async Task NftTransferReservation_ReleasePreservesSourceOwnership()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var source = Guid.NewGuid();
+        var holon = new Holon
+        {
+            Id = Guid.NewGuid(),
+            AvatarId = source,
+            Name = "Released NFT",
+            ProviderName = "SurrealProvider",
+            AssetType = "NFT",
+            IsActive = true,
+            CreatedDate = DateTime.UtcNow,
+        };
+        await _store.UpsertAsync(holon);
+
+        (await _store.TryReserveNftTransferAsync(
+            holon.Id, source, Guid.NewGuid(), "settlement-release")).Result.Should().BeTrue();
+
+        var released = await _store.ReleaseNftTransferReservationAsync(
+            holon.Id, source, "settlement-release");
+        var replay = await _store.ReleaseNftTransferReservationAsync(
+            holon.Id, source, "settlement-release");
+
+        released.Result.Should().BeTrue();
+        replay.Result.Should().BeTrue();
+        (await _store.GetByIdAsync(holon.Id)).Result!.AvatarId.Should().Be(source);
+    }
+
     private static async Task<bool> ProbeSurrealAsync()
     {
         try
@@ -449,4 +552,10 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
         => SurrealTestSchema.BootstrapAsync(_testNamespace, "holon");
 
     private Task DropNamespaceAsync() => SurrealTestSchema.DropAsync(_testNamespace);
+
+    private sealed class TransferReservationProjection
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("transfer_reserved_at")]
+        public DateTimeOffset? TransferReservedAt { get; set; }
+    }
 }

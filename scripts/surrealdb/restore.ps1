@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    AZOA Sleek -- SurrealDB restore (surreal import via container exec).
+    AZOA -- SurrealDB restore (surreal import via container exec).
 
 .DESCRIPTION
     Restores a SurrealQL script produced by backup.ps1 by copying it INTO the

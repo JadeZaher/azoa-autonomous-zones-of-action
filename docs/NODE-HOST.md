@@ -120,6 +120,8 @@ Double-underscore env-var form (`SurrealDb__Endpoint`) overrides appsettings.
 | `SurrealDb__User` / `SurrealDb__Password` | yes (prod) | SurrealDB root credentials. |
 | `SurrealDb__G1DurabilityAcknowledged` | yes | Must be `true` outside `IntegrationTest` or the node **refuses to boot** (§6). Operator's ack that the store fsyncs per commit. |
 | `ASPNETCORE_ENVIRONMENT` | yes | `Production` gates Swagger off and enforces the secret guards + G1 ack. |
+| `ForwardedHeaders__Enabled` | proxy deploys | Disabled by default. Enable only with explicit `KnownProxies`/`KnownNetworks`, or with both trust-all and edge-only acknowledgement on a platform whose edge is the sole ingress. |
+| `ForwardedHeaders__TrustAll` / `ForwardedHeaders__EdgeOnlyDeploymentAcknowledged` | Railway template | Both are `true` in the Railway edge-only template. They are unsafe on a directly reachable self-hosted port. |
 | `Jwt__Key` | yes (**SECRET**) | JWT signing key, ≥32 chars. No default — boot fails without it outside Development/IntegrationTest. |
 | `Jwt__Issuer` / `Jwt__Audience` | optional | Default `AZOA.WebAPI` / `AZOA.Client`. |
 | `AZOA__WalletEncryptionKey` | yes (**SECRET**) | At-rest key for platform wallet generation. No default — `WalletKeyService` throws without it. |
@@ -128,6 +130,11 @@ Double-underscore env-var form (`SurrealDb__Endpoint`) overrides appsettings.
 The `SurrealDb__*` family is consumed by **both** the .NET host and the
 entrypoint's `surrealforge` pre-step — wire one family. The entrypoint also
 accepts `SURREALFORGE_*` aliases (`_URL` / `_NS` / `_DB` / `_USER` / `_PASS`).
+
+Production also requires a persistent Data Protection key ring at
+`DataProtection__KeyRingPath` (the Railway template mounts `/app/data`). All
+replicas that accept the same public cursor must share that ring and application
+name.
 
 ### Secrets
 

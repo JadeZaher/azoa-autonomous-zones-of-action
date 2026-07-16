@@ -1,4 +1,4 @@
-// ─── AZOA Sleek — MCP Quest Reachability: Acceptance Criterion Test ──────────
+// ─── AZOA — MCP Quest Reachability: Acceptance Criterion Test ──────────
 //
 // LOAD-BEARING TEST (read before modifying this file)
 // ─────────────────────────────────────────────────────

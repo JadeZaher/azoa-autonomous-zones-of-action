@@ -36,6 +36,11 @@ namespace AZOA.WebAPI.IntegrationTests;
 /// </summary>
 public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplicationFactory>, IAsyncLifetime
 {
+    private static readonly HttpClient SurrealHealthClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(2)
+    };
+
     protected readonly AZOATestWebApplicationFactory Factory;
     protected readonly HttpClient Client;
     // Mirror the SERVER's JSON config (Program.cs registers JsonStringEnumConverter
@@ -320,28 +325,7 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
     /// Must only be called with file-sourced SQL — never with runtime input.
     protected async Task ExecuteSurrealSqlRawAsync(string sql)
     {
-        if (!await IsSurrealDbAvailableAsync()) return;
-
-        var content = new StringContent(sql, System.Text.Encoding.UTF8, "application/x-www-form-urlencoded");
-        var request = new HttpRequestMessage(HttpMethod.Post, "/sql") { Content = content };
-        // Override Content-Type for raw SurrealQL
-        request.Content.Headers.ContentType =
-            new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
-        foreach (var header in SurrealClient.DefaultRequestHeaders)
-            request.Headers.TryAddWithoutValidation(header.Key, header.Value);
-
-        using var tempClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
-        var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
-        tempClient.DefaultRequestHeaders.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-        // SurrealDB 3.x requires the "Surreal-NS"/"Surreal-DB" header names; the
-        // legacy "NS"/"DB" names are ignored, which silently routed raw DDL to
-        // the DEFAULT namespace instead of the per-test one.
-        tempClient.DefaultRequestHeaders.Add("Surreal-NS", TestNamespace);
-        tempClient.DefaultRequestHeaders.Add("Surreal-DB", "test");
-
-        var response = await tempClient.PostAsync("/sql",
+        var response = await SurrealClient.PostAsync("/sql",
             new StringContent(sql, System.Text.Encoding.UTF8, "text/plain"));
         // Best-effort — DDL failures are logged but don't abort the test suite
         // (Worker C may add constraints that require specific ordering).
@@ -352,9 +336,7 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
     {
         try
         {
-            using var probe = new HttpClient();
-            probe.Timeout = TimeSpan.FromSeconds(2);
-            var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
+            var r = await SurrealHealthClient.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
         catch { return false; }

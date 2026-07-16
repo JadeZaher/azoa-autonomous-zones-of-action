@@ -1,9 +1,8 @@
 name: CI
 
-# Minimal green-bar guard (final-hardening-cutover Phase H, H6). Not a
-# release/deploy pipeline — build + unit-test only. Integration tests need a
-# live SurrealDB container and are intentionally excluded here; run them
-# locally via tests/AZOA.WebAPI.IntegrationTests (see RUNBOOK.md).
+# Build and test guard. This remains intentionally separate from release and
+# deployment, but includes the SurrealDB-backed integration suite now that
+# namespace isolation makes the full suite a meaningful green/red signal.
 on:
   push:
     branches: ["**"]
@@ -12,8 +11,9 @@ on:
 
 jobs:
   dotnet:
-    name: .NET build + unit tests
+    name: .NET build + tests
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -23,13 +23,37 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Restore
-        run: dotnet restore azoa-sleek.sln
+        run: dotnet restore azoa.sln
 
       - name: Build
-        run: dotnet build azoa-sleek.sln --configuration Release --no-restore
+        run: dotnet build azoa.sln --configuration Release --no-restore
 
       - name: Unit tests
         run: dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj --configuration Release --no-build
+
+      - name: Start SurrealDB
+        run: |
+          docker run --detach \
+            --name azoa-ci-surrealdb \
+            --user 0:0 \
+            --publish 8000:8000 \
+            --env SURREAL_SYNC_DATA=true \
+            --volume azoa-ci-surrealdb-data:/data \
+            surrealdb/surrealdb:v3.1.4 \
+            start --log info --user root --pass root --bind 0.0.0.0:8000 rocksdb:///data/db
+
+          for attempt in {1..30}; do
+            if docker exec azoa-ci-surrealdb /surreal is-ready --endpoint http://localhost:8000; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs azoa-ci-surrealdb
+          exit 1
+
+      - name: Integration tests
+        run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category!=Chaos&Category!=Perf"
 
   sdk:
     name: SDK build + vitest

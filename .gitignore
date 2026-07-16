@@ -218,3 +218,6 @@ conductor/.conductor_session_log
 .pi/
 .mdg/
 .claude/
+
+# scrt/mpg local search caches (machine-local, regenerable)
+.mpg/

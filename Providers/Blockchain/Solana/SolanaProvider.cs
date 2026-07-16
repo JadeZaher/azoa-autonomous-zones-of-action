@@ -31,23 +31,25 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         : base(config, logger)
     {
         _configManager = new BlockchainConfigurationManager(config);
-        var network = _configManager.GetDefaultNetwork(ChainType);
-        var networkConfig = _configManager.GetNetworkConfig(ChainType, network);
-
-        _rpcHttpClient = BuildRpcClient(networkConfig);
-        Initialize(networkConfig, network);
     }
 
-    /// <summary>
-    /// (Re)builds the RPC client so it binds to the network passed to
-    /// <see cref="Initialize"/> — the single place clients are constructed.
-    /// Without this, the ctor-time default network would be used regardless of
-    /// the network the factory requested.
-    /// </summary>
-    public override void Initialize(BlockchainNetworkConfig config, ChainNetwork network)
+    /// <inheritdoc/>
+    protected override void OnInitialize(BlockchainNetworkConfig config, ChainNetwork network)
     {
         _rpcHttpClient = BuildRpcClient(config);
-        base.Initialize(config, network);
+    }
+
+    private HttpClient RpcHttpClient
+    {
+        get
+        {
+            EnsureStandaloneInitialized(() =>
+            {
+                var network = _configManager.GetDefaultNetwork(ChainType);
+                return (_configManager.GetNetworkConfig(ChainType, network), network);
+            });
+            return _rpcHttpClient;
+        }
     }
 
     private static HttpClient BuildRpcClient(BlockchainNetworkConfig config)
@@ -84,7 +86,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         var id = Interlocked.Increment(ref _requestId);
         var body = new SolanaRpcRequest { JsonRpc = "2.0", Id = id, Method = method, Params = parameters };
 
-        var response = await _rpcHttpClient.PostAsJsonAsync("", body, cancellationToken: ct);
+        var response = await RpcHttpClient.PostAsJsonAsync("", body, cancellationToken: ct);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<SolanaRpcResponse<T>>(cancellationToken: ct);
@@ -360,7 +362,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
                 ["currentSlot"] = slotResp.Error == null ? slotResp.Result.ToString() : "unknown",
                 ["totalSupply"] = supplyResp.Result?.Value?.Total.ToString() ?? "unknown",
                 ["circulatingSupply"] = supplyResp.Result?.Value?.Circulating.ToString() ?? "unknown",
-                ["rpcEndpoint"] = _rpcHttpClient.BaseAddress?.ToString() ?? "",
+                ["rpcEndpoint"] = RpcHttpClient.BaseAddress?.ToString() ?? "",
                 ["time"] = DateTime.UtcNow
             };
 

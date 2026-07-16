@@ -4,12 +4,14 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.DataProtection;
+using AZOA.WebAPI.Core.Networking;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Reflection;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Core.Blockchain;
 using AZOA.WebAPI.Extensions;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
@@ -37,10 +39,11 @@ using AZOA.WebAPI.Services.Quest;
 using AZOA.WebAPI.Mcp;
 using AZOA.WebAPI.Services.Quest.Handlers;
 using AZOA.WebAPI.Services.Wormhole;
+using AZOA.WebAPI.Services.Conformance;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// W1-A1: Dev-only JSONL exception logger (binds Diagnostics:JsonlExceptionLogger config).
+// Optional JSONL diagnostic sink; each environment must enable it explicitly.
 builder.AddJsonlExceptionLogging();
 
 builder.Services.AddControllers(options =>
@@ -53,6 +56,32 @@ builder.Services.AddControllers(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
+var dataProtectionApplicationName = builder.Configuration["DataProtection:ApplicationName"]
+    ?? "AZOA.WebAPI.NodeTransparency.v1";
+var dataProtection = builder.Services
+    .AddDataProtection()
+    .SetApplicationName(dataProtectionApplicationName);
+var dataProtectionKeyRingPath = builder.Configuration["DataProtection:KeyRingPath"];
+if (!string.IsNullOrWhiteSpace(dataProtectionKeyRingPath))
+{
+    dataProtection.PersistKeysToFileSystem(
+        new DirectoryInfo(Path.GetFullPath(dataProtectionKeyRingPath)));
+}
+else if (!builder.Environment.IsDevelopment()
+    && !builder.Environment.IsEnvironment("IntegrationTest"))
+{
+    throw new InvalidOperationException(
+        "DataProtection:KeyRingPath is required outside Development/IntegrationTest so opaque public cursors " +
+        "remain valid across restarts and instances. Mount the configured directory on durable shared storage.");
+}
+builder.Services.AddOptions<NodeConformanceOptions>()
+    .Bind(builder.Configuration.GetSection(NodeConformanceOptions.SectionName));
+builder.Services.AddOptions<AZOA.WebAPI.Services.Governance.NodeTransparencyHistoryOptions>()
+    .Bind(builder.Configuration.GetSection(AZOA.WebAPI.Services.Governance.NodeTransparencyHistoryOptions.SectionName));
+builder.Services.AddSingleton<INodeConformanceEvidenceSource, TrxNodeConformanceEvidenceSource>();
+builder.Services.AddSingleton<INodeIdentityKeyService, ProtectedFileNodeIdentityKeyService>();
+builder.Services.AddSingleton<INodeConformanceManifestService, NodeConformanceManifestService>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Governance.NodeTransparencyHistoryCheckpointStore>();
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 // AutoMapper 15.x: AddAutoMapper takes a config action; AddMaps scans the assembly
@@ -120,6 +149,11 @@ if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("
             "Set a strong secret via the AZOA__WalletEncryptionKey environment variable " +
             "before starting outside Development.");
 }
+
+SurrealRuntimeConfigurationGuard.GuardProduction(
+    builder.Configuration, builder.Environment.IsProduction());
+var surrealRuntimeConfigSection = SurrealRuntimeConfigurationGuard.ResolveRuntimeSectionName(
+    builder.Configuration, builder.Environment.IsProduction());
 
 // Fail-fast simulated-mode guard (H1): Blockchain:Mode=Simulated short-circuits
 // every chain to fake sim:tx: settlement with no real network I/O. That must
@@ -203,14 +237,11 @@ builder.Services.AddAuthentication(options =>
 })
 .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
     ApiKeyAuthenticationHandler.SchemeName, _ => { })
-.AddPolicyScheme("MultiScheme", "JWT or API Key", options =>
+.AddScheme<AuthenticationSchemeOptions, CredentialFreeAuthenticationHandler>(
+    CredentialFreeAuthenticationHandler.SchemeName, _ => { })
+.AddPolicyScheme("MultiScheme", "JWT, API Key, or credential-free public", options =>
 {
-    options.ForwardDefaultSelector = context =>
-    {
-        if (context.Request.Headers.ContainsKey("X-Api-Key"))
-            return ApiKeyAuthenticationHandler.SchemeName;
-        return JwtBearerDefaults.AuthenticationScheme;
-    };
+    options.ForwardDefaultSelector = AuthenticationSchemeSelector.Resolve;
 });
 
 // TenantScope policy (tenant-onboarding): a tenant-surface action requires the
@@ -295,6 +326,15 @@ builder.Services.AddAuthorization(o =>
                 || string.Equals(ctx.User.FindFirst("role")?.Value, "Admin", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(ctx.User.FindFirst("is_admin")?.Value, "true", StringComparison.OrdinalIgnoreCase);
         }));
+    o.AddPolicy("NodeGovern", p =>
+        p.RequireAssertion(ctx =>
+        {
+            var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
+            if (string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.NodeGovern);
+        }));
 });
 
 // Actionable authorization failures (DX audit): a denied scoped API key gets a JSON
@@ -309,7 +349,7 @@ builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationM
 //
 // Partition strategy (most-specific identity wins, so each principal is
 // metered independently):
-//   1. X-Api-Key header present  -> partition per API key  (per-key metering)
+//   1. authenticated API key     -> partition per server-issued key id
 //   2. else authenticated avatar -> partition per avatar/user id
 //   3. else anonymous            -> partition per client IP
 //
@@ -336,38 +376,6 @@ var rlDevMultiplier = builder.Environment.IsDevelopment()
 rlGlobalPermit    *= rlDevMultiplier;
 rlFinancialPermit *= rlDevMultiplier;
 
-// Stable partition key for the *current* request: API key, else avatar/user,
-// else IP. Prefixed so the three identity spaces never collide.
-static string ResolveRateLimitPartitionKey(HttpContext httpContext)
-{
-    if (httpContext.Request.Headers.TryGetValue("X-Api-Key", out var apiKeyValues))
-    {
-        var apiKey = apiKeyValues.FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            // Hash so the raw secret never lives in limiter state / logs, but
-            // the partition is still 1:1 with the key (per-API-key metering).
-            var hash = Convert.ToHexString(
-                System.Security.Cryptography.SHA256.HashData(
-                    System.Text.Encoding.UTF8.GetBytes(apiKey)));
-            return $"apikey:{hash}";
-        }
-    }
-
-    var user = httpContext.User;
-    if (user?.Identity?.IsAuthenticated == true)
-    {
-        var sub = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                  ?? user.FindFirst("sub")?.Value
-                  ?? user.FindFirst("AvatarId")?.Value;
-        if (!string.IsNullOrWhiteSpace(sub))
-            return $"avatar:{sub}";
-    }
-
-    var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    return $"ip:{ip}";
-}
-
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -378,7 +386,7 @@ builder.Services.AddRateLimiter(options =>
         if (!rlEnabled)
             return RateLimitPartition.GetNoLimiter("disabled");
 
-        var key = ResolveRateLimitPartitionKey(httpContext);
+        var key = RateLimitPartitionKey.Resolve(httpContext);
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = rlGlobalPermit,
@@ -394,7 +402,7 @@ builder.Services.AddRateLimiter(options =>
         if (!rlEnabled)
             return RateLimitPartition.GetNoLimiter("disabled");
 
-        var key = ResolveRateLimitPartitionKey(httpContext);
+        var key = RateLimitPartitionKey.Resolve(httpContext);
         return RateLimitPartition.GetFixedWindowLimiter($"fin:{key}", _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = rlFinancialPermit,
@@ -450,6 +458,17 @@ builder.Services.AddScoped<IHolonStore,
 // final-hardening-cutover F5: opt-in Holon AssetType registry store.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IHolonTypeRegistryStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealHolonTypeRegistryStore>();
+// node-operator-governance: singleton local node parameters + immutable audit.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INodeGovernanceStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealNodeGovernanceStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INodeFeeScheduleStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealNodeFeeScheduleStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INodeTreasuryStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealNodeTreasuryStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INodeTransparencyStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealNodeTransparencyStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IAdminBootstrapStateStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealAdminBootstrapStateStore>();
 builder.Services.AddScoped<IBlockchainOperationStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealBlockchainOperationStore>();
 builder.Services.AddScoped<ISTARStore,
@@ -543,12 +562,11 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IQuestWebhookOutboxStor
 // <surrealdb-client-package>
 // Homebake SurrealDB client (Phase 6, sub-wave 1.5a). Replaces direct
 // registration of SurrealDb.Net's ISurrealDbClient. Binds
-// SurrealConnectionOptions from the "SurrealDb" configuration section by
-// default (override the section name via the optional argument). The actual
+// SurrealConnectionOptions from the isolated runtime configuration section. The actual
 // SurrealDB-backed *Store adapters land in surrealdb-migration wave-2 tasks
 // 5-8; until then this registration just makes the client available for
 // any code that wants to use it (integration tests, future adapters).
-builder.Services.AddSurrealForge(builder.Configuration);
+builder.Services.AddSurrealForge(builder.Configuration, surrealRuntimeConfigSection);
 // Decorate ISurrealExecutor with OTEL instrumentation (spans + SurrealMetrics).
 // The decorator is in AZOA.WebAPI so the homebake package stays observability-agnostic.
 // Remove the package's DefaultSurrealExecutor descriptor and re-register the same
@@ -588,6 +606,17 @@ builder.Services.AddScoped<IHolonManager, HolonManager>();
 // validation hook HolonManager consults on every holon create/update).
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IHolonTypeRegistryManager,
     AZOA.WebAPI.Managers.HolonTypeRegistryManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeGovernanceManager,
+    AZOA.WebAPI.Managers.NodeGovernanceManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeFeeScheduleManager,
+    AZOA.WebAPI.Managers.NodeFeeScheduleManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeTreasuryManager,
+    AZOA.WebAPI.Managers.NodeTreasuryManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeTransparencyManager,
+    AZOA.WebAPI.Managers.NodeTransparencyManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeTransparencyHistoryService,
+    AZOA.WebAPI.Managers.NodeTransparencyHistoryService>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Governance.NodeTransparencyCursorCodec>();
 
 // ─── Custodial-provider initiative: custody / tenant / kyc / allocation managers ───
 // custody-key-management: decrypt→sign→zero resolver (the only signer-facing
@@ -672,6 +701,10 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycManager,
     AZOA.WebAPI.Managers.KycManager>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycGateService,
     AZOA.WebAPI.Services.Kyc.KycGateService>();
+builder.Services.Configure<AZOA.WebAPI.Services.Governance.NodeGovernanceOptions>(
+    builder.Configuration.GetSection(AZOA.WebAPI.Services.Governance.NodeGovernanceOptions.SectionName));
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.INodeGovernanceGuard,
+    AZOA.WebAPI.Services.Governance.NodeGovernanceGuard>();
 // fiat-stripe-bridge: idempotent, KYC-gated, tenant-callable allocation primitive.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationManager,
     AZOA.WebAPI.Managers.AllocationManager>();
@@ -732,36 +765,36 @@ builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSignerF
         sp.GetServices<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner>()));
 
 // ─── Blockchain providers & factory ───
-// AlgorandProvider is constructed explicitly so it receives the signer factory +
-// (interim) custody key service; the parameterless overload exists only for tests.
-builder.Services.AddSingleton<IBlockchainProvider>(sp => new AlgorandProvider(
+// Providers are transient because the factory binds one mutable instance to one
+// chain/network pair and caches that independent binding for its lifetime.
+builder.Services.AddTransient<AlgorandProvider>(sp => new AlgorandProvider(
     sp.GetRequiredService<IConfiguration>(),
     sp.GetRequiredService<ILogger<AlgorandProvider>>(),
     sp.GetRequiredService<AZOA.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(),
     sp.GetRequiredService<WalletKeyService>(),
     // value-path-wiring C1: route signing through the audited custody choke point.
-    // IKeyCustodyService is scoped and the provider is a singleton, so it is
-    // resolved per signing op from a fresh scope via IServiceScopeFactory (the
-    // AlgorandFaucet precedent). Passing null for the direct custody seam keeps
-    // that injection for unit tests only.
+    // IKeyCustodyService is scoped, so the network-bound provider resolves it
+    // per signing operation from a fresh scope. Passing null for the direct
+    // custody seam keeps that injection for unit tests only.
     custodyService: null,
     custodyScopeFactory: sp.GetRequiredService<IServiceScopeFactory>(),
     // Faucet operations are provider-scoped: the Algorand provider owns the
     // test-ALGO top-up path and delegates the idempotent build/sign/submit to the
     // injected IAlgorandFaucet (WalletManager no longer depends on it directly).
     faucet: sp.GetRequiredService<IAlgorandFaucet>()));
-builder.Services.AddSingleton<IBlockchainProvider, SolanaProvider>();
-// db-only-null-provider: the no-signer simulated provider. The factory hands it
-// out for every chain when Blockchain:Mode == "Simulated"; otherwise it is only
-// reachable as the "Simulated" ChainType. Registered before the factory so the
-// factory's IEnumerable<IBlockchainProvider> sees it.
-builder.Services.AddSingleton<IBlockchainProvider,
-    AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>();
+builder.Services.AddTransient<SolanaProvider>();
+builder.Services.AddTransient<AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>();
 builder.Services.AddSingleton<IBlockchainProviderFactory>(sp =>
-{
-    var registeredProviders = sp.GetRequiredService<IEnumerable<IBlockchainProvider>>();
-    return new BlockchainProviderFactory(registeredProviders, sp.GetRequiredService<IConfiguration>());
-});
+    new BlockchainProviderFactory(
+        new[]
+        {
+            new BlockchainProviderRegistration("Algorand", sp.GetRequiredService<AlgorandProvider>),
+            new BlockchainProviderRegistration("Solana", sp.GetRequiredService<SolanaProvider>),
+            new BlockchainProviderRegistration(
+                "Simulated",
+                sp.GetRequiredService<AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>),
+        },
+        sp.GetRequiredService<IConfiguration>()));
 
 // ─── Wormhole trustless bridge adapter ───
 builder.Services.Configure<WormholeConfig>(
@@ -918,19 +951,11 @@ if (debugRequested && app.Environment.IsProduction())
     app.Logger.LogWarning(
         "AZOA:DebugErrors was requested but is FORCE-DISABLED in Production.");
 
-// Forwarded headers FIRST so every downstream component (https redirect, rate
-// limiter partitioned by client IP, auth) sees the real client scheme/IP from
-// the edge proxy rather than the proxy's own. KnownNetworks/KnownProxies are
-// cleared because Railway's proxy IP is not statically known; the trade-off is
-// that X-Forwarded-* is trusted unconditionally, which is acceptable only
-// because the app is always fronted by Railway's edge (never directly exposed).
-var forwardedHeadersOptions = new ForwardedHeadersOptions
-{
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-};
-forwardedHeadersOptions.KnownIPNetworks.Clear();
-forwardedHeadersOptions.KnownProxies.Clear();
-app.UseForwardedHeaders(forwardedHeadersOptions);
+// Resolve trusted forwarding before rate limiting/auth. Direct/self-hosted
+// deployments default to disabled; trust-all requires an explicit edge-only ack.
+var forwardedHeadersOptions = ForwardedHeaderTrust.Build(builder.Configuration);
+if (forwardedHeadersOptions is not null)
+    app.UseForwardedHeaders(forwardedHeadersOptions);
 
 // Must be the first error-handling middleware so it wraps the entire pipeline
 // and turns any unhandled throw into a structured (debug-aware) JSON error
@@ -960,7 +985,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Integratio
 // CAN verify at boot is:
 //   (1) the server is reachable through the same ISurrealExecutor the rest
 //       of the app uses (proves DI + connection + auth all line up), and
-//   (2) the SurrealDb:G1DurabilityAcknowledged config flag is set to true
+//   (2) the SurrealRuntime:G1DurabilityAcknowledged config flag is set to true
 //       — operators must explicitly ack that they've reviewed compose and
 //       confirmed the durable posture. This is an audit-trail gate,
 //       not a behavioural one.
@@ -968,7 +993,7 @@ if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Integratio
 // is brought up per-test by the harness, not at host boot.
 if (!app.Environment.IsEnvironment("IntegrationTest"))
 {
-    var ack = builder.Configuration.GetValue<bool>("SurrealDb:G1DurabilityAcknowledged");
+    var ack = builder.Configuration.GetValue<bool>("SurrealRuntime:G1DurabilityAcknowledged");
     if (!ack)
         throw new InvalidOperationException(
             "SurrealDB G1 durability acknowledgement is missing. Confirm that " +
@@ -977,7 +1002,7 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
             "`SURREAL_SYNC_DATA: \"true\"` (RocksDB then fsyncs its WAL on every " +
             "commit before ACK — the 3.x durable path that replaced the retired " +
             "`surrealkv://...?sync=every`), then set " +
-            "SurrealDb:G1DurabilityAcknowledged=true in configuration to " +
+            "SurrealRuntime:G1DurabilityAcknowledged=true in configuration to " +
             "acknowledge the review. Every commit must fsync before ack (G1).");
 
     using var scope = app.Services.CreateScope();
@@ -993,7 +1018,7 @@ if (!app.Environment.IsEnvironment("IntegrationTest"))
     }
     catch (Exception ex)
     {
-        var endpoint = builder.Configuration["SurrealDb:Endpoint"]
+        var endpoint = builder.Configuration[$"{surrealRuntimeConfigSection}:Endpoint"]
             ?? "http://localhost:8000";
         throw new InvalidOperationException(
             "SurrealDB server unreachable at boot. Ensure the container is running " +
@@ -1028,6 +1053,7 @@ app.UseMcpAuth();
 app.MapMcp();
 // ISwapManager + IDexAdapter registrations are above (DEX adapters block)
 app.MapControllers();
+app.MapNodeConformanceDocument();
 app.MapAzoaHealth(app.Environment);
 await app.RunAsync();
 

@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Controllers;
 using AZOA.WebAPI.IntegrationTests.Factories;
@@ -78,6 +81,52 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
         var result = await response.Content.ReadFromJsonAsync<AZOAResult<List<ApiKeyScopeInfo>>>(JsonOptions);
         result!.Result.Should().Contain(s => s.Scope == AzoaScopes.DappDevelop && s.IsSelfIssuable);
         result.Result.Should().Contain(s => s.Scope == AzoaScopes.DappManage && s.IsSelfIssuable);
+        result.Result.Should().NotContain(s => s.Scope == AzoaScopes.NodeGovern);
+    }
+
+    [Fact]
+    public async Task Create_AsManager_WithNodeGovernScope_ShouldReturnBadRequest()
+    {
+        using var manager = Factory.CreateAuthenticatedClient(AzoaDappRoles.Manager);
+
+        var response = await manager.PostAsJsonAsync("api/apikey", new CreateApiKeyRequest
+        {
+            Name = "bad-node-govern-key",
+            Scopes = AzoaScopes.NodeGovern,
+        }, JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain(AzoaScopes.NodeGovern);
+    }
+
+    [Fact]
+    public async Task NodeGovernPolicy_IsJwtOnlyAndDistinctFromOperator()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var authz = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
+
+        var apiKeyWithLiteralScope = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim("AuthMethod", "ApiKey"),
+            new Claim("scope", AzoaScopes.NodeGovern),
+        }, "ApiKey"));
+        var jwtWithOperatorOnly = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim("scope", AzoaScopes.Operator),
+            new Claim("role", "Admin"),
+        }, "Bearer"));
+        var jwtWithNodeGovern = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim("scope", AzoaScopes.NodeGovern),
+        }, "Bearer"));
+
+        (await authz.AuthorizeAsync(apiKeyWithLiteralScope, resource: null, "NodeGovern"))
+            .Succeeded.Should().BeFalse("API keys must never satisfy node governance");
+        (await authz.AuthorizeAsync(jwtWithOperatorOnly, resource: null, "NodeGovern"))
+            .Succeeded.Should().BeFalse("economic governance remains a separate capability");
+        (await authz.AuthorizeAsync(jwtWithNodeGovern, resource: null, "NodeGovern"))
+            .Succeeded.Should().BeTrue();
     }
 
     [Fact]

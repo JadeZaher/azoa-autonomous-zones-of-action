@@ -40,16 +40,20 @@ public sealed class SurrealSagaStore : ISagaStore
     // Status string literals are passed as bound parameters so SurrealDB's
     // ASSERT INSIDE [...] constraint compares against the same tokens the
     // schema declares — no token smuggling, no typo drift.
-    private const string StatusPending      = "Pending";
-    private const string StatusInProgress   = "InProgress";
-    private const string StatusCompleted    = "Completed";
+    private const string StatusPending = "Pending";
+    private const string StatusInProgress = "InProgress";
+    private const string StatusCompleted = "Completed";
     private const string StatusCompensating = "Compensating";
     private const string StatusDeadLettered = "DeadLettered";
-    private const string StatusParked       = "Parked";
-    private const string StatusCancelled    = "Cancelled";
+    private const string StatusParked = "Parked";
+    private const string StatusCancelled = "Cancelled";
 
     private const int LastErrorMaxLength = 2048;
-    private const int OutputMaxLength    = 4096;
+    private const int OutputMaxLength = 4096;
+    private const string CompletionLeaseConflict =
+        "Saga completion lease conflict";
+    private const string CompensationLeaseConflict =
+        "Saga compensation lease conflict";
 
     // SurrealForge.Client type-infers string literals: a GUID-shaped value
     // becomes a `uuid` literal (u'...') and a `table:id`-shaped value becomes a
@@ -115,26 +119,22 @@ public sealed class SurrealSagaStore : ISagaStore
     private async Task PersistNewAsync(SagaStepRecord record, CancellationToken ct)
     {
         var poco = FromDomain(record);
-
-        // CREATE type::record('saga_steps', <id>) CONTENT <body> RETURN AFTER.
-        // type::record() builds the SurrealDB record id from a parameterized
-        // table+id pair so the table identifier cannot be smuggled.
-        var q = SurrealQuery
-            .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-            .WithParam("_t", TableName)
-            .WithParam("_id", poco.Id)
-            .WithParam("_body", poco);
-
-        var response = await _executor.ExecuteAsync(q, ct);
+        var response = await _executor.ExecuteAsync(BuildCreateStepQuery(poco), ct);
         response.EnsureAllOk();
     }
 
     // ── ParkStepAsync — suspend on signal/timer (durable-workflow-engine) ─────
 
+    /// <inheritdoc/>
     public async Task<bool> ParkStepAsync(
-        Guid id, string gateId, DateTime? resumeAt, CancellationToken ct)
+        Guid id,
+        DateTime claimedAt,
+        string gateId,
+        DateTime? resumeAt,
+        CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
+        var claimedAtUtc = DateTime.SpecifyKind(claimedAt, DateTimeKind.Utc);
         var surrealId = SurrealId.ToSurrealId(id);
 
         // The park KIND is the single discriminator (no magic sentinel, no
@@ -154,23 +154,25 @@ public sealed class SurrealSagaStore : ISagaStore
         {
             var nextRunUtc = DateTime.SpecifyKind(resumeAt.Value, DateTimeKind.Utc);
             q = SurrealQuery
-                .Of("UPDATE type::record($_t, $_id) SET status = $_parked, gate_id = NONE, next_run_at = $_next, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+                .Of("UPDATE type::record($_t, $_id) SET status = $_parked, gate_id = NONE, next_run_at = $_next, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
                 .WithParam("_t", TableName)
                 .WithParam("_id", surrealId)
                 .WithParam("_parked", StatusParked)
                 .WithParam("_next", nextRunUtc)
                 .WithParam("_in_progress", StatusInProgress)
+                .WithParam("_claimed_at", claimedAtUtc)
                 .WithParam("_now", nowUtc);
         }
         else
         {
             q = SurrealQuery
-                .Of("UPDATE type::record($_t, $_id) SET status = $_parked, gate_id = $_gate, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+                .Of("UPDATE type::record($_t, $_id) SET status = $_parked, gate_id = $_gate, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
                 .WithParam("_t", TableName)
                 .WithParam("_id", surrealId)
                 .WithParam("_parked", StatusParked)
                 .WithParam("_gate", EncodeOpaqueKey(gateId))
                 .WithParam("_in_progress", StatusInProgress)
+                .WithParam("_claimed_at", claimedAtUtc)
                 .WithParam("_now", nowUtc);
         }
 
@@ -316,6 +318,7 @@ public sealed class SurrealSagaStore : ISagaStore
 
     // ── TryClaimDueStepAsync — G2 single-winner primitive ─────────────────────
 
+    /// <inheritdoc/>
     public async Task<SagaStepRecord?> TryClaimDueStepAsync(
         Guid id, DateTime now, CancellationToken ct)
     {
@@ -361,41 +364,91 @@ public sealed class SurrealSagaStore : ISagaStore
 
     // ── CompleteStepAsync ─────────────────────────────────────────────────────
 
-    public async Task<bool> CompleteStepAsync(Guid id, string? output, CancellationToken ct)
+    /// <inheritdoc/>
+    public async Task<bool> CompleteStepAsync(
+        Guid id, DateTime claimedAt, string? output, CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
-        var surrealId = SurrealId.ToSurrealId(id);
-        var truncatedOutput = Truncate(output, OutputMaxLength);
+        var guardedCompletion = SurrealQuery.Combine(
+            BuildLeaseCompletionQuery(id, claimedAt, output, nowUtc),
+            BuildLeaseGuardQuery(CompletionLeaseConflict));
+        var result = await ExecuteLeaseGuardedAsync(
+            guardedCompletion,
+            CompletionLeaseConflict,
+            createdStatementIndex: null,
+            missingCreatedRowMessage: null,
+            ct: ct);
+        return result.Applied;
+    }
 
-        var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET status = $_completed, output = $_output, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
-            .WithParam("_t", TableName)
-            .WithParam("_id", surrealId)
-            .WithParam("_completed", StatusCompleted)
-            .WithParam("_in_progress", StatusInProgress)
-            .WithParam("_output", (object?)truncatedOutput!)
-            .WithParam("_now", nowUtc);
+    /// <inheritdoc/>
+    public async Task<SagaStepRecord?> CompleteAndEnqueueNextStepAsync(
+        Guid id,
+        DateTime claimedAt,
+        string? output,
+        string sagaName,
+        string nextStepName,
+        string correlationKey,
+        string nextStepIdempotencyKey,
+        string payloadJson,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var successor = new SagaStepRecord
+        {
+            Id = Guid.NewGuid(),
+            SagaName = sagaName,
+            StepName = nextStepName,
+            CorrelationKey = correlationKey,
+            StepIdempotencyKey = nextStepIdempotencyKey,
+            Payload = payloadJson,
+            Status = StepStatus.Pending,
+            IsCompensation = false,
+            AttemptCount = 0,
+            NextRunAt = nowUtc,
+            CreatedAt = nowUtc,
+            UpdatedAt = nowUtc,
+        };
 
-        var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0 || !response[0].IsOk) return false;
-        return response[0].AffectedCount() == 1;
+        // raw: lease-guarded completion and successor enqueue share one transaction.
+        var atomic = SurrealQuery.Combine(
+            SurrealQuery.Of("BEGIN"),
+            BuildLeaseCompletionQuery(id, claimedAt, output, nowUtc),
+            BuildLeaseGuardQuery(CompletionLeaseConflict),
+            BuildCreateStepQuery(FromDomain(successor)),
+            SurrealQuery.Of("COMMIT"));
+
+        var result = await ExecuteLeaseGuardedAsync(
+            atomic,
+            CompletionLeaseConflict,
+            createdStatementIndex: 3,
+            missingCreatedRowMessage: "Saga continuation transaction returned no successor row.",
+            ct: ct);
+        return result.Created is null ? null : ToDomain(result.Created);
     }
 
     // ── ScheduleRetryAsync ────────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<bool> ScheduleRetryAsync(
-        Guid id, DateTime nextRunAt, string error, CancellationToken ct)
+        Guid id,
+        DateTime claimedAt,
+        DateTime nextRunAt,
+        string error,
+        CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
+        var claimedAtUtc = DateTime.SpecifyKind(claimedAt, DateTimeKind.Utc);
         var nextRunUtc = DateTime.SpecifyKind(nextRunAt, DateTimeKind.Utc);
         var surrealId = SurrealId.ToSurrealId(id);
 
         var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET status = $_pending, attempt_count = attempt_count + 1, next_run_at = $_next, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_pending, attempt_count = attempt_count + 1, next_run_at = $_next, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_pending", StatusPending)
             .WithParam("_in_progress", StatusInProgress)
+            .WithParam("_claimed_at", claimedAtUtc)
             .WithParam("_next", nextRunUtc)
             .WithParam("_error", (object?)Truncate(error, LastErrorMaxLength)!)
             .WithParam("_now", nowUtc);
@@ -407,8 +460,10 @@ public sealed class SurrealSagaStore : ISagaStore
 
     // ── CompensateStepAsync ───────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<SagaStepRecord?> CompensateStepAsync(
         Guid id,
+        DateTime claimedAt,
         string compensationStepName,
         string compensationIdempotencyKey,
         string compensationPayloadJson,
@@ -419,17 +474,11 @@ public sealed class SurrealSagaStore : ISagaStore
         if (failing is null) return null;
 
         var nowUtc = DateTime.UtcNow;
+        var claimedAtUtc = DateTime.SpecifyKind(claimedAt, DateTimeKind.Utc);
         var surrealId = SurrealId.ToSurrealId(id);
 
-        // Build the compensation row up-front so we can ship both statements
-        // in a single multi-statement Combine. Statement [0] is the conditional
-        // transition (only the winner mutates); statement [1] CREATEs the new
-        // compensation Pending row. If [0]'s WHERE clause misses (concurrent
-        // reclaim won) we surface that as "no winner" by inspecting affected==0
-        // and skipping the result of [1] (which will still have CREATEd because
-        // Combine is not a SurrealDB transaction). To make the two-statement
-        // sequence truly atomic we wrap them in BEGIN/COMMIT via the explicit
-        // transaction primitive instead.
+        // Build both sides of the compensation hand-off before entering the
+        // explicit transaction; see Services/Sagas/AGENTS.md §compensation-atomicity.
         var compensation = new SagaStepRecord
         {
             Id = Guid.NewGuid(),
@@ -447,51 +496,50 @@ public sealed class SurrealSagaStore : ISagaStore
         };
         var compensationPoco = FromDomain(compensation);
 
-        // First: conditional transition of the failing step. Only proceed to
-        // enqueue the compensation row when this winner-of-the-race succeeded.
+        // raw: lease-guarded compensation transition and enqueue share one transaction.
         var transition = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET status = $_compensating, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+            .Of("LET $_transitioned = UPDATE type::record($_t, $_id) SET status = $_compensating, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_compensating", StatusCompensating)
             .WithParam("_in_progress", StatusInProgress)
+            .WithParam("_claimed_at", claimedAtUtc)
             .WithParam("_error", (object?)Truncate(error, LastErrorMaxLength)!)
             .WithParam("_now", nowUtc);
 
-        var transitionResp = await _executor.ExecuteAsync(transition, ct);
-        if (transitionResp.Count == 0 || !transitionResp[0].IsOk)
-            return null;
-        if (transitionResp[0].AffectedCount() != 1)
-            return null; // concurrent transition already handled it
+        var atomic = SurrealQuery.Combine(
+            SurrealQuery.Of("BEGIN"),
+            transition,
+            BuildLeaseGuardQuery(CompensationLeaseConflict),
+            BuildCreateStepQuery(compensationPoco),
+            SurrealQuery.Of("COMMIT"));
 
-        // Second: enqueue the declared compensation row as a fresh Pending.
-        // Sequenced AFTER the conditional transition succeeded so the same
-        // single-winner property keeps it from being double-enqueued.
-        var create = SurrealQuery
-            .Of("CREATE type::record($_t2, $_cid) CONTENT $_cbody RETURN AFTER")
-            .WithParam("_t2", TableName)
-            .WithParam("_cid", compensationPoco.Id)
-            .WithParam("_cbody", compensationPoco);
-
-        var createResp = await _executor.ExecuteAsync(create, ct);
-        createResp.EnsureAllOk();
-
-        return compensation;
+        var result = await ExecuteLeaseGuardedAsync(
+            atomic,
+            CompensationLeaseConflict,
+            createdStatementIndex: 3,
+            missingCreatedRowMessage: "Saga compensation transaction returned no row.",
+            ct: ct);
+        return result.Created is null ? null : ToDomain(result.Created);
     }
 
     // ── DeadLetterStepAsync ───────────────────────────────────────────────────
 
-    public async Task<bool> DeadLetterStepAsync(Guid id, string error, CancellationToken ct)
+    /// <inheritdoc/>
+    public async Task<bool> DeadLetterStepAsync(
+        Guid id, DateTime claimedAt, string error, CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
+        var claimedAtUtc = DateTime.SpecifyKind(claimedAt, DateTimeKind.Utc);
         var surrealId = SurrealId.ToSurrealId(id);
 
         var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET status = $_dead, dead_lettered = true, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_dead, dead_lettered = true, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_dead", StatusDeadLettered)
             .WithParam("_in_progress", StatusInProgress)
+            .WithParam("_claimed_at", claimedAtUtc)
             .WithParam("_error", (object?)Truncate(error, LastErrorMaxLength)!)
             .WithParam("_now", nowUtc);
 
@@ -613,6 +661,68 @@ public sealed class SurrealSagaStore : ISagaStore
         return response[0].AffectedCount() == 1;
     }
 
+    private static SurrealQuery BuildLeaseCompletionQuery(
+        Guid id,
+        DateTime claimedAt,
+        string? output,
+        DateTime nowUtc)
+        => SurrealQuery
+            .Of("LET $_transitioned = UPDATE type::record($_t, $_id) SET status = $_completed, output = $_output, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
+            .WithParam("_t", TableName)
+            .WithParam("_id", SurrealId.ToSurrealId(id))
+            .WithParam("_completed", StatusCompleted)
+            .WithParam("_in_progress", StatusInProgress)
+            .WithParam("_claimed_at", DateTime.SpecifyKind(claimedAt, DateTimeKind.Utc))
+            .WithParam("_output", (object?)Truncate(output, OutputMaxLength)!)
+            .WithParam("_now", nowUtc);
+
+    private static SurrealQuery BuildLeaseGuardQuery(string conflictMarker)
+        => SurrealQuery
+            .Of("IF array::len($_transitioned) != 1 { THROW $_lease_conflict }")
+            .WithParam("_lease_conflict", conflictMarker);
+
+    private static SurrealQuery BuildCreateStepQuery(SagaStepPoco poco)
+        => SurrealQuery
+            .Of("CREATE type::record($_create_t, $_create_id) CONTENT $_create_body RETURN AFTER")
+            .WithParam("_create_t", TableName)
+            .WithParam("_create_id", poco.Id)
+            .WithParam("_create_body", poco);
+
+    private async Task<(bool Applied, SagaStepPoco? Created)> ExecuteLeaseGuardedAsync(
+        SurrealQuery query,
+        string conflictMarker,
+        int? createdStatementIndex,
+        string? missingCreatedRowMessage,
+        CancellationToken ct)
+    {
+        var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var executed = await _executor.ExecuteAsync(query, ct);
+            var errors = JoinStatementErrors(executed);
+            if (!errors.Contains(conflictMarker, StringComparison.Ordinal))
+                executed.EnsureAllOk();
+            return executed;
+        }, ct);
+
+        var finalErrors = JoinStatementErrors(response);
+        if (finalErrors.Contains(conflictMarker, StringComparison.Ordinal))
+            return (false, null);
+        if (response.Count == 0)
+            throw new InvalidOperationException("Saga lease-guarded mutation returned no statements.");
+        if (!createdStatementIndex.HasValue)
+            return (true, null);
+
+        var created = response.GetValues<SagaStepPoco>(createdStatementIndex.Value)
+            .SingleOrDefault()
+            ?? throw new InvalidOperationException(
+                missingCreatedRowMessage ?? "Saga transaction returned no created row.");
+        return (true, created);
+    }
+
+    private static string JoinStatementErrors(IEnumerable<SurrealStatementResult> response)
+        => string.Join(" ", response.Where(statement => !statement.IsOk)
+            .Select(statement => statement.ErrorText));
+
     // ── Mapping helpers ───────────────────────────────────────────────────────
 
 
@@ -632,46 +742,46 @@ public sealed class SurrealSagaStore : ISagaStore
 
     private static SagaStepPoco FromDomain(SagaStepRecord r) => new()
     {
-        Id                 = SurrealId.ToSurrealId(r.Id),
-        CorrelationKey     = EncodeOpaqueKey(r.CorrelationKey),
-        SagaName           = r.SagaName,
-        StepName           = EncodeOpaqueKey(r.StepName),
+        Id = SurrealId.ToSurrealId(r.Id),
+        CorrelationKey = EncodeOpaqueKey(r.CorrelationKey),
+        SagaName = r.SagaName,
+        StepName = EncodeOpaqueKey(r.StepName),
         StepIdempotencyKey = EncodeOpaqueKey(r.StepIdempotencyKey),
-        Payload            = r.Payload ?? string.Empty,
-        Status             = StatusToString(r.Status),
-        IsCompensation     = r.IsCompensation,
-        AttemptCount       = r.AttemptCount,
-        NextRunAt          = new DateTimeOffset(DateTime.SpecifyKind(r.NextRunAt, DateTimeKind.Utc)),
-        ClaimedAt          = r.ClaimedAt.HasValue
+        Payload = r.Payload ?? string.Empty,
+        Status = StatusToString(r.Status),
+        IsCompensation = r.IsCompensation,
+        AttemptCount = r.AttemptCount,
+        NextRunAt = new DateTimeOffset(DateTime.SpecifyKind(r.NextRunAt, DateTimeKind.Utc)),
+        ClaimedAt = r.ClaimedAt.HasValue
                              ? new DateTimeOffset(DateTime.SpecifyKind(r.ClaimedAt.Value, DateTimeKind.Utc))
                              : null,
-        LastError          = r.LastError,
-        Output             = r.Output,
-        DeadLettered       = r.DeadLettered,
-        CreatedAt          = new DateTimeOffset(DateTime.SpecifyKind(r.CreatedAt, DateTimeKind.Utc)),
-        UpdatedAt          = new DateTimeOffset(DateTime.SpecifyKind(r.UpdatedAt, DateTimeKind.Utc)),
-        GateId             = r.GateId is null ? null : EncodeOpaqueKey(r.GateId),
+        LastError = r.LastError,
+        Output = r.Output,
+        DeadLettered = r.DeadLettered,
+        CreatedAt = new DateTimeOffset(DateTime.SpecifyKind(r.CreatedAt, DateTimeKind.Utc)),
+        UpdatedAt = new DateTimeOffset(DateTime.SpecifyKind(r.UpdatedAt, DateTimeKind.Utc)),
+        GateId = r.GateId is null ? null : EncodeOpaqueKey(r.GateId),
     };
 
     private static SagaStepRecord ToDomain(SagaStepPoco p) => new()
     {
-        Id                 = SurrealId.FromSurrealId(StripIdPrefix(p.Id)),
-        CorrelationKey     = DecodeOpaqueKey(p.CorrelationKey ?? string.Empty),
-        SagaName           = p.SagaName ?? string.Empty,
-        StepName           = DecodeOpaqueKey(p.StepName ?? string.Empty),
+        Id = SurrealId.FromSurrealId(StripIdPrefix(p.Id)),
+        CorrelationKey = DecodeOpaqueKey(p.CorrelationKey ?? string.Empty),
+        SagaName = p.SagaName ?? string.Empty,
+        StepName = DecodeOpaqueKey(p.StepName ?? string.Empty),
         StepIdempotencyKey = DecodeOpaqueKey(p.StepIdempotencyKey ?? string.Empty),
-        Payload            = p.Payload ?? string.Empty,
-        Status             = StatusFromString(p.Status),
-        IsCompensation     = p.IsCompensation,
-        AttemptCount       = p.AttemptCount,
-        NextRunAt          = p.NextRunAt.UtcDateTime,
-        ClaimedAt          = p.ClaimedAt?.UtcDateTime,
-        LastError          = p.LastError,
-        Output             = p.Output,
-        DeadLettered       = p.DeadLettered,
-        CreatedAt          = p.CreatedAt.UtcDateTime,
-        UpdatedAt          = p.UpdatedAt.UtcDateTime,
-        GateId             = p.GateId is null ? null : DecodeOpaqueKey(p.GateId),
+        Payload = p.Payload ?? string.Empty,
+        Status = StatusFromString(p.Status),
+        IsCompensation = p.IsCompensation,
+        AttemptCount = p.AttemptCount,
+        NextRunAt = p.NextRunAt.UtcDateTime,
+        ClaimedAt = p.ClaimedAt?.UtcDateTime,
+        LastError = p.LastError,
+        Output = p.Output,
+        DeadLettered = p.DeadLettered,
+        CreatedAt = p.CreatedAt.UtcDateTime,
+        UpdatedAt = p.UpdatedAt.UtcDateTime,
+        GateId = p.GateId is null ? null : DecodeOpaqueKey(p.GateId),
     };
 
     /// <summary>
@@ -688,25 +798,25 @@ public sealed class SurrealSagaStore : ISagaStore
 
     private static string StatusToString(StepStatus s) => s switch
     {
-        StepStatus.Pending      => StatusPending,
-        StepStatus.InProgress   => StatusInProgress,
-        StepStatus.Completed    => StatusCompleted,
+        StepStatus.Pending => StatusPending,
+        StepStatus.InProgress => StatusInProgress,
+        StepStatus.Completed => StatusCompleted,
         StepStatus.Compensating => StatusCompensating,
         StepStatus.DeadLettered => StatusDeadLettered,
-        StepStatus.Parked       => StatusParked,
-        StepStatus.Cancelled    => StatusCancelled,
+        StepStatus.Parked => StatusParked,
+        StepStatus.Cancelled => StatusCancelled,
         _ => throw new ArgumentOutOfRangeException(nameof(s), s, "Unknown StepStatus value."),
     };
 
     private static StepStatus StatusFromString(string? s) => s switch
     {
-        StatusPending      => StepStatus.Pending,
-        StatusInProgress   => StepStatus.InProgress,
-        StatusCompleted    => StepStatus.Completed,
+        StatusPending => StepStatus.Pending,
+        StatusInProgress => StepStatus.InProgress,
+        StatusCompleted => StepStatus.Completed,
         StatusCompensating => StepStatus.Compensating,
         StatusDeadLettered => StepStatus.DeadLettered,
-        StatusParked       => StepStatus.Parked,
-        StatusCancelled    => StepStatus.Cancelled,
+        StatusParked => StepStatus.Parked,
+        StatusCancelled => StepStatus.Cancelled,
         _ => throw new InvalidOperationException(
             $"Unrecognised saga step status '{s}' read from SurrealDB. " +
             "Schema ASSERT INSIDE [...] should have prevented this; refresh the schema."),
@@ -756,23 +866,23 @@ public sealed class SurrealSagaStore : ISagaStore
     /// </summary>
     private sealed class SagaStepPoco
     {
-        [JsonPropertyName("id")]                    public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("correlation_key")]       public string? CorrelationKey { get; set; }
-        [JsonPropertyName("saga_name")]             public string? SagaName { get; set; }
-        [JsonPropertyName("step_name")]             public string? StepName { get; set; }
-        [JsonPropertyName("step_idempotency_key")]  public string? StepIdempotencyKey { get; set; }
-        [JsonPropertyName("payload")]               public string? Payload { get; set; }
-        [JsonPropertyName("status")]                public string? Status { get; set; }
-        [JsonPropertyName("is_compensation")]       public bool IsCompensation { get; set; }
-        [JsonPropertyName("attempt_count")]         public int AttemptCount { get; set; }
-        [JsonPropertyName("next_run_at")]           public DateTimeOffset NextRunAt { get; set; }
-        [JsonPropertyName("claimed_at")]            public DateTimeOffset? ClaimedAt { get; set; }
-        [JsonPropertyName("last_error")]            public string? LastError { get; set; }
-        [JsonPropertyName("output")]                public string? Output { get; set; }
-        [JsonPropertyName("dead_lettered")]         public bool DeadLettered { get; set; }
-        [JsonPropertyName("created_at")]            public DateTimeOffset CreatedAt { get; set; }
-        [JsonPropertyName("updated_at")]            public DateTimeOffset UpdatedAt { get; set; }
-        [JsonPropertyName("gate_id")]               public string? GateId { get; set; }
+        [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
+        [JsonPropertyName("correlation_key")] public string? CorrelationKey { get; set; }
+        [JsonPropertyName("saga_name")] public string? SagaName { get; set; }
+        [JsonPropertyName("step_name")] public string? StepName { get; set; }
+        [JsonPropertyName("step_idempotency_key")] public string? StepIdempotencyKey { get; set; }
+        [JsonPropertyName("payload")] public string? Payload { get; set; }
+        [JsonPropertyName("status")] public string? Status { get; set; }
+        [JsonPropertyName("is_compensation")] public bool IsCompensation { get; set; }
+        [JsonPropertyName("attempt_count")] public int AttemptCount { get; set; }
+        [JsonPropertyName("next_run_at")] public DateTimeOffset NextRunAt { get; set; }
+        [JsonPropertyName("claimed_at")] public DateTimeOffset? ClaimedAt { get; set; }
+        [JsonPropertyName("last_error")] public string? LastError { get; set; }
+        [JsonPropertyName("output")] public string? Output { get; set; }
+        [JsonPropertyName("dead_lettered")] public bool DeadLettered { get; set; }
+        [JsonPropertyName("created_at")] public DateTimeOffset CreatedAt { get; set; }
+        [JsonPropertyName("updated_at")] public DateTimeOffset UpdatedAt { get; set; }
+        [JsonPropertyName("gate_id")] public string? GateId { get; set; }
     }
 
     /// <summary>

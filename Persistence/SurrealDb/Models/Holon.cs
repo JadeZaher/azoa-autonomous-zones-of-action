@@ -21,6 +21,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [Index("holon_parent", Fields = new[] { "parent_holon_id" })]
     [Index("holon_provider_chain", Fields = new[] { "provider_name", "chain_id" })]
     [Index("holon_asset_type", Fields = new[] { "asset_type" })]
+    [Index("holon_transfer_reservation", Fields = new[] { "transfer_reservation_key" }, Unique = true)]
     [ExtraSurrealField("embedding", "option<array<float, 384>>", Order = 12,
         FieldGroup = "Embedding vector for HNSW semantic search (384-dimensional, MiniLM-style)")]
     public partial class Holon : ISurrealRecord
@@ -91,5 +92,18 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 18)]
         [Default("false")]
         public bool IsPublic { get; set; }
+
+        [Column(Order = 19)]
+        public string? TransferReservationKey { get; set; }
+
+        [Column(Order = 20)]
+        [References(typeof(Avatar), Optional = true)]
+        public string? TransferTargetAvatarId { get; set; }
+
+        [Column(Order = 21)]
+        public DateTimeOffset? TransferReservedAt { get; set; }
+
+        [Column(Order = 22)]
+        public string? LastTransferSettlementKey { get; set; }
     }
 }

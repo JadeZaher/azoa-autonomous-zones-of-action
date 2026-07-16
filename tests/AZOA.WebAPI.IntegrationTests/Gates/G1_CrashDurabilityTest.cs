@@ -1,4 +1,4 @@
-// ─── AZOA Sleek — Guardrail G1: Crash-Durability Gate ───────────────────────
+// ─── AZOA — Guardrail G1: Crash-Durability Gate ───────────────────────
 //
 // LOAD-BEARING ASSERTION (read before modifying this file)
 // ──────────────────────────────────────────────────────────

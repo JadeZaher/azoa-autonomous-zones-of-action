@@ -1,18 +1,11 @@
+using System.Diagnostics;
 using System.Text.Json;
+using AZOA.WebAPI.Core.Diagnostics;
 using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Middleware;
 
-/// <summary>
-/// Converts an unhandled exception into a structured JSON response that mirrors
-/// the <see cref="AZOAResult{T}"/> error shape, so the SDK can parse it like
-/// any other error. When debug mode is on the response carries the full
-/// exception chain; otherwise only a generic message is returned.
-///
-/// Without this, a thrown exception escaping a controller produced an empty
-/// HTTP 500 with no body — the exact cause of the opaque
-/// "GET /api/bridge/history failed with HTTP 500" with no further detail.
-/// </summary>
+/// <summary>Logs and shapes unhandled request exceptions; see Core/Diagnostics/AGENTS.md.</summary>
 public sealed class DebugExceptionMiddleware
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -37,10 +30,30 @@ public sealed class DebugExceptionMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception for {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+            var activity = Activity.Current;
+            activity?.SetStatus(ActivityStatusCode.Error);
+            activity?.AddEvent(new ActivityEvent(
+                "exception",
+                tags: new ActivityTagsCollection
+                {
+                    { "exception.type", ex.GetType().FullName },
+                    { "exception.escaped", false },
+                }));
 
-            // Headers already flushed — can't rewrite the response, let it bubble.
+            using (_logger.BeginScope(new Dictionary<string, object?>
+            {
+                ["requestId"] = context.TraceIdentifier,
+                ["requestMethod"] = context.Request.Method,
+                ["requestPath"] = context.Request.Path.Value,
+                ["statusCode"] = StatusCodes.Status500InternalServerError,
+                ["TraceId"] = Activity.Current?.TraceId.ToString(),
+                ["SpanId"] = Activity.Current?.SpanId.ToString(),
+            }))
+            {
+                _logger.LogCritical(ex, "Unhandled exception for {Method} {Path}",
+                    context.Request.Method, context.Request.Path);
+            }
+
             if (context.Response.HasStarted)
                 throw;
 
@@ -48,12 +61,23 @@ public sealed class DebugExceptionMiddleware
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             context.Response.ContentType = "application/json";
 
+            var suppressDebugDetails = context.GetEndpoint()?.Metadata
+                .GetMetadata<SuppressDebugExceptionDetailsAttribute>() is not null;
             var result = new AZOAResult<object>();
-            result.CaptureException(
-                ex,
-                AZOAResultDebug.Enabled
-                    ? ex.Message
-                    : "An unexpected error occurred. Enable debug mode (AZOA:DebugErrors) for details.");
+            if (suppressDebugDetails)
+            {
+                context.Response.Headers.CacheControl = "no-store";
+                result.IsError = true;
+                result.Message = "An unexpected error occurred.";
+            }
+            else
+            {
+                result.CaptureException(
+                    ex,
+                    AZOAResultDebug.Enabled
+                        ? ex.Message
+                        : "An unexpected error occurred. Enable debug mode (AZOA:DebugErrors) for details.");
+            }
 
             var json = JsonSerializer.Serialize(result.ToErrorPayload(), JsonOptions);
             await context.Response.WriteAsync(json);

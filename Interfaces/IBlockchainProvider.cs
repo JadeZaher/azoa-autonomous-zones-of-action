@@ -9,6 +9,12 @@ public interface IBlockchainProvider
     string ChainType { get; }
     ChainNetwork ActiveNetwork { get; }
 
+    /// <summary>
+    /// Initializes one previously unbound provider instance for a single network.
+    /// Callers should obtain production providers from
+    /// <c>IBlockchainProviderFactory</c>; factory-bound providers reject external
+    /// reinitialization so a cached network binding cannot be retargeted.
+    /// </summary>
     void Initialize(BlockchainNetworkConfig config, ChainNetwork network);
 
     /// <summary>

@@ -10,6 +10,8 @@ using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Tests.Managers;
 
@@ -32,7 +34,8 @@ public class AdminBootstrapTests
         Mock<IAvatarStore> store,
         string environmentName,
         string? seedEmail = null,
-        string? seedSecret = null)
+        string? seedSecret = null,
+        FakeAdminBootstrapStateStore? bootstrapState = null)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -51,11 +54,16 @@ public class AdminBootstrapTests
         var environment = new Mock<IHostEnvironment>();
         environment.Setup(e => e.EnvironmentName).Returns(environmentName);
 
-        return new AvatarManager(store.Object, config, environment.Object);
+        return new AvatarManager(
+            store.Object,
+            config,
+            environment.Object,
+            bootstrapState ?? new FakeAdminBootstrapStateStore());
     }
 
-    private static Avatar MakeAvatar(string email) => new()
+    private static AZOA.WebAPI.Models.Avatar MakeAvatar(string email) => new()
     {
+        Id = Guid.NewGuid(),
         Email = email,
         PasswordHash = BCrypt.Net.BCrypt.HashPassword("password123"),
     };
@@ -63,17 +71,23 @@ public class AdminBootstrapTests
     private static JwtSecurityToken Decode(string jwt) => new JwtSecurityTokenHandler().ReadJwtToken(jwt);
 
     [Fact]
-    public async Task Login_WithBothSeedValuesSetAndMatchingEmail_StampsOperatorAdmin()
+    public async Task Login_WithMatchingEmailAndVerifiedOneTimeSecret_StampsOperatorAdmin()
     {
         var avatar = MakeAvatar("admin@azoa.test");
         var store = MakeStore(avatar);
         var manager = MakeManager(store, "Development", "admin@azoa.test", "seed-secret");
 
-        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+        var result = await manager.LoginAsync(new AvatarLoginModel
+        {
+            Email = avatar.Email,
+            Password = "password123",
+            BootstrapSecret = "seed-secret",
+        });
 
         result.IsError.Should().BeFalse();
         var token = Decode(result.Result!);
         token.Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.Operator);
+        token.Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
         token.Claims.Should().Contain(c => c.Type == "role" && c.Value == "Admin");
     }
 
@@ -138,6 +152,7 @@ public class AdminBootstrapTests
         token.Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.DappDevelop);
         token.Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.DappManage);
         token.Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.Operator);
+        token.Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
     }
 
     [Fact]
@@ -182,5 +197,87 @@ public class AdminBootstrapTests
         var act = async () => await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
 
         await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task Login_WithMissingOrWrongBootstrapSecret_DoesNotStamp()
+    {
+        var avatar = MakeAvatar("admin@azoa.test");
+        var store = MakeStore(avatar);
+        var manager = MakeManager(store, "Development", avatar.Email, "seed-secret");
+
+        var missing = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+        var wrong = await manager.LoginAsync(new AvatarLoginModel
+        {
+            Email = avatar.Email,
+            Password = "password123",
+            BootstrapSecret = "wrong-secret",
+        });
+
+        Decode(missing.Result!).Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
+        Decode(wrong.Result!).Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
+    }
+
+    [Fact]
+    public async Task Login_AfterBinding_ReplaysOnlyForBoundAvatar()
+    {
+        var seed = MakeAvatar("admin@azoa.test");
+        var attacker = MakeAvatar("attacker@azoa.test");
+        var state = new FakeAdminBootstrapStateStore();
+        var store = MakeStore(seed);
+        var manager = MakeManager(store, "Development", seed.Email, "seed-secret", state);
+
+        var first = await manager.LoginAsync(new AvatarLoginModel
+        {
+            Email = seed.Email,
+            Password = "password123",
+            BootstrapSecret = "seed-secret",
+        });
+        store.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = new IAvatar[] { attacker } });
+        var replay = await manager.LoginAsync(new AvatarLoginModel
+        {
+            Email = attacker.Email,
+            Password = "password123",
+            BootstrapSecret = "seed-secret",
+        });
+
+        Decode(first.Result!).Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
+        Decode(replay.Result!).Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
+    }
+
+    [Fact]
+    public async Task Update_SelfCannotClaimConfiguredBootstrapEmail()
+    {
+        var avatar = MakeAvatar("attacker@azoa.test");
+        avatar.Id = Guid.NewGuid();
+        var store = MakeStore(avatar);
+        store.Setup(p => p.GetByIdAsync(avatar.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar> { Result = avatar });
+        var manager = MakeManager(store, "Development", "admin@azoa.test", "seed-secret");
+
+        var result = await manager.UpdateAsync(
+            avatar.Id,
+            new AvatarUpdateModel { Email = "admin@azoa.test" },
+            avatar.Id);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("cannot be claimed");
+    }
+
+    private sealed class FakeAdminBootstrapStateStore : IAdminBootstrapStateStore
+    {
+        private AdminBootstrapState? _state;
+
+        public Task<AZOAResult<AdminBootstrapState?>> GetAsync(CancellationToken ct = default)
+            => Task.FromResult(new AZOAResult<AdminBootstrapState?> { Result = _state, Message = "Success" });
+
+        public Task<AZOAResult<AdminBootstrapState>> BindOnceAsync(
+            AdminBootstrapState state,
+            CancellationToken ct = default)
+        {
+            _state ??= state;
+            return Task.FromResult(new AZOAResult<AdminBootstrapState> { Result = _state, Message = "Success" });
+        }
     }
 }

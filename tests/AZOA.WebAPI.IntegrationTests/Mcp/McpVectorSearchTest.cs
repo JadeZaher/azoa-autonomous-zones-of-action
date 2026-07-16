@@ -1,4 +1,4 @@
-// ─── AZOA Sleek — MCP Vector Search Integration Tests ────────────────────────
+// ─── AZOA — MCP Vector Search Integration Tests ────────────────────────
 //
 // Tests for the vector_search tool (VectorSearchTool + DeterministicDummyEmbeddingProvider).
 //

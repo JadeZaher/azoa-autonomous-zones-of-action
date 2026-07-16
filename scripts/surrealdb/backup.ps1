@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    AZOA Sleek -- SurrealDB backup (surreal export via container exec).
+    AZOA -- SurrealDB backup (surreal export via container exec).
 
 .DESCRIPTION
     Exports a SurrealDB namespace/database to a SurrealQL script by running

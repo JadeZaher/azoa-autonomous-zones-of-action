@@ -11,6 +11,71 @@ Each `*Kind` enum inside a POCO MIRRORS its domain enum
 string-enum field MUST enumerate exactly those names, or a SCHEMAFULL ASSERT
 rejects a legitimate write.
 
+`OperationLog.StatusKind` and `SwapState.StatusKind` include
+`PendingConfirmation`. It represents a submitted transaction with a persisted
+hash whose chain verdict is not yet terminal. Mapping it to `Unknown` is a data
+loss bug because reconciliation selects by the closed status set.
+
+## node-operator-governance
+
+`NodeGovernanceParameters` is a singleton local policy row keyed by `local`.
+For both `AllowedChains` and `AllowedAssetTypes`, `null` means unrestricted and
+an empty array means deny all. Preserve that distinction in mappings and tests.
+
+`NodeGovernanceAudit` is append-only. It stores both previous and new allowlists
+so an operator can reconstruct exactly what changed without diffing historical
+parameter rows. Do not add update/delete store methods for the audit table.
+
+`NodeFeeSchedule` is also a singleton keyed by `local`. Flat fees are unsigned
+integer base-unit strings; bps values are `0..10000`. Its `Version` is a CAS
+token, not display metadata: schedule replacement and the matching
+`NodeFeeAudit` insert happen in one transaction only when the stored version
+matches. `NodeFeeAudit` is append-only and stores full previous/new JSON
+snapshots so every economic decision version is reconstructable.
+
+Governance and fee singleton `created_at` fields are database-defaulted and
+read-only. Their CAS transactions use explicit `SET` clauses that omit the
+field, preserving the original creation time on every update.
+
+`NodeTreasuryDestination` is keyed deterministically by canonical chain/network
+and also has a unique composite index over those columns. It is routing policy,
+not part of `NodeFeeSchedule`: rotating a treasury must not rewrite pricing, and
+an in-flight settlement must retain the address and destination version it
+claimed. `NodeTreasuryAudit` is append-only; destination CAS and audit creation
+belong to one transaction.
+
+`NodeFeeSettlement` is the durable, currently inert boundary for a fee consumer
+that needs two observable on-chain effects. Its deterministic record id uses a
+hash of the parent idempotency key plus operation; never persist the raw tenant
+key. A prepared row freezes chain/network, asset, gross/fee/net amounts,
+fee-schedule version, and treasury address/version before either effect can be
+submitted. Its three base-unit amounts are canonical, positive unsigned 64-bit
+decimal strings (no sign, leading zero, or value above `ulong.MaxValue`), and
+the POCO assertions enforce that contract even when a caller bypasses the
+manager. The parent-key hash, operation, chain/network, asset, three amounts,
+fee-schedule version, and treasury address/version are also `READONLY`:
+SurrealDB accepts them during the initial `CREATE`, then prevents an economic
+decision rewrite. Fee, treasury, attempt, and state version counters are nonnegative at
+the schema boundary. Recovery uses `lease_token`, `lease_expires_at`, and the
+CAS `state_version`: a candidate is claimable only when due with no lease or
+when a prior lease has expired, and a release needs the exact live
+token/version. `next_attempt_at` bounds scans while `reconciliation_reason`
+explains why an inert worker left the row non-terminal. `Prepared` does not
+authorize a chain action: activation still needs an atomic parent-claim creation
+path, reviewed effect hand-offs, provider submission, and chain reconciliation.
+Do not model fees as an AZOA off-chain balance.
+
+## NFT transfer projection reservation
+
+`Holon.TransferReservationKey`, `TransferTargetAvatarId`, and
+`TransferReservedAt` form the pre-broadcast ownership reservation. The source
+owner remains authoritative until chain confirmation. A conditional finalize
+moves `AvatarId`, clears the reservation, and records
+`LastTransferSettlementKey` so crash replay is idempotent. These fields are
+workflow provenance, not an off-chain asset balance. Reusing a reservation key
+with a different target is an idempotency conflict and must never rewrite the
+reserved target.
+
 ## §quest-access-request
 
 quest-invitations-approval track. Adds a **run-authorization** dimension to

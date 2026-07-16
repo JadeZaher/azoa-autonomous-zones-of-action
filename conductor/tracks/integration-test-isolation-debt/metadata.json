@@ -1,6 +1,6 @@
 {
   "id": "integration-test-isolation-debt",
-  "status": "pending",
+  "status": "active",
   "created": "2026-07-06",
-  "description": "Retire the ~31-failure full-suite integration tail: per-test namespace isolation + Buckets A-D from INTEGRATION-TEST-PASSOFF.md; make the suite a usable CI gate."
+  "description": "Turn the repaired, namespace-isolated SurrealDB integration suite into a required CI gate; archive only after a complete post-fix run and repository CI both pass."
 }

@@ -39,7 +39,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _surrealAvailable = await ProbeSurrealAsync();Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+        _surrealAvailable = await ProbeSurrealAsync(); Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         // Bootstrap namespace + schema BEFORE binding the per-test connection so
         // the DEFINE NAMESPACE statement does not require an existing namespace.
@@ -47,11 +47,11 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
         var options = new SurrealConnectionOptions
         {
-            Endpoint  = SurrealTestDefaults.Endpoint,
+            Endpoint = SurrealTestDefaults.Endpoint,
             Namespace = _testNamespace,
-            Database  = "test",
-            User      = SurrealTestDefaults.User,
-            Password  = SurrealTestDefaults.Password
+            Database = "test",
+            User = SurrealTestDefaults.User,
+            Password = SurrealTestDefaults.Password
         };
 
         var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
@@ -61,7 +61,8 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     }
 
     public async Task DisposeAsync()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
         try
         {
             await DropNamespaceAsync();
@@ -122,7 +123,8 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task GetDueStepIds_ReturnsDuePendingRows_InOrder_BoundedByBatch()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var now = DateTime.UtcNow;
 
@@ -164,7 +166,8 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task GetDueStepIds_ReclaimsStaleLeases()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "StaleStep", UniqueCorrelation(), UniqueIdempotency(),
@@ -195,7 +198,8 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task TryClaimDueStep_FirstCaller_Wins()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "Claimable", UniqueCorrelation(), UniqueIdempotency(),
@@ -218,14 +222,15 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task TryClaimDueStep_SecondConcurrentCaller_Loses()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "Contested", UniqueCorrelation(), UniqueIdempotency(),
             "{}", false, CancellationToken.None);
 
         var now = DateTime.UtcNow.AddSeconds(5);
-        var first  = await _store.TryClaimDueStepAsync(enq.Id, now, CancellationToken.None);
+        var first = await _store.TryClaimDueStepAsync(enq.Id, now, CancellationToken.None);
         var second = await _store.TryClaimDueStepAsync(enq.Id, now, CancellationToken.None);
 
         first.Should().NotBeNull("first caller wins");
@@ -290,7 +295,8 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task CompleteStep_FromInProgress_Succeeds_And_IsNoOpAfterwards()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "Completable", UniqueCorrelation(), UniqueIdempotency(),
@@ -302,7 +308,8 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         claimed.Should().NotBeNull();
 
         var ok1 = await _store.CompleteStepAsync(
-            enq.Id, """{"result":"ok"}""", CancellationToken.None);
+            enq.Id, claimed!.ClaimedAt!.Value,
+            """{"result":"ok"}""", CancellationToken.None);
         ok1.Should().BeTrue("a Completed transition from InProgress must succeed");
 
         var fetched = await _store.GetAsync(enq.Id, CancellationToken.None);
@@ -311,8 +318,77 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         fetched.ClaimedAt.Should().BeNull("Complete clears the lease");
 
         // Second call must be a silent no-op (zero affected rows).
-        var ok2 = await _store.CompleteStepAsync(enq.Id, "ignored", CancellationToken.None);
+        var ok2 = await _store.CompleteStepAsync(
+            enq.Id, claimed.ClaimedAt.Value, "ignored", CancellationToken.None);
         ok2.Should().BeFalse("subsequent Complete on a non-InProgress row must be a no-op");
+    }
+
+    [SkippableFact]
+    public async Task CompleteAndEnqueueNextStep_IsAtomicLeaseGuardedAndRollsBackInvalidSuccessor()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var source = await _store.EnqueueAsync(
+            "AtomicContinuation", "First", UniqueCorrelation(), UniqueIdempotency(),
+            "{}", false, CancellationToken.None);
+        var firstClaim = await ClaimAsync(source.Id);
+
+        var successor = await _store.CompleteAndEnqueueNextStepAsync(
+            source.Id,
+            firstClaim.ClaimedAt!.Value,
+            "{\"result\":\"ok\"}",
+            source.SagaName,
+            "Second",
+            source.CorrelationKey,
+            UniqueIdempotency(),
+            source.Payload,
+            CancellationToken.None);
+
+        successor.Should().NotBeNull();
+        successor!.Status.Should().Be(StepStatus.Pending);
+        (await _store.GetAsync(source.Id, CancellationToken.None))!.Status
+            .Should().Be(StepStatus.Completed);
+
+        var staleSource = await _store.EnqueueAsync(
+            "AtomicContinuation", "Stale", UniqueCorrelation(), UniqueIdempotency(),
+            "{}", false, CancellationToken.None);
+        var staleClaim = await ClaimAsync(staleSource.Id);
+        var reclaimNow = staleClaim.ClaimedAt!.Value.AddMinutes(2);
+        (await _store.GetDueStepIdsAsync(
+            reclaimNow, 10, TimeSpan.FromSeconds(1), CancellationToken.None))
+            .Should().Contain(staleSource.Id);
+        var winnerClaim = await _store.TryClaimDueStepAsync(
+            staleSource.Id, reclaimNow.AddMilliseconds(1), CancellationToken.None);
+        winnerClaim.Should().NotBeNull();
+
+        var staleResult = await _store.CompleteAndEnqueueNextStepAsync(
+            staleSource.Id,
+            staleClaim.ClaimedAt.Value,
+            "{}",
+            staleSource.SagaName,
+            "Second",
+            staleSource.CorrelationKey,
+            UniqueIdempotency(),
+            staleSource.Payload,
+            CancellationToken.None);
+        staleResult.Should().BeNull();
+        (await _store.StepExistsAsync(staleSource.CorrelationKey, "Second", CancellationToken.None))
+            .Should().BeFalse();
+
+        Func<Task> invalidSuccessor = async () => await _store.CompleteAndEnqueueNextStepAsync(
+            staleSource.Id,
+            winnerClaim!.ClaimedAt!.Value,
+            "{}",
+            staleSource.SagaName,
+            string.Empty,
+            staleSource.CorrelationKey,
+            UniqueIdempotency(),
+            staleSource.Payload,
+            CancellationToken.None);
+        await invalidSuccessor.Should().ThrowAsync<SurrealStatementException>();
+        var persisted = await _store.GetAsync(staleSource.Id, CancellationToken.None);
+        persisted!.Status.Should().Be(StepStatus.InProgress);
+        persisted.ClaimedAt.Should().Be(winnerClaim.ClaimedAt);
     }
 
     /// <summary>
@@ -322,18 +398,21 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task ScheduleRetry_FromInProgress_BumpsAttempt_AndPushesNextRunAt()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "Retryable", UniqueCorrelation(), UniqueIdempotency(),
             "{}", false, CancellationToken.None);
 
-        await _store.TryClaimDueStepAsync(
+        var claimed = await _store.TryClaimDueStepAsync(
             enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        claimed.Should().NotBeNull();
 
         var retryAt = DateTime.UtcNow.AddSeconds(30);
         var ok = await _store.ScheduleRetryAsync(
-            enq.Id, retryAt, "transient blockchain rpc error", CancellationToken.None);
+            enq.Id, claimed!.ClaimedAt!.Value, retryAt,
+            "transient blockchain rpc error", CancellationToken.None);
         ok.Should().BeTrue();
 
         var fetched = await _store.GetAsync(enq.Id, CancellationToken.None);
@@ -352,7 +431,8 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
     /// </summary>
     [SkippableFact]
     public async Task CompensateStep_FromInProgress_TransitionsAndEnqueuesCompensation()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
@@ -364,12 +444,14 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
             isCompensation: false,
             ct: CancellationToken.None);
 
-        await _store.TryClaimDueStepAsync(
+        var claimed = await _store.TryClaimDueStepAsync(
             enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        claimed.Should().NotBeNull();
 
         var compensationIdem = UniqueIdempotency();
         var compensation = await _store.CompensateStepAsync(
             id: enq.Id,
+            claimedAt: claimed!.ClaimedAt!.Value,
             compensationStepName: "UnlockSource",
             compensationIdempotencyKey: compensationIdem,
             compensationPayloadJson: """{"reverse":"1.0"}""",
@@ -391,23 +473,55 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         failing.ClaimedAt.Should().BeNull("compensation clears the lease");
     }
 
+    [SkippableFact]
+    public async Task CompensateStep_CreateFailure_RollsBackStatusTransition()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var enqueued = await _store.EnqueueAsync(
+            "AtomicCompensation", "Forward", UniqueCorrelation(), UniqueIdempotency(),
+            "{}", false, CancellationToken.None);
+        var claimed = await _store.TryClaimDueStepAsync(
+            enqueued.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        claimed.Should().NotBeNull();
+
+        Func<Task> act = async () => await _store.CompensateStepAsync(
+            enqueued.Id,
+            claimed!.ClaimedAt!.Value,
+            compensationStepName: string.Empty,
+            compensationIdempotencyKey: UniqueIdempotency(),
+            compensationPayloadJson: "{}",
+            error: "force compensation create assertion",
+            ct: CancellationToken.None);
+
+        await act.Should().ThrowAsync<SurrealStatementException>();
+        var persisted = await _store.GetAsync(enqueued.Id, CancellationToken.None);
+        persisted!.Status.Should().Be(StepStatus.InProgress,
+            "the failing compensation CREATE must roll back the status transition");
+        persisted.AttemptCount.Should().Be(0);
+        persisted.ClaimedAt.Should().NotBeNull();
+    }
+
     /// <summary>
     /// DeadLetterStepAsync transitions InProgress → DeadLettered, sets the
     /// DeadLettered=true mirror flag, bumps AttemptCount, stores the error.
     /// </summary>
     [SkippableFact]
     public async Task DeadLetterStep_FromInProgress_TransitionsAndSetsFlag()
-    {Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var enq = await _store.EnqueueAsync(
             "S", "DoomedStep", UniqueCorrelation(), UniqueIdempotency(),
             "{}", false, CancellationToken.None);
 
-        await _store.TryClaimDueStepAsync(
+        var claimed = await _store.TryClaimDueStepAsync(
             enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        claimed.Should().NotBeNull();
 
         var ok = await _store.DeadLetterStepAsync(
-            enq.Id, "no compensation declared -- terminal failure", CancellationToken.None);
+            enq.Id, claimed!.ClaimedAt!.Value,
+            "no compensation declared -- terminal failure", CancellationToken.None);
         ok.Should().BeTrue();
 
         var fetched = await _store.GetAsync(enq.Id, CancellationToken.None);
@@ -433,9 +547,11 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
             "quest-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
-        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        var claimed = await ClaimAsync(enq.Id);
 
-        var parked = await _store.ParkStepAsync(enq.Id, "phase-met", resumeAt: null, CancellationToken.None);
+        var parked = await _store.ParkStepAsync(
+            enq.Id, claimed.ClaimedAt!.Value, "phase-met",
+            resumeAt: null, CancellationToken.None);
         parked.Should().BeTrue("a claimed InProgress step parks");
 
         var fetched = await _store.GetAsync(enq.Id, CancellationToken.None);
@@ -463,10 +579,12 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
             "quest-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
-        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
-        await _store.ParkStepAsync(enq.Id, "phase-met", resumeAt: null, CancellationToken.None);
+        var claimed = await ClaimAsync(enq.Id);
+        await _store.ParkStepAsync(
+            enq.Id, claimed.ClaimedAt!.Value, "phase-met",
+            resumeAt: null, CancellationToken.None);
 
-        var first  = await _store.TrySignalAsync(corr, "phase-met", null, CancellationToken.None);
+        var first = await _store.TrySignalAsync(corr, "phase-met", null, CancellationToken.None);
         var second = await _store.TrySignalAsync(corr, "phase-met", null, CancellationToken.None);
 
         first.Should().NotBeNull("first signal un-parks the gate");
@@ -495,8 +613,10 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
             "quest-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
-        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
-        await _store.ParkStepAsync(enq.Id, "phase-met", resumeAt: null, CancellationToken.None);
+        var claimed = await ClaimAsync(enq.Id);
+        await _store.ParkStepAsync(
+            enq.Id, claimed.ClaimedAt!.Value, "phase-met",
+            resumeAt: null, CancellationToken.None);
 
         var wrong = await _store.TrySignalAsync(corr, "some-other-gate", null, CancellationToken.None);
         wrong.Should().BeNull("a signal on a non-matching gate un-parks nothing");
@@ -518,10 +638,12 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
             "quest-workflow", "waitNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
-        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        var claimed = await ClaimAsync(enq.Id);
 
         var resumeAt = DateTime.UtcNow.AddSeconds(30);
-        await _store.ParkStepAsync(enq.Id, gateId: "", resumeAt: resumeAt, CancellationToken.None);
+        await _store.ParkStepAsync(
+            enq.Id, claimed.ClaimedAt!.Value, gateId: "",
+            resumeAt: resumeAt, CancellationToken.None);
 
         // Before the timer: not due (Parked, timer in the future).
         var notYet = await _store.GetDueStepIdsAsync(
@@ -552,8 +674,9 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var dead = await _store.EnqueueAsync("S", "Doomed", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
-        await _store.TryClaimDueStepAsync(dead.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
-        await _store.DeadLetterStepAsync(dead.Id, "terminal", CancellationToken.None);
+        var claimed = await ClaimAsync(dead.Id);
+        await _store.DeadLetterStepAsync(
+            dead.Id, claimed.ClaimedAt!.Value, "terminal", CancellationToken.None);
 
         var pending = await _store.EnqueueAsync("S", "Fresh", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
 
@@ -574,8 +697,9 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var dead = await _store.EnqueueAsync("S", "Doomed", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
-        await _store.TryClaimDueStepAsync(dead.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
-        await _store.DeadLetterStepAsync(dead.Id, "terminal", CancellationToken.None);
+        var claimed = await ClaimAsync(dead.Id);
+        await _store.DeadLetterStepAsync(
+            dead.Id, claimed.ClaimedAt!.Value, "terminal", CancellationToken.None);
 
         (await _store.RequeueStepAsync(dead.Id, CancellationToken.None)).Should().BeTrue();
         var revived = await _store.GetAsync(dead.Id, CancellationToken.None);
@@ -601,8 +725,9 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var dead = await _store.EnqueueAsync("S", "Doomed", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
-        await _store.TryClaimDueStepAsync(dead.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
-        await _store.DeadLetterStepAsync(dead.Id, "terminal", CancellationToken.None);
+        var claimed = await ClaimAsync(dead.Id);
+        await _store.DeadLetterStepAsync(
+            dead.Id, claimed.ClaimedAt!.Value, "terminal", CancellationToken.None);
 
         (await _store.CancelStepAsync(dead.Id, "operator abandon", CancellationToken.None)).Should().BeTrue();
         var cancelled = await _store.GetAsync(dead.Id, CancellationToken.None);
@@ -611,8 +736,9 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
         // A Completed step cannot be cancelled.
         var done = await _store.EnqueueAsync("S", "Done", UniqueCorrelation(), UniqueIdempotency(), "{}", false, CancellationToken.None);
-        await _store.TryClaimDueStepAsync(done.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
-        await _store.CompleteStepAsync(done.Id, "{}", CancellationToken.None);
+        var doneClaim = await ClaimAsync(done.Id);
+        await _store.CompleteStepAsync(
+            done.Id, doneClaim.ClaimedAt!.Value, "{}", CancellationToken.None);
         (await _store.CancelStepAsync(done.Id, "too late", CancellationToken.None))
             .Should().BeFalse("a Completed step is not cancellable");
     }
@@ -657,6 +783,15 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
     private static string UniqueCorrelation() => $"corr-{Guid.NewGuid():N}";
     private static string UniqueIdempotency() => $"idem-{Guid.NewGuid():N}";
+
+    private async Task<SagaStepRecord> ClaimAsync(Guid id)
+    {
+        var claimed = await _store.TryClaimDueStepAsync(
+            id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        claimed.Should().NotBeNull();
+        claimed!.ClaimedAt.Should().NotBeNull();
+        return claimed;
+    }
 
     private static async Task<bool> ProbeSurrealAsync()
     {

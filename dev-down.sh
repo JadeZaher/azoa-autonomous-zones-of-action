@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# AZOA Sleek -- full-stack dev teardown (bash).
+# AZOA -- full-stack dev teardown (bash).
 #
 # Usage:
-#   ./dev-down.sh             # stop all services (keeps the surrealdb_data volume)
-#   ./dev-down.sh --wipe      # also drop the volume so the next dev-up sees a fresh DB
+#   ./dev-down.sh             # stop all services (keeps database + cursor-key volumes)
+#   ./dev-down.sh --wipe      # also drop all dev volumes
 #   ./dev-down.sh --reset-db  # alias for --wipe (matches dev-up.sh vocabulary)
 
 set -euo pipefail
@@ -43,7 +43,7 @@ done
 # podman-compose just exits non-zero because it tried to remove a
 # container that was never created.
 if [ "$WIPE" -eq 1 ]; then
-    echo "[dev-down] Tearing down with -v (wipes surrealdb_data volume) ..."
+    echo "[dev-down] Tearing down with -v (wipes database + cursor-key volumes) ..."
     $COMPOSE -f "$COMPOSE_FILE" down -v --remove-orphans || true
 
     # Belt + braces (same pattern as dev-up.sh): purge stray project-labeled
@@ -71,12 +71,12 @@ fi
 
 echo ""
 echo "[dev-down] Flags (run ./dev-down.sh <flag>):"
-echo "  --wipe        Also drop the SurrealDB volume so next dev-up is fresh."
+echo "  --wipe        Also drop the database + cursor-key volumes."
 echo "  --reset-db    Alias for --wipe (matches dev-up.sh vocabulary)."
 echo ""
 echo "  Default behavior (no flags):"
 echo "    * Stops + removes containers"
-echo "    * PRESERVES the SurrealDB volume so data survives"
+echo "    * PRESERVES database + cursor-key volumes"
 echo ""
 
 exit 0

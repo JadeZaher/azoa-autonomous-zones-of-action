@@ -35,4 +35,16 @@ public sealed class AllocationResult
 
     /// <summary>The idempotency key the allocation was deduped on (diagnostics).</summary>
     public string IdempotencyKey { get; set; } = string.Empty;
+
+    /// <summary>The caller-authoritative amount before the node fee was applied.</summary>
+    public string GrossAmount { get; set; } = string.Empty;
+
+    /// <summary>The node fee retained from this allocation in base units.</summary>
+    public string NodeFeeAmount { get; set; } = string.Empty;
+
+    /// <summary>The amount sent to the chain operation after the node fee.</summary>
+    public string NetAmount { get; set; } = string.Empty;
+
+    /// <summary>The immutable fee schedule version used for this allocation.</summary>
+    public long NodeFeeScheduleVersion { get; set; }
 }

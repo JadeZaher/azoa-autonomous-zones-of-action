@@ -235,5 +235,29 @@ namespace AZOA.WebAPI.Tests.Middleware
             policy.Should().NotBeNull();
             policy!.Origins.Should().NotContain("https://malicious-site.com");
         }
+
+        [Fact]
+        public async Task GetPolicyAsync_PublicTransparency_IsCredentialFreeAndSkipsApiKeyLookup()
+        {
+            _environment.Setup(e => e.EnvironmentName).Returns("Production");
+            var provider = new DynamicCorsPolicyProvider(
+                _scopeFactory.Object,
+                _environment.Object,
+                CreateConfig([]));
+            var context = new DefaultHttpContext();
+            context.Request.Method = HttpMethods.Get;
+            context.Request.Headers["Origin"] = "https://any-reader.example";
+            context.Request.Headers["X-Api-Key"] = "untrusted-rotating-value";
+
+            var policy = await provider.GetPolicyAsync(
+                context,
+                DynamicCorsPolicyProvider.PublicTransparencyPolicy);
+
+            policy.Should().NotBeNull();
+            policy!.Origins.Should().Equal("*");
+            policy.Methods.Should().Equal(HttpMethods.Get);
+            policy.SupportsCredentials.Should().BeFalse();
+            _scopeFactory.Verify(scopeFactory => scopeFactory.CreateScope(), Times.Never);
+        }
     }
 }

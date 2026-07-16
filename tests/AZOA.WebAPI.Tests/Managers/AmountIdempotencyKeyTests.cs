@@ -123,8 +123,18 @@ public class AmountIdempotencyKeyTests
              .ReturnsAsync((IBlockchainOperation op, CancellationToken _) =>
                  new AZOAResult<IBlockchainOperation> { Result = op });
 
-        var config = new ConfigurationBuilder().Build();
-        var factory = new BlockchainProviderFactory(new[] { provider.Object }, config);
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Blockchain:DefaultChain"] = "Algorand",
+                ["Blockchain:DefaultNetwork"] = "Devnet",
+                ["Blockchain:Chains:0:ChainType"] = "Algorand",
+                ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
+            })
+            .Build();
+        var factory = new BlockchainProviderFactory(
+            [new BlockchainProviderRegistration("Algorand", () => provider.Object)],
+            config);
         return new BlockchainOperationManager(store.Object, factory, idempotency);
     }
 

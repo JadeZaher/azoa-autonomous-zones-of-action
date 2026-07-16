@@ -4,6 +4,7 @@ graph LR
     %% Regenerate with: dotnet run --project packages/SurrealForge.Schema -- flowcharts
 
     %% Nodes in this slice
+    admin_bootstrap_state["admin_bootstrap_state: Node"]:::nodeClass
     api_key["api_key: Node"]:::nodeClass
     avatar["avatar: Node"]:::nodeClass
     consent_audit["consent_audit: Node"]:::nodeClass
@@ -12,11 +13,18 @@ graph LR
     holon_type_registry["holon_type_registry: Node"]:::nodeClass
     kyc_document["kyc_document: Node"]:::nodeClass
     kyc_submission["kyc_submission: Node"]:::nodeClass
+    node_fee_audit["node_fee_audit: Node"]:::nodeClass
+    node_fee_schedule["node_fee_schedule: Node"]:::nodeClass
+    node_governance_audit["node_governance_audit: Node"]:::nodeClass
+    node_governance_parameters["node_governance_parameters: Node"]:::nodeClass
+    node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
+    node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
     star_odk["star_odk: Node"]:::nodeClass
     wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
     wallet_auth_claim_token["wallet_auth_claim_token: Node"]:::nodeClass
 
     %% Edges (outbound from this slice)
+    admin_bootstrap_state -- "avatar_id [N:1]" --> avatar
     api_key -- "avatar_id [N:1]" --> avatar
     avatar -- "owner_tenant_id [N:0..1]" --> avatar
     consent_audit -- "avatar_id [N:0..1]" --> avatar
@@ -25,10 +33,17 @@ graph LR
     consent_grant -- "tenant_id [N:1]" --> avatar
     holon -- "avatar_id [N:0..1]" --> avatar
     holon -- "origin_avatar_id [N:0..1]" --> avatar
+    holon -- "transfer_target_avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
     holon -- "source_holon_id [N:0..1]" --> holon
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
+    node_fee_audit -- "actor_avatar_id [N:1]" --> avatar
+    node_fee_schedule -- "updated_by_avatar_id [N:0..1]" --> avatar
+    node_governance_audit -- "actor_avatar_id [N:1]" --> avatar
+    node_governance_parameters -- "updated_by_avatar_id [N:0..1]" --> avatar
+    node_treasury_audit -- "actor_avatar_id [N:1]" --> avatar
+    node_treasury_destination -- "updated_by_avatar_id [N:0..1]" --> avatar
     star_odk -- "avatar_id [N:0..1]" --> avatar
     wallet_auth_claim_token -- "target_avatar_id [N:1]" --> avatar
     wallet_auth_claim_token -- "tenant_id [N:1]" --> avatar

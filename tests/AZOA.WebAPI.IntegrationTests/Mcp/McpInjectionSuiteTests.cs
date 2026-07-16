@@ -1,4 +1,4 @@
-// ─── AZOA Sleek — MCP Injection Suite (G3 Mirror for MCP Tool Inputs) ─────────
+// ─── AZOA — MCP Injection Suite (G3 Mirror for MCP Tool Inputs) ─────────
 //
 // LOAD-BEARING ASSERTION (read before modifying this file)
 // ─────────────────────────────────────────────────────────

@@ -3,6 +3,16 @@
 Rationale / cross-cutting notes for `Services/`. Code carries terse one-line
 doc-comments; the "why" lives here.
 
+## Credential-free public endpoints
+
+`CredentialFreePublicEndpoint` marks anonymous evidence routes that ignore all
+supplied credentials. The policy selector routes them to a no-op authentication
+scheme, and `ApiKeyAuthenticationHandler` also returns no result before opening
+a store scope as defense in depth. Arbitrary bearer/API-key values therefore
+cannot turn a free public read into an unmetered pre-rate-limit database lookup.
+Pair the marker with an explicit credential-free CORS policy and an
+IP-partitioned limiter.
+
 ## §bridge — CrossChainBridgeService + WormholeAdapter + Reconciliation
 
 The cross-chain bridge is FUND-LOSS-CRITICAL. Its safety rests on an
@@ -86,6 +96,19 @@ is `Reversing` with no persisted burn hash), the outcome is genuinely ambiguous
 (on-chain may or may not have landed). These are parked for reconciliation with a
 "manual/operator resolution required" error — NEVER auto-completed or
 auto-failed, because either guess could double-mint or strand funds.
+
+### Submitted operation status is durable
+
+`OperationStatus.PendingConfirmation` is a first-class `operation_log` status,
+not an alias for `Unknown`. `BlockchainOperationManager` uses it only when a
+provider returns a transaction hash but confirmation is still indeterminate.
+The reconciliation sweep includes this state and may advance it only from
+positive chain truth or fail it only from an explicit on-chain rejection. This
+status must remain mirrored in the decorated POCO enum and generated schema;
+otherwise a submitted transaction disappears from the recovery queue.
+Provider resolution uses the persisted `ChainType` and `ChainNetwork`; an
+invalid network fails closed, while a missing network retains the legacy
+Devnet fallback for rows created before the field existed.
 
 ### Tests
 

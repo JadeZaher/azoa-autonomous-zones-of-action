@@ -1,28 +1,34 @@
+using System.Net;
 using FluentAssertions;
+using AZOA.WebAPI.Core.Blockchain;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Services.Dex;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using AZOA.WebAPI.Services.Dex;
-using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Tests.Managers.Dex;
 
 /// <summary>
-/// Unit tests for <see cref="TinymanDexAdapter"/>. The validation + build
-/// cases are fully offline (they short-circuit before any Algod call); the
-/// live quote case is config-driven and mirrors the existing SwapManager
-/// integration assertion at the adapter level.
+/// Unit tests for <see cref="TinymanDexAdapter"/>. The quote path uses a local
+/// Algod handler so the AMM math is exercised without public testnet uptime.
 /// </summary>
 public class TinymanDexAdapterTests
 {
-    private static IConfiguration AppConfig() =>
+    private static IConfiguration AppConfig(string algodUrl = "http://algod.test/") =>
         new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: false)
             .AddJsonFile("appsettings.Development.json", optional: true)
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Blockchain:DefaultNetwork"] = "Testnet",
+                ["Blockchain:Chains:0:ChainType"] = "Algorand",
+                ["Blockchain:Chains:0:Testnet:NodeUrl"] = algodUrl
+            })
             .Build();
 
-    private static TinymanDexAdapter Build() =>
-        new(AppConfig(), new LoggerFactory().CreateLogger<TinymanDexAdapter>());
+    private static TinymanDexAdapter Build(HttpMessageHandler? handler = null) =>
+        new(AppConfig(), new LoggerFactory().CreateLogger<TinymanDexAdapter>(), handler);
 
     [Fact]
     public void Chain_IsAlgorand()
@@ -69,8 +75,6 @@ public class TinymanDexAdapterTests
     [Fact]
     public async Task BuildSwapTransactionAsync_ReturnsClientSideInstructions()
     {
-        // Tinyman build is client-side: it returns instructions regardless of
-        // the (already-validated) cached payload — no network involved.
         var result = await Build().BuildSwapTransactionAsync(
             new SwapExecuteRequest { Chain = "algorand", QuoteId = "qid", WalletAddress = "WALLET" },
             "{\"asset1Id\":0,\"asset2Id\":10458941}");
@@ -84,11 +88,16 @@ public class TinymanDexAdapterTests
     }
 
     [Fact]
-    public async Task GetQuoteAsync_AlgorandTestnet_ReturnsValidQuote()
+    public async Task GetQuoteAsync_LocalPoolReserves_ReturnsValidQuote()
     {
-        // Live: hits the Tinyman V2 ALGO/USDC pool on Algorand testnet via the
-        // config-driven Algod URL. Asserts shape, not a hardcoded ratio.
-        var result = await Build().GetQuoteAsync(new SwapQuoteRequest
+        var handler = new RoutingHandler
+        {
+            AccountResponse = (HttpStatusCode.OK, PoolStateJson(
+                asset1Reserves: 2_500_000_000,
+                asset2Reserves: 100_000_000_000))
+        };
+
+        var result = await Build(handler).GetQuoteAsync(new SwapQuoteRequest
         {
             Chain = "algorand",
             TokenIn = "0",
@@ -103,10 +112,96 @@ public class TinymanDexAdapterTests
         dq.Quote.TokenIn.Should().Be("0");
         dq.Quote.TokenOut.Should().Be("10458941");
         dq.Quote.AmountIn.Should().Be("1000000");
-        long.TryParse(dq.Quote.ExpectedAmountOut, out var outAmt).Should().BeTrue();
-        outAmt.Should().BeGreaterThan(0);
-        // Adapter leaves QuoteId null — SwapManager assigns it.
-        dq.Quote.QuoteId.Should().BeNull();
+        dq.Quote.ExpectedAmountOut.Should().Be("24924");
+        dq.Quote.MinAmountOut.Should().Be("24799");
+        dq.Quote.Fee.Should().Be("3000");
+        dq.Quote.QuoteId.Should().BeNull("SwapManager assigns QuoteId after the adapter returns");
         dq.CachePayload.Should().Contain("asset1Id");
+        handler.LastPath.Should().StartWith("/v2/accounts/");
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_MissingPool_ReturnsUnavailableQuote()
+    {
+        var handler = new RoutingHandler
+        {
+            AccountResponse = (HttpStatusCode.NotFound, "missing")
+        };
+
+        var result = await Build(handler).GetQuoteAsync(new SwapQuoteRequest
+        {
+            Chain = "algorand",
+            TokenIn = "0",
+            TokenOut = "10458941",
+            AmountIn = "1000000",
+            SlippageBps = 50
+        });
+
+        result.IsError.Should().BeFalse(result.Message);
+        result.Result!.Quote.Unavailable.Should().BeTrue();
+        result.Result.Quote.UnavailableReason.Should().Be("no_pool");
+        result.Result.CachePayload.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_AlgodTimeout_ReturnsUnavailableQuote()
+    {
+        var handler = new RoutingHandler
+        {
+            Exception = new TaskCanceledException("simulated algod timeout")
+        };
+
+        var result = await Build(handler).GetQuoteAsync(new SwapQuoteRequest
+        {
+            Chain = "algorand",
+            TokenIn = "0",
+            TokenOut = "10458941",
+            AmountIn = "1000000",
+            SlippageBps = 50
+        });
+
+        result.IsError.Should().BeFalse(result.Message);
+        result.Result!.Quote.Unavailable.Should().BeTrue();
+        result.Result.Quote.UnavailableReason.Should().Be("no_pool");
+    }
+
+    private static string PoolStateJson(ulong asset1Reserves, ulong asset2Reserves)
+    {
+        var asset1Key = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("asset_1_reserves"));
+        var asset2Key = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("asset_2_reserves"));
+        return $$"""
+            {
+              "apps-local-state": [
+                {
+                  "id": {{TinymanV2PoolLocator.TestnetValidatorAppId}},
+                  "key-value": [
+                    { "key": "{{asset1Key}}", "value": { "type": 2, "uint": {{asset1Reserves}} } },
+                    { "key": "{{asset2Key}}", "value": { "type": 2, "uint": {{asset2Reserves}} } }
+                  ]
+                }
+              ]
+            }
+            """;
+    }
+
+    private sealed class RoutingHandler : HttpMessageHandler
+    {
+        public (HttpStatusCode Status, string Body) AccountResponse { get; set; }
+            = (HttpStatusCode.OK, "{}");
+        public Exception? Exception { get; set; }
+        public string? LastPath { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastPath = request.RequestUri!.AbsolutePath;
+            if (Exception is not null)
+                return Task.FromException<HttpResponseMessage>(Exception);
+
+            return Task.FromResult(new HttpResponseMessage(AccountResponse.Status)
+            {
+                Content = new StringContent(AccountResponse.Body, System.Text.Encoding.UTF8, "application/json")
+            });
+        }
     }
 }

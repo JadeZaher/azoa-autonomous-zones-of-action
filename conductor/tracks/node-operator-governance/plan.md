@@ -66,12 +66,197 @@ transaction.
 
 The fee-schedule slice now has a required fail-closed manager, versioned
 schedule plus append-only audit, value-idempotent retries, expected-version CAS,
-and allocation Mint/Transfer netting inside the won allocation claim. Gross,
-fee, net, and schedule version are persisted into the operation/replay payload;
-crash reconciliation restores the complete allocation result. Raw NFT, Swap,
+and allocation Mint netting inside the won allocation claim. Transfer quotes are
+fail-closed when nonzero until node-treasury settlement exists. Gross, fee, net,
+and schedule version are persisted into the operation/replay payload; crash
+reconciliation restores the complete allocation result. Raw NFT, Swap,
 QuestComplete, and FederationPublish consumers remain open Phase 1 work; their
 configured entries must not be called enforced until those value paths quote
 and settle them.
+
+The remaining consumers cannot share Allocation Mint's simple netting rule.
+Raw NFT routes currently persist intent/ownership before broadcast, Swap returns
+a client-signed transaction, QuestComplete may be driven by a durable workflow,
+and FederationPublish does not yet have a live cross-node value path. Before
+enabling any nonzero entry, Phase 1 therefore requires a settlement boundary
+with all of the following:
+
+- chain-scoped treasury destinations validated against the target provider;
+- a durable `node_fee_settlement` record keyed by the parent idempotency claim,
+  operation kind, schedule version, asset, gross/fee/net amounts, and both
+  effect states;
+- chain-adapter support for one atomic client-signed group where the chain
+  supports it, or independently observable/reconcilable primary and treasury
+  transactions where it does not;
+- recovery that never charges twice and never reports the primary action
+  complete while a required fee is only a phantom off-chain receivable;
+- manager refactors that win the settlement claim before raw NFT ownership or
+  quest/federation publication side effects.
+
+Until those invariants exist, nonzero Transfer and every other unsettled
+consumer must continue to fail closed. Local quest definition publication is
+not `FederationPublish` and must not be charged under that schedule entry.
+
+Settlement prerequisite audit (2026-07-11) found that submitted operations in
+`PendingConfirmation` were omitted from the persisted status enum and recovery
+scan, causing them to round-trip as `Unknown`. The enum/schema/reconciliation
+closure is now repaired and covered by store round-trip plus chain-confirmation
+tests. Ownership reservation/finalization and deterministic atomic submission
+remain required before nonzero Transfer activation.
+
+The ownership prerequisite now has a SurrealDB single-winner primitive:
+`TryReserveNftTransferAsync` conditionally reserves only an NFT still owned by
+the expected source, `FinalizeReservedNftTransferAsync` moves ownership only for
+that settlement key, and replay recognizes the recorded finalization key.
+Provider submission and reconciliation are not wired to it yet, so nonzero
+Transfer remains fail-closed.
+
+Treasury routing policy is now a separate versioned surface rather than a field
+inside fee pricing. `NodeTreasuryDestination` is scoped by canonical
+chain/network, validated against the selected provider on writes and reads, and
+updated with an immutable audit row under one expected-version CAS transaction.
+Identical retries are value-idempotent. This closes the configuration
+prerequisite only: no fee consumer may use a destination until a durable
+settlement claim pins its address and version, and nonzero Transfer therefore
+remains fail-closed.
+
+Multi-network provider lifetime is now an isolated factory boundary. Providers
+are registered as creators rather than singleton instances; the factory uses a
+canonical chain/network key and exactly-once lazy initialization to cache an
+independent mutable provider per binding. Focused real-Solana concurrent
+resolution proves a Devnet binding stays Devnet after Testnet is created. This
+closes the provider-instance prerequisite only: settlement remains disabled
+pending the separate atomic-claim, effect-submission, reconciliation, and
+consumer-wiring requirements below.
+
+Settlement foundation (2026-07-12): `NodeFeeSettlement` now supplies an inert,
+DBML/POCO-first durable intent vocabulary. Its deterministic id is derived from
+the parent idempotency key and fee operation; the row pins chain/network, asset,
+gross/fee/net amounts, fee-schedule version, treasury address/version, and the
+independent primary/fee effect states. `NodeFeeSettlementManager` is intentionally
+unregistered: it can only prepare an immutable row and has no controller, worker,
+provider submission, or reconciliation caller. This is not activation evidence.
+Amounts are schema-validated canonical positive `ulong` base-unit strings and
+all version counters are nonnegative. A create replay is normalized only after
+the typed store confirms the deterministic record id exists; unconfirmed
+statement/schema failures continue to surface rather than being guessed from an
+error message.
+Before any nonzero consumer uses it, row creation must join the won parent claim
+atomically, lifecycle updates need single-winner persistent transitions, and
+live-SurrealDB recovery tests must prove no duplicate charge or false completion.
+
+Atomic admission closure (2026-07-13): preparation now creates the parent
+`idempotency_key_store` claim and immutable `node_fee_settlement` record inside
+one bounded, parameterized SurrealDB transaction, or returns the existing pair.
+The new parent remains `InProgress` with neither a cached result nor error; no
+terminal parent outcome is recorded until a future terminal settlement protocol
+can atomically prove the settlement terminal. A partial historical pair, parent
+key/operation mismatch, or terminal parent paired with a non-terminal settlement
+fails closed. This replaces the previous separate settlement read/create race,
+but does not wire a provider, worker, or fee consumer. The required raw
+multi-table transaction has a 2026-08-31 SurrealForge typed-builder waiver and
+must be replaced when that package can express conditional cross-table
+admission.
+
+Admission-boundary hardening (2026-07-13): there is no longer an unpaired public
+settlement create seam. `AdmitAsync` accepts only a canonical fresh `Prepared`
+intent: both effects must be `NotStarted`; operation/transaction identifiers,
+leases, reconciliation fields, and terminal lifecycle state are rejected; and
+attempt/state versions must be zero. Its raw `CONTENT` write is an explicit
+allowlist, so rejected record-link or effect-bearing input cannot reach
+SurrealDB. Parent-key trimming is shared by hash and record-id derivation.
+An existing ordinary outer idempotency claim with the same parent key returns a
+fail-closed conflict and remains untouched; it is not silently reclassified as
+a settlement pair. Replay also requires parent and settlement terminality to
+agree in both directions. Focused manager and live-Surreal tests cover this
+collision, direct effect-bearing rejection, and paired admission without
+activating a provider or any fee consumer.
+
+Focused verification (2026-07-13): 16 `NodeFeeSettlementManagerTests` and 7
+live-Surreal `SurrealNodeFeeSettlementStoreTests` pass. The live slice includes
+two concurrent admissions of a colon-bearing parent key (one create, one exact
+replay, one durable `InProgress` parent and one settlement) and a deliberately
+invalid settlement write that rolls back its otherwise-new parent claim. These
+tests prove the admission boundary only; they are not evidence of chain-effect
+execution, reconciliation, or a nonzero Transfer activation.
+
+Recovery seam (2026-07-13): the inert settlement vocabulary now has bounded
+durability mechanics without a value-path caller. Every due candidate
+or expired lease is re-claimed by a `state_version` plus lease/due CAS; a fresh
+opaque lease token, expiry, attempt count, and retry schedule make a crashed
+worker reclaimable. The only lease-guarded transition currently releases a
+won claim into `AwaitingReconciliation` with an explicit reason. The explicit
+`NodeFeeSettlementRecoveryWorker` has no provider dependency and is not
+registered as a hosted service, so it cannot submit or confirm either economic
+effect. This is recovery safety infrastructure, not settlement activation:
+atomic parent-claim creation, effect hand-offs, provider submission,
+chain-derived reconciliation, live-Surreal concurrency/recovery proof, and
+consumer wiring remain acceptance blockers.
+
+Independent persistence review closure (2026-07-13): the frozen economic
+decision is now schema-enforced, not merely manager-checked. SurrealDB permits
+the initial `CREATE` but marks the parent-key hash, operation, chain/network,
+asset, gross/fee/net amounts, schedule version, and treasury address/version
+`READONLY` afterwards. Focused live-Surreal tests cover deterministic concurrent
+create normalization, divergent manager preparation, and stale lease rejection
+after an expired lease has been reclaimed. This remains inert lifecycle safety,
+not provider or consumer activation.
+
+Paired terminal protocol (2026-07-13): an exact recovery lease can now record a
+mixed observation containing `Unknown`/`Failed` effects into
+`AwaitingReconciliation`, which leaves its parent idempotency claim `InProgress`.
+A separate, bounded multi-table CAS can
+accept two distinct confirmed effect references and atomically set the
+settlement `Settled` plus its matching parent `Completed`, including the replay
+payload. Stale leases, parent/key mismatches, illegal proofs, and reverse
+terminal transitions leave both rows unchanged. This is a persistence protocol
+and live-Surreal test seam, not provider/group submission, a hosted worker, NFT
+ownership, a controller, or nonzero Transfer-fee activation. Its raw
+transaction is covered by the existing SurrealForge conditional cross-table
+mutation waiver, expiring 2026-08-31.
+
+Direct-transfer bypass closure (2026-07-13): `NftManager.TransferAsync` now
+reads the effective Transfer schedule before it reads or mutates NFT ownership
+or creates an operation. Any nonzero flat or bps entry, unavailable schedule, or
+malformed schedule rejects the direct route while no settlement executor exists.
+This is a fail-closed containment measure only; it does not reserve ownership,
+create a settlement, submit an atomic group, or make nonzero Transfer fees
+active.
+
+Typed-query waiver (expires 2026-08-31): the consumed SurrealForge package
+cannot currently represent the recovery scan's contract-cased enum plus
+due-or-expired lease predicate, the lease-guarded multi-field effect CASs, or
+the parent/settlement cross-table transactions. Those bounded parameterized
+statements are marked `raw:` and covered by focused live-Surreal
+claim/reclaim/token-guard/paired-terminal tests. Replace them with the typed
+package surface before this track can close; the waiver is not permission to add
+ordinary CRUD raw queries.
+
+Settlement-reference immutability and SurrealDB 3.x terminalization correction
+(2026-07-13): confirmed primary or treasury transaction references are now
+monotonic. A nonterminal reconciliation cannot downgrade or replace a confirmed
+reference, and paired terminalization rejects a proof that differs from an
+already observed confirmation before it can complete the parent. The write-side
+lease CAS repeats those predicates, so the read-side fast rejection is not the
+only guard. Live SurrealDB also proved that `UPDATE ONLY ... RETURN AFTER` is
+already a single object inside a transaction; calling `.first()` aborted the
+entire paired-terminal transaction. The protocol now uses that object directly.
+Colon-bearing transaction references use the shared temporary
+`SurrealScalarString` binding primitive so SurrealDB cannot reinterpret a
+record-shaped string as a link. Focused tests cover rejected replacement,
+successful exact proof, stale lease, nonterminal reconciliation, and parent
+completion. This hardens inert persistence only; it does not authorize a
+provider, worker, or nonzero fee consumer.
+
+Verification evidence (2026-07-11): the API project builds with zero errors;
+the regenerated decorated-POCO goldens include treasury tables, ownership
+reservation fields/index, and `PendingConfirmation`; 1,422 unit tests pass with
+one intentional skip; and the 42-test focused live-SurrealDB slice passes with
+no failures. That slice covers governance routes, treasury update+audit CAS and
+concurrency, status persistence, and NFT reservation competition/replay. The
+track remains `in_progress`: provider network-instance isolation, the durable
+`node_fee_settlement` state machine, atomic submission, reconciliation, and the
+remaining fee consumers are still acceptance blockers.
 
 ### 1.4 Interop-boundary invariant (documented + tested even pre-federation)
 - Assert `node:govern` is node-local: a local rule governs only local-settling actions; no

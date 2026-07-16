@@ -28,15 +28,18 @@ public sealed class ReconciliationHostedService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ReconciliationHostedService> _logger;
     private readonly ReconciliationOptions _options;
+    private readonly TimeSpan _minimumInterval;
 
     public ReconciliationHostedService(
         IServiceScopeFactory scopeFactory,
         ILogger<ReconciliationHostedService> logger,
-        IOptions<ReconciliationOptions> options)
+        IOptions<ReconciliationOptions> options,
+        TimeSpan? minimumInterval = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _options = options.Value;
+        _minimumInterval = minimumInterval ?? TimeSpan.FromSeconds(10);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -50,7 +53,8 @@ public sealed class ReconciliationHostedService : BackgroundService
         }
 
         // Clamp to a sane floor so a misconfigured tiny interval can't hot-loop.
-        var interval = TimeSpan.FromSeconds(Math.Max(10, _options.IntervalSeconds));
+        var configuredInterval = TimeSpan.FromSeconds(Math.Max(0, _options.IntervalSeconds));
+        var interval = configuredInterval < _minimumInterval ? _minimumInterval : configuredInterval;
         var startupDelay = TimeSpan.FromSeconds(Math.Max(0, _options.StartupDelaySeconds));
 
         _logger.LogInformation(

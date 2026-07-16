@@ -88,6 +88,9 @@ public sealed class SagaProcessor : ISagaProcessor
         var step = await _store.TryClaimDueStepAsync(id, claimedNow, ct);
         if (step is null)
             return false;
+        var claimedAt = step.ClaimedAt
+            ?? throw new InvalidOperationException(
+                $"Claimed saga step '{step.Id}' returned without a lease token.");
 
         var def = _registry.Find(step.SagaName);
         if (def is null)
@@ -95,7 +98,7 @@ public sealed class SagaProcessor : ISagaProcessor
             _logger.LogError(
                 "Saga processor: step {StepId} references unregistered saga " +
                 "'{SagaName}' — dead-lettering.", step.Id, step.SagaName);
-            await _store.DeadLetterStepAsync(step.Id,
+            await _store.DeadLetterStepAsync(step.Id, claimedAt,
                 $"No saga definition registered for '{step.SagaName}'.", ct);
             return true;
         }
@@ -107,7 +110,7 @@ public sealed class SagaProcessor : ISagaProcessor
                 "Saga processor: saga '{SagaName}' has no step '{StepName}' " +
                 "(step {StepId}) — dead-lettering.",
                 step.SagaName, step.StepName, step.Id);
-            await _store.DeadLetterStepAsync(step.Id,
+            await _store.DeadLetterStepAsync(step.Id, claimedAt,
                 $"Saga '{step.SagaName}' has no step '{step.StepName}'.", ct);
             return true;
         }
@@ -134,24 +137,26 @@ public sealed class SagaProcessor : ISagaProcessor
         // a park is never misread as a failed attempt.
         if (result.Park is { } park)
         {
-            await OnStepParkedAsync(step, park, ct);
+            await OnStepParkedAsync(step, claimedAt, park, ct);
             return true;
         }
 
         if (result.Success)
         {
-            await OnStepSucceededAsync(step, stepDef, def, result.Output, ct);
+            await OnStepSucceededAsync(step, claimedAt, def, result.Output, ct);
             return true;
         }
 
-        await OnStepFailedAsync(step, stepDef, attempt, result.Error ?? "unknown error", ct);
+        await OnStepFailedAsync(
+            step, claimedAt, stepDef, attempt, result.Error ?? "unknown error", ct);
         return true;
     }
 
     private async Task OnStepParkedAsync(
-        SagaStepRecord step, ParkRequest park, CancellationToken ct)
+        SagaStepRecord step, DateTime claimedAt, ParkRequest park, CancellationToken ct)
     {
-        var parked = await _store.ParkStepAsync(step.Id, park.GateId, park.ResumeAt, ct);
+        var parked = await _store.ParkStepAsync(
+            step.Id, claimedAt, park.GateId, park.ResumeAt, ct);
         if (!parked)
         {
             // A concurrent reclaim already transitioned this row out of
@@ -176,52 +181,61 @@ public sealed class SagaProcessor : ISagaProcessor
     }
 
     private async Task OnStepSucceededAsync(
-        SagaStepRecord step, ISagaStep stepDef, ISagaDefinition def,
+        SagaStepRecord step, DateTime claimedAt, ISagaDefinition def,
         string? output, CancellationToken ct)
     {
-        var completed = await _store.CompleteStepAsync(step.Id, output, ct);
-        if (!completed)
+        var next = step.IsCompensation ? null : def.NextForwardStep(step.StepName);
+        if (step.IsCompensation || next is null)
         {
-            // A concurrent reclaim already transitioned this row — idempotent
-            // no-op (the winner drives continuation).
-            _logger.LogInformation(
-                "Saga processor: step {StepId} ({Saga}/{Step}) no longer InProgress " +
-                "at completion (concurrent reclaim) — no-op.",
-                step.Id, step.SagaName, step.StepName);
-            return;
-        }
+            var completed = await _store.CompleteStepAsync(step.Id, claimedAt, output, ct);
+            if (!completed)
+            {
+                _logger.LogInformation(
+                    "Saga processor: step {StepId} ({Saga}/{Step}) lost lease " +
+                    "at completion — no-op.",
+                    step.Id, step.SagaName, step.StepName);
+                return;
+            }
 
-        // A compensation step succeeding settles the saga as compensated — no
-        // forward continuation.
-        if (step.IsCompensation)
-        {
-            _logger.LogInformation(
-                "Saga processor: compensation step {StepId} ({Saga}/{Step}) completed " +
-                "— saga instance '{Correlation}' compensated.",
-                step.Id, step.SagaName, step.StepName, step.CorrelationKey);
-            return;
-        }
-
-        // Forward step: enqueue the next forward step (transactional outbox
-        // continuation) or complete the saga.
-        var next = def.NextForwardStep(step.StepName);
-        if (next is null)
-        {
-            _logger.LogInformation(
-                "Saga processor: final forward step {StepId} ({Saga}/{Step}) completed " +
-                "— saga instance '{Correlation}' COMPLETED.",
-                step.Id, step.SagaName, step.StepName, step.CorrelationKey);
+            if (step.IsCompensation)
+            {
+                _logger.LogInformation(
+                    "Saga processor: compensation step {StepId} ({Saga}/{Step}) completed " +
+                    "— saga instance '{Correlation}' compensated.",
+                    step.Id, step.SagaName, step.StepName, step.CorrelationKey);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Saga processor: final forward step {StepId} ({Saga}/{Step}) completed " +
+                    "— saga instance '{Correlation}' COMPLETED.",
+                    step.Id, step.SagaName, step.StepName, step.CorrelationKey);
+            }
             return;
         }
 
         var nextIdemKey = SagaKeys.StepIdempotencyKey(step.CorrelationKey, next.Name);
-        await _store.EnqueueNextStepAsync(
-            step.SagaName, next.Name, step.CorrelationKey, nextIdemKey,
+        var successor = await _store.CompleteAndEnqueueNextStepAsync(
+            step.Id,
+            claimedAt,
+            output,
+            step.SagaName,
+            next.Name,
+            step.CorrelationKey,
+            nextIdemKey,
             // The saga-instance payload flows UNCHANGED through forward steps —
             // a generic module must not assume a step's output is the next
             // step's input (that coupling is a consumer concern). The completed
             // step's output is recorded on its own record for observability.
             step.Payload, ct);
+        if (successor is null)
+        {
+            _logger.LogInformation(
+                "Saga processor: step {StepId} ({Saga}/{Step}) lost lease " +
+                "before atomic continuation — no-op.",
+                step.Id, step.SagaName, step.StepName);
+            return;
+        }
 
         _logger.LogInformation(
             "Saga processor: step {StepId} ({Saga}/{Step}) completed — enqueued next " +
@@ -229,7 +243,7 @@ public sealed class SagaProcessor : ISagaProcessor
     }
 
     private async Task OnStepFailedAsync(
-        SagaStepRecord step, ISagaStep stepDef, int attempt, string error,
+        SagaStepRecord step, DateTime claimedAt, ISagaStep stepDef, int attempt, string error,
         CancellationToken ct)
     {
         var policy = stepDef.RetryPolicy;
@@ -238,7 +252,8 @@ public sealed class SagaProcessor : ISagaProcessor
         {
             var delay = policy.NextDelay(attempt);
             var nextRunAt = DateTime.UtcNow + delay;
-            var ok = await _store.ScheduleRetryAsync(step.Id, nextRunAt, error, ct);
+            var ok = await _store.ScheduleRetryAsync(
+                step.Id, claimedAt, nextRunAt, error, ct);
             if (ok)
                 _logger.LogWarning(
                     "Saga processor: step {StepId} ({Saga}/{Step}) attempt {Attempt} " +
@@ -252,7 +267,7 @@ public sealed class SagaProcessor : ISagaProcessor
         {
             var compIdemKey = SagaKeys.StepIdempotencyKey(step.CorrelationKey, compName);
             var comp = await _store.CompensateStepAsync(
-                step.Id, compName, compIdemKey, step.Payload, error, ct);
+                step.Id, claimedAt, compName, compIdemKey, step.Payload, error, ct);
             if (comp is not null)
                 _logger.LogError(
                     "Saga processor: forward step {StepId} ({Saga}/{Step}) exhausted " +
@@ -265,7 +280,7 @@ public sealed class SagaProcessor : ISagaProcessor
 
         // No declared compensation (or a compensation step that itself
         // exhausted) ⇒ dead-letter for an operator.
-        var dl = await _store.DeadLetterStepAsync(step.Id, error, ct);
+        var dl = await _store.DeadLetterStepAsync(step.Id, claimedAt, error, ct);
         if (dl)
             _logger.LogError(
                 "Saga processor: step {StepId} ({Saga}/{Step}, compensation={IsComp}) " +

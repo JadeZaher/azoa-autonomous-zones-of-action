@@ -36,8 +36,12 @@ public class BlockchainOperationManagerTests
         _solProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                     .ReturnsAsync(new AZOAResult<string> { Result = "sol_tx_456" });
 
-        var config = new ConfigurationBuilder().Build();
-        var factory = new BlockchainProviderFactory(new[] { _algoProvider.Object, _solProvider.Object }, config);
+        var config = BuildEnabledProviderConfig();
+        var factory = new BlockchainProviderFactory(
+        [
+            new BlockchainProviderRegistration("Algorand", () => _algoProvider.Object),
+            new BlockchainProviderRegistration("Solana", () => _solProvider.Object),
+        ], config);
         _idempotency = new FakeIdempotencyStore();
         _manager = new BlockchainOperationManager(_store.Object, factory, _idempotency);
     }
@@ -63,6 +67,70 @@ public class BlockchainOperationManagerTests
         operation.Status.Should().Be(OperationStatus.Minted);
         operation.Parameters.Should().ContainKey("TxHash");
         _algoProvider.Verify(p => p.MintAsync("ipfs://test", 1UL, "NFT", It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DefaultChainAndTestnet_StampsCanonicalRoutingBeforePersistence()
+    {
+        var operation = new BlockchainOperation
+        {
+            OperationType = "Mint",
+            TokenUri = "ipfs://canonical-routing",
+            Amount = 1,
+            AssetType = "NFT",
+            Parameters = new Dictionary<string, string>
+            {
+                ["ChainNetwork"] = "Testnet",
+            },
+        };
+        _store.Setup(p => p.UpsertAsync(
+                It.IsAny<IBlockchainOperation>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IBlockchainOperation op, CancellationToken _) =>
+                new AZOAResult<IBlockchainOperation> { Result = op });
+
+        var result = await _manager.ExecuteAsync(operation);
+
+        result.IsError.Should().BeFalse(result.Message);
+        operation.Parameters["ChainType"].Should().Be("Algorand");
+        operation.Parameters["ChainNetwork"].Should().Be("Testnet");
+        _store.Verify(p => p.UpsertAsync(
+            It.Is<IBlockchainOperation>(op =>
+                op.Parameters["ChainType"] == "Algorand"
+                && op.Parameters["ChainNetwork"] == "Testnet"),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SameEconomicOperationOnDifferentNetworks_DoesNotDedupeAcrossNetworks()
+    {
+        var calls = 0;
+        _algoProvider.Setup(p => p.MintAsync(
+                It.IsAny<string>(),
+                It.IsAny<ulong>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<SigningContext?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                Interlocked.Increment(ref calls);
+                return new AZOAResult<string> { Result = $"algo_tx_{calls}" };
+            });
+        _store.Setup(p => p.UpsertAsync(
+                It.IsAny<IBlockchainOperation>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IBlockchainOperation op, CancellationToken _) =>
+                new AZOAResult<IBlockchainOperation> { Result = op });
+        var devnet = NewMintOp();
+        devnet.Parameters["ChainNetwork"] = "Devnet";
+        var testnet = NewMintOp();
+        testnet.Parameters["ChainNetwork"] = "Testnet";
+
+        await _manager.ExecuteAsync(devnet);
+        await _manager.ExecuteAsync(testnet);
+
+        calls.Should().Be(2);
     }
 
     [Fact]
@@ -198,6 +266,36 @@ public class BlockchainOperationManagerTests
         // (no second op row written): original wins → 2 saves (initial +
         // settle); duplicate → 0 saves.
         _store.Verify(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_IdenticalContentWithDistinctParentKeys_ExecutesBothEffects()
+    {
+        var mintCalls = 0;
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+                     .ReturnsAsync(() =>
+                     {
+                         Interlocked.Increment(ref mintCalls);
+                         return new AZOAResult<string> { Result = $"algo_tx_{mintCalls}" };
+                     });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
+              .ReturnsAsync((IBlockchainOperation op, CancellationToken _) =>
+                  new AZOAResult<IBlockchainOperation> { Result = op });
+
+        var first = NewMintOp();
+        first.Parameters["IdempotencyKey"] = "alloc:tenant:purchase-a";
+        var second = NewMintOp();
+        second.Parameters["IdempotencyKey"] = "alloc:tenant:purchase-b";
+
+        var firstResult = await _manager.ExecuteAsync(first);
+        var secondResult = await _manager.ExecuteAsync(second);
+
+        firstResult.IsError.Should().BeFalse();
+        secondResult.IsError.Should().BeFalse();
+        mintCalls.Should().Be(2,
+            "distinct outer allocation keys represent distinct legitimate purchases");
+        _idempotency.RecordCount.Should().Be(2);
+        _idempotency.Keys.Distinct().Should().HaveCount(2);
     }
 
     [Fact]
@@ -458,4 +556,20 @@ public class BlockchainOperationManagerTests
             "an AwaitingSignature op was not broadcast server-side — it must NOT be a terminal Completed record");
         record.ResultPayload.Should().BeNullOrEmpty("no TxHash exists — nothing was submitted on-chain");
     }
+    private static IConfiguration BuildEnabledProviderConfig()
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Blockchain:DefaultChain"] = "Algorand",
+                ["Blockchain:DefaultNetwork"] = "Devnet",
+                ["Blockchain:Chains:0:ChainType"] = "Algorand",
+                ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
+                ["Blockchain:Chains:0:Testnet:IsEnabled"] = "true",
+                ["Blockchain:Chains:0:Mainnet:IsEnabled"] = "true",
+                ["Blockchain:Chains:1:ChainType"] = "Solana",
+                ["Blockchain:Chains:1:Devnet:IsEnabled"] = "true",
+                ["Blockchain:Chains:1:Testnet:IsEnabled"] = "true",
+                ["Blockchain:Chains:1:Mainnet:IsEnabled"] = "true",
+            })
+            .Build();
 }

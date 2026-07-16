@@ -1,13 +1,14 @@
 using System.Collections.Generic;
-using Microsoft.Extensions.Logging;
 
 namespace AZOA.WebAPI.Core.Diagnostics;
 
 /// <summary>Bound from the <c>Diagnostics:JsonlExceptionLogger</c> config section.</summary>
 public sealed class JsonlExceptionLoggerOptions
 {
+    private int _maxEntrySizeBytes = 32_768;
+
     /// <summary>Enables or disables the logger entirely.</summary>
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; }
 
     /// <summary>Directory where JSONL files are written (relative to content root or absolute).</summary>
     public string Directory { get; set; } = "logs/exceptions";
@@ -26,9 +27,10 @@ public sealed class JsonlExceptionLoggerOptions
         "privatekey",
     ];
 
-    /// <summary>Truncate serialized entry to this byte limit before writing.</summary>
-    public int MaxEntrySizeBytes { get; set; } = 32_768;
-
-    /// <summary>Minimum log level that triggers a JSONL row.</summary>
-    public LogLevel MinimumLevel { get; set; } = LogLevel.Warning;
+    /// <summary>Truncate serialized entries to this byte limit (effective minimum: two bytes).</summary>
+    public int MaxEntrySizeBytes
+    {
+        get => _maxEntrySizeBytes;
+        set => _maxEntrySizeBytes = value < 2 ? 2 : value;
+    }
 }

@@ -32,6 +32,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             Failed,
             Completed,
             AwaitingSignature,
+            PendingConfirmation,
             Minted,
             Burned,
             Exchanged,
@@ -55,7 +56,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string OperationType { get; set; } = string.Empty;
 
         [FieldGroup("Status (OperationStatus closed set)")]
-        [Inside("Pending", "Unknown", "Failed", "Completed", "AwaitingSignature",
+        [Inside("Pending", "Unknown", "Failed", "Completed", "AwaitingSignature", "PendingConfirmation",
                 "Minted", "Burned", "Exchanged", "Swapped", "Transferred", "Deployed", "Called")]
         [Default("\"Pending\"")]
         [JsonConverter(typeof(JsonStringEnumConverter))]

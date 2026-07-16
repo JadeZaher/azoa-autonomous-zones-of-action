@@ -8,6 +8,7 @@ graph LR
     consent_webhook_event["consent_webhook_event: Node"]:::nodeClass
     consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
     idempotency_key_store["idempotency_key_store: Node"]:::nodeClass
+    node_fee_settlement["node_fee_settlement: Node"]:::nodeClass
     operation_log["operation_log: Node"]:::nodeClass
     quest_webhook_event["quest_webhook_event: Node"]:::nodeClass
     saga_steps["saga_steps: Node"]:::nodeClass
@@ -28,6 +29,8 @@ graph LR
     consent_webhook_event -- "tenant_id [N:1]" --> avatar
     consent_webhook_event -- "grant_id [N:1]" --> consent_grant
     consumed_vaa_ledger -- "bridge_transaction_id [N:0..1]" --> bridge_tx
+    node_fee_settlement -- "fee_operation_id [N:0..1]" --> operation_log
+    node_fee_settlement -- "primary_operation_id [N:0..1]" --> operation_log
     operation_log -- "acting_tenant_id [N:0..1]" --> avatar
     operation_log -- "avatar_id [N:0..1]" --> avatar
     operation_log -- "holon_id [N:0..1]" --> holon

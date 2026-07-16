@@ -57,6 +57,14 @@ public class AZOAResult<T>
             ? ErrorDetail.From(Exception)
             : null;
 
+    /// <summary>Create a successful typed result.</summary>
+    public static AZOAResult<T> Success(T result, string message = "Success")
+        => new() { Result = result, Message = message };
+
+    /// <summary>Create an expected typed failure without capturing an exception.</summary>
+    public static AZOAResult<T> Failure(string message, T? result = default)
+        => new() { IsError = true, Result = result, Message = message };
+
     /// <summary>
     /// Record an exception against this result. Marks it as an error and uses
     /// the exception message unless an explicit one is supplied.

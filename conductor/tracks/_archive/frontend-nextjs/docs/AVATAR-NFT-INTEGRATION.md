@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the integration of the Avatar NFT Service into the AZOA Sleek frontend application. The integration provides a complete user interface for managing avatar NFTs, authentication, and blockchain interactions.
+This document describes the integration of the Avatar NFT Service into the AZOA frontend application. The integration provides a complete user interface for managing avatar NFTs, authentication, and blockchain interactions.
 
 ## 🎯 **Integration Components**
 

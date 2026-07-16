@@ -1,4 +1,4 @@
-# ─── AZOA Sleek — full-stack dev composition ───
+# ─── AZOA — full-stack dev composition ───
 #
 # Brings up the entire stack so a new contributor can clone + run:
 #
@@ -18,7 +18,8 @@
 #   you can hit the API directly from a tool like httpie or curl on the host.
 #
 # Persistence:
-#   `surrealdb_data` named volume preserves data across container restarts.
+#   `surrealdb_data` preserves database state and `azoa_api_data_protection`
+#   preserves opaque-cursor keys across API container restarts.
 #   Wipe it via `docker compose -f docker-compose.dev.yml down -v` when you
 #   want a clean DB.
 #
@@ -86,7 +87,7 @@ services:
         condition: service_healthy
     # Resolves host.docker.internal on Linux Docker Engine (Desktop adds it
     # automatically; Engine does not) for the genuine external-SurrealDB
-    # case where dev-up points SurrealDb__Endpoint at the host.
+    # case where dev-up points the runtime endpoint at the host.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -96,18 +97,21 @@ services:
       # bundled `surrealdb` service (compose-network DNS entry).
       #
       # The interpolation source variable is SURREALFORGE_URL (NOT
-      # `SurrealDb__Endpoint`) because podman-compose's ${VAR:-default}
+      # `SurrealRuntime__Endpoint`) because podman-compose's ${VAR:-default}
       # parser drops env-var names that contain double underscores --
-      # so both .NET config keys (`SurrealDb__Endpoint`) AND the CLI's
-      # `SURREALFORGE_URL` get the SAME value via SURREALFORGE_URL,
+      # so the runtime config and the CLI's `SURREALFORGE_URL` get the SAME
+      # endpoint value via SURREALFORGE_URL,
       # which is single-underscore-safe.
-      SurrealDb__Endpoint: "${SURREALFORGE_URL:-http://surrealdb:8000}"
-      SurrealDb__Namespace: "azoa"
-      SurrealDb__Database: "azoa"
-      SurrealDb__User: "root"
-      SurrealDb__Password: "root"
+      SurrealRuntime__Endpoint: "${SURREALFORGE_URL:-http://surrealdb:8000}"
+      SurrealRuntime__Namespace: "azoa"
+      SurrealRuntime__Database: "azoa"
+      SurrealRuntime__User: "root"
+      SurrealRuntime__Password: "root"
+      SurrealRuntime__G1DurabilityAcknowledged: "true"
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:5000"
+      DataProtection__ApplicationName: "AZOA.WebAPI.NodeTransparency.v1"
+      DataProtection__KeyRingPath: "/app/data/data-protection-keys"
       # Mirror env-var aliases used by the surrealforge CLI so the on-boot
       # migration pre-step (entrypoint wrapper, see below) reaches the right
       # instance with no flags.
@@ -118,6 +122,8 @@ services:
       SURREALFORGE_PASS: "root"
     ports:
       - "5000:5000"
+    volumes:
+      - azoa_api_data_protection:/app/data/data-protection-keys
     networks:
       - azoa-dev
     healthcheck:
@@ -178,6 +184,8 @@ services:
 
 volumes:
   surrealdb_data:
+    driver: local
+  azoa_api_data_protection:
     driver: local
 
 networks:

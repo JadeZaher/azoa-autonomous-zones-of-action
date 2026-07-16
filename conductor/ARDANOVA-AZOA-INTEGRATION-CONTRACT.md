@@ -1,10 +1,14 @@
+---
+type: contract
+---
+
 # AZOA Blockchain-Node Integration Contract
 
 **Status:** Phase-1 keystone (consolidation + extension). This is the single
 canonical contract for integrating with **AZOA as a generic, self-hostable
 blockchain-operations node**. A copy lives in both repos:
 
-- AZOA: `oasis-sleek/conductor/ARDANOVA-AZOA-INTEGRATION-CONTRACT.md`
+- AZOA: `azoa/conductor/ARDANOVA-AZOA-INTEGRATION-CONTRACT.md`
 - ArdaNova: `ardanova/conductor/ARDANOVA-AZOA-INTEGRATION-CONTRACT.md`
 
 Both copies are byte-identical and must be kept in sync. Each repo then authors
@@ -108,9 +112,9 @@ JWT. Scopes gate capability:
   *fleet of avatars it owns* (the custodial / acting-as path of §5.2). A
   publish-only consumer that lets avatars self-run does **not** need it.
 
-The consumer's AZOA API key is a **deploy-time secret** (`AZOA_TENANT_API_KEY` in
-`conductor/retros/DEPLOY-STEPS-TODO.md` (retired); read on the consumer side from secret store, e.g.
-`AZOA__TenantApiKey`). **Never committed.** AZOA holds **no** payment-provider
+The consumer's AZOA API key is a **deploy-time secret** (`AZOA_TENANT_API_KEY`,
+bound by the consumer's secret store to `Azoa:TenantApiKey` / `AZOA__TenantApiKey`).
+**Never commit or document the key value.** AZOA holds **no** payment-provider
 secret — webhook verification is the consumer's job.
 
 ---
@@ -309,7 +313,7 @@ is **feature-flagged** so simulated/legacy paths coexist during migration.
 
 ## 10. Track decomposition (Phase-2 — each repo authors its own)
 
-### AZOA (`oasis-sleek/conductor/tracks/`)
+### AZOA (`azoa/conductor/tracks/`)
 - `azoa-node-integration-contract` — this doc + contract/seam tests; neutral "consumer/operator/avatar" framing; the publish-vs-run distinction made explicit in API docs.
 - `quest-reconcile-retry-wiring` — close **P7** (§7). The double-mint blocker. Highest priority.
 - `scrum-lifecycle-quest-presets` — the create→fund→work→tasks definition(s) + public templates an avatar can instantiate and self-run (§5).

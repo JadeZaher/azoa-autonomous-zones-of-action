@@ -1,0 +1,16 @@
+{
+  "id": "azoa-code-style-backpropagation",
+  "description": "Back-propagate typed Surreal mutation APIs, centralized exception observability, inherited contract documentation, shared helpers, and changed-file pruning across the AZOA domain.",
+  "type": "tech-debt",
+  "created_at": "2026-07-11T00:00:00Z",
+  "status": "in_progress",
+  "horizon": "alpha-hardening",
+  "phase": "Package mutation primitives and enforcement baseline first; migrate store/domain batches without weakening atomicity",
+  "blocks": [],
+  "depends_on": [],
+  "related": [
+    "surrealdb-client-package",
+    "surreal-linq-adoption-sweep",
+    "node-operator-governance"
+  ]
+}

@@ -12,6 +12,8 @@ using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Governance;
+using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Tests.Managers;
 
@@ -39,14 +41,14 @@ public class FungibleTokenManagerTests
     private readonly Guid _avatarId = Guid.NewGuid();
     private readonly Guid _callerAvatarId = Guid.NewGuid();
 
-    private FungibleTokenManager BuildManager()
+    private FungibleTokenManager BuildManager(INodeGovernanceGuard? nodeGovernance = null)
     {
         // Default: the provider resolves the ASA module and CreateASAAsync succeeds.
         WireProviderResolvesAsa();
         SetupCreateAsaSucceeds();
         return new(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
-            _factory.Object, _idempotency);
+            _factory.Object, _idempotency, nodeGovernance);
     }
 
     // ── Provider / module wiring ───────────────────────────────────────────────
@@ -112,6 +114,30 @@ public class FungibleTokenManagerTests
         Total = 1_000_000,
         Decimals = 6
     };
+
+    [Fact]
+    public async Task CreateAsync_NodeGovernanceDisallowedAssetType_RejectsBeforeClaimOrSideEffects()
+    {
+        var guard = new NodeGovernanceGuard(Options.Create(new NodeGovernanceOptions
+        {
+            AllowedAssetTypes = new[] { "NFT" }
+        }));
+        var manager = BuildManager(guard);
+
+        var result = await manager.CreateAsync(
+            _avatarId, CreateRequest(), _callerAvatarId, "blocked", ApiKeyId);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("Node governance disallows fungible-token:create on asset type 'FungibleToken'");
+        _kyc.Verify(k => k.RequireVerifiedAsync(It.IsAny<Guid>()), Times.Never);
+        _walletStore.Verify(s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _factory.Verify(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()), Times.Never);
+        _asa.Verify(a => a.CreateASAAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()), Times.Never);
+        (await _idempotency.GetAsync($"fungible:{ApiKeyId}:blocked", CancellationToken.None)).Should().BeNull();
+    }
 
     // ── Happy path ─────────────────────────────────────────────────────────────
 
@@ -193,6 +219,52 @@ public class FungibleTokenManagerTests
         second.Result.AssetId.Should().Be(first.Result.AssetId);
 
         // The irreversible ASA creation ran EXACTLY ONCE across the duplicate calls.
+        _asa.Verify(a => a.CreateASAAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateAsync_UnexpectedPreEffectFailure_BubblesAndSettlesSafeFailure()
+    {
+        _kyc.Setup(k => k.RequireVerifiedAsync(_avatarId))
+            .ThrowsAsync(new InvalidOperationException("sensitive diagnostic"));
+        var manager = BuildManager();
+
+        Func<Task> act = async () => await manager.CreateAsync(
+            _avatarId, CreateRequest(), _callerAvatarId, "pre_effect_failure", ApiKeyId);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        var record = await _idempotency.GetAsync(
+            $"fungible:{ApiKeyId}:pre_effect_failure", CancellationToken.None);
+        record!.State.Should().Be(IdempotencyState.Failed);
+        record.Error.Should().Be("Fungible token creation failed unexpectedly.");
+    }
+
+    [Fact]
+    public async Task CreateAsync_UnexpectedProviderFailure_LeavesClaimInProgressAndDoesNotRetryEffect()
+    {
+        ApproveKyc(_avatarId);
+        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        var manager = BuildManager();
+        _asa.Setup(a => a.CreateASAAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("ambiguous provider failure"));
+
+        Func<Task> first = async () => await manager.CreateAsync(
+            _avatarId, CreateRequest(), _callerAvatarId, "ambiguous", ApiKeyId);
+        await first.Should().ThrowAsync<InvalidOperationException>();
+
+        var replay = await manager.CreateAsync(
+            _avatarId, CreateRequest(), _callerAvatarId, "ambiguous", ApiKeyId);
+        replay.IsError.Should().BeTrue();
+        replay.Message.Should().Contain("in progress");
+        var record = await _idempotency.GetAsync(
+            $"fungible:{ApiKeyId}:ambiguous", CancellationToken.None);
+        record!.State.Should().Be(IdempotencyState.InProgress);
         _asa.Verify(a => a.CreateASAAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),

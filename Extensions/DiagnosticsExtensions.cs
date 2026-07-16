@@ -7,7 +7,7 @@ using AZOA.WebAPI.Core.Diagnostics;
 namespace AZOA.WebAPI.Extensions;
 
 /// <summary>
-/// Registers the JSONL exception logger subsystem (development-only).
+/// Registers the optional JSONL diagnostic logger subsystem.
 /// </summary>
 public static class DiagnosticsExtensions
 {
@@ -15,13 +15,10 @@ public static class DiagnosticsExtensions
     /// Binds <c>Diagnostics:JsonlExceptionLogger</c> config, registers
     /// <see cref="JsonlExceptionWriter"/> as a singleton + <see cref="IHostedService"/>,
     /// and wires the <see cref="JsonlExceptionLoggerProvider"/> into the logging pipeline.
-    /// No-op in non-development environments.
+    /// No-op unless explicitly enabled for the current environment.
     /// </summary>
     public static WebApplicationBuilder AddJsonlExceptionLogging(this WebApplicationBuilder builder)
     {
-        if (!builder.Environment.IsDevelopment())
-            return builder;
-
         var options = new JsonlExceptionLoggerOptions();
         builder.Configuration
             .GetSection("Diagnostics:JsonlExceptionLogger")

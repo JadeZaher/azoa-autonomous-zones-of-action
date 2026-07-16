@@ -71,19 +71,23 @@ public class QuestWorkflowDurableExecutionIntegrationTests : IntegrationTestBase
     }
 
     /// Drain all currently-due saga steps in fresh DI scopes until the outbox is
-    /// idle (a bounded loop, not a sleep). This is exactly what the hosted
-    /// processor's trigger does per tick — invoked directly so the test is
-    /// deterministic. Returns the total number of steps whose handler ran.
-    private async Task<int> DrainSagaStepsAsync(int maxTicks = 16)
+    /// idle. Multiple consecutive idle observations tolerate the enabled hosted
+    /// processor briefly owning a step while this deterministic drain checks the
+    /// same outbox. Returns the total number of steps whose handler ran here.
+    private async Task<int> DrainSagaStepsAsync(int maxTicks = 64)
     {
         var total = 0;
+        var idleTicks = 0;
         for (var tick = 0; tick < maxTicks; tick++)
         {
             using var scope = Factory.Services.CreateScope();
             var processor = scope.ServiceProvider.GetRequiredService<ISagaProcessor>();
             var processed = await processor.ProcessDueStepsAsync(CancellationToken.None);
             total += processed;
-            if (processed == 0) break; // outbox idle — nothing left due
+            idleTicks = processed == 0 ? idleTicks + 1 : 0;
+            if (idleTicks >= 3) break;
+            if (processed == 0)
+                await Task.Delay(25);
         }
         return total;
     }

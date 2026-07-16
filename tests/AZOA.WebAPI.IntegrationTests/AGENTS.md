@@ -60,3 +60,14 @@ target row to pre-exist, so seed order is unconstrained.
 `RunPwsh` resolves `pwsh` (7+) first, falling back to `powershell.exe` (5.1) when pwsh
 is absent (this dev box + some CI images ship only 5.1); the backup/restore scripts are
 5.1-compatible.
+
+## §database-role-proof — disposable privilege behavior evidence
+
+`Persistence/Surreal/SurrealDatabaseRoleProofTests.cs` creates one
+server-generated namespace/database and uses root only for setup and teardown. It
+never touches the default `azoa` namespace or any shared user, and skips only when
+`/health` is unreachable. The deliberately raw statements cover DDL, principal
+management, and a multi-statement transaction beyond typed CRUD. The proof records
+the pinned 3.1.4 limitation: database `EDITOR` can mutate table definitions and a
+schema-ledger row, so separating runtime from root does not establish DDL tamper
+isolation.

@@ -5,6 +5,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Governance;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -17,11 +18,16 @@ public class HolonManager : IHolonManager
     // it. A null registry means validation is skipped entirely (free-string behaviour).
     // See Managers/AGENTS.md §holon-type-registry.
     private readonly IHolonTypeRegistryManager? _typeRegistry;
+    private readonly INodeGovernanceGuard _nodeGovernance;
 
-    public HolonManager(IHolonStore holonStore, IHolonTypeRegistryManager? typeRegistry = null)
+    public HolonManager(
+        IHolonStore holonStore,
+        IHolonTypeRegistryManager? typeRegistry = null,
+        INodeGovernanceGuard? nodeGovernance = null)
     {
         _holonStore = holonStore;
         _typeRegistry = typeRegistry;
+        _nodeGovernance = nodeGovernance ?? NodeGovernanceGuard.Unrestricted;
     }
 
     private static bool IsOwnedBy(IHolon holon, Guid avatarId) => holon.AvatarId == avatarId;
@@ -89,6 +95,10 @@ public class HolonManager : IHolonManager
 
         // F5 opt-in AssetType validation: constrains ONLY types registered in the
         // registry; unregistered types remain free strings.
+        var governanceError = await EnsureGovernedAssetTypeAllowedAsync(holon.AssetType, "holon:create");
+        if (governanceError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = governanceError };
+
         var typeError = await ValidateAssetTypeAsync(holon.AssetType, holon.Metadata, request);
         if (typeError != null)
             return new AZOAResult<IHolon> { IsError = true, Message = typeError };
@@ -129,6 +139,10 @@ public class HolonManager : IHolonManager
         holon.ModifiedDate = DateTime.UtcNow;
 
         // F5 opt-in AssetType validation against the post-merge type + metadata.
+        var governanceError = await EnsureGovernedAssetTypeAllowedAsync(holon.AssetType, "holon:update");
+        if (governanceError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = governanceError };
+
         var typeError = await ValidateAssetTypeAsync(holon.AssetType, holon.Metadata, request);
         if (typeError != null)
             return new AZOAResult<IHolon> { IsError = true, Message = typeError };
@@ -588,6 +602,12 @@ public class HolonManager : IHolonManager
         if (_typeRegistry == null) return null; // registry not wired ⇒ free strings.
 
         var result = await _typeRegistry.ValidateAsync(assetType, metadata, request);
+        return result.IsError ? result.Message : null;
+    }
+
+    private async Task<string?> EnsureGovernedAssetTypeAllowedAsync(string? assetType, string action)
+    {
+        var result = await _nodeGovernance.EnsureAssetTypeAllowedAsync(assetType, action);
         return result.IsError ? result.Message : null;
     }
 }

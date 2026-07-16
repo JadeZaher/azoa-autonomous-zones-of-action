@@ -1,4 +1,4 @@
-# AZOA Sleek — Runbook
+# AZOA — Runbook
 
 Operational reference: how to start, stop, reset, deploy, and diagnose the
 stack. For developer setup + conventions see [DEVELOPMENT.md](DEVELOPMENT.md);
@@ -84,6 +84,8 @@ separate Railway service.
 | Variable | Required | Notes |
 |---|---|---|
 | `ASPNETCORE_ENVIRONMENT` | yes | Set to `Production`. Gates Swagger off and enforces the G1 durability ack below. |
+| `ForwardedHeaders__Enabled` | Railway | `true` only when an edge proxy is present; direct/self-hosted nodes leave it false or configure explicit trusted proxy IPs/networks. |
+| `ForwardedHeaders__TrustAll` / `ForwardedHeaders__EdgeOnlyDeploymentAcknowledged` | Railway | Both `true` for the Railway edge-only template. Never use this pair when the application port is directly reachable; configure `KnownProxies`/`KnownNetworks` instead. |
 | `Jwt__Key` | yes | JWT signing key, ≥32 chars. No default — boot fails without it. |
 | `Jwt__Issuer` / `Jwt__Audience` | optional | Default `AZOA.WebAPI` / `AZOA.Client`. |
 | `AZOA__WalletEncryptionKey` | yes | Symmetric key for platform wallet generation. No default — `WalletKeyService` throws without it. |
@@ -99,6 +101,11 @@ The `SurrealDb__*` family is consumed by both the .NET host AND the
 entrypoint's migration pre-step; you only need to wire one family. The
 entrypoint also accepts the `SURREALFORGE_*` aliases
 (`SURREALFORGE_URL` / `_NS` / `_DB` / `_USER` / `_PASS`) if preferred.
+
+Mount a persistent volume at `/app/data` for the Data Protection cursor key
+ring. A multi-replica deployment must use one shared key ring and the same
+`DataProtection__ApplicationName`; otherwise opaque public cursors fail across
+restarts or replicas.
 
 ### Entrypoint migration behavior
 
@@ -127,6 +134,20 @@ deploy step already applied them).
 ---
 
 ## 3. Common diagnostics
+
+### Exception logs and telemetry
+
+`Logging__LogLevel__Default` is the single severity control used by every
+configured sink: the base default is `Information`, Development uses `Debug`,
+and Production uses `Critical`. The optional JSONL sink is enabled with
+`Diagnostics__JsonlExceptionLogger__Enabled=true`; set
+`Diagnostics__JsonlExceptionLogger__Directory` to an absolute path or a path
+relative to the API binary directory (default `logs/exceptions`). Mount that
+directory persistently if local exception records must survive a container
+replacement. Configure OpenTelemetry export with
+`OpenTelemetry__Otlp__Endpoint` and optional
+`OpenTelemetry__Otlp__Protocol=grpc|http/protobuf`. Spans export exception type,
+not exception message.
 
 **`dev-up.sh` says "no compose runtime found"**
 Install one of: Docker Desktop, Docker Engine (Linux), or Podman 4.x+. The

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -58,6 +59,7 @@ public sealed class ReconciliationService : IReconciliationService
     {
         OperationStatus.Pending,
         OperationStatus.AwaitingSignature,
+        OperationStatus.PendingConfirmation,
     };
 
     public ReconciliationService(
@@ -452,9 +454,26 @@ public sealed class ReconciliationService : IReconciliationService
             ? ct0
             : null;
 
+        ChainNetwork? chainNetwork = null;
+        if (op.Parameters.TryGetValue("ChainNetwork", out var networkRaw)
+            && !string.IsNullOrWhiteSpace(networkRaw))
+        {
+            if (!Enum.TryParse<ChainNetwork>(networkRaw, true, out var parsedNetwork)
+                || !Enum.IsDefined(parsedNetwork))
+            {
+                _logger.LogWarning(
+                    "Reconciliation: operation {OperationId} has invalid persisted network '{Network}'",
+                    op.Id, networkRaw);
+                return MaybeFlagStuckOperation(op, ageSeconds, hardStuck,
+                    $"invalid persisted ChainNetwork '{networkRaw}'");
+            }
+
+            chainNetwork = parsedNetwork;
+        }
+
         var provider = chainType is not null
-            ? TryResolveProvider(chainType)
-            : SafeDefaultProvider();
+            ? TryResolveProvider(chainType, chainNetwork)
+            : TryResolveDefaultProvider(chainNetwork);
 
         if (provider is null)
         {
@@ -622,8 +641,14 @@ public sealed class ReconciliationService : IReconciliationService
             return;
         }
 
+        var settlementPayload = settleCompleted
+            && op.Parameters.TryGetValue(IdempotencyParameterNames.ResultPayload, out var replayPayload)
+            && !string.IsNullOrWhiteSpace(replayPayload)
+                ? replayPayload
+                : payloadOrReason;
+
         await SettleIdempotencyRecordAsync(
-            key, settleCompleted, payloadOrReason,
+            key, settleCompleted, settlementPayload,
             ownerDescription: $"operation {op.Id}", ct);
     }
 
@@ -795,5 +820,14 @@ public sealed class ReconciliationService : IReconciliationService
             _logger.LogWarning(ex, "Reconciliation: default provider resolution failed");
             return null;
         }
+    }
+
+    private IBlockchainProvider? TryResolveDefaultProvider(ChainNetwork? network)
+    {
+        var configuredDefault = SafeDefaultProvider();
+        if (configuredDefault is null || network is null)
+            return configuredDefault;
+
+        return TryResolveProvider(configuredDefault.ChainType, network);
     }
 }

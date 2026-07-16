@@ -1,4 +1,4 @@
-// ─── AZOA Sleek — Guardrail G3: Injection Suite Gate ────────────────────────
+// ─── AZOA — Guardrail G3: Injection Suite Gate ────────────────────────
 //
 // LOAD-BEARING ASSERTION (read before modifying this file)
 // ─────────────────────────────────────────────────────────

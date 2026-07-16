@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -22,22 +21,12 @@ namespace AZOA.WebAPI.Tests.Signing;
 /// the user's walletId/avatarId), NOT the platform key — and a non-owning avatar
 /// is IDOR-rejected by the custody guard with NO signing side effect.
 /// </summary>
-public class AlgorandProviderCustodySigningTests : IDisposable
+public class AlgorandProviderCustodySigningTests
 {
-    private readonly HttpListener _listener;
-    private readonly string _baseUrl;
+    private const string BaseUrl = "http://algod.test/";
     private readonly AlgoAccount _userAccount = new();
 
     private int _submitCount;
-
-    public AlgorandProviderCustodySigningTests()
-    {
-        var port = GetFreePort();
-        _baseUrl = $"http://127.0.0.1:{port}/";
-        _listener = new HttpListener();
-        _listener.Prefixes.Add(_baseUrl);
-        _listener.Start();
-    }
 
     private IConfiguration BuildConfig() => new ConfigurationBuilder()
         .AddInMemoryCollection(new Dictionary<string, string?>
@@ -49,24 +38,25 @@ public class AlgorandProviderCustodySigningTests : IDisposable
             ["Blockchain:DefaultNetwork"] = "devnet",
             ["Blockchain:Chains:0:ChainType"] = "Algorand",
             ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
-            ["Blockchain:Chains:0:Devnet:NodeUrl"] = _baseUrl,
-            ["Blockchain:Chains:0:Devnet:TimeoutMs"] = "5000",
+            ["Blockchain:Chains:0:Devnet:NodeUrl"] = BaseUrl,
+            ["Blockchain:Chains:0:Devnet:TimeoutMs"] = "1000",
         })
         .Build();
 
-    private AlgorandProvider NewProvider(IKeyCustodyService custody)
+    private AlgorandProvider NewProvider(IKeyCustodyService custody, HttpMessageHandler? handler = null)
     {
         var config = BuildConfig();
         var signerFactory = new TransactionSignerFactory(new[] { new AlgorandTransactionSigner() });
         return new AlgorandProvider(
             config, NullLogger<AlgorandProvider>.Instance, signerFactory,
-            keyService: null, custodyService: custody, custodyScopeFactory: null);
+            keyService: null, custodyService: custody, custodyScopeFactory: null,
+            faucet: null, httpMessageHandler: handler);
     }
 
     [Fact]
     public async Task PerUserTransfer_SignsWithUsersKey_ViaCustodyResolver_NotPlatform()
     {
-        using var _ = RunStub(confirmedRound: 3);
+        using var stub = RunStub(confirmedRound: 3);
 
         var avatarId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
@@ -95,7 +85,7 @@ public class AlgorandProviderCustodySigningTests : IDisposable
             .ThrowsAsync(new InvalidOperationException(
                 "C1: a per-user transfer must NOT resolve the platform key."));
 
-        var provider = NewProvider(custody.Object);
+        var provider = NewProvider(custody.Object, stub);
         var userAddr = _userAccount.Address.EncodeAsString();
 
         var result = await provider.TransferAsync(
@@ -122,7 +112,7 @@ public class AlgorandProviderCustodySigningTests : IDisposable
     [Fact]
     public async Task PerUserTransfer_NonOwningAvatar_IsIdorRejected_WithNoSigningSideEffect()
     {
-        using var _ = RunStub(confirmedRound: 3);
+        using var stub = RunStub(confirmedRound: 3);
 
         var attackerAvatarId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
@@ -140,7 +130,7 @@ public class AlgorandProviderCustodySigningTests : IDisposable
                     Message = "Wallet not owned by this avatar."
                 }));
 
-        var provider = NewProvider(custody.Object);
+        var provider = NewProvider(custody.Object, stub);
         var userAddr = _userAccount.Address.EncodeAsString();
 
         var result = await provider.TransferAsync(
@@ -157,7 +147,7 @@ public class AlgorandProviderCustodySigningTests : IDisposable
     [Fact]
     public async Task PerUserTransfer_UnresolvableContext_FailsClosed_NeverPlatformFallback()
     {
-        using var _ = RunStub(confirmedRound: 3);
+        using var stub = RunStub(confirmedRound: 3);
 
         // No custody wired at all AND a per-user context: the provider must fail
         // closed, NOT fall back to the configured platform mnemonic.
@@ -166,7 +156,8 @@ public class AlgorandProviderCustodySigningTests : IDisposable
         var provider = new AlgorandProvider(
             config, NullLogger<AlgorandProvider>.Instance, signerFactory,
             keyService: new AZOA.WebAPI.Services.Signing.WalletKeyService(config),
-            custodyService: null, custodyScopeFactory: null);
+            custodyService: null, custodyScopeFactory: null,
+            faucet: null, httpMessageHandler: stub);
 
         var userAddr = _userAccount.Address.EncodeAsString();
         var result = await provider.TransferAsync(
@@ -182,94 +173,59 @@ public class AlgorandProviderCustodySigningTests : IDisposable
 
     // ─── In-process Algod stub (mirrors AlgorandProviderTransactTests) ───
 
-    private IDisposable RunStub(long confirmedRound)
+    private StubScope RunStub(long confirmedRound) => new(this, confirmedRound);
+
+    private static HttpResponseMessage JsonResponse(Dictionary<string, object?> extra)
     {
-        var cts = new CancellationTokenSource();
-        var loop = Task.Run(async () =>
+        var content = new StringContent(JsonSerializer.Serialize(extra), System.Text.Encoding.UTF8);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+    }
+
+    private sealed class StubScope : HttpMessageHandler
+    {
+        private readonly AlgorandProviderCustodySigningTests _owner;
+        private readonly long _confirmedRound;
+
+        public StubScope(AlgorandProviderCustodySigningTests owner, long confirmedRound)
         {
-            while (!cts.IsCancellationRequested)
+            _owner = owner;
+            _confirmedRound = confirmedRound;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/v2/transactions/params", StringComparison.Ordinal))
             {
-                HttpListenerContext ctx;
-                try { ctx = await _listener.GetContextAsync(); }
-                catch { break; }
-
-                var path = ctx.Request.Url!.AbsolutePath;
-                try
+                return Task.FromResult(JsonResponse(new Dictionary<string, object?>
                 {
-                    if (path.EndsWith("/v2/transactions/params"))
-                    {
-                        WriteJson(ctx, extra: new Dictionary<string, object?>
-                        {
-                            ["fee"] = 0,
-                            ["min-fee"] = 1000,
-                            ["last-round"] = 100,
-                            ["genesis-id"] = "devnet-v1.0",
-                            ["genesis-hash"] = "SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=",
-                        });
-                    }
-                    else if (path == "/v2/transactions")
-                    {
-                        Interlocked.Increment(ref _submitCount);
-                        WriteJson(ctx, extra: new Dictionary<string, object?> { ["txId"] = "STUBTXID" });
-                    }
-                    else if (path.Contains("/v2/transactions/pending/"))
-                    {
-                        WriteJson(ctx, extra: new Dictionary<string, object?>
-                        {
-                            ["confirmed-round"] = confirmedRound,
-                            ["pool-error"] = "",
-                        });
-                    }
-                    else
-                    {
-                        ctx.Response.StatusCode = 404;
-                        ctx.Response.Close();
-                    }
-                }
-                catch
-                {
-                    try { ctx.Response.Abort(); } catch { /* ignore */ }
-                }
+                    ["fee"] = 0,
+                    ["min-fee"] = 1000,
+                    ["last-round"] = 100,
+                    ["genesis-id"] = "devnet-v1.0",
+                    ["genesis-hash"] = "SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=",
+                }));
             }
-        });
 
-        return new StubScope(cts, loop);
-    }
+            if (path == "/v2/transactions")
+            {
+                Interlocked.Increment(ref _owner._submitCount);
+                return Task.FromResult(JsonResponse(new Dictionary<string, object?> { ["txId"] = "STUBTXID" }));
+            }
 
-    private static void WriteJson(HttpListenerContext ctx, Dictionary<string, object?> extra)
-    {
-        var json = JsonSerializer.Serialize(extra);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-        ctx.Response.ContentType = "application/json";
-        ctx.Response.StatusCode = 200;
-        ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
-        ctx.Response.Close();
-    }
+            if (path.Contains("/v2/transactions/pending/", StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse(new Dictionary<string, object?>
+                {
+                    ["confirmed-round"] = _confirmedRound,
+                    ["pool-error"] = "",
+                }));
+            }
 
-    private static int GetFreePort()
-    {
-        var l = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        l.Start();
-        var port = ((IPEndPoint)l.LocalEndpoint).Port;
-        l.Stop();
-        return port;
-    }
-
-    public void Dispose()
-    {
-        try { _listener.Stop(); _listener.Close(); } catch { /* ignore */ }
-    }
-
-    private sealed class StubScope : IDisposable
-    {
-        private readonly CancellationTokenSource _cts;
-        private readonly Task _loop;
-        public StubScope(CancellationTokenSource cts, Task loop) { _cts = cts; _loop = loop; }
-        public void Dispose()
-        {
-            _cts.Cancel();
-            try { _loop.Wait(TimeSpan.FromSeconds(2)); } catch { /* ignore */ }
-            _cts.Dispose();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
 }

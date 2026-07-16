@@ -34,6 +34,9 @@ public static class AzoaScopes
     /// </summary>
     public const string Operator = "operator:admin";
 
+    /// <summary>May govern node-local economic parameters; JWT-only, never API-key issuable.</summary>
+    public const string NodeGovern = "node:govern";
+
     /// <summary>A child credential may mint/transfer NFTs for its avatar.</summary>
     public const string NftMint = "nft:mint";
 
@@ -128,6 +131,7 @@ public static class AzoaScopes
         new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
         {
             Operator,
+            NodeGovern,
         };
 
     /// <summary>

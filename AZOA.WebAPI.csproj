@@ -3,6 +3,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- This is an executable node host. Reusable NuGet surfaces live in their
+         own packages; do not accidentally publish the host as a library. -->
+    <IsPackable>false</IsPackable>
     <!-- Enforcement teeth: the app project is IDE0005-clean, so a NEW unused using
          here fails the build (not just warns). Style severities live in the root
          .editorconfig; EnforceCodeStyleInBuild (Directory.Build.props) surfaces them.

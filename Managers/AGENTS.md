@@ -154,6 +154,119 @@ constructor arg (`= null`). DI always supplies it; the null default only exists 
 three unit-test fixtures that do `new HolonManager(store)` keep compiling. A null
 registry ⇒ validation skipped entirely (pure free-string behaviour).
 
+## node-operator-governance
+
+`INodeGovernanceGuard` is a security gate, unlike the opt-in holon type registry
+above. The guard runs before idempotency claims or store writes on the governed
+economic-engine seams:
+
+| Seam | Governed dimensions |
+|---|---|
+| `AllocationManager.AllocateAsync` | `ChainType` + allocation asset type |
+| `FungibleTokenManager.CreateAsync` | `ChainType` + `FungibleToken` |
+| `HolonManager.CreateAsync` / `UpdateAsync` | `AssetType` |
+
+The local node's policy is stored as one `node_governance_parameters:local`
+record and changed only through the `NodeGovern` JWT-only surface. Every update
+compares the observed version inside the write transaction and appends its
+`node_governance_audit` row there; concurrent writers cannot publish the same
+next version.
+Persistent parameters override appsettings; no persistent row means appsettings
+still apply. A persistence read error fails closed because this is an economic
+authorization decision.
+
+`NodeFeeScheduleManager` owns the singleton versioned fee table and immutable
+audit snapshots. Updates are value-idempotent, accept an optional
+`ExpectedVersion`, and use store-level compare-and-swap inside the same
+transaction as the audit insert. A stale writer never creates a forked
+`N -> N+1` audit history.
+
+`NodeTreasuryManager` owns treasury routing policy separately from fee pricing.
+Destinations are versioned per canonical chain/network, provider-validated on
+both write and read, and changed with the matching immutable audit row in one
+store transaction. Identical retries are value-idempotent even with a stale
+`ExpectedVersion`; a different stale value conflicts. A configured destination
+does not activate a fee consumer by itself: settlement must pin the destination
+address and version inside its own durable claim before any economic effect.
+
+`NodeFeeSettlementManager` is intentionally unregistered and has no controller
+or value-path caller. It validates and prepares an immutable settlement intent,
+then exposes only an inert recovery sweep: bounded due/stale-lease candidates
+are claimed with a fresh token and state version and released into
+`AwaitingReconciliation`. The store also has an explicit-call paired terminal
+protocol for independently observed, distinct confirmed primary/fee effects; it
+atomically completes the parent claim but has no manager, worker, or provider
+caller. Nothing here submits, confirms, cancels, or authorizes a fee.
+`NodeFeeSettlementRecoveryWorker` is an explicit-call seam, not a hosted
+service, and has no provider dependency; activating it is therefore not a
+Transfer-consumer activation. `PrepareAsync` now atomically admits an
+`InProgress` parent idempotency claim and immutable settlement pair; a replay
+returns the existing pair and a divergent immutable decision conflicts. It does
+not complete or fail the parent claim; only the store's guarded paired terminal
+protocol can do so. Value-path activation still needs reviewed lease-guarded
+effect hand-offs and chain reconciliation.
+Admission is deliberately narrower than recovery: its only legal input is a
+fresh `Prepared` row with both effects `NotStarted`, zero counters/version, and
+no operation link, transaction hash, lease, or reconciliation fields. The
+parent key is canonicalized once before both its hash and deterministic record
+id are derived. A normal outer idempotency claim using the same key fails closed
+without creating or altering a settlement; it is not treated as a partial pair
+to repair. There is no unpaired settlement-create manager/store seam.
+
+`AllocationManager` quotes Mint/Transfer fees only after winning its outer
+idempotency claim and before wallet/NFT/broadcast effects. The fee manager is a
+required dependency: configuration read failures reject the allocation. Gross,
+fee, net, and schedule version are pinned into the operation and replay payload;
+duplicate allocation keys never requote. The outer allocation key participates
+in the inner blockchain-operation key so two legitimate purchases with different
+allocation keys cannot collapse. Mint fees settle as retained unminted supply.
+Until a treasury transfer primitive lands, a nonzero Transfer fee rejects before
+wallet/NFT/broadcast effects; zero-fee transfers sign from the caller's existing
+source wallet and deliver to the route target's wallet. Self-transfer is rejected.
+
+A chain-observed operation stores `IdempotencyResultPayload` on its row.
+Reconciliation uses that serialized owner result, not a raw transaction hash,
+when settling an orphaned outer claim. Once a transaction hash is observed,
+failure of the outer completion write must leave the claim recoverable rather
+than marking an already-broadcast effect Failed.
+
+`NftManager.TransferAsync` reads the effective Transfer entry before its first
+NFT read, ownership mutation, or operation write. A nonzero flat amount or bps
+(including one that rounds to zero for a unit NFT) rejects the direct route until
+the version-pinned, on-chain settlement flow replaces this containment gate. An
+unavailable or malformed schedule also rejects, preventing the direct route from
+bypassing configured fee policy while the settlement executor is inactive.
+
+Unexpected allocation or fungible-token exceptions always bubble to the host
+logging boundary. Before entering a value-effect call, recovery may fail the
+owned claim with a fixed non-sensitive message. Once a provider/value effect may
+have started, the claim stays `InProgress` for reconciliation; never persist
+`ex.Message` or mark an ambiguous effect Failed, because that can authorize a
+duplicate broadcast.
+
+`BlockchainOperationManager` resolves and stamps canonical `ChainType` plus
+`ChainNetwork` before its first persistence write. The network is part of the
+idempotency fingerprint: identical economics on Devnet and Mainnet are distinct
+operations. Reconciliation uses those persisted coordinates and resolves legacy
+default-chain rows at their persisted network.
+
+Provider `AZOAResult<T>` failures are expected economic outcomes and remain
+durable failed operations. A thrown provider exception is unexpected: it bubbles
+to the host logging boundary only after recovery. With a durable transaction hash,
+the row becomes `PendingConfirmation` and the claim stays nonterminal for chain
+reconciliation. Without a hash, the row becomes `Unknown` and the claim is failed
+terminally so automatic rebroadcast is impossible; manual reconciliation owns the
+ambiguity. Only `BlockchainProviderNotFoundException` is translated to a generic
+validation result—never classify providers by parsing exception messages. Apply
+the same rule to governance managers: validation and CAS conflicts return results;
+infrastructure or programming exceptions bubble.
+
+`NodeTransparencyManager` projects those operator-only models into a separate
+anonymous contract. It never forwards internal response objects because they
+carry actor ids and raw JSON. It validates stored typed snapshots, returns a
+bounded keyset page, and substitutes one generic unavailable message for store
+error results so an anonymous caller cannot mine infrastructure details.
+
 ## §quest-dependency-enforcement
 
 **final-hardening F4 — dependencies are ENFORCED at run start (fail-closed).**

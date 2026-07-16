@@ -111,6 +111,29 @@ public sealed class SurrealBlockchainOperationStoreTests : IAsyncLifetime
         getResult.Result.Status.Should().Be(OperationStatus.Pending);
     }
 
+    [SkippableFact]
+    public async Task Upsert_PendingConfirmation_RoundTripsWithoutBecomingUnknown()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var op = new BlockchainOperationBuilder()
+            .WithId(Guid.NewGuid())
+            .ForAvatar(Guid.NewGuid())
+            .OfType("Transfer")
+            .WithStatus(OperationStatus.PendingConfirmation)
+            .Build();
+        op.Parameters["TxHash"] = "submitted_tx";
+
+        var saved = await _store.UpsertAsync(op);
+        var loaded = await _store.GetByIdAsync(op.Id);
+
+        saved.IsError.Should().BeFalse();
+        saved.Result!.Status.Should().Be(OperationStatus.PendingConfirmation);
+        loaded.IsError.Should().BeFalse();
+        loaded.Result!.Status.Should().Be(OperationStatus.PendingConfirmation);
+        loaded.Result.Parameters["TxHash"].Should().Be("submitted_tx");
+    }
+
     /// <summary>
     /// Test 2: GetById for a non-existent id returns IsError=true with "Operation not found."
     /// </summary>

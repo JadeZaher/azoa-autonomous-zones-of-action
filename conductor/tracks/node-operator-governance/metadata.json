@@ -5,7 +5,7 @@
   "created_at": "2026-07-10T00:00:00Z",
   "status": "in_progress",
   "horizon": "alpha-partial",
-  "phase": "Phase 1 auth guardrail plus dynamic chain/asset governance parameters and immutable audit are in progress/partly landed; fee schedules next; Phase 2 gated on federation-v2",
+  "phase": "Phase 1 auth guardrail, dynamic chain/asset governance, immutable audit, versioned fee schedules, and separate chain/network treasury routing policy are in progress/partly landed; allocation Mint settles by netting, nonzero Transfer fees fail closed pending durable treasury settlement, and remaining value-path consumers are open; Phase 2 gated on federation-v2",
   "blocks": [],
   "depends_on": [
     "avatar-dapp-rbac",
@@ -16,6 +16,8 @@
     "fiat-stripe-bridge",
     "data-engine-decision",
     "tenant-consent-delegation",
-    "consent-gate-architecture"
+    "consent-gate-architecture",
+    "node-public-governance-transparency",
+    "node-egress-fees"
   ]
 }

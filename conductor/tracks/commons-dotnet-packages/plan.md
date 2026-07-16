@@ -12,7 +12,10 @@ status: deferred
 1. Reserve package IDs and create the separate `AZOA.Commons` repository.
 2. Establish shared deterministic-pack, Source Link, API-baseline, SBOM, signing,
    and protected-tag release policy.
-3. Land Contracts and node-conformance golden vectors without a DHT dependency.
+3. Adopt and independently review the normative
+   [`holochain-dotnet-bridge-contract`](../federation-v2/holochain-dotnet-bridge-contract.md),
+   including canonical publication/attestation and error vectors.
+4. Land Contracts and node-conformance golden vectors without a DHT dependency.
 
 ## Post-gate work
 

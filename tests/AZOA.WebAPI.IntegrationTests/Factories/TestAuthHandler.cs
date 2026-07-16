@@ -34,6 +34,8 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
     // avatar-dapp-rbac: when "true", stamp operator:admin + role=Admin so a test can
     // exercise operator-gated surfaces (the Operator policy + the role-assign path).
     public const string OperatorHeaderName = "X-Test-Operator";
+    public const string NodeGovernHeaderName = "X-Test-Node-Govern";
+    public const string OperatorOnlyHeaderName = "X-Test-Operator-Only";
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -58,13 +60,22 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
             new("dapp_role", dappRole)
         };
 
-        if (Request.Headers.TryGetValue(OperatorHeaderName, out var op)
-            && string.Equals(op.ToString(), "true", StringComparison.OrdinalIgnoreCase))
+        var isOperator = Request.Headers.TryGetValue(OperatorHeaderName, out var op)
+            && string.Equals(op.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        var isOperatorOnly = Request.Headers.TryGetValue(OperatorOnlyHeaderName, out var opOnly)
+            && string.Equals(opOnly.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        var isNodeGovernor = Request.Headers.TryGetValue(NodeGovernHeaderName, out var node)
+            && string.Equals(node.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+
+        if (isOperator)
         {
             claims.Add(new Claim("scope", AZOA.WebAPI.Core.AzoaScopes.Operator));
             claims.Add(new Claim("role", "Admin"));
             claims.Add(new Claim(ClaimTypes.Role, "Admin"));
         }
+
+        if ((isOperator && !isOperatorOnly) || isNodeGovernor)
+            claims.Add(new Claim("scope", AZOA.WebAPI.Core.AzoaScopes.NodeGovern));
 
         var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);

@@ -21,7 +21,9 @@ tables: `ecosystem` (root, one per STARODK) and `ecosystem_node` (tree nodes).
 - **Cascade delete.** `DeleteAsync(ecosystemId)` deletes child nodes first
   (`DELETE ... WHERE ecosystem_id = $eco`) then the root, so no orphan nodes
   dangle. There is no schema-level ON DELETE.
-- **No-throw.** Every method captures exceptions into an `AZOAResult<T>`.
+- **Expected outcomes are typed.** Not-found and recognized conflicts use
+  `AZOAResult<T>`; unexpected executor/mapping failures bubble to the host
+  boundary described below.
 
 ## §holon-type-registry — SurrealHolonTypeRegistryStore (F5)
 
@@ -50,8 +52,9 @@ full feature rationale; this note covers only the persistence choices.
   callers always see the bare AssetType name in both `Id` and `AssetType`. It also
   backfills `AssetType` from the id if the column ever came back empty.
 
-- **No-throw.** Every method captures exceptions into an `AZOAResult<T>`; the manager
-  treats any error result as "unconstrained" (fail-open — see the manager note).
+- **Registry failure policy.** The manager owns the explicit fail-open decision
+  for unavailable registry data; the store does not flatten arbitrary exceptions
+  into an error string.
 
 - **Schema.** The `.surql` under `Generated/Schemas/holon_type_registry.surql` is
   emitted from the POCO by `AttributeSchemaScanner` + `SurqlEmitter` and gated by the
@@ -97,6 +100,88 @@ Invariants to preserve when adding stores:
   must run before any store query — enforced by `SurrealTestSchema.BootstrapAsync` in tests.
 - **No string-interpolated SurrealQL** (`.Of($"...")`): the `SurrealForge.Analyzer`
   SRDB0001 rule fails the build on interpolation, and the build is clean.
+
+## Error boundary for new and modified stores
+
+Store methods return `AZOAResult<T>` for expected persistence outcomes such as
+not-found, validation rejection, or a recognized compare-and-set conflict.
+Unexpected executor, protocol, mapping, and serialization exceptions must bubble
+to the host boundary so the centralized logger receives their type, stack, query
+context, and trace correlation. Do not add blanket `catch (Exception)` blocks
+that reduce an unexpected failure to `ex.Message`; when touching an existing
+method, prune that pattern if its callers already run behind a request, worker,
+or CLI exception boundary.
+
+## Typed mutation boundary
+
+This directory documents datastore mechanics only. Domain policy belongs in the
+owning manager/service guide. Prefer typed query/writer/mutation builders for
+ordinary CRUD and typed relation builders for graph edges. DDL belongs in schema
+generation. Retain raw statements only for a genuinely multi-table/multi-statement
+atomic invariant. A temporarily unsupported single statement requires a linked,
+expiring package issue/track waiver plus a one-line `raw:` reason. Colon-bearing scalar
+strings must use the package's coercion-safe string binding; do not reimplement
+encoding or character-splitting workarounds in individual stores.
+
+Temporary waiver: `SurrealNodeTransparencyStore` uses two parameterized SELECT
+variants for one descending `(occurred_at,id)` keyset pagination path because
+the current typed read builder cannot express the required disjunction plus
+record-id ordering. The active `azoa-code-style-backpropagation` track owns the
+SurrealForge.Client remediation; the reviewed waiver expires 2026-09-30.
+
+Temporary waiver: `SurrealHolonStore` retains one delete and three conditional
+transfer mutations until the tested SurrealForge.Client 0.4 mutation package is
+published and consumed here. The same code-style track owns that migration; the
+waiver expires 2026-08-31.
+
+`SurrealNodeFeeSettlementStore` uses typed `SurrealQuery<T>.Key` for direct
+record reads; it intentionally exposes no unpaired settlement-create method.
+`AdmitAsync` has a temporary
+2026-08-31 raw waiver because the consumed SurrealForge package cannot express
+the one transaction that conditionally creates/replays an
+`idempotency_key_store` parent and `node_fee_settlement` child across two
+tables. It is bounded, fully parameterized, transient-conflict retried, and
+returns only the final paired rows. Both missing means both are created; both
+present means replay after parent key/operation validation; either one present
+is a corruption error, never an implicit repair, except that a parent-only row
+with a different ordinary operation is a known outer-ledger collision and is
+returned as a fail-closed conflict without mutation. Admission accepts only a
+fresh canonical `Prepared` row with both effects `NotStarted`, zero lifecycle
+counters, and no links, hashes, lease, or reconciliation fields. The raw
+`CONTENT` dictionary is an explicit allowlist that writes only the immutable
+economics (canonical positive `ulong` base-unit strings with overflow-safe
+`gross = fee + net`) and those canonical inert lifecycle values, so a caller
+cannot smuggle record links, an unbalanced amount, or an effect state through
+it. New parents are always `InProgress` without result/error. Parent and
+settlement terminality must agree on replay;
+neither terminal-before-nonterminal direction is accepted. Parent-key trimming
+is centralized before both hash and deterministic record-id derivation, and its
+colon-safe stored form matches the configured package ledger adapter. The
+recovery read and its two lease mutations
+share the same expiry because the consumed package lowercases enum predicates
+and lacks a typed multi-field conditional builder for the claim's ORed
+due-or-expired predicate and the defer's exact token-plus-expiry guard. Those
+parameterized statements carry `raw:` pointers in code; replace all six raw
+seams with typed conditional/transaction builders as soon as the packaged
+surface lands. Do not classify duplicate races from server error-message text.
+Recovery scan rows are only candidates: claim always repeats the state-version
+plus due-or-expired lease predicate, and every reconciliation or terminal write
+requires the exact unexpired lease token. A nonterminal effect report must contain
+at least one `Unknown`/`Failed` state and cannot alter the parent. Confirmed
+effect references are monotonic: later reconciliation or terminalization must
+preserve the exact observed reference, enforced inside the same lease CAS.
+The raw reconciliation statement also explicitly casts optional transaction
+references through `SurrealScalarString`, preserving colon-bearing chain
+identifiers rather than allowing SurrealDB to coerce them into record ids.
+`TrySettlePairedAsync`
+is a second bounded, parameterized raw transaction (same 2026-08-31 waiver): it
+accepts two distinct confirmed references and atomically changes the settlement
+to `Settled` and its matching `InProgress` parent to `Completed`. It never
+submits, signs, or polls an effect, and stale/illegal/reverse transitions return
+no mutation. Value-path lifecycle activation still requires reviewed
+provider/reconciliation hand-offs with live-SurrealDB concurrency tests.
+Within that transaction, `UPDATE ONLY ... RETURN AFTER` is already one object on
+SurrealDB 3.x; do not append `.first()`, which aborts the transaction.
 
 ## §set-omits-null — always serialize option<> collections (Phase H / H7)
 

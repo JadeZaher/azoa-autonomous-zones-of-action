@@ -55,7 +55,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Run as the non-root user the aspnet base image ships (APP_UID=1654).
 # /app must be owned by that user so any runtime-written files (e.g. the
 # dev JSONL exception log dir) succeed without root.
-RUN chown -R $APP_UID /app
+RUN mkdir -p /app/data/data-protection-keys && chown -R $APP_UID /app
 USER $APP_UID
 
 # ASPNETCORE_URLS is set by docker-entrypoint.sh so Railway's injected $PORT

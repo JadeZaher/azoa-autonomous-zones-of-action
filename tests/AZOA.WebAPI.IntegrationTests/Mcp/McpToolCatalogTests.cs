@@ -1,4 +1,4 @@
-// ─── AZOA Sleek — MCP Tool Catalog: Happy-Path Integration Tests ─────────────
+// ─── AZOA — MCP Tool Catalog: Happy-Path Integration Tests ─────────────
 //
 // ONE test per tool; each covers the core happy-path contract and verifies
 // that the response shape and scoping rules are correct.

@@ -20,9 +20,9 @@ public enum AllocationKind
 /// <summary>
 /// Single tenant-callable allocation request (D4 — one DTO with an asset-kind
 /// discriminator). It carries the asset descriptor + an already-decided amount;
-/// AZOA does NOT compute amounts, run token economics, or evaluate any gate —
-/// those stay in the fiat-settlement tenant. AZOA materialises the wallet (if
-/// absent) and moves the on-chain/custodial asset.
+/// the fiat-settlement tenant remains authoritative for that gross amount and
+/// its economics. AZOA validates it and applies the node's server-authoritative
+/// fee schedule before materialising the wallet and moving the net asset.
 ///
 /// IDOR note: this DTO intentionally does NOT carry an owner / target avatar id.
 /// The allocation target avatar is supplied out-of-band (route / contract
@@ -48,8 +48,8 @@ public class AllocationRequest
 
     /// <summary>
     /// The already-decided amount of the asset to allocate, as a string for
-    /// arbitrary precision (house convention). AZOA treats this as opaque and
-    /// authoritative — it does not derive or validate economic meaning.
+    /// arbitrary precision (house convention). It is the caller-authoritative
+    /// gross amount; AZOA validates the provider range and applies node fees.
     /// </summary>
     public string Amount { get; set; } = string.Empty;
 

@@ -1,0 +1,27 @@
+---
+type: plan
+track: integration-test-isolation-debt
+status: active
+updated: 2026-07-12
+---
+
+# Integration-test CI gate plan
+
+- [x] Give every test factory a unique SurrealDB namespace shared by its app
+  host and direct setup clients.
+- [x] Retire the historical Bucket A–D failure tail.
+- [x] Fix the three failures exposed by the 2026-07-11 full-suite run.
+- [x] Add pinned SurrealDB 3.1.4 RocksDB startup, readiness diagnostics, and the
+  non-chaos integration project to `.github/workflows/ci.yml`.
+- [x] Diagnose the unfiltered post-fix run: 314 passed, one skipped, and only
+  the documented machine-dependent wallet p99 performance budget failed.
+- [x] Run the complete default correctness suite after the final fixes:
+  `310 passed, 1 intentional skip, 0 failed` in Release on 2026-07-11
+  (`Category!=Chaos&Category!=Perf`, 23m55s).
+- [ ] Keep the local-only `Category=Perf` budgets strict and isolate the wallet
+  read p99 before archive. A quiet rerun on 2026-07-12 passed saga due-scan and
+  bridge insert, but `WalletGetById` measured 59.3 ms against its 50 ms budget;
+  the direct-record query path needs environment or transport evidence before
+  any change to the budget is considered.
+- [ ] Observe a green repository CI check on the workflow change.
+- [ ] Archive the track only after both verification items are checked.

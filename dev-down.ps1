@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    AZOA Sleek -- full-stack dev teardown (PowerShell).
+    AZOA -- full-stack dev teardown (PowerShell).
 
 .PARAMETER Wipe
-    Also drop the surrealdb_data volume so the next dev-up sees a fresh DB.
+    Also drop the SurrealDB and API cursor-key volumes.
 
 .PARAMETER ResetDb
     Alias for -Wipe. Matches the dev-up.ps1 vocabulary so you can use the
@@ -11,7 +11,7 @@
 
 .EXAMPLE
     ./dev-down.ps1            # stop containers, keep volume
-    ./dev-down.ps1 -Wipe      # stop containers and drop the SurrealDB volume
+    ./dev-down.ps1 -Wipe      # stop containers and drop all dev volumes
     ./dev-down.ps1 -ResetDb   # same as -Wipe
 #>
 [CmdletBinding()]
@@ -93,7 +93,7 @@ $prevPref = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 
 if ($Wipe) {
-    Write-Host "[dev-down] Tearing down with -v (wipes surrealdb_data volume) ..."
+    Write-Host "[dev-down] Tearing down with -v (wipes database + cursor-key volumes) ..."
 } else {
     Write-Host "[dev-down] Tearing down (volume preserved -- pass -Wipe / -ResetDb to drop) ..."
 }
@@ -122,11 +122,11 @@ $ErrorActionPreference = $prevPref
 
 Write-Host ""
 Write-Host "[dev-down] Flags (run ./dev-down.ps1 -<Flag>):"
-Write-Host "  -Wipe / -ResetDb   Also drop the SurrealDB volume so next dev-up is fresh."
+Write-Host "  -Wipe / -ResetDb   Also drop the database + cursor-key volumes."
 Write-Host ""
 Write-Host "  Default behavior (no flags):"
 Write-Host "    * Stops + removes containers"
-Write-Host "    * PRESERVES the SurrealDB volume so data survives"
+Write-Host "    * PRESERVES database + cursor-key volumes"
 Write-Host ""
 
 exit 0

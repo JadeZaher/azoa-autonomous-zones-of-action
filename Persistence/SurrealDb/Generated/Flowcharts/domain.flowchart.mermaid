@@ -4,9 +4,9 @@ graph LR
     %% Regenerate with: dotnet run --project packages/SurrealForge.Schema -- flowcharts
     %% 
     %% Slices in this diagram:
-    %%   bridge: bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, operation_log, quest_webhook_event, saga_steps, webhook_registration
+    %%   bridge: bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, node_fee_settlement, operation_log, quest_webhook_event, saga_steps, webhook_registration
     %%   dapp_composition: dapp_series, dapp_series_quest, ecosystem, ecosystem_node
-    %%   identity: api_key, avatar, consent_audit, consent_grant, holon, holon_type_registry, kyc_document, kyc_submission, star_odk, wallet_auth_challenge, wallet_auth_claim_token
+    %%   identity: admin_bootstrap_state, api_key, avatar, consent_audit, consent_grant, holon, holon_type_registry, kyc_document, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, star_odk, wallet_auth_challenge, wallet_auth_claim_token
     %%   quest: executes, forked_from, quest, quest_access_request, quest_dependency, quest_edge, quest_node, quest_node_execution, quest_run
     %%   quest_templates: quest_node_template, quest_template
     %%   wallet_nft: nft_ownership, swap_state, wallet
@@ -24,7 +24,17 @@ graph LR
     %%   kyc_document.type: GOVERNMENT_ID, PASSPORT, DRIVERS_LICENSE, SELFIE, PROOF_OF_ADDRESS  (KycDocument.KycDocumentType)
     %%   kyc_submission.provider: MANUAL, VERIFF  (KycSubmission.KycProvider)
     %%   kyc_submission.status: PENDING, IN_REVIEW, APPROVED, REJECTED, EXPIRED  (KycSubmission.KycStatus)
-    %%   operation_log.status: Pending, Unknown, Failed, Completed, AwaitingSignature, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (OperationLog.StatusKind)
+    %%   node_fee_audit.action: ScheduleUpdated
+    %%   node_fee_settlement.fee_effect_state: NotStarted, Submitted, Confirmed, Failed, Unknown  (NodeFeeSettlement.EffectStateKind)
+    %%   node_fee_settlement.network: Devnet, Testnet, Mainnet
+    %%   node_fee_settlement.operation: Mint, Transfer, Swap, QuestComplete, FederationPublish
+    %%   node_fee_settlement.primary_effect_state: NotStarted, Submitted, Confirmed, Failed, Unknown  (NodeFeeSettlement.EffectStateKind)
+    %%   node_fee_settlement.state: Prepared, PrimarySubmitted, FeeSubmitted, AwaitingReconciliation, Settled, Cancelled  (NodeFeeSettlement.StateKind)
+    %%   node_governance_audit.action: ParametersUpdated
+    %%   node_treasury_audit.action: DestinationUpdated
+    %%   node_treasury_audit.network: Devnet, Testnet, Mainnet
+    %%   node_treasury_destination.network: Devnet, Testnet, Mainnet
+    %%   operation_log.status: Pending, Unknown, Failed, Completed, AwaitingSignature, PendingConfirmation, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (OperationLog.StatusKind)
     %%   quest.run_access: Open, InviteOnly  (Quest.QuestRunAccessKind)
     %%   quest.status: Draft, Active, Completed, Failed, Archived  (Quest.QuestStatusKind)
     %%   quest_access_request.status: Pending, Approved, Rejected, Withdrawn  (QuestAccessRequest.QuestAccessRequestStatusKind)
@@ -36,7 +46,7 @@ graph LR
     %%   quest_run.status: Pending, Running, Succeeded, Failed, Forked, Cancelled, Suspended, AwaitingSignal, AwaitingTimer, AwaitingReconciliation  (QuestRun.QuestRunStatusKind)
     %%   quest_webhook_event.status: Pending, Delivered, DeadLettered  (QuestWebhookEvent.DeliveryStatus)
     %%   saga_steps.status: Pending, InProgress, Completed, Compensating, DeadLettered, Parked, Cancelled  (SagaSteps.StepStatus)
-    %%   swap_state.status: Pending, Unknown, Failed, Completed, AwaitingSignature, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (SwapState.StatusKind)
+    %%   swap_state.status: Pending, Unknown, Failed, Completed, AwaitingSignature, PendingConfirmation, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (SwapState.StatusKind)
     %%   wallet.wallet_type: External, Platform  (Wallet.WalletTypeKind)
 
     subgraph slice_bridge ["bridge"]
@@ -44,6 +54,7 @@ graph LR
         consent_webhook_event["consent_webhook_event: Node"]:::nodeClass
         consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
         idempotency_key_store["idempotency_key_store: Node"]:::nodeClass
+        node_fee_settlement["node_fee_settlement: Node"]:::nodeClass
         operation_log["operation_log: Node"]:::nodeClass
         quest_webhook_event["quest_webhook_event: Node"]:::nodeClass
         saga_steps["saga_steps: Node"]:::nodeClass
@@ -58,6 +69,7 @@ graph LR
     end
 
     subgraph slice_identity ["identity"]
+        admin_bootstrap_state["admin_bootstrap_state: Node"]:::nodeClass
         api_key["api_key: Node"]:::nodeClass
         avatar["avatar: Node"]:::nodeClass
         consent_audit["consent_audit: Node"]:::nodeClass
@@ -66,6 +78,12 @@ graph LR
         holon_type_registry["holon_type_registry: Node"]:::nodeClass
         kyc_document["kyc_document: Node"]:::nodeClass
         kyc_submission["kyc_submission: Node"]:::nodeClass
+        node_fee_audit["node_fee_audit: Node"]:::nodeClass
+        node_fee_schedule["node_fee_schedule: Node"]:::nodeClass
+        node_governance_audit["node_governance_audit: Node"]:::nodeClass
+        node_governance_parameters["node_governance_parameters: Node"]:::nodeClass
+        node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
+        node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
         star_odk["star_odk: Node"]:::nodeClass
         wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
         wallet_auth_claim_token["wallet_auth_claim_token: Node"]:::nodeClass
@@ -95,6 +113,7 @@ graph LR
     end
 
     %% Edges (slice-local + cross-slice)
+    admin_bootstrap_state -- "avatar_id [N:1]" --> avatar
     api_key -- "avatar_id [N:1]" --> avatar
     avatar -- "owner_tenant_id [N:0..1]" --> avatar
     bridge_tx -- "avatar_id [N:1]" --> avatar
@@ -116,11 +135,20 @@ graph LR
     ecosystem_node -- "parent_node_id [N:0..1]" --> ecosystem_node
     holon -- "avatar_id [N:0..1]" --> avatar
     holon -- "origin_avatar_id [N:0..1]" --> avatar
+    holon -- "transfer_target_avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
     holon -- "source_holon_id [N:0..1]" --> holon
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
     nft_ownership -- "avatar_id [N:1]" --> avatar
+    node_fee_audit -- "actor_avatar_id [N:1]" --> avatar
+    node_fee_schedule -- "updated_by_avatar_id [N:0..1]" --> avatar
+    node_fee_settlement -- "fee_operation_id [N:0..1]" --> operation_log
+    node_fee_settlement -- "primary_operation_id [N:0..1]" --> operation_log
+    node_governance_audit -- "actor_avatar_id [N:1]" --> avatar
+    node_governance_parameters -- "updated_by_avatar_id [N:0..1]" --> avatar
+    node_treasury_audit -- "actor_avatar_id [N:1]" --> avatar
+    node_treasury_destination -- "updated_by_avatar_id [N:0..1]" --> avatar
     operation_log -- "acting_tenant_id [N:0..1]" --> avatar
     operation_log -- "avatar_id [N:0..1]" --> avatar
     operation_log -- "holon_id [N:0..1]" --> holon

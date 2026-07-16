@@ -31,12 +31,16 @@ public sealed class ActionableAuthorizationResultHandler : IAuthorizationMiddlew
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             context.Response.ContentType = "application/json";
-            var missingScope = RequiredDappScope(context);
+            var missingScope = RequiredScope(context);
+            var message = missingScope is AzoaScopes.DappDevelop or AzoaScopes.DappManage
+                ? $"This API key lacks the '{missingScope}' scope or owning-avatar role required "
+                  + "for this dApp operation. Rotate the key after updating the avatar role."
+                : $"This API key cannot satisfy the '{missingScope}' policy. Use a JWT identity "
+                  + "that carries the required capability.";
             await context.Response.WriteAsJsonAsync(new
             {
                 isError = true,
-                message = $"This API key lacks the '{missingScope}' scope or owning-avatar role required "
-                        + "for this dApp operation. Rotate the key after updating the avatar role.",
+                message,
             });
             return;
         }
@@ -44,14 +48,19 @@ public sealed class ActionableAuthorizationResultHandler : IAuthorizationMiddlew
         await _default.HandleAsync(next, context, policy, authorizeResult);
     }
 
-    private static string RequiredDappScope(HttpContext context)
+    private static string RequiredScope(HttpContext context)
     {
         var policies = context.GetEndpoint()?
             .Metadata.GetOrderedMetadata<IAuthorizeData>()
             .Select(a => a.Policy);
 
-        return policies?.Contains("DappManage", StringComparer.Ordinal) == true
-            ? AzoaScopes.DappManage
-            : AzoaScopes.DappDevelop;
+        var policyList = policies?.ToArray() ?? Array.Empty<string?>();
+        if (policyList.Contains("NodeGovern", StringComparer.Ordinal))
+            return AzoaScopes.NodeGovern;
+        if (policyList.Contains("Operator", StringComparer.Ordinal))
+            return AzoaScopes.Operator;
+        if (policyList.Contains("DappManage", StringComparer.Ordinal))
+            return AzoaScopes.DappManage;
+        return AzoaScopes.DappDevelop;
     }
 }

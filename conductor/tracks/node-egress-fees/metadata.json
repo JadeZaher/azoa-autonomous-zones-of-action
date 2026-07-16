@@ -1,0 +1,19 @@
+{
+  "id": "node-egress-fees",
+  "description": "Optional byte-dimensional fees for explicit AZOA-controlled exports and peer-resolution payloads.",
+  "type": "feature",
+  "created_at": "2026-07-11T00:00:00Z",
+  "status": "pending",
+  "horizon": "post-alpha-federation-gated",
+  "phase": "Deferred until durable fee settlement, provider network isolation, and a real export/federation consumer exist",
+  "blocks": [],
+  "depends_on": [
+    "node-operator-governance",
+    "node-public-governance-transparency",
+    "federation-v2"
+  ],
+  "related": [
+    "node-conformance-manifest",
+    "data-engine-decision"
+  ]
+}

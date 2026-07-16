@@ -1,3 +1,7 @@
+---
+type: product-context
+---
+
 # Product: AZOA WebAPI — Lightweight
 
 ## Vision

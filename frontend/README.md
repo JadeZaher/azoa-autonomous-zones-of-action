@@ -1,4 +1,4 @@
-# AZOA Sleek Frontend
+# AZOA Frontend
 
 A comprehensive Next.js frontend for testing blockchain providers with real connectivity to Algorand and Solana devnet networks.
 

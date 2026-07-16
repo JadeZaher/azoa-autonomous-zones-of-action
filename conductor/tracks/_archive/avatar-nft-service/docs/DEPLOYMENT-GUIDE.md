@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide provides comprehensive instructions for deploying the integrated AZOA Sleek platform with Avatar NFT Service, frontend authentication, and blockchain connectivity.
+This guide provides comprehensive instructions for deploying the integrated AZOA platform with Avatar NFT Service, frontend authentication, and blockchain connectivity.
 
 ## 🎯 **Architecture Overview**
 
@@ -616,4 +616,4 @@ services.AddApplicationInsightsTelemetry();
 services.AddPrometheus();
 ```
 
-This comprehensive deployment guide ensures a smooth integration and deployment of the complete AZOA Sleek platform with Avatar NFT Service, providing a robust and scalable solution for blockchain-based digital identity management.
+This comprehensive deployment guide ensures a smooth integration and deployment of the complete AZOA platform with Avatar NFT Service, providing a robust and scalable solution for blockchain-based digital identity management.

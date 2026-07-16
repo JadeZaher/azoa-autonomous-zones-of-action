@@ -1,0 +1,15 @@
+{
+  "id": "surreal-runtime-least-privilege",
+  "description": "Separate production API runtime credentials from schema/bootstrap authority for SurrealDB 3.1.4.",
+  "type": "security",
+  "created_at": "2026-07-13T00:00:00Z",
+  "status": "in_progress",
+  "horizon": "pre-production",
+  "phase": "Configuration contract and fail-closed startup guard landed; live role verification remains required.",
+  "blocks": [],
+  "depends_on": [],
+  "related": [
+    "azoa-code-style-backpropagation",
+    "node-operator-governance"
+  ]
+}

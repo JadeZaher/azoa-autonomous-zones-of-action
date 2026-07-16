@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Services.Blockchain;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Interfaces;
@@ -13,6 +14,9 @@ namespace AZOA.WebAPI.Managers;
 
 public class BlockchainOperationManager : IBlockchainOperationManager
 {
+    private const string UnexpectedExecutionMessage =
+        "Blockchain execution ended unexpectedly; automatic rebroadcast is disabled pending reconciliation.";
+
     private readonly IBlockchainOperationStore _blockchainOperationStore;
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly IIdempotencyStore _idempotencyStore;
@@ -29,9 +33,48 @@ public class BlockchainOperationManager : IBlockchainOperationManager
 
     public async Task<AZOAResult<IBlockchainOperation>> ExecuteAsync(IBlockchainOperation operation, AZOARequest? request = null)
     {
-        var chainType = operation.Parameters.GetValueOrDefault("ChainType", _chainFactory.GetDefaultProvider().ChainType);
+        string requestedChain;
+        try
+        {
+            requestedChain = operation.Parameters.TryGetValue("ChainType", out var persistedChain)
+                && !string.IsNullOrWhiteSpace(persistedChain)
+                    ? persistedChain
+                    : _chainFactory.GetDefaultProvider().ChainType;
+        }
+        catch (BlockchainProviderNotFoundException)
+        {
+            return AZOAResult<IBlockchainOperation>.Failure(
+                "The configured default blockchain provider is unavailable.", operation);
+        }
+
         var networkStr = operation.Parameters.GetValueOrDefault("ChainNetwork", "Devnet");
-        var network = Enum.TryParse<ChainNetwork>(networkStr, true, out var parsed) ? parsed : ChainNetwork.Devnet;
+        if (!Enum.TryParse<ChainNetwork>(networkStr, true, out var network)
+            || !Enum.IsDefined(network))
+        {
+            return new AZOAResult<IBlockchainOperation>
+            {
+                IsError = true,
+                Result = operation,
+                Message = $"Invalid ChainNetwork '{networkStr}'.",
+            };
+        }
+
+        IBlockchainProvider chainProvider;
+        try
+        {
+            chainProvider = _chainFactory.GetProvider(requestedChain, network);
+        }
+        catch (BlockchainProviderNotFoundException)
+        {
+            return AZOAResult<IBlockchainOperation>.Failure(
+                $"No blockchain provider is available for {requestedChain}/{network}.", operation);
+        }
+
+        var chainType = chainProvider.ChainType;
+        operation.Parameters["ChainType"] = chainType;
+        operation.Parameters["ChainNetwork"] = network.ToString();
+        operation.Parameters.Remove("TxHash");
+        operation.Parameters.Remove("Error");
 
         // ── Idempotency gate (api-safety-hardening task 11) ──────────────────
         // The on-chain effect for this operation is irreversible. We must NOT
@@ -41,7 +84,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         // "same logical operation" (same chain/type/wallet/params) always maps
         // to the same key and executes its chain effect exactly once, even
         // under duplicate or concurrent requests.
-        var idempotencyKey = DeriveIdempotencyKey(operation, chainType);
+        var idempotencyKey = DeriveIdempotencyKey(operation, chainType, network);
 
         var claim = await _idempotencyStore.TryClaimAsync(idempotencyKey, operation.OperationType, CancellationToken.None);
         if (!claim.Won)
@@ -54,17 +97,15 @@ public class BlockchainOperationManager : IBlockchainOperationManager
 
         // We won the claim: persist the operation row, then perform the effect
         // exactly once.
-        var result = await _blockchainOperationStore.UpsertAsync(operation, default);
-        if (result.IsError)
-        {
-            await _idempotencyStore.FailAsync(idempotencyKey, result.Message, CancellationToken.None);
-            return result;
-        }
-
-        var chainProvider = _chainFactory.GetProvider(chainType, network);
-
         try
         {
+            var result = await _blockchainOperationStore.UpsertAsync(operation, default);
+            if (result.IsError)
+            {
+                await _idempotencyStore.FailAsync(idempotencyKey, result.Message, CancellationToken.None);
+                return result;
+            }
+
             switch (operation.OperationType)
             {
                 case "Mint":
@@ -94,31 +135,39 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                     operation.Status = OperationStatus.Unknown;
                     break;
             }
+
+            if (operation.Status == OperationStatus.Pending)
+            {
+                operation.Status = OperationStatus.Completed;
+                operation.CompletedDate = DateTime.UtcNow;
+            }
+
+            var saved = await _blockchainOperationStore.UpsertAsync(operation, default);
+
+            if (saved.IsError
+                && !string.IsNullOrWhiteSpace(
+                    operation.Parameters.GetValueOrDefault("TxHash", string.Empty)))
+            {
+                throw new InvalidOperationException(
+                    "Post-broadcast operation persistence returned an error result.");
+            }
+
+            // Settle the idempotency record from the terminal operation state.
+            // NOTE: an "AwaitingSignature" op has NOT been broadcast server-side
+            // (it goes to client-side signing) — it is NOT yet irreversible, so we
+            // must NOT mark the idempotency record Completed. Leave it InProgress so
+            // a later server-side submit (if ever added) can still settle it; a
+            // duplicate request meanwhile replays the same "awaiting signature"
+            // instruction without re-running the (harmless, non-broadcasting) path.
+            await SettleIdempotencyAsync(idempotencyKey, operation, saved);
+
+            return saved;
         }
         catch (Exception ex)
         {
-            operation.Status = OperationStatus.Failed;
-            operation.Parameters["Error"] = ex.Message;
+            await RecoverClaimAfterUnexpectedFailureAsync(idempotencyKey, operation, ex);
+            throw;
         }
-
-        if (operation.Status == OperationStatus.Pending)
-        {
-            operation.Status = OperationStatus.Completed;
-            operation.CompletedDate = DateTime.UtcNow;
-        }
-
-        var saved = await _blockchainOperationStore.UpsertAsync(operation, default);
-
-        // Settle the idempotency record from the terminal operation state.
-        // NOTE: an "AwaitingSignature" op has NOT been broadcast server-side
-        // (it goes to client-side signing) — it is NOT yet irreversible, so we
-        // must NOT mark the idempotency record Completed. Leave it InProgress so
-        // a later server-side submit (if ever added) can still settle it; a
-        // duplicate request meanwhile replays the same "awaiting signature"
-        // instruction without re-running the (harmless, non-broadcasting) path.
-        await SettleIdempotencyAsync(idempotencyKey, operation, saved);
-
-        return saved;
     }
 
     /// <summary>
@@ -128,7 +177,10 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// on-chain effect. Explicitly does NOT include <see cref="IBlockchainOperation.Id"/>
     /// (fresh GUID per call) or any timestamp.
     /// </summary>
-    private static string DeriveIdempotencyKey(IBlockchainOperation operation, string chainType)
+    private static string DeriveIdempotencyKey(
+        IBlockchainOperation operation,
+        string chainType,
+        ChainNetwork network)
     {
         var p = operation.Parameters;
         var walletAddress = p.GetValueOrDefault("WalletAddress", string.Empty);
@@ -169,6 +221,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 "transfer",
                 p.GetValueOrDefault("SourceTokenId", (operation as ITransferOperation)?.SourceHolonId?.ToString() ?? string.Empty),
                 (operation as ITransferOperation)?.RecipientAddress ?? p.GetValueOrDefault("RecipientAddress", string.Empty),
+                p.GetValueOrDefault("Amount", string.Empty),
             },
             "DeployContract" => new object[]
             {
@@ -189,6 +242,11 @@ public class BlockchainOperationManager : IBlockchainOperationManager
             // op type alone (still deterministic, still deduped).
             _ => new object[] { operation.OperationType.ToLowerInvariant() },
         };
+
+        if (p.TryGetValue("IdempotencyKey", out var parentKey) && !string.IsNullOrWhiteSpace(parentKey))
+            opParams = [.. opParams, "parent", parentKey];
+
+        opParams = [.. opParams, "network", network.ToString()];
 
         return OperationIdGenerator.Generate(chainType, operation.OperationType, walletAddress, opParams);
     }
@@ -298,6 +356,45 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         // TxHash so duplicates replay the exact same on-chain result.
         var txHash = operation.Parameters.GetValueOrDefault("TxHash", string.Empty);
         await _idempotencyStore.CompleteAsync(idempotencyKey, txHash, CancellationToken.None);
+    }
+
+    private async Task RecoverClaimAfterUnexpectedFailureAsync(
+        string idempotencyKey,
+        IBlockchainOperation operation,
+        Exception originalException)
+    {
+        var txHash = operation.Parameters.GetValueOrDefault("TxHash", string.Empty);
+        operation.Status = string.IsNullOrWhiteSpace(txHash)
+            ? OperationStatus.Unknown
+            : OperationStatus.PendingConfirmation;
+        operation.Parameters["Error"] = UnexpectedExecutionMessage;
+
+        var recoveryPersisted = false;
+        try
+        {
+            var persisted = await _blockchainOperationStore.UpsertAsync(operation, CancellationToken.None);
+            recoveryPersisted = !persisted.IsError;
+            if (recoveryPersisted && operation.Status == OperationStatus.PendingConfirmation)
+                return;
+
+            if (persisted.IsError)
+                originalException.Data["AZOA.OperationRecovery"] =
+                    "Operation persistence returned an error result.";
+        }
+        catch (Exception recoveryException)
+        {
+            originalException.Data["AZOA.OperationRecoveryExceptionType"] =
+                recoveryException.GetType().FullName ?? recoveryException.GetType().Name;
+        }
+
+        if (recoveryPersisted && operation.Status == OperationStatus.PendingConfirmation)
+            return;
+
+        await IdempotencyClaimRecovery.TryFailAsync(
+            _idempotencyStore,
+            idempotencyKey,
+            UnexpectedExecutionMessage,
+            originalException);
     }
 
     public async Task<AZOAResult<IBlockchainOperation>> BuildAndExecuteAsync(Func<BlockchainOperationBuilder, IBlockchainOperation> build, AZOARequest? request = null)

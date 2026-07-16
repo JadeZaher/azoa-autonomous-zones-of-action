@@ -589,7 +589,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                         key_hash     = hash,
                         key_prefix   = prefix,
                         is_active    = true,
-                        scopes       = "read,write",
+                        scopes       = new[] { "read", "write" },
                     },
                 });
         }

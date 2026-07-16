@@ -166,3 +166,28 @@ The proof is the integration test
 `SurrealSagaStoreTests.TryClaimDueStep_Concurrent_ExactlyOneWins_NoConflictThrown`
 (8 concurrent claims on one due step → exactly one winner, zero thrown
 conflicts), mirroring the idempotency store's `TryClaim_Concurrent_ExactlyOneWins`.
+
+## §compensation-atomicity — transition and enqueue are one transaction
+
+`CompensateStepAsync` must never persist `InProgress → Compensating` without the
+declared Pending compensation row. It uses one explicit `BEGIN`/`COMMIT` request:
+the conditional update is assigned to `$_transitioned`, a guard throws unless
+exactly one row won, and only then is the compensation row created. A create or
+schema failure rolls the status transition back; a concurrent loser returns
+`null` without creating an orphan row. Do not split these statements into two
+executor calls or call an unwrapped `Combine` atomic.
+
+## §lease-owned-transitions — stale workers cannot mutate or continue
+
+`TryClaimDueStepAsync` returns `ClaimedAt`, which is an exact lease token, not
+diagnostic metadata. Every worker transition conditions its write on
+`status=InProgress AND claimed_at=token`. A reclaimed worker may finish its
+handler but cannot complete, retry, park, dead-letter, compensate, or enqueue a
+successor.
+
+`CompleteAndEnqueueNextStepAsync` commits source completion and forward
+successor creation in one guarded `BEGIN`/`COMMIT` request. Use it for processor
+continuation; do not call `CompleteStepAsync` followed by `EnqueueNextStepAsync`
+for the same logical transition. Completion and compensation share the lease
+guard/create helpers so their source literals remain classified atomicity
+escape hatches rather than proliferating raw CRUD.

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    AZOA Sleek -- full-stack dev launcher (PowerShell).
+    AZOA -- full-stack dev launcher (PowerShell).
 
 .DESCRIPTION
     Brings up SurrealDB + WebAPI + Frontend via docker-compose.dev.yml.
@@ -27,9 +27,9 @@
 
 .PARAMETER ResetDb
     DESTRUCTIVE. Tear down with `down -v --remove-orphans` so the
-    SurrealDB volume is wiped before bringing the stack back up. Use when
-    you genuinely want a clean DB. Default behavior preserves the volume
-    across restarts -- code-only iteration should not lose data.
+    SurrealDB and API cursor-key volumes are wiped before bringing the stack
+    back up. Use when you genuinely want a clean DB. Default behavior
+    preserves both volumes across restarts.
 
 .PARAMETER Rebuild
     DEPRECATED -- rebuild is the default. Kept as a no-op alias.

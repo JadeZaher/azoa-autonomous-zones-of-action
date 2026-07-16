@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
@@ -9,13 +8,11 @@ using Microsoft.Extensions.Hosting;
 
 namespace AZOA.WebAPI.Core.Diagnostics;
 
-/// <summary>
-/// Singleton background worker that dequeues <see cref="JsonlEntry"/> items and
-/// appends them to a rotating JSONL file (one file per UTC day).
-/// Registered as <see cref="IHostedService"/> so the channel is drained on shutdown.
-/// </summary>
+/// <summary>Drains diagnostic entries to daily JSONL files.</summary>
 public sealed class JsonlExceptionWriter : IHostedService, IDisposable
 {
+    private const int QueueCapacity = 1024;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -26,25 +23,39 @@ public sealed class JsonlExceptionWriter : IHostedService, IDisposable
     private readonly Channel<JsonlEntry> _channel;
     private Task? _consumer;
     private CancellationTokenSource? _cts;
+    private long _failureCount;
 
     public JsonlExceptionWriter(JsonlExceptionLoggerOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _channel = Channel.CreateBounded<JsonlEntry>(new BoundedChannelOptions(1024)
+        _channel = Channel.CreateBounded<JsonlEntry>(new BoundedChannelOptions(QueueCapacity)
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false,
         });
     }
 
-    /// <summary>Enqueues an entry for writing; never blocks (drop-oldest on overflow).</summary>
-    public void Enqueue(JsonlEntry entry) => _channel.Writer.TryWrite(entry);
+    /// <summary>Number of queue, write, or forced-drain failures reported to the fallback sink.</summary>
+    public long FailureCount => Interlocked.Read(ref _failureCount);
+
+    /// <summary>Accepts an entry only when the bounded queue can preserve it.</summary>
+    public bool Enqueue(JsonlEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        if (_channel.Writer.TryWrite(entry))
+            return true;
+
+        ReportFailure("enqueue-rejected", null);
+        return false;
+    }
 
     /// <inheritdoc/>
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        _cts = new CancellationTokenSource();
         _consumer = Task.Run(() => ConsumeAsync(_cts.Token), CancellationToken.None);
         return Task.CompletedTask;
     }
@@ -53,11 +64,17 @@ public sealed class JsonlExceptionWriter : IHostedService, IDisposable
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _channel.Writer.TryComplete();
-        _cts?.Cancel();
-        if (_consumer is not null)
+        if (_consumer is null)
+            return;
+
+        try
         {
-            try { await _consumer.ConfigureAwait(false); }
-            catch (OperationCanceledException) { /* expected on shutdown */ }
+            await _consumer.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            ReportFailure("shutdown-drain", null);
+            _cts?.Cancel();
         }
     }
 
@@ -65,8 +82,14 @@ public sealed class JsonlExceptionWriter : IHostedService, IDisposable
     {
         await foreach (var entry in _channel.Reader.ReadAllAsync(ct).ConfigureAwait(false))
         {
-            try { await WriteEntryAsync(entry).ConfigureAwait(false); }
-            catch { /* swallow individual write failures — never crash the host */ }
+            try
+            {
+                await WriteEntryAsync(entry).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                ReportFailure("write", ex);
+            }
         }
     }
 
@@ -74,33 +97,76 @@ public sealed class JsonlExceptionWriter : IHostedService, IDisposable
     {
         var dir = _options.Directory;
         if (!Path.IsPathRooted(dir))
-        {
-            // Resolve relative path from the current process directory.
             dir = Path.Combine(AppContext.BaseDirectory, dir);
-        }
 
         Directory.CreateDirectory(dir);
 
         var date = DateTime.UtcNow.ToString("yyyy-MM-dd");
         var file = Path.Combine(dir, $"{date}.jsonl");
+        var line = SerializeWithinLimit(entry, _options.MaxEntrySizeBytes);
 
-        var line = JsonSerializer.Serialize(entry, JsonOptions);
-
-        // Enforce max size guard.
-        if (System.Text.Encoding.UTF8.GetByteCount(line) > _options.MaxEntrySizeBytes)
-        {
-            line = line.Substring(0, Math.Min(line.Length, _options.MaxEntrySizeBytes / 2)) + "...[truncated]\"}}";
-        }
-
-        // FileShare.ReadWrite allows external log tailing without locking.
         await using var fs = new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
         await using var sw = new StreamWriter(fs, System.Text.Encoding.UTF8, leaveOpen: true);
         await sw.WriteLineAsync(line).ConfigureAwait(false);
     }
 
+    private static string SerializeWithinLimit(JsonlEntry entry, int configuredLimit)
+    {
+        var limit = Math.Max(2, configuredLimit);
+        var line = JsonSerializer.Serialize(entry, JsonOptions);
+        if (System.Text.Encoding.UTF8.GetByteCount(line) <= limit)
+            return line;
+
+        var summary = entry with
+        {
+            Category = Truncate(entry.Category, 128)!,
+            Message = "[entry truncated]",
+            ExceptionMessage = null,
+            Stack = null,
+            InnerChain = null,
+            RequestId = Truncate(entry.RequestId, 64),
+            RequestMethod = Truncate(entry.RequestMethod, 16),
+            RequestPath = Truncate(entry.RequestPath, 128),
+            TraceId = Truncate(entry.TraceId, 64),
+            SpanId = Truncate(entry.SpanId, 32),
+            SurrealStatement = null,
+            SurrealParams = null,
+        };
+        line = JsonSerializer.Serialize(summary, JsonOptions);
+        if (System.Text.Encoding.UTF8.GetByteCount(line) <= limit)
+            return line;
+
+        line = JsonSerializer.Serialize(new { message = "[entry truncated]" }, JsonOptions);
+        return System.Text.Encoding.UTF8.GetByteCount(line) <= limit ? line : "{}";
+    }
+
+    private static string? Truncate(string? value, int maxLength)
+        => value is not null && value.Length > maxLength
+            ? value[..maxLength]
+            : value;
+
+    private void ReportFailure(string stage, Exception? exception)
+    {
+        var count = Interlocked.Increment(ref _failureCount);
+        try
+        {
+            Console.Error.WriteLine(
+                $"AZOA JSONL diagnostics {stage} failure " +
+                $"({exception?.GetType().Name ?? "no exception detail"}); count={count}.");
+        }
+        catch (IOException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
+        _channel.Writer.TryComplete();
+        _cts?.Cancel();
         _cts?.Dispose();
     }
 }

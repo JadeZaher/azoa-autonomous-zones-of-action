@@ -76,7 +76,8 @@ public class ReconciliationHostedServiceTests
         var host = new ReconciliationHostedService(
             scopeFactory,
             Mock.Of<ILogger<ReconciliationHostedService>>(),
-            options);
+            options,
+            minimumInterval: TimeSpan.FromMilliseconds(1));
 
         await host.StartAsync(cts.Token);
 

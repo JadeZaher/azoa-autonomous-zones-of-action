@@ -57,32 +57,64 @@ public interface ISagaStore
         Guid id, DateTime now, CancellationToken ct);
 
     /// <summary>
-    /// Mark a claimed step <see cref="StepStatus.Completed"/> (conditional on it
-    /// still being <see cref="StepStatus.InProgress"/>), recording its output.
-    /// Returns whether the conditional write applied (false ⇒ a concurrent
-    /// reclaim/transition already moved it; the caller no-ops).
+    /// Mark a claimed step <see cref="StepStatus.Completed"/>, recording its
+    /// output. The write is conditional on both
+    /// <see cref="StepStatus.InProgress"/> and an exact match with
+    /// <paramref name="claimedAt"/>, the lease token returned by
+    /// <see cref="TryClaimDueStepAsync"/>. Returns whether the conditional write
+    /// applied; <c>false</c> means the lease was reclaimed or the row moved.
     /// </summary>
-    Task<bool> CompleteStepAsync(Guid id, string? output, CancellationToken ct);
+    Task<bool> CompleteStepAsync(
+        Guid id, DateTime claimedAt, string? output, CancellationToken ct);
+
+    /// <summary>
+    /// Atomically complete a claimed forward step and enqueue its successor.
+    /// The completion is conditional on the exact <paramref name="claimedAt"/>
+    /// lease returned by <see cref="TryClaimDueStepAsync"/>; the successor is
+    /// created in the same transaction only when that lease still owns the
+    /// <paramref name="id"/> row. Returns the persisted successor, or
+    /// <c>null</c> when the lease was reclaimed or the row moved. Any successor
+    /// write failure must roll the completion back.
+    /// </summary>
+    Task<SagaStepRecord?> CompleteAndEnqueueNextStepAsync(
+        Guid id,
+        DateTime claimedAt,
+        string? output,
+        string sagaName,
+        string nextStepName,
+        string correlationKey,
+        string nextStepIdempotencyKey,
+        string payloadJson,
+        CancellationToken ct);
 
     /// <summary>
     /// Record a failed attempt and schedule the retry: conditional on the row
-    /// still being <see cref="StepStatus.InProgress"/>, set it back to
-    /// <see cref="StepStatus.Pending"/>, bump <c>AttemptCount</c>, push
-    /// <c>NextRunAt</c> out by <paramref name="backoff"/>, clear the lease,
+    /// still being <see cref="StepStatus.InProgress"/> under the exact
+    /// <paramref name="claimedAt"/> lease returned by
+    /// <see cref="TryClaimDueStepAsync"/>, set it back to
+    /// <see cref="StepStatus.Pending"/>, bump <c>AttemptCount</c>, set
+    /// <c>NextRunAt</c> to <paramref name="nextRunAt"/>, clear the lease, and
     /// store <paramref name="error"/>. Returns whether it applied.
     /// </summary>
     Task<bool> ScheduleRetryAsync(
-        Guid id, DateTime nextRunAt, string error, CancellationToken ct);
+        Guid id,
+        DateTime claimedAt,
+        DateTime nextRunAt,
+        string error,
+        CancellationToken ct);
 
     /// <summary>
     /// Terminal-fail a forward step that exhausted retries: conditional on
     /// <see cref="StepStatus.InProgress"/>, set <see cref="StepStatus.Compensating"/>
     /// and enqueue the declared compensation step as a fresh Pending row in the
-    /// SAME unit of work. Returns the enqueued compensation record, or
-    /// <c>null</c> if the transition no longer applied.
+    /// SAME unit of work. The transition also requires the exact
+    /// <paramref name="claimedAt"/> lease returned by
+    /// <see cref="TryClaimDueStepAsync"/>. Returns the enqueued compensation
+    /// record, or <c>null</c> if the lease or transition no longer matches.
     /// </summary>
     Task<SagaStepRecord?> CompensateStepAsync(
         Guid id,
+        DateTime claimedAt,
         string compensationStepName,
         string compensationIdempotencyKey,
         string compensationPayloadJson,
@@ -93,10 +125,13 @@ public interface ISagaStore
     /// Dead-letter a step (a forward step with NO declared compensation, or a
     /// compensation step that itself exhausted): conditional on
     /// <see cref="StepStatus.InProgress"/>, set
-    /// <see cref="StepStatus.DeadLettered"/> + <c>DeadLettered=true</c>.
-    /// Returns whether it applied.
+    /// <see cref="StepStatus.DeadLettered"/> + <c>DeadLettered=true</c>. The
+    /// transition also requires the exact <paramref name="claimedAt"/> lease
+    /// returned by <see cref="TryClaimDueStepAsync"/>. Returns whether it
+    /// applied.
     /// </summary>
-    Task<bool> DeadLetterStepAsync(Guid id, string error, CancellationToken ct);
+    Task<bool> DeadLetterStepAsync(
+        Guid id, DateTime claimedAt, string error, CancellationToken ct);
 
     /// <summary>
     /// Enqueue the next forward step of a saga instance after a step completed
@@ -112,17 +147,23 @@ public interface ISagaStore
 
     /// <summary>
     /// SUSPEND a claimed step on an external signal/timer (durable-workflow-engine).
-    /// Conditional on the row still being <see cref="StepStatus.InProgress"/>,
-    /// set <see cref="StepStatus.Parked"/>, persist <paramref name="gateId"/>,
-    /// clear the lease, and set <c>NextRunAt</c> to <paramref name="resumeAt"/>
+    /// Conditional on the row still being <see cref="StepStatus.InProgress"/>
+    /// under the exact <paramref name="claimedAt"/> lease returned by
+    /// <see cref="TryClaimDueStepAsync"/>, set <see cref="StepStatus.Parked"/>,
+    /// persist <paramref name="gateId"/>, clear the lease, and set
+    /// <c>NextRunAt</c> to <paramref name="resumeAt"/>
     /// when supplied (a wait/timer node fires through the existing
     /// <see cref="GetDueStepIdsAsync"/> scan) or far into the future when
     /// <c>null</c> (parks indefinitely until signalled — the gate scan never
     /// claims a <c>Parked</c> row). Returns whether the conditional write
-    /// applied (false ⇒ a concurrent reclaim/transition already moved it).
+    /// applied; <c>false</c> means the lease was reclaimed or the row moved.
     /// </summary>
     Task<bool> ParkStepAsync(
-        Guid id, string gateId, DateTime? resumeAt, CancellationToken ct);
+        Guid id,
+        DateTime claimedAt,
+        string gateId,
+        DateTime? resumeAt,
+        CancellationToken ct);
 
     /// <summary>
     /// Deliver an external signal to a PARKED gate step (durable-workflow-engine).

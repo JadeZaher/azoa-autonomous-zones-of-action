@@ -22,13 +22,18 @@ public class TinymanDexAdapter : IDexAdapter
 {
     private readonly IConfiguration _config;
     private readonly ILogger<TinymanDexAdapter> _logger;
+    private readonly HttpMessageHandler? _httpMessageHandler;
 
     public string Chain => "algorand";
 
-    public TinymanDexAdapter(IConfiguration config, ILogger<TinymanDexAdapter> logger)
+    public TinymanDexAdapter(
+        IConfiguration config,
+        ILogger<TinymanDexAdapter> logger,
+        HttpMessageHandler? httpMessageHandler = null)
     {
         _config = config;
         _logger = logger;
+        _httpMessageHandler = httpMessageHandler;
     }
 
     public async Task<AZOAResult<DexQuote>> GetQuoteAsync(SwapQuoteRequest req)
@@ -190,7 +195,7 @@ public class TinymanDexAdapter : IDexAdapter
         var validatorAppId = GetTinymanValidatorAppId();
         var poolAddress = TinymanV2PoolLocator.GetPoolAddress(validatorAppId, assetInId, assetOutId);
 
-        using var client = new HttpClient { BaseAddress = new Uri(algodUrl), Timeout = TimeSpan.FromSeconds(10) };
+        using var client = CreateAlgodClient(algodUrl);
         client.DefaultRequestHeaders.Add("User-Agent", "AZOA-SwapManager/1.0");
 
         string response;
@@ -201,6 +206,11 @@ public class TinymanDexAdapter : IDexAdapter
         catch (HttpRequestException ex)
         {
             _logger.LogWarning(ex, "Tinyman pool account {Pool} not found on Algod", poolAddress);
+            return (0, 0);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Tinyman pool account {Pool} lookup timed out on Algod", poolAddress);
             return (0, 0);
         }
 
@@ -255,6 +265,17 @@ public class TinymanDexAdapter : IDexAdapter
 
 
     // ─── Configuration Helpers ───
+
+    private HttpClient CreateAlgodClient(string algodUrl)
+    {
+        var client = _httpMessageHandler is null
+            ? new HttpClient()
+            : new HttpClient(_httpMessageHandler, disposeHandler: false);
+
+        client.BaseAddress = new Uri(algodUrl);
+        client.Timeout = TimeSpan.FromSeconds(10);
+        return client;
+    }
 
     private string GetAlgodUrl()
     {

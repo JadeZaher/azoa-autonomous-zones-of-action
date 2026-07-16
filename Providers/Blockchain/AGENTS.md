@@ -3,6 +3,33 @@
 Directory-level rationale for the blockchain providers. Terse one-line doc-comments
 live in the code; the "why" and cross-cutting seams live here.
 
+## Â§network-instance-isolation
+
+`IBlockchainProvider.Initialize` mutates a provider's network client and active
+network. Therefore a registered provider is never a singleton instance shared by
+network cache keys. `BlockchainProviderFactory` receives
+`BlockchainProviderRegistration` creators, creates one fresh provider for each
+canonical `(chainType, network)` pair, and initializes it exactly once through a
+`Lazy` cache. Production DI registers the concrete providers as transient and
+hands creators to the singleton factory; consumers resolve only through
+`IBlockchainProviderFactory` and must not call `Initialize` themselves.
+
+All shipped providers inherit `BaseBlockchainProvider`: constructors allocate no
+network clients, factory binding constructs those resources exactly once, and a
+factory-bound instance rejects later public `Initialize` calls. A standalone
+provider may initialize itself lazily for a direct unit test or local tool, but a
+factory registration must return it still unbound. Third-party implementations
+that bypass the base class remain responsible for honoring the interface contract.
+The factory rejects undefined `ChainNetwork` values and disabled live networks
+before invoking a registration creator; simulated mode is the intentional
+network-free exception.
+
+This is a settlement precondition: network-specific treasury routing and any
+future fee settlement may rely on a returned provider remaining bound to the
+requested chain/network. The factory tests exercise concurrent real Solana
+resolution and assert that resolving Testnet cannot retarget the cached Devnet
+provider.
+
 ## §bridge — cross-chain value primitives (final-hardening-cutover B2)
 
 ### Verification path (there is exactly one)

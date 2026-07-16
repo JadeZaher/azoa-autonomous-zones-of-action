@@ -2,7 +2,7 @@
 type: spec
 track: federation-v2
 created: 2026-07-05
-revised: 2026-07-10
+revised: 2026-07-12
 status: deferred
 horizon: v2
 activation_gate: >-
@@ -29,7 +29,7 @@ supersedes_framing: >-
   reframes to Holochain-FIRST per owner direction: the hApp IS the public ledger, the
   Commons DHT is the shared substrate, federation is peer-to-peer, and the heavy runtime
   lives in a SEPARATE dedicated repo (AZOA.Commons). See review-2026-07-10.md for the
-  decision log.
+  decision log and review-2026-07-12.md for the package/runtime boundary.
 ---
 
 # Track: federation-v2

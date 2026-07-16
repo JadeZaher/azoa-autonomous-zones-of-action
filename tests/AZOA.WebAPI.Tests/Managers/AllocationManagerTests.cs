@@ -12,6 +12,8 @@ using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Governance;
+using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Tests.Managers;
 
@@ -31,22 +33,48 @@ public class AllocationManagerTests
     private readonly Mock<IWalletStore> _walletStore = new();
     private readonly Mock<INftManager> _nft = new();
     private readonly Mock<IBlockchainOperationManager> _blockchainOps = new();
+    private readonly Mock<INodeFeeScheduleManager> _nodeFees = new();
     private readonly InMemoryIdempotencyStore _idempotency = new();
 
     private readonly Guid _avatarId = Guid.NewGuid();
     private readonly Guid _callerAvatarId = Guid.NewGuid();
+
+    public AllocationManagerTests()
+    {
+        _nodeFees
+            .Setup(m => m.QuoteAsync(
+                It.IsAny<NodeFeeOperation>(),
+                It.IsAny<ulong>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((NodeFeeOperation operation, ulong gross, CancellationToken _) =>
+                new AZOAResult<NodeFeeQuoteResponse>
+                {
+                    Result = new NodeFeeQuoteResponse
+                    {
+                        Operation = operation,
+                        GrossAmount = gross.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        FeeAmount = "0",
+                        NetAmount = gross.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ScheduleVersion = 0,
+                    },
+                    Message = "Success",
+                });
+    }
 
     // value-path-wiring C2: the allocation now broadcasts through
     // IBlockchainOperationManager.ExecuteAsync (it no longer treats NftManager's
     // upsert-only op as the value-bearing result). The default broadcast returns a
     // confirmed op carrying a TxHash so the alloc idempotency key can Complete; a
     // dedicated test overrides this to assert the no-TxHash → stay-InProgress path.
-    private AllocationManager BuildManager()
+    private AllocationManager BuildManager(
+        INodeGovernanceGuard? nodeGovernance = null,
+        INodeFeeScheduleManager? nodeFees = null)
     {
         SetupBroadcastReturnsTxHash();
         return new(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
-            _nft.Object, _blockchainOps.Object, _idempotency);
+            _nft.Object, _blockchainOps.Object, _idempotency,
+            nodeFees ?? _nodeFees.Object, nodeGovernance);
     }
 
     private void SetupBroadcastReturnsTxHash(string txHash = "algo_tx_alloc")
@@ -102,6 +130,26 @@ public class AllocationManagerTests
                    Result = Mock.Of<IBlockchainOperation>(o => o.Id == Guid.NewGuid())
                });
 
+    private void SetupFeeQuote(
+        NodeFeeOperation operation,
+        ulong grossAmount,
+        ulong feeAmount,
+        long scheduleVersion)
+        => _nodeFees
+            .Setup(m => m.QuoteAsync(operation, grossAmount, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<NodeFeeQuoteResponse>
+            {
+                Result = new NodeFeeQuoteResponse
+                {
+                    Operation = operation,
+                    GrossAmount = grossAmount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    FeeAmount = feeAmount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    NetAmount = (grossAmount - feeAmount).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ScheduleVersion = scheduleVersion,
+                },
+                Message = "Success",
+            });
+
     // value-path-wiring H4/D5: the allocation amount is a base-unit INTEGER string
     // (the provider surface is ulong). The prior "100.00" decimal data predates the
     // strict integer parse; it is now an integer so the broadcast amount round-trips
@@ -114,6 +162,27 @@ public class AllocationManagerTests
         Name = "Project Alpha",
         AssetId = "PRJALPHA"
     };
+
+    [Fact]
+    public async Task AllocateAsync_NodeGovernanceDisallowedChain_RejectsBeforeClaimOrSideEffects()
+    {
+        var guard = new NodeGovernanceGuard(Options.Create(new NodeGovernanceOptions
+        {
+            AllowedChains = new[] { "Solana" }
+        }));
+        var manager = BuildManager(guard);
+
+        var result = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "blocked", ApiKeyId);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("Node governance disallows allocation:Mint on chain 'Algorand'");
+        _kyc.Verify(k => k.RequireVerifiedAsync(It.IsAny<Guid>()), Times.Never);
+        _walletStore.Verify(s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _nft.Verify(n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Never);
+        _blockchainOps.Verify(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()), Times.Never);
+        (await _idempotency.GetAsync($"alloc:{ApiKeyId}:blocked", CancellationToken.None)).Should().BeNull();
+    }
 
     // ── Idempotency ────────────────────────────────────────────────────────────
 
@@ -162,6 +231,38 @@ public class AllocationManagerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task AllocateAsync_DuplicateKey_DoesNotRequoteOrRebroadcastAndPreservesFeeVersion()
+    {
+        ApproveKyc(_avatarId);
+        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        SetupMintSucceeds();
+        SetupFeeQuote(NodeFeeOperation.Mint, 100, 7, 17);
+        var manager = BuildManager();
+
+        var first = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "pi_fee_replay", ApiKeyId);
+        var replay = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "pi_fee_replay", ApiKeyId);
+
+        first.IsError.Should().BeFalse(first.Message);
+        first.Result!.NodeFeeScheduleVersion.Should().Be(17);
+        first.Result.NetAmount.Should().Be("93");
+        replay.IsError.Should().BeFalse(replay.Message);
+        replay.Result!.Replayed.Should().BeTrue();
+        replay.Result.NodeFeeScheduleVersion.Should().Be(17);
+        replay.Result.NetAmount.Should().Be("93");
+        _nodeFees.Verify(
+            m => m.QuoteAsync(NodeFeeOperation.Mint, 100, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _nft.Verify(
+            n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+            Times.Once);
+        _blockchainOps.Verify(
+            b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()),
+            Times.Once);
+    }
+
     // ── value-path-wiring C2 + H1: real broadcast + crash-replay exactly-once ──
 
     [Fact]
@@ -184,7 +285,7 @@ public class AllocationManagerTests
             });
         var manager = new AllocationManager(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
-            _nft.Object, _blockchainOps.Object, _idempotency);
+            _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
         var result = await manager.AllocateAsync(
             _avatarId, MintRequest(), _callerAvatarId, "pi_broadcast", ApiKeyId);
@@ -238,7 +339,7 @@ public class AllocationManagerTests
         var crashStore = new CrashAfterBroadcastIdempotencyStore();
         var manager = new AllocationManager(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
-            _nft.Object, _blockchainOps.Object, crashStore);
+            _nft.Object, _blockchainOps.Object, crashStore, _nodeFees.Object);
 
         var first = await manager.AllocateAsync(
             _avatarId, MintRequest(), _callerAvatarId, "pi_crash", ApiKeyId);
@@ -260,6 +361,35 @@ public class AllocationManagerTests
         var orphan = await crashStore.GetAsync(broadcastOp.Parameters["IdempotencyKey"], CancellationToken.None);
         orphan!.State.Should().Be(IdempotencyState.InProgress,
             "the claim stays InProgress until reconciliation settles it from the persisted key + chain truth");
+    }
+
+    [Fact]
+    public async Task AllocateAsync_UnexpectedEffectFailure_BubblesAndDuplicateDoesNotRetryEffect()
+    {
+        ApproveKyc(_avatarId);
+        var wallet = WalletFor(_avatarId, ChainType);
+        HasWallet(_avatarId, wallet);
+        SetupMintSucceeds();
+        _blockchainOps
+            .Setup(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()))
+            .ThrowsAsync(new InvalidOperationException("ambiguous provider failure"));
+        var manager = new AllocationManager(
+            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
+
+        Func<Task> first = async () => await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "ambiguous", ApiKeyId);
+        await first.Should().ThrowAsync<InvalidOperationException>();
+
+        var replay = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "ambiguous", ApiKeyId);
+        replay.IsError.Should().BeTrue();
+        replay.Message.Should().Contain("in progress");
+        _blockchainOps.Verify(
+            b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()), Times.Once);
+        var record = await _idempotency.GetAsync(
+            $"alloc:{ApiKeyId}:ambiguous", CancellationToken.None);
+        record!.State.Should().Be(IdempotencyState.InProgress);
     }
 
     // ── value-path-wiring H4: amount widening + rejection-before-broadcast ──────
@@ -286,7 +416,7 @@ public class AllocationManagerTests
             });
         var manager = new AllocationManager(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
-            _nft.Object, _blockchainOps.Object, _idempotency);
+            _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
         var request = new AllocationRequest
         {
@@ -305,6 +435,109 @@ public class AllocationManagerTests
         ulong.Parse(broadcastOp.Parameters["Amount"]).Should().Be(5_000_000_000UL);
     }
 
+    [Fact]
+    public async Task AllocateAsync_MintFee_UsesNetTypedAmountAndStampsQuoteMetadata()
+    {
+        ApproveKyc(_avatarId);
+        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        SetupMintSucceeds();
+        SetupFeeQuote(NodeFeeOperation.Mint, 100, 7, 4);
+        var manager = BuildManager();
+
+        IBlockchainOperation? broadcastOp = null;
+        _blockchainOps
+            .Setup(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()))
+            .ReturnsAsync((IBlockchainOperation op, AZOARequest? _) =>
+            {
+                broadcastOp = op;
+                op.Parameters["TxHash"] = "algo_tx_fee_mint";
+                op.Status = OperationStatus.Minted;
+                return new AZOAResult<IBlockchainOperation> { Result = op };
+            });
+
+        var result = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "pi_fee_mint", ApiKeyId);
+
+        result.IsError.Should().BeFalse(result.Message);
+        broadcastOp.Should().BeAssignableTo<IMintOperation>();
+        ((IMintOperation)broadcastOp!).Amount.Should().Be(93UL);
+        broadcastOp.Parameters["GrossAmount"].Should().Be("100");
+        broadcastOp.Parameters["NodeFeeAmount"].Should().Be("7");
+        broadcastOp.Parameters["NetAmount"].Should().Be("93");
+        broadcastOp.Parameters["NodeFeeScheduleVersion"].Should().Be("4");
+        result.Result!.GrossAmount.Should().Be("100");
+        result.Result.NodeFeeAmount.Should().Be("7");
+        result.Result.NetAmount.Should().Be("93");
+        result.Result.NodeFeeScheduleVersion.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task AllocateAsync_TransferFeeWithoutTreasurySettlement_FailsBeforeSideEffects()
+    {
+        ApproveKyc(_avatarId);
+        SetupFeeQuote(NodeFeeOperation.Transfer, 100, 11, 6);
+        var manager = BuildManager();
+        var request = new AllocationRequest
+        {
+            Kind = AllocationKind.Transfer,
+            ChainType = ChainType,
+            Amount = "100",
+            AssetId = "PRJALPHA",
+            AssetRecordId = Guid.NewGuid(),
+            Name = "Project Alpha",
+        };
+
+        var result = await manager.AllocateAsync(
+            _avatarId, request, _callerAvatarId, "pi_fee_transfer", ApiKeyId);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("treasury settlement");
+        _walletStore.Verify(
+            s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _nft.Verify(
+            n => n.TransferAsync(It.IsAny<Guid>(), It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+            Times.Never);
+        _blockchainOps.Verify(
+            b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AllocateAsync_FeeQuoteFailure_FailsClaimBeforeWalletNftOrBroadcast()
+    {
+        ApproveKyc(_avatarId);
+        _nodeFees
+            .Setup(m => m.QuoteAsync(NodeFeeOperation.Mint, 100, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<NodeFeeQuoteResponse>
+            {
+                IsError = true,
+                Message = "Node fee schedule unavailable: store offline.",
+            });
+        var manager = BuildManager();
+
+        var result = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "pi_fee_unavailable", ApiKeyId);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("Node fee schedule unavailable");
+        _walletStore.Verify(
+            s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _walletManager.Verify(
+            m => m.GenerateWalletAsync(It.IsAny<WalletGenerateRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>()),
+            Times.Never);
+        _nft.Verify(
+            n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+            Times.Never);
+        _blockchainOps.Verify(
+            b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()),
+            Times.Never);
+        var claim = await _idempotency.GetAsync(
+            $"alloc:{ApiKeyId}:pi_fee_unavailable", CancellationToken.None);
+        claim!.State.Should().Be(IdempotencyState.Failed);
+    }
+
     [Theory]
     [InlineData("abc")]      // non-numeric
     [InlineData("100.00")]   // non-integer (base units must be integral)
@@ -318,7 +551,7 @@ public class AllocationManagerTests
         SetupMintSucceeds();
         var manager = new AllocationManager(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
-            _nft.Object, _blockchainOps.Object, _idempotency);
+            _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
         var request = new AllocationRequest
         {
@@ -424,6 +657,7 @@ public class AllocationManagerTests
             });
 
         var attacker = Guid.NewGuid(); // a hostile "owner" the caller might try to inject
+        HasWallet(attacker, WalletFor(attacker, ChainType));
         var request = new AllocationRequest
         {
             Kind = AllocationKind.Transfer,

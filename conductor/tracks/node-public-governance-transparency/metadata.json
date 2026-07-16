@@ -1,0 +1,17 @@
+{
+  "id": "node-public-governance-transparency",
+  "description": "Anonymous, privacy-safe reads of a node's current governance, fee, treasury, and bounded audit history.",
+  "type": "feature",
+  "created_at": "2026-07-11T00:00:00Z",
+  "status": "in_progress",
+  "horizon": "alpha",
+  "phase": "Implementation and trusted-forwarder hardening landed; integrated verification remains before archive",
+  "blocks": [],
+  "depends_on": [
+    "node-operator-governance"
+  ],
+  "related": [
+    "node-conformance-manifest",
+    "node-egress-fees"
+  ]
+}

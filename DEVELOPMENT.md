@@ -1,4 +1,4 @@
-# AZOA Sleek — developer setup
+# AZOA — developer setup
 
 Clone, run, hit `localhost:3000` and `localhost:5000`. That's the goal.
 
@@ -26,14 +26,14 @@ Tear down: `./dev-down.sh` (or `.ps1`). Wipe the DB volume too:
 1. **Detect compose runtime** — checks for, in order: `docker compose`
    (v2 plugin), `docker-compose` (v1 standalone), `podman-compose`,
    `podman compose` (4.x+ subcommand). First match wins.
-2. **Bring up SurrealDB** — `surrealdb/surrealdb:v1.5.4` container with
+2. **Bring up SurrealDB** — `surrealdb/surrealdb:v3.1.4` container with
    RocksDB backing at `rocksdb:///data/db` (G1 durability — RocksDB
    syncs its WAL per commit). Healthcheck uses the bundled `/surreal
    isready` since the image is distroless (no curl). The original
    `surrealkv://...?sync=every` config crashed because 1.5.4 ships
    without the `surrealkv` feature flag; a 2.x/3.x bump is tracked at
    [`surrealdb-major-upgrade`](conductor/tracks/surrealdb-major-upgrade/spec.md).
-3. **Bring up the WebAPI** — `Dockerfile` builds the .NET 8 image plus
+3. **Bring up the WebAPI** — `Dockerfile` builds the .NET 10 image plus
    the `surrealforge` CLI. The container's entrypoint
    ([`docker-entrypoint.sh`](docker-entrypoint.sh)):
    1. Waits for SurrealDB to be reachable

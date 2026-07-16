@@ -13,8 +13,8 @@ namespace AZOA.WebAPI.Observability;
 // Lives in AZOA.WebAPI so the homebake package stays observability-agnostic.
 sealed class InstrumentedSurrealExecutor : ISurrealExecutor
 {
-    static readonly ActivitySource _activitySource = new("SurrealForge");
-    static readonly Meter          _meter          = new("SurrealForge", "1.0.0");
+    static readonly ActivitySource _activitySource = new(OpenTelemetryExtensions.SurrealInstrumentationName);
+    static readonly Meter _meter = new(OpenTelemetryExtensions.SurrealInstrumentationName, "1.0.0");
 
     static readonly Counter<long>      _queryCounter = _meter.CreateCounter<long>(
         "surrealdb.queries",
@@ -126,8 +126,7 @@ sealed class InstrumentedSurrealExecutor : ISurrealExecutor
 
     void RecordError(Activity? activity, Exception ex, string kind, string? table, long start)
     {
-        activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-        activity?.SetTag("exception.message", ex.Message);
+        activity?.SetStatus(ActivityStatusCode.Error);
         activity?.SetTag("exception.type", ex.GetType().FullName);
 
         var elapsed = Stopwatch.GetElapsedTime(start).TotalMilliseconds;

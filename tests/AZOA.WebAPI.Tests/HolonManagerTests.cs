@@ -6,6 +6,8 @@ using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Governance;
+using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Tests;
 
@@ -40,6 +42,24 @@ public class HolonManagerTests
         result.IsError.Should().BeFalse();
         result.Result!.AvatarId.Should().Be(avatarId);
         result.Result.Name.Should().Be("Test Holon");
+    }
+
+    [Fact]
+    public async Task CreateAsync_NodeGovernanceDisallowedAssetType_RejectsBeforeStoreWrite()
+    {
+        var guard = new NodeGovernanceGuard(Options.Create(new NodeGovernanceOptions
+        {
+            AllowedAssetTypes = new[] { "Quest" }
+        }));
+        var manager = new HolonManager(_store.Object, nodeGovernance: guard);
+
+        var result = await manager.CreateAsync(
+            new HolonCreateModel { Name = "Track", ProviderName = "InMemory", AssetType = "Song" },
+            Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("Node governance disallows holon:create on asset type 'Song'");
+        _store.Verify(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

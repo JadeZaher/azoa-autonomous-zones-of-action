@@ -10,7 +10,7 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 
 export const metadata: Metadata = {
-  title: 'AZOA Sleek',
+  title: 'AZOA',
   description: 'Avatar NFT & Blockchain Platform',
 }
 

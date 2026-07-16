@@ -38,6 +38,12 @@ on `Azoa.Commons.Client` only. A generic `Azoa.Holochain.Client` becomes public
 only after a second non-Commons consumer proves that abstraction. DNA/wire versions are independent from package
 SemVer and are negotiated fail-closed.
 
+The normative cross-repository package, facade, attestation, capability, error,
+and idempotency contract is
+[`federation-v2/holochain-dotnet-bridge-contract.md`](../federation-v2/holochain-dotnet-bridge-contract.md).
+It deliberately specifies contracts and proof obligations only; it does not
+authorize an implementation before this track's activation gate.
+
 ## Reliability and security requirements
 
 - Exact supported conductor/DNA matrix with golden wire vectors.

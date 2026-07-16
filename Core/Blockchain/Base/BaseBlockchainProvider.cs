@@ -36,10 +36,14 @@ public enum RetrySafety
 
 /// <summary>
 /// Base class for blockchain providers with shared retry, error handling, and configuration logic.
-/// All IBlockchainProvider methods are virtual so derived providers can override them.
+/// Network binding is owned here so factory-created providers cannot be retargeted.
 /// </summary>
 public abstract class BaseBlockchainProvider : IBlockchainProvider
 {
+    private readonly object _standaloneInitializationGate = new();
+    private int _initializationState;
+    private int _factoryBound;
+
     protected readonly IConfiguration _config;
     protected readonly ILogger _logger;
     protected BlockchainNetworkConfig _networkConfig = new();
@@ -53,10 +57,77 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
         _logger = logger;
     }
 
-    public virtual void Initialize(BlockchainNetworkConfig config, ChainNetwork network)
+    /// <inheritdoc/>
+    public void Initialize(BlockchainNetworkConfig config, ChainNetwork network)
     {
-        _networkConfig = config;
-        ActiveNetwork = network;
+        if (Volatile.Read(ref _factoryBound) != 0)
+            throw new InvalidOperationException(
+                $"{ChainType} provider is factory-bound and cannot be reinitialized externally.");
+
+        InitializeOnce(config, network);
+    }
+
+    /// <summary>Builds network-specific resources during the sole allowed initialization.</summary>
+    protected virtual void OnInitialize(BlockchainNetworkConfig config, ChainNetwork network)
+    {
+    }
+
+    /// <summary>True once the provider has a stable network binding.</summary>
+    protected bool IsInitialized => Volatile.Read(ref _initializationState) != 0;
+
+    /// <summary>Initializes a standalone provider lazily for direct unit-test or tool use.</summary>
+    protected void EnsureStandaloneInitialized(
+        Func<(BlockchainNetworkConfig Config, ChainNetwork Network)> resolveDefaultBinding)
+    {
+        ArgumentNullException.ThrowIfNull(resolveDefaultBinding);
+        if (IsInitialized)
+            return;
+
+        lock (_standaloneInitializationGate)
+        {
+            if (IsInitialized)
+                return;
+
+            var (config, network) = resolveDefaultBinding();
+            Initialize(config, network);
+        }
+    }
+
+    internal void InitializeForFactory(BlockchainNetworkConfig config, ChainNetwork network)
+    {
+        if (IsInitialized)
+            throw new InvalidOperationException(
+                $"{ChainType} provider registration returned an already initialized instance. " +
+                "Factory registrations must create an unbound provider.");
+
+        if (Interlocked.CompareExchange(ref _factoryBound, 1, 0) != 0)
+            throw new InvalidOperationException($"{ChainType} provider is already factory-bound.");
+
+        InitializeOnce(config, network);
+    }
+
+    private void InitializeOnce(BlockchainNetworkConfig config, ChainNetwork network)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        if (!Enum.IsDefined(network))
+            throw new ArgumentOutOfRangeException(nameof(network), network, "Unsupported blockchain network.");
+
+        if (Interlocked.CompareExchange(ref _initializationState, 1, 0) != 0)
+            throw new InvalidOperationException(
+                $"{ChainType} provider is already initialized and cannot be rebound to {network}.");
+
+        try
+        {
+            OnInitialize(config, network);
+            _networkConfig = config;
+            ActiveNetwork = network;
+        }
+        catch
+        {
+            Interlocked.Exchange(ref _initializationState, 0);
+            throw;
+        }
+
         _logger.LogInformation(
             "Initialized {ChainType} provider on {Network} with node {NodeUrl}",
             ChainType, network, config.NodeUrl);

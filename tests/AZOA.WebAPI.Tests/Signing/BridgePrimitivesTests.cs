@@ -22,26 +22,18 @@ namespace AZOA.WebAPI.Tests.Signing;
 /// gone (the interface no longer declares VerifyBridgeProofAsync — enforced at compile
 /// time by this file referencing IBlockchainProvider without it).
 /// </summary>
-public class BridgePrimitivesTests : IDisposable
+public class BridgePrimitivesTests
 {
-    private readonly HttpListener _listener;
-    private readonly string _baseUrl;
+    private const string BaseUrl = "http://algod.test/";
     private readonly AlgoAccount _platform = new();
     private readonly AlgoAccount _vault = new();
 
     private int _submitCount;
     private volatile byte[]? _lastSubmittedBody;
 
-    public BridgePrimitivesTests()
-    {
-        var port = GetFreePort();
-        _baseUrl = $"http://127.0.0.1:{port}/";
-        _listener = new HttpListener();
-        _listener.Prefixes.Add(_baseUrl);
-        _listener.Start();
-    }
-
-    private AlgorandProvider NewAlgorandProvider(bool withPlatformMnemonic = true)
+    private AlgorandProvider NewAlgorandProvider(
+        bool withPlatformMnemonic = true,
+        HttpMessageHandler? handler = null)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -49,8 +41,8 @@ public class BridgePrimitivesTests : IDisposable
             ["Blockchain:DefaultNetwork"] = "devnet",
             ["Blockchain:Chains:0:ChainType"] = "Algorand",
             ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
-            ["Blockchain:Chains:0:Devnet:NodeUrl"] = _baseUrl,
-            ["Blockchain:Chains:0:Devnet:TimeoutMs"] = "5000",
+            ["Blockchain:Chains:0:Devnet:NodeUrl"] = BaseUrl,
+            ["Blockchain:Chains:0:Devnet:TimeoutMs"] = "1000",
         };
         if (withPlatformMnemonic)
             settings["AZOA:Algorand:PlatformMnemonic"] = _platform.ToMnemonic();
@@ -58,7 +50,15 @@ public class BridgePrimitivesTests : IDisposable
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var keyService = new WalletKeyService(config);
         var signerFactory = new TransactionSignerFactory(new[] { new AlgorandTransactionSigner() });
-        return new AlgorandProvider(config, NullLogger<AlgorandProvider>.Instance, signerFactory, keyService);
+        return new AlgorandProvider(
+            config,
+            NullLogger<AlgorandProvider>.Instance,
+            signerFactory,
+            keyService,
+            custodyService: null,
+            custodyScopeFactory: null,
+            faucet: null,
+            httpMessageHandler: handler);
     }
 
     private static SolanaProvider NewSolanaProvider()
@@ -83,9 +83,9 @@ public class BridgePrimitivesTests : IDisposable
     {
         const ulong assetId = 4242UL;
         const int amount = 5;
-        using var _ = RunStub(confirmedRound: 9);
+        using var stub = RunStub(confirmedRound: 9);
 
-        var provider = NewAlgorandProvider();
+        var provider = NewAlgorandProvider(handler: stub);
         var result = await provider.LockForBridgeAsync(
             tokenId: assetId.ToString(),
             vaultAddress: _vault.Address.EncodeAsString(),
@@ -111,9 +111,9 @@ public class BridgePrimitivesTests : IDisposable
     public async Task Algorand_burn_wrapped_broadcasts_real_asset_destroy()
     {
         const ulong assetId = 7788UL;
-        using var _ = RunStub(confirmedRound: 4);
+        using var stub = RunStub(confirmedRound: 4);
 
-        var provider = NewAlgorandProvider();
+        var provider = NewAlgorandProvider(handler: stub);
         var result = await provider.BurnWrappedAsync(
             tokenId: assetId.ToString(),
             amount: 3,
@@ -203,98 +203,63 @@ public class BridgePrimitivesTests : IDisposable
 
     // ─── In-process Algod stub (mirrors AlgorandProviderTransactTests) ───
 
-    private IDisposable RunStub(long confirmedRound)
+    private StubScope RunStub(long confirmedRound) => new(this, confirmedRound);
+
+    private static HttpResponseMessage JsonResponse(Dictionary<string, object?> dict)
     {
-        var cts = new CancellationTokenSource();
-        var loop = Task.Run(async () =>
+        var content = new StringContent(JsonSerializer.Serialize(dict), System.Text.Encoding.UTF8);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+    }
+
+    private sealed class StubScope : HttpMessageHandler
+    {
+        private readonly BridgePrimitivesTests _owner;
+        private readonly long _confirmedRound;
+
+        public StubScope(BridgePrimitivesTests owner, long confirmedRound)
         {
-            while (!cts.IsCancellationRequested)
+            _owner = owner;
+            _confirmedRound = confirmedRound;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/v2/transactions/params", StringComparison.Ordinal))
             {
-                HttpListenerContext ctx;
-                try { ctx = await _listener.GetContextAsync(); }
-                catch { break; }
-
-                var path = ctx.Request.Url!.AbsolutePath;
-                try
+                return JsonResponse(new Dictionary<string, object?>
                 {
-                    if (path.EndsWith("/v2/transactions/params"))
-                    {
-                        WriteJson(ctx, new Dictionary<string, object?>
-                        {
-                            ["fee"] = 0,
-                            ["min-fee"] = 1000,
-                            ["last-round"] = 100,
-                            ["genesis-id"] = "devnet-v1.0",
-                            ["genesis-hash"] = "SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=",
-                        });
-                    }
-                    else if (path == "/v2/transactions")
-                    {
-                        using var ms = new System.IO.MemoryStream();
-                        await ctx.Request.InputStream.CopyToAsync(ms);
-                        _lastSubmittedBody = ms.ToArray();
-                        Interlocked.Increment(ref _submitCount);
-                        WriteJson(ctx, new Dictionary<string, object?> { ["txId"] = "STUBTXID" });
-                    }
-                    else if (path.Contains("/v2/transactions/pending/"))
-                    {
-                        WriteJson(ctx, new Dictionary<string, object?>
-                        {
-                            ["confirmed-round"] = confirmedRound,
-                            ["asset-index"] = null,
-                            ["pool-error"] = "",
-                        });
-                    }
-                    else
-                    {
-                        ctx.Response.StatusCode = 404;
-                        ctx.Response.Close();
-                    }
-                }
-                catch
-                {
-                    try { ctx.Response.Abort(); } catch { /* ignore */ }
-                }
+                    ["fee"] = 0,
+                    ["min-fee"] = 1000,
+                    ["last-round"] = 100,
+                    ["genesis-id"] = "devnet-v1.0",
+                    ["genesis-hash"] = "SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=",
+                });
             }
-        });
 
-        return new StubScope(cts, loop);
-    }
+            if (path == "/v2/transactions")
+            {
+                _owner._lastSubmittedBody = request.Content is null
+                    ? Array.Empty<byte>()
+                    : await request.Content.ReadAsByteArrayAsync(cancellationToken);
+                Interlocked.Increment(ref _owner._submitCount);
+                return JsonResponse(new Dictionary<string, object?> { ["txId"] = "STUBTXID" });
+            }
 
-    private static void WriteJson(HttpListenerContext ctx, Dictionary<string, object?> dict)
-    {
-        var json = JsonSerializer.Serialize(dict);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-        ctx.Response.ContentType = "application/json";
-        ctx.Response.StatusCode = 200;
-        ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
-        ctx.Response.Close();
-    }
+            if (path.Contains("/v2/transactions/pending/", StringComparison.Ordinal))
+            {
+                return JsonResponse(new Dictionary<string, object?>
+                {
+                    ["confirmed-round"] = _confirmedRound,
+                    ["asset-index"] = null,
+                    ["pool-error"] = "",
+                });
+            }
 
-    private static int GetFreePort()
-    {
-        var l = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        l.Start();
-        var port = ((IPEndPoint)l.LocalEndpoint).Port;
-        l.Stop();
-        return port;
-    }
-
-    public void Dispose()
-    {
-        try { _listener.Stop(); _listener.Close(); } catch { /* ignore */ }
-    }
-
-    private sealed class StubScope : IDisposable
-    {
-        private readonly CancellationTokenSource _cts;
-        private readonly Task _loop;
-        public StubScope(CancellationTokenSource cts, Task loop) { _cts = cts; _loop = loop; }
-        public void Dispose()
-        {
-            _cts.Cancel();
-            try { _loop.Wait(TimeSpan.FromSeconds(2)); } catch { /* ignore */ }
-            _cts.Dispose();
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
     }
 }

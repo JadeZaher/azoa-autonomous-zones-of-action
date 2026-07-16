@@ -5,27 +5,29 @@
 #   1. Wait for SurrealDB to become reachable (the compose `depends_on:
 #      condition: service_healthy` covers most cases, but we add a belt
 #      check so a hand-run container doesn't crash on first request).
-#   2. Run `surrealforge up` so the deployed namespace + database have
-#      every committed `.surql` applied. Idempotent on re-runs.
+#   2. In Development, run `surrealforge up` so the local namespace + database
+#      have every committed `.surql` applied. Production uses a separate job.
 #   3. exec the WebAPI host so signals propagate cleanly and the process
 #      tree stays flat.
 #
-# Skip the migration step with AZOA_SKIP_MIGRATIONS=1 -- useful in CI
-# when migrations are already applied by an earlier step.
+# Production requires AZOA_SKIP_MIGRATIONS=1: schema credentials must never
+# enter the API process.
 
 set -eu
 
-# Resolve the SurrealDB connection from the migration CLI's SURREALFORGE_*
-# aliases first, then fall back to the .NET SurrealDb__* config family so a
-# Railway deploy only needs ONE env-var family wired up, then finally to the
-# compose service name `surrealdb` so docker-compose.dev.yml works unwired.
-SURREAL_URL="${SURREALFORGE_URL:-${SurrealDb__Endpoint:-http://surrealdb:8000}}"
-SURREAL_NS="${SURREALFORGE_NS:-${SurrealDb__Namespace:-azoa}}"
-SURREAL_DB="${SURREALFORGE_DB:-${SurrealDb__Database:-azoa}}"
-SURREAL_USER="${SURREALFORGE_USER:-${SurrealDb__User:-root}}"
-SURREAL_PASS="${SURREALFORGE_PASS:-${SurrealDb__Password:-root}}"
+if [ "$(printf '%s' "${ASPNETCORE_ENVIRONMENT:-Production}" | tr '[:upper:]' '[:lower:]')" = "production" ] \
+    && [ "${AZOA_SKIP_MIGRATIONS:-0}" != "1" ]; then
+    echo "[entrypoint] Production refuses API-boot migrations. Run the separate schema job and set AZOA_SKIP_MIGRATIONS=1." >&2
+    exit 64
+fi
 
 if [ "${AZOA_SKIP_MIGRATIONS:-0}" != "1" ]; then
+    # Schema credentials are deliberately distinct from SurrealRuntime__*.
+    SURREAL_URL="${SURREALFORGE_URL:-http://surrealdb:8000}"
+    SURREAL_NS="${SURREALFORGE_NS:-azoa}"
+    SURREAL_DB="${SURREALFORGE_DB:-azoa}"
+    SURREAL_USER="${SURREALFORGE_USER:-root}"
+    SURREAL_PASS="${SURREALFORGE_PASS:-root}"
     echo "[entrypoint] Waiting for SurrealDB at $SURREAL_URL ..."
     attempts=0
     until curl -sf "$SURREAL_URL/health" >/dev/null 2>&1; do
@@ -52,8 +54,7 @@ if [ "${AZOA_SKIP_MIGRATIONS:-0}" != "1" ]; then
         --database "$SURREAL_DB" \
         --schemas-dir /app/persistence/SurrealDb/Generated/Schemas \
         --migrations-dir /app/persistence/SurrealDb/Migrations \
-        --applied-by "azoa-api/docker-entrypoint" \
-        --force
+        --applied-by "azoa-local/docker-entrypoint"
 else
     echo "[entrypoint] AZOA_SKIP_MIGRATIONS=1 -- skipping migration step."
 fi

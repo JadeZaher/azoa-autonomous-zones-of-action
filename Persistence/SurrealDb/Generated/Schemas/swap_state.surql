@@ -9,7 +9,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- SwapState.StatusKind
-DEFINE PARAM IF NOT EXISTS $swap_state_status VALUE ["Pending", "Unknown", "Failed", "Completed", "AwaitingSignature", "Minted", "Burned", "Exchanged", "Swapped", "Transferred", "Deployed", "Called"];
+DEFINE PARAM IF NOT EXISTS $swap_state_status VALUE ["Pending", "Unknown", "Failed", "Completed", "AwaitingSignature", "PendingConfirmation", "Minted", "Burned", "Exchanged", "Swapped", "Transferred", "Deployed", "Called"];
 
 DEFINE TABLE IF NOT EXISTS swap_state SCHEMAFULL;
 

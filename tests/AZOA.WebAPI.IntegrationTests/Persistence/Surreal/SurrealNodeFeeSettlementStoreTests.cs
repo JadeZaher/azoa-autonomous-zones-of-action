@@ -1,0 +1,631 @@
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Core.Idempotency;
+using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Providers.Stores.Surreal;
+using AZOA.WebAPI.Services.Governance;
+using FluentAssertions;
+using SurrealForge.Client;
+using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
+
+namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
+
+public sealed class SurrealNodeFeeSettlementStoreTests : IAsyncLifetime
+{
+    private readonly string _testNamespace = $"test{Guid.NewGuid():N}";
+    private SurrealNodeFeeSettlementStore _store = null!;
+    private SurrealIdempotencyStore _idempotency = null!;
+    private HttpSurrealConnection _connection = null!;
+    private bool _surrealAvailable;
+
+    public async Task InitializeAsync()
+    {
+        _surrealAvailable = await ProbeSurrealAsync();
+        if (!_surrealAvailable)
+            return;
+
+        var options = new SurrealConnectionOptions
+        {
+            Endpoint = SurrealTestDefaults.Endpoint,
+            Namespace = _testNamespace,
+            Database = "test",
+            User = SurrealTestDefaults.User,
+            Password = SurrealTestDefaults.Password,
+        };
+        _connection = new HttpSurrealConnection(
+            new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) },
+            options);
+        var executor = new DefaultSurrealExecutor(_connection);
+        _store = new SurrealNodeFeeSettlementStore(executor);
+        _idempotency = new SurrealIdempotencyStore(executor);
+        await SurrealTestSchema.BootstrapAsync(
+            _testNamespace,
+            IdempotencyKeyStore.SchemaNameConst,
+            NodeFeeSettlement.SchemaNameConst);
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (!_surrealAvailable || _connection is null)
+            return;
+
+        try
+        {
+            await SurrealTestSchema.DropAsync(_testNamespace);
+        }
+        catch
+        {
+            // Best-effort test namespace cleanup.
+        }
+        finally
+        {
+            _connection.Dispose();
+        }
+    }
+
+    [SkippableFact]
+    public async Task DueRecovery_ClaimAndLeaseGuardedDefer_RoundTripWithoutEffectMutation()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var created = await AdmitPreparedAsync(now);
+        var candidates = await _store.ListRecoverableAsync(now.AddSeconds(1), 10);
+        candidates.IsError.Should().BeFalse(candidates.Message);
+        candidates.Result.Should().ContainSingle();
+
+        var claim = await _store.TryClaimRecoveryAsync(
+            candidates.Result!.Single(),
+            "worker-a",
+            now.AddSeconds(1),
+            now.AddSeconds(31));
+        claim.IsError.Should().BeFalse(claim.Message);
+        claim.Result.Should().NotBeNull();
+        claim.Result!.LeaseToken.Should().Be("worker-a");
+        claim.Result.AttemptCount.Should().Be(1);
+        claim.Result.StateVersion.Should().Be(1);
+
+        var staleToken = await _store.TryDeferToReconciliationAsync(
+            new NodeFeeSettlementRecoveryLease(created.Id, "wrong-worker", claim.Result.StateVersion),
+            "wrong lease must not mutate",
+            now.AddMinutes(5),
+            now.AddSeconds(2));
+        staleToken.IsError.Should().BeFalse(staleToken.Message);
+        staleToken.Result.Should().BeFalse();
+
+        var deferred = await _store.TryDeferToReconciliationAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(claim.Result),
+            "execution remains disabled",
+            now.AddMinutes(5),
+            now.AddSeconds(2));
+        deferred.IsError.Should().BeFalse(deferred.Message);
+        deferred.Result.Should().BeTrue();
+
+        var persisted = await _store.GetAsync(created.Id);
+        persisted.Result.Should().NotBeNull();
+        persisted.Result!.State.Should().Be(NodeFeeSettlement.StateKind.AwaitingReconciliation);
+        persisted.Result.PrimaryEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.NotStarted);
+        persisted.Result.FeeEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.NotStarted);
+        persisted.Result.LeaseToken.Should().BeNull();
+        persisted.Result.LeaseExpiresAt.Should().BeNull();
+        persisted.Result.ReconciliationReason.Should().Be("execution remains disabled");
+        persisted.Result.StateVersion.Should().Be(2);
+    }
+
+    [SkippableFact]
+    public async Task ConcurrentClaimAndExpiredLeaseReclaim_ElectsOneWinner()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var created = await AdmitPreparedAsync(now);
+        var first = await _store.TryClaimRecoveryAsync(created, "expired-worker", now, now.AddSeconds(1));
+        first.Result.Should().NotBeNull();
+
+        var staleCandidates = await _store.ListRecoverableAsync(now.AddSeconds(2), 10);
+        staleCandidates.Result.Should().ContainSingle();
+        var staleCandidate = staleCandidates.Result!.Single();
+        var claims = await Task.WhenAll(
+            _store.TryClaimRecoveryAsync(staleCandidate, "worker-a", now.AddSeconds(2), now.AddSeconds(32)),
+            _store.TryClaimRecoveryAsync(staleCandidate, "worker-b", now.AddSeconds(2), now.AddSeconds(32)));
+
+        claims.Should().OnlyContain(claim => !claim.IsError, string.Join(Environment.NewLine, claims.Select(claim => claim.Message)));
+        claims.Count(claim => claim.Result is not null).Should().Be(1);
+        var winner = claims.Single(claim => claim.Result is not null).Result!;
+        winner.AttemptCount.Should().Be(2);
+        winner.StateVersion.Should().Be(2);
+
+        var persisted = await _store.GetAsync(created.Id);
+        persisted.Result!.LeaseToken.Should().BeOneOf("worker-a", "worker-b");
+        persisted.Result.LeaseExpiresAt.Should().Be(now.AddSeconds(32));
+    }
+
+    [SkippableFact]
+    public async Task ConcurrentAdmissions_NormalizeToOneCreatedAndOneReplayedPair()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var source = Guid.NewGuid().ToString("N");
+        var first = CreateSettlement(source, now);
+        var second = CreateSettlement(source, now);
+
+        var results = await Task.WhenAll(
+            _store.AdmitAsync(first, source),
+            _store.AdmitAsync(second, source));
+
+        results.Should().OnlyContain(result => !result.IsError,
+            string.Join(Environment.NewLine, results.Select(result => result.Message)));
+        results.Count(result => result.Result!.Disposition == NodeFeeSettlementAdmissionDisposition.Created)
+            .Should().Be(1);
+        results.Count(result => result.Result!.Disposition == NodeFeeSettlementAdmissionDisposition.Replayed)
+            .Should().Be(1);
+        results.Select(result => result.Result!.Settlement.Id).Distinct().Should().ContainSingle();
+
+        var persisted = await _store.GetAsync(first.Id);
+        persisted.Result.Should().NotBeNull();
+        persisted.Result!.GrossAmount.Should().Be("1000");
+    }
+
+    [SkippableFact]
+    public async Task ManagerPrepare_DivergentDecisionForPinnedKey_ReturnsConflictWithoutOverwrite()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var manager = new NodeFeeSettlementManager(_store);
+        var parentKey = Guid.NewGuid().ToString("N");
+        var original = Draft(parentKey);
+        var prepared = await manager.PrepareAsync(original);
+        prepared.IsError.Should().BeFalse(prepared.Message);
+
+        var divergent = await manager.PrepareAsync(Draft(parentKey, feeAmount: "30", netAmount: "970"));
+
+        divergent.IsError.Should().BeTrue();
+        divergent.Message.Should().Contain("conflict");
+        var persisted = await _store.GetAsync(prepared.Result!.Id);
+        persisted.Result.Should().NotBeNull();
+        persisted.Result!.FeeAmount.Should().Be("25");
+        persisted.Result.NetAmount.Should().Be("975");
+    }
+
+    [SkippableFact]
+    public async Task ConcurrentManagerAdmission_CreatesOneInProgressParentAndOneSettlement()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var manager = new NodeFeeSettlementManager(_store);
+        var parentKey = "fee-admission:" + Guid.NewGuid().ToString("N");
+        var results = await Task.WhenAll(
+            manager.PrepareAsync(Draft(parentKey)),
+            manager.PrepareAsync(Draft(parentKey)));
+
+        results.Should().OnlyContain(result => !result.IsError,
+            string.Join(Environment.NewLine, results.Select(result => result.Message)));
+        results.Count(result => result.Message == "Settlement prepared.").Should().Be(1);
+        results.Count(result => result.Message == "Settlement already prepared.").Should().Be(1);
+
+        var parent = await _idempotency.GetAsync(parentKey, CancellationToken.None);
+        parent.Should().NotBeNull();
+        parent!.State.Should().Be(AZOA.WebAPI.Models.Idempotency.IdempotencyState.InProgress);
+        parent.ResultPayload.Should().BeNull();
+        parent.Error.Should().BeNull();
+
+        var settlement = await _store.GetAsync(results[0].Result!.Id);
+        settlement.Result.Should().NotBeNull();
+        settlement.Result!.PrimaryEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.NotStarted);
+        settlement.Result.FeeEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.NotStarted);
+    }
+
+    [SkippableFact]
+    public async Task Admission_SettlementSchemaFailure_RollsBackTheNewParentClaim()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var parentKey = "failed-admission:" + Guid.NewGuid().ToString("N");
+        var invalid = CreateSettlement(parentKey, DateTimeOffset.UtcNow);
+        invalid.AssetId = string.Empty;
+
+        Func<Task> act = async () => await _store.AdmitAsync(invalid, parentKey);
+        await act.Should().ThrowAsync<Exception>();
+
+        (await _idempotency.GetAsync(parentKey, CancellationToken.None)).Should().BeNull();
+        (await _store.GetAsync(invalid.Id)).Result.Should().BeNull();
+    }
+
+    [SkippableFact]
+    public async Task Admission_EffectBearingInput_IsRejectedBeforeTheRawContentTransaction()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var parentKey = "effect-bearing-admission:" + Guid.NewGuid().ToString("N");
+        var invalid = CreateSettlement(parentKey, DateTimeOffset.UtcNow);
+        invalid.State = NodeFeeSettlement.StateKind.PrimarySubmitted;
+        invalid.PrimaryEffectState = NodeFeeSettlement.EffectStateKind.Submitted;
+        invalid.PrimaryOperationId = "operation:must-not-be-written";
+        invalid.PrimaryTransactionHash = "transaction:must-not-be-written";
+        invalid.LeaseToken = "must-not-be-written";
+
+        Func<Task> act = async () => await _store.AdmitAsync(invalid, parentKey);
+        await act.Should().ThrowAsync<ArgumentException>();
+
+        (await _idempotency.GetAsync(parentKey, CancellationToken.None)).Should().BeNull();
+        (await _store.GetAsync(invalid.Id)).Result.Should().BeNull();
+    }
+
+    [SkippableFact]
+    public async Task Admission_UnbalancedEffectFreePreparedInput_IsRejectedBeforeTheRawContentTransaction()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var parentKey = "unbalanced-admission:" + Guid.NewGuid().ToString("N");
+        var invalid = CreateSettlement(parentKey, DateTimeOffset.UtcNow);
+        invalid.NetAmount = "974";
+
+        Func<Task> act = async () => await _store.AdmitAsync(invalid, parentKey);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*gross = fee + net*");
+
+        (await _idempotency.GetAsync(parentKey, CancellationToken.None)).Should().BeNull();
+        (await _store.GetAsync(invalid.Id)).Result.Should().BeNull();
+    }
+
+    [SkippableFact]
+    public async Task Admission_TerminalInput_IsRejectedBeforeTheRawContentTransaction()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var parentKey = "terminal-admission:" + Guid.NewGuid().ToString("N");
+        var invalid = CreateSettlement(parentKey, DateTimeOffset.UtcNow);
+        invalid.State = NodeFeeSettlement.StateKind.Settled;
+        invalid.PrimaryEffectState = NodeFeeSettlement.EffectStateKind.Confirmed;
+        invalid.FeeEffectState = NodeFeeSettlement.EffectStateKind.Confirmed;
+
+        Func<Task> act = async () => await _store.AdmitAsync(invalid, parentKey);
+        await act.Should().ThrowAsync<ArgumentException>();
+
+        (await _idempotency.GetAsync(parentKey, CancellationToken.None)).Should().BeNull();
+        (await _store.GetAsync(invalid.Id)).Result.Should().BeNull();
+    }
+
+    [SkippableFact]
+    public async Task Admission_RejectsSettlementTerminalBeforeItsInProgressParent()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var parentKey = "reverse-terminal:" + Guid.NewGuid().ToString("N");
+        var prepared = CreateSettlement(parentKey, DateTimeOffset.UtcNow);
+        var admitted = await _store.AdmitAsync(prepared, parentKey);
+        admitted.IsError.Should().BeFalse(admitted.Message);
+
+        var executor = new DefaultSurrealExecutor(_connection);
+        var corrupt = SurrealQuery
+            .Of("UPDATE ONLY type::record($_t, $_id) SET state = $_state")
+            .WithParam("_t", NodeFeeSettlement.SchemaNameConst)
+            .WithParam("_id", prepared.Id)
+            .WithParam("_state", NodeFeeSettlement.StateKind.Settled.ToString());
+        var corruptResult = await executor.ExecuteAsync(corrupt, CancellationToken.None);
+        corruptResult.EnsureAllOk();
+
+        Func<Task> act = async () => await _store.AdmitAsync(CreateSettlement(parentKey, DateTimeOffset.UtcNow), parentKey);
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*terminal states disagree*");
+    }
+
+    [SkippableFact]
+    public async Task ManagerPrepare_NormalOuterIdempotencyClaim_FailsClosedAndPreservesTheClaim()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var parentKey = "outer-idempotency:" + Guid.NewGuid().ToString("N");
+        var outerClaim = await _idempotency.TryClaimAsync(parentKey, "allocation/mint", CancellationToken.None);
+        outerClaim.Won.Should().BeTrue();
+        var manager = new NodeFeeSettlementManager(_store);
+
+        var result = await manager.PrepareAsync(Draft(parentKey));
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("already claimed");
+        var preserved = await _idempotency.GetAsync(parentKey, CancellationToken.None);
+        preserved.Should().NotBeNull();
+        preserved!.OperationType.Should().Be("allocation/mint");
+        preserved.State.Should().Be(AZOA.WebAPI.Models.Idempotency.IdempotencyState.InProgress);
+        (await _store.GetAsync(NodeFeeSettlement.RecordIdFor(parentKey, "Transfer"))).Result.Should().BeNull();
+    }
+
+    [SkippableFact]
+    public async Task ExpiredLease_ReclaimedByCurrentWinner_RejectsOldCorrectTokenAndAllowsCurrentToken()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var created = await AdmitPreparedAsync(now);
+        var expiredClaim = await _store.TryClaimRecoveryAsync(
+            created,
+            "expired-worker",
+            now,
+            now.AddSeconds(1));
+        expiredClaim.Result.Should().NotBeNull();
+
+        var reclaimAt = now.AddSeconds(2);
+        var currentClaim = await _store.TryClaimRecoveryAsync(
+            expiredClaim.Result!,
+            "current-worker",
+            reclaimAt,
+            reclaimAt.AddSeconds(30));
+        currentClaim.Result.Should().NotBeNull();
+
+        var staleDefer = await _store.TryDeferToReconciliationAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(expiredClaim.Result!),
+            "stale worker must not mutate",
+            now.AddMinutes(5),
+            reclaimAt.AddSeconds(1));
+        staleDefer.IsError.Should().BeFalse(staleDefer.Message);
+        staleDefer.Result.Should().BeFalse();
+
+        var currentDefer = await _store.TryDeferToReconciliationAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(currentClaim.Result!),
+            "current worker may defer",
+            now.AddMinutes(5),
+            reclaimAt.AddSeconds(1));
+        currentDefer.IsError.Should().BeFalse(currentDefer.Message);
+        currentDefer.Result.Should().BeTrue();
+
+        var persisted = await _store.GetAsync(created.Id);
+        persisted.Result!.State.Should().Be(NodeFeeSettlement.StateKind.AwaitingReconciliation);
+        persisted.Result.ReconciliationReason.Should().Be("current worker may defer");
+        persisted.Result.LeaseToken.Should().BeNull();
+        persisted.Result.StateVersion.Should().Be(3);
+    }
+
+    [SkippableFact]
+    public async Task PairedTerminalization_CompletesConfirmedDistinctEffectsAndParentInOneTransaction()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var parentKey = "terminal-pair:" + Guid.NewGuid().ToString("N");
+        var admitted = await _store.AdmitAsync(CreateSettlement(parentKey, now), parentKey);
+        var claim = await _store.TryClaimRecoveryAsync(
+            admitted.Result!.Settlement,
+            "terminal-worker",
+            now.AddSeconds(1),
+            now.AddMinutes(1));
+
+        var settled = await _store.TrySettlePairedAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(claim.Result!),
+            new NodeFeeSettlementTerminalization(
+                parentKey,
+                "primary:confirmed-1",
+                "fee:confirmed-2",
+                "{\"settlement\":\"complete\"}"),
+            now.AddSeconds(2));
+
+        settled.IsError.Should().BeFalse(settled.Message);
+        settled.Result.Should().BeTrue();
+        var persisted = await _store.GetAsync(admitted.Result.Settlement.Id);
+        var parent = await _idempotency.GetAsync(parentKey, CancellationToken.None);
+        persisted.Result!.State.Should().Be(NodeFeeSettlement.StateKind.Settled);
+        persisted.Result.PrimaryEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.Confirmed);
+        persisted.Result.FeeEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.Confirmed);
+        persisted.Result.PrimaryTransactionHash.Should().Be("primary:confirmed-1");
+        persisted.Result.FeeTransactionHash.Should().Be("fee:confirmed-2");
+        persisted.Result.LeaseToken.Should().BeNull();
+        parent!.State.Should().Be(AZOA.WebAPI.Models.Idempotency.IdempotencyState.Completed);
+        parent.ResultPayload.Should().Be("{\"settlement\":\"complete\"}");
+
+        var reverse = await _store.TryDeferToReconciliationAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(claim.Result!),
+            "terminal rows are irreversible",
+            now.AddMinutes(5),
+            now.AddSeconds(3));
+        reverse.IsError.Should().BeFalse(reverse.Message);
+        reverse.Result.Should().BeFalse();
+        (await _idempotency.GetAsync(parentKey, CancellationToken.None))!.State
+            .Should().Be(AZOA.WebAPI.Models.Idempotency.IdempotencyState.Completed);
+    }
+
+    [SkippableFact]
+    public async Task PairedTerminalization_RejectsIllegalProofAndStaleLeaseWithoutPartialParentCompletion()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var parentKey = "terminal-stale:" + Guid.NewGuid().ToString("N");
+        var admitted = await _store.AdmitAsync(CreateSettlement(parentKey, now), parentKey);
+        var oldClaim = await _store.TryClaimRecoveryAsync(
+            admitted.Result!.Settlement,
+            "old-worker",
+            now.AddSeconds(1),
+            now.AddSeconds(2));
+        var currentClaim = await _store.TryClaimRecoveryAsync(
+            oldClaim.Result!,
+            "current-worker",
+            now.AddSeconds(3),
+            now.AddMinutes(1));
+
+        Func<Task> invalidProof = async () => await _store.TrySettlePairedAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(currentClaim.Result!),
+            new NodeFeeSettlementTerminalization(parentKey, "same-effect", "same-effect", "payload"),
+            now.AddSeconds(4));
+        await invalidProof.Should().ThrowAsync<ArgumentException>();
+
+        var stale = await _store.TrySettlePairedAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(oldClaim.Result!),
+            new NodeFeeSettlementTerminalization(parentKey, "primary:stale", "fee:stale", "payload"),
+            now.AddSeconds(4));
+        stale.IsError.Should().BeFalse(stale.Message);
+        stale.Result.Should().BeFalse();
+        var persisted = await _store.GetAsync(admitted.Result.Settlement.Id);
+        persisted.Result!.State.Should().NotBe(NodeFeeSettlement.StateKind.Settled);
+        (await _idempotency.GetAsync(parentKey, CancellationToken.None))!.State
+            .Should().Be(AZOA.WebAPI.Models.Idempotency.IdempotencyState.InProgress);
+    }
+
+    [SkippableFact]
+    public async Task NonterminalReconciliation_UnknownOrFailedEffectsCannotCompleteTheParent()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var parentKey = "nonterminal-effect:" + Guid.NewGuid().ToString("N");
+        var admitted = await _store.AdmitAsync(CreateSettlement(parentKey, now), parentKey);
+        var claim = await _store.TryClaimRecoveryAsync(
+            admitted.Result!.Settlement,
+            "reconciliation-worker",
+            now.AddSeconds(1),
+            now.AddMinutes(1));
+
+        var deferred = await _store.TryRecordNonTerminalReconciliationAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(claim.Result!),
+            new NodeFeeSettlementEffectReconciliation(
+                NodeFeeSettlement.EffectStateKind.Unknown,
+                null,
+                NodeFeeSettlement.EffectStateKind.Failed,
+                null),
+            "both effects require chain reconciliation",
+            now.AddMinutes(5),
+            now.AddSeconds(2));
+
+        deferred.IsError.Should().BeFalse(deferred.Message);
+        deferred.Result.Should().BeTrue();
+        var persisted = await _store.GetAsync(admitted.Result.Settlement.Id);
+        persisted.Result!.State.Should().Be(NodeFeeSettlement.StateKind.AwaitingReconciliation);
+        persisted.Result.PrimaryEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.Unknown);
+        persisted.Result.FeeEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.Failed);
+        persisted.Result.PrimaryTransactionHash.Should().BeNull();
+        persisted.Result.FeeTransactionHash.Should().BeNull();
+        (await _idempotency.GetAsync(parentKey, CancellationToken.None))!.State
+            .Should().Be(AZOA.WebAPI.Models.Idempotency.IdempotencyState.InProgress);
+    }
+
+    [SkippableFact]
+    public async Task ConfirmedEffectReference_IsMonotonicAcrossReconciliationAndPairedTerminalization()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var parentKey = "confirmed-reference:" + Guid.NewGuid().ToString("N");
+        var admitted = await _store.AdmitAsync(CreateSettlement(parentKey, now), parentKey);
+        var firstClaim = await _store.TryClaimRecoveryAsync(
+            admitted.Result!.Settlement, "first-worker", now.AddSeconds(1), now.AddSeconds(2));
+        var recorded = await _store.TryRecordNonTerminalReconciliationAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(firstClaim.Result!),
+            new NodeFeeSettlementEffectReconciliation(
+                NodeFeeSettlement.EffectStateKind.Confirmed, "primary:observed",
+                NodeFeeSettlement.EffectStateKind.Failed, "fee:failed"),
+            "fee effect requires reconciliation", now.AddSeconds(3), now.AddSeconds(1));
+
+        recorded.IsError.Should().BeFalse(recorded.Message);
+        recorded.Result.Should().BeTrue();
+        var secondClaim = await _store.TryClaimRecoveryAsync(
+            (await _store.GetAsync(admitted.Result.Settlement.Id)).Result!,
+            "second-worker", now.AddSeconds(4), now.AddSeconds(5));
+        var conflicting = await _store.TrySettlePairedAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(secondClaim.Result!),
+            new NodeFeeSettlementTerminalization(
+                parentKey, "primary:replacement", "fee:confirmed", "payload"),
+            now.AddSeconds(4));
+
+        conflicting.IsError.Should().BeFalse(conflicting.Message);
+        conflicting.Result.Should().BeFalse();
+        var afterConflict = await _store.GetAsync(admitted.Result.Settlement.Id);
+        afterConflict.Result!.State.Should().Be(NodeFeeSettlement.StateKind.AwaitingReconciliation);
+        afterConflict.Result.PrimaryEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.Confirmed);
+        afterConflict.Result.PrimaryTransactionHash.Should().Be("primary:observed");
+        (await _idempotency.GetAsync(parentKey, CancellationToken.None))!.State
+            .Should().Be(AZOA.WebAPI.Models.Idempotency.IdempotencyState.InProgress);
+
+        var finalClaim = await _store.TryClaimRecoveryAsync(
+            afterConflict.Result, "final-worker", now.AddSeconds(6), now.AddMinutes(1));
+        var settled = await _store.TrySettlePairedAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(finalClaim.Result!),
+            new NodeFeeSettlementTerminalization(
+                parentKey, "primary:observed", "fee:confirmed", "payload"),
+            now.AddSeconds(6));
+
+        settled.IsError.Should().BeFalse(settled.Message);
+        settled.Result.Should().BeTrue();
+    }
+
+    private async Task<NodeFeeSettlement> AdmitPreparedAsync(DateTimeOffset now)
+    {
+        var source = Guid.NewGuid().ToString("N");
+        var settlement = CreateSettlement(source, now);
+        var admitted = await _store.AdmitAsync(settlement, source);
+        admitted.IsError.Should().BeFalse(admitted.Message);
+        return admitted.Result!.Settlement;
+    }
+
+    private static NodeFeeSettlement CreateSettlement(string source, DateTimeOffset now)
+        => new()
+        {
+            Id = NodeFeeSettlement.RecordIdFor(source, "Transfer"),
+            ParentIdempotencyKeyHash = NodeFeeSettlement.HashParentIdempotencyKey(source),
+            Operation = "Transfer",
+            Chain = "algorand",
+            Network = "Mainnet",
+            AssetId = "42",
+            GrossAmount = "1000",
+            FeeAmount = "25",
+            NetAmount = "975",
+            FeeScheduleVersion = 7,
+            TreasuryAddress = "TREASURY",
+            TreasuryDestinationVersion = 3,
+            State = NodeFeeSettlement.StateKind.Prepared,
+            PrimaryEffectState = NodeFeeSettlement.EffectStateKind.NotStarted,
+            FeeEffectState = NodeFeeSettlement.EffectStateKind.NotStarted,
+            StateVersion = 0,
+            AttemptCount = 0,
+            NextAttemptAt = now,
+            UpdatedAt = now,
+        };
+
+    private static NodeFeeSettlementDraft Draft(
+        string parentKey,
+        string feeAmount = "25",
+        string netAmount = "975") => new()
+    {
+        ParentIdempotencyKey = parentKey,
+        Operation = NodeFeeOperation.Transfer,
+        Chain = "algorand",
+        Network = AZOA.WebAPI.Core.ChainNetwork.Mainnet,
+        AssetId = "42",
+        GrossAmount = "1000",
+        FeeAmount = feeAmount,
+        NetAmount = netAmount,
+        FeeScheduleVersion = 7,
+        TreasuryAddress = "TREASURY",
+        TreasuryDestinationVersion = 3,
+    };
+
+    private static async Task<bool> ProbeSurrealAsync()
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            using var response = await http.GetAsync(SurrealTestDefaults.Endpoint + "/health");
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+}

@@ -45,6 +45,12 @@ public sealed record JsonlEntry
     [JsonPropertyName("statusCode")]
     public int? StatusCode { get; init; }
 
+    [JsonPropertyName("traceId")]
+    public string? TraceId { get; init; }
+
+    [JsonPropertyName("spanId")]
+    public string? SpanId { get; init; }
+
     [JsonPropertyName("surrealStatement")]
     public string? SurrealStatement { get; init; }
 

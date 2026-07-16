@@ -8,6 +8,29 @@ scope: Core/Surreal
 Storage-engine primitives that are domain-agnostic and reused across every
 SurrealDB-backed store. SurrealDB is the sole storage engine.
 
+## Â§scalar-string-binding
+
+`SurrealScalarString.ToCharacters` is the temporary reusable binding primitive
+for a raw SurrealQL expression that must preserve a colon-bearing scalar string.
+Bind its characters and reconstruct with `array::join($_value_chars, '')` so
+SurrealDB 3.x cannot reinterpret `table:id`-shaped values as record ids. Use it
+only where the consumed SurrealForge package cannot supply a typed scalar-string
+binding; replace it when the package exposes that primitive. Do not recreate the
+character-array workaround in individual stores. It maps a missing optional
+value to an empty array; callers retain optionality with a separate boolean
+parameter because SurrealQL evaluates both `IF` branches.
+
+## §runtime-identity
+
+`SurrealRuntimeConfigurationGuard` keeps the production API on the isolated
+`SurrealRuntime` configuration section. Production requires a non-root,
+database-scoped user and `AZOA_SKIP_MIGRATIONS=1`; the API container cannot
+receive legacy `SurrealDb` credentials or run the schema tool at boot. The
+separate schema job has `SURREALFORGE_*` credentials and remains an operations
+gate until its SurrealDB 3.1.4 permissions are proven live. Built-in database
+`EDITOR` is not a DDL-proof role, so do not claim full DDL separation from the
+config split alone; see the `surreal-runtime-least-privilege` conductor track.
+
 ## §transient-conflict — optimistic-concurrency retry (`SurrealTransientConflict`)
 
 > **Moved to the package.** `SurrealTransientConflict` now lives in

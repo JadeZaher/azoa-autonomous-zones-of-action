@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Interfaces;
@@ -283,6 +284,69 @@ public class ReconciliationServiceTests
         harness.AssertNoOnChainMutation();
     }
 
+    [Fact]
+    public async Task Operations_PendingConfirmation_IsSweptAndAdvancedFromChainTruth()
+    {
+        using var harness = new FakeReconHarness();
+        var operationId = harness.SeedOperation(o =>
+        {
+            o.Status = OperationStatus.PendingConfirmation;
+            o.OperationType = "Transfer";
+            o.CreatedDate = DateTime.UtcNow.AddMinutes(-30);
+            o.Parameters = new Dictionary<string, string>
+            {
+                ["TxHash"] = "pending_confirmation_tx",
+                ["ChainType"] = "Algorand",
+                ["ChainNetwork"] = "Testnet",
+            };
+        });
+        harness.SetupTxStatus("pending_confirmation_tx", new Dictionary<string, object>
+        {
+            ["confirmed"] = true,
+        });
+
+        var report = await harness.CreateService().ReconcileOperationsAsync(CancellationToken.None);
+
+        report.Scanned.Should().Be(1);
+        report.Advanced.Should().Be(1);
+        harness.GetOperation(operationId).Status.Should().Be(OperationStatus.Completed);
+        harness.FactoryMock.Verify(
+            f => f.GetProvider("Algorand", ChainNetwork.Testnet),
+            Times.Once);
+        harness.AssertNoOnChainMutation();
+    }
+
+    [Fact]
+    public async Task Operations_DefaultChainWithPersistedTestnet_ResolvesDefaultChainOnTestnet()
+    {
+        using var harness = new FakeReconHarness();
+        var operationId = harness.SeedOperation(o =>
+        {
+            o.Status = OperationStatus.PendingConfirmation;
+            o.OperationType = "Transfer";
+            o.CreatedDate = DateTime.UtcNow.AddMinutes(-30);
+            o.Parameters = new Dictionary<string, string>
+            {
+                ["TxHash"] = "default_chain_testnet_tx",
+                ["ChainNetwork"] = "Testnet",
+            };
+        });
+        harness.SetupTxStatus("default_chain_testnet_tx", new Dictionary<string, object>
+        {
+            ["confirmed"] = true,
+        });
+
+        var report = await harness.CreateService().ReconcileOperationsAsync(CancellationToken.None);
+
+        report.Advanced.Should().Be(1);
+        harness.GetOperation(operationId).Status.Should().Be(OperationStatus.Completed);
+        harness.FactoryMock.Verify(f => f.GetDefaultProvider(), Times.Once);
+        harness.FactoryMock.Verify(
+            f => f.GetProvider("Solana", ChainNetwork.Testnet),
+            Times.Once);
+        harness.AssertNoOnChainMutation();
+    }
+
     /// <summary>
     /// An orphan lock stuck Initiated/Locked with a LockTxHash: a CONFIRMED
     /// source-chain lock advances the lifecycle flag; an ambiguous hard-stuck
@@ -401,10 +465,11 @@ public class ReconciliationServiceTests
     /// </summary>
     [Fact]
     public async Task OperationConfirmedTerminal_SettlesResolvableIdempotency_LeavesUnresolvableUntouched()
-    {
-        using var harness = new FakeReconHarness();
-        const string idemKey = "op:explicit-key:abc123";
-        harness.SeedIdempotency(idemKey, IdempotencyState.InProgress, "Mint");
+        {
+            using var harness = new FakeReconHarness();
+            const string idemKey = "op:explicit-key:abc123";
+            const string replayPayload = "{\"operationId\":\"fee-bearing-allocation\",\"nodeFeeScheduleVersion\":7}";
+            harness.SeedIdempotency(idemKey, IdempotencyState.InProgress, "Mint");
 
         // (a) op WITH an explicit resolvable key in Parameters.
         var keyedOp = harness.SeedOperation(o =>
@@ -415,9 +480,10 @@ public class ReconciliationServiceTests
             o.Parameters = new Dictionary<string, string>
             {
                 ["TxHash"] = "op_confirmed",
-                ["ChainType"] = "Algorand",
-                ["IdempotencyKey"] = idemKey,
-            };
+                    ["ChainType"] = "Algorand",
+                    ["IdempotencyKey"] = idemKey,
+                    [IdempotencyParameterNames.ResultPayload] = replayPayload,
+                };
         });
         harness.SetupTxStatus("op_confirmed", new Dictionary<string, object>
         {
@@ -447,8 +513,10 @@ public class ReconciliationServiceTests
         harness.GetOperation(keyedOp).Status.Should().Be(OperationStatus.Completed);
         harness.GetOperation(unkeyedOp).Status.Should().Be(OperationStatus.Completed);
 
-        harness.GetIdempotency(idemKey)!.State.Should().Be(IdempotencyState.Completed,
-            "the resolvable-key op settles its orphaned InProgress record");
+            harness.GetIdempotency(idemKey)!.State.Should().Be(IdempotencyState.Completed,
+                "the resolvable-key op settles its orphaned InProgress record");
+            harness.GetIdempotency(idemKey)!.ResultPayload.Should().Be(replayPayload,
+                "the owning allocation replay payload must survive reconciliation");
 
         harness.AssertNoOnChainMutation();
     }

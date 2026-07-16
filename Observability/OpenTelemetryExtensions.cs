@@ -19,6 +19,9 @@ public static class OpenTelemetryExtensions
     /// </summary>
     public const string ActivitySourceName = "AZOA.WebAPI";
 
+    /// <summary>Shared source and meter name for the Surreal executor decorator.</summary>
+    public const string SurrealInstrumentationName = "SurrealForge";
+
     /// <summary>
     /// Shared ActivitySource instance for use by controllers and managers.
     /// </summary>
@@ -51,7 +54,7 @@ public static class OpenTelemetryExtensions
             {
                 tracing
                     .AddSource(ActivitySourceName)
-                    .AddSource("AZOA.SurrealDb")
+                    .AddSource(SurrealInstrumentationName)
                     .AddAspNetCoreInstrumentation(opts =>
                     {
                         // Enrich spans with request correlation attributes
@@ -84,7 +87,7 @@ public static class OpenTelemetryExtensions
                 metrics
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddMeter("AZOA.SurrealDb");
+                    .AddMeter(SurrealInstrumentationName);
 
                 if (!string.IsNullOrWhiteSpace(otlpEndpoint))
                 {

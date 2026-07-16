@@ -15,6 +15,7 @@ public class NftManagerTests
     private readonly Mock<IHolonStore> _holonStore;
     private readonly Mock<IBlockchainOperationStore> _blockchainOperationStore;
     private readonly Mock<IKycGateService> _kycGate;
+    private readonly Mock<INodeFeeScheduleManager> _nodeFees;
     private readonly NftManager _manager;
 
     public NftManagerTests()
@@ -22,12 +23,23 @@ public class NftManagerTests
         _holonStore = new Mock<IHolonStore>();
         _blockchainOperationStore = new Mock<IBlockchainOperationStore>();
         _kycGate = new Mock<IKycGateService>();
+        _nodeFees = new Mock<INodeFeeScheduleManager>();
         // value-path-wiring H3: MintAsync now gates on KYC at the choke point.
         // Default to approved so the existing mint-path tests exercise the same
         // behaviour; the dedicated H3 test overrides this to assert fail-closed.
         _kycGate.Setup(k => k.RequireVerifiedAsync(It.IsAny<Guid>()))
                 .ReturnsAsync(new AZOAResult<bool> { Result = true, Message = "Success" });
-        _manager = new NftManager(_holonStore.Object, _blockchainOperationStore.Object, _kycGate.Object);
+        _nodeFees.Setup(f => f.GetScheduleAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<NodeFeeScheduleResponse>
+            {
+                Result = new NodeFeeScheduleResponse(),
+                Message = "Success",
+            });
+        _manager = new NftManager(
+            _holonStore.Object,
+            _blockchainOperationStore.Object,
+            _kycGate.Object,
+            _nodeFees.Object);
     }
 
     private static INft CreateNftMock(Guid id, string name, string assetType = "NFT", Guid? avatarId = null, string? chainId = null) =>
@@ -180,6 +192,89 @@ public class NftManagerTests
 
         result.IsError.Should().BeFalse();
         nft.AvatarId.Should().Be(targetId);
+    }
+
+    [Theory]
+    [InlineData("1", 0)]
+    [InlineData("0", 1)]
+    public async Task TransferAsync_NonzeroConfiguredFee_RejectsBeforeAnyTransferSideEffect(
+        string flatBaseUnits,
+        long bps)
+    {
+        _nodeFees.Setup(f => f.GetScheduleAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<NodeFeeScheduleResponse>
+            {
+                Result = new NodeFeeScheduleResponse
+                {
+                    Transfer = new NodeFeeScheduleEntryResponse
+                    {
+                        FlatBaseUnits = flatBaseUnits,
+                        Bps = bps,
+                    },
+                },
+                Message = "Success",
+            });
+
+        var result = await _manager.TransferAsync(
+            Guid.NewGuid(),
+            new NftTransferRequest { TargetAvatarId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
+            Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("nonzero node Transfer fee");
+        _holonStore.Verify(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _holonStore.Verify(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
+        _blockchainOperationStore.Verify(
+            p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task TransferAsync_UnavailableFeeSchedule_RejectsBeforeAnyTransferSideEffect()
+    {
+        _nodeFees.Setup(f => f.GetScheduleAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<NodeFeeScheduleResponse>
+            {
+                IsError = true,
+                Message = "Surreal unavailable",
+            });
+
+        var result = await _manager.TransferAsync(
+            Guid.NewGuid(),
+            new NftTransferRequest { TargetAvatarId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
+            Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("fee schedule is unavailable");
+        _holonStore.Verify(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _holonStore.Verify(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
+        _blockchainOperationStore.Verify(
+            p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task TransferAsync_MalformedFeeSchedule_RejectsBeforeAnyTransferSideEffect()
+    {
+        _nodeFees.Setup(f => f.GetScheduleAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<NodeFeeScheduleResponse>
+            {
+                Result = new NodeFeeScheduleResponse
+                {
+                    Transfer = new NodeFeeScheduleEntryResponse { FlatBaseUnits = "invalid" },
+                },
+                Message = "Success",
+            });
+
+        var result = await _manager.TransferAsync(
+            Guid.NewGuid(),
+            new NftTransferRequest { TargetAvatarId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
+            Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("fee schedule is invalid");
+        _holonStore.Verify(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _holonStore.Verify(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
+        _blockchainOperationStore.Verify(
+            p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

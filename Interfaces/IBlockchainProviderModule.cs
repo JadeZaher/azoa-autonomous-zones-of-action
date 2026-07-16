@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Interfaces;
@@ -53,4 +54,22 @@ public interface ISolanaSPLModule : IBlockchainProviderModule
 {
     Task<AZOAResult<string>> CreateTokenAccountAsync(string mint, string owner, CancellationToken ct = default);
     Task<AZOAResult<string>> CloseTokenAccountAsync(string tokenAccount, string owner, CancellationToken ct = default);
+}
+
+/// <summary>Optional capability for chains that can accept both transfer legs atomically.</summary>
+public interface IAtomicTransferGroupModule : IBlockchainProviderModule
+{
+    /// <summary>True only when this bound adapter can construct, sign, and submit a real atomic group.</summary>
+    bool SupportsAtomicTransferGroups { get; }
+
+    /// <summary>
+    /// Submits the primary and treasury legs as one chain-atomic group. The request
+    /// must have been constructed from this resolved provider's canonical binding;
+    /// an error means no group acceptance was established. Implementations must never
+    /// fall back to sequential individual transfers or return an acceptance detached
+    /// from the request's group identity.
+    /// </summary>
+    Task<AZOAResult<AtomicTransferGroupSubmission>> SubmitAtomicTransferGroupAsync(
+        AtomicTransferGroupRequest request,
+        CancellationToken ct = default);
 }

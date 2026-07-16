@@ -388,4 +388,16 @@ public class ClaimsPrincipalScopeTests
             }, "Test"));
         p.CanSelfIssueApiKeyScope(AzoaScopes.Operator).Should().BeFalse();
     }
+
+    [Fact]
+    public void CanSelfIssueApiKeyScope_NeverAllowsNodeGovern()
+    {
+        var p = new ClaimsPrincipal(new ClaimsIdentity(
+            new[]
+            {
+                new Claim("dapp_role", AzoaDappRoles.Manager),
+                new Claim("scope", AzoaScopes.NodeGovern),
+            }, "Test"));
+        p.CanSelfIssueApiKeyScope(AzoaScopes.NodeGovern).Should().BeFalse();
+    }
 }

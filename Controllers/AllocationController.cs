@@ -18,8 +18,8 @@ namespace AZOA.WebAPI.Controllers;
 ///
 /// This controller holds NO payment-provider secret, runs NO checkout, and
 /// exposes NO webhook handler — it trusts the tenant via the API key, not via any
-/// payment-provider signature. Token economics stay in the tenant; AZOA receives
-/// an already-decided amount.
+/// payment-provider signature. Product economics stay in the tenant; AZOA
+/// receives its gross amount and applies the node's configured fee policy.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]

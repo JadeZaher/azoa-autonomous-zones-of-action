@@ -20,9 +20,9 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 ///   deduped via <see cref="AZOA.WebAPI.Interfaces.IIdempotencyStore"/>.</item>
 /// </list>
 ///
-/// AZOA holds NO payment-provider secret, runs NO checkout, NO webhook handler,
-/// and NO token economics — those stay in the tenant. AZOA receives an
-/// already-decided amount and the tenant's idempotency key.
+/// AZOA holds NO payment-provider secret, runs NO checkout, and runs NO webhook
+/// handler. The tenant decides the gross amount and its product economics; AZOA
+/// applies the node's configured fee policy and the tenant's idempotency key.
 /// </summary>
 public interface IAllocationManager
 {
@@ -49,8 +49,9 @@ public interface IAllocationManager
     /// <param name="avatarId">The authorised target avatar (route/contract).</param>
     /// <param name="request">Asset descriptor + already-decided amount (D4).</param>
     /// <param name="callerAvatarId">
-    /// The authenticated caller (the tenant's avatar). Recorded for diagnostics;
-    /// it does not widen authority beyond the API-key scope.
+    /// The authenticated caller (the tenant's avatar). On Transfer it is the
+    /// source owner whose existing chain wallet signs the move; it never widens
+    /// authority beyond the API-key and consent scopes.
     /// </param>
     /// <param name="clientIdempotencyKey">
     /// The tenant's <c>Idempotency-Key</c> header (e.g. the PaymentIntent id).

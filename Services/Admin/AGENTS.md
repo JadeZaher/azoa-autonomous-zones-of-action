@@ -9,7 +9,7 @@ mint the first `operator:admin` principal (`Core/AzoaScopes.cs:33`) — the
 deploy. NODE-HOST §8.9 documented "configure your JWT issuer" with no concrete
 mechanism.
 
-## Mechanism (stateless, no schema change)
+## Mechanism
 
 `AdminBootstrapOptions` (config section `AdminBootstrap`) holds two values, both
 env-driven and both required together:
@@ -17,18 +17,15 @@ env-driven and both required together:
 - `AdminBootstrap:SeedEmail` — the email of the avatar to promote.
 - `AdminBootstrap:SeedSecret` — a shared secret proving operator intent.
 
-`AvatarManager.StampOperatorAdminIfSeeded` runs on every JWT mint
-(`GenerateJwt`). If **both** values are set and the minting avatar's email
-(case-insensitive) matches `SeedEmail`, the token gets `scope=operator:admin`
-plus the interim `role=Admin` / `ClaimTypes.Role=Admin` claims (the legacy path
-keeps working unconditionally — this is additive).
+`AvatarManager.ResolveBootstrapAuthorityAsync` runs before every JWT mint. An
+unbound seed avatar must match `SeedEmail` and present the exact secret; the
+first successful proof creates a record-id binding. Only that bound avatar gets
+`scope=operator:admin`, `scope=node:govern`, and the Admin role on later JWTs.
 
-**Fail-closed by construction:** either value absent ⇒ the seam is a no-op for
-every avatar, forever. There is no code path that stamps a scope without both
-values present. The secret is a config value, never checked against a request
-input (no endpoint takes a "prove you know the secret" body) — proving intent
-means an operator with deploy/config access set it, which is the same trust
-level as any other launch secret (Jwt:Key, WalletEncryptionKey, etc).
+**Fail-closed by construction:** either config value absent leaves every login
+ordinary; missing or wrong proof leaves an unbound seed avatar ordinary; a
+binding owned by another avatar leaves the caller ordinary; and state-store
+failure prevents scope stamping. The bootstrap secret is never persisted.
 
 `SeedAdminHostedService` adds nothing to the stamping decision — it only makes
 a **partial** config (one of the two set, not both) loud: a warning in
@@ -50,3 +47,11 @@ bootstrap, with zero data left behind.
 
 See `docs/NODE-HOST.md` §8.9 for the exact env vars, first-login flow, and
 verify step.
+
+## One-time identity binding
+
+The bootstrap is no longer stateless: first login for `SeedEmail` must present
+the configured `BootstrapSecret`, which is compared in constant time and never
+persisted. `admin_bootstrap_state:local` then binds the bootstrap to that avatar
+record id. Only the bound id receives `operator:admin` and `node:govern` on
+later logins; profile edits cannot claim the configured seed email.

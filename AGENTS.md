@@ -8,7 +8,7 @@ This file is the operational cheat-sheet for build / test / local stack. Keep it
 
 The reference dev setup uses **podman** (docker works identically). All commands below use `podman`; substitute `docker` if present.
 Containers: `azoa-dev-surrealdb`, `azoa-dev-api`, `azoa-dev-frontend`.
-SurrealDB image: `surrealdb/surrealdb:v1.5.4`.
+SurrealDB image: `surrealdb/surrealdb:v3.1.4`.
 
 ## Local stack — `dev-up.ps1` / `dev-up.sh`
 
@@ -56,7 +56,7 @@ dotnet build azoa.sln    -c Debug           # whole solution (incl. test project
 dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj -c Debug # Unit suite
 dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj -c Debug --filter "FullyQualifiedName~CrossChainBridgeServiceTests"
 dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj -c Debug # Integration
-dotnet test tests/SurrealForge.Schema.Tests/SurrealForge.Schema.Tests.csproj -c Debug # Schema
+dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj -c Debug --filter "FullyQualifiedName~AttributePocoByteEquivalenceTests|FullyQualifiedName~FlowchartRegenerationTests" # Schema/flowchart goldens
 ```
 
 - Integration tests require dev-up SurrealDB instance.
@@ -67,10 +67,38 @@ dotnet test tests/SurrealForge.Schema.Tests/SurrealForge.Schema.Tests.csproj -c 
 - **Config-driven**: Load real `appsettings.json` in tests.
 - **Source of truth**: SurrealDB sole storage engine; blockchain is the source of truth for balances.
 - **Greenfield, pre-launch**: No customers/prod data; prefer clean re-architecture over shims.
-- **SurrealDB lookups**: Use `SELECT * FROM type::record($_t, $_id)` (or `SelectById`), NOT `WHERE id = $id`.
+- **SurrealDB lookups**: Use `SurrealQuery<T>.Key(...)` / `SelectById`, never a
+  scan-style `WHERE id = $id`; a temporary raw record lookup needs the same
+  expiring waiver as any other unsupported single statement.
+- **Typed Surreal access first**: Use `SurrealQuery<T>`/LINQ for ordinary reads,
+  `SurrealWriter` for ordinary creates/upserts, and typed conditional-mutation
+  builders for single-record updates/deletes, and the typed relation builder for
+  graph edges. DDL belongs in generated schema tooling. Raw `SurrealQuery.Of(...)`
+  is reserved for a genuinely multi-table/multi-statement atomic transaction.
+  A temporarily unsupported single-statement construct requires a linked,
+  expiring SurrealForge issue/track waiver; it is not a permanent exception.
+  Every retained raw call needs a terse `// raw: <atomic invariant or waiver>`
+  pointer and a directory-level design note. Never hand-write basic CRUD merely
+  because it is shorter.
 - **SDK & Provider parity**: Keep SDK and .NET providers mirrored; add chains via plugin interfaces (`ChainProvider` / `IBlockchainProvider`, `DexAdapter`).
 - **Self-documenting**: Prefer clean code and test helpers over verbose comments.
 - **Role-first layout**: Place code by role: `Managers/`, `Services/<domain>/`, `Helpers/`, `Core/` (primitives only), `Providers/`, `Middleware/`, `Interfaces/`. Folder↔namespace strictly mirrored.
+- **Exception boundaries**: Expected validation/conflict/not-found outcomes use
+  typed results. Unexpected infrastructure/programming exceptions bubble to the
+  centralized HTTP/worker boundary so structured logging and OpenTelemetry see
+  the original exception once. Catch only to translate a known exception, add
+  recovery/retry semantics, or keep a long-running worker alive; rethrow
+  cancellation and avoid catch-log-rethrow duplication.
+- **Contract docs and helpers**: Interfaces own the XML contract. Implementations
+  use `/// <inheritdoc/>` (or `cref` when implementing a differently named
+  contract) instead of copying prose. Reusable pure helpers live in `Helpers/`
+  or the owning domain package; keep a private static helper beside a class only
+  when it is tiny, single-purpose, and not duplicated.
 - **Code style**: Unused usings (`IDE0005`) are **build errors** in the app project. Do not commit unused usings.
+- **Changed-file pruning gate**: Before handing off any turn, inspect every
+  touched file for avoidable raw SurrealQL, catch-all exception swallowing,
+  duplicated/private helpers, missing `inheritdoc`, stale comments, and unused
+  imports. Remove what the current typed/shared surface can express; record any
+  justified escape hatch in the nearest `AGENTS.md` and active conductor track.
 - **Bridge safety**: Never weaken exactly-once assertions. See `docs/RESIDUAL-RISK-RUNBOOK.md` for residual risks.
 - **DEX env-conditions**: Tinyman/Jupiter pools/unreachability are `Unavailable: true` (200 OK), not red errors.

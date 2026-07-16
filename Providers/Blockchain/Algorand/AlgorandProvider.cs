@@ -15,6 +15,7 @@ using AZOA.WebAPI.Interfaces.Signing;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.Base;
 using AlgoAccount = Algorand.Algod.Model.Account;
@@ -25,9 +26,9 @@ namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 /// Algorand blockchain provider using direct REST API calls to Algod and Indexer.
 /// Avoids SDK versioning issues while providing full devnet/testnet/mainnet connectivity.
 /// </summary>
-public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
+public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule
 {
-    // Assigned in BuildClients(), which the ctor invokes before any use; the
+    // Assigned in BuildClients() during the provider's one-time network binding; the
     // null-forgiving initializer documents that and clears CS8618 without a
     // misleading nullable annotation (the field is never observably null).
     private HttpClient _algodHttpClient = null!;
@@ -47,7 +48,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     // mnemonic is reachable ONLY through the platform door (custody or the fallback
     // platform resolver below).
     //
-    // The provider is a singleton but IKeyCustodyService is scoped, so production
+    // Factory-bound providers are cached per network while IKeyCustodyService is scoped, so production
     // resolves a fresh custody instance per signing op via _custodyScopeFactory
     // (the AlgorandFaucet precedent). _custodyService is the direct-inject seam for
     // unit tests; _keyService is the platform-only fallback for the signing-core
@@ -67,10 +68,36 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     public string CapabilityName => "Algorand.ASA";
     public override bool SupportsBridging => true;
 
+    /// <inheritdoc/>
+    public bool SupportsAtomicTransferGroups => false;
+
     // Algorand exposes a server-side faucet; "configured?" is resolved at dispense
     // time so the caller gets the precise "set Blockchain:Faucet:Algorand:Mnemonic"
     // message rather than a generic "not supported".
     public override bool SupportsFaucet => true;
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<AtomicTransferGroupSubmission>> SubmitAtomicTransferGroupAsync(
+        AtomicTransferGroupRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ct.ThrowIfCancellationRequested();
+
+        if (!string.Equals(request.ChainType, ChainType, StringComparison.Ordinal)
+            || request.Network != ActiveNetwork)
+        {
+            return Task.FromResult(Error<AtomicTransferGroupSubmission>(
+                $"Atomic transfer group binding {request.ChainType}/{request.Network} does not match " +
+                $"this Algorand provider binding {ChainType}/{ActiveNetwork}."));
+        }
+
+        return Task.FromResult(Error<AtomicTransferGroupSubmission>(
+            "Algorand atomic transfer groups are unavailable: this provider only supports a single " +
+            "transaction canonicalization, custody signature, submit, and confirmation. A verified group-id " +
+            "assignment, canonical two-transaction signing envelope, batch-submit boundary, and group-level " +
+            "reconciliation contract are required before this capability can be enabled."));
+    }
 
     public AlgorandProvider(IConfiguration config, ILogger<AlgorandProvider> logger)
         : this(config, logger, signerFactory: null, keyService: null)
@@ -105,23 +132,34 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         _faucet = faucet;
         _httpMessageHandler = httpMessageHandler;
 
-        var network = _configManager.GetDefaultNetwork(ChainType);
-        var networkConfig = _configManager.GetNetworkConfig(ChainType, network);
-
-        BuildClients(networkConfig);
-        Initialize(networkConfig, network);
     }
 
-    /// <summary>
-    /// (Re)builds the Algod + Indexer clients so they bind to the network passed
-    /// to <see cref="Initialize"/> — the single place clients are constructed.
-    /// Without this, the ctor-time default network would be used regardless of
-    /// the network the factory requested.
-    /// </summary>
-    public override void Initialize(BlockchainNetworkConfig config, ChainNetwork network)
+    /// <inheritdoc/>
+    protected override void OnInitialize(BlockchainNetworkConfig config, ChainNetwork network)
     {
         BuildClients(config);
-        base.Initialize(config, network);
+    }
+
+    private HttpClient AlgodHttpClient
+    {
+        get
+        {
+            EnsureStandaloneInitialized(() =>
+            {
+                var network = _configManager.GetDefaultNetwork(ChainType);
+                return (_configManager.GetNetworkConfig(ChainType, network), network);
+            });
+            return _algodHttpClient;
+        }
+    }
+
+    private HttpClient? IndexerHttpClient
+    {
+        get
+        {
+            _ = AlgodHttpClient;
+            return _indexerHttpClient;
+        }
     }
 
     private void BuildClients(BlockchainNetworkConfig config)
@@ -164,7 +202,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
 
         try
         {
-            var account = await _algodHttpClient.GetFromJsonAsync<AlgodAccountInfo>(
+            var account = await AlgodHttpClient.GetFromJsonAsync<AlgodAccountInfo>(
                 $"/v2/accounts/{address}", cancellationToken: ct);
 
             if (account == null)
@@ -201,7 +239,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
 
         try
         {
-            var account = await _algodHttpClient.GetFromJsonAsync<AlgodAccountInfo>(
+            var account = await AlgodHttpClient.GetFromJsonAsync<AlgodAccountInfo>(
                 $"/v2/accounts/{address}", cancellationToken: ct);
             return account != null
                 ? Ok(true, "Valid Algorand address — confirmed on network")
@@ -343,13 +381,14 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(tokenId) || _indexerHttpClient == null)
+            var indexer = IndexerHttpClient;
+            if (string.IsNullOrWhiteSpace(tokenId) || indexer == null)
                 return Error<Dictionary<string, object>>("Token ID required and Indexer must be configured");
 
             if (!long.TryParse(tokenId, out var assetId))
                 return Error<Dictionary<string, object>>($"Invalid asset ID: {tokenId}");
 
-            var response = await _indexerHttpClient.GetFromJsonAsync<IndexerAssetResponse>(
+            var response = await indexer.GetFromJsonAsync<IndexerAssetResponse>(
                 $"/v2/assets/{assetId}", cancellationToken: ct);
 
             if (response?.Asset == null)
@@ -383,10 +422,11 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(ownerAddress) || _indexerHttpClient == null)
+            var indexer = IndexerHttpClient;
+            if (string.IsNullOrWhiteSpace(ownerAddress) || indexer == null)
                 return Error<List<Dictionary<string, object>>>("Owner address required and Indexer must be configured");
 
-            var response = await _indexerHttpClient.GetFromJsonAsync<IndexerAssetsListResponse>(
+            var response = await indexer.GetFromJsonAsync<IndexerAssetsListResponse>(
                 $"/v2/accounts/{ownerAddress}/assets", cancellationToken: ct);
 
             var tokens = new List<Dictionary<string, object>>();
@@ -424,7 +464,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             AlgodPendingTransactionInfo? pending = null;
             try
             {
-                pending = await _algodHttpClient.GetFromJsonAsync<AlgodPendingTransactionInfo>(
+                pending = await AlgodHttpClient.GetFromJsonAsync<AlgodPendingTransactionInfo>(
                     $"/v2/transactions/pending/{txHash}", cancellationToken: ct);
             }
             catch (HttpRequestException)
@@ -448,11 +488,12 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
                 return Ok(pendingStatus, "Transaction status retrieved (algod pending pool)");
             }
 
-            if (_indexerHttpClient == null)
+            var indexer = IndexerHttpClient;
+            if (indexer == null)
                 return Error<Dictionary<string, object>>(
                     "Transaction not in algod pending pool and no Indexer is configured to look up confirmed transactions");
 
-            var indexed = await _indexerHttpClient.GetFromJsonAsync<IndexerTransactionResponse>(
+            var indexed = await indexer.GetFromJsonAsync<IndexerTransactionResponse>(
                 $"/v2/transactions/{txHash}", cancellationToken: ct);
 
             var tx = indexed?.Transaction;
@@ -497,10 +538,10 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
     {
         try
         {
-            var status = await _algodHttpClient.GetFromJsonAsync<AlgodStatus>(
+            var status = await AlgodHttpClient.GetFromJsonAsync<AlgodStatus>(
                 "/v2/status", cancellationToken: ct);
 
-            var genesis = await _algodHttpClient.GetStringAsync("/genesis", cancellationToken: ct);
+            var genesis = await AlgodHttpClient.GetStringAsync("/genesis", cancellationToken: ct);
 
             var info = new Dictionary<string, object>
             {
@@ -836,7 +877,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
         try
         {
             paramsInfo = await ExecuteWithRetryAsync(
-                async () => await _algodHttpClient.GetFromJsonAsync<AlgodSuggestedParams>(
+                async () => await AlgodHttpClient.GetFromJsonAsync<AlgodSuggestedParams>(
                     "/v2/transactions/params", cancellationToken: ct)
                     ?? throw new InvalidOperationException("Algod returned no suggested params"),
                 ct: ct,
@@ -890,7 +931,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
                 {
                     using var content = new ByteArrayContent(signResult.Result);
                     content.Headers.ContentType = new MediaTypeHeaderValue("application/x-binary");
-                    var resp = await _algodHttpClient.PostAsync("/v2/transactions", content, ct);
+                    var resp = await AlgodHttpClient.PostAsync("/v2/transactions", content, ct);
                     resp.EnsureSuccessStatusCode();
                 },
                 ct: ct,
@@ -931,7 +972,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule
             ct.ThrowIfCancellationRequested();
             try
             {
-                var pending = await _algodHttpClient.GetFromJsonAsync<AlgodPendingTransactionInfo>(
+                var pending = await AlgodHttpClient.GetFromJsonAsync<AlgodPendingTransactionInfo>(
                     $"/v2/transactions/pending/{txId}", cancellationToken: ct);
 
                 if (pending is not null)

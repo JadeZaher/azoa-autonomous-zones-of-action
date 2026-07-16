@@ -1,3 +1,4 @@
+using System.Globalization;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
@@ -13,15 +14,18 @@ public class NftManager : INftManager
     private readonly IHolonStore _holonStore;
     private readonly IBlockchainOperationStore _blockchainOperationStore;
     private readonly IKycGateService _kycGate;
+    private readonly INodeFeeScheduleManager _nodeFees;
 
     public NftManager(
         IHolonStore holonStore,
         IBlockchainOperationStore blockchainOperationStore,
-        IKycGateService kycGate)
+        IKycGateService kycGate,
+        INodeFeeScheduleManager nodeFees)
     {
         _holonStore = holonStore;
         _blockchainOperationStore = blockchainOperationStore;
         _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
+        _nodeFees = nodeFees ?? throw new ArgumentNullException(nameof(nodeFees));
     }
 
     // Cross-tenant read scope: an NFT (a Holon with AssetType=="NFT") is readable iff
@@ -129,8 +133,13 @@ public class NftManager : INftManager
         return await _blockchainOperationStore.UpsertAsync(operation, default);
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid avatarId, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
     {
+        var transferFeeBlocker = await GetDirectTransferFeeBlockerAsync();
+        if (transferFeeBlocker is not null)
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = transferFeeBlocker };
+
         // Load and verify ownership
         var holonResult = await _holonStore.GetByIdAsync(nftId, default);
         if (holonResult.IsError || holonResult.Result == null)
@@ -175,6 +184,26 @@ public class NftManager : INftManager
         };
 
         return await _blockchainOperationStore.UpsertAsync(operation, default);
+    }
+
+    private async Task<string?> GetDirectTransferFeeBlockerAsync()
+    {
+        var schedule = await _nodeFees.GetScheduleAsync();
+        if (schedule.IsError || schedule.Result is null)
+        {
+            return "Node Transfer fee schedule is unavailable; direct NFT transfer denied until fee settlement can be verified.";
+        }
+
+        var transfer = schedule.Result.Transfer;
+        if (!ulong.TryParse(transfer.FlatBaseUnits, NumberStyles.None, CultureInfo.InvariantCulture, out var flat)
+            || transfer.Bps is < 0 or > 10_000)
+        {
+            return "Node Transfer fee schedule is invalid; direct NFT transfer denied.";
+        }
+
+        return flat > 0 || transfer.Bps > 0
+            ? "Direct NFT transfer is unavailable while a nonzero node Transfer fee requires on-chain treasury settlement."
+            : null;
     }
 
     public async Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid avatarId, AZOARequest? providerRequest = null)

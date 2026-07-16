@@ -19,14 +19,24 @@ public sealed class SagaOperatorStoreTests
     private readonly InMemorySagaStore _store = new();
     private static readonly CancellationToken Ct = CancellationToken.None;
 
+    private async Task<DateTime> ClaimAsync(Guid id)
+    {
+        var claimed = await _store.TryClaimDueStepAsync(
+            id, DateTime.UtcNow.AddSeconds(5), Ct);
+        claimed.Should().NotBeNull();
+        claimed!.ClaimedAt.Should().NotBeNull();
+        return claimed.ClaimedAt!.Value;
+    }
+
     // Drive a step to DeadLettered the way the processor does: enqueue → claim →
     // dead-letter (dead-letter is conditional on InProgress).
     private async Task<SagaStepRecord> SeedDeadLetteredAsync(string saga = "S", string step = "s")
     {
         var enq = await _store.EnqueueAsync(saga, step, $"corr-{Guid.NewGuid():N}",
             $"idem-{Guid.NewGuid():N}", "{}", false, Ct);
-        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), Ct);
-        (await _store.DeadLetterStepAsync(enq.Id, "boom", Ct)).Should().BeTrue();
+        var claimedAt = await ClaimAsync(enq.Id);
+        (await _store.DeadLetterStepAsync(enq.Id, claimedAt, "boom", Ct))
+            .Should().BeTrue();
         return enq;
     }
 
@@ -35,8 +45,10 @@ public sealed class SagaOperatorStoreTests
         var corr = $"corr-{Guid.NewGuid():N}";
         var enq = await _store.EnqueueAsync("quest-workflow", "gate", corr,
             $"idem-{Guid.NewGuid():N}", "{}", false, Ct);
-        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), Ct);
-        (await _store.ParkStepAsync(enq.Id, "phase-met", resumeAt: null, Ct)).Should().BeTrue();
+        var claimedAt = await ClaimAsync(enq.Id);
+        (await _store.ParkStepAsync(
+                enq.Id, claimedAt, "phase-met", resumeAt: null, Ct))
+            .Should().BeTrue();
         return enq;
     }
 
@@ -118,8 +130,8 @@ public sealed class SagaOperatorStoreTests
     {
         var enq = await _store.EnqueueAsync("S", "s", $"corr-{Guid.NewGuid():N}",
             $"idem-{Guid.NewGuid():N}", "{}", false, Ct);
-        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), Ct);
-        await _store.CompleteStepAsync(enq.Id, "{}", Ct);
+        var claimedAt = await ClaimAsync(enq.Id);
+        await _store.CompleteStepAsync(enq.Id, claimedAt, "{}", Ct);
 
         (await _store.RequeueStepAsync(enq.Id, Ct))
             .Should().BeFalse("a Completed step must never be revived");
@@ -159,8 +171,8 @@ public sealed class SagaOperatorStoreTests
     {
         var enq = await _store.EnqueueAsync("S", "s", $"corr-{Guid.NewGuid():N}",
             $"idem-{Guid.NewGuid():N}", "{}", false, Ct);
-        await _store.TryClaimDueStepAsync(enq.Id, DateTime.UtcNow.AddSeconds(5), Ct);
-        await _store.CompleteStepAsync(enq.Id, "{}", Ct);
+        var claimedAt = await ClaimAsync(enq.Id);
+        await _store.CompleteStepAsync(enq.Id, claimedAt, "{}", Ct);
 
         (await _store.CancelStepAsync(enq.Id, "too late", Ct))
             .Should().BeFalse("a Completed step must not be cancellable");

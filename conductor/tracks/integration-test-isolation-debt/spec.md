@@ -2,28 +2,34 @@
 type: spec
 track: integration-test-isolation-debt
 created: 2026-07-06
-status: pending
-horizon: post-launch
+status: active
+horizon: alpha
 depends_on: [final-hardening-cutover]
 ---
 
-# integration-test-isolation-debt — retire the full-suite failure tail
+# integration-test-isolation-debt — make integration tests a CI gate
 
 ## Why
 
-The full integration suite carries a ~31-failure tail (down from 37) that is
-**attributed, not regressive**: shared-SurrealDB-container contention plus
-documented pre-existing test-design conflicts. Every failing class passes when
-run scoped — except the Bucket A design conflicts, which fail deterministically.
-The tail makes the suite useless as a single green/red launch signal. Source of
-truth: `conductor/tracks/integration-test-isolation-debt/INTEGRATION-TEST-PASSOFF.md`.
+The historical ~31-failure tail was retired by per-class SurrealDB namespace
+isolation plus the Bucket A–D fixes recorded in
+`INTEGRATION-TEST-PASSOFF.md`. On 2026-07-11 the complete suite reached 312
+passes, one intentional skip, and three newly exposed correctness failures. Each was then
+reproduced and fixed: strict SurrealQL fee-CAS composition, fee-CAS conflict
+normalization, and a durable-workflow drain race. Focused post-fix reruns are
+green. A subsequent unfiltered Release run reached 314 passes and one skip, but
+correctly demonstrated that the opt-in `WalletGetById_P99_Under50ms` benchmark
+is not stable on developer hardware. Performance and hard-kill chaos categories
+remain separately invocable evidence; neither is part of the routine correctness
+gate. The remaining work is to make the correctness signal continuous in CI and
+collect one complete filtered post-fix run before archive.
 
-## Scope (buckets from the pass-off, deduplicated)
+## Completed remediation (buckets from the pass-off, deduplicated)
 
-1. **Per-test namespace isolation** — per-class isolation (max granularity under
-   `IClassFixture`) still shares data within a class and forces serial thinking.
-   Rebuild the harness so each test method gets its own namespace, or serialize
-   the collections that genuinely contend.
+1. **Namespace isolation** — each `WebApplicationFactory` owns a unique
+   SurrealDB namespace, and the app plus direct setup clients use that same
+   namespace. Methods within a class retain their deliberate shared-fixture
+   semantics.
 2. **Bucket A — IDOR test-design conflicts (~15 tests)** — tests seed a random
    avatar but the controller acts on the authenticated `DefaultAvatarId`
    (IDOR-resistant scoping working as designed). Fix per test: seed with the
@@ -39,7 +45,32 @@ truth: `conductor/tracks/integration-test-isolation-debt/INTEGRATION-TEST-PASSOF
    `Interact_ShouldRemovePeersAndMetadata` peer-removal wiring and the
    `Holon.{Mint,Exchange}` / `STARODK.Deploy` 400s.
 
+## Remaining scope
+
+1. Observe the repository workflow boot the pinned SurrealDB 3.1.4 RocksDB
+   container and pass the default correctness suite.
+2. Keep the one intentional analyzer skip explicit; database readiness failure
+   must fail the job rather than silently turning the suite into a pass.
+3. Archive after the repository CI proof is recorded.
+
 ## Acceptance
 
-- Full suite (all classes, parallel) is green on a clean container; the suite
-  becomes a usable CI gate (unblocks including integration in `.github/workflows/ci.yml`).
+- Default correctness suite (all non-chaos, non-performance classes in
+  parallel) is green on a clean SurrealDB 3.1.4 container.
+- `.github/workflows/ci.yml` boots that pinned database and runs the integration
+  project on every push and pull request.
+- A failed database readiness probe fails the job and prints container logs.
+- The Windows/Podman hard-kill drill remains opt-in under `Category=Chaos`;
+  machine-dependent latency budgets remain opt-in under `Category=Perf`;
+  routine CI explicitly excludes both categories.
+- Archive only after a complete local post-fix run and the repository CI check
+  both pass.
+
+## Verification log
+
+- 2026-07-11, unfiltered Release: 314 passed, one intentional skip, one failed;
+  the only failure was the documented opt-in wallet p99 performance budget.
+- 2026-07-11, default correctness filter
+  (`Category!=Chaos&Category!=Perf`): 310 passed, one intentional skip, zero
+  failed in 23m55s.
+- Repository CI proof remains pending; track stays active.

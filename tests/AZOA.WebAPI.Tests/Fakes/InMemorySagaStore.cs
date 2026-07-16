@@ -23,6 +23,7 @@ namespace AZOA.WebAPI.Tests.Fakes;
 public sealed class InMemorySagaStore : ISagaStore
 {
     private readonly ConcurrentDictionary<Guid, SagaStepRecord> _steps = new();
+    private readonly object _mutationGate = new();
 
     // ── EnqueueAsync / EnqueueNextStepAsync ───────────────────────────────────
 
@@ -52,7 +53,8 @@ public sealed class InMemorySagaStore : ISagaStore
             UpdatedAt = now,
         };
 
-        _steps[record.Id] = Copy(record);
+        lock (_mutationGate)
+            _steps[record.Id] = Copy(record);
         return Task.FromResult(Copy(record));
     }
 
@@ -158,11 +160,13 @@ public sealed class InMemorySagaStore : ISagaStore
 
     // ── CompleteStepAsync ─────────────────────────────────────────────────────
 
-    public Task<bool> CompleteStepAsync(Guid id, string? output, CancellationToken ct)
+    /// <inheritdoc/>
+    public Task<bool> CompleteStepAsync(
+        Guid id, DateTime claimedAt, string? output, CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
         var applied = MutateIf(id,
-            r => r.Status == StepStatus.InProgress,
+            r => OwnsLease(r, claimedAt),
             r =>
             {
                 r.Status = StepStatus.Completed;
@@ -173,15 +177,72 @@ public sealed class InMemorySagaStore : ISagaStore
         return Task.FromResult(applied);
     }
 
+    /// <inheritdoc/>
+    public Task<SagaStepRecord?> CompleteAndEnqueueNextStepAsync(
+        Guid id,
+        DateTime claimedAt,
+        string? output,
+        string sagaName,
+        string nextStepName,
+        string correlationKey,
+        string nextStepIdempotencyKey,
+        string payloadJson,
+        CancellationToken ct)
+    {
+        ValidateSuccessor(
+            sagaName, nextStepName, correlationKey, nextStepIdempotencyKey);
+        var nowUtc = DateTime.UtcNow;
+
+        lock (_mutationGate)
+        {
+            if (!_steps.TryGetValue(id, out var current)
+                || !OwnsLease(current, claimedAt))
+            {
+                return Task.FromResult<SagaStepRecord?>(null);
+            }
+
+            var completed = Copy(current);
+            completed.Status = StepStatus.Completed;
+            completed.Output = output;
+            completed.ClaimedAt = null;
+            completed.UpdatedAt = nowUtc;
+
+            var successor = new SagaStepRecord
+            {
+                Id = Guid.NewGuid(),
+                SagaName = sagaName,
+                StepName = nextStepName,
+                CorrelationKey = correlationKey,
+                StepIdempotencyKey = nextStepIdempotencyKey,
+                Payload = payloadJson,
+                Status = StepStatus.Pending,
+                IsCompensation = false,
+                AttemptCount = 0,
+                NextRunAt = nowUtc,
+                CreatedAt = nowUtc,
+                UpdatedAt = nowUtc,
+            };
+
+            _steps[id] = completed;
+            _steps[successor.Id] = Copy(successor);
+            return Task.FromResult<SagaStepRecord?>(Copy(successor));
+        }
+    }
+
     // ── ScheduleRetryAsync ────────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public Task<bool> ScheduleRetryAsync(
-        Guid id, DateTime nextRunAt, string error, CancellationToken ct)
+        Guid id,
+        DateTime claimedAt,
+        DateTime nextRunAt,
+        string error,
+        CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
         var nextRunUtc = DateTime.SpecifyKind(nextRunAt, DateTimeKind.Utc);
         var applied = MutateIf(id,
-            r => r.Status == StepStatus.InProgress,
+            r => OwnsLease(r, claimedAt),
             r =>
             {
                 r.Status = StepStatus.Pending;
@@ -196,8 +257,10 @@ public sealed class InMemorySagaStore : ISagaStore
 
     // ── CompensateStepAsync ───────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public Task<SagaStepRecord?> CompensateStepAsync(
         Guid id,
+        DateTime claimedAt,
         string compensationStepName,
         string compensationIdempotencyKey,
         string compensationPayloadJson,
@@ -206,47 +269,57 @@ public sealed class InMemorySagaStore : ISagaStore
     {
         var nowUtc = DateTime.UtcNow;
 
-        // [0] Conditional transition of the failing forward step (single winner).
-        var transitioned = MutateIf(id,
-            r => r.Status == StepStatus.InProgress,
-            r =>
-            {
-                r.Status = StepStatus.Compensating;
-                r.AttemptCount += 1;
-                r.ClaimedAt = null;
-                r.LastError = error;
-                r.UpdatedAt = nowUtc;
-            });
-        if (transitioned is null)
-            return Task.FromResult<SagaStepRecord?>(null); // lost the race
-
-        // [1] CREATE the declared compensation row as a fresh Pending.
-        var compensation = new SagaStepRecord
+        lock (_mutationGate)
         {
-            Id = Guid.NewGuid(),
-            SagaName = transitioned.SagaName,
-            StepName = compensationStepName,
-            CorrelationKey = transitioned.CorrelationKey,
-            StepIdempotencyKey = compensationIdempotencyKey,
-            Payload = compensationPayloadJson,
-            Status = StepStatus.Pending,
-            IsCompensation = true,
-            AttemptCount = 0,
-            NextRunAt = nowUtc,
-            CreatedAt = nowUtc,
-            UpdatedAt = nowUtc,
-        };
-        _steps[compensation.Id] = Copy(compensation);
-        return Task.FromResult<SagaStepRecord?>(Copy(compensation));
+            if (!_steps.TryGetValue(id, out var current)
+                || !OwnsLease(current, claimedAt))
+            {
+                return Task.FromResult<SagaStepRecord?>(null);
+            }
+            ValidateSuccessor(
+                current.SagaName,
+                compensationStepName,
+                current.CorrelationKey,
+                compensationIdempotencyKey);
+
+            var transitioned = Copy(current);
+            transitioned.Status = StepStatus.Compensating;
+            transitioned.AttemptCount += 1;
+            transitioned.ClaimedAt = null;
+            transitioned.LastError = error;
+            transitioned.UpdatedAt = nowUtc;
+
+            var compensation = new SagaStepRecord
+            {
+                Id = Guid.NewGuid(),
+                SagaName = transitioned.SagaName,
+                StepName = compensationStepName,
+                CorrelationKey = transitioned.CorrelationKey,
+                StepIdempotencyKey = compensationIdempotencyKey,
+                Payload = compensationPayloadJson,
+                Status = StepStatus.Pending,
+                IsCompensation = true,
+                AttemptCount = 0,
+                NextRunAt = nowUtc,
+                CreatedAt = nowUtc,
+                UpdatedAt = nowUtc,
+            };
+
+            _steps[id] = transitioned;
+            _steps[compensation.Id] = Copy(compensation);
+            return Task.FromResult<SagaStepRecord?>(Copy(compensation));
+        }
     }
 
     // ── DeadLetterStepAsync ───────────────────────────────────────────────────
 
-    public Task<bool> DeadLetterStepAsync(Guid id, string error, CancellationToken ct)
+    /// <inheritdoc/>
+    public Task<bool> DeadLetterStepAsync(
+        Guid id, DateTime claimedAt, string error, CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
         var applied = MutateIf(id,
-            r => r.Status == StepStatus.InProgress,
+            r => OwnsLease(r, claimedAt),
             r =>
             {
                 r.Status = StepStatus.DeadLettered;
@@ -261,8 +334,13 @@ public sealed class InMemorySagaStore : ISagaStore
 
     // ── ParkStepAsync — suspend on signal/timer ───────────────────────────────
 
+    /// <inheritdoc/>
     public Task<bool> ParkStepAsync(
-        Guid id, string gateId, DateTime? resumeAt, CancellationToken ct)
+        Guid id,
+        DateTime claimedAt,
+        string gateId,
+        DateTime? resumeAt,
+        CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
 
@@ -270,7 +348,7 @@ public sealed class InMemorySagaStore : ISagaStore
         // sentinel). TIMER park (resumeAt set) ⇒ gate_id null + NextRunAt set;
         // SIGNAL park (resumeAt null) ⇒ gate_id set + NextRunAt LEFT UNCHANGED.
         var applied = MutateIf(id,
-            r => r.Status == StepStatus.InProgress,
+            r => OwnsLease(r, claimedAt),
             r =>
             {
                 r.Status = StepStatus.Parked;
@@ -446,60 +524,66 @@ public sealed class InMemorySagaStore : ISagaStore
 
     /// <summary>
     /// The in-memory analogue of SurrealDB's conditional <c>UPDATE … WHERE …
-    /// RETURN AFTER</c>: atomically (per the ConcurrentDictionary update lambda)
-    /// re-checks <paramref name="predicate"/> against the live row and applies
-    /// <paramref name="mutate"/> only when it still holds, returning a defensive
-    /// copy of the mutated row — or <c>null</c> when the predicate no longer held
-    /// (lost the single-winner race / row absent). The predicate + mutation run
-    /// inside <see cref="ConcurrentDictionary{TKey,TValue}.AddOrUpdate"/>'s update
-    /// delegate so concurrent callers serialize on the same key, giving the same
-    /// at-most-one-winner property as the conditional UPDATE.
+    /// RETURN AFTER</c>: re-check the live row and apply only when the predicate
+    /// still holds. The shared gate also lets multi-row hand-offs update the
+    /// current step and create its successor as one observable operation.
     /// </summary>
     private SagaStepRecord? MutateIf(
         Guid id, Func<SagaStepRecord, bool> predicate, Action<SagaStepRecord> mutate)
     {
-        if (!_steps.ContainsKey(id))
-            return null;
+        lock (_mutationGate)
+        {
+            if (!_steps.TryGetValue(id, out var current) || !predicate(current))
+                return null;
 
-        SagaStepRecord? winner = null;
-        _steps.AddOrUpdate(
-            id,
-            // Key vanished between the ContainsKey check and here — no add.
-            _ => throw new InvalidOperationException(
-                $"Saga step {id} disappeared during conditional update."),
-            (_, current) =>
-            {
-                if (!predicate(current))
-                    return current; // predicate failed ⇒ no-op, winner stays null
+            var next = Copy(current);
+            mutate(next);
+            _steps[id] = next;
+            return Copy(next);
+        }
+    }
 
-                var next = Copy(current);
-                mutate(next);
-                winner = Copy(next);
-                return next;
-            });
+    private static bool OwnsLease(SagaStepRecord record, DateTime claimedAt)
+        => record.Status == StepStatus.InProgress
+           && record.ClaimedAt.HasValue
+           && DateTime.SpecifyKind(record.ClaimedAt.Value, DateTimeKind.Utc)
+              == DateTime.SpecifyKind(claimedAt, DateTimeKind.Utc);
 
-        return winner;
+    private static void ValidateSuccessor(
+        string sagaName,
+        string stepName,
+        string correlationKey,
+        string stepIdempotencyKey)
+    {
+        if (string.IsNullOrEmpty(sagaName)
+            || string.IsNullOrEmpty(stepName)
+            || string.IsNullOrEmpty(correlationKey)
+            || string.IsNullOrEmpty(stepIdempotencyKey))
+        {
+            throw new InvalidOperationException(
+                "Saga successor requires non-empty identity fields.");
+        }
     }
 
     /// <summary>Field-by-field deep copy (SagaStepRecord has no Clone).</summary>
     private static SagaStepRecord Copy(SagaStepRecord r) => new()
     {
-        Id                 = r.Id,
-        CorrelationKey     = r.CorrelationKey,
-        SagaName           = r.SagaName,
-        StepName           = r.StepName,
+        Id = r.Id,
+        CorrelationKey = r.CorrelationKey,
+        SagaName = r.SagaName,
+        StepName = r.StepName,
         StepIdempotencyKey = r.StepIdempotencyKey,
-        Payload            = r.Payload,
-        Status             = r.Status,
-        IsCompensation     = r.IsCompensation,
-        AttemptCount       = r.AttemptCount,
-        NextRunAt          = r.NextRunAt,
-        ClaimedAt          = r.ClaimedAt,
-        LastError          = r.LastError,
-        Output             = r.Output,
-        DeadLettered       = r.DeadLettered,
-        GateId             = r.GateId,
-        CreatedAt          = r.CreatedAt,
-        UpdatedAt          = r.UpdatedAt,
+        Payload = r.Payload,
+        Status = r.Status,
+        IsCompensation = r.IsCompensation,
+        AttemptCount = r.AttemptCount,
+        NextRunAt = r.NextRunAt,
+        ClaimedAt = r.ClaimedAt,
+        LastError = r.LastError,
+        Output = r.Output,
+        DeadLettered = r.DeadLettered,
+        GateId = r.GateId,
+        CreatedAt = r.CreatedAt,
+        UpdatedAt = r.UpdatedAt,
     };
 }

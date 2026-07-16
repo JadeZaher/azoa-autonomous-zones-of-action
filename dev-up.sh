@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AZOA Sleek -- full-stack dev launcher (bash).
+# AZOA -- full-stack dev launcher (bash).
 #
 # Brings up SurrealDB + WebAPI + Frontend via docker-compose.dev.yml.
 # Auto-detects docker compose v2, docker-compose v1, or podman-compose.
@@ -7,7 +7,7 @@
 # Usage:
 #   ./dev-up.sh                 # default: rebuild images + SDK, keep DB volume, apply pending schema
 #   ./dev-up.sh --no-build      # fast restart, reuse cached images
-#   ./dev-up.sh --reset-db      # DESTRUCTIVE: wipe SurrealDB volume before bringing up
+#   ./dev-up.sh --reset-db      # DESTRUCTIVE: wipe database + cursor-key volumes before bringing up
 #   ./dev-up.sh --reset         # keep volume but wipe + re-apply schema
 #   ./dev-up.sh --logs          # tail combined logs after startup
 #
@@ -107,7 +107,7 @@ PROJECT_NAME="$(basename "$SCRIPT_DIR")"
 # ── Teardown (default: preserve volume; --reset-db to wipe) ──────────────────
 
 if [ "$DO_WIPE" -eq 1 ]; then
-    echo "[dev-up] --reset-db: tearing down stack + wiping SurrealDB volume..."
+    echo "[dev-up] --reset-db: tearing down stack + wiping database and cursor-key volumes..."
     $COMPOSE -f "$COMPOSE_FILE" down -v --remove-orphans || true
     if [ "${COMPOSE%% *}" = "podman" ] || [ "${COMPOSE%% *}" = "podman-compose" ]; then
         VOL_RUNTIME=podman
@@ -125,7 +125,7 @@ if [ "$DO_WIPE" -eq 1 ]; then
         fi
     fi
 else
-    echo "[dev-up] Preserving SurrealDB volume across restart (pass --reset-db to wipe)."
+    echo "[dev-up] Preserving database + cursor-key volumes (pass --reset-db to wipe)."
 fi
 
 # ── Detect a pre-existing SurrealDB on localhost:8000 ─────────────────────────
