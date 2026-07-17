@@ -130,10 +130,10 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 function Logo() {
   return (
     <div className="flex h-12 items-center gap-2.5 px-4">
-      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
-        <span className="text-xs font-bold text-primary-foreground">O</span>
+      <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-primary">
+        <span className="text-xs font-bold text-primary-foreground">A</span>
       </div>
-      <span className="text-sm font-semibold tracking-tight">AZOA</span>
+      <span className="text-sm font-bold tracking-[0.08em]">AZOA</span>
     </div>
   )
 }

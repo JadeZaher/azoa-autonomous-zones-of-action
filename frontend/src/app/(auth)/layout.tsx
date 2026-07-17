@@ -1,3 +1,5 @@
+import { HeroDag } from '@/components/landing/hero-dag'
+
 export default function AuthLayout({
   children,
 }: {
@@ -5,44 +7,45 @@ export default function AuthLayout({
 }) {
   return (
     <div className="relative grid min-h-screen lg:grid-cols-2">
-      {/* Left panel — decorative branding side */}
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-zinc-900 p-10 lg:flex">
-        {/* Animated gradient mesh */}
-        <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 via-zinc-900/90 to-blue-950" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-700/20 via-transparent to-transparent" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-indigo-600/10 via-transparent to-transparent" />
+      {/* Left panel — AZOA brand side with the live quest-graph animation */}
+      <div className="relative hidden flex-col justify-between overflow-hidden bg-[#16120D] p-10 text-[#F2EDE3] lg:flex">
+        <HeroDag ink="#F2EDE3" accent="#C8501E" speed={0.8} density={0.9} />
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(to top, rgba(22,18,13,0.9) 0%, rgba(22,18,13,0.45) 50%, rgba(22,18,13,0.75) 100%)',
+          }}
+        />
 
-        {/* Logo */}
-        <div className="relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-lg shadow-white/10">
-              <svg
-                viewBox="0 0 24 24"
-                className="h-6 w-6 text-zinc-900"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
+        {/* Wordmark + live badge */}
+        <div className="relative z-10 flex items-start justify-between">
+          <div>
+            <div className="text-2xl font-bold tracking-[0.08em]">AZOA</div>
+            <div className="mt-2 font-mono text-[11px] tracking-[0.18em] text-[#C8501E]">
+              AUTONOMOUS ZONES OF ACTION
             </div>
-            <span className="text-xl font-bold tracking-tight text-white">AZOA</span>
+          </div>
+          <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.1em] text-[#b7ad9c]">
+            <span className="inline-block h-2 w-2 rounded-full bg-[#C8501E]" />
+            LIVE — QUEST GRAPH
           </div>
         </div>
 
-        {/* Quote */}
-        <div className="relative z-10">
+        {/* Statement + quote */}
+        <div className="relative z-10 space-y-8">
+          <h2 className="max-w-md text-4xl font-bold leading-[0.98] tracking-[-0.02em]">
+            One avatar.
+            <br />
+            Every economy.
+          </h2>
           <blockquote className="space-y-3">
-            <p className="text-lg leading-relaxed text-white/80">
+            <p className="max-w-md text-lg leading-relaxed text-[#F2EDE3]/80">
               &ldquo;Your sovereign digital identity, unified across every
               chain. One avatar, infinite possibilities.&rdquo;
             </p>
-            <footer className="text-sm text-white/50">
-              — The AZOA Protocol
+            <footer className="font-mono text-[11px] tracking-[0.12em] text-[#b7ad9c]">
+              — THE AZOA PROTOCOL
             </footer>
           </blockquote>
         </div>
@@ -50,20 +53,13 @@ export default function AuthLayout({
 
       {/* Right panel — form */}
       <div className="flex items-center justify-center bg-background p-4 sm:p-8">
-        {/* Mobile logo */}
+        {/* Mobile wordmark */}
         <div className="absolute left-6 top-6 lg:hidden">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-md shadow-primary/20">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-5 w-5 text-primary-foreground"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-            </svg>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-sm bg-[#16120D]">
+              <span className="text-sm font-bold text-[#F2EDE3]">A</span>
+            </div>
+            <span className="text-lg font-bold tracking-[0.06em]">AZOA</span>
           </div>
         </div>
 

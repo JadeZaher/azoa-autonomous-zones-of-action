@@ -35,6 +35,9 @@ export default function LoginPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="space-y-2 text-center lg:text-left">
+        <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-primary">
+          Sign in
+        </p>
         <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
         <p className="text-sm text-muted-foreground">
           Sign in to your AZOA account to continue

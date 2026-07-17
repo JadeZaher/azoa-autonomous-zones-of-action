@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Space_Grotesk, IBM_Plex_Mono } from 'next/font/google'
 import { NetworkProvider } from '@/lib/network-context'
 import { DebugProvider } from '@/lib/debug-context'
 import { AzoaProvider } from '@/lib/azoa-context'
@@ -7,11 +7,20 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { resolveServerApiUrl } from '@/lib/runtime-config'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  weight: ['400', '500', '700'],
+  variable: '--font-sans',
+})
+const plexMono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-mono',
+})
 
 export const metadata: Metadata = {
-  title: 'AZOA',
-  description: 'Avatar NFT & Blockchain Platform',
+  title: 'AZOA — Autonomous Zones of Action',
+  description: 'One engine. Every kind of economy.',
 }
 
 // Force per-request rendering so resolveServerApiUrl() reads the live
@@ -36,7 +45,7 @@ export default function RootLayout({
     .replace(/\u2029/g, '\\u2029')
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${spaceGrotesk.variable} ${plexMono.variable} font-sans antialiased`}>
         {/* Injected at request time — NOT a build-time constant. */}
         <script
           id="__RUNTIME_CONFIG__"
