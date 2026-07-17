@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { HeroDag } from '@/components/landing/hero-dag'
 
 export default function AuthLayout({
@@ -18,14 +19,14 @@ export default function AuthLayout({
           }}
         />
 
-        {/* Wordmark + live badge */}
+        {/* Wordmark + live badge — wordmark returns to the marketing landing */}
         <div className="relative z-10 flex items-start justify-between">
-          <div>
+          <Link href="/" className="group -m-2 block p-2 transition-opacity hover:opacity-80">
             <div className="text-2xl font-bold tracking-[0.08em]">AZOA</div>
             <div className="mt-2 font-mono text-[11px] tracking-[0.18em] text-[#C8501E]">
               AUTONOMOUS ZONES OF ACTION
             </div>
-          </div>
+          </Link>
           <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.1em] text-[#b7ad9c]">
             <span className="inline-block h-2 w-2 rounded-full bg-[#C8501E]" />
             LIVE — QUEST GRAPH
@@ -55,12 +56,12 @@ export default function AuthLayout({
       <div className="flex items-center justify-center bg-background p-4 sm:p-8">
         {/* Mobile wordmark */}
         <div className="absolute left-6 top-6 lg:hidden">
-          <div className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-sm bg-[#16120D]">
               <span className="text-sm font-bold text-[#F2EDE3]">A</span>
             </div>
             <span className="text-lg font-bold tracking-[0.06em]">AZOA</span>
-          </div>
+          </Link>
         </div>
 
         <div className="w-full max-w-sm">{children}</div>

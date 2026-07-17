@@ -14,7 +14,7 @@ const GITHUB = 'https://github.com/JadeZaher/azoa-autonomous-zones-of-action'
 const STYLES = `
 .azoa-landing{font-family:'Space Grotesk',sans-serif;color:#16120D;background:#F2EDE3;min-height:100vh;}
 .azoa-landing *{box-sizing:border-box;}
-.azoa-landing a{color:inherit;text-decoration:none;}
+.azoa-landing a{text-decoration:none;}
 .azoa-landing ::selection{background:#C8501E;color:#F2EDE3;}
 .azoa-landing .mono{font-family:'IBM Plex Mono',monospace;}
 
@@ -24,7 +24,7 @@ const STYLES = `
 .az-link{transition:color .15s;}
 .az-link:hover{color:#C8501E;}
 
-.az-btn{display:inline-flex;align-items:center;font-family:'IBM Plex Mono',monospace;letter-spacing:0.08em;transition:background .15s,color .15s,border-color .15s;cursor:pointer;white-space:nowrap;}
+.az-btn{display:inline-flex;align-items:center;font-family:'IBM Plex Mono',monospace;letter-spacing:0.08em;transition:background .15s,color .15s,border-color .15s;cursor:pointer;white-space:nowrap;text-decoration:none;}
 .az-btn--sm{font-size:13px;padding:8px 16px;}
 .az-btn--md{font-size:13px;padding:14px 24px;}
 .az-btn--lg{font-size:14px;padding:16px 32px;}
