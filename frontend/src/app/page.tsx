@@ -138,7 +138,7 @@ export default function Home() {
           </div>
           <div className="az-prim-foot">
             <p>MULTICHAIN · MULTI-WALLET · FIAT-BRIDGED · SELF-HOSTED</p>
-            <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--outline-inv az-btn--md">FULL ARCHITECTURE →</a>
+            <Link href="/architecture" className="az-btn az-btn--outline-inv az-btn--md">FULL ARCHITECTURE →</Link>
           </div>
         </div>
       </section>

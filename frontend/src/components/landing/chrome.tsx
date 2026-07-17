@@ -124,6 +124,18 @@ export const LANDING_STYLES = `
 .az-ardanova-item .lbl{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.12em;color:#E08A5B;}
 .az-ardanova-item p{margin:0;font-size:16px;line-height:1.6;color:#b7ad9c;text-wrap:pretty;}
 
+/* Architecture route */
+.az-arch-section{padding:100px 32px;border-bottom:1px solid #16120D;}
+.az-arch-grid{max-width:1400px;margin:0 auto;display:grid;grid-template-columns:minmax(180px,1fr) 3fr;gap:32px;}
+.az-arch-body{max-width:840px;}
+.az-arch-h2{margin:0 0 24px;font-size:clamp(30px,3.6vw,52px);line-height:1.02;font-weight:700;letter-spacing:-0.02em;text-transform:uppercase;}
+.az-arch-body p{margin:0 0 18px;font-size:17px;line-height:1.6;color:#3d362c;text-wrap:pretty;}
+.az-arch-body p:last-child{margin-bottom:0;}
+.az-arch-section--dark{background:#16120D;color:#F2EDE3;border-bottom:none;}
+.az-arch-section--dark .az-kicker{color:#E08A5B;}
+.az-arch-section--dark .az-arch-body p{color:#b7ad9c;}
+.az-arch-diagram{width:100%;max-width:720px;margin-top:40px;display:block;}
+
 @media(max-width:720px){
   .az-nav{padding:0 18px;}
   .az-nav-right{gap:14px;}
@@ -132,9 +144,10 @@ export const LANDING_STYLES = `
   .az-hero-badge{right:18px;}
   .az-shead,.az-trust-grid{grid-template-columns:1fr;}
   .az-domain{grid-template-columns:1fr;gap:14px;}
-  #domains,.az-dark,.az-trust,#next,.az-cta,.az-fed-header,.az-fed-section,.az-ardanova{padding-left:18px;padding-right:18px;}
+  #domains,.az-dark,.az-trust,#next,.az-cta,.az-fed-header,.az-fed-section,.az-ardanova,.az-arch-section{padding-left:18px;padding-right:18px;}
   .az-ticker{padding-left:18px;padding-right:18px;}
   .az-fed-header{padding-top:120px;}
+  .az-arch-grid{grid-template-columns:1fr;}
 }
 `
 
@@ -163,7 +176,7 @@ export function LandingNav({ active }: { active?: 'architecture' | 'federation' 
     <nav className="az-nav">
       <Link href="/" className="az-brand">AZOA</Link>
       <div className="az-nav-right">
-        <Link href="/#primitives" className={`az-link az-hide-sm${active === 'architecture' ? ' az-link--active' : ''}`}>ARCHITECTURE</Link>
+        <Link href="/architecture" className={`az-link az-hide-sm${active === 'architecture' ? ' az-link--active' : ''}`}>ARCHITECTURE</Link>
         <Link href="/federation" className={`az-link az-hide-sm${active === 'federation' ? ' az-link--active' : ''}`}>FEDERATION</Link>
         <Link href="/federation#ardanova" className="az-link az-hide-sm">ARDANOVA</Link>
         <Link href={enterHref} className="az-btn az-btn--outline az-btn--sm">{enterLabel}</Link>

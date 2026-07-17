@@ -5,8 +5,7 @@ import { GITHUB, LandingHead, LandingNav, LandingFooter } from '@/components/lan
 
 // AZOA Federation page — imported from the Claude Design project
 // "AZOA — Autonomous Zones of Action" (Federation.dc.html). Shares the landing
-// chrome; the "Architecture" links point at the home /#primitives section since
-// a dedicated Architecture route is not yet implemented.
+// chrome; the "Architecture" links point at the /architecture route.
 
 const PILLARS = [
   { title: 'Freedom', body: 'Every zone runs its own node, its own rules, its own economy. No central operator to appease, no platform that can change the deal underneath you.' },
@@ -73,7 +72,7 @@ export default function Federation() {
         <p>The engine is open source and ready to self-host today. Federation lands on top of what you build now.</p>
         <div className="az-cta-row">
           <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--lg">VIEW ON GITHUB ↗</a>
-          <Link href="/#primitives" className="az-btn az-btn--outline az-btn--lg">THE ARCHITECTURE →</Link>
+          <Link href="/architecture" className="az-btn az-btn--outline az-btn--lg">THE ARCHITECTURE →</Link>
         </div>
       </section>
 
