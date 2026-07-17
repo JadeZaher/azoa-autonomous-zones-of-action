@@ -33,7 +33,8 @@ export default function Architecture() {
             <p>
               Steps carry their results forward as bindings, failed checks cascade to stop downstream payouts, and every run survives restarts. Build quests visually — drag, drop, connect — and publish only when the graph validates.
             </p>
-            <svg viewBox="0 0 720 140" className="az-arch-diagram">
+            {/* Wide horizontal graph — desktop/tablet. */}
+            <svg viewBox="0 0 720 140" className="az-arch-diagram az-arch-diagram--desktop">
               <line x1="60" y1="70" x2="200" y2="30" stroke="#16120D" strokeWidth="1.5" />
               <line x1="60" y1="70" x2="200" y2="110" stroke="#16120D" strokeWidth="1.5" />
               <line x1="200" y1="30" x2="360" y2="70" stroke="#16120D" strokeWidth="1.5" />
@@ -53,6 +54,28 @@ export default function Architecture() {
               <text x="200" y="140" fontFamily="IBM Plex Mono" fontSize="11" fill="#C8501E" textAnchor="middle">ACTIVE</text>
               <text x="360" y="105" fontFamily="IBM Plex Mono" fontSize="11" fill="#6f665a" textAnchor="middle">GATE</text>
               <text x="660" y="105" fontFamily="IBM Plex Mono" fontSize="11" fill="#6f665a" textAnchor="middle">SETTLE</text>
+            </svg>
+            {/* Vertical graph — mobile, tuned for narrow width + legible labels. */}
+            <svg viewBox="0 0 320 452" className="az-arch-diagram--mobile">
+              <line x1="160" y1="40" x2="96" y2="140" stroke="#16120D" strokeWidth="2" />
+              <line x1="160" y1="40" x2="224" y2="140" stroke="#16120D" strokeWidth="2" />
+              <line x1="96" y1="140" x2="160" y2="236" stroke="#16120D" strokeWidth="2" />
+              <line x1="224" y1="140" x2="160" y2="236" stroke="#C8501E" strokeWidth="2.5" />
+              <line x1="160" y1="236" x2="96" y2="332" stroke="#16120D" strokeWidth="2" />
+              <line x1="160" y1="236" x2="224" y2="332" stroke="#16120D" strokeWidth="2" />
+              <line x1="96" y1="332" x2="160" y2="428" stroke="#16120D" strokeWidth="2" />
+              <line x1="224" y1="332" x2="160" y2="428" stroke="#16120D" strokeWidth="2" />
+              <circle cx="160" cy="40" r="11" fill="#16120D" />
+              <circle cx="96" cy="140" r="11" fill="none" stroke="#16120D" strokeWidth="2.5" />
+              <circle cx="224" cy="140" r="11" fill="#C8501E" />
+              <circle cx="160" cy="236" r="11" fill="none" stroke="#16120D" strokeWidth="2.5" />
+              <circle cx="96" cy="332" r="11" fill="none" stroke="#16120D" strokeWidth="2.5" />
+              <circle cx="224" cy="332" r="11" fill="none" stroke="#16120D" strokeWidth="2.5" />
+              <circle cx="160" cy="428" r="11" fill="#16120D" />
+              <text x="182" y="45" fontFamily="IBM Plex Mono" fontSize="14" fill="#6f665a" textAnchor="start">START</text>
+              <text x="246" y="145" fontFamily="IBM Plex Mono" fontSize="14" fill="#C8501E" textAnchor="start">ACTIVE</text>
+              <text x="182" y="241" fontFamily="IBM Plex Mono" fontSize="14" fill="#6f665a" textAnchor="start">GATE</text>
+              <text x="182" y="433" fontFamily="IBM Plex Mono" fontSize="14" fill="#6f665a" textAnchor="start">SETTLE</text>
             </svg>
           </div>
         </div>

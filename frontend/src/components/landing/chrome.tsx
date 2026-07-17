@@ -149,6 +149,7 @@ export const LANDING_STYLES = `
 .az-arch-section--dark .az-kicker{color:#E08A5B;}
 .az-arch-section--dark .az-arch-body p{color:#b7ad9c;}
 .az-arch-diagram{width:100%;max-width:720px;margin-top:40px;display:block;}
+.az-arch-diagram--mobile{display:none;}
 
 /* Tablet — collapse the two-column heads/rows before things get cramped. */
 @media(max-width:900px){
@@ -189,6 +190,8 @@ export const LANDING_STYLES = `
   .az-fed-cell h3{font-size:clamp(26px,7vw,44px);}
   .az-arch-h2{font-size:clamp(26px,7vw,52px);}
   .az-arch-grid{grid-template-columns:1fr;}
+  .az-arch-diagram--desktop{display:none;}
+  .az-arch-diagram--mobile{display:block;width:100%;max-width:300px;height:auto;margin:36px auto 8px;}
 
   .az-cta h2{font-size:clamp(34px,9vw,104px);}
   .az-ardanova-title{font-size:clamp(46px,14vw,150px);}
