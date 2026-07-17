@@ -23,6 +23,11 @@ export const metadata: Metadata = {
   description: 'One engine. Every kind of economy.',
 }
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+}
+
 // Force per-request rendering so resolveServerApiUrl() reads the live
 // process.env.API_URL at request time. Without this Next.js statically
 // pre-renders the layout at build time (when API_URL is unset), baking the

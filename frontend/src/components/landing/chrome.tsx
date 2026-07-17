@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 
 // Shared AZOA marketing chrome — styles, fonts, nav, footer — used by the
@@ -10,8 +11,9 @@ import { useAzoaAuth } from '@/lib/azoa-auth'
 export const GITHUB = 'https://github.com/JadeZaher/azoa-autonomous-zones-of-action'
 
 export const LANDING_STYLES = `
-.azoa-landing{font-family:'Space Grotesk',sans-serif;color:#16120D;background:#F2EDE3;min-height:100vh;}
+.azoa-landing{font-family:'Space Grotesk',sans-serif;color:#16120D;background:#F2EDE3;min-height:100vh;overflow-x:hidden;}
 .azoa-landing *{box-sizing:border-box;}
+.azoa-landing section,.azoa-landing header,.azoa-landing footer,.azoa-landing nav,.azoa-landing .az-ticker{width:100%;max-width:100%;}
 .azoa-landing a{text-decoration:none;}
 .azoa-landing ::selection{background:#C8501E;color:#F2EDE3;}
 .azoa-landing .mono{font-family:'IBM Plex Mono',monospace;}
@@ -22,6 +24,18 @@ export const LANDING_STYLES = `
 .az-link{transition:color .15s;}
 .az-link:hover{color:#C8501E;}
 .az-link--active{color:#C8501E;}
+
+.az-burger{display:none;flex-direction:column;justify-content:center;gap:5px;width:38px;height:32px;padding:0 8px;background:transparent;border:1px solid #16120D;cursor:pointer;}
+.az-burger span{display:block;width:100%;height:1.5px;background:#16120D;transition:transform .2s,opacity .2s;}
+.az-burger[aria-expanded="true"] span:nth-child(1){transform:translateY(6.5px) rotate(45deg);}
+.az-burger[aria-expanded="true"] span:nth-child(2){opacity:0;}
+.az-burger[aria-expanded="true"] span:nth-child(3){transform:translateY(-6.5px) rotate(-45deg);}
+.az-mobile-menu{display:none;position:fixed;top:60px;left:0;right:0;z-index:19;background:#F2EDE3;border-bottom:1px solid #16120D;flex-direction:column;font-family:'IBM Plex Mono',monospace;}
+.az-mobile-link{padding:18px 18px;border-top:1px solid #d6ccba;font-size:14px;letter-spacing:0.08em;color:#16120D;transition:background .15s,color .15s;}
+.az-mobile-link:first-child{border-top:none;}
+.az-mobile-link:hover,.az-mobile-link:active{background:#e9e2d3;color:#C8501E;}
+.az-mobile-link--cta{background:#16120D;color:#F2EDE3;}
+.az-mobile-link--cta:hover,.az-mobile-link--cta:active{background:#C8501E;color:#F2EDE3;}
 
 .az-btn{display:inline-flex;align-items:center;font-family:'IBM Plex Mono',monospace;letter-spacing:0.08em;transition:background .15s,color .15s,border-color .15s;cursor:pointer;white-space:nowrap;text-decoration:none;}
 .az-btn--sm{font-size:13px;padding:8px 16px;}
@@ -136,18 +150,51 @@ export const LANDING_STYLES = `
 .az-arch-section--dark .az-arch-body p{color:#b7ad9c;}
 .az-arch-diagram{width:100%;max-width:720px;margin-top:40px;display:block;}
 
+/* Tablet — collapse the two-column heads/rows before things get cramped. */
+@media(max-width:900px){
+  .az-shead,.az-trust-grid,.az-arch-grid{grid-template-columns:1fr;gap:20px;}
+  #domains,.az-dark,.az-trust,#next,.az-cta,.az-fed-section,.az-arch-section{padding-top:80px;padding-bottom:80px;}
+  .az-fed-header{padding-top:140px;}
+}
+
+/* Mobile-first — single column everywhere, tighter type + padding, hamburger nav. */
 @media(max-width:720px){
   .az-nav{padding:0 18px;}
-  .az-nav-right{gap:14px;}
   .az-hide-sm{display:none;}
-  .az-hero-content{left:18px;right:18px;}
-  .az-hero-badge{right:18px;}
-  .az-shead,.az-trust-grid{grid-template-columns:1fr;}
-  .az-domain{grid-template-columns:1fr;gap:14px;}
-  #domains,.az-dark,.az-trust,#next,.az-cta,.az-fed-header,.az-fed-section,.az-ardanova,.az-arch-section{padding-left:18px;padding-right:18px;}
-  .az-ticker{padding-left:18px;padding-right:18px;}
-  .az-fed-header{padding-top:120px;}
+  .az-nav-right{gap:12px;}
+  .az-burger{display:inline-flex;}
+  .az-mobile-menu{display:flex;}
+
+  .az-hero{min-height:560px;}
+  .az-hero-content{left:18px;right:18px;bottom:32px;}
+  .az-hero-badge{right:18px;top:72px;}
+  .az-hero-row{flex-direction:column;align-items:flex-start;gap:20px;}
+  .az-h1{font-size:clamp(40px,11vw,140px);}
+  .az-h2{font-size:clamp(30px,8vw,68px);}
+
+  #domains{padding:56px 18px 0;}
+  .az-dark,.az-trust,#next,.az-fed-section,.az-arch-section{padding:56px 18px;}
+  .az-cta{padding:72px 18px;}
+  .az-fed-header{padding:108px 18px 48px;}
+  .az-ardanova{padding:72px 18px;}
+  .az-ticker{padding:12px 18px;font-size:11px;letter-spacing:0.06em;}
+
+  .az-domain{grid-template-columns:1fr;gap:12px;padding:28px 0;}
+  .az-domains-note{padding:40px 0 56px;}
+  .az-domains-note p,.az-fed-note,.az-ardanova-lede{font-size:clamp(20px,6vw,36px);}
+  .az-prim-grid,.az-next-grid,.az-fed-grid,.az-ardanova-items,.az-trust-items{grid-template-columns:1fr;}
+  .az-ardanova-items,.az-trust-items{gap:28px;margin-top:40px;}
+  .az-prim-foot{flex-direction:column;align-items:flex-start;}
+  .az-fed-cell{padding:32px 22px;}
+  .az-fed-cell h3{font-size:clamp(26px,7vw,44px);}
+  .az-arch-h2{font-size:clamp(26px,7vw,52px);}
   .az-arch-grid{grid-template-columns:1fr;}
+
+  .az-cta h2{font-size:clamp(34px,9vw,104px);}
+  .az-ardanova-title{font-size:clamp(46px,14vw,150px);}
+  .az-cta-row{flex-direction:column;align-items:center;}
+  .az-cta-row .az-btn{justify-content:center;width:100%;max-width:320px;}
+  .az-footer{flex-direction:column;gap:12px;}
 }
 `
 
@@ -168,21 +215,43 @@ export function LandingHead() {
 
 export function LandingNav({ active }: { active?: 'architecture' | 'federation' }) {
   const { isAuthenticated, loading } = useAzoaAuth()
+  const [open, setOpen] = useState(false)
   const entered = !loading && isAuthenticated
   const enterHref = entered ? '/overview' : '/login'
   const enterLabel = entered ? 'DASHBOARD →' : 'LOGIN →'
+  const close = () => setOpen(false)
 
   return (
-    <nav className="az-nav">
-      <Link href="/" className="az-brand">AZOA</Link>
-      <div className="az-nav-right">
-        <Link href="/architecture" className={`az-link az-hide-sm${active === 'architecture' ? ' az-link--active' : ''}`}>ARCHITECTURE</Link>
-        <Link href="/federation" className={`az-link az-hide-sm${active === 'federation' ? ' az-link--active' : ''}`}>FEDERATION</Link>
-        <Link href="/federation#ardanova" className="az-link az-hide-sm">ARDANOVA</Link>
-        <Link href={enterHref} className="az-btn az-btn--outline az-btn--sm">{enterLabel}</Link>
-        <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--sm">GITHUB ↗</a>
-      </div>
-    </nav>
+    <>
+      <nav className="az-nav">
+        <Link href="/" className="az-brand" onClick={close}>AZOA</Link>
+        <div className="az-nav-right">
+          <Link href="/architecture" className={`az-link az-hide-sm${active === 'architecture' ? ' az-link--active' : ''}`}>ARCHITECTURE</Link>
+          <Link href="/federation" className={`az-link az-hide-sm${active === 'federation' ? ' az-link--active' : ''}`}>FEDERATION</Link>
+          <Link href="/federation#ardanova" className="az-link az-hide-sm">ARDANOVA</Link>
+          <Link href={enterHref} className="az-btn az-btn--outline az-btn--sm az-hide-sm">{enterLabel}</Link>
+          <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--sm az-hide-sm">GITHUB ↗</a>
+          <button
+            type="button"
+            className="az-burger"
+            aria-label="Menu"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span /><span /><span />
+          </button>
+        </div>
+      </nav>
+      {open && (
+        <div className="az-mobile-menu">
+          <Link href="/architecture" className="az-mobile-link" onClick={close}>ARCHITECTURE</Link>
+          <Link href="/federation" className="az-mobile-link" onClick={close}>FEDERATION</Link>
+          <Link href="/federation#ardanova" className="az-mobile-link" onClick={close}>ARDANOVA</Link>
+          <Link href={enterHref} className="az-mobile-link az-mobile-link--cta" onClick={close}>{enterLabel}</Link>
+          <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-mobile-link" onClick={close}>GITHUB ↗</a>
+        </div>
+      )}
+    </>
   )
 }
 
