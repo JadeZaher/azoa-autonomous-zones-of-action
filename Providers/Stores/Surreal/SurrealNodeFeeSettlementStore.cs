@@ -186,6 +186,28 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
     }
 
     /// <inheritdoc/>
+    public async Task<AZOAResult<NodeFeeAtomicGroup?>> GetAcceptedAtomicGroupAsync(
+        string settlementId,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settlementId);
+        var canonicalSettlementId = settlementId.Trim();
+        var receipt = await _executor.QuerySingleAsync<NodeFeeAtomicGroup>(
+            SurrealQuery<NodeFeeAtomicGroup>.Key(NodeFeeAtomicGroup.RecordIdFor(canonicalSettlementId)),
+            ct);
+        if (receipt is null)
+            return AZOAResult<NodeFeeAtomicGroup?>.Success(null, "Accepted atomic group receipt was not found.");
+
+        if (!NodeFeeAtomicGroup.IsBoundToSettlement(receipt, canonicalSettlementId))
+        {
+            return AZOAResult<NodeFeeAtomicGroup?>.Failure(
+                "Accepted atomic group receipt is not bound to the requested settlement.");
+        }
+
+        return AZOAResult<NodeFeeAtomicGroup?>.Success(receipt, "Accepted atomic group receipt loaded.");
+    }
+
+    /// <inheritdoc/>
     public async Task<AZOAResult<IReadOnlyList<NodeFeeSettlement>>> ListRecoverableAsync(
         DateTimeOffset now,
         int batchSize,
@@ -248,6 +270,56 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
 
             response.EnsureAllOk();
             throw new InvalidOperationException("Node fee settlement claim returned no statement result.");
+        }, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<NodeFeeSettlement?>> TryClaimAcceptedAtomicGroupRecoveryAsync(
+        NodeFeeSettlement candidate,
+        string leaseToken,
+        DateTimeOffset now,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentException.ThrowIfNullOrWhiteSpace(leaseToken);
+        if (leaseExpiresAt <= now)
+            throw new ArgumentOutOfRangeException(nameof(leaseExpiresAt));
+
+        var nextVersion = checked(candidate.StateVersion + 1);
+        var nextAttemptCount = checked(candidate.AttemptCount + 1);
+        // raw: current consumed SurrealForge package cannot atomically combine this
+        // exact recovery-lease CAS with the deterministic immutable receipt existence
+        // predicate; waiver expires 2026-08-31.
+        var query = SurrealQuery
+            .Of("UPDATE ONLY type::record($_t, $_id) SET lease_token = type::string($_lease_token), lease_expires_at = $_lease_expires_at, attempt_count = $_attempt_count, state_version = $_next_version, updated_at = $_now WHERE state_version = $_expected_version AND state INSIDE $_recoverable_states AND ((lease_token = NONE AND next_attempt_at <= $_now) OR lease_expires_at <= $_now) AND (SELECT * FROM type::record($_receipt_table, $_receipt_id)).first() != NONE RETURN AFTER")
+            .WithParam("_t", NodeFeeSettlement.SchemaNameConst)
+            .WithParam("_id", candidate.Id)
+            .WithParam("_lease_token", leaseToken)
+            .WithParam("_lease_expires_at", leaseExpiresAt)
+            .WithParam("_attempt_count", nextAttemptCount)
+            .WithParam("_next_version", nextVersion)
+            .WithParam("_expected_version", candidate.StateVersion)
+            .WithParam("_recoverable_states", RecoverableStates.Select(state => state.ToString()).ToArray())
+            .WithParam("_receipt_table", NodeFeeAtomicGroup.SchemaNameConst)
+            .WithParam("_receipt_id", NodeFeeAtomicGroup.RecordIdFor(candidate.Id))
+            .WithParam("_now", now);
+
+        return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var response = await _executor.ExecuteAsync(query, ct);
+            if (response.Count == 1 && response[0].IsOk && response[0].AffectedCount() == 1)
+            {
+                var claimed = response.GetValues<NodeFeeSettlement>(0).SingleOrDefault()
+                    ?? throw new InvalidOperationException("Node fee accepted-group recovery claim returned no row.");
+                return AZOAResult<NodeFeeSettlement?>.Success(claimed, "Accepted-group recovery lease claimed.");
+            }
+
+            if (response.Count == 1 && response[0].IsOk)
+                return AZOAResult<NodeFeeSettlement?>.Success(null, "Accepted-group recovery claim contention or no receipt.");
+
+            response.EnsureAllOk();
+            throw new InvalidOperationException("Node fee accepted-group recovery claim returned no statement result.");
         }, ct);
     }
 
@@ -494,7 +566,7 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
     {
         ArgumentNullException.ThrowIfNull(lease);
         ArgumentNullException.ThrowIfNull(terminalization);
-        ArgumentException.ThrowIfNullOrWhiteSpace(terminalization.ParentIdempotencyKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(terminalization.ParentIdempotencyKeyHash);
         ArgumentException.ThrowIfNullOrWhiteSpace(terminalization.PrimaryEffectReference);
         ArgumentException.ThrowIfNullOrWhiteSpace(terminalization.FeeEffectReference);
         ArgumentException.ThrowIfNullOrWhiteSpace(terminalization.ParentResultPayload);
@@ -514,8 +586,7 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
         if (current is null)
             return AZOAResult<bool>.Success(false, "Settlement was not found.");
 
-        var parentKey = NodeFeeSettlement.CanonicalizeParentIdempotencyKey(terminalization.ParentIdempotencyKey);
-        var parentId = NodeFeeSettlement.HashParentIdempotencyKey(parentKey);
+        var parentId = terminalization.ParentIdempotencyKeyHash;
         if (!string.Equals(current.ParentIdempotencyKeyHash, parentId, StringComparison.Ordinal))
             return AZOAResult<bool>.Success(false, "Settlement parent mismatch.");
         if (!PreservesConfirmedEffect(
@@ -532,7 +603,10 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
 
         var parentOperation = NodeFeeSettlement.ParentClaimOperationType(current.Operation);
         var nextVersion = checked(lease.StateVersion + 1);
-        var encodedParentKey = SurrealIdempotencyStore.EncodeKeyForConfiguredLedger(parentKey);
+        var parentKey = terminalization.ParentIdempotencyKey;
+        var encodedParentKey = parentKey is null
+            ? string.Empty
+            : SurrealIdempotencyStore.EncodeKeyForConfiguredLedger(parentKey);
 
         // raw: settlement and its independent parent claim must become terminal
         // together; current typed primitives cannot conditionally mutate both tables. Waiver expires 2026-08-31.
@@ -543,10 +617,11 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
                 .WithParam("_parent_table", IdempotencyKeyStore.SchemaNameConst)
                 .WithParam("_parent_id", parentId),
             SurrealQuery
-                .Of("LET $_settled = (IF $_parent != NONE AND $_parent.state = $_in_progress AND $_parent.key = type::string($_parent_key) AND $_parent.operation_type = type::string($_parent_operation) { (UPDATE ONLY type::record($_settlement_table, $_settlement_id) SET state = $_settled_state, primary_effect_state = $_confirmed, primary_transaction_hash = array::join($_primary_reference_chars, ''), fee_effect_state = $_confirmed, fee_transaction_hash = array::join($_fee_reference_chars, ''), state_version = $_next_version, reconciliation_reason = NONE, lease_token = NONE, lease_expires_at = NONE, updated_at = $_now WHERE state_version = $_expected_version AND state INSIDE $_recoverable_states AND lease_token = type::string($_lease_token) AND lease_expires_at > $_now AND (primary_effect_state != $_confirmed OR primary_transaction_hash = array::join($_primary_reference_chars, '')) AND (fee_effect_state != $_confirmed OR fee_transaction_hash = array::join($_fee_reference_chars, '')) RETURN AFTER) } ELSE { NONE })")
+                .Of("LET $_settled = (IF $_parent != NONE AND $_parent.state = $_in_progress AND (NOT $_require_parent_key OR $_parent.key = type::string($_parent_key)) AND $_parent.operation_type = type::string($_parent_operation) { (UPDATE ONLY type::record($_settlement_table, $_settlement_id) SET state = $_settled_state, primary_effect_state = $_confirmed, primary_transaction_hash = array::join($_primary_reference_chars, ''), fee_effect_state = $_confirmed, fee_transaction_hash = array::join($_fee_reference_chars, ''), state_version = $_next_version, reconciliation_reason = NONE, lease_token = NONE, lease_expires_at = NONE, updated_at = $_now WHERE state_version = $_expected_version AND state INSIDE $_recoverable_states AND lease_token = type::string($_lease_token) AND lease_expires_at > $_now AND (primary_effect_state != $_confirmed OR primary_transaction_hash = array::join($_primary_reference_chars, '')) AND (fee_effect_state != $_confirmed OR fee_transaction_hash = array::join($_fee_reference_chars, '')) RETURN AFTER) } ELSE { NONE })")
                 .WithParam("_parent_table", IdempotencyKeyStore.SchemaNameConst)
                 .WithParam("_parent_id", parentId)
                 .WithParam("_in_progress", IdempotencyKeyStore.StateKind.InProgress.ToString())
+                .WithParam("_require_parent_key", parentKey is not null)
                 .WithParam("_parent_key", encodedParentKey)
                 .WithParam("_parent_operation", parentOperation)
                 .WithParam("_settlement_table", NodeFeeSettlement.SchemaNameConst)
@@ -561,12 +636,13 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
                 .WithParam("_lease_token", lease.LeaseToken)
                 .WithParam("_now", now),
             SurrealQuery
-                .Of("LET $_completed_parent = (IF $_settled = NONE { NONE } ELSE { (UPDATE ONLY type::record($_parent_table, $_parent_id) SET state = $_completed, result_payload = type::string($_payload), error = NONE, updated_at = $_now WHERE state = $_in_progress AND key = type::string($_parent_key) AND operation_type = type::string($_parent_operation) RETURN AFTER) })")
+                .Of("LET $_completed_parent = (IF $_settled = NONE { NONE } ELSE { (UPDATE ONLY type::record($_parent_table, $_parent_id) SET state = $_completed, result_payload = type::string($_payload), error = NONE, updated_at = $_now WHERE state = $_in_progress AND (NOT $_require_parent_key OR key = type::string($_parent_key)) AND operation_type = type::string($_parent_operation) RETURN AFTER) })")
                 .WithParam("_parent_table", IdempotencyKeyStore.SchemaNameConst)
                 .WithParam("_parent_id", parentId)
                 .WithParam("_completed", IdempotencyKeyStore.StateKind.Completed.ToString())
                 .WithParam("_payload", terminalization.ParentResultPayload.Trim())
                 .WithParam("_in_progress", IdempotencyKeyStore.StateKind.InProgress.ToString())
+                .WithParam("_require_parent_key", parentKey is not null)
                 .WithParam("_parent_key", encodedParentKey)
                 .WithParam("_parent_operation", parentOperation)
                 .WithParam("_now", now),
@@ -599,6 +675,7 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
             EnsurePairedTerminalization(
                 persistedParent,
                 persistedSettlement,
+                parentId,
                 parentKey,
                 parentOperation,
                 primaryReference,
@@ -689,9 +766,7 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
         AtomicTransferGroupRequest request,
         AtomicTransferGroupSubmission submission)
     {
-        var settlementLink = SurrealLink.ToLink(NodeFeeSettlement.SchemaNameConst, settlementId);
-        return (string.Equals(receipt.SettlementId, settlementId, StringComparison.Ordinal)
-                || string.Equals(receipt.SettlementId, settlementLink, StringComparison.Ordinal))
+        return NodeFeeAtomicGroup.IsBoundToSettlement(receipt, settlementId)
            && string.Equals(receipt.GroupIdentity, request.GroupIdentity, StringComparison.Ordinal)
            && string.Equals(receipt.ChainGroupId, submission.ChainGroupId, StringComparison.Ordinal)
            && string.Equals(receipt.SourceAddress, request.Primary.FromAddress, StringComparison.Ordinal)
@@ -781,13 +856,16 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
     private static void EnsurePairedTerminalization(
         IdempotencyKeyStore parent,
         NodeFeeSettlement settlement,
-        string parentKey,
+        string parentId,
+        string? parentKey,
         string parentOperation,
         string primaryReference,
         string feeReference,
         string parentPayload)
     {
-        var parentMatches = IsExpectedParentClaim(parent, parentKey, parentOperation);
+        var parentMatches = string.Equals(settlement.ParentIdempotencyKeyHash, parentId, StringComparison.Ordinal)
+            && string.Equals(parent.OperationType, parentOperation, StringComparison.Ordinal)
+            && (parentKey is null || IsExpectedParentClaim(parent, parentKey, parentOperation));
         var terminalStateMatches = parent.State == IdempotencyKeyStore.StateKind.Completed
             && settlement.State == NodeFeeSettlement.StateKind.Settled;
         var primaryReferenceMatches = settlement.PrimaryEffectState == NodeFeeSettlement.EffectStateKind.Confirmed

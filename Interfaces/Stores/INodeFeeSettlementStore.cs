@@ -19,6 +19,15 @@ public interface INodeFeeSettlementStore
     Task<AZOAResult<NodeFeeSettlement?>> GetAsync(string settlementId, CancellationToken ct = default);
 
     /// <summary>
+    /// Loads the sole immutable accepted atomic-group receipt deterministically bound to
+    /// <paramref name="settlementId"/>. A missing receipt is not an error; a receipt
+    /// whose record link does not match that settlement is a durable integrity failure.
+    /// </summary>
+    Task<AZOAResult<NodeFeeAtomicGroup?>> GetAcceptedAtomicGroupAsync(
+        string settlementId,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Lists at most <paramref name="batchSize"/> non-terminal settlements that are due for recovery
     /// or whose lease has expired. The returned rows are candidates only; callers must claim each row.
     /// </summary>
@@ -33,6 +42,18 @@ public interface INodeFeeSettlementStore
     /// required by a later guarded transition.
     /// </summary>
     Task<AZOAResult<NodeFeeSettlement?>> TryClaimRecoveryAsync(
+        NodeFeeSettlement candidate,
+        string leaseToken,
+        DateTimeOffset now,
+        DateTimeOffset leaseExpiresAt,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Atomically claims only a due candidate that already has its deterministic immutable accepted-group
+    /// receipt. A missing receipt produces expected contention without changing the settlement, so an
+    /// ordinary <c>Prepared</c> intent remains eligible for its separate receipt-recording protocol.
+    /// </summary>
+    Task<AZOAResult<NodeFeeSettlement?>> TryClaimAcceptedAtomicGroupRecoveryAsync(
         NodeFeeSettlement candidate,
         string leaseToken,
         DateTimeOffset now,

@@ -81,40 +81,54 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         ArgumentNullException.ThrowIfNull(request);
         ct.ThrowIfCancellationRequested();
 
-        var transferGroup = request.TransferGroup;
-        var submission = request.Submission;
-        if (!string.Equals(transferGroup.ChainType, ChainType, StringComparison.Ordinal)
-            || transferGroup.Network != ActiveNetwork)
+        var evidence = AtomicTransferGroupObservationEvidence.TryCreate(
+            request.TransferGroup,
+            request.Submission);
+        return evidence.IsError || evidence.Result is null
+            ? Error<AtomicTransferGroupObservation>(evidence.Message)
+            : await ObserveAtomicTransferGroupAsync(evidence.Result, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<AtomicTransferGroupObservation>> ObserveAtomicTransferGroupAsync(
+        AtomicTransferGroupObservationEvidence evidence,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        ct.ThrowIfCancellationRequested();
+
+        if (!string.Equals(evidence.ChainType, ChainType, StringComparison.OrdinalIgnoreCase)
+            || evidence.Network != ActiveNetwork)
         {
             return Error<AtomicTransferGroupObservation>(
-                $"Atomic transfer group observation binding {transferGroup.ChainType}/{transferGroup.Network} does not match " +
+                $"Atomic transfer group observation binding {evidence.ChainType}/{evidence.Network} does not match " +
                 $"this Algorand provider binding {ChainType}/{ActiveNetwork}.");
         }
-        if (!ulong.TryParse(transferGroup.Primary.AssetId, NumberStyles.None,
+        if (!ulong.TryParse(evidence.Primary.AssetId, NumberStyles.None,
                 CultureInfo.InvariantCulture, out var assetId)
             || assetId == 0
-            || transferGroup.Primary.AssetId != transferGroup.Treasury.AssetId)
+            || evidence.Primary.AssetId != evidence.Treasury.AssetId)
         {
             return Error<AtomicTransferGroupObservation>(
                 "An atomic Algorand transfer group observation requires one numeric ASA asset id.");
         }
-        if (!IsCanonicalAlgorandGroupId(submission.ChainGroupId)
-            || !IsCanonicalAlgorandTransactionId(submission.PrimaryTransactionId)
-            || !IsCanonicalAlgorandTransactionId(submission.TreasuryTransactionId)
-            || string.Equals(submission.PrimaryTransactionId, submission.TreasuryTransactionId, StringComparison.Ordinal)
-            || string.Equals(submission.ChainGroupId, submission.PrimaryTransactionId, StringComparison.Ordinal)
-            || string.Equals(submission.ChainGroupId, submission.TreasuryTransactionId, StringComparison.Ordinal))
+        if (!IsCanonicalAlgorandGroupId(evidence.ChainGroupId)
+            || !IsCanonicalAlgorandTransactionId(evidence.PrimaryTransactionId)
+            || !IsCanonicalAlgorandTransactionId(evidence.TreasuryTransactionId)
+            || string.Equals(evidence.PrimaryTransactionId, evidence.TreasuryTransactionId, StringComparison.Ordinal)
+            || string.Equals(evidence.ChainGroupId, evidence.PrimaryTransactionId, StringComparison.Ordinal)
+            || string.Equals(evidence.ChainGroupId, evidence.TreasuryTransactionId, StringComparison.Ordinal))
         {
             return Error<AtomicTransferGroupObservation>(
                 "An atomic Algorand transfer group observation requires distinct canonical group and transaction identifiers.");
         }
 
         var primary = await ObserveAtomicTransferLegAsync(
-            submission.PrimaryTransactionId, submission.ChainGroupId,
-            transferGroup.Primary, assetId, ct);
+            evidence.PrimaryTransactionId, evidence.ChainGroupId,
+            evidence.Primary, assetId, ct);
         var treasury = await ObserveAtomicTransferLegAsync(
-            submission.TreasuryTransactionId, submission.ChainGroupId,
-            transferGroup.Treasury, assetId, ct);
+            evidence.TreasuryTransactionId, evidence.ChainGroupId,
+            evidence.Treasury, assetId, ct);
         return new AZOAResult<AtomicTransferGroupObservation>
         {
             Result = new AtomicTransferGroupObservation(AggregateObservation(primary, treasury), primary, treasury),
@@ -1340,7 +1354,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     private async Task<AtomicTransferLegObservation> ObserveAtomicTransferLegAsync(
         string transactionId,
         string expectedGroupId,
-        AtomicTransferEffect expectedEffect,
+        AtomicTransferObservationEffect expectedEffect,
         ulong expectedAssetId,
         CancellationToken ct)
     {
@@ -1442,7 +1456,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     private static AtomicTransferLegObservation ValidateIndexedAtomicTransferLeg(
         string transactionId,
         string expectedGroupId,
-        AtomicTransferEffect expectedEffect,
+        AtomicTransferObservationEffect expectedEffect,
         ulong expectedAssetId,
         IndexerTransactionInfo? transaction)
     {

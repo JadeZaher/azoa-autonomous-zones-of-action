@@ -55,7 +55,7 @@ public sealed class NodeFeeSettlementManager : INodeFeeSettlementManager
         NodeFeeSettlementRecoveryRequest request,
         CancellationToken ct = default)
     {
-        var requestError = ValidateRecoveryRequest(request);
+        var requestError = NodeFeeSettlementRecoveryRequestValidator.Validate(request);
         if (requestError is not null)
             return AZOAResult<NodeFeeSettlementRecoveryReport>.Failure(requestError);
 
@@ -205,27 +205,6 @@ public sealed class NodeFeeSettlementManager : INodeFeeSettlementManager
             NextAttemptAt = now,
             UpdatedAt = now,
         });
-    }
-
-    private static string? ValidateRecoveryRequest(NodeFeeSettlementRecoveryRequest? request)
-    {
-        if (request is null)
-            return "Node fee settlement recovery request is required.";
-        if (request.BatchSize is < 1 or > 100)
-            return "Node fee settlement recovery batch size must be between 1 and 100.";
-        if (request.LeaseDuration < TimeSpan.FromSeconds(1)
-            || request.LeaseDuration > TimeSpan.FromMinutes(15))
-        {
-            return "Node fee settlement recovery lease duration must be between one second and fifteen minutes.";
-        }
-
-        if (request.RetryDelay < TimeSpan.FromSeconds(1)
-            || request.RetryDelay > TimeSpan.FromDays(1))
-        {
-            return "Node fee settlement recovery retry delay must be between one second and one day.";
-        }
-
-        return null;
     }
 
     private static bool HasSameImmutableDecision(NodeFeeSettlement left, NodeFeeSettlement right)

@@ -303,8 +303,31 @@ recipient, amount, and the absence of close, clawback, and rekey fields on both
 legs in one positive round. Indexer absence may consult Algod only to classify
 pending, unseen, or pool-rejected evidence; it cannot confirm a transfer.
 Contradictory confirmation dominates a pool rejection. This is a reconciliation
-prerequisite only: no observer is registered or wired into receipt recording,
-terminalization, a worker, or a nonzero fee consumer.
+prerequisite only: no observer is wired into receipt recording, a hosted worker,
+or a nonzero fee consumer.
+
+Receipt-driven reconciliation (2026-07-18): an explicitly invoked scoped
+`NodeFeeSettlementAtomicGroupReconciler` now atomically claims only a due
+settlement that already has its deterministic immutable receipt, leaving
+ordinary `Prepared`/non-atomic/no-receipt rows unchanged, before reading it.
+It reconstructs only
+secret-free observation facts from the pinned settlement plus receipt (chain and
+network, asset, source/destinations, amounts, group and transaction ids); it
+does not recover a signing context or raw parent idempotency key. Before any
+provider call it requires the canonical settlement link, precommitted group
+identity, receipt transaction ids equal to the settlement's submitted refs,
+accepted receipt state, and positive `gross = fee + net` economics. A missing
+receipt cannot win the receipt-gated claim and leaves its settlement unchanged;
+structurally invalid evidence only releases the receipt-bearing lease
+nonterminally. A typed receipt-read integrity/store error stops with the won
+lease to expire, without provider observation, terminalization, or a further
+settlement mutation, rather than being misclassified as absence. The exact persisted
+provider/network must expose the read-only observation capability. Only both
+exact receipt legs confirmed at one positive round terminalize through the
+existing paired CAS, using the durable parent SHA-256 record id and a deterministic
+secret-free replay payload; every other outcome remains nonterminal. DI makes
+this scoped seam resolvable but it has no hosted worker, controller, submission,
+receipt writer, or fee-consumer caller, so it is not nonzero Transfer activation.
 
 Verification evidence (2026-07-11): the API project builds with zero errors;
 the regenerated decorated-POCO goldens include treasury tables, ownership

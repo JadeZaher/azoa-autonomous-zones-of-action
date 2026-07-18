@@ -121,6 +121,34 @@ public sealed class SurrealNodeFeeSettlementStoreTests : IAsyncLifetime
     }
 
     [SkippableFact]
+    public async Task AcceptedGroupRecoveryClaim_WithoutReceipt_LeavesPreparedSettlementUntouched()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var created = await AdmitPreparedAsync(now);
+
+        var claim = await _store.TryClaimAcceptedAtomicGroupRecoveryAsync(
+            created,
+            "accepted-group-worker",
+            now.AddSeconds(1),
+            now.AddMinutes(1));
+        var persisted = await _store.GetAsync(created.Id);
+
+        claim.IsError.Should().BeFalse(claim.Message);
+        claim.Result.Should().BeNull();
+        persisted.Result.Should().NotBeNull();
+        persisted.Result!.State.Should().Be(NodeFeeSettlement.StateKind.Prepared);
+        persisted.Result.PrimaryEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.NotStarted);
+        persisted.Result.FeeEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.NotStarted);
+        persisted.Result.AttemptCount.Should().Be(0);
+        persisted.Result.StateVersion.Should().Be(0);
+        persisted.Result.LeaseToken.Should().BeNull();
+        persisted.Result.LeaseExpiresAt.Should().BeNull();
+    }
+
+    [SkippableFact]
     public async Task ConcurrentClaimAndExpiredLeaseReclaim_ElectsOneWinner()
     {
         Skip.IfNot(_surrealAvailable,

@@ -6,10 +6,10 @@ namespace AZOA.WebAPI.Tests.Architecture;
 public sealed partial class CodeStyleDebtBudgetTests
 {
     private const int ProductionCatchAllCeiling = 205;
-    // Includes the three parameterized NodeFeeSettlement lease/admission/
+    // Includes the four parameterized NodeFeeSettlement lease/admission/
     // terminal CAS statements, waived only until 2026-08-31; see
     // Providers/Stores/Surreal/AGENTS.md.
-    private const int ProductionLiteralMutationCeiling = 80;
+    private const int ProductionLiteralMutationCeiling = 81;
 
     private static readonly string[] ProductionRoots =
     {
@@ -33,12 +33,13 @@ public sealed partial class CodeStyleDebtBudgetTests
             ["SurrealKycStore.cs"] = 6,
             ["SurrealNftStore.cs"] = 2,
             ["SurrealNodeFeeScheduleStore.cs"] = 6,
-            // Lease CAS plus parameterized multi-table parent/settlement
-            // admission, accepted-group receipt, and terminal transactions.
+            // Lease CAS plus the receipt-gated recovery CAS and parameterized
+            // multi-table parent/settlement admission, accepted-group receipt,
+            // and terminal transactions.
             // The receipt is one waiver but SurrealQuery.Of accepts only one
             // statement, so its BEGIN/LET/UPDATE/CREATE/SELECT/COMMIT pieces
             // must compose through Combine; waiver expires 2026-08-31.
-            ["SurrealNodeFeeSettlementStore.cs"] = 26,
+            ["SurrealNodeFeeSettlementStore.cs"] = 27,
             ["SurrealNodeGovernanceStore.cs"] = 6,
             ["SurrealNodeTreasuryStore.cs"] = 6,
             ["SurrealNodeTransparencyStore.cs"] = 2,
@@ -76,7 +77,7 @@ public sealed partial class CodeStyleDebtBudgetTests
             ["SurrealNftStore.cs|UPSERT"] = 2,
             ["SurrealNodeFeeScheduleStore.cs|CREATE"] = 1,
             ["SurrealNodeFeeScheduleStore.cs|UPSERT"] = 1,
-            ["SurrealNodeFeeSettlementStore.cs|UPDATE ONLY"] = 3,
+            ["SurrealNodeFeeSettlementStore.cs|UPDATE ONLY"] = 4,
             ["SurrealNodeGovernanceStore.cs|CREATE"] = 1,
             ["SurrealNodeGovernanceStore.cs|UPSERT"] = 1,
             ["SurrealNodeTreasuryStore.cs|CREATE"] = 1,

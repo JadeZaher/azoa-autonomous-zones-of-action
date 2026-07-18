@@ -17,6 +17,14 @@ not indexed a leg, Algod can only classify it as pending, unseen, or pool
 rejected; it can never upgrade that leg to confirmed. Observation performs no
 persistence, signing, broadcast, settlement transition, or ownership mutation.
 
+The capability also accepts `AtomicTransferGroupObservationEvidence` for a
+durable receipt-driven reconciler. This is a secret-free projection of the same
+facts needed for observation (chain/network, asset, source, destinations,
+amounts, group and transaction ids); it deliberately has no signing context or
+wallet material. The original request overload remains for direct callers and
+first validates into this evidence type. A provider must treat both overloads as
+identical read-only evidence paths.
+
 ## Â§network-instance-isolation
 
 `IBlockchainProvider.Initialize` mutates a provider's network client and active

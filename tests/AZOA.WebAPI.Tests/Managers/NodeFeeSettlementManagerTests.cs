@@ -614,6 +614,14 @@ public sealed class NodeFeeSettlementManagerTests
             return AZOAResult<NodeFeeSettlement?>.Success(settlement);
         }
 
+        public Task<AZOAResult<NodeFeeAtomicGroup?>> GetAcceptedAtomicGroupAsync(
+            string settlementId,
+            CancellationToken ct = default)
+        {
+            _atomicGroups.TryGetValue(NodeFeeAtomicGroup.RecordIdFor(settlementId), out var receipt);
+            return Task.FromResult(AZOAResult<NodeFeeAtomicGroup?>.Success(receipt));
+        }
+
         public async Task<AZOAResult<IReadOnlyList<NodeFeeSettlement>>> ListRecoverableAsync(
             DateTimeOffset now,
             int batchSize,
@@ -670,6 +678,19 @@ public sealed class NodeFeeSettlementManagerTests
                 stored.UpdatedAt = now;
                 return Task.FromResult(AZOAResult<NodeFeeSettlement?>.Success(Clone(stored)));
             }
+        }
+
+        public Task<AZOAResult<NodeFeeSettlement?>> TryClaimAcceptedAtomicGroupRecoveryAsync(
+            NodeFeeSettlement candidate,
+            string leaseToken,
+            DateTimeOffset now,
+            DateTimeOffset leaseExpiresAt,
+            CancellationToken ct = default)
+        {
+            if (!_atomicGroups.ContainsKey(NodeFeeAtomicGroup.RecordIdFor(candidate.Id)))
+                return Task.FromResult(AZOAResult<NodeFeeSettlement?>.Success(null));
+
+            return TryClaimRecoveryAsync(candidate, leaseToken, now, leaseExpiresAt, ct);
         }
 
         public Task<AZOAResult<NodeFeeAtomicGroup?>> TryRecordAcceptedAtomicGroupAsync(

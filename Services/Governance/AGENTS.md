@@ -53,6 +53,30 @@ admission. This is optional for non-atomic settlement intents, but mandatory
 for receipt recording and immutable thereafter; do not permit a receipt based
 only on matching amounts or treasury routing.
 
+`NodeFeeSettlementAtomicGroupReconciler` is a scoped, explicitly invoked
+observation seam registered only so an operator-controlled caller can resolve
+it. It is not a hosted worker and has no controller or fee-consumer caller.
+It atomically claims only a due settlement that already has the deterministic
+immutable receipt, leaving ordinary `Prepared`/non-atomic/no-receipt rows
+entirely untouched, then
+requires its exact settlement link, precommitted group identity, persisted
+transaction references, accepted receipt state, and positive pinned economics
+before it reconstructs secret-free observation evidence. Signing context and the
+raw parent idempotency key are intentionally absent from that evidence. A missing
+receipt cannot win the receipt-gated claim and leaves its settlement untouched;
+a successfully read but structurally inconsistent receipt is only deferred. A
+typed receipt-read integrity/store error stops with the won lease left to expire
+and performs no provider call, terminalization, or further reconciliation
+mutation, so corruption/infrastructure is not misclassified as missing evidence.
+The reconciler resolves the exact persisted chain/network provider and its
+observation capability. Only two exact receipt transaction IDs confirmed in one
+positive round use the existing paired terminal CAS. That CAS can now take the
+persisted parent SHA-256 record id when the raw parent key is unavailable; it
+still requires the matching parent record and operation, and never reconstructs
+or logs the key. All other observations remain nonterminal and retain a retry.
+The deterministic parent replay payload contains settlement/group/transaction
+identifiers and confirmation round only.
+
 ## node treasury routing
 
 Treasury destinations are separate policy per canonical chain/network. The

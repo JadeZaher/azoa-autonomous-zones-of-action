@@ -85,4 +85,13 @@ public interface IAtomicTransferGroupObservationModule : IBlockchainProviderModu
     Task<AZOAResult<AtomicTransferGroupObservation>> ObserveAtomicTransferGroupAsync(
         AtomicTransferGroupObservationRequest request,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Reads exact chain evidence reconstructed from a durable accepted-group receipt.
+    /// The evidence deliberately excludes signing credentials and cannot authorize a
+    /// submission; implementations must treat it as observation-only.
+    /// </summary>
+    Task<AZOAResult<AtomicTransferGroupObservation>> ObserveAtomicTransferGroupAsync(
+        AtomicTransferGroupObservationEvidence evidence,
+        CancellationToken ct = default);
 }

@@ -826,6 +826,13 @@ builder.Services.AddScoped<IVaaSignatureVerifier, Secp256k1VaaSignatureVerifier>
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IIdempotencyStore,
     AZOA.WebAPI.Core.Idempotency.SurrealIdempotencyStore>();
 
+// Receipt reconciliation is a scoped, explicitly invoked observation seam. It is
+// deliberately not a hosted worker or fee-consumer activation path.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INodeFeeSettlementStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealNodeFeeSettlementStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeFeeSettlementAtomicGroupReconciler,
+    AZOA.WebAPI.Services.Governance.NodeFeeSettlementAtomicGroupReconciler>();
+
 // ─── Cross-chain bridge (hybrid trusted + Wormhole) ───
 // surrealdb-migration wave-2 task 8: routes through IBridgeStore +
 // IIdempotencyStore. Storage backend is SurrealDB after wave-3 EF deletion.

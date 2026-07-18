@@ -86,5 +86,17 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
                 System.Text.Encoding.UTF8.GetBytes("node_fee_atomic_group|" + settlementId.Trim())))
                 .ToLowerInvariant();
         }
+
+        /// <summary>Checks the canonical or Surreal-record-link form of this receipt's settlement binding.</summary>
+        public static bool IsBoundToSettlement(NodeFeeAtomicGroup receipt, string settlementId)
+        {
+            ArgumentNullException.ThrowIfNull(receipt);
+            ArgumentException.ThrowIfNullOrWhiteSpace(settlementId);
+
+            var canonicalSettlementId = settlementId.Trim();
+            var settlementLink = SurrealLink.ToLink(NodeFeeSettlement.SchemaNameConst, canonicalSettlementId);
+            return string.Equals(receipt.SettlementId, canonicalSettlementId, StringComparison.Ordinal)
+                || string.Equals(receipt.SettlementId, settlementLink, StringComparison.Ordinal);
+        }
     }
 }

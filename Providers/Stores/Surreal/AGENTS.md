@@ -183,6 +183,22 @@ provider/reconciliation hand-offs with live-SurrealDB concurrency tests.
 Within that transaction, `UPDATE ONLY ... RETURN AFTER` is already one object on
 SurrealDB 3.x; do not append `.first()`, which aborts the transaction.
 
+`GetAcceptedAtomicGroupAsync` is deliberately ordinary typed record access by
+the receipt's deterministic settlement-derived id. It validates the receipt's
+stored settlement link before returning it; no raw join or scan is permitted for
+this one-to-one immutable read. Paired terminalization accepts either the legacy
+raw parent key or its already-persisted SHA-256 parent record id. Hash-only
+callers retain the parent id, `InProgress` state, and operation checks inside the
+same transaction, but cannot reconstruct or expose the raw idempotency key.
+
+Receipt-driven reconciliation uses a separate lease CAS that requires the
+deterministic receipt record to exist inside the same conditional update. This
+prevents the observation loop from changing an ordinary `Prepared` or
+non-atomic settlement before it has an accepted receipt; a no-receipt candidate
+returns ordinary claim contention with no state, lease, or attempt mutation.
+The receipt-existence predicate is one additional narrow raw waiver under the
+same 2026-08-31 typed-builder limitation, not permission for raw receipt reads.
+
 `TryRecordAcceptedAtomicGroupAsync` is a third bounded raw transaction under
 the same 2026-08-31 waiver. It conditionally creates the one-to-one immutable
 `node_fee_atomic_group` receipt while the exact unexpired settlement lease and
