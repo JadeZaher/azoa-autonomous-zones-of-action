@@ -47,6 +47,16 @@ upload. Independent download confirmed the five expected archive entries, all
 metadata hashes, the exact two passing G3 runtime proofs, and `gh attestation
 verify`; this is CI-production evidence only, not deployment proof.
 
+Runtime ingestion is now metadata-bound and fail-closed: it requires the exact
+five declared files and hashes, trusted repository/workflow, the compiled source
+revision, bounded freshness, safe bounded XML, and the exact G3 runtime pair.
+Its signed document cannot outlive evidence expiry. CI run `29632597722` for
+commit `456c2c11c9b70029ae499f2b38e07144b6976e67` passed the complete build,
+unit, integration, evidence, attestation, upload, and SDK gates. The remaining
+activation work is a protected promotion that verifies provenance, embeds the
+bundle read-only in an immutable image, and deploys that digest with durable
+identity storage; this track remains in progress.
+
 ## Activation limits (2026-07-13)
 
 The local half can sign and serve a bounded descriptor only when explicitly
