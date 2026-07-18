@@ -73,3 +73,16 @@ public interface IAtomicTransferGroupModule : IBlockchainProviderModule
         AtomicTransferGroupRequest request,
         CancellationToken ct = default);
 }
+
+/// <summary>Optional read-only capability for classifying the two on-chain legs of an accepted atomic group.</summary>
+public interface IAtomicTransferGroupObservationModule : IBlockchainProviderModule
+{
+    /// <summary>
+    /// Reads and validates both legs against the immutable request and accepted submission.
+    /// This is evidence collection only: it must not persist, sign, submit, or terminalize a settlement.
+    /// Caller cancellation propagates; unavailable network evidence is reported as an observation verdict.
+    /// </summary>
+    Task<AZOAResult<AtomicTransferGroupObservation>> ObserveAtomicTransferGroupAsync(
+        AtomicTransferGroupObservationRequest request,
+        CancellationToken ct = default);
+}

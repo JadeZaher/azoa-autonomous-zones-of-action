@@ -3,6 +3,20 @@
 Directory-level rationale for the blockchain providers. Terse one-line doc-comments
 live in the code; the "why" and cross-cutting seams live here.
 
+## Â§atomic-group-observation
+
+`IAtomicTransferGroupObservationModule` is an evidence-only capability. Its
+Algorand implementation uses Indexer records as the authority for a confirmed
+two-leg group and validates every immutable field: transaction id, group id,
+sender, ASA, recipient, amount, and the absence of close-to, clawback, and rekey
+fields. Before any HTTP request, the Algorand adapter requires canonical
+uppercase base32 transaction digests, canonical 32-byte base64 group digests,
+and a positive invariant-culture ASA id. Both legs must have the same positive
+confirmed round. If Indexer has
+not indexed a leg, Algod can only classify it as pending, unseen, or pool
+rejected; it can never upgrade that leg to confirmed. Observation performs no
+persistence, signing, broadcast, settlement transition, or ownership mutation.
+
 ## Â§network-instance-isolation
 
 `IBlockchainProvider.Initialize` mutates a provider's network client and active

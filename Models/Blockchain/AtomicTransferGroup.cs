@@ -275,3 +275,110 @@ public enum AtomicTransferGroupSubmissionState
     PendingConfirmation,
     Confirmed,
 }
+
+/// <summary>Immutable inputs for a read-only audit of an accepted atomic group.</summary>
+public sealed record AtomicTransferGroupObservationRequest
+{
+    private AtomicTransferGroupObservationRequest(
+        AtomicTransferGroupRequest transferGroup,
+        AtomicTransferGroupSubmission submission)
+    {
+        TransferGroup = transferGroup;
+        Submission = submission;
+    }
+
+    /// <summary>The immutable economic and routing decision to match.</summary>
+    public AtomicTransferGroupRequest TransferGroup { get; }
+    /// <summary>The accepted chain identifiers to inspect.</summary>
+    public AtomicTransferGroupSubmission Submission { get; }
+
+    /// <summary>Validates that accepted evidence is bound to the supplied immutable request.</summary>
+    public static AZOAResult<AtomicTransferGroupObservationRequest> TryCreate(
+        AtomicTransferGroupRequest? transferGroup,
+        AtomicTransferGroupSubmission? submission)
+    {
+        if (transferGroup is null || submission is null)
+            return Error("An immutable transfer group and accepted submission are required.");
+        if (!IsCanonicalSha256Digest(transferGroup.GroupIdentity)
+            || !string.Equals(transferGroup.GroupIdentity, submission.GroupIdentity, StringComparison.Ordinal))
+        {
+            return Error("Accepted submission evidence is not bound to the immutable transfer group.");
+        }
+        if (submission.State == AtomicTransferGroupSubmissionState.NotSubmitted
+            || !IsCanonicalIdentifier(submission.ChainGroupId)
+            || !IsCanonicalIdentifier(submission.PrimaryTransactionId)
+            || !IsCanonicalIdentifier(submission.TreasuryTransactionId)
+            || string.Equals(submission.PrimaryTransactionId, submission.TreasuryTransactionId, StringComparison.Ordinal)
+            || string.Equals(submission.ChainGroupId, submission.PrimaryTransactionId, StringComparison.Ordinal)
+            || string.Equals(submission.ChainGroupId, submission.TreasuryTransactionId, StringComparison.Ordinal))
+        {
+            return Error("Accepted submission group and transaction identifiers must be distinct, non-empty, and canonical.");
+        }
+
+        return new AZOAResult<AtomicTransferGroupObservationRequest>
+        {
+            Result = new AtomicTransferGroupObservationRequest(transferGroup, submission),
+        };
+    }
+
+    private static bool IsCanonicalIdentifier(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && string.Equals(value, value.Trim(), StringComparison.Ordinal);
+
+    private static bool IsCanonicalSha256Digest(string value)
+    {
+        if (value.Length != 64)
+            return false;
+
+        foreach (var character in value)
+        {
+            if ((character < '0' || character > '9')
+                && (character < 'a' || character > 'f'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static AZOAResult<AtomicTransferGroupObservationRequest> Error(string message) => new()
+    {
+        IsError = true,
+        Message = message,
+    };
+}
+
+/// <summary>Evidence state of one accepted atomic transfer leg.</summary>
+public enum AtomicTransferLegObservationVerdict
+{
+    Confirmed = 1,
+    Pending,
+    Unseen,
+    PoolRejected,
+    Mismatched,
+    Unavailable,
+}
+
+/// <summary>Aggregated evidence state of an accepted atomic transfer group.</summary>
+public enum AtomicTransferGroupObservationVerdict
+{
+    Confirmed = 1,
+    Incomplete,
+    Rejected,
+    Mismatched,
+    Unavailable,
+}
+
+/// <summary>Read-only observation for one requested transaction identifier.</summary>
+public sealed record AtomicTransferLegObservation(
+    string TransactionId,
+    AtomicTransferLegObservationVerdict Verdict,
+    long? ConfirmedRound,
+    string? Detail = null);
+
+/// <summary>Read-only aggregate of exact evidence for both atomic transfer legs.</summary>
+public sealed record AtomicTransferGroupObservation(
+    AtomicTransferGroupObservationVerdict Verdict,
+    AtomicTransferLegObservation Primary,
+    AtomicTransferLegObservation Treasury);

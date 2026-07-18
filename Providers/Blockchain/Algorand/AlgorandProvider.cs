@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -27,7 +28,7 @@ namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 /// Algorand blockchain provider using direct REST API calls to Algod and Indexer.
 /// Avoids SDK versioning issues while providing full devnet/testnet/mainnet connectivity.
 /// </summary>
-public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule
+public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule, IAtomicTransferGroupObservationModule
 {
     // Assigned in BuildClients() during the provider's one-time network binding; the
     // null-forgiving initializer documents that and clears CS8618 without a
@@ -71,6 +72,54 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
 
     /// <inheritdoc/>
     public bool SupportsAtomicTransferGroups => true;
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<AtomicTransferGroupObservation>> ObserveAtomicTransferGroupAsync(
+        AtomicTransferGroupObservationRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ct.ThrowIfCancellationRequested();
+
+        var transferGroup = request.TransferGroup;
+        var submission = request.Submission;
+        if (!string.Equals(transferGroup.ChainType, ChainType, StringComparison.Ordinal)
+            || transferGroup.Network != ActiveNetwork)
+        {
+            return Error<AtomicTransferGroupObservation>(
+                $"Atomic transfer group observation binding {transferGroup.ChainType}/{transferGroup.Network} does not match " +
+                $"this Algorand provider binding {ChainType}/{ActiveNetwork}.");
+        }
+        if (!ulong.TryParse(transferGroup.Primary.AssetId, NumberStyles.None,
+                CultureInfo.InvariantCulture, out var assetId)
+            || assetId == 0
+            || transferGroup.Primary.AssetId != transferGroup.Treasury.AssetId)
+        {
+            return Error<AtomicTransferGroupObservation>(
+                "An atomic Algorand transfer group observation requires one numeric ASA asset id.");
+        }
+        if (!IsCanonicalAlgorandGroupId(submission.ChainGroupId)
+            || !IsCanonicalAlgorandTransactionId(submission.PrimaryTransactionId)
+            || !IsCanonicalAlgorandTransactionId(submission.TreasuryTransactionId)
+            || string.Equals(submission.PrimaryTransactionId, submission.TreasuryTransactionId, StringComparison.Ordinal)
+            || string.Equals(submission.ChainGroupId, submission.PrimaryTransactionId, StringComparison.Ordinal)
+            || string.Equals(submission.ChainGroupId, submission.TreasuryTransactionId, StringComparison.Ordinal))
+        {
+            return Error<AtomicTransferGroupObservation>(
+                "An atomic Algorand transfer group observation requires distinct canonical group and transaction identifiers.");
+        }
+
+        var primary = await ObserveAtomicTransferLegAsync(
+            submission.PrimaryTransactionId, submission.ChainGroupId,
+            transferGroup.Primary, assetId, ct);
+        var treasury = await ObserveAtomicTransferLegAsync(
+            submission.TreasuryTransactionId, submission.ChainGroupId,
+            transferGroup.Treasury, assetId, ct);
+        return new AZOAResult<AtomicTransferGroupObservation>
+        {
+            Result = new AtomicTransferGroupObservation(AggregateObservation(primary, treasury), primary, treasury),
+        };
+    }
 
     // Algorand exposes a server-side faucet; "configured?" is resolved at dispense
     // time so the caller gets the precise "set Blockchain:Faucet:Algorand:Mnemonic"
@@ -1251,7 +1300,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         };
     }
 
-    private async Task<AZOAResult<AtomicTransferLegObservation>> ReadAtomicTransferLegAsync(
+    private async Task<AZOAResult<PendingAtomicTransferLegObservation>> ReadAtomicTransferLegAsync(
         string transactionId,
         CancellationToken ct)
     {
@@ -1261,13 +1310,13 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
                 $"/v2/transactions/pending/{transactionId}", cancellationToken: ct);
             if (!string.IsNullOrWhiteSpace(pending?.PoolError))
             {
-                return Error<AtomicTransferLegObservation>(
+                return Error<PendingAtomicTransferLegObservation>(
                     $"Atomic transfer group leg {transactionId} was rejected by the pool: {pending.PoolError}");
             }
 
-            return new AZOAResult<AtomicTransferLegObservation>
+            return new AZOAResult<PendingAtomicTransferLegObservation>
             {
-                Result = new AtomicTransferLegObservation(pending?.ConfirmedRound > 0),
+                Result = new PendingAtomicTransferLegObservation(pending?.ConfirmedRound > 0),
             };
         }
         catch (OperationCanceledException)
@@ -1276,15 +1325,216 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            return new AZOAResult<AtomicTransferLegObservation>
+            return new AZOAResult<PendingAtomicTransferLegObservation>
             {
-                Result = new AtomicTransferLegObservation(Confirmed: false),
+                Result = new PendingAtomicTransferLegObservation(Confirmed: false),
             };
         }
         catch (HttpRequestException ex)
         {
-            return Error<AtomicTransferLegObservation>(
+            return Error<PendingAtomicTransferLegObservation>(
                 $"Failed to read atomic transfer group leg {transactionId}: {ex.Message}", ex);
+        }
+    }
+
+    private async Task<AtomicTransferLegObservation> ObserveAtomicTransferLegAsync(
+        string transactionId,
+        string expectedGroupId,
+        AtomicTransferEffect expectedEffect,
+        ulong expectedAssetId,
+        CancellationToken ct)
+    {
+        var indexer = IndexerHttpClient;
+        if (indexer is null)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable,
+                "Algorand Indexer is required for confirmed atomic-group evidence.");
+        }
+
+        try
+        {
+            using var response = await indexer.GetAsync($"/v2/transactions/{Uri.EscapeDataString(transactionId)}", ct);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return await ObservePendingAtomicTransferLegAsync(transactionId, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable,
+                    $"Algorand Indexer returned {(int)response.StatusCode}.");
+            }
+
+            var indexed = await response.Content.ReadFromJsonAsync<IndexerTransactionResponse>(cancellationToken: ct);
+            return ValidateIndexedAtomicTransferLeg(transactionId, expectedGroupId, expectedEffect, expectedAssetId,
+                indexed?.Transaction);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable,
+                "Algorand Indexer observation timed out.");
+        }
+        catch (HttpRequestException ex)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable, ex.Message);
+        }
+        catch (JsonException ex)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable, ex.Message);
+        }
+        catch (NotSupportedException ex)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable, ex.Message);
+        }
+    }
+
+    private async Task<AtomicTransferLegObservation> ObservePendingAtomicTransferLegAsync(
+        string transactionId,
+        CancellationToken ct)
+    {
+        try
+        {
+            using var response = await AlgodHttpClient.GetAsync(
+                $"/v2/transactions/pending/{Uri.EscapeDataString(transactionId)}", ct);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return Observation(transactionId, AtomicTransferLegObservationVerdict.Unseen);
+            if (!response.IsSuccessStatusCode)
+            {
+                return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable,
+                    $"Algod returned {(int)response.StatusCode}.");
+            }
+
+            var pending = await response.Content.ReadFromJsonAsync<AlgodPendingTransactionInfo>(cancellationToken: ct);
+            if (pending is null)
+            {
+                return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable,
+                    "Algod returned no pending transaction evidence.");
+            }
+            if (!string.IsNullOrWhiteSpace(pending.PoolError))
+                return Observation(transactionId, AtomicTransferLegObservationVerdict.PoolRejected, pending.PoolError);
+
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Pending);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable,
+                "Algod pending observation timed out.");
+        }
+        catch (HttpRequestException ex)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable, ex.Message);
+        }
+        catch (JsonException ex)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable, ex.Message);
+        }
+        catch (NotSupportedException ex)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable, ex.Message);
+        }
+    }
+
+    private static AtomicTransferLegObservation ValidateIndexedAtomicTransferLeg(
+        string transactionId,
+        string expectedGroupId,
+        AtomicTransferEffect expectedEffect,
+        ulong expectedAssetId,
+        IndexerTransactionInfo? transaction)
+    {
+        if (transaction is null)
+        {
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Unavailable,
+                "Algorand Indexer returned no transaction evidence.");
+        }
+        if (transaction.ConfirmedRound <= 0)
+            return Observation(transactionId, AtomicTransferLegObservationVerdict.Pending);
+
+        var assetTransfer = transaction.AssetTransfer;
+        var matches = string.Equals(transaction.Id, transactionId, StringComparison.Ordinal)
+            && string.Equals(transaction.Group, expectedGroupId, StringComparison.Ordinal)
+            && string.Equals(transaction.Sender, expectedEffect.FromAddress, StringComparison.Ordinal)
+            && string.Equals(transaction.TxType, "axfer", StringComparison.Ordinal)
+            && assetTransfer is not null
+            && assetTransfer.AssetId == expectedAssetId
+            && string.Equals(assetTransfer.Receiver, expectedEffect.ToAddress, StringComparison.Ordinal)
+            && assetTransfer.Amount == expectedEffect.Amount
+            && string.IsNullOrEmpty(assetTransfer.CloseTo)
+            && string.IsNullOrEmpty(assetTransfer.RevocationTarget)
+            && string.IsNullOrEmpty(transaction.RekeyTo);
+        return matches
+            ? Observation(transactionId, AtomicTransferLegObservationVerdict.Confirmed, confirmedRound: transaction.ConfirmedRound)
+            : Observation(transactionId, AtomicTransferLegObservationVerdict.Mismatched,
+                "Confirmed Indexer evidence does not match the immutable atomic-group leg.", transaction.ConfirmedRound);
+    }
+
+    private static AtomicTransferGroupObservationVerdict AggregateObservation(
+        AtomicTransferLegObservation primary,
+        AtomicTransferLegObservation treasury)
+    {
+        if (primary.Verdict == AtomicTransferLegObservationVerdict.Mismatched
+            || treasury.Verdict == AtomicTransferLegObservationVerdict.Mismatched
+            || (primary.Verdict == AtomicTransferLegObservationVerdict.Confirmed
+                && treasury.Verdict == AtomicTransferLegObservationVerdict.Confirmed
+                && primary.ConfirmedRound != treasury.ConfirmedRound))
+        {
+            return AtomicTransferGroupObservationVerdict.Mismatched;
+        }
+        if (primary.Verdict == AtomicTransferLegObservationVerdict.PoolRejected
+            || treasury.Verdict == AtomicTransferLegObservationVerdict.PoolRejected)
+        {
+            return AtomicTransferGroupObservationVerdict.Rejected;
+        }
+        if (primary.Verdict == AtomicTransferLegObservationVerdict.Unavailable
+            || treasury.Verdict == AtomicTransferLegObservationVerdict.Unavailable)
+        {
+            return AtomicTransferGroupObservationVerdict.Unavailable;
+        }
+        return primary.Verdict == AtomicTransferLegObservationVerdict.Confirmed
+            && treasury.Verdict == AtomicTransferLegObservationVerdict.Confirmed
+            ? AtomicTransferGroupObservationVerdict.Confirmed
+            : AtomicTransferGroupObservationVerdict.Incomplete;
+    }
+
+    private static AtomicTransferLegObservation Observation(
+        string transactionId,
+        AtomicTransferLegObservationVerdict verdict,
+        string? detail = null,
+        long? confirmedRound = null) =>
+        new(transactionId, verdict, confirmedRound, detail);
+
+    private static bool IsCanonicalAlgorandTransactionId(string? value)
+    {
+        if (value is null || value.Length != 52 || value[^1] is not ('A' or 'Q'))
+            return false;
+
+        foreach (var character in value)
+        {
+            if ((character < 'A' || character > 'Z') && (character < '2' || character > '7'))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsCanonicalAlgorandGroupId(string? value)
+    {
+        if (value is null || value.Length != 44)
+            return false;
+
+        try
+        {
+            var bytes = Convert.FromBase64String(value);
+            return bytes.Length == 32
+                && string.Equals(Convert.ToBase64String(bytes), value, StringComparison.Ordinal);
+        }
+        catch (FormatException)
+        {
+            return false;
         }
     }
 
@@ -1541,7 +1791,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     }
 
     private sealed record ConfirmedTxn(string TxId, long ConfirmedRound, ulong? AssetIndex, bool PendingConfirmation);
-    private sealed record AtomicTransferLegObservation(bool Confirmed);
+    private sealed record PendingAtomicTransferLegObservation(bool Confirmed);
 
     // ─── REST API DTOs ───
 
@@ -1628,14 +1878,36 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
 
     private class IndexerTransactionInfo
     {
+        [System.Text.Json.Serialization.JsonPropertyName("id")]
+        public string? Id { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("confirmed-round")]
         public long ConfirmedRound { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("group")]
+        public string? Group { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("fee")]
         public long Fee { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("sender")]
         public string? Sender { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("tx-type")]
         public string? TxType { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("rekey-to")]
+        public string? RekeyTo { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("asset-transfer-transaction")]
+        public IndexerAssetTransfer? AssetTransfer { get; set; }
+    }
+
+    private class IndexerAssetTransfer
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("asset-id")]
+        public ulong AssetId { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("amount")]
+        public ulong Amount { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("receiver")]
+        public string? Receiver { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("close-to")]
+        public string? CloseTo { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("revocation-target")]
+        public string? RevocationTarget { get; set; }
     }
 
     private class IndexerAssetResponse

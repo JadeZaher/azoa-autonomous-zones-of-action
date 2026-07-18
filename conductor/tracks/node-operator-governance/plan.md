@@ -293,6 +293,19 @@ record an atomic receipt. The receipt transaction remains one HTTP request via
 `.Of` bodies, so the six parameterized fragments are one explicitly budgeted raw
 waiver, not six independent escape hatches.
 
+Read-only Algorand group observation (2026-07-18):
+`IAtomicTransferGroupObservationModule` independently classifies a previously
+accepted two-leg group without persistence, signing, broadcasting, settlement
+mutation, or terminalization. Before it makes a request, the adapter requires
+canonical Algorand transaction and group identifiers plus a positive ASA id;
+Indexer confirmation must match the submitted id/group, sender, ASA transfer,
+recipient, amount, and the absence of close, clawback, and rekey fields on both
+legs in one positive round. Indexer absence may consult Algod only to classify
+pending, unseen, or pool-rejected evidence; it cannot confirm a transfer.
+Contradictory confirmation dominates a pool rejection. This is a reconciliation
+prerequisite only: no observer is registered or wired into receipt recording,
+terminalization, a worker, or a nonzero fee consumer.
+
 Verification evidence (2026-07-11): the API project builds with zero errors;
 the regenerated decorated-POCO goldens include treasury tables, ownership
 reservation fields/index, and `PendingConfirmation`; 1,422 unit tests pass with
