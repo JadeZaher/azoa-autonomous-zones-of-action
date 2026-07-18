@@ -25,7 +25,10 @@ status: in_progress
 
 The local reader now accepts only real VSTest fully-qualified test names for the
 five designated gate classes and rejects mixed/full-suite artifacts. CI still
-needs verification of the five scoped TRXs: G1 now accepts injected Docker
+needs verification of the five scoped TRXs: G3 deliberately records its two
+runtime injection proofs rather than the optional static-analyzer fixture (that
+fixture is skipped when its source project is unavailable, and a conformance
+artifact may not contain skipped results). G1 now accepts injected Docker
 runtime/container coordinates so the workflow can run it against the disposable
 CI SurrealDB container, validates every TRX result is a passing expected class,
 then packages the five files plus hashes, repository/commit/workflow/run and
@@ -33,6 +36,11 @@ then packages the five files plus hashes, repository/commit/workflow/run and
 verify the expected repository, protected `main` ref/commit, signer workflow,
 metadata hashes and freshness before mounting extracted files read-only and
 enabling the endpoint; CI upload alone is not evidence.
+
+The first remote producer run on 2026-07-18 correctly failed closed when that
+optional G3 fixture produced a skipped result. The repaired producer filters to
+the two named runtime proofs and rejects a G3 TRX unless it contains both names
+exactly; remote attestation verification remains pending.
 
 ## Activation limits (2026-07-13)
 
