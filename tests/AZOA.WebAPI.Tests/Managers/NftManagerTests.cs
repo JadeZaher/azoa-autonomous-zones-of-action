@@ -16,6 +16,7 @@ public class NftManagerTests
     private readonly Mock<IBlockchainOperationStore> _blockchainOperationStore;
     private readonly Mock<IKycGateService> _kycGate;
     private readonly Mock<INodeFeeScheduleManager> _nodeFees;
+    private readonly Mock<INodeGovernanceGuard> _nodeGovernance;
     private readonly NftManager _manager;
 
     public NftManagerTests()
@@ -24,6 +25,7 @@ public class NftManagerTests
         _blockchainOperationStore = new Mock<IBlockchainOperationStore>();
         _kycGate = new Mock<IKycGateService>();
         _nodeFees = new Mock<INodeFeeScheduleManager>();
+        _nodeGovernance = new Mock<INodeGovernanceGuard>();
         // value-path-wiring H3: MintAsync now gates on KYC at the choke point.
         // Default to approved so the existing mint-path tests exercise the same
         // behaviour; the dedicated H3 test overrides this to assert fail-closed.
@@ -35,11 +37,15 @@ public class NftManagerTests
                 Result = new NodeFeeScheduleResponse(),
                 Message = "Success",
             });
+        _nodeGovernance.Setup(g => g.EnsureAllowedAsync(
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<bool> { Result = true });
         _manager = new NftManager(
             _holonStore.Object,
             _blockchainOperationStore.Object,
             _kycGate.Object,
-            _nodeFees.Object);
+            _nodeFees.Object,
+            _nodeGovernance.Object);
     }
 
     private static INft CreateNftMock(Guid id, string name, string assetType = "NFT", Guid? avatarId = null, string? chainId = null) =>
@@ -172,6 +178,75 @@ public class NftManagerTests
 
         result.IsError.Should().BeFalse();
         _holonStore.Verify(p => p.UpsertAsync(It.Is<IHolon>(h => h.AssetType == "NFT" && h.AvatarId == avatarId), default), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("1", 0)]
+    [InlineData("0", 1)]
+    public async Task MintAsync_NonzeroConfiguredFee_RejectsBeforeAnyMintSideEffect(
+        string flatBaseUnits,
+        long bps)
+    {
+        _nodeFees.Setup(f => f.GetScheduleAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<NodeFeeScheduleResponse>
+            {
+                Result = new NodeFeeScheduleResponse
+                {
+                    Mint = new NodeFeeScheduleEntryResponse { FlatBaseUnits = flatBaseUnits, Bps = bps },
+                },
+            });
+
+        var result = await _manager.MintAsync(new NftMintRequest { ChainId = "Algorand" }, Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("nonzero node Mint fee");
+        VerifyNoMintSideEffect();
+    }
+
+    [Fact]
+    public async Task MintAsync_UnavailableFeeSchedule_RejectsBeforeAnyMintSideEffect()
+    {
+        _nodeFees.Setup(f => f.GetScheduleAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<NodeFeeScheduleResponse> { IsError = true, Message = "Store unavailable" });
+
+        var result = await _manager.MintAsync(new NftMintRequest { ChainId = "Algorand" }, Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("fee schedule is unavailable");
+        VerifyNoMintSideEffect();
+    }
+
+    [Fact]
+    public async Task MintAsync_MalformedFeeSchedule_RejectsBeforeAnyMintSideEffect()
+    {
+        _nodeFees.Setup(f => f.GetScheduleAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<NodeFeeScheduleResponse>
+            {
+                Result = new NodeFeeScheduleResponse
+                {
+                    Mint = new NodeFeeScheduleEntryResponse { FlatBaseUnits = "invalid" },
+                },
+            });
+
+        var result = await _manager.MintAsync(new NftMintRequest { ChainId = "Algorand" }, Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("fee schedule is invalid");
+        VerifyNoMintSideEffect();
+    }
+
+    [Fact]
+    public async Task MintAsync_DisallowedGovernance_RejectsBeforeKycAndAnyMintSideEffect()
+    {
+        _nodeGovernance.Setup(g => g.EnsureAllowedAsync(
+                "Algorand", "NFT", "nft:mint", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<bool> { IsError = true, Message = "Node governance disallows nft:mint." });
+
+        var result = await _manager.MintAsync(new NftMintRequest { ChainId = "Algorand" }, Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        _kycGate.Verify(g => g.RequireVerifiedAsync(It.IsAny<Guid>()), Times.Never);
+        VerifyNoMintSideEffect();
     }
 
     [Fact]
@@ -330,5 +405,12 @@ public class NftManagerTests
         result.Result!.Name.Should().Be("MyNFT");
         result.Result!.Image.Should().Be("https://example.com/img.png");
         result.Result!.ExternalUrl.Should().Be("https://example.com");
+    }
+
+    private void VerifyNoMintSideEffect()
+    {
+        _holonStore.Verify(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
+        _blockchainOperationStore.Verify(
+            p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

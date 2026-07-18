@@ -2,6 +2,7 @@
 
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Idempotency;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -28,6 +29,7 @@ public sealed class AllocationManager : IAllocationManager
     private readonly IKycGateService _kycGate;
     private readonly IWalletManager _walletManager;
     private readonly IWalletStore _walletStore;
+    private readonly IHolonStore _holonStore;
     private readonly INftManager _nftManager;
     private readonly IBlockchainOperationManager _blockchainOps;
     private readonly IIdempotencyStore _idempotencyStore;
@@ -38,6 +40,7 @@ public sealed class AllocationManager : IAllocationManager
         IKycGateService kycGate,
         IWalletManager walletManager,
         IWalletStore walletStore,
+        IHolonStore holonStore,
         INftManager nftManager,
         IBlockchainOperationManager blockchainOps,
         IIdempotencyStore idempotencyStore,
@@ -47,6 +50,7 @@ public sealed class AllocationManager : IAllocationManager
         _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
         _walletManager = walletManager ?? throw new ArgumentNullException(nameof(walletManager));
         _walletStore = walletStore ?? throw new ArgumentNullException(nameof(walletStore));
+        _holonStore = holonStore ?? throw new ArgumentNullException(nameof(holonStore));
         _nftManager = nftManager ?? throw new ArgumentNullException(nameof(nftManager));
         _blockchainOps = blockchainOps ?? throw new ArgumentNullException(nameof(blockchainOps));
         _idempotencyStore = idempotencyStore ?? throw new ArgumentNullException(nameof(idempotencyStore));
@@ -228,21 +232,19 @@ public sealed class AllocationManager : IAllocationManager
         string idempotencyKey,
         Guid? actingTenantId = null)
     {
-        // Step A: record the Holon + KYC gate via NftManager (D2/D3). NftManager
-        // owns the metadata Holon upsert and the single-choke-point KYC gate; it is
-        // NOT the broadcast path. A KYC rejection here fails closed before broadcast.
+        // Step A: record allocation metadata within the already-owned claim.
         var mint = new NftMintRequest
         {
             WalletId = wallet.Id,
             Name = request.Name,
             Description = request.Description ?? string.Empty,
-            ChainId = request.AssetId ?? request.ChainType,
+            ChainId = request.ChainType,
             TokenId = request.AssetId,
             Metadata = MergeAmount(request, feeQuote)
         };
-        var holonResult = await _nftManager.MintAsync(mint, avatarId);
-        if (holonResult.IsError)
-            return holonResult;
+        var holonResult = await _holonStore.UpsertAsync(NftHolonFactory.Create(mint, avatarId));
+        if (holonResult.IsError || holonResult.Result is null)
+            return Operation.Invalid(holonResult.Message);
 
         // Step B: build a typed mint op and drive it through the REAL broadcast
         // path (C2) so the provider is called and a TxHash is recorded.
@@ -264,7 +266,7 @@ public sealed class AllocationManager : IAllocationManager
             // custody seam runs the live consent check before key decrypt.
             ActingTenantId = actingTenantId,
             SigningScope = actingTenantId.HasValue ? AzoaScopes.NftMint : null,
-            Parameters = BuildOpParameters(wallet, request, feeQuote, idempotencyKey, holonResult.Result)
+            Parameters = BuildOpParameters(wallet, request, feeQuote, idempotencyKey, holonResult.Result.Id.ToString())
         };
         op.Parameters[IdempotencyParameterNames.ResultPayload] = SerializeForReplay(BuildAllocationResult(
             avatarId, wallet, walletProvisioned, op.Id, idempotencyKey, feeQuote));
@@ -301,8 +303,9 @@ public sealed class AllocationManager : IAllocationManager
         };
         var holonResult = await _nftManager.TransferAsync(
             request.AssetRecordId.Value, transfer, sourceAvatarId);
-        if (holonResult.IsError)
-            return holonResult;
+        if (holonResult.IsError || holonResult.Result is null)
+            return Operation.Invalid(holonResult.Message);
+        var holonId = holonResult.Result.Parameters?.GetValueOrDefault("holonId");
 
         // Step B: build a typed transfer op and broadcast it (C2). The recipient is
         // the target avatar's custodial wallet address; the asset is request.AssetId.
@@ -318,7 +321,8 @@ public sealed class AllocationManager : IAllocationManager
             ActingTenantId = actingTenantId,
             SigningScope = actingTenantId.HasValue ? AzoaScopes.TransferSign : null,
             Parameters = BuildOpParameters(
-                sourceWallet, request, feeQuote, idempotencyKey, holonResult.Result)
+                sourceWallet, request, feeQuote, idempotencyKey,
+                holonId)
         };
         if (!string.IsNullOrWhiteSpace(request.AssetId))
             op.Parameters["SourceTokenId"] = request.AssetId!;
@@ -356,7 +360,7 @@ public sealed class AllocationManager : IAllocationManager
         AllocationRequest request,
         AllocationFeeQuote feeQuote,
         string idempotencyKey,
-        IBlockchainOperation? holonOp)
+        string? holonId)
     {
         var p = new Dictionary<string, string>
         {
@@ -375,7 +379,7 @@ public sealed class AllocationManager : IAllocationManager
         };
         if (!string.IsNullOrWhiteSpace(request.AssetId))
             p["TokenUri"] = request.AssetId!;
-        if (holonOp?.Parameters is { } hp && hp.TryGetValue("holonId", out var holonId))
+        if (!string.IsNullOrWhiteSpace(holonId))
             p["holonId"] = holonId;
         return p;
     }

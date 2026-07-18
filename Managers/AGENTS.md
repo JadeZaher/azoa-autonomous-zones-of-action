@@ -165,6 +165,7 @@ economic-engine seams:
 | `AllocationManager.AllocateAsync` | `ChainType` + allocation asset type |
 | `FungibleTokenManager.CreateAsync` | `ChainType` + `FungibleToken` |
 | `HolonManager.CreateAsync` / `UpdateAsync` | `AssetType` |
+| `NftManager.MintAsync` / `TransferAsync` / `BurnAsync` | chain + `NFT` |
 
 The local node's policy is stored as one `node_governance_parameters:local`
 record and changed only through the `NodeGovern` JWT-only surface. Every update
@@ -236,6 +237,14 @@ NFT read, ownership mutation, or operation write. A nonzero flat amount or bps
 the version-pinned, on-chain settlement flow replaces this containment gate. An
 unavailable or malformed schedule also rejects, preventing the direct route from
 bypassing configured fee policy while the settlement executor is inactive.
+
+`NftManager.MintAsync` is the direct and quest route. It applies the same
+governance guard and rejects unavailable, malformed, or nonzero Mint entries
+before KYC, Holon, or operation work because no direct Mint settlement exists.
+Allocation persists its metadata through the shared `NftHolonFactory` only
+after it has made and persisted a version-pinned quote inside its idempotency
+claim; it neither reuses the direct route nor creates a second pending operation.
+All three direct NFT mutations apply the governance guard before their writes.
 
 Unexpected allocation or fungible-token exceptions always bubble to the host
 logging boundary. Before entering a value-effect call, recovery may fail the

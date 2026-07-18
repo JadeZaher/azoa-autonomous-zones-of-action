@@ -110,6 +110,9 @@ public sealed class NodeConformanceManifestTests : IDisposable
 
         await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, "G3.trx"), Trx("G3", "Failed"));
         (await source.TryReadAsync()).Should().BeNull();
+
+        await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, "G3.trx"), Trx("G3", "Passed", "G2"));
+        (await source.TryReadAsync()).Should().BeNull();
     }
 
     [Fact]
@@ -159,8 +162,22 @@ public sealed class NodeConformanceManifestTests : IDisposable
 
     private static readonly string[] Gates = ["G1", "G2", "G3", "G5", "G7"];
 
-    private static string Trx(string gate, string outcome)
-        => $"<TestRun><Results><UnitTestResult testName=\"{gate}_Evidence\" outcome=\"{outcome}\" /></Results></TestRun>";
+    private static string Trx(string gate, string outcome, string? testClassGate = null)
+    {
+        var testClass = testClassGate ?? gate;
+        return $"<TestRun><Results><UnitTestResult testName=\"AZOA.WebAPI.IntegrationTests.Gates.{testClass}_" +
+               $"{TestClassSuffix(testClass)}.Evidence\" outcome=\"{outcome}\" /></Results></TestRun>";
+    }
+
+    private static string TestClassSuffix(string gate) => gate switch
+    {
+        "G1" => "CrashDurabilityTest",
+        "G2" => "IdempotencyTocTouTest",
+        "G3" => "InjectionSuiteTest",
+        "G5" => "RestoreDrillTest",
+        "G7" => "ReconciliationDrillTest",
+        _ => throw new ArgumentOutOfRangeException(nameof(gate)),
+    };
 
     private sealed class StubEvidenceSource : INodeConformanceEvidenceSource
     {

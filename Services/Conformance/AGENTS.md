@@ -15,7 +15,8 @@ bounded freshness remain required before the L0 track can claim conformance.
 
 `TrxNodeConformanceEvidenceSource` accepts exactly five expected TRX files:
 `G1.trx`, `G2.trx`, `G3.trx`, `G5.trx`, and `G7.trx`. Each must contain only
-passing results and at least one matching gate test name. The service calculates
+passing results from only its expected fully-qualified gate test class; mixed or
+full-suite artifacts are rejected. The service calculates
 the SHA-256 digest itself and includes only gate, digest, and count in the
 public document. It does not accept operator-entered pass/fail claims. The
 deployment must provide these output files read-only in

@@ -21,6 +21,15 @@ status: in_progress
    add artifact freshness/provenance enforcement, independently consume a deployed
    endpoint, and then verify every acceptance criterion before archival.
 
+## Evidence ingestion correction (2026-07-17)
+
+The local reader now accepts only real VSTest fully-qualified test names for the
+five designated gate classes and rejects mixed/full-suite artifacts. CI still
+does not generate the five scoped TRXs: G1 requires Docker runtime/container
+configuration before its hard-kill probe can run against the CI SurrealDB
+container, then each gate needs an isolated TRX artifact plus provenance and
+freshness verification before this track can close.
+
 ## Activation limits (2026-07-13)
 
 The local half can sign and serve a bounded descriptor only when explicitly

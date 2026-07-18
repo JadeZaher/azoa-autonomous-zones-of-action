@@ -1,11 +1,13 @@
 using System.Globalization;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Governance;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -15,17 +17,20 @@ public class NftManager : INftManager
     private readonly IBlockchainOperationStore _blockchainOperationStore;
     private readonly IKycGateService _kycGate;
     private readonly INodeFeeScheduleManager _nodeFees;
+    private readonly INodeGovernanceGuard _nodeGovernance;
 
     public NftManager(
         IHolonStore holonStore,
         IBlockchainOperationStore blockchainOperationStore,
         IKycGateService kycGate,
-        INodeFeeScheduleManager nodeFees)
+        INodeFeeScheduleManager nodeFees,
+        INodeGovernanceGuard nodeGovernance)
     {
         _holonStore = holonStore;
         _blockchainOperationStore = blockchainOperationStore;
         _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
         _nodeFees = nodeFees ?? throw new ArgumentNullException(nameof(nodeFees));
+        _nodeGovernance = nodeGovernance ?? throw new ArgumentNullException(nameof(nodeGovernance));
     }
 
     // Cross-tenant read scope: an NFT (a Holon with AssetType=="NFT") is readable iff
@@ -73,34 +78,31 @@ public class NftManager : INftManager
         return new AZOAResult<IEnumerable<INft>> { Result = filtered.Cast<INft>().ToList(), Message = "Success" };
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid avatarId, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
     {
-        // value-path-wiring H3: KYC gate at the single choke point. Both the
-        // allocation door and the raw POST /api/nft/mint door pass through here, so
-        // gating before ANY side effect (Holon upsert / op build) closes the P5 hole
-        // where a tenant could mint via the controller and sidestep the gate. The
-        // KYC_FORBIDDEN: prefix is preserved so NftController maps it to 403.
+        return await MintCoreAsync(request, avatarId, actingTenantId);
+    }
+
+    private async Task<AZOAResult<IBlockchainOperation>> MintCoreAsync(
+        NftMintRequest request,
+        Guid avatarId,
+        Guid? actingTenantId)
+    {
+        var governance = await _nodeGovernance.EnsureAllowedAsync(request.ChainId, "NFT", "nft:mint");
+        if (governance.IsError)
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = governance.Message };
+
+        var mintFeeBlocker = await GetDirectFeeBlockerAsync(NodeFeeOperation.Mint);
+        if (mintFeeBlocker is not null)
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = mintFeeBlocker };
+
+        // KYC remains mandatory before a mint writes its Holon or operation.
         var gate = await _kycGate.RequireVerifiedAsync(avatarId);
         if (gate.IsError)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
 
-        // Build the Holon with AssetType = "NFT"
-        var metadata = new Dictionary<string, string>(request.Metadata);
-        if (!string.IsNullOrEmpty(request.ImageUri)) metadata["image"] = request.ImageUri;
-        if (!string.IsNullOrEmpty(request.ExternalUri)) metadata["external_url"] = request.ExternalUri;
-
-        var holon = new Holon
-        {
-            AvatarId = avatarId,
-            Name = request.Name,
-            Description = request.Description,
-            AssetType = "NFT",
-            ChainId = request.ChainId,
-            TokenId = request.TokenId,
-            Metadata = metadata,
-            ProviderName = "PostgreSQL",
-            IsActive = true
-        };
+        var holon = NftHolonFactory.Create(request, avatarId);
 
         var saveResult = await _holonStore.UpsertAsync(holon, default);
         if (saveResult.IsError || saveResult.Result == null)
@@ -136,7 +138,7 @@ public class NftManager : INftManager
     /// <inheritdoc/>
     public async Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid avatarId, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
     {
-        var transferFeeBlocker = await GetDirectTransferFeeBlockerAsync();
+        var transferFeeBlocker = await GetDirectFeeBlockerAsync(NodeFeeOperation.Transfer);
         if (transferFeeBlocker is not null)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = transferFeeBlocker };
 
@@ -148,6 +150,10 @@ public class NftManager : INftManager
         var holon = holonResult.Result;
         if (!string.Equals(holon.AssetType, "NFT", StringComparison.OrdinalIgnoreCase))
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Holon is not an NFT." };
+
+        var governance = await _nodeGovernance.EnsureAllowedAsync(holon.ChainId, "NFT", "nft:transfer");
+        if (governance.IsError)
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = governance.Message };
 
         if (holon.AvatarId != avatarId)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };
@@ -186,23 +192,23 @@ public class NftManager : INftManager
         return await _blockchainOperationStore.UpsertAsync(operation, default);
     }
 
-    private async Task<string?> GetDirectTransferFeeBlockerAsync()
+    private async Task<string?> GetDirectFeeBlockerAsync(NodeFeeOperation operation)
     {
         var schedule = await _nodeFees.GetScheduleAsync();
         if (schedule.IsError || schedule.Result is null)
         {
-            return "Node Transfer fee schedule is unavailable; direct NFT transfer denied until fee settlement can be verified.";
+            return $"Node {operation} fee schedule is unavailable; direct NFT {operation.ToString().ToLowerInvariant()} denied until fee settlement can be verified.";
         }
 
-        var transfer = schedule.Result.Transfer;
-        if (!ulong.TryParse(transfer.FlatBaseUnits, NumberStyles.None, CultureInfo.InvariantCulture, out var flat)
-            || transfer.Bps is < 0 or > 10_000)
+        var entry = operation == NodeFeeOperation.Mint ? schedule.Result.Mint : schedule.Result.Transfer;
+        if (!ulong.TryParse(entry.FlatBaseUnits, NumberStyles.None, CultureInfo.InvariantCulture, out var flat)
+            || entry.Bps is < 0 or > 10_000)
         {
-            return "Node Transfer fee schedule is invalid; direct NFT transfer denied.";
+            return $"Node {operation} fee schedule is invalid; direct NFT {operation.ToString().ToLowerInvariant()} denied.";
         }
 
-        return flat > 0 || transfer.Bps > 0
-            ? "Direct NFT transfer is unavailable while a nonzero node Transfer fee requires on-chain treasury settlement."
+        return flat > 0 || entry.Bps > 0
+            ? $"Direct NFT {operation.ToString().ToLowerInvariant()} is unavailable while a nonzero node {operation} fee requires on-chain treasury settlement."
             : null;
     }
 
@@ -216,6 +222,10 @@ public class NftManager : INftManager
         var holon = holonResult.Result;
         if (!string.Equals(holon.AssetType, "NFT", StringComparison.OrdinalIgnoreCase))
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Holon is not an NFT." };
+
+        var governance = await _nodeGovernance.EnsureAllowedAsync(holon.ChainId, "NFT", "nft:burn");
+        if (governance.IsError)
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = governance.Message };
 
         if (holon.AvatarId != avatarId)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };

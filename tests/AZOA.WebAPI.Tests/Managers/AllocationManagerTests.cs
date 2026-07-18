@@ -31,6 +31,7 @@ public class AllocationManagerTests
     private readonly Mock<IKycGateService> _kyc = new();
     private readonly Mock<IWalletManager> _walletManager = new();
     private readonly Mock<IWalletStore> _walletStore = new();
+    private readonly Mock<IHolonStore> _holonStore = new();
     private readonly Mock<INftManager> _nft = new();
     private readonly Mock<IBlockchainOperationManager> _blockchainOps = new();
     private readonly Mock<INodeFeeScheduleManager> _nodeFees = new();
@@ -41,6 +42,9 @@ public class AllocationManagerTests
 
     public AllocationManagerTests()
     {
+        _holonStore
+            .Setup(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IHolon holon, CancellationToken _) => new AZOAResult<IHolon> { Result = holon });
         _nodeFees
             .Setup(m => m.QuoteAsync(
                 It.IsAny<NodeFeeOperation>(),
@@ -73,6 +77,7 @@ public class AllocationManagerTests
         SetupBroadcastReturnsTxHash();
         return new(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency,
             nodeFees ?? _nodeFees.Object, nodeGovernance);
     }
@@ -124,11 +129,9 @@ public class AllocationManagerTests
             .ReturnsAsync(new AZOAResult<IWallet> { Result = wallet });
 
     private void SetupMintSucceeds()
-        => _nft.Setup(n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
-               .ReturnsAsync(new AZOAResult<IBlockchainOperation>
-               {
-                   Result = Mock.Of<IBlockchainOperation>(o => o.Id == Guid.NewGuid())
-               });
+        => _holonStore
+            .Setup(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IHolon holon, CancellationToken _) => new AZOAResult<IHolon> { Result = holon });
 
     private void SetupFeeQuote(
         NodeFeeOperation operation,
@@ -179,7 +182,7 @@ public class AllocationManagerTests
         result.Message.Should().Contain("Node governance disallows allocation:Mint on chain 'Algorand'");
         _kyc.Verify(k => k.RequireVerifiedAsync(It.IsAny<Guid>()), Times.Never);
         _walletStore.Verify(s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
-        _nft.Verify(n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Never);
+        _holonStore.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
         _blockchainOps.Verify(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()), Times.Never);
         (await _idempotency.GetAsync($"alloc:{ApiKeyId}:blocked", CancellationToken.None)).Should().BeNull();
     }
@@ -208,7 +211,7 @@ public class AllocationManagerTests
         second.Result.OperationId.Should().Be(first.Result.OperationId);
 
         // The irreversible effect ran exactly once across the duplicate calls.
-        _nft.Verify(n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+        _holonStore.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -227,7 +230,7 @@ public class AllocationManagerTests
 
         first.IsError.Should().BeFalse();
         second.Result!.Replayed.Should().BeTrue();
-        _nft.Verify(n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+        _holonStore.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -255,8 +258,8 @@ public class AllocationManagerTests
         _nodeFees.Verify(
             m => m.QuoteAsync(NodeFeeOperation.Mint, 100, It.IsAny<CancellationToken>()),
             Times.Once);
-        _nft.Verify(
-            n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+        _holonStore.Verify(
+            s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _blockchainOps.Verify(
             b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()),
@@ -285,6 +288,7 @@ public class AllocationManagerTests
             });
         var manager = new AllocationManager(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
         var result = await manager.AllocateAsync(
@@ -339,6 +343,7 @@ public class AllocationManagerTests
         var crashStore = new CrashAfterBroadcastIdempotencyStore();
         var manager = new AllocationManager(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _holonStore.Object,
             _nft.Object, _blockchainOps.Object, crashStore, _nodeFees.Object);
 
         var first = await manager.AllocateAsync(
@@ -375,6 +380,7 @@ public class AllocationManagerTests
             .ThrowsAsync(new InvalidOperationException("ambiguous provider failure"));
         var manager = new AllocationManager(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
         Func<Task> first = async () => await manager.AllocateAsync(
@@ -416,6 +422,7 @@ public class AllocationManagerTests
             });
         var manager = new AllocationManager(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
         var request = new AllocationRequest
@@ -469,6 +476,31 @@ public class AllocationManagerTests
         result.Result.NodeFeeAmount.Should().Be("7");
         result.Result.NetAmount.Should().Be("93");
         result.Result.NodeFeeScheduleVersion.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task AllocateAsync_MintUsesCanonicalChainTypeForTheNftGovernanceBoundary()
+    {
+        ApproveKyc(_avatarId);
+        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        IHolon? mintedHolon = null;
+        _holonStore.Setup(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IHolon holon, CancellationToken _) =>
+            {
+                mintedHolon = holon;
+                return new AZOAResult<IHolon>
+                {
+                    Result = holon,
+                };
+            });
+        var manager = BuildManager();
+
+        var result = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "pi_mint_chain", ApiKeyId);
+
+        result.IsError.Should().BeFalse(result.Message);
+        mintedHolon!.ChainId.Should().Be(ChainType);
+        mintedHolon.TokenId.Should().Be("PRJALPHA");
     }
 
     [Fact]
@@ -527,8 +559,8 @@ public class AllocationManagerTests
         _walletManager.Verify(
             m => m.GenerateWalletAsync(It.IsAny<WalletGenerateRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>()),
             Times.Never);
-        _nft.Verify(
-            n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+        _holonStore.Verify(
+            s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _blockchainOps.Verify(
             b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()),
@@ -551,6 +583,7 @@ public class AllocationManagerTests
         SetupMintSucceeds();
         var manager = new AllocationManager(
             _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
         var request = new AllocationRequest
@@ -595,7 +628,7 @@ public class AllocationManagerTests
         result.Message.Should().StartWith(KycAuthorizationError.Forbidden);
 
         // No value-bearing side effect: never minted, never provisioned.
-        _nft.Verify(n => n.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+        _holonStore.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _walletManager.Verify(m => m.GenerateWalletAsync(
             It.IsAny<WalletGenerateRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>()), Times.Never);

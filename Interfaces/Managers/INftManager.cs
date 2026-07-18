@@ -17,7 +17,9 @@ public interface INftManager
     // (along with the signing scope) so the custody seam's live consent gate fires.
     // Null (the default) = user-driven / direct caller — no op-level tenant stamp,
     // identical behaviour to before.
+    /// <summary>Creates a direct or quest NFT mint request, subject to the direct-route fee containment policy.</summary>
     Task<AZOAResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid avatarId, AZOARequest? providerRequest = null, Guid? actingTenantId = null);
+
     Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid avatarId, AZOARequest? providerRequest = null, Guid? actingTenantId = null);
     Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid avatarId, AZOARequest? providerRequest = null);
     Task<AZOAResult<NftMetadata>> GetMetadataAsync(Guid id, AZOARequest? request = null);

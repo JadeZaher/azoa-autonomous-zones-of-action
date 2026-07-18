@@ -69,10 +69,12 @@ schedule plus append-only audit, value-idempotent retries, expected-version CAS,
 and allocation Mint netting inside the won allocation claim. Transfer quotes are
 fail-closed when nonzero until node-treasury settlement exists. Gross, fee, net,
 and schedule version are persisted into the operation/replay payload; crash
-reconciliation restores the complete allocation result. Raw NFT, Swap,
-QuestComplete, and FederationPublish consumers remain open Phase 1 work; their
-configured entries must not be called enforced until those value paths quote
-and settle them.
+reconciliation restores the complete allocation result. Swap, QuestComplete,
+and FederationPublish consumers remain open Phase 1 work; their configured
+entries must not be called enforced until those value paths quote and settle
+them. Direct and quest NFT Mint now fail closed whenever the Mint entry is
+unavailable, malformed, or nonzero; allocation Mint alone uses its server-held,
+version-pinned quote to mint the net amount.
 
 The remaining consumers cannot share Allocation Mint's simple netting rule.
 Raw NFT routes currently persist intent/ownership before broadcast, Swap returns
@@ -222,6 +224,15 @@ malformed schedule rejects the direct route while no settlement executor exists.
 This is a fail-closed containment measure only; it does not reserve ownership,
 create a settlement, submit an atomic group, or make nonzero Transfer fees
 active.
+
+Direct-mint containment and NFT governance closure (2026-07-17): the public
+and quest `NftManager.MintAsync` path now reads the Mint schedule and rejects
+unavailable, malformed, or nonzero fees before KYC, Holon persistence, or
+operation creation. Allocation persists NFT metadata directly inside its won
+claim after a validated, version-pinned quote; it does not expose a bypass
+method or create a second pending operation. Mint, transfer, and burn now all
+apply the node chain/asset guard before their writes. This is containment, not
+settlement activation: no direct NFT route may charge or claim a nonzero fee yet.
 
 Typed-query waiver (expires 2026-08-31): the consumed SurrealForge package
 cannot currently represent the recovery scan's contract-cased enum plus

@@ -6,3 +6,7 @@ normalizes either a bare GUID/hex id or a `table:id` link so manager response
 mappers do not maintain private copies of transport parsing. `BareId` also
 normalizes SurrealDB's backtick/double-quoted textual-id rendering before it is
 used in a typed record comparison or GUID conversion.
+
+`NftHolonFactory` is the shared pure mapping for guarded NFT metadata writes.
+It contains no KYC, governance, fee, persistence, or operation policy; callers
+must make those decisions before persisting its result.

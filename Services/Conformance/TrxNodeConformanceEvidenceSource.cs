@@ -8,6 +8,15 @@ namespace AZOA.WebAPI.Services.Conformance;
 public sealed class TrxNodeConformanceEvidenceSource : INodeConformanceEvidenceSource
 {
     private static readonly string[] RequiredGates = ["G1", "G2", "G3", "G5", "G7"];
+    private static readonly IReadOnlyDictionary<string, string> GateTestClasses =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["G1"] = "AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest",
+            ["G2"] = "AZOA.WebAPI.IntegrationTests.Gates.G2_IdempotencyTocTouTest",
+            ["G3"] = "AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest",
+            ["G5"] = "AZOA.WebAPI.IntegrationTests.Gates.G5_RestoreDrillTest",
+            ["G7"] = "AZOA.WebAPI.IntegrationTests.Gates.G7_ReconciliationDrillTest",
+        };
     private readonly IOptions<NodeConformanceOptions> _options;
 
     public TrxNodeConformanceEvidenceSource(IOptions<NodeConformanceOptions> options)
@@ -53,9 +62,15 @@ public sealed class TrxNodeConformanceEvidenceSource : INodeConformanceEvidenceS
                 return false;
             }
 
-            passedTestCount = results.Count(result => ((string?)result.Attribute("testName"))
-                ?.StartsWith(gate + "_", StringComparison.OrdinalIgnoreCase) == true);
-            return passedTestCount > 0;
+            var expectedClass = GateTestClasses[gate] + ".";
+            if (results.Any(result => !((string?)result.Attribute("testName"))
+                    ?.StartsWith(expectedClass, StringComparison.Ordinal) == true))
+            {
+                return false;
+            }
+
+            passedTestCount = results.Length;
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException)
         {
