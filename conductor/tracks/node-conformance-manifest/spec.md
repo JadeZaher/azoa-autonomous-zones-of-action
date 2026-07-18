@@ -2,7 +2,7 @@
 type: spec
 track: node-conformance-manifest
 created: 2026-07-11
-status: pending
+status: in_progress
 horizon: alpha
 repository: azoa
 activation_gate: >-

@@ -7,19 +7,21 @@ no Holochain runtime/client/conductor package, DHT publication, peer handling,
 cross-node resolution, private SurrealDB data, PII, wallet keys, or value
 authority. The sole public result is a bounded, signed document at
 `/.well-known/azoa-node.json`; it is absent (404) unless an operator opts in
-with all required configuration and fresh evidence.
+with all required configuration and an evidence directory. Artifact integrity
+is limited to self-computed digests of supplied bytes; CI provenance and
+bounded freshness remain required before the L0 track can claim conformance.
 
 ### Evidence source
 
-`TrxNodeConformanceEvidenceSource` accepts exactly five CI-produced TRX files:
+`TrxNodeConformanceEvidenceSource` accepts exactly five expected TRX files:
 `G1.trx`, `G2.trx`, `G3.trx`, `G5.trx`, and `G7.trx`. Each must contain only
 passing results and at least one matching gate test name. The service calculates
 the SHA-256 digest itself and includes only gate, digest, and count in the
-public document. It does not accept operator-entered pass/fail claims. CI must
-mount these output files read-only into `NodeConformance:EvidenceDirectory`.
-The document is intentionally unavailable when artifacts are stale, missing,
-or failed; current code requires a separate deployment freshness policy before
-the L0 track can close.
+public document. It does not accept operator-entered pass/fail claims. The
+deployment must provide these output files read-only in
+`NodeConformance:EvidenceDirectory`. The document is unavailable when artifacts
+are missing or failed; stale artifacts are currently accepted, so deployment
+freshness and provenance enforcement are required before the L0 track can close.
 
 ### Node identity, rotation, and restore
 

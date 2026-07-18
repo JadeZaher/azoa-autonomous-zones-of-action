@@ -75,6 +75,11 @@ collect one complete filtered post-fix run before archive.
   failed in 23m55s.
 - 2026-07-17, first repository CI execution on `29c75d6` reached 342 passed,
   one skip, and two failures. G5 targeted the local container name and the SDK
-  lockfile was ignored, so both deterministic CI preconditions were repaired;
-  the remaining treasury-governance 500 needs a clean project-DB reproduction.
-- Repository CI proof remains pending; track stays active.
+  lockfile was ignored; those deterministic CI preconditions and the
+  test-host simulated-provider configuration were repaired before the green
+  run below.
+- 2026-07-18, GitHub Actions run `29630076208` for `96129bb` passed: SDK 15
+  files/183 tests; unit 1,538 passed/one intentional skip; integration 344
+  passed/one intentional skip on the pinned clean SurrealDB 3.1.4 container.
+  Repository CI proof is complete; the track remains active only for its
+  separate opt-in performance-budget evidence.

@@ -30,7 +30,10 @@ updated: 2026-07-17
   bridge insert, but `WalletGetById` measured 59.3 ms against its 50 ms budget;
   the direct-record query path needs environment or transport evidence before
   any change to the budget is considered.
-- [ ] Observe a green repository CI check on the workflow change.
+- [x] Observe a green repository CI check on the workflow change: GitHub Actions
+  run `29630076208` for `96129bb` passed the SDK's 15 files/183 tests, 1,538
+  unit tests with one intentional skip, and 344 integration tests with one
+  intentional skip on a clean SurrealDB 3.1.4 container.
 - [ ] Diagnose and repair the remaining CI-only
   `PutTreasuryDestination_AsNodeGovernor_PersistsGetRoundTripsAndAudits` 500;
   local reproduction is blocked until the project SurrealDB owns port 8000.
