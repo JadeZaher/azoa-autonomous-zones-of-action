@@ -40,7 +40,12 @@ enabling the endpoint; CI upload alone is not evidence.
 The first remote producer run on 2026-07-18 correctly failed closed when that
 optional G3 fixture produced a skipped result. The repaired producer filters to
 the two named runtime proofs and rejects a G3 TRX unless it contains both names
-exactly; remote attestation verification remains pending.
+exactly. Remote CI run `29631648826` for commit
+`f79e691cb54460c35291d6d748b2f9931e7406d0` passed build, unit, full
+integration, all five scoped gates, packaging, GitHub attestation, and artifact
+upload. Independent download confirmed the five expected archive entries, all
+metadata hashes, the exact two passing G3 runtime proofs, and `gh attestation
+verify`; this is CI-production evidence only, not deployment proof.
 
 ## Activation limits (2026-07-13)
 
