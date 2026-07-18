@@ -335,6 +335,14 @@ to a bound parameter. SurrealDB 3.1.4 rejects the latter form during parsing;
 the replacement preserves both hash-only reconciliation terminalization and the
 legacy raw-key equality guard inside the same atomic settlement/parent CAS.
 
+Verification evidence (2026-07-18): GitHub Actions run `29637395587` is green
+after the compatibility correction. It passes SDK build and Vitest, .NET build
+and unit tests, the full live-SurrealDB integration suite, conformance and
+package gate evidence, and evidence attestation/upload. This verifies the
+receipt-driven reconciliation persistence seam; it does not authorize hosted
+reconciliation, provider submission, NFT ownership terminalization, or any
+nonzero Transfer-fee consumer.
+
 Verification evidence (2026-07-11): the API project builds with zero errors;
 the regenerated decorated-POCO goldens include treasury tables, ownership
 reservation fields/index, and `PendingConfirmation`; 1,422 unit tests pass with
