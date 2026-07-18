@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Reflection;
+using System.Text.Json;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Services.Conformance;
 using FluentAssertions;
@@ -88,30 +90,126 @@ public sealed class NodeConformanceManifestTests : IDisposable
     }
 
     [Fact]
-    public async Task TrxEvidenceSource_DerivesDigestAndRefusesFailedGate()
+    public async Task Manifest_CapsExpiryAtEvidenceBoundaryAndRefusesExpiredEvidence()
+    {
+        var issuedAt = DateTimeOffset.Parse("2026-07-13T12:00:00Z");
+        var options = CreateOptions();
+        options.ManifestLifetimeMinutes = 60;
+        var evidenceExpiresAt = issuedAt.AddMinutes(5);
+        var boundedService = CreateService(
+            new FixedTimeProvider(issuedAt),
+            options,
+            new StubEvidenceSource(evidenceExpiresAt));
+
+        var boundedDocument = (await boundedService.TryGetDocumentAsync()).Document;
+        boundedDocument.Should().NotBeNull();
+        boundedDocument!.Manifest.ExpiresAt.Should().Be(evidenceExpiresAt);
+
+        var expiredService = CreateService(
+            new FixedTimeProvider(issuedAt),
+            CreateOptions(),
+            new StubEvidenceSource(issuedAt));
+        (await expiredService.TryGetDocumentAsync()).IsAvailable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TrxEvidenceSource_DerivesMetadataBoundDigestAndRefusesFailedGate()
     {
         var evidenceDirectory = Path.Combine(_temporaryDirectory, "evidence");
         Directory.CreateDirectory(evidenceDirectory);
-        foreach (var gate in Gates)
-            await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, $"{gate}.trx"), Trx(gate, "Passed"));
+        var now = DateTimeOffset.Parse("2026-07-13T12:00:00Z");
+        await WriteEvidenceBundleAsync(evidenceDirectory, now);
 
-        var source = new TrxNodeConformanceEvidenceSource(Options.Create(new NodeConformanceOptions
-        {
-            EvidenceDirectory = evidenceDirectory,
-        }));
+        var source = new TrxNodeConformanceEvidenceSource(
+            Options.Create(CreateEvidenceOptions(evidenceDirectory)), new FixedTimeProvider(now));
         var evidence = await source.TryReadAsync();
 
         evidence.Should().NotBeNull();
-        var resolvedEvidence = evidence!;
+        var resolvedEvidence = evidence!.Evidence;
         resolvedEvidence.Should().HaveCount(5);
         var g1Path = Path.Combine(evidenceDirectory, "G1.trx");
         var expectedDigest = Convert.ToHexStringLower(SHA256.HashData(await File.ReadAllBytesAsync(g1Path)));
         resolvedEvidence.Single(item => item.Gate == "G1").ArtifactSha256.Should().Be(expectedDigest);
 
-        await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, "G3.trx"), Trx("G3", "Failed"));
+        await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, "G3.trx"), Trx("G3", "Failed", G3Tests));
         (await source.TryReadAsync()).Should().BeNull();
 
-        await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, "G3.trx"), Trx("G3", "Passed", "G2"));
+        await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, "G3.trx"), Trx("G3", "Passed", [G3Tests[0]]));
+        await WriteMetadataAsync(evidenceDirectory, now);
+        (await source.TryReadAsync()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TrxEvidenceSource_FailsClosedWhenMetadataBindingOrFreshnessIsInvalid()
+    {
+        var evidenceDirectory = Path.Combine(_temporaryDirectory, "evidence-binding");
+        Directory.CreateDirectory(evidenceDirectory);
+        var now = DateTimeOffset.Parse("2026-07-13T12:00:00Z");
+        var source = new TrxNodeConformanceEvidenceSource(
+            Options.Create(CreateEvidenceOptions(evidenceDirectory)), new FixedTimeProvider(now));
+
+        await WriteEvidenceBundleAsync(evidenceDirectory, now, repository: "other/repository");
+        (await source.TryReadAsync()).Should().BeNull();
+
+        await WriteEvidenceBundleAsync(evidenceDirectory, now, generatedAt: now.AddMinutes(-24 * 60 - 1));
+        (await source.TryReadAsync()).Should().BeNull();
+
+        await WriteEvidenceBundleAsync(evidenceDirectory, now, commit: new string('0', 40));
+        (await source.TryReadAsync()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TrxEvidenceSource_RequiresExactDeclaredArtifactSetAndHashes()
+    {
+        var evidenceDirectory = Path.Combine(_temporaryDirectory, "evidence-artifacts");
+        Directory.CreateDirectory(evidenceDirectory);
+        var now = DateTimeOffset.Parse("2026-07-13T12:00:00Z");
+        var source = new TrxNodeConformanceEvidenceSource(
+            Options.Create(CreateEvidenceOptions(evidenceDirectory)), new FixedTimeProvider(now));
+
+        await WriteEvidenceBundleAsync(evidenceDirectory, now, files: [
+            new NodeConformanceEvidenceFile("G2.trx", new string('a', 64)),
+            new NodeConformanceEvidenceFile("G1.trx", new string('a', 64)),
+            new NodeConformanceEvidenceFile("G3.trx", new string('a', 64)),
+            new NodeConformanceEvidenceFile("G5.trx", new string('a', 64)),
+            new NodeConformanceEvidenceFile("G7.trx", new string('a', 64)),
+        ]);
+        (await source.TryReadAsync()).Should().BeNull();
+
+        await WriteEvidenceBundleAsync(evidenceDirectory, now);
+        await File.AppendAllTextAsync(Path.Combine(evidenceDirectory, "G1.trx"), " ");
+        (await source.TryReadAsync()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TrxEvidenceSource_FailsClosedOnOversizedEvidenceAndProhibitedDtd()
+    {
+        var evidenceDirectory = Path.Combine(_temporaryDirectory, "evidence-limits");
+        Directory.CreateDirectory(evidenceDirectory);
+        var now = DateTimeOffset.Parse("2026-07-13T12:00:00Z");
+        var source = new TrxNodeConformanceEvidenceSource(
+            Options.Create(CreateEvidenceOptions(evidenceDirectory)), new FixedTimeProvider(now));
+
+        await WriteEvidenceBundleAsync(evidenceDirectory, now);
+        await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, "metadata.json"), new string(' ', 64 * 1024 + 1));
+        (await source.TryReadAsync()).Should().BeNull();
+
+        await WriteEvidenceBundleAsync(evidenceDirectory, now);
+        await File.WriteAllTextAsync(
+            Path.Combine(evidenceDirectory, "G1.trx"),
+            Trx("G1", "Passed") + new string(' ', 512 * 1024));
+        (await source.TryReadAsync()).Should().BeNull();
+
+        await WriteEvidenceBundleAsync(evidenceDirectory, now);
+        foreach (var gate in Gates)
+            await File.AppendAllTextAsync(Path.Combine(evidenceDirectory, $"{gate}.trx"), new string(' ', 450 * 1024));
+        await WriteMetadataAsync(evidenceDirectory, now);
+        (await source.TryReadAsync()).Should().BeNull();
+
+        await WriteEvidenceBundleAsync(evidenceDirectory, now);
+        await File.WriteAllTextAsync(
+            Path.Combine(evidenceDirectory, "G1.trx"),
+            "<!DOCTYPE TestRun [<!ELEMENT TestRun ANY>]><TestRun><Results><UnitTestResult testName=\"AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest.Evidence\" outcome=\"Passed\" /></Results></TestRun>");
         (await source.TryReadAsync()).Should().BeNull();
     }
 
@@ -142,12 +240,15 @@ public sealed class NodeConformanceManifestTests : IDisposable
             Directory.Delete(_temporaryDirectory, recursive: true);
     }
 
-    private NodeConformanceManifestService CreateService(TimeProvider clock, NodeConformanceOptions? options = null)
+    private NodeConformanceManifestService CreateService(
+        TimeProvider clock,
+        NodeConformanceOptions? options = null,
+        INodeConformanceEvidenceSource? evidence = null)
     {
         options ??= CreateOptions();
         var protector = new EphemeralDataProtectionProvider();
         var keys = new ProtectedFileNodeIdentityKeyService(protector, Options.Create(options));
-        return new NodeConformanceManifestService(new StubEvidenceSource(), keys, Options.Create(options), clock);
+        return new NodeConformanceManifestService(evidence ?? new StubEvidenceSource(), keys, Options.Create(options), clock);
     }
 
     private NodeConformanceOptions CreateOptions() => new()
@@ -156,17 +257,88 @@ public sealed class NodeConformanceManifestTests : IDisposable
         NodeId = "azoa-test-node",
         KeyStoragePath = Path.Combine(_temporaryDirectory, "identity"),
         EvidenceDirectory = Path.Combine(_temporaryDirectory, "evidence"),
+        ExpectedRepository = "JadeZaher/azoa-autonomous-zones-of-action",
+        ExpectedWorkflow = "JadeZaher/azoa-autonomous-zones-of-action/.github/workflows/ci.yml@refs/heads/main",
+        MaxEvidenceAgeMinutes = 24 * 60,
         ManifestLifetimeMinutes = 60,
         MaxPayloadBytes = 16 * 1024,
     };
 
     private static readonly string[] Gates = ["G1", "G2", "G3", "G5", "G7"];
+    private static readonly string[] G3Tests =
+    [
+        "AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest.G3_ControllerPaths_HostileInput_LandsAsLiteralNotSurrealQl",
+        "AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest.G3_DirectWithParam_HostileInput_PersistsAsLiteralString",
+    ];
 
-    private static string Trx(string gate, string outcome, string? testClassGate = null)
+    private static string Trx(string gate, string outcome, IReadOnlyList<string>? testNames = null, string? testClassGate = null)
     {
         var testClass = testClassGate ?? gate;
-        return $"<TestRun><Results><UnitTestResult testName=\"AZOA.WebAPI.IntegrationTests.Gates.{testClass}_" +
-               $"{TestClassSuffix(testClass)}.Evidence\" outcome=\"{outcome}\" /></Results></TestRun>";
+        var resolvedTestNames = testNames ??
+            [$"AZOA.WebAPI.IntegrationTests.Gates.{testClass}_{TestClassSuffix(testClass)}.Evidence"];
+        return $"<TestRun><Results>{string.Concat(resolvedTestNames.Select(testName =>
+            $"<UnitTestResult testName=\"{testName}\" outcome=\"{outcome}\" />"))}</Results></TestRun>";
+    }
+
+    private static NodeConformanceOptions CreateEvidenceOptions(string evidenceDirectory) => new()
+    {
+        EvidenceDirectory = evidenceDirectory,
+        ExpectedRepository = "JadeZaher/azoa-autonomous-zones-of-action",
+        ExpectedWorkflow = "JadeZaher/azoa-autonomous-zones-of-action/.github/workflows/ci.yml@refs/heads/main",
+        MaxEvidenceAgeMinutes = 24 * 60,
+    };
+
+    private static async Task WriteEvidenceBundleAsync(
+        string evidenceDirectory,
+        DateTimeOffset now,
+        DateTimeOffset? generatedAt = null,
+        string? repository = null,
+        string? commit = null,
+        IReadOnlyList<NodeConformanceEvidenceFile>? files = null)
+    {
+        foreach (var gate in Gates)
+        {
+            var testNames = string.Equals(gate, "G3", StringComparison.Ordinal) ? G3Tests : null;
+            await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, $"{gate}.trx"), Trx(gate, "Passed", testNames));
+        }
+
+        await WriteMetadataAsync(evidenceDirectory, now, generatedAt, repository, commit, files);
+    }
+
+    private static async Task WriteMetadataAsync(
+        string evidenceDirectory,
+        DateTimeOffset now,
+        DateTimeOffset? generatedAt = null,
+        string? repository = null,
+        string? commit = null,
+        IReadOnlyList<NodeConformanceEvidenceFile>? files = null)
+    {
+        var metadata = new NodeConformanceEvidenceMetadata(
+            "azoa-node-conformance-evidence/v1",
+            repository ?? "JadeZaher/azoa-autonomous-zones-of-action",
+            commit ?? RuntimeSourceRevision(),
+            "JadeZaher/azoa-autonomous-zones-of-action/.github/workflows/ci.yml@refs/heads/main",
+            "123456",
+            generatedAt ?? now.AddMinutes(-1),
+            now.AddHours(1),
+            files ?? Gates.Select(gate => new NodeConformanceEvidenceFile(
+                $"{gate}.trx",
+                Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(evidenceDirectory, $"{gate}.trx")))))).ToArray());
+        await File.WriteAllTextAsync(
+            Path.Combine(evidenceDirectory, "metadata.json"),
+            JsonSerializer.Serialize(metadata));
+    }
+
+    private static string RuntimeSourceRevision()
+    {
+        var informationalVersion = typeof(TrxNodeConformanceEvidenceSource).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var separator = informationalVersion?.LastIndexOf('+') ?? -1;
+        var revision = separator >= 0 ? informationalVersion![(separator + 1)..] : null;
+        return revision is { Length: 40 }
+            && revision.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f')
+                ? revision
+                : throw new Xunit.Sdk.XunitException("Expected a 40-character source revision in the app assembly.");
     }
 
     private static string TestClassSuffix(string gate) => gate switch
@@ -179,12 +351,12 @@ public sealed class NodeConformanceManifestTests : IDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(gate)),
     };
 
-    private sealed class StubEvidenceSource : INodeConformanceEvidenceSource
+    private sealed class StubEvidenceSource(DateTimeOffset? validUntil = null) : INodeConformanceEvidenceSource
     {
-        public Task<IReadOnlyList<NodeConformanceGateEvidence>?> TryReadAsync(CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<NodeConformanceGateEvidence>?>(Gates
-                .Select(gate => new NodeConformanceGateEvidence(gate, new string('a', 64), 1))
-                .ToArray());
+        public Task<NodeConformanceEvidenceSnapshot?> TryReadAsync(CancellationToken ct = default)
+            => Task.FromResult<NodeConformanceEvidenceSnapshot?>(new(
+                Gates.Select(gate => new NodeConformanceGateEvidence(gate, new string('a', 64), 1)).ToArray(),
+                validUntil ?? DateTimeOffset.MaxValue));
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

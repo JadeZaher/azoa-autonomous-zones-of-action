@@ -13,7 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends unzip \
 COPY . .
 RUN dotnet restore AZOA.WebAPI.csproj
 
-RUN dotnet publish AZOA.WebAPI.csproj -c Release -o /app/publish --no-restore
+ARG SOURCE_REVISION
+RUN case "$SOURCE_REVISION" in \
+      [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;; \
+      *) echo "SOURCE_REVISION must be a 40-character lowercase Git SHA." >&2; exit 1 ;; \
+    esac \
+    && dotnet publish AZOA.WebAPI.csproj -c Release -o /app/publish --no-restore -p:SourceRevisionId="$SOURCE_REVISION"
 
 # Stage the SurrealForge schema/migration CLI so the entrypoint can run
 # `surrealforge up` at boot. The published SurrealForge.Schema package ships a

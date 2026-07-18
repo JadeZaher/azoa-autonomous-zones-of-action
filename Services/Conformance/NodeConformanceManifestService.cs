@@ -35,7 +35,11 @@ public sealed class NodeConformanceManifestService : INodeConformanceManifestSer
             return NodeConformanceDocumentAvailability.Unavailable;
 
         var issuedAt = _clock.GetUtcNow();
-        var expiresAt = issuedAt.AddMinutes(options.ManifestLifetimeMinutes);
+        var requestedExpiresAt = issuedAt.AddMinutes(options.ManifestLifetimeMinutes);
+        var expiresAt = requestedExpiresAt < evidence.ValidUntil ? requestedExpiresAt : evidence.ValidUntil;
+        if (expiresAt <= issuedAt)
+            return NodeConformanceDocumentAvailability.Unavailable;
+
         using var key = _identityKeys.GetCurrent();
         var descriptor = key.Descriptor with { NodeId = options.NodeId.Trim() };
         var unsigned = new NodeConformanceDocument(
@@ -45,7 +49,7 @@ public sealed class NodeConformanceManifestService : INodeConformanceManifestSer
                 NodeConformanceCanonicalizer.SchemaVersion,
                 issuedAt,
                 expiresAt,
-                evidence,
+                evidence.Evidence,
                 string.Empty));
         var signed = unsigned with
         {
@@ -66,6 +70,9 @@ public sealed class NodeConformanceManifestService : INodeConformanceManifestSer
             && options.NodeId.Trim().Length <= 128
             && !string.IsNullOrWhiteSpace(options.KeyStoragePath)
             && !string.IsNullOrWhiteSpace(options.EvidenceDirectory)
+            && !string.IsNullOrWhiteSpace(options.ExpectedRepository)
+            && !string.IsNullOrWhiteSpace(options.ExpectedWorkflow)
+            && options.MaxEvidenceAgeMinutes is > 0 and <= 24 * 60
             && options.ManifestLifetimeMinutes is > 0 and <= 24 * 60
             && options.MaxPayloadBytes is > 0 and <= 64 * 1024;
 }

@@ -13,21 +13,24 @@ bounded freshness remain required before the L0 track can claim conformance.
 
 ### Evidence source
 
-`TrxNodeConformanceEvidenceSource` accepts exactly five expected TRX files:
-`G1.trx`, `G2.trx`, `G3.trx`, `G5.trx`, and `G7.trx`. Each must contain only
-passing results from only its expected fully-qualified gate test class; the CI
-producer additionally requires the exact two non-skippable runtime injection
-proofs in `G3.trx`. Mixed or full-suite artifacts are rejected. The service calculates
-the SHA-256 digest itself and includes only gate, digest, and count in the
-public document. It does not accept operator-entered pass/fail claims. The
-deployment must provide these output files read-only in
-`NodeConformance:EvidenceDirectory`. The document is unavailable when artifacts
-are missing or failed; stale artifacts are currently accepted, so deployment
-freshness and provenance enforcement are required before the L0 track can close.
+`TrxNodeConformanceEvidenceSource` accepts only a `metadata.json` plus the five
+declared TRX files: `G1.trx`, `G2.trx`, `G3.trx`, `G5.trx`, and `G7.trx`. The
+metadata schema, ordered file set, lower-case SHA-256 digests, repository,
+workflow, runtime assembly source revision, timestamps, and freshness must all
+match configured trust. Each TRX must contain only passing results from its
+expected fully-qualified gate test class; `G3.trx` must contain exactly the two
+non-skippable runtime injection proofs. Mixed or full-suite artifacts are
+rejected. The service calculates every digest from the bytes it parses and
+includes only gate, digest, and count in the public document. It does not
+accept operator-entered pass/fail claims. The deployment must provide these
+files read-only in `NodeConformance:EvidenceDirectory`; missing, expired, or
+untrusted evidence makes the document unavailable. The manifest service caps
+its own expiry at the evidence validity boundary and refuses an already-expired
+snapshot; a signed descriptor must never outlive the CI proof it reports.
 
 Trusted push CI produces a metadata-bound tarball containing these five files
-and an artifact attestation. Upload integrity alone is not deployment provenance: a
-protected promotion step must verify the expected repository, protected `main`
+and an artifact attestation. Upload integrity alone is not deployment provenance:
+a protected promotion step must verify the expected repository, protected `main`
 commit/ref, signer workflow identity, attestation, metadata hashes, and bounded
 freshness before mounting the extracted files read-only and enabling the endpoint.
 

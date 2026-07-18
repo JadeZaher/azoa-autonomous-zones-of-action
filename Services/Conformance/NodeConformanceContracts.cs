@@ -1,4 +1,22 @@
+using System.Text.Json.Serialization;
+
 namespace AZOA.WebAPI.Services.Conformance;
+
+/// <summary>Trusted CI metadata that binds local conformance artifacts to one source revision.</summary>
+public sealed record NodeConformanceEvidenceMetadata(
+    [property: JsonPropertyName("schema")] string Schema,
+    [property: JsonPropertyName("repository")] string Repository,
+    [property: JsonPropertyName("commit")] string Commit,
+    [property: JsonPropertyName("workflow")] string Workflow,
+    [property: JsonPropertyName("runId")] string RunId,
+    [property: JsonPropertyName("generatedAt")] DateTimeOffset GeneratedAt,
+    [property: JsonPropertyName("expiresAt")] DateTimeOffset ExpiresAt,
+    [property: JsonPropertyName("files")] IReadOnlyList<NodeConformanceEvidenceFile> Files);
+
+/// <summary>One named SHA-256 artifact declared by CI metadata.</summary>
+public sealed record NodeConformanceEvidenceFile(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("sha256")] string Sha256);
 
 /// <summary>Public descriptor and proof document served from the well-known endpoint.</summary>
 public sealed record NodeConformanceDocument(
@@ -36,6 +54,11 @@ public sealed record NodeConformanceGateEvidence(
     string Gate,
     string ArtifactSha256,
     int PassedTestCount);
+
+/// <summary>Validated gate evidence and the latest instant it may support a manifest.</summary>
+public sealed record NodeConformanceEvidenceSnapshot(
+    IReadOnlyList<NodeConformanceGateEvidence> Evidence,
+    DateTimeOffset ValidUntil);
 
 /// <summary>Result shape for the public endpoint; unavailable detail is intentionally non-public.</summary>
 public sealed record NodeConformanceDocumentAvailability(
