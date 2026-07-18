@@ -7,8 +7,8 @@
 FROM node:20-alpine AS frontend-build
 WORKDIR /app
 
-COPY frontend/package.json ./
-RUN npm install
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 
 COPY frontend/ .
 
@@ -17,6 +17,7 @@ COPY frontend/ .
 # src/app/layout.tsx), not baked into the client bundle. Only non-secret,
 # genuinely build-time NEXT_PUBLIC_* values belong in this stage.
 RUN npm run build
+RUN npm prune --omit=dev
 
 # Stage 2: Production runtime
 FROM node:20-alpine AS runtime
@@ -31,8 +32,8 @@ COPY --from=frontend-build /app/public ./public
 ENV NODE_ENV=production
 # API_URL is read at request time (server-injected into window.__RUNTIME_CONFIG__)
 # so an operator can repoint the UI by changing this env var and restarting the
-# container — no image rebuild required. Default matches the compose network name.
-ENV API_URL=http://azoa-api:5000
+# container — no image rebuild required. Production has no fallback; API_URL
+# must be a public browser-reachable HTTPS origin.
 EXPOSE 3000
 
 CMD ["npm", "run", "start"]

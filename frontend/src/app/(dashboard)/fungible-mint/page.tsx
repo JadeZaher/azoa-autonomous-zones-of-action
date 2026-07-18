@@ -30,11 +30,11 @@ import { ErrorBanner } from '@/components/shared/error-banner'
 import { azoa, isOk } from '@/lib/azoa'
 import { useAzoa } from '@/lib/azoa-context'
 import type {
-  WalletResult,
   PortfolioResult,
   PortfolioAsset,
   FungibleTokenResult,
 } from 'azoa-sdk'
+import type { WalletResult } from 'azoa-sdk/api'
 import { Coins, Wallet, ShieldAlert, RefreshCw } from 'lucide-react'
 
 function truncate(addr: string, chars = 6): string {

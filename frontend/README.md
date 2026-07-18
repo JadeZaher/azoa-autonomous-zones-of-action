@@ -1,6 +1,6 @@
 # AZOA Frontend
 
-A comprehensive Next.js frontend for testing blockchain providers with real connectivity to Algorand and Solana devnet networks.
+A Next.js frontend for operating and testing an Azoa node across Algorand and Solana networks.
 
 ## 🚀 Features
 
@@ -23,12 +23,43 @@ A comprehensive Next.js frontend for testing blockchain providers with real conn
 - **Transaction History** - Complete transaction tracking with status monitoring
 - **Avatar NFT Dashboard** - Digital identity with holon integration
 - **Testing Interface** - Comprehensive testing suite for all provider functions
+- **Node Operator Console** - Dedicated, mobile-first readiness, provider-policy,
+  tenant-assignment, and KYC decision surfaces at `/operator`
+- **Tenant KYC Choice** - Tenant-owned provider selection from the node's
+  enabled and ready catalog at `/kyc`
+
+### Node operator access
+
+The API seeds one reserved operator identity from `NodeOperator__Username` and
+`NodeOperator__Password` during node launch. Set
+`NodeOperator__CredentialRevision` to a positive integer and increment it when
+rotating either credential so old operator sessions fail closed. These values
+belong on the API service, never in frontend environment variables. Sign in at
+`/operator/login`. `NodeOperator__SessionMinutes` accepts 5–30 minutes and
+defaults to 20.
+Operator authority uses a dedicated short-lived JWT held in an HttpOnly,
+SameSite=Strict same-origin cookie; it never enters the ordinary SDK's
+localStorage session.
+
+“End operator session” clears only this browser's operator cookie. The overview
+page's separately confirmed “Revoke all operator sessions” action is for a
+credential exposure or handoff and invalidates every current operator session.
+
+Provider API keys, webhook secrets, and operator credentials stay in Railway
+or the deployment platform's secret store. The console reports secret-free
+readiness/configured state and changes policy only—it never displays or stores
+those secret values. Provider responses expose only `trustRevision`,
+`requiredConfigurationKeys`, and `missingConfigurationKeys` so an operator can
+repair host configuration without a secret read-back path. See
+`src/app/operator/AGENTS.md` for the BFF and KYC trust boundaries.
 
 ## 🛠️ Technology Stack
 
-- **Next.js 14** - React framework with TypeScript
+- **Next.js 16.2.10** - React framework with TypeScript
+- **React 18.3.1** - retained deliberately; Next.js 16.2.10 supports React 18.2+
+  and a React 19 behavior migration should be reviewed separately
 - **Tailwind CSS** - Utility-first styling
-- **Axios** - HTTP client for API communication
+- **Azoa SDK** - Typed API and fetch-based chain-provider integration
 - **TypeScript** - Type-safe development
 - **React Hooks** - Modern React state management
 - **Responsive Design** - Mobile-friendly interface
@@ -36,7 +67,7 @@ A comprehensive Next.js frontend for testing blockchain providers with real conn
 ## 📦 Installation
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 20.9+
 - npm or yarn
 
 ### Setup
@@ -46,7 +77,7 @@ git clone https://github.com/your-username/azoa-frontend.git
 cd azoa-frontend
 
 # Install dependencies
-npm install
+npm ci
 
 # Start development server
 npm run dev
@@ -55,8 +86,14 @@ npm run dev
 ### Environment Variables
 Create a `.env.local` file in the root directory:
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:5000
+API_URL=http://localhost:5000
 ```
+
+`API_URL` is resolved by the Next.js server at request time and injected for the
+browser. Production has no localhost or internal-host fallback: configure a
+public HTTPS API origin. The Railway health probe is `GET /api/health`, which
+returns 503 when that runtime contract is invalid. The local compose stack uses
+`AZOA_ALLOW_INSECURE_LOCAL_API=true`; never deploy that override.
 
 ## 🔧 Development
 
@@ -75,7 +112,7 @@ npm start
 npm run lint
 
 # Type checking
-npx tsc --noEmit
+npm run typecheck
 ```
 
 ### Project Structure
@@ -172,16 +209,9 @@ const response = await apiClient.validateAddress({
 4. Set environment variables
 
 ### Docker
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 3000
-CMD ["npm", "start"]
-```
+Use the checked-in `frontend/Dockerfile`; it performs a lockfile-pinned build
+with Node 20 and prunes development dependencies before creating the runtime
+stage.
 
 ### Traditional Server
 ```bash
@@ -271,7 +301,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Next.js** - React framework
 - **Tailwind CSS** - Utility-first CSS framework
-- **Axios** - HTTP client
+- **Azoa SDK** - typed API client
 - **TypeScript** - Type-safe JavaScript
 
 ## 📞 Support

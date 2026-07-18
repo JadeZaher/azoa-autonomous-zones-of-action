@@ -40,9 +40,9 @@ The AZOA frontend is now **complete and ready for production deployment**. All m
 - ✅ **AvatarNFTDashboard** - NFT creation and management
 
 ### **Technical Implementation**
-- ✅ **Next.js 14** - React framework with TypeScript
+- ✅ **Next.js 16.2.10** - React framework with TypeScript
 - ✅ **Tailwind CSS** - Utility-first styling
-- ✅ **Axios** - HTTP client for API communication
+- ✅ **Azoa SDK** - Typed API and fetch-based chain-provider integration
 - ✅ **TypeScript** - Type-safe development
 - ✅ **Responsive Design** - Mobile-friendly interface
 - ✅ **Dynamic Imports** - Optimized loading
@@ -65,8 +65,14 @@ npm start
 ### **Environment Variables**
 Create a `.env.local` file:
 ```env
-NEXT_PUBLIC_API_URL=https://your-backend-api.com
+API_URL=https://your-backend-api.com
 ```
+
+The production value is runtime configuration, not a `NEXT_PUBLIC_*` build
+constant. It must be a public HTTPS origin; missing, localhost, private-IP, and
+`.internal` values make `GET /api/health` return 503 and prevent Railway from
+promoting the service. `AZOA_ALLOW_INSECURE_LOCAL_API` is reserved for the local
+compose stack and must never be set by a hosted deployment.
 
 ### **Platform Deployment Options**
 
@@ -83,16 +89,9 @@ NEXT_PUBLIC_API_URL=https://your-backend-api.com
 4. Set environment variables
 
 #### **Docker**
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 3000
-CMD ["npm", "start"]
-```
+Use the checked-in `frontend/Dockerfile`; it uses Node 20, `npm ci`, and the
+committed lockfile. Production promotion publishes and attests this image from
+`.github/workflows/conformance-release.yml`.
 
 #### **Traditional Server**
 ```bash

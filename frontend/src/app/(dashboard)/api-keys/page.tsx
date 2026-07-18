@@ -2,14 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { azoa, isOk } from '@/lib/azoa'
-import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Separator } from '@/components/ui/separator'
 import {
   Table,
   TableBody,
@@ -151,7 +149,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
     if (expiresInDays.trim()) body.expiresInDays = parseInt(expiresInDays, 10)
     if (scopeList.length > 0) body.scopes = scopeList.join(',')
 
-    const res = await azoa.api.request('POST', '/api/apikey', body)
+    const res = await azoa.api.request<CreateApiKeyResponse>('POST', '/api/apikey', body)
 
     if (isOk(res)) {
       onCreated(res.value)
@@ -462,7 +460,6 @@ function KeyList({
 // ─── Page ───
 
 export default function ApiKeysPage() {
-  const { isAuthenticated } = useAzoaAuth()
   const [keys, setKeys] = useState<ApiKeyInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -471,7 +468,7 @@ export default function ApiKeysPage() {
   const fetchKeys = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const res = await azoa.api.request('GET', '/api/apikey')
+    const res = await azoa.api.request<ApiKeyInfo[]>('GET', '/api/apikey')
     if (isOk(res)) {
       setKeys(res.value)
     } else {

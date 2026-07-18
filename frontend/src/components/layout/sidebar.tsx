@@ -26,6 +26,7 @@ import {
   Database,
   ShieldAlert,
   GitMerge,
+  BadgeCheck,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -41,6 +42,7 @@ const navGroups = [
     items: [
       { href: '/avatars', label: 'Avatars', icon: Users },
       { href: '/holons', label: 'Holons', icon: Box },
+      { href: '/kyc', label: 'KYC Provider', icon: BadgeCheck },
     ],
   },
   {

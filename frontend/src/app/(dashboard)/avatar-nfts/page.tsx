@@ -529,8 +529,8 @@ function AvatarNftDetail({ nft }: { nft: AvatarNft }) {
 
   const fetchBindings = useCallback(async () => {
     const [holonRes, walletRes] = await Promise.all([
-      azoa.api.request('GET', `/api/avatarnft/${nft.id}/holons`),
-      azoa.api.request('GET', `/api/avatarnft/${nft.id}/wallets`),
+      azoa.api.request<BoundHolon[]>('GET', `/api/avatarnft/${nft.id}/holons`),
+      azoa.api.request<BoundWallet[]>('GET', `/api/avatarnft/${nft.id}/wallets`),
     ])
     if (isOk(holonRes)) setHolons(holonRes.value)
     if (isOk(walletRes)) setWallets(walletRes.value)
@@ -682,7 +682,7 @@ function AvatarNftList({ avatarId }: { avatarId: string }) {
   const fetchNfts = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const res = await azoa.api.request('GET', `/api/avatarnft/avatar/${avatarId}`)
+    const res = await azoa.api.request<AvatarNft[]>('GET', `/api/avatarnft/avatar/${avatarId}`)
     if (isOk(res)) {
       setNfts(res.value)
     } else {
