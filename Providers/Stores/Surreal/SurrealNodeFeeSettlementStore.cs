@@ -732,7 +732,6 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
             ["fee_schedule_version"] = settlement.FeeScheduleVersion,
             ["treasury_address"] = settlement.TreasuryAddress,
             ["treasury_destination_version"] = settlement.TreasuryDestinationVersion,
-            ["expected_atomic_group_identity"] = settlement.ExpectedAtomicGroupIdentity,
             ["state"] = NodeFeeSettlement.StateKind.Prepared.ToString(),
             ["primary_effect_state"] = NodeFeeSettlement.EffectStateKind.NotStarted.ToString(),
             ["fee_effect_state"] = NodeFeeSettlement.EffectStateKind.NotStarted.ToString(),
@@ -741,6 +740,10 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
             ["next_attempt_at"] = settlement.NextAttemptAt,
             ["updated_at"] = settlement.UpdatedAt,
         };
+
+        if (settlement.ExpectedAtomicGroupIdentity is not null)
+            content["expected_atomic_group_identity"] = settlement.ExpectedAtomicGroupIdentity;
+
         return content;
     }
 

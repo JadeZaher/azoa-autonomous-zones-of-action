@@ -654,7 +654,7 @@ public sealed class SurrealNodeFeeSettlementStoreTests : IAsyncLifetime
             NodeFeeSettlementRecoveryLease.FromClaim(currentClaim.Result!),
             new NodeFeeAcceptedAtomicGroup(mismatch, mismatchSubmission), now.AddSeconds(4));
         rejected.IsError.Should().BeTrue();
-        rejected.Message.Should().Contain("precommitted");
+        rejected.Message.Should().Contain("immutable economics");
 
         var persisted = await _store.GetAsync(admitted.Result.Settlement.Id);
         persisted.Result!.LeaseToken.Should().Be("current-worker");
