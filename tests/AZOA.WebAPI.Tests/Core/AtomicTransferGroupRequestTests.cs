@@ -89,7 +89,7 @@ public sealed class AtomicTransferGroupRequestTests
     {
         var request = Request();
         var action = () => AtomicTransferGroupSubmission.Accepted(
-            request, "primary", "treasury", AtomicTransferGroupSubmissionState.NotSubmitted);
+            request, "chain-group", "primary", "treasury", AtomicTransferGroupSubmissionState.NotSubmitted);
 
         action.Should().Throw<ArgumentOutOfRangeException>();
     }
@@ -100,13 +100,14 @@ public sealed class AtomicTransferGroupRequestTests
         var request = Request();
 
         var accepted = AtomicTransferGroupSubmission.Accepted(
-            request, "primary-transaction", "treasury-transaction", AtomicTransferGroupSubmissionState.Submitted);
+            request, "chain-group", "primary-transaction", "treasury-transaction", AtomicTransferGroupSubmissionState.Submitted);
         var duplicate = () => AtomicTransferGroupSubmission.Accepted(
-            request, "same-transaction", "same-transaction", AtomicTransferGroupSubmissionState.Submitted);
+            request, "chain-group", "same-transaction", "same-transaction", AtomicTransferGroupSubmissionState.Submitted);
         var blank = () => AtomicTransferGroupSubmission.Accepted(
-            request, " ", "treasury-transaction", AtomicTransferGroupSubmissionState.Submitted);
+            request, "chain-group", " ", "treasury-transaction", AtomicTransferGroupSubmissionState.Submitted);
 
         accepted.GroupIdentity.Should().Be(request.GroupIdentity);
+        accepted.ChainGroupId.Should().Be("chain-group");
         duplicate.Should().Throw<ArgumentException>().WithMessage("*must be distinct*");
         blank.Should().Throw<ArgumentException>();
     }

@@ -183,6 +183,19 @@ provider/reconciliation hand-offs with live-SurrealDB concurrency tests.
 Within that transaction, `UPDATE ONLY ... RETURN AFTER` is already one object on
 SurrealDB 3.x; do not append `.first()`, which aborts the transaction.
 
+`TryRecordAcceptedAtomicGroupAsync` is a third bounded raw transaction under
+the same 2026-08-31 waiver. It conditionally creates the one-to-one immutable
+`node_fee_atomic_group` receipt while the exact unexpired settlement lease and
+economic binding still match, sets both recorded effect references to Submitted,
+and releases the lease into immediate reconciliation. Exact receipt replay is
+idempotent; divergent evidence conflicts. This closes only the post-broadcast
+receipt gap as far as durable evidence permits: a crash before the receipt is
+written remains ambiguous and must not trigger a re-broadcast.
+`SurrealQuery.Of` accepts one statement only, so the six receipt statements are
+composed by `SurrealQuery.Combine` into one HTTP transaction; do not replace
+that with a semicolon-joined `.Of` body. The architecture ratchet counts those
+fragments but treats them as this one reviewed 2026-08-31 receipt waiver.
+
 ## §set-omits-null — always serialize option<> collections (Phase H / H7)
 
 `SurrealWriter.Upsert` builds a SET-based `UPDATE ... SET col = ...` and OMITS

@@ -82,6 +82,9 @@ DEFINE FIELD IF NOT EXISTS created_at ON TABLE node_fee_settlement TYPE datetime
     DEFAULT time::now()
     READONLY;
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE node_fee_settlement TYPE datetime;
+DEFINE FIELD IF NOT EXISTS expected_atomic_group_identity ON TABLE node_fee_settlement TYPE option<string>
+    ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$")
+    READONLY;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

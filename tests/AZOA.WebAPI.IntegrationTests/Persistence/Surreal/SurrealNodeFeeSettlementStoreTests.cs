@@ -1,10 +1,15 @@
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Providers.Blockchain.Base;
 using AZOA.WebAPI.Providers.Stores.Surreal;
 using AZOA.WebAPI.Services.Governance;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;
@@ -42,7 +47,8 @@ public sealed class SurrealNodeFeeSettlementStoreTests : IAsyncLifetime
         await SurrealTestSchema.BootstrapAsync(
             _testNamespace,
             IdempotencyKeyStore.SchemaNameConst,
-            NodeFeeSettlement.SchemaNameConst);
+            NodeFeeSettlement.SchemaNameConst,
+            NodeFeeAtomicGroup.SchemaNameConst);
     }
 
     public async Task DisposeAsync()
@@ -564,6 +570,192 @@ public sealed class SurrealNodeFeeSettlementStoreTests : IAsyncLifetime
         settled.Result.Should().BeTrue();
     }
 
+    [SkippableFact]
+    public async Task AcceptedAtomicGroup_RecordsExactReplayAndLeavesTheParentInProgress()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var parentKey = "accepted-group:" + Guid.NewGuid().ToString("N");
+        var request = AtomicRequest(parentKey);
+        var admitted = await _store.AdmitAsync(
+            CreateSettlement(parentKey, now, request.GroupIdentity), parentKey);
+        var claim = await _store.TryClaimRecoveryAsync(
+            admitted.Result!.Settlement, "receipt-worker", now.AddSeconds(1), now.AddMinutes(1));
+        var submission = AtomicTransferGroupSubmission.Accepted(
+            request, "chain:group-1", "primary:tx-1", "treasury:tx-2",
+            AtomicTransferGroupSubmissionState.PendingConfirmation);
+
+        var recorded = await _store.TryRecordAcceptedAtomicGroupAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(claim.Result!),
+            new NodeFeeAcceptedAtomicGroup(request, submission), now.AddSeconds(2));
+        var replay = await _store.TryRecordAcceptedAtomicGroupAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(claim.Result!),
+            new NodeFeeAcceptedAtomicGroup(request, submission), now.AddSeconds(3));
+
+        recorded.IsError.Should().BeFalse(recorded.Message);
+        recorded.Result!.Id.Should().Be(NodeFeeAtomicGroup.RecordIdFor(admitted.Result.Settlement.Id));
+        recorded.Result.ChainGroupId.Should().Be("chain:group-1");
+        recorded.Result.SettlementId.Should().Be("node_fee_settlement:" + admitted.Result.Settlement.Id);
+        replay.IsError.Should().BeFalse(replay.Message);
+        replay.Result!.Id.Should().Be(recorded.Result.Id);
+
+        var settlement = await _store.GetAsync(admitted.Result.Settlement.Id);
+        settlement.Result!.State.Should().Be(NodeFeeSettlement.StateKind.AwaitingReconciliation);
+        settlement.Result.PrimaryEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.Submitted);
+        settlement.Result.FeeEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.Submitted);
+        settlement.Result.PrimaryTransactionHash.Should().Be("primary:tx-1");
+        settlement.Result.FeeTransactionHash.Should().Be("treasury:tx-2");
+        settlement.Result.LeaseToken.Should().BeNull();
+        (await _idempotency.GetAsync(parentKey, CancellationToken.None))!.State
+            .Should().Be(AZOA.WebAPI.Models.Idempotency.IdempotencyState.InProgress);
+
+        var divergent = AtomicTransferGroupSubmission.Accepted(
+            request, "chain:other-group", "primary:tx-other", "treasury:tx-other",
+            AtomicTransferGroupSubmissionState.PendingConfirmation);
+        var conflict = await _store.TryRecordAcceptedAtomicGroupAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(claim.Result!),
+            new NodeFeeAcceptedAtomicGroup(request, divergent), now.AddSeconds(4));
+        conflict.IsError.Should().BeTrue();
+        conflict.Message.Should().Contain("conflicts");
+    }
+
+    [SkippableFact]
+    public async Task AcceptedAtomicGroup_RejectsStaleLeaseAndMismatchedEconomics()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var parentKey = "accepted-group-guard:" + Guid.NewGuid().ToString("N");
+        var request = AtomicRequest(parentKey);
+        var admitted = await _store.AdmitAsync(
+            CreateSettlement(parentKey, now, request.GroupIdentity), parentKey);
+        var oldClaim = await _store.TryClaimRecoveryAsync(
+            admitted.Result!.Settlement, "old-worker", now.AddSeconds(1), now.AddSeconds(2));
+        var currentClaim = await _store.TryClaimRecoveryAsync(
+            oldClaim.Result!, "current-worker", now.AddSeconds(3), now.AddMinutes(1));
+        var submission = AtomicTransferGroupSubmission.Accepted(
+            request, "chain:group-2", "primary:tx-3", "treasury:tx-4",
+            AtomicTransferGroupSubmissionState.Submitted);
+
+        var stale = await _store.TryRecordAcceptedAtomicGroupAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(oldClaim.Result!),
+            new NodeFeeAcceptedAtomicGroup(request, submission), now.AddSeconds(4));
+        stale.IsError.Should().BeFalse(stale.Message);
+        stale.Result.Should().BeNull();
+
+        var mismatch = AtomicRequest(parentKey, primaryAmount: 974);
+        var mismatchSubmission = AtomicTransferGroupSubmission.Accepted(
+            mismatch, "chain:group-3", "primary:tx-5", "treasury:tx-6",
+            AtomicTransferGroupSubmissionState.Submitted);
+        var rejected = await _store.TryRecordAcceptedAtomicGroupAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(currentClaim.Result!),
+            new NodeFeeAcceptedAtomicGroup(mismatch, mismatchSubmission), now.AddSeconds(4));
+        rejected.IsError.Should().BeTrue();
+        rejected.Message.Should().Contain("precommitted");
+
+        var persisted = await _store.GetAsync(admitted.Result.Settlement.Id);
+        persisted.Result!.LeaseToken.Should().Be("current-worker");
+        persisted.Result.PrimaryEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.NotStarted);
+        persisted.Result.FeeEffectState.Should().Be(NodeFeeSettlement.EffectStateKind.NotStarted);
+    }
+
+    [SkippableFact]
+    public async Task AcceptedAtomicGroup_RequiresMatchingPrecommittedIdentity()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var absentKey = "accepted-group-absent:" + Guid.NewGuid().ToString("N");
+        var absentRequest = AtomicRequest(absentKey);
+        var absentAdmission = await _store.AdmitAsync(CreateSettlement(absentKey, now), absentKey);
+        var absentClaim = await _store.TryClaimRecoveryAsync(
+            absentAdmission.Result!.Settlement, "absent-worker", now.AddSeconds(1), now.AddMinutes(1));
+        var absent = await _store.TryRecordAcceptedAtomicGroupAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(absentClaim.Result!),
+            new NodeFeeAcceptedAtomicGroup(absentRequest, AtomicTransferGroupSubmission.Accepted(
+                absentRequest, "chain:absent", "primary:absent", "treasury:absent",
+                AtomicTransferGroupSubmissionState.Submitted)), now.AddSeconds(2));
+        absent.IsError.Should().BeTrue();
+        absent.Message.Should().Contain("precommitted");
+
+        var mismatchKey = "accepted-group-mismatch:" + Guid.NewGuid().ToString("N");
+        var mismatchRequest = AtomicRequest(mismatchKey);
+        var mismatchAdmission = await _store.AdmitAsync(
+            CreateSettlement(mismatchKey, now, new string('a', 64)), mismatchKey);
+        var mismatchClaim = await _store.TryClaimRecoveryAsync(
+            mismatchAdmission.Result!.Settlement, "mismatch-worker", now.AddSeconds(1), now.AddMinutes(1));
+        var mismatch = await _store.TryRecordAcceptedAtomicGroupAsync(
+            NodeFeeSettlementRecoveryLease.FromClaim(mismatchClaim.Result!),
+            new NodeFeeAcceptedAtomicGroup(mismatchRequest, AtomicTransferGroupSubmission.Accepted(
+                mismatchRequest, "chain:mismatch", "primary:mismatch", "treasury:mismatch",
+                AtomicTransferGroupSubmissionState.Submitted)), now.AddSeconds(2));
+        mismatch.IsError.Should().BeTrue();
+        mismatch.Message.Should().Contain("precommitted");
+    }
+
+    [SkippableFact]
+    public async Task AcceptedAtomicGroup_ConcurrentExactAndDivergentEvidenceLeavesOneImmutableReceipt()
+    {
+        Skip.IfNot(_surrealAvailable,
+            "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var now = DateTimeOffset.UtcNow;
+        var parentKey = "accepted-group-concurrent:" + Guid.NewGuid().ToString("N");
+        var request = AtomicRequest(parentKey);
+        var admitted = await _store.AdmitAsync(
+            CreateSettlement(parentKey, now, request.GroupIdentity), parentKey);
+        var claim = await _store.TryClaimRecoveryAsync(
+            admitted.Result!.Settlement, "concurrent-worker", now.AddSeconds(1), now.AddMinutes(1));
+        var lease = NodeFeeSettlementRecoveryLease.FromClaim(claim.Result!);
+        var exact = new NodeFeeAcceptedAtomicGroup(request, AtomicTransferGroupSubmission.Accepted(
+            request, "chain:concurrent", "primary:concurrent", "treasury:concurrent",
+            AtomicTransferGroupSubmissionState.Submitted));
+        var divergent = new NodeFeeAcceptedAtomicGroup(request, AtomicTransferGroupSubmission.Accepted(
+            request, "chain:divergent", "primary:divergent", "treasury:divergent",
+            AtomicTransferGroupSubmissionState.Submitted));
+
+        var results = await Task.WhenAll(
+            _store.TryRecordAcceptedAtomicGroupAsync(lease, exact, now.AddSeconds(2)),
+            _store.TryRecordAcceptedAtomicGroupAsync(lease, divergent, now.AddSeconds(2)));
+
+        results.Should().ContainSingle(result => !result.IsError && result.Result != null);
+        results.Should().ContainSingle(result => result.IsError && result.Message.Contains("conflicts", StringComparison.Ordinal));
+        var persisted = await new DefaultSurrealExecutor(_connection).QuerySingleAsync<NodeFeeAtomicGroup>(
+            SurrealQuery<NodeFeeAtomicGroup>.Key(NodeFeeAtomicGroup.RecordIdFor(admitted.Result.Settlement.Id)),
+            CancellationToken.None);
+        persisted.Should().NotBeNull();
+        persisted!.PrimaryTransactionId.Should().BeOneOf("primary:concurrent", "primary:divergent");
+    }
+
+    private static AtomicTransferGroupRequest AtomicRequest(string parentKey, ulong primaryAmount = 975)
+    {
+        var provider = new AtomicGroupTestProvider();
+        provider.Initialize(new BlockchainNetworkConfig(), AZOA.WebAPI.Core.ChainNetwork.Mainnet);
+        var request = AtomicTransferGroupRequest.TryCreate(
+            provider,
+            "algorand",
+            AZOA.WebAPI.Core.ChainNetwork.Mainnet,
+            parentKey,
+            new AtomicTransferEffect("42", "source:wallet", "recipient:wallet", primaryAmount, SigningContext.Platform),
+            new AtomicTransferEffect("42", "source:wallet", "TREASURY", 25, SigningContext.Platform));
+        request.IsError.Should().BeFalse(request.Message);
+        return request.Result!;
+    }
+
+    private sealed class AtomicGroupTestProvider : BaseBlockchainProvider
+    {
+        public AtomicGroupTestProvider()
+            : base(new ConfigurationBuilder().Build(), NullLogger<AtomicGroupTestProvider>.Instance)
+        {
+        }
+
+        public override string ChainType => "algorand";
+    }
+
     private async Task<NodeFeeSettlement> AdmitPreparedAsync(DateTimeOffset now)
     {
         var source = Guid.NewGuid().ToString("N");
@@ -573,7 +765,10 @@ public sealed class SurrealNodeFeeSettlementStoreTests : IAsyncLifetime
         return admitted.Result!.Settlement;
     }
 
-    private static NodeFeeSettlement CreateSettlement(string source, DateTimeOffset now)
+    private static NodeFeeSettlement CreateSettlement(
+        string source,
+        DateTimeOffset now,
+        string? expectedAtomicGroupIdentity = null)
         => new()
         {
             Id = NodeFeeSettlement.RecordIdFor(source, "Transfer"),
@@ -588,6 +783,7 @@ public sealed class SurrealNodeFeeSettlementStoreTests : IAsyncLifetime
             FeeScheduleVersion = 7,
             TreasuryAddress = "TREASURY",
             TreasuryDestinationVersion = 3,
+            ExpectedAtomicGroupIdentity = expectedAtomicGroupIdentity,
             State = NodeFeeSettlement.StateKind.Prepared,
             PrimaryEffectState = NodeFeeSettlement.EffectStateKind.NotStarted,
             FeeEffectState = NodeFeeSettlement.EffectStateKind.NotStarted,

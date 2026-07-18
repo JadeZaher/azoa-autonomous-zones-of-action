@@ -1,6 +1,7 @@
 using System.Globalization;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Governance;
@@ -116,6 +117,37 @@ public sealed class NodeFeeSettlementManager : INodeFeeSettlementManager
             "Settlement recovery sweep completed without chain submission.");
     }
 
+    /// <inheritdoc/>
+    public async Task<AZOAResult<NodeFeeAtomicGroup?>> RecordAcceptedAtomicGroupAsync(
+        NodeFeeSettlementRecoveryLease lease,
+        AtomicTransferGroupRequest request,
+        AtomicTransferGroupSubmission submission,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+    {
+        if (lease is null || request is null || submission is null)
+            return AZOAResult<NodeFeeAtomicGroup?>.Failure("A settlement lease, group request, and accepted submission are required.");
+        if (now == default)
+            return AZOAResult<NodeFeeAtomicGroup?>.Failure("An accepted-group timestamp is required.");
+        if (!string.Equals(request.GroupIdentity, submission.GroupIdentity, StringComparison.Ordinal))
+            return AZOAResult<NodeFeeAtomicGroup?>.Failure("Accepted group evidence is not bound to the supplied request.");
+
+        var recorded = await _store.TryRecordAcceptedAtomicGroupAsync(
+            lease,
+            new NodeFeeAcceptedAtomicGroup(request, submission),
+            now,
+            ct);
+        if (recorded.IsError)
+        {
+            return AZOAResult<NodeFeeAtomicGroup?>.Failure(
+                $"Accepted atomic group could not be recorded: {recorded.Message}");
+        }
+
+        return recorded.Result is null
+            ? AZOAResult<NodeFeeAtomicGroup?>.Success(null, "Accepted atomic group lease contention.")
+            : AZOAResult<NodeFeeAtomicGroup?>.Success(recorded.Result, "Accepted atomic group recorded.");
+    }
+
     private const string InertRecoveryReason =
         "Settlement execution is not activated; retained for explicit reconciliation.";
 
@@ -142,6 +174,12 @@ public sealed class NodeFeeSettlementManager : INodeFeeSettlementManager
         if (gross == 0 || fee == 0 || net == 0 || (UInt128)fee + net != gross)
             return AZOAResult<NodeFeeSettlement>.Failure("Settlement amounts must be positive and satisfy gross = fee + net.");
 
+        if (!TryCanonicalizeOptionalAtomicGroupIdentity(draft.ExpectedAtomicGroupIdentity, out var expectedAtomicGroupIdentity))
+        {
+            return AZOAResult<NodeFeeSettlement>.Failure(
+                "Expected atomic group identity must be a canonical lowercase SHA-256 digest.");
+        }
+
         var parentKey = NodeFeeSettlement.CanonicalizeParentIdempotencyKey(draft.ParentIdempotencyKey);
         var now = DateTimeOffset.UtcNow;
         return AZOAResult<NodeFeeSettlement>.Success(new NodeFeeSettlement
@@ -158,6 +196,7 @@ public sealed class NodeFeeSettlementManager : INodeFeeSettlementManager
             FeeScheduleVersion = draft.FeeScheduleVersion,
             TreasuryAddress = draft.TreasuryAddress.Trim(),
             TreasuryDestinationVersion = draft.TreasuryDestinationVersion,
+            ExpectedAtomicGroupIdentity = expectedAtomicGroupIdentity,
             State = NodeFeeSettlement.StateKind.Prepared,
             PrimaryEffectState = NodeFeeSettlement.EffectStateKind.NotStarted,
             FeeEffectState = NodeFeeSettlement.EffectStateKind.NotStarted,
@@ -200,8 +239,24 @@ public sealed class NodeFeeSettlementManager : INodeFeeSettlementManager
            && left.NetAmount == right.NetAmount
            && left.FeeScheduleVersion == right.FeeScheduleVersion
            && left.TreasuryAddress == right.TreasuryAddress
-           && left.TreasuryDestinationVersion == right.TreasuryDestinationVersion;
+           && left.TreasuryDestinationVersion == right.TreasuryDestinationVersion
+           && left.ExpectedAtomicGroupIdentity == right.ExpectedAtomicGroupIdentity;
 
     private static string CanonicalizeChain(string chain)
         => chain.Trim().ToLowerInvariant();
+
+    private static bool TryCanonicalizeOptionalAtomicGroupIdentity(string? value, out string? canonical)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            canonical = null;
+            return true;
+        }
+
+        canonical = value;
+        return string.Equals(value, value.Trim(), StringComparison.Ordinal)
+            && canonical.Length == 64
+            && canonical.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+    }
+
 }

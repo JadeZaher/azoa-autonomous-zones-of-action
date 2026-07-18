@@ -1,6 +1,7 @@
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Core.Surreal;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -22,6 +23,9 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
         NodeFeeSettlement.StateKind.FeeSubmitted,
         NodeFeeSettlement.StateKind.AwaitingReconciliation,
     ];
+
+    private const string AcceptedGroupReconciliationReason =
+        "Accepted atomic group requires independent chain reconciliation.";
 
     private readonly ISurrealExecutor _executor;
 
@@ -244,6 +248,126 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
 
             response.EnsureAllOk();
             throw new InvalidOperationException("Node fee settlement claim returned no statement result.");
+        }, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<NodeFeeAtomicGroup?>> TryRecordAcceptedAtomicGroupAsync(
+        NodeFeeSettlementRecoveryLease lease,
+        NodeFeeAcceptedAtomicGroup acceptedGroup,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        ArgumentNullException.ThrowIfNull(acceptedGroup);
+        if (now == default)
+            throw new ArgumentOutOfRangeException(nameof(now));
+
+        var request = acceptedGroup.Request ?? throw new ArgumentException("An atomic group request is required.", nameof(acceptedGroup));
+        var submission = acceptedGroup.Submission ?? throw new ArgumentException("An atomic group submission is required.", nameof(acceptedGroup));
+        ValidateAcceptedGroup(request, submission);
+
+        var current = await _executor.QuerySingleAsync<NodeFeeSettlement>(
+            SurrealQuery<NodeFeeSettlement>.Key(lease.SettlementId),
+            ct);
+        if (current is null)
+            return AZOAResult<NodeFeeAtomicGroup?>.Success(null, "Settlement was not found.");
+        if (!MatchesSettlementEconomics(current, request))
+        {
+            return AZOAResult<NodeFeeAtomicGroup?>.Failure(
+                "Accepted atomic group does not match the settlement's immutable economics and routing.");
+        }
+        if (string.IsNullOrWhiteSpace(current.ExpectedAtomicGroupIdentity)
+            || !string.Equals(current.ExpectedAtomicGroupIdentity, request.GroupIdentity, StringComparison.Ordinal))
+        {
+            return AZOAResult<NodeFeeAtomicGroup?>.Failure(
+                "Settlement has no matching precommitted expected atomic group identity.");
+        }
+
+        var receiptId = NodeFeeAtomicGroup.RecordIdFor(lease.SettlementId);
+        var existingReceipt = await _executor.QuerySingleAsync<NodeFeeAtomicGroup>(
+            SurrealQuery<NodeFeeAtomicGroup>.Key(receiptId),
+            ct);
+        if (existingReceipt is not null)
+        {
+            return ReceiptMatches(existingReceipt, lease.SettlementId, request, submission)
+                ? AZOAResult<NodeFeeAtomicGroup?>.Success(existingReceipt, "Accepted atomic group already recorded.")
+                : AZOAResult<NodeFeeAtomicGroup?>.Failure("Accepted atomic group conflicts with the immutable receipt.");
+        }
+
+        var nextVersion = checked(lease.StateVersion + 1);
+        var receiptState = ToReceiptState(submission.State);
+        var primaryTransactionId = submission.PrimaryTransactionId;
+        var treasuryTransactionId = submission.TreasuryTransactionId;
+        var sourceAddress = request.Primary.FromAddress;
+        var primaryRecipient = request.Primary.ToAddress;
+        var nextAttemptAt = now;
+
+        // raw: receipt creation and the leased settlement's transition must be one transaction;
+        // current SurrealForge typed primitives cannot conditionally mutate the settlement and create its receipt. Waiver expires 2026-08-31.
+        var atomic = SurrealQuery.Combine(
+            SurrealQuery.Of("BEGIN"),
+            SurrealQuery
+                .Of("LET $_receipt = (SELECT * FROM type::record($_receipt_table, $_receipt_id)).first()")
+                .WithParam("_receipt_table", NodeFeeAtomicGroup.SchemaNameConst)
+                .WithParam("_receipt_id", receiptId),
+            SurrealQuery
+                .Of("LET $_updated = (IF $_receipt = NONE { (UPDATE ONLY type::record($_settlement_table, $_settlement_id) SET state = $_awaiting_reconciliation, primary_effect_state = $_submitted, primary_transaction_hash = array::join($_primary_transaction_id_chars, ''), fee_effect_state = $_submitted, fee_transaction_hash = array::join($_treasury_transaction_id_chars, ''), state_version = $_next_version, reconciliation_reason = type::string($_reason), next_attempt_at = $_next_attempt_at, lease_token = NONE, lease_expires_at = NONE, updated_at = $_now WHERE state_version = $_expected_version AND state = $_prepared AND primary_effect_state = $_not_started AND fee_effect_state = $_not_started AND primary_transaction_hash = NONE AND fee_transaction_hash = NONE AND lease_token = type::string($_lease_token) AND lease_expires_at > $_now AND parent_idempotency_key_hash = $_parent_key_hash AND expected_atomic_group_identity = $_expected_group_identity AND chain = $_chain AND network = $_network AND asset_id = $_asset_id AND gross_amount = $_gross_amount AND fee_amount = $_fee_amount AND net_amount = $_net_amount AND treasury_address = array::join($_treasury_address_chars, '') RETURN AFTER) } ELSE { NONE })")
+                .WithParam("_settlement_table", NodeFeeSettlement.SchemaNameConst)
+                .WithParam("_settlement_id", lease.SettlementId)
+                .WithParam("_awaiting_reconciliation", NodeFeeSettlement.StateKind.AwaitingReconciliation.ToString())
+                .WithParam("_submitted", NodeFeeSettlement.EffectStateKind.Submitted.ToString())
+                .WithParam("_primary_transaction_id_chars", SurrealScalarString.ToCharacters(primaryTransactionId))
+                .WithParam("_treasury_transaction_id_chars", SurrealScalarString.ToCharacters(treasuryTransactionId))
+                .WithParam("_next_version", nextVersion)
+                .WithParam("_reason", AcceptedGroupReconciliationReason)
+                .WithParam("_next_attempt_at", nextAttemptAt)
+                .WithParam("_expected_version", lease.StateVersion)
+                .WithParam("_prepared", NodeFeeSettlement.StateKind.Prepared.ToString())
+                .WithParam("_not_started", NodeFeeSettlement.EffectStateKind.NotStarted.ToString())
+                .WithParam("_lease_token", lease.LeaseToken)
+                .WithParam("_parent_key_hash", request.IdempotencyKeyHash)
+                .WithParam("_expected_group_identity", request.GroupIdentity)
+                .WithParam("_chain", request.ChainType.Trim().ToLowerInvariant())
+                .WithParam("_network", request.Network.ToString())
+                .WithParam("_asset_id", request.Primary.AssetId)
+                .WithParam("_gross_amount", checked(request.Primary.Amount + request.Treasury.Amount).ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .WithParam("_fee_amount", request.Treasury.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .WithParam("_net_amount", request.Primary.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .WithParam("_treasury_address_chars", SurrealScalarString.ToCharacters(request.Treasury.ToAddress))
+                .WithParam("_now", now),
+            SurrealQuery
+                .Of("LET $_created = (IF $_updated != NONE { (CREATE ONLY type::record($_receipt_table, $_receipt_id) SET settlement_id = type::record($_settlement_table, $_settlement_id), group_identity = type::string($_group_identity), chain_group_id = array::join($_chain_group_id_chars, ''), source_address = array::join($_source_address_chars, ''), primary_recipient_address = array::join($_primary_recipient_chars, ''), primary_transaction_id = array::join($_primary_transaction_id_chars, ''), treasury_transaction_id = array::join($_treasury_transaction_id_chars, ''), state = $_receipt_state RETURN AFTER) } ELSE { NONE })")
+                .WithParam("_receipt_table", NodeFeeAtomicGroup.SchemaNameConst)
+                .WithParam("_receipt_id", receiptId)
+                .WithParam("_settlement_table", NodeFeeSettlement.SchemaNameConst)
+                .WithParam("_settlement_id", lease.SettlementId)
+                .WithParam("_group_identity", request.GroupIdentity)
+                .WithParam("_chain_group_id_chars", SurrealScalarString.ToCharacters(submission.ChainGroupId))
+                .WithParam("_source_address_chars", SurrealScalarString.ToCharacters(sourceAddress))
+                .WithParam("_primary_recipient_chars", SurrealScalarString.ToCharacters(primaryRecipient))
+                .WithParam("_primary_transaction_id_chars", SurrealScalarString.ToCharacters(primaryTransactionId))
+                .WithParam("_treasury_transaction_id_chars", SurrealScalarString.ToCharacters(treasuryTransactionId))
+                .WithParam("_receipt_state", receiptState.ToString()),
+            SurrealQuery
+                .Of("SELECT * FROM type::record($_receipt_table, $_receipt_id)")
+                .WithParam("_receipt_table", NodeFeeAtomicGroup.SchemaNameConst)
+                .WithParam("_receipt_id", receiptId),
+            SurrealQuery.Of("COMMIT"));
+
+        return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var response = await _executor.ExecuteAsync(atomic, ct);
+            response.EnsureAllOk();
+            if (response.Count < 6)
+                throw new InvalidOperationException("Accepted atomic group transaction returned an incomplete response.");
+
+            var persisted = response.GetValues<NodeFeeAtomicGroup>(4).SingleOrDefault();
+            if (persisted is null)
+                return AZOAResult<NodeFeeAtomicGroup?>.Success(null, "Accepted atomic group lease contention.");
+            return ReceiptMatches(persisted, lease.SettlementId, request, submission)
+                ? AZOAResult<NodeFeeAtomicGroup?>.Success(persisted, "Accepted atomic group recorded.")
+                : AZOAResult<NodeFeeAtomicGroup?>.Failure("Accepted atomic group conflicts with the immutable receipt.");
         }, ct);
     }
 
@@ -503,6 +627,95 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
             throw new InvalidOperationException("Node fee settlement conditional mutation returned no statement result.");
         }, ct);
 
+    private static void ValidateAcceptedGroup(
+        AtomicTransferGroupRequest request,
+        AtomicTransferGroupSubmission submission)
+    {
+        if (!IsCanonicalSha256Digest(request.GroupIdentity)
+            || !IsCanonicalSha256Digest(request.IdempotencyKeyHash)
+            || !string.Equals(request.GroupIdentity, submission.GroupIdentity, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Accepted atomic group evidence must be bound to one canonical request identity.");
+        }
+
+        if (!Enum.IsDefined(request.Network)
+            || request.Primary.Amount == 0
+            || request.Treasury.Amount == 0
+            || string.IsNullOrWhiteSpace(request.ChainType)
+            || string.IsNullOrWhiteSpace(request.Primary.AssetId)
+            || !string.Equals(request.Primary.AssetId, request.Treasury.AssetId, StringComparison.Ordinal)
+            || !string.Equals(request.Primary.FromAddress, request.Treasury.FromAddress, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(request.Primary.FromAddress)
+            || string.IsNullOrWhiteSpace(request.Primary.ToAddress)
+            || string.IsNullOrWhiteSpace(request.Treasury.ToAddress)
+            || string.Equals(request.Primary.ToAddress, request.Treasury.ToAddress, StringComparison.Ordinal)
+            || request.Primary.SigningContext != request.Treasury.SigningContext)
+        {
+            throw new ArgumentException("Accepted atomic group evidence has an invalid two-leg request binding.");
+        }
+
+        if (submission.State is AtomicTransferGroupSubmissionState.NotSubmitted
+            || string.IsNullOrWhiteSpace(submission.ChainGroupId)
+            || string.IsNullOrWhiteSpace(submission.PrimaryTransactionId)
+            || string.IsNullOrWhiteSpace(submission.TreasuryTransactionId)
+            || !HasNoSurroundingWhitespace(submission.ChainGroupId)
+            || !HasNoSurroundingWhitespace(submission.PrimaryTransactionId)
+            || !HasNoSurroundingWhitespace(submission.TreasuryTransactionId)
+            || string.Equals(submission.PrimaryTransactionId, submission.TreasuryTransactionId, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Accepted atomic group evidence must contain distinct, non-empty chain identifiers.");
+        }
+    }
+
+    private static bool MatchesSettlementEconomics(
+        NodeFeeSettlement settlement,
+        AtomicTransferGroupRequest request)
+    {
+        var gross = (UInt128)request.Primary.Amount + request.Treasury.Amount;
+        return gross <= ulong.MaxValue
+           && string.Equals(settlement.ParentIdempotencyKeyHash, request.IdempotencyKeyHash, StringComparison.Ordinal)
+           && string.Equals(settlement.Chain, request.ChainType.Trim(), StringComparison.OrdinalIgnoreCase)
+           && string.Equals(settlement.Network, request.Network.ToString(), StringComparison.Ordinal)
+           && string.Equals(settlement.AssetId, request.Primary.AssetId, StringComparison.Ordinal)
+           && string.Equals(settlement.GrossAmount, gross.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
+           && string.Equals(settlement.FeeAmount, request.Treasury.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
+           && string.Equals(settlement.NetAmount, request.Primary.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
+           && string.Equals(settlement.TreasuryAddress, request.Treasury.ToAddress, StringComparison.Ordinal);
+    }
+
+    private static bool ReceiptMatches(
+        NodeFeeAtomicGroup receipt,
+        string settlementId,
+        AtomicTransferGroupRequest request,
+        AtomicTransferGroupSubmission submission)
+    {
+        var settlementLink = SurrealLink.ToLink(NodeFeeSettlement.SchemaNameConst, settlementId);
+        return (string.Equals(receipt.SettlementId, settlementId, StringComparison.Ordinal)
+                || string.Equals(receipt.SettlementId, settlementLink, StringComparison.Ordinal))
+           && string.Equals(receipt.GroupIdentity, request.GroupIdentity, StringComparison.Ordinal)
+           && string.Equals(receipt.ChainGroupId, submission.ChainGroupId, StringComparison.Ordinal)
+           && string.Equals(receipt.SourceAddress, request.Primary.FromAddress, StringComparison.Ordinal)
+           && string.Equals(receipt.PrimaryRecipientAddress, request.Primary.ToAddress, StringComparison.Ordinal)
+           && string.Equals(receipt.PrimaryTransactionId, submission.PrimaryTransactionId, StringComparison.Ordinal)
+           && string.Equals(receipt.TreasuryTransactionId, submission.TreasuryTransactionId, StringComparison.Ordinal)
+           && receipt.State == ToReceiptState(submission.State);
+    }
+
+    private static NodeFeeAtomicGroup.StateKind ToReceiptState(AtomicTransferGroupSubmissionState state)
+        => state switch
+        {
+            AtomicTransferGroupSubmissionState.Submitted => NodeFeeAtomicGroup.StateKind.Submitted,
+            AtomicTransferGroupSubmissionState.PendingConfirmation => NodeFeeAtomicGroup.StateKind.PendingConfirmation,
+            AtomicTransferGroupSubmissionState.Confirmed => NodeFeeAtomicGroup.StateKind.Confirmed,
+            _ => throw new ArgumentOutOfRangeException(nameof(state), "An accepted atomic group cannot be NotSubmitted."),
+        };
+
+    private static bool IsCanonicalSha256Digest(string value)
+        => value.Length == 64 && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+    private static bool HasNoSurroundingWhitespace(string value)
+        => string.Equals(value, value.Trim(), StringComparison.Ordinal);
+
     private static Dictionary<string, object?> BuildSettlementContent(NodeFeeSettlement settlement)
     {
         var content = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -519,6 +732,7 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
             ["fee_schedule_version"] = settlement.FeeScheduleVersion,
             ["treasury_address"] = settlement.TreasuryAddress,
             ["treasury_destination_version"] = settlement.TreasuryDestinationVersion,
+            ["expected_atomic_group_identity"] = settlement.ExpectedAtomicGroupIdentity,
             ["state"] = NodeFeeSettlement.StateKind.Prepared.ToString(),
             ["primary_effect_state"] = NodeFeeSettlement.EffectStateKind.NotStarted.ToString(),
             ["fee_effect_state"] = NodeFeeSettlement.EffectStateKind.NotStarted.ToString(),
@@ -667,6 +881,14 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
         {
             throw new ArgumentException(
                 "Settlement amounts must be canonical positive unsigned 64-bit base-unit strings satisfying gross = fee + net.",
+                nameof(settlement));
+        }
+
+        if (settlement.ExpectedAtomicGroupIdentity is not null
+            && !IsCanonicalSha256Digest(settlement.ExpectedAtomicGroupIdentity))
+        {
+            throw new ArgumentException(
+                "Settlement expected atomic group identity must be a canonical lowercase SHA-256 digest.",
                 nameof(settlement));
         }
     }

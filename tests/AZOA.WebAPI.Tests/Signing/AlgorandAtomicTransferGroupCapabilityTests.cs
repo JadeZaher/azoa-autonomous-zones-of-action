@@ -55,6 +55,7 @@ public sealed class AlgorandAtomicTransferGroupCapabilityTests
 
         result.IsError.Should().BeFalse(result.Message);
         result.Result!.State.Should().Be(AtomicTransferGroupSubmissionState.Confirmed);
+        result.Result.ChainGroupId.Should().NotBeNullOrWhiteSpace();
         signer.Groups.Should().HaveCount(2);
         signer.Groups.Distinct(StringComparer.Ordinal).Should().ContainSingle();
         handler.BroadcastCount.Should().Be(1);
@@ -138,6 +139,7 @@ public sealed class AlgorandAtomicTransferGroupCapabilityTests
 
         result.IsError.Should().BeFalse(result.Message);
         result.Result!.State.Should().Be(AtomicTransferGroupSubmissionState.PendingConfirmation);
+        result.Result.ChainGroupId.Should().NotBeNullOrWhiteSpace();
         result.Result.PrimaryTransactionId.Should().NotBeNullOrWhiteSpace();
         result.Result.TreasuryTransactionId.Should().NotBeNullOrWhiteSpace();
         result.Result.PrimaryTransactionId.Should().NotBe(result.Result.TreasuryTransactionId);

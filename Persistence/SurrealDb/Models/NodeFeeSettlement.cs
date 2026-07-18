@@ -165,6 +165,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 27)]
         public DateTimeOffset UpdatedAt { get; set; }
 
+        [Column(Order = 28)]
+        [Assert("$value = NONE OR string::matches($value, \"^[0-9a-f]{64}$\")")]
+        [ReadOnly]
+        public string? ExpectedAtomicGroupIdentity { get; set; }
+
         public static string HashParentIdempotencyKey(string parentIdempotencyKey)
         {
             var canonicalKey = CanonicalizeParentIdempotencyKey(parentIdempotencyKey);

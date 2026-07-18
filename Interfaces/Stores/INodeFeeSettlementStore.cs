@@ -40,6 +40,18 @@ public interface INodeFeeSettlementStore
         CancellationToken ct = default);
 
     /// <summary>
+    /// Atomically records one immutable, accepted two-leg chain group under the exact live settlement
+    /// lease. The receipt binds the request economics to the settlement, releases the lease into
+    /// reconciliation, and never completes the parent claim. An exact receipt replay returns the
+    /// existing receipt; divergent evidence is a conflict.
+    /// </summary>
+    Task<AZOAResult<NodeFeeAtomicGroup?>> TryRecordAcceptedAtomicGroupAsync(
+        NodeFeeSettlementRecoveryLease lease,
+        NodeFeeAcceptedAtomicGroup acceptedGroup,
+        DateTimeOffset now,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Releases an active recovery lease into the non-terminal reconciliation state. The mutation applies
     /// only while <paramref name="lease"/> still owns the record and its lease has not expired.
     /// </summary>

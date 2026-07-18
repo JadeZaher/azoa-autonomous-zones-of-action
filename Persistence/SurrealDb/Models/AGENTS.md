@@ -65,6 +65,22 @@ authorize a chain action: activation still needs an atomic parent-claim creation
 path, reviewed effect hand-offs, provider submission, and chain reconciliation.
 Do not model fees as an AZOA off-chain balance.
 
+`NodeFeeAtomicGroup` is the one-to-one immutable receipt for an accepted
+two-leg chain group. Its deterministic id derives only from the settlement id;
+the unique settlement link is the schema backstop. It records the request
+identity, chain-native group id, source/recipient, two distinct transaction
+ids, and accepted submission state. It is evidence of submission, not a chain
+observation or parent terminalization: reconciliation must still independently
+verify both legs before a settlement can complete.
+
+`NodeFeeSettlement.ExpectedAtomicGroupIdentity` is optional for ordinary inert
+settlements but, once supplied, is immutable 64-character lowercase SHA-256
+evidence of the exact source, recipients, amounts, signing context, provider
+chain/network, and parent-key digest in an `AtomicTransferGroupRequest`. Receipt
+recording is fail-closed when it is absent or differs; this prevents a later
+lease holder from substituting a different signer or recipient into an otherwise
+matching amount decision.
+
 ## NFT transfer projection reservation
 
 `Holon.TransferReservationKey`, `TransferTargetAvatarId`, and

@@ -34,8 +34,11 @@ public sealed partial class CodeStyleDebtBudgetTests
             ["SurrealNftStore.cs"] = 2,
             ["SurrealNodeFeeScheduleStore.cs"] = 6,
             // Lease CAS plus parameterized multi-table parent/settlement
-            // admission and terminal transactions; waiver expires 2026-08-31.
-            ["SurrealNodeFeeSettlementStore.cs"] = 20,
+            // admission, accepted-group receipt, and terminal transactions.
+            // The receipt is one waiver but SurrealQuery.Of accepts only one
+            // statement, so its BEGIN/LET/UPDATE/CREATE/SELECT/COMMIT pieces
+            // must compose through Combine; waiver expires 2026-08-31.
+            ["SurrealNodeFeeSettlementStore.cs"] = 26,
             ["SurrealNodeGovernanceStore.cs"] = 6,
             ["SurrealNodeTreasuryStore.cs"] = 6,
             ["SurrealNodeTransparencyStore.cs"] = 2,

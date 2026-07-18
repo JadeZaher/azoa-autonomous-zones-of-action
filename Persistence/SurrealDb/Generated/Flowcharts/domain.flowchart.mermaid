@@ -4,7 +4,7 @@ graph LR
     %% Regenerate with: dotnet run --project packages/SurrealForge.Schema -- flowcharts
     %% 
     %% Slices in this diagram:
-    %%   bridge: bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, node_fee_settlement, operation_log, quest_webhook_event, saga_steps, webhook_registration
+    %%   bridge: bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, node_fee_atomic_group, node_fee_settlement, operation_log, quest_webhook_event, saga_steps, webhook_registration
     %%   dapp_composition: dapp_series, dapp_series_quest, ecosystem, ecosystem_node
     %%   identity: admin_bootstrap_state, api_key, avatar, consent_audit, consent_grant, holon, holon_type_registry, kyc_document, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, star_odk, wallet_auth_challenge, wallet_auth_claim_token
     %%   quest: executes, forked_from, quest, quest_access_request, quest_dependency, quest_edge, quest_node, quest_node_execution, quest_run
@@ -24,6 +24,7 @@ graph LR
     %%   kyc_document.type: GOVERNMENT_ID, PASSPORT, DRIVERS_LICENSE, SELFIE, PROOF_OF_ADDRESS  (KycDocument.KycDocumentType)
     %%   kyc_submission.provider: MANUAL, VERIFF  (KycSubmission.KycProvider)
     %%   kyc_submission.status: PENDING, IN_REVIEW, APPROVED, REJECTED, EXPIRED  (KycSubmission.KycStatus)
+    %%   node_fee_atomic_group.state: Submitted, PendingConfirmation, Confirmed  (NodeFeeAtomicGroup.StateKind)
     %%   node_fee_audit.action: ScheduleUpdated
     %%   node_fee_settlement.fee_effect_state: NotStarted, Submitted, Confirmed, Failed, Unknown  (NodeFeeSettlement.EffectStateKind)
     %%   node_fee_settlement.network: Devnet, Testnet, Mainnet
@@ -54,6 +55,7 @@ graph LR
         consent_webhook_event["consent_webhook_event: Node"]:::nodeClass
         consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
         idempotency_key_store["idempotency_key_store: Node"]:::nodeClass
+        node_fee_atomic_group["node_fee_atomic_group: Node"]:::nodeClass
         node_fee_settlement["node_fee_settlement: Node"]:::nodeClass
         operation_log["operation_log: Node"]:::nodeClass
         quest_webhook_event["quest_webhook_event: Node"]:::nodeClass
@@ -141,6 +143,7 @@ graph LR
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
     nft_ownership -- "avatar_id [N:1]" --> avatar
+    node_fee_atomic_group -- "settlement_id [N:1]" --> node_fee_settlement
     node_fee_audit -- "actor_avatar_id [N:1]" --> avatar
     node_fee_schedule -- "updated_by_avatar_id [N:0..1]" --> avatar
     node_fee_settlement -- "fee_operation_id [N:0..1]" --> operation_log

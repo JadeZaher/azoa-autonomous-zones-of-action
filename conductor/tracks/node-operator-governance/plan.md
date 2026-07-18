@@ -270,6 +270,29 @@ successful exact proof, stale lease, nonterminal reconciliation, and parent
 completion. This hardens inert persistence only; it does not authorize a
 provider, worker, or nonzero fee consumer.
 
+Accepted atomic-group receipt (2026-07-18): an accepted two-leg provider result
+now carries the chain-native group id and can be recorded once under the exact
+live `node_fee_settlement` lease. The immutable `node_fee_atomic_group` receipt
+pins request identity, source/primary recipient, two transaction ids, and
+submission state; the same transaction moves both settlement effects to
+`Submitted`, releases the lease, and schedules immediate reconciliation. Exact
+replay returns the existing receipt while divergent evidence and stale leases
+fail closed. This remains inert evidence only: there is no provider caller,
+observer, worker, terminalization change, or nonzero fee-consumer activation.
+The pre-receipt broadcast crash window is deliberately still ambiguous and must
+never cause automatic re-broadcast.
+
+Receipt binding hardening (2026-07-18): atomic-capable settlement admission may
+precommit the canonical `AtomicTransferGroupRequest.GroupIdentity`; receipt
+recording now requires that immutable value and repeats it in the lease CAS.
+This binds the otherwise-unrepresented source, primary recipient, and signing
+context to the durable decision. Ordinary non-atomic settlements remain
+compatible with no precommit, but must fail closed if someone later attempts to
+record an atomic receipt. The receipt transaction remains one HTTP request via
+`SurrealQuery.Combine`: the package rejects semicolon-joined multi-statement
+`.Of` bodies, so the six parameterized fragments are one explicitly budgeted raw
+waiver, not six independent escape hatches.
+
 Verification evidence (2026-07-11): the API project builds with zero errors;
 the regenerated decorated-POCO goldens include treasury tables, ownership
 reservation fields/index, and `PendingConfirmation`; 1,422 unit tests pass with

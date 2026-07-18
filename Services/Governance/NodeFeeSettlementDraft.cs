@@ -26,4 +26,7 @@ public sealed class NodeFeeSettlementDraft
     public string TreasuryAddress { get; init; } = string.Empty;
 
     public long TreasuryDestinationVersion { get; init; }
+
+    /// <summary>Optional immutable group identity required before an atomic receipt may be recorded.</summary>
+    public string? ExpectedAtomicGroupIdentity { get; init; }
 }

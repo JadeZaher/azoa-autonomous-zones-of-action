@@ -178,11 +178,13 @@ public sealed record AtomicTransferGroupSubmission
 {
     private AtomicTransferGroupSubmission(
         string groupIdentity,
+        string chainGroupId,
         string primaryTransactionId,
         string treasuryTransactionId,
         AtomicTransferGroupSubmissionState state)
     {
         GroupIdentity = groupIdentity;
+        ChainGroupId = chainGroupId;
         PrimaryTransactionId = primaryTransactionId;
         TreasuryTransactionId = treasuryTransactionId;
         State = state;
@@ -190,6 +192,8 @@ public sealed record AtomicTransferGroupSubmission
 
     /// <summary>Stable identity of the group decision.</summary>
     public string GroupIdentity { get; }
+    /// <summary>The chain-native identifier assigned to the submitted transaction group.</summary>
+    public string ChainGroupId { get; }
     /// <summary>Transaction identifier for the recipient-facing leg.</summary>
     public string PrimaryTransactionId { get; }
     /// <summary>Transaction identifier for the treasury leg.</summary>
@@ -200,6 +204,7 @@ public sealed record AtomicTransferGroupSubmission
     /// <summary>Creates an accepted two-leg result bound to its originating group request.</summary>
     public static AtomicTransferGroupSubmission Accepted(
         AtomicTransferGroupRequest request,
+        string chainGroupId,
         string primaryTransactionId,
         string treasuryTransactionId,
         AtomicTransferGroupSubmissionState state)
@@ -208,6 +213,7 @@ public sealed record AtomicTransferGroupSubmission
         if (!IsCanonicalSha256Digest(request.GroupIdentity))
             throw new ArgumentException("The originating request has an invalid group identity.", nameof(request));
 
+        chainGroupId = ValidateChainGroupId(chainGroupId);
         primaryTransactionId = ValidateTransactionId(primaryTransactionId, nameof(primaryTransactionId));
         treasuryTransactionId = ValidateTransactionId(treasuryTransactionId, nameof(treasuryTransactionId));
         if (string.Equals(primaryTransactionId, treasuryTransactionId, StringComparison.Ordinal))
@@ -221,6 +227,7 @@ public sealed record AtomicTransferGroupSubmission
 
         return new AtomicTransferGroupSubmission(
             request.GroupIdentity,
+            chainGroupId,
             primaryTransactionId,
             treasuryTransactionId,
             state);
@@ -232,6 +239,14 @@ public sealed record AtomicTransferGroupSubmission
         if (!string.Equals(transactionId, transactionId.Trim(), StringComparison.Ordinal))
             throw new ArgumentException("A transaction identifier cannot have surrounding whitespace.", parameterName);
         return transactionId;
+    }
+
+    private static string ValidateChainGroupId(string chainGroupId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(chainGroupId);
+        if (!string.Equals(chainGroupId, chainGroupId.Trim(), StringComparison.Ordinal))
+            throw new ArgumentException("A chain group identifier cannot have surrounding whitespace.", nameof(chainGroupId));
+        return chainGroupId;
     }
 
     private static bool IsCanonicalSha256Digest(string value)

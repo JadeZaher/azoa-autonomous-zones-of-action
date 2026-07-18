@@ -1,5 +1,6 @@
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -38,6 +39,34 @@ public sealed class NodeFeeSettlementManagerTests
         store.ParentClaim!.State.Should().Be(IdempotencyState.InProgress);
         store.ParentClaim.ResultPayload.Should().BeNull();
         store.ParentClaim.Error.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PrepareAsync_PinsOptionalCanonicalExpectedAtomicGroupIdentity()
+    {
+        var store = new FakeNodeFeeSettlementStore();
+        var manager = new NodeFeeSettlementManager(store);
+        var expectedIdentity = new string('a', 64);
+
+        var result = await manager.PrepareAsync(ValidDraft(expectedAtomicGroupIdentity: expectedIdentity));
+
+        result.IsError.Should().BeFalse(result.Message);
+        result.Result!.ExpectedAtomicGroupIdentity.Should().Be(expectedIdentity);
+    }
+
+    [Theory]
+    [InlineData("ABC")]
+    [InlineData("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff ")]
+    public async Task PrepareAsync_RejectsNonCanonicalExpectedAtomicGroupIdentity(string expectedIdentity)
+    {
+        var store = new FakeNodeFeeSettlementStore();
+        var manager = new NodeFeeSettlementManager(store);
+
+        var result = await manager.PrepareAsync(ValidDraft(expectedAtomicGroupIdentity: expectedIdentity));
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("canonical lowercase");
+        store.AdmitCount.Should().Be(0);
     }
 
     [Fact]
@@ -425,7 +454,8 @@ public sealed class NodeFeeSettlementManagerTests
     private static NodeFeeSettlementDraft ValidDraft(
         string grossAmount = "1000",
         string feeAmount = "25",
-        string netAmount = "975") => new()
+        string netAmount = "975",
+        string? expectedAtomicGroupIdentity = null) => new()
     {
         ParentIdempotencyKey = "payment-intent-1",
         Operation = NodeFeeOperation.Transfer,
@@ -438,6 +468,7 @@ public sealed class NodeFeeSettlementManagerTests
         FeeScheduleVersion = 7,
         TreasuryAddress = "TREASURY",
         TreasuryDestinationVersion = 3,
+        ExpectedAtomicGroupIdentity = expectedAtomicGroupIdentity,
     };
 
     private static NodeFeeSettlementRecoveryRequest RecoveryRequest(DateTimeOffset now) => new(
@@ -450,6 +481,7 @@ public sealed class NodeFeeSettlementManagerTests
     {
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, NodeFeeSettlement> _rows = new(StringComparer.Ordinal);
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IdempotencyRecord> _parentClaims = new(StringComparer.Ordinal);
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, NodeFeeAtomicGroup> _atomicGroups = new(StringComparer.Ordinal);
         private readonly TaskCompletionSource _firstTwoReadsReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly bool _blockFirstTwoReads;
         private readonly bool _blockFirstTwoRecoveryScans;
@@ -640,6 +672,83 @@ public sealed class NodeFeeSettlementManagerTests
             }
         }
 
+        public Task<AZOAResult<NodeFeeAtomicGroup?>> TryRecordAcceptedAtomicGroupAsync(
+            NodeFeeSettlementRecoveryLease lease,
+            NodeFeeAcceptedAtomicGroup acceptedGroup,
+            DateTimeOffset now,
+            CancellationToken ct = default)
+        {
+            lock (_recoveryGate)
+            {
+                var receiptId = NodeFeeAtomicGroup.RecordIdFor(lease.SettlementId);
+                if (_atomicGroups.TryGetValue(receiptId, out var existing))
+                {
+                    return Task.FromResult(AZOAResult<NodeFeeAtomicGroup?>.Success(existing));
+                }
+
+                if (!_rows.TryGetValue(lease.SettlementId, out var stored)
+                    || stored.StateVersion != lease.StateVersion
+                    || stored.LeaseToken != lease.LeaseToken
+                    || stored.LeaseExpiresAt <= now
+                    || stored.State != NodeFeeSettlement.StateKind.Prepared
+                    || stored.PrimaryEffectState != NodeFeeSettlement.EffectStateKind.NotStarted
+                    || stored.FeeEffectState != NodeFeeSettlement.EffectStateKind.NotStarted)
+                {
+                    return Task.FromResult(AZOAResult<NodeFeeAtomicGroup?>.Success(null));
+                }
+
+                var request = acceptedGroup.Request;
+                var submission = acceptedGroup.Submission;
+                if (request.IdempotencyKeyHash != stored.ParentIdempotencyKeyHash
+                    || string.IsNullOrWhiteSpace(stored.ExpectedAtomicGroupIdentity)
+                    || request.GroupIdentity != stored.ExpectedAtomicGroupIdentity
+                    || !string.Equals(request.ChainType, stored.Chain, StringComparison.OrdinalIgnoreCase)
+                    || request.Network.ToString() != stored.Network
+                    || request.Primary.AssetId != stored.AssetId
+                    || request.Primary.Amount.ToString() != stored.NetAmount
+                    || request.Treasury.Amount.ToString() != stored.FeeAmount
+                    || request.Treasury.ToAddress != stored.TreasuryAddress
+                    || submission.GroupIdentity != request.GroupIdentity)
+                {
+                    return Task.FromResult(AZOAResult<NodeFeeAtomicGroup?>.Failure("Accepted atomic group does not match the settlement's immutable economics and routing."));
+                }
+
+                var state = submission.State switch
+                {
+                    AtomicTransferGroupSubmissionState.Submitted => NodeFeeAtomicGroup.StateKind.Submitted,
+                    AtomicTransferGroupSubmissionState.PendingConfirmation => NodeFeeAtomicGroup.StateKind.PendingConfirmation,
+                    AtomicTransferGroupSubmissionState.Confirmed => NodeFeeAtomicGroup.StateKind.Confirmed,
+                    _ => throw new ArgumentOutOfRangeException(nameof(acceptedGroup)),
+                };
+                var receipt = new NodeFeeAtomicGroup
+                {
+                    Id = receiptId,
+                    SettlementId = "node_fee_settlement:" + lease.SettlementId,
+                    GroupIdentity = request.GroupIdentity,
+                    ChainGroupId = submission.ChainGroupId,
+                    SourceAddress = request.Primary.FromAddress,
+                    PrimaryRecipientAddress = request.Primary.ToAddress,
+                    PrimaryTransactionId = submission.PrimaryTransactionId,
+                    TreasuryTransactionId = submission.TreasuryTransactionId,
+                    State = state,
+                    AcceptedAt = now,
+                };
+                _atomicGroups[receiptId] = receipt;
+                stored.State = NodeFeeSettlement.StateKind.AwaitingReconciliation;
+                stored.PrimaryEffectState = NodeFeeSettlement.EffectStateKind.Submitted;
+                stored.PrimaryTransactionHash = submission.PrimaryTransactionId;
+                stored.FeeEffectState = NodeFeeSettlement.EffectStateKind.Submitted;
+                stored.FeeTransactionHash = submission.TreasuryTransactionId;
+                stored.StateVersion++;
+                stored.ReconciliationReason = "Accepted atomic group requires independent chain reconciliation.";
+                stored.NextAttemptAt = now;
+                stored.LeaseToken = null;
+                stored.LeaseExpiresAt = null;
+                stored.UpdatedAt = now;
+                return Task.FromResult(AZOAResult<NodeFeeAtomicGroup?>.Success(receipt));
+            }
+        }
+
         public Task<AZOAResult<bool>> TryDeferToReconciliationAsync(
             NodeFeeSettlementRecoveryLease lease,
             string reason,
@@ -803,6 +912,7 @@ public sealed class NodeFeeSettlementManagerTests
             FeeScheduleVersion = settlement.FeeScheduleVersion,
             TreasuryAddress = settlement.TreasuryAddress,
             TreasuryDestinationVersion = settlement.TreasuryDestinationVersion,
+            ExpectedAtomicGroupIdentity = settlement.ExpectedAtomicGroupIdentity,
             State = settlement.State,
             PrimaryEffectState = settlement.PrimaryEffectState,
             FeeEffectState = settlement.FeeEffectState,

@@ -43,6 +43,16 @@ No recovery result is a transfer authorization, submission, confirmation, or
 fee settlement. Parent-claim atomicity, effect dispatch, and chain-derived
 reconciliation remain activation prerequisites.
 
+`RecordAcceptedAtomicGroupAsync` is an unregistered manager seam for durable
+post-broadcast evidence. It accepts only a live settlement recovery lease plus
+an `IAtomicTransferGroupModule` request/submission pair, delegates the immutable
+economic binding and CAS to the store, and leaves the parent InProgress for
+chain reconciliation. It does not submit, poll, or terminalize a transfer.
+The settlement draft can precommit its request's canonical group identity at
+admission. This is optional for non-atomic settlement intents, but mandatory
+for receipt recording and immutable thereafter; do not permit a receipt based
+only on matching amounts or treasury routing.
+
 ## node treasury routing
 
 Treasury destinations are separate policy per canonical chain/network. The

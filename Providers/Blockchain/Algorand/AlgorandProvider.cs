@@ -175,6 +175,13 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
                 "Algorand group-id assignment did not bind both transfer legs to one group.");
         }
 
+        var chainGroupId = transactions[0].Group.ToString();
+        if (string.IsNullOrWhiteSpace(chainGroupId))
+        {
+            return Error<AtomicTransferGroupSubmission>(
+                "Algorand group-id assignment returned no chain group identifier.");
+        }
+
         var primaryTransactionId = transactions[0].TxID();
         var treasuryTransactionId = transactions[1].TxID();
         var signed = await SignAtomicTransferGroupViaCustodyAsync(
@@ -218,6 +225,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
 
         var submission = AtomicTransferGroupSubmission.Accepted(
             request,
+            chainGroupId,
             primaryTransactionId,
             treasuryTransactionId,
             confirmation.Result);
