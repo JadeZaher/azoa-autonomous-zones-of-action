@@ -18,10 +18,14 @@ rejects duplicate transaction identifiers; adapters are forbidden from sequentia
 fallback. Unknown chains fail at provider resolution and a mismatched chain or
 network fails before a group identity is hashed.
 
-`AlgorandProvider` currently exposes the module as unavailable and makes no
-HTTP, custody, signing, or chain call. The installed/used SDK path only proves a
-single-transaction build/sign/POST/confirm pipeline. A real adapter requires
-verified group-id assignment, canonical two-transaction group signing, one
-batch broadcast, and group-level reconciliation. This is a type-safe activation
-prerequisite, not execution evidence; every nonzero unsettled consumer remains
-fail-closed.
+`AlgorandProvider` implements this provider primitive: it assigns one SDK
+`TxGroup` id to two typed ASA transfers, requires their source to match the
+resolved signing key (rekey and multisig are unsupported), signs both legs in
+one custody callback, and sends their envelopes through one batch POST. It
+returns both transaction ids and treats incomplete confirmation observation as
+non-terminal pending state.
+
+This is not consumer activation. No fee consumer, dependency-injection path, or
+recovery worker invokes the primitive yet; the durable settlement lifecycle and
+group-level reconciliation activation remain required. Every nonzero unsettled
+consumer, including Transfer, therefore remains fail-closed.

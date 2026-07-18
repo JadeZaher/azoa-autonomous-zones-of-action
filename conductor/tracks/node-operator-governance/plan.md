@@ -160,6 +160,17 @@ multi-table transaction has a 2026-08-31 SurrealForge typed-builder waiver and
 must be replaced when that package can express conditional cross-table
 admission.
 
+Algorand atomic-adapter prerequisite (2026-07-18): `IAtomicTransferGroupModule`
+now builds a two-leg same-ASA `TxGroup`, requires the shared sender to match the
+resolved signing key (rekey and multisig are unsupported), resolves both
+signatures in one custody callback, and sends the resulting envelopes in one
+Algod batch. It returns both transaction ids as `PendingConfirmation` unless
+both leg observations confirm; only a 404 is interpreted as unseen/pending, so
+other observation failures remain errors. This is provider capability only: it
+is not wired into a fee consumer, DI path, or recovery worker, so nonzero
+Transfer remains fail-closed pending durable settlement lifecycle and
+group-level reconciliation activation.
+
 Admission-boundary hardening (2026-07-13): there is no longer an unpaired public
 settlement create seam. `AdmitAsync` accepts only a canonical fresh `Prepared`
 intent: both effects must be `NotStarted`; operation/transaction identifiers,

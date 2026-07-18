@@ -12,10 +12,17 @@ sequential transfers. Callers resolve the requested chain/network through
 `IBlockchainProviderFactory` before creating a request, so unknown chains fail at
 the provider boundary and casing aliases hash as the provider's canonical name.
 
-`AlgorandProvider` currently exposes this module with
-`SupportsAtomicTransferGroups = false` and fails closed without touching HTTP,
-custody, or signing. Its current pipeline can only encode, sign, POST, and
-confirm one transaction. Enabling this requires reviewed group-id assignment
-compatible with the installed SDK, canonical signing for both grouped
-transactions, one batch-broadcast boundary, and group-level reconciliation that
-observes both transaction ids. No fee consumer may call it until all four exist.
+`AlgorandProvider` assigns the SDK's `TxGroup` id after both typed ASA transfer
+legs share suggested parameters, requires their sender to equal the resolved
+signing-key address, signs both legs within one custody resolution, and submits
+the concatenated signed envelopes through exactly one Algod POST. Rekeyed and
+multisig senders are explicitly unsupported and fail closed rather than producing
+an envelope the chain would reject.
+The accepted result always carries both independently derivable transaction ids.
+Both confirmed observations are required for `Confirmed`; a timeout or one-leg
+observation is `PendingConfirmation` and must be reconciled, never collapsed to
+a terminal partial success. Only an Algod 404 means an unseen/pending leg; other
+HTTP failures surface as errors. A failed custody/consent check occurs before the
+batch POST. This is an adapter capability only: no fee consumer, worker, or
+dependency-injection activation may use it until the durable settlement claim
+and group-level reconciliation workflow are wired and verified.

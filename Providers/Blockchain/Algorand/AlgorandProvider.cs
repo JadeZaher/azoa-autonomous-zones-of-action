@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -69,7 +70,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     public override bool SupportsBridging => true;
 
     /// <inheritdoc/>
-    public bool SupportsAtomicTransferGroups => false;
+    public bool SupportsAtomicTransferGroups => true;
 
     // Algorand exposes a server-side faucet; "configured?" is resolved at dispense
     // time so the caller gets the precise "set Blockchain:Faucet:Algorand:Mnemonic"
@@ -77,7 +78,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     public override bool SupportsFaucet => true;
 
     /// <inheritdoc/>
-    public Task<AZOAResult<AtomicTransferGroupSubmission>> SubmitAtomicTransferGroupAsync(
+    public async Task<AZOAResult<AtomicTransferGroupSubmission>> SubmitAtomicTransferGroupAsync(
         AtomicTransferGroupRequest request,
         CancellationToken ct = default)
     {
@@ -87,16 +88,144 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         if (!string.Equals(request.ChainType, ChainType, StringComparison.Ordinal)
             || request.Network != ActiveNetwork)
         {
-            return Task.FromResult(Error<AtomicTransferGroupSubmission>(
+            return Error<AtomicTransferGroupSubmission>(
                 $"Atomic transfer group binding {request.ChainType}/{request.Network} does not match " +
-                $"this Algorand provider binding {ChainType}/{ActiveNetwork}."));
+                $"this Algorand provider binding {ChainType}/{ActiveNetwork}.");
         }
 
-        return Task.FromResult(Error<AtomicTransferGroupSubmission>(
-            "Algorand atomic transfer groups are unavailable: this provider only supports a single " +
-            "transaction canonicalization, custody signature, submit, and confirmation. A verified group-id " +
-            "assignment, canonical two-transaction signing envelope, batch-submit boundary, and group-level " +
-            "reconciliation contract are required before this capability can be enabled."));
+        if (_signerFactory is null)
+            return Error<AtomicTransferGroupSubmission>(
+                "Cannot submit an Algorand atomic transfer group: no transaction signer is configured.");
+        if (!ulong.TryParse(request.Primary.AssetId, out var assetId)
+            || request.Primary.AssetId != request.Treasury.AssetId)
+        {
+            return Error<AtomicTransferGroupSubmission>(
+                "An atomic Algorand transfer group requires one numeric ASA asset id.");
+        }
+        if (!ValidateAddressFormat(request.Primary.FromAddress)
+            || !ValidateAddressFormat(request.Primary.ToAddress)
+            || !ValidateAddressFormat(request.Treasury.ToAddress))
+        {
+            return Error<AtomicTransferGroupSubmission>(
+                "An atomic Algorand transfer group requires valid source and recipient addresses.");
+        }
+
+        AlgodSuggestedParams paramsInfo;
+        try
+        {
+            var fetchedParams = await ExecuteWithRetryAsync(
+                async () => await AlgodHttpClient.GetFromJsonAsync<AlgodSuggestedParams>(
+                    "/v2/transactions/params", cancellationToken: ct),
+                ct: ct,
+                safety: RetrySafety.Idempotent);
+            if (fetchedParams is null)
+            {
+                return Error<AtomicTransferGroupSubmission>(
+                    "Algod returned no suggested params for the atomic transfer group.");
+            }
+
+            paramsInfo = fetchedParams;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (HttpRequestException ex)
+        {
+            return Error<AtomicTransferGroupSubmission>(
+                $"Failed to fetch suggested params for the atomic transfer group: {ex.Message}", ex);
+        }
+        catch (JsonException ex)
+        {
+            return Error<AtomicTransferGroupSubmission>(
+                $"Failed to fetch suggested params for the atomic transfer group: {ex.Message}", ex);
+        }
+        catch (NotSupportedException ex)
+        {
+            return Error<AtomicTransferGroupSubmission>(
+                $"Failed to fetch suggested params for the atomic transfer group: {ex.Message}", ex);
+        }
+
+        var source = new Address(request.Primary.FromAddress);
+        Transaction[] transactions =
+        {
+            new AssetTransferTransaction
+            {
+                Sender = source,
+                XferAsset = assetId,
+                AssetReceiver = new Address(request.Primary.ToAddress),
+                AssetAmount = request.Primary.Amount,
+            },
+            new AssetTransferTransaction
+            {
+                Sender = source,
+                XferAsset = assetId,
+                AssetReceiver = new Address(request.Treasury.ToAddress),
+                AssetAmount = request.Treasury.Amount,
+            },
+        };
+        foreach (var transaction in transactions)
+            ApplySuggestedParams(transaction, paramsInfo);
+
+        TxGroup.AssignGroupID(transactions);
+        if (transactions[0].Group is null || transactions[1].Group is null
+            || !transactions[0].Group.Equals(transactions[1].Group))
+        {
+            return Error<AtomicTransferGroupSubmission>(
+                "Algorand group-id assignment did not bind both transfer legs to one group.");
+        }
+
+        var primaryTransactionId = transactions[0].TxID();
+        var treasuryTransactionId = transactions[1].TxID();
+        var signed = await SignAtomicTransferGroupViaCustodyAsync(
+            transactions, request.Primary.SigningContext, ct);
+        if (signed.IsError || signed.Result is null)
+        {
+            return Error<AtomicTransferGroupSubmission>(
+                $"Signing failed for the atomic transfer group: {signed.Message}", signed.Exception);
+        }
+
+        try
+        {
+            var payload = JoinSignedGroup(signed.Result);
+            await ExecuteWithRetryAsync(
+                async () =>
+                {
+                    using var content = new ByteArrayContent(payload);
+                    content.Headers.ContentType = new MediaTypeHeaderValue("application/x-binary");
+                    var response = await AlgodHttpClient.PostAsync("/v2/transactions", content, ct);
+                    response.EnsureSuccessStatusCode();
+                },
+                ct: ct,
+                safety: RetrySafety.Broadcast);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (HttpRequestException ex)
+        {
+            return Error<AtomicTransferGroupSubmission>(
+                "Atomic transfer group broadcast was not acknowledged; reconcile against chain truth before re-sending: " +
+                ex.Message,
+                ex);
+        }
+
+        var confirmation = await WaitForAtomicTransferGroupConfirmationAsync(
+            primaryTransactionId, treasuryTransactionId, ct);
+        if (confirmation.IsError)
+            return Error<AtomicTransferGroupSubmission>(confirmation.Message, confirmation.Exception);
+
+        var submission = AtomicTransferGroupSubmission.Accepted(
+            request,
+            primaryTransactionId,
+            treasuryTransactionId,
+            confirmation.Result);
+        return new AZOAResult<AtomicTransferGroupSubmission>
+        {
+            Result = submission,
+            Message = confirmation.Message,
+        };
     }
 
     public AlgorandProvider(IConfiguration config, ILogger<AlgorandProvider> logger)
@@ -1014,6 +1143,155 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         };
     }
 
+    private async Task<AZOAResult<byte[][]>> SignAtomicTransferGroupViaCustodyAsync(
+        Transaction[] transactions,
+        SigningContext signingContext,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return await SignViaCustodyAsync(
+            "submit atomic transfer group",
+            signingContext,
+            keyBytes =>
+            {
+                using var material = new SigningKeyMaterial(keyBytes);
+                var signingAddress = new AlgoAccount(keyBytes).Address.EncodeAsString();
+                if (!string.Equals(
+                        transactions[0].Sender.EncodeAsString(),
+                        signingAddress,
+                        StringComparison.Ordinal))
+                {
+                    return Task.FromResult(new AZOAResult<byte[][]>
+                    {
+                        IsError = true,
+                        Message =
+                            "Atomic transfer groups require the shared sender to match the resolved signing key; " +
+                            "rekeyed and multisig senders are not supported.",
+                    });
+                }
+
+                var signer = _signerFactory!.GetSigner(ChainType);
+                var signed = new byte[transactions.Length][];
+                for (var index = 0; index < transactions.Length; index++)
+                {
+                    var leg = signer.Sign(Encoder.EncodeToMsgPackOrdered(transactions[index]), material);
+                    if (leg.IsError || leg.Result is null)
+                    {
+                        return Task.FromResult(new AZOAResult<byte[][]>
+                        {
+                            IsError = true,
+                            Message = leg.Message,
+                            Exception = leg.Exception,
+                        });
+                    }
+
+                    signed[index] = leg.Result;
+                }
+
+                return Task.FromResult(new AZOAResult<byte[][]> { Result = signed });
+            });
+    }
+
+    private async Task<AZOAResult<AtomicTransferGroupSubmissionState>> WaitForAtomicTransferGroupConfirmationAsync(
+        string primaryTransactionId,
+        string treasuryTransactionId,
+        CancellationToken ct)
+    {
+        const int maxPolls = 10;
+        var primaryConfirmed = false;
+        var treasuryConfirmed = false;
+        for (var attempt = 0; attempt < maxPolls; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var primary = await ReadAtomicTransferLegAsync(primaryTransactionId, ct);
+            if (primary.IsError)
+                return Error<AtomicTransferGroupSubmissionState>(primary.Message, primary.Exception);
+            primaryConfirmed |= primary.Result!.Confirmed;
+
+            var treasury = await ReadAtomicTransferLegAsync(treasuryTransactionId, ct);
+            if (treasury.IsError)
+                return Error<AtomicTransferGroupSubmissionState>(treasury.Message, treasury.Exception);
+            treasuryConfirmed |= treasury.Result!.Confirmed;
+
+            if (primaryConfirmed && treasuryConfirmed)
+            {
+                return new AZOAResult<AtomicTransferGroupSubmissionState>
+                {
+                    Result = AtomicTransferGroupSubmissionState.Confirmed,
+                    Message = "Algorand atomic transfer group confirmed.",
+                };
+            }
+
+            if (primaryConfirmed || treasuryConfirmed)
+            {
+                return new AZOAResult<AtomicTransferGroupSubmissionState>
+                {
+                    Result = AtomicTransferGroupSubmissionState.PendingConfirmation,
+                    Message = "Algorand atomic transfer group has an incomplete confirmation observation; reconcile both legs before any terminal transition.",
+                };
+            }
+
+            await Task.Delay(1000, ct);
+        }
+
+        return new AZOAResult<AtomicTransferGroupSubmissionState>
+        {
+            Result = AtomicTransferGroupSubmissionState.PendingConfirmation,
+            Message = primaryConfirmed || treasuryConfirmed
+                ? "Algorand atomic transfer group has an incomplete confirmation observation; reconcile both legs before any terminal transition."
+                : "Algorand atomic transfer group was submitted but is pending confirmation; reconcile both legs before any terminal transition.",
+        };
+    }
+
+    private async Task<AZOAResult<AtomicTransferLegObservation>> ReadAtomicTransferLegAsync(
+        string transactionId,
+        CancellationToken ct)
+    {
+        try
+        {
+            var pending = await AlgodHttpClient.GetFromJsonAsync<AlgodPendingTransactionInfo>(
+                $"/v2/transactions/pending/{transactionId}", cancellationToken: ct);
+            if (!string.IsNullOrWhiteSpace(pending?.PoolError))
+            {
+                return Error<AtomicTransferLegObservation>(
+                    $"Atomic transfer group leg {transactionId} was rejected by the pool: {pending.PoolError}");
+            }
+
+            return new AZOAResult<AtomicTransferLegObservation>
+            {
+                Result = new AtomicTransferLegObservation(pending?.ConfirmedRound > 0),
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new AZOAResult<AtomicTransferLegObservation>
+            {
+                Result = new AtomicTransferLegObservation(Confirmed: false),
+            };
+        }
+        catch (HttpRequestException ex)
+        {
+            return Error<AtomicTransferLegObservation>(
+                $"Failed to read atomic transfer group leg {transactionId}: {ex.Message}", ex);
+        }
+    }
+
+    private static byte[] JoinSignedGroup(IReadOnlyList<byte[]> signedLegs)
+    {
+        if (signedLegs.Count != 2 || signedLegs.Any(static leg => leg is null || leg.Length == 0))
+            throw new InvalidOperationException("An atomic Algorand transfer group requires two signed legs.");
+
+        var length = checked(signedLegs[0].Length + signedLegs[1].Length);
+        var payload = new byte[length];
+        Buffer.BlockCopy(signedLegs[0], 0, payload, 0, signedLegs[0].Length);
+        Buffer.BlockCopy(signedLegs[1], 0, payload, signedLegs[0].Length, signedLegs[1].Length);
+        return payload;
+    }
+
     private AssetParams BuildAssetParams(
         string name, string unitName, ulong total, ulong decimals, bool defaultFrozen,
         string managerAddress, string reserveAddress, string freezeAddress, string clawbackAddress,
@@ -1084,7 +1362,28 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         // is still reachable via the platform door ONLY; a per-user op fails closed
         // (it must never fall back to the platform key — value-path-wiring C1).
         if (!ctx.IsPlatform)
-            return UserContextNotResolvable(opLabel);
+            return UserContextNotResolvable<byte[]>(opLabel);
+
+        return await SignWithFallbackPlatformKeyAsync(opLabel, sign);
+    }
+
+    private async Task<AZOAResult<T>> SignViaCustodyAsync<T>(
+        string opLabel,
+        SigningContext ctx,
+        Func<byte[], Task<AZOAResult<T>>> sign)
+    {
+        if (_custodyService is not null)
+            return await SignWithCustodyAsync(_custodyService, opLabel, ctx, sign);
+
+        if (_custodyScopeFactory is not null)
+        {
+            using var scope = _custodyScopeFactory.CreateScope();
+            var custody = scope.ServiceProvider.GetRequiredService<IKeyCustodyService>();
+            return await SignWithCustodyAsync(custody, opLabel, ctx, sign);
+        }
+
+        if (!ctx.IsPlatform)
+            return UserContextNotResolvable<T>(opLabel);
 
         return await SignWithFallbackPlatformKeyAsync(opLabel, sign);
     }
@@ -1096,9 +1395,9 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     /// <see cref="IKeyCustodyService.WithPlatformSigningKeyAsync{T}"/>. A per-user
     /// context with no resolvable wallet/avatar fails closed — never the platform key.
     /// </summary>
-    private static async Task<AZOAResult<byte[]>> SignWithCustodyAsync(
+    private static async Task<AZOAResult<T>> SignWithCustodyAsync<T>(
         IKeyCustodyService custody, string opLabel, SigningContext ctx,
-        Func<byte[], Task<AZOAResult<byte[]>>> sign)
+        Func<byte[], Task<AZOAResult<T>>> sign)
     {
         // tenant-consent-delegation C1/C2/AC4/AC4b: route BOTH the platform and the
         // per-user resolve through the consent-aware overloads, passing the full
@@ -1110,7 +1409,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
             return Flatten(await custody.WithPlatformSigningKeyAsync(true, ctx, sign), opLabel);
 
         if (!ctx.IsResolvableUserContext)
-            return UserContextNotResolvable(opLabel);
+            return UserContextNotResolvable<T>(opLabel);
 
         return Flatten(await custody.WithSigningKeyAsync(ctx, sign), opLabel);
     }
@@ -1122,8 +1421,8 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     /// reaches here (it fails closed above), so the unconditional config-mnemonic
     /// load the review flagged for user ops is gone.
     /// </summary>
-    private async Task<AZOAResult<byte[]>> SignWithFallbackPlatformKeyAsync(
-        string opLabel, Func<byte[], Task<AZOAResult<byte[]>>> sign)
+    private async Task<AZOAResult<T>> SignWithFallbackPlatformKeyAsync<T>(
+        string opLabel, Func<byte[], Task<AZOAResult<T>>> sign)
     {
         // Fail-closed backstop (security review): the ungated platform-key fallback (no
         // custody service ⇒ no consent gate) must NEVER run in a real deployment. A
@@ -1138,7 +1437,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         var isProtectedEnv = aspnetEnv.Equals("Production", StringComparison.OrdinalIgnoreCase)
             || aspnetEnv.Equals("Staging", StringComparison.OrdinalIgnoreCase);
         if (isProtectedEnv)
-            return new AZOAResult<byte[]>
+            return new AZOAResult<T>
             {
                 IsError = true,
                 Message =
@@ -1147,7 +1446,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
             };
 
         if (_keyService is null)
-            return new AZOAResult<byte[]>
+            return new AZOAResult<T>
             {
                 IsError = true,
                 Message =
@@ -1156,7 +1455,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
 
         var mnemonic = _config.GetValue<string>(KeyCustodyService.PlatformMnemonicConfigPath);
         if (string.IsNullOrWhiteSpace(mnemonic))
-            return new AZOAResult<byte[]>
+            return new AZOAResult<T>
             {
                 IsError = true,
                 Message = $"Cannot {opLabel}: no platform signing key configured."
@@ -1198,7 +1497,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         }
     }
 
-    private static AZOAResult<byte[]> UserContextNotResolvable(string opLabel) =>
+    private static AZOAResult<T> UserContextNotResolvable<T>(string opLabel) =>
         new()
         {
             IsError = true,
@@ -1213,10 +1512,10 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     /// carries resolve-time errors: wallet not found, IDOR rejection, no platform
     /// key) and the signer's inner result (sign-time errors) into one result.
     /// </summary>
-    private static AZOAResult<byte[]> Flatten(AZOAResult<AZOAResult<byte[]>> outer, string opLabel)
+    private static AZOAResult<T> Flatten<T>(AZOAResult<AZOAResult<T>> outer, string opLabel)
     {
         if (outer.IsError || outer.Result is null)
-            return new AZOAResult<byte[]>
+            return new AZOAResult<T>
             {
                 IsError = true,
                 Message = string.IsNullOrWhiteSpace(outer.Message)
@@ -1234,6 +1533,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     }
 
     private sealed record ConfirmedTxn(string TxId, long ConfirmedRound, ulong? AssetIndex, bool PendingConfirmation);
+    private sealed record AtomicTransferLegObservation(bool Confirmed);
 
     // ─── REST API DTOs ───
 
