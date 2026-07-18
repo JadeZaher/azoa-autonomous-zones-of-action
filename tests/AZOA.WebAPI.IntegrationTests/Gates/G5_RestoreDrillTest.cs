@@ -22,12 +22,11 @@ namespace AZOA.WebAPI.IntegrationTests.Gates;
 ///
 /// Script surface (confirmed by reading scripts/surrealdb/backup.ps1 and restore.ps1):
 ///   backup.ps1  -OutputPath &lt;path&gt; -Namespace &lt;ns&gt; -Database &lt;db&gt;
-///               -Endpoint &lt;url&gt; -User &lt;user&gt; -Pass &lt;pass&gt;
+///               -Endpoint &lt;url&gt; -User &lt;user&gt; -Pass &lt;pass&gt; -ContainerName &lt;name&gt;
 ///   restore.ps1 -InputPath  &lt;path&gt; -Namespace &lt;ns&gt; -Database &lt;db&gt;
-///               -Endpoint &lt;url&gt; -User &lt;user&gt; -Pass &lt;pass&gt; -Force
+///               -Endpoint &lt;url&gt; -User &lt;user&gt; -Pass &lt;pass&gt; -ContainerName &lt;name&gt; -Force
 ///
-/// Both scripts use `&lt;docker|podman&gt; exec azoa-dev-surrealdb surreal export/import`
-/// (auto-detected; falls back to podman if docker is not on PATH).
+/// Both scripts use the selected container, not a host-installed surreal binary.
 ///
 /// Seed data-shape contract (2026-07-06): every seeded value must satisfy its
 /// SCHEMAFULL column type. `record&lt;...&gt;` link fields (e.g. wallet.avatar_id) and
@@ -40,6 +39,8 @@ namespace AZOA.WebAPI.IntegrationTests.Gates;
 [Trait("Category", "Gate")]
 public sealed class G5_RestoreDrillTest : IntegrationTestBase
 {
+    private const string DefaultSurrealContainerName = "azoa-dev-surrealdb";
+
     // ── Deterministic seed IDs (fixed so post-restore read is byte-comparable) ──
 
     // wallet rows
@@ -120,6 +121,11 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
 
     // ── G5 test ───────────────────────────────────────────────────────────────
 
+    private static string SurrealContainerName
+        => Environment.GetEnvironmentVariable("AZOA_SURREALDB_CONTAINER_NAME") is { Length: > 0 } containerName
+            ? containerName
+            : DefaultSurrealContainerName;
+
     [SkippableFact]
     public async Task G5_Backup_Wipe_Restore_PreservesEveryValueTable()
     {
@@ -177,7 +183,8 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             "-Database", "test",
             "-Endpoint", SurrealTestDefaults.Endpoint,
             "-User", SurrealTestDefaults.User,
-            "-Pass", SurrealTestDefaults.Password);
+            "-Pass", SurrealTestDefaults.Password,
+            "-ContainerName", SurrealContainerName);
 
         var (backupExit, backupStdOut, backupStdErr) = RunPwsh(backupArgs);
 
@@ -211,6 +218,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             "-Endpoint", SurrealTestDefaults.Endpoint,
             "-User", SurrealTestDefaults.User,
             "-Pass", SurrealTestDefaults.Password,
+            "-ContainerName", SurrealContainerName,
             "-Force");
 
         var (restoreExit, restoreStdOut, restoreStdErr) = RunPwsh(restoreArgs);

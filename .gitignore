@@ -178,7 +178,9 @@ Thumbs.db
 *.temp
 
 # Package manager files
+# The SDK CI job uses npm ci, so its lockfile is a checked-in build input.
 package-lock.json
+!sdk/azoa-wallet/package-lock.json
 yarn.lock
 pnpm-lock.yaml
 

@@ -53,6 +53,8 @@ jobs:
           exit 1
 
       - name: Integration tests
+        env:
+          AZOA_SURREALDB_CONTAINER_NAME: azoa-ci-surrealdb
         run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category!=Chaos&Category!=Perf"
 
   sdk:

@@ -2,7 +2,7 @@
 type: plan
 track: integration-test-isolation-debt
 status: active
-updated: 2026-07-12
+updated: 2026-07-17
 ---
 
 # Integration-test CI gate plan
@@ -18,10 +18,20 @@ updated: 2026-07-12
 - [x] Run the complete default correctness suite after the final fixes:
   `310 passed, 1 intentional skip, 0 failed` in Release on 2026-07-11
   (`Category!=Chaos&Category!=Perf`, 23m55s).
+- [x] Repair the first repository-CI run's deterministic preconditions: commit
+  the SDK lockfile required by `npm ci`, and pass CI's `azoa-ci-surrealdb`
+  container name explicitly to the G5 backup/restore drill while keeping its
+  local default.
+- [x] Supply the explicit `Simulated/Devnet` provider configuration needed by
+  the Live-mode integration host's treasury-governance test; production and
+  the default Live chain remain unchanged.
 - [ ] Keep the local-only `Category=Perf` budgets strict and isolate the wallet
   read p99 before archive. A quiet rerun on 2026-07-12 passed saga due-scan and
   bridge insert, but `WalletGetById` measured 59.3 ms against its 50 ms budget;
   the direct-record query path needs environment or transport evidence before
   any change to the budget is considered.
 - [ ] Observe a green repository CI check on the workflow change.
+- [ ] Diagnose and repair the remaining CI-only
+  `PutTreasuryDestination_AsNodeGovernor_PersistsGetRoundTripsAndAudits` 500;
+  local reproduction is blocked until the project SurrealDB owns port 8000.
 - [ ] Archive the track only after both verification items are checked.

@@ -86,7 +86,12 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
 
                 // Keep the AZOA provider key so Program.cs provider-selection code
                 // (if any) doesn't throw on missing config.
-                ["AZOA:DefaultProvider"] = "SurrealDb"
+                ["AZOA:DefaultProvider"] = "SurrealDb",
+
+                // Treasury routing validates the requested provider even while this
+                // host remains in Live mode; register its network-only test provider.
+                ["Blockchain:Chains:3:ChainType"] = "Simulated",
+                ["Blockchain:Chains:3:Devnet:IsEnabled"] = "true"
             });
         });
 

@@ -73,4 +73,8 @@ collect one complete filtered post-fix run before archive.
 - 2026-07-11, default correctness filter
   (`Category!=Chaos&Category!=Perf`): 310 passed, one intentional skip, zero
   failed in 23m55s.
+- 2026-07-17, first repository CI execution on `29c75d6` reached 342 passed,
+  one skip, and two failures. G5 targeted the local container name and the SDK
+  lockfile was ignored, so both deterministic CI preconditions were repaired;
+  the remaining treasury-governance 500 needs a clean project-DB reproduction.
 - Repository CI proof remains pending; track stays active.

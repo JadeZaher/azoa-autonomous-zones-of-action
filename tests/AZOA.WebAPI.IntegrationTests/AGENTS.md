@@ -61,6 +61,15 @@ target row to pre-exist, so seed order is unconstrained.
 is absent (this dev box + some CI images ship only 5.1); the backup/restore scripts are
 5.1-compatible.
 
+## §g5-container-selection — CI-safe restore container targeting
+
+`G5_RestoreDrillTest` defaults its script invocation to the local
+`azoa-dev-surrealdb` container. CI sets `AZOA_SURREALDB_CONTAINER_NAME` to the
+container it starts (`azoa-ci-surrealdb`), and the test passes that value explicitly
+to both backup and restore scripts. This keeps the restore drill enabled in the
+routine non-chaos/non-performance correctness gate without making local runs depend
+on the CI container name.
+
 ## §database-role-proof — disposable privilege behavior evidence
 
 `Persistence/Surreal/SurrealDatabaseRoleProofTests.cs` creates one
@@ -71,3 +80,12 @@ management, and a multi-statement transaction beyond typed CRUD. The proof recor
 the pinned 3.1.4 limitation: database `EDITOR` can mutate table definitions and a
 schema-ledger row, so separating runtime from root does not establish DDL tamper
 isolation.
+
+## §treasury-provider-config — live-mode simulated provider registration
+
+`AZOATestWebApplicationFactory` remains in `Blockchain:Mode=Live`, matching the
+ordinary integration host. It registers an enabled `Simulated/Devnet` chain entry
+only so node treasury routing can validate its explicitly requested provider without
+network I/O. Tests that need globally simulated settlement use their dedicated
+factory and set `Blockchain:Mode=Simulated`; do not change the shared host mode to
+make a treasury test pass.
