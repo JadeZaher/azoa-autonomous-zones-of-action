@@ -329,6 +329,12 @@ secret-free replay payload; every other outcome remains nonterminal. DI makes
 this scoped seam resolvable but it has no hosted worker, controller, submission,
 receipt writer, or fee-consumer caller, so it is not nonzero Transfer activation.
 
+CI compatibility correction (2026-07-18): the paired terminalization's optional
+parent-key guard uses an explicit boolean comparison rather than `NOT` applied
+to a bound parameter. SurrealDB 3.1.4 rejects the latter form during parsing;
+the replacement preserves both hash-only reconciliation terminalization and the
+legacy raw-key equality guard inside the same atomic settlement/parent CAS.
+
 Verification evidence (2026-07-11): the API project builds with zero errors;
 the regenerated decorated-POCO goldens include treasury tables, ownership
 reservation fields/index, and `PendingConfirmation`; 1,422 unit tests pass with
