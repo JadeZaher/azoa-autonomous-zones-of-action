@@ -25,10 +25,14 @@ status: in_progress
 
 The local reader now accepts only real VSTest fully-qualified test names for the
 five designated gate classes and rejects mixed/full-suite artifacts. CI still
-does not generate the five scoped TRXs: G1 requires Docker runtime/container
-configuration before its hard-kill probe can run against the CI SurrealDB
-container, then each gate needs an isolated TRX artifact plus provenance and
-freshness verification before this track can close.
+needs verification of the five scoped TRXs: G1 now accepts injected Docker
+runtime/container coordinates so the workflow can run it against the disposable
+CI SurrealDB container, validates every TRX result is a passing expected class,
+then packages the five files plus hashes, repository/commit/workflow/run and
+24-hour validity metadata into an attested tarball. A protected promotion must
+verify the expected repository, protected `main` ref/commit, signer workflow,
+metadata hashes and freshness before mounting extracted files read-only and
+enabling the endpoint; CI upload alone is not evidence.
 
 ## Activation limits (2026-07-13)
 

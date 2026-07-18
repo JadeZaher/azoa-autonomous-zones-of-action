@@ -14,6 +14,10 @@ jobs:
     name: .NET build + tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
 
@@ -56,6 +60,79 @@ jobs:
         env:
           AZOA_SURREALDB_CONTAINER_NAME: azoa-ci-surrealdb
         run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category!=Chaos&Category!=Perf"
+
+      - name: Conformance gate evidence
+        env:
+          AZOA_CONTAINER_RUNTIME: docker
+          AZOA_SURREALDB_CONTAINER_NAME: azoa-ci-surrealdb
+          CONFORMANCE_RESULTS: ${{ runner.temp }}/azoa-conformance
+        run: |
+          mkdir -p "$CONFORMANCE_RESULTS"
+          dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest" --logger "trx;LogFileName=G1.trx" --results-directory "$CONFORMANCE_RESULTS"
+          dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G2_IdempotencyTocTouTest" --logger "trx;LogFileName=G2.trx" --results-directory "$CONFORMANCE_RESULTS"
+          dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest" --logger "trx;LogFileName=G3.trx" --results-directory "$CONFORMANCE_RESULTS"
+          dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G5_RestoreDrillTest" --logger "trx;LogFileName=G5.trx" --results-directory "$CONFORMANCE_RESULTS"
+          dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G7_ReconciliationDrillTest" --logger "trx;LogFileName=G7.trx" --results-directory "$CONFORMANCE_RESULTS"
+          python3 - "$CONFORMANCE_RESULTS" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          expected = {
+              "G1": "G1_CrashDurabilityTest",
+              "G2": "G2_IdempotencyTocTouTest",
+              "G3": "G3_InjectionSuiteTest",
+              "G5": "G5_RestoreDrillTest",
+              "G7": "G7_ReconciliationDrillTest",
+          }
+          directory = Path(sys.argv[1])
+          for gate, class_name in expected.items():
+              path = directory / f"{gate}.trx"
+              results = [element for element in ET.parse(path).iter()
+                         if element.tag.rsplit("}", 1)[-1] == "UnitTestResult"]
+              prefix = f"AZOA.WebAPI.IntegrationTests.Gates.{class_name}."
+              if not results or any(result.get("outcome") != "Passed" or not
+                                    result.get("testName", "").startswith(prefix)
+                                    for result in results):
+                  raise SystemExit(f"Invalid conformance TRX: {path}")
+          PY
+
+      - name: Package conformance gate evidence
+        if: success()
+        env:
+          CONFORMANCE_RESULTS: ${{ runner.temp }}/azoa-conformance
+        run: |
+          files_json=$(for file in "$CONFORMANCE_RESULTS"/G{1,2,3,5,7}.trx; do
+            jq -n --arg name "$(basename "$file")" --arg sha256 "$(sha256sum "$file" | awk '{print $1}')" '{name: $name, sha256: $sha256}'
+          done | jq -s .)
+          jq -n \
+            --arg schema "azoa-node-conformance-evidence/v1" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg commit "$GITHUB_SHA" \
+            --arg workflow "$GITHUB_WORKFLOW_REF" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg expiresAt "$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson files "$files_json" \
+            '{schema: $schema, repository: $repository, commit: $commit, workflow: $workflow, runId: $runId, generatedAt: $generatedAt, expiresAt: $expiresAt, files: $files}' \
+            > "$CONFORMANCE_RESULTS/metadata.json"
+          tar --create --gzip --file "$CONFORMANCE_RESULTS/conformance-evidence.tar.gz" \
+            --directory "$CONFORMANCE_RESULTS" metadata.json G1.trx G2.trx G3.trx G5.trx G7.trx
+
+      - name: Attest conformance evidence
+        if: success() && github.event_name == 'push'
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/azoa-conformance/conformance-evidence.tar.gz
+
+      - name: Upload conformance evidence bundle
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: azoa-node-conformance-${{ github.sha }}
+          path: ${{ runner.temp }}/azoa-conformance/conformance-evidence.tar.gz
+          if-no-files-found: error
+          retention-days: 30
 
   sdk:
     name: SDK build + vitest

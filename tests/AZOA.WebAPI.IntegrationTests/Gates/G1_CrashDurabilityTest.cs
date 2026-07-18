@@ -17,7 +17,7 @@
 //
 // G1_HardKill_DurableInserts_SurviveRestart proves this at runtime:
 //   1. Insert N=20 bridge_tx rows + N=20 saga_steps rows via the real stores.
-//   2. Hard-kill the container (podman kill --signal=KILL azoa-dev-surrealdb).
+//   2. Hard-kill the configured SurrealDB container.
 //   3. Restart the container and wait for /health.
 //   4. Re-query every row by its deterministic id and assert byte-identical fields.
 //
@@ -60,8 +60,7 @@ namespace AZOA.WebAPI.IntegrationTests.Gates;
 /// load-bearing and not merely advisory.
 /// </summary>
 /// <remarks>
-/// Chaos test — Windows + podman host expected; opt-in via --filter Category=Chaos.
-/// The default CI pipeline uses --filter "Category!=Chaos" which skips this class.
+/// Chaos test — defaults to the local podman container; CI injects Docker coordinates.
 /// </remarks>
 [Trait("Category", "Chaos")]
 public sealed class G1_CrashDurabilityTest : IntegrationTestBase
@@ -89,7 +88,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
 
     /// <summary>
     /// Inserts N=20 bridge_tx rows and N=20 saga_steps rows, hard-kills the
-    /// SurrealDB container via <c>podman kill --signal=KILL</c>, restarts it,
+    /// configured SurrealDB container, restarts it,
     /// waits for the /health probe, then re-queries every row and asserts
     /// byte-identical field values via FluentAssertions BeEquivalentTo.
     ///
@@ -135,7 +134,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
             insertedSagas.Add(step);
         }
 
-        // ── Phase 4: Hard-kill the container via podman ────────────────────────
+        // ── Phase 4: Hard-kill the configured container ────────────────────────
         KillContainerHard();
 
         // ── Phase 5: Restart + wait for /health 200 ───────────────────────────
@@ -326,60 +325,54 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     }
 
     /// <summary>
-    /// The SurrealDB container name in the dev stack (docker-compose.dev.yml).
-    /// The 1.5.x-era standalone `azoa-surrealdb-test` container is gone — the
-    /// v3.1.4 cutover runs SurrealDB as the `azoa-dev-surrealdb` compose service.
+    /// The container defaults to the local compose name and may be injected by CI.
     /// </summary>
-    private const string SurrealContainerName = "azoa-dev-surrealdb";
+    private static string SurrealContainerName =>
+        Environment.GetEnvironmentVariable("AZOA_SURREALDB_CONTAINER_NAME") ?? "azoa-dev-surrealdb";
+
+    private static string ContainerRuntime =>
+        Environment.GetEnvironmentVariable("AZOA_CONTAINER_RUNTIME") ?? "podman";
 
     /// <summary>
-    /// Hard-kills the SurrealDB container via
-    /// <c>podman kill --signal=KILL azoa-dev-surrealdb</c>.
-    /// Throws with stderr content if the exit code is non-zero so CI logs show
-    /// a clear error (e.g. "container not found") rather than a cryptic timeout.
+    /// Hard-kills the configured SurrealDB container.
     /// </summary>
     private static void KillContainerHard()
     {
-        using var proc = RunPodman($"kill --signal=KILL {SurrealContainerName}");
+        using var proc = RunContainer($"kill --signal=KILL {SurrealContainerName}");
         proc.WaitForExit();
 
         if (proc.ExitCode != 0)
         {
             var stderr = proc.StandardError.ReadToEnd();
             throw new InvalidOperationException(
-                $"podman kill --signal=KILL {SurrealContainerName} exited with code {proc.ExitCode}. " +
+                $"{ContainerRuntime} kill --signal=KILL {SurrealContainerName} exited with code {proc.ExitCode}. " +
                 $"stderr: {stderr}. Ensure the container is running before the Chaos test.");
         }
     }
 
     /// <summary>
-    /// Restarts the SurrealDB container via <c>podman start azoa-dev-surrealdb</c>.
-    /// A SIGKILL leaves the container in the `exited` state (compose
-    /// `restart: unless-stopped` does not auto-recover a manual kill), so an
-    /// explicit start is required. Idempotent: starting an already-running
-    /// container is a no-op that returns 0; the /health poll that follows is the
-    /// authoritative readiness check regardless of exit code.
+    /// Restarts the configured SurrealDB container after its hard kill.
     /// </summary>
     private static void RestartContainer()
     {
-        using var proc = RunPodman($"start {SurrealContainerName}");
+        using var proc = RunContainer($"start {SurrealContainerName}");
         proc.WaitForExit();
         // Non-zero exit is not fatal here — the /health poll is authoritative.
     }
 
-    /// <summary>Start a <c>podman</c> subprocess capturing stdout/stderr.</summary>
-    private static Process RunPodman(string arguments)
+    /// <summary>Starts the configured container runtime with captured output.</summary>
+    private static Process RunContainer(string arguments)
     {
         var psi = new ProcessStartInfo
         {
-            FileName               = "podman",
+            FileName               = ContainerRuntime,
             Arguments              = arguments,
             RedirectStandardOutput = true,
             RedirectStandardError  = true,
             UseShellExecute        = false,
         };
         return Process.Start(psi)
-            ?? throw new InvalidOperationException($"Failed to start `podman {arguments}`.");
+            ?? throw new InvalidOperationException($"Failed to start `{ContainerRuntime} {arguments}`.");
     }
 
     /// <summary>
@@ -410,7 +403,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
         throw new TimeoutException(
             $"SurrealDB container at {SurrealTestDefaults.Endpoint} did not return HTTP 200 on /health " +
             $"within {timeout.TotalSeconds:F0} seconds after restart. " +
-            "Check podman logs with: podman logs azoa-surrealdb-test");
+            $"Check {ContainerRuntime} logs for {SurrealContainerName}.");
     }
 
     /// <summary>
@@ -418,7 +411,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     /// finds the repo root (identified by the presence of
     /// <c>AZOA.WebAPI.csproj</c>). This replicates the private
     /// <c>FindRepoRoot</c> logic in <see cref="IntegrationTestBase"/> locally
-    /// so the G1 config-gate test can locate <c>podman-compose.yml</c>
+    /// so the G1 config-gate test can locate <c>docker-compose.dev.yml</c>
     /// without breaking base-class encapsulation.
     /// </summary>
     private static string FindLocalRepoRoot()

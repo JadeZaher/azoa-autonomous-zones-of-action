@@ -24,6 +24,12 @@ deployment must provide these output files read-only in
 are missing or failed; stale artifacts are currently accepted, so deployment
 freshness and provenance enforcement are required before the L0 track can close.
 
+Trusted push CI produces a metadata-bound tarball containing these five files
+and an artifact attestation. Upload integrity alone is not deployment provenance: a
+protected promotion step must verify the expected repository, protected `main`
+commit/ref, signer workflow identity, attestation, metadata hashes, and bounded
+freshness before mounting the extracted files read-only and enabling the endpoint.
+
 ### Node identity, rotation, and restore
 
 `ProtectedFileNodeIdentityKeyService` uses a distinct NIST P-256 identity key.
