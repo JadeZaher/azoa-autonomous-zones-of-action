@@ -269,6 +269,20 @@ track remains `in_progress`: provider network-instance isolation, the durable
 `node_fee_settlement` state machine, atomic submission, reconciliation, and the
 remaining fee consumers are still acceptance blockers.
 
+### Operational evidence promotion (2026-07-17)
+
+The tracked manual `Promote attested conformance image` workflow accepts only
+the current `main` commit and the matching successful `CI` push run. It verifies
+the downloaded evidence bundle's GitHub attestation, exact archive shape,
+metadata identity/freshness, and every TRX hash before publishing a
+SHA-addressable GHCR image. A separate production Dockerfile embeds that
+verified bundle root-owned and read-only while preserving runtime write access
+only under `/app/data`; it also records the source revision in the assembly and
+OCI image label. This is a release-artifact boundary, not deployment activation:
+repository administrators must protect the `conformance-promotion` environment,
+and Railway must later be moved manually to the emitted immutable digest with a
+durable volume and matching runtime conformance settings.
+
 ### 1.4 Interop-boundary invariant (documented + tested even pre-federation)
 - Assert `node:govern` is node-local: a local rule governs only local-settling actions; no
   local rule reaches a peer. This is a test + doc even in Phase 1 so the boundary is fixed

@@ -5,7 +5,7 @@ An Azoa node is three Railway services:
 | Service | What it is | Source |
 |---|---|---|
 | **SurrealDB** | Sole storage engine (v3.x) with a persistent `/data` volume | Public template [`surrealdb-3x`](https://railway.com/deploy/surrealdb-3x) |
-| **azoa-api** | .NET 10 WebAPI backend | This repo, root `Dockerfile` |
+| **azoa-api** | .NET 10 WebAPI backend | Verified GHCR image, promoted from this repo |
 | **azoa-frontend** | Next.js 14 dashboard (installs the published `azoa-sdk` from npm) | This repo, `frontend/Dockerfile` |
 
 The exact, production-validated wiring is in [`template.json`](./template.json).
@@ -41,8 +41,13 @@ names, sources, and the `${{service.VAR}}` references must match).
    ```
    railway add --service azoa-api \
      --variables "SurrealDb__Endpoint=${SurrealDb__Endpoint}" ...
-   railway service source connect --repo <owner>/<repo> --branch main --service azoa-api
    ```
+   Do not source-connect the production API to a branch. First run the protected
+   `Promote attested conformance image` workflow with the exact current `main`
+   SHA and its successful CI run id, then configure Railway with the resulting
+   immutable `ghcr.io/...@sha256:...` reference. The release workflow validates
+   the CI artifact attestation and embeds its bounded conformance evidence
+   read-only at `/app/conformance`; it deliberately does not call Railway.
    Required secrets (generate strong random values):
    `Jwt__Key`, `AZOA__WalletEncryptionKey`. Required non-secret:
    `Cors__AllowedOrigins__0` = the frontend's public URL (the app fail-closes at
@@ -55,6 +60,19 @@ names, sources, and the `${{service.VAR}}` references must match).
    public domain.
 
 ## Gotchas learned standing this up
+
+### Conformance promotion
+
+`Dockerfile.conformance-release` exists only for the promotion workflow. It
+adds the verified evidence bundle as root-owned read-only files and gives the
+runtime account write access only to `/app/data`. Do not use it for local or
+unverified builds. Before enabling the `conformance-promotion` GitHub
+environment, configure required reviewers there; the workflow's environment
+name alone cannot provide approval protection. Railway must be updated only to
+the emitted image digest, with its `/app/data` volume preserved and the
+conformance runtime configuration set to the same repository, CI workflow, and
+source revision. Before any such update, verify the published image attestation
+against this repository and the protected promotion workflow.
 
 - **One `railway.json` per repo applies to every service.** Keep Dockerfile
   selection in each service's `RAILWAY_DOCKERFILE_PATH` variable, not in a

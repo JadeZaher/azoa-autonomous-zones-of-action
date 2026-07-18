@@ -1,0 +1,56 @@
+# Production-only image recipe. See deploy/railway/DEPLOY.md §Conformance promotion.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+RUN apt-get update && apt-get install -y --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+RUN dotnet restore AZOA.WebAPI.csproj
+
+ARG SOURCE_REVISION
+RUN case "$SOURCE_REVISION" in \
+      [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;; \
+      *) echo "SOURCE_REVISION must be a 40-character lowercase Git SHA." >&2; exit 1 ;; \
+    esac \
+    && dotnet publish AZOA.WebAPI.csproj -c Release -o /app/publish --no-restore -p:SourceRevisionId="$SOURCE_REVISION"
+
+ARG SURREALFORGE_SCHEMA_VERSION=0.1.1
+RUN set -eu; \
+    url="https://api.nuget.org/v3-flatcontainer/surrealforge.schema/${SURREALFORGE_SCHEMA_VERSION}/surrealforge.schema.${SURREALFORGE_SCHEMA_VERSION}.nupkg"; \
+    curl -fsSL "$url" -o /tmp/sfs.nupkg; \
+    mkdir -p /app/schema-cli; \
+    cd /app/schema-cli; \
+    unzip -q -o /tmp/sfs.nupkg "tools/net10.0/any/*" -d /tmp/sfs; \
+    cp -r /tmp/sfs/tools/net10.0/any/* /app/schema-cli/; \
+    rm -rf /tmp/sfs /tmp/sfs.nupkg; \
+    test -f /app/schema-cli/SurrealForge.Schema.dll
+
+RUN mkdir -p /app/persistence && cp -r Persistence/SurrealDb /app/persistence/SurrealDb
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
+
+COPY --from=build /app/publish ./
+COPY --from=build /app/schema-cli ./schema-cli/
+COPY --from=build /app/persistence ./persistence/
+COPY --chown=root:root verified-evidence ./conformance/
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && find /app/conformance -type d -exec chmod 0555 {} \; \
+    && find /app/conformance -type f -exec chmod 0444 {} \; \
+    && mkdir -p /app/data/data-protection-keys \
+    && chown -R $APP_UID /app/data
+
+USER $APP_UID
+
+ENV ASPNETCORE_ENVIRONMENT=Production
+EXPOSE 5000
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

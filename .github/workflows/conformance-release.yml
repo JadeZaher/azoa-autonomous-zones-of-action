@@ -1,0 +1,172 @@
+name: Promote attested conformance image
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact current main commit proven by the CI run.
+        required: true
+        type: string
+      ci_run_id:
+        description: Successful CI run that produced the conformance-evidence artifact.
+        required: true
+        type: string
+
+concurrency:
+  group: conformance-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Verify evidence and publish immutable image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: conformance-promotion
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      attestations: write
+      artifact-metadata: write
+      id-token: write
+    steps:
+      - name: Check out requested source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+
+      - name: Verify source and producer run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git fetch origin +refs/heads/main:refs/remotes/origin/main --depth=1
+          test "$(git rev-parse origin/main)" = "$SOURCE_SHA"
+          run=$(gh run view "$CI_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --json conclusion,event,headBranch,headSha,status,workflowName)
+          test "$(jq -r '.conclusion' <<< "$run")" = success
+          test "$(jq -r '.status' <<< "$run")" = completed
+          test "$(jq -r '.event' <<< "$run")" = push
+          test "$(jq -r '.headBranch' <<< "$run")" = main
+          test "$(jq -r '.headSha' <<< "$run")" = "$SOURCE_SHA"
+          test "$(jq -r '.workflowName' <<< "$run")" = CI
+
+      - name: Download and verify attested evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          artifact="azoa-node-conformance-$SOURCE_SHA"
+          gh run download "$CI_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$artifact" --dir downloaded-evidence
+          bundle=$(find downloaded-evidence -type f -name conformance-evidence.tar.gz -print -quit)
+          test -n "$bundle"
+          test "$(find downloaded-evidence -type f -name conformance-evidence.tar.gz | wc -l)" = 1
+          test "$(stat --printf=%s "$bundle")" -le 2097152
+          gh attestation verify "$bundle" -R "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml" \
+            --source-digest "$SOURCE_SHA" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners
+          python3 - "$bundle" verified-evidence "$GITHUB_REPOSITORY" "$SOURCE_SHA" "$CI_RUN_ID" <<'PY'
+          import hashlib
+          import json
+          import sys
+          import tarfile
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          bundle, destination, repository, source_sha, ci_run_id = sys.argv[1:]
+          expected_names = ["metadata.json", "G1.trx", "G2.trx", "G3.trx", "G5.trx", "G7.trx"]
+          expected_workflow = f"{repository}/.github/workflows/ci.yml@refs/heads/main"
+          member_limits = {"metadata.json": 65536, **{name: 524288 for name in expected_names[1:]}}
+          destination_path = Path(destination)
+          destination_path.mkdir(mode=0o700)
+          payloads = {}
+          with tarfile.open(bundle, "r:gz") as archive:
+              members = archive.getmembers()
+              names = [member.name for member in members]
+              if (names != expected_names or any(not member.isfile() for member in members)
+                      or any(member.size > member_limits[member.name] for member in members)
+                      or sum(member.size for member in members) > 2097152):
+                  raise SystemExit("Unexpected conformance archive members.")
+              for member in members:
+                  source = archive.extractfile(member)
+                  if source is None:
+                      raise SystemExit(f"Unreadable conformance archive member: {member.name}")
+                  payload = source.read(member_limits[member.name] + 1)
+                  if len(payload) > member_limits[member.name]:
+                      raise SystemExit(f"Oversized conformance archive member: {member.name}")
+                  payloads[member.name] = payload
+
+          metadata = json.loads(payloads["metadata.json"])
+          required_keys = {"schema", "repository", "commit", "workflow", "runId", "generatedAt", "expiresAt", "files"}
+          if set(metadata) != required_keys:
+              raise SystemExit("Unexpected conformance metadata shape.")
+          if (metadata["schema"] != "azoa-node-conformance-evidence/v1"
+                  or metadata["repository"] != repository
+                  or metadata["commit"] != source_sha
+                  or metadata["workflow"] != expected_workflow
+                  or metadata["runId"] != ci_run_id):
+              raise SystemExit("Conformance metadata identity mismatch.")
+          parse_time = lambda value: datetime.fromisoformat(value.replace("Z", "+00:00"))
+          generated_at, expires_at = parse_time(metadata["generatedAt"]), parse_time(metadata["expiresAt"])
+          now = datetime.now(timezone.utc)
+          if generated_at.tzinfo is None or expires_at.tzinfo is None or generated_at > now or expires_at <= now or expires_at > generated_at + timedelta(hours=24):
+              raise SystemExit("Conformance metadata freshness mismatch.")
+          file_entries = metadata["files"]
+          if not isinstance(file_entries, list) or [entry.get("name") for entry in file_entries] != expected_names[1:]:
+              raise SystemExit("Conformance metadata file list mismatch.")
+          for entry in file_entries:
+              if set(entry) != {"name", "sha256"} or entry["name"] not in payloads:
+                  raise SystemExit("Conformance metadata file entry mismatch.")
+              if hashlib.sha256(payloads[entry["name"]]).hexdigest() != entry["sha256"]:
+                  raise SystemExit(f"Conformance hash mismatch: {entry['name']}")
+          for name in expected_names:
+              (destination_path / name).write_bytes(payloads[name])
+          PY
+
+      - name: Derive image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish verified image
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: Dockerfile.conformance-release
+          push: true
+          build-args: SOURCE_REVISION=${{ inputs.source_sha }}
+          tags: ${{ steps.image.outputs.name }}:${{ inputs.source_sha }}
+
+      - name: Attest release image
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Publish immutable deployment reference
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          {
+            echo "## Verified AZOA release image"
+            echo
+            echo "Deploy only \`$IMAGE_NAME@$IMAGE_DIGEST\` after Railway service review."
+          } >> "$GITHUB_STEP_SUMMARY"
