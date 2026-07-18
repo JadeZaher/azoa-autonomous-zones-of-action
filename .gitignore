@@ -189,6 +189,9 @@ pnpm-lock.yaml
 *.test.ts
 *.spec.js
 *.spec.ts
+# The SDK's executable test suite is part of the published-client contract and
+# must remain visible to its CI vitest job.
+!sdk/azoa-wallet/**/*.test.ts
 
 # Build artifacts
 dist/
