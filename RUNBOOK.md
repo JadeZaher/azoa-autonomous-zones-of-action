@@ -160,9 +160,12 @@ command `/usr/local/bin/docker-entrypoint.sh schema`. Give that service only:
 - `AZOA_RUNTIME_PASSWORD` as a generated 48-character secret.
 
 The job waits for SurrealDB, runs `surrealforge up` without checksum force, then
-creates or rotates a database-level `EDITOR` user. Require terminal `SUCCESS`
-before promoting the API. The built-in role removes owner/IAM authority but is
-not DDL-proof; track stricter data-only isolation separately.
+creates or rotates a database-level `EDITOR` user. Railway retries one nonzero
+exit, then exposes the failure instead of masking it as a stopped one-shot
+service. Require terminal `SUCCESS` and the explicit `Schema job completed
+successfully` log marker before promoting the API. The built-in role removes
+owner/IAM authority but is not DDL-proof; track stricter data-only isolation
+separately.
 
 The schema owner's username accepts a 3–64 character token-safe value, including
 Railway-generated values that begin with a digit. Its `SURREALFORGE_PASS` accepts

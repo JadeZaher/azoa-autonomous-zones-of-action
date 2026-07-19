@@ -8,20 +8,70 @@ namespace AZOA.WebAPI.Tests.Core;
 
 public sealed class SurrealDeploymentLeastPrivilegeContractTests
 {
-    [Fact]
-    public void KycCompatibilityBaseline_RetainsTheShippedChecksum()
+    [Theory]
+    [InlineData("admin_bootstrap_state.surql", "89531eaf99831478f07018f63fbd5d8e20d10296283d258f350ad6f8dc7c6483")]
+    [InlineData("bridge_tx.surql", "eb42fc6b723d7fc91ba95e8bddef58d9c994b07ad89a96d20a291ef55f584084")]
+    [InlineData("holon.surql", "befd3f9dd6e9a15a8f6dcc278153d028c1da1629b836bf2f15621424bfd7605e")]
+    [InlineData("kyc_submission.surql", "aad029ce96cc6009b147b5022d275abb42ae4d0a7011261f6e63a6dc633e7ac2")]
+    [InlineData("operation_log.surql", "f67cb9da11f239416dabb42ab9839f9615bb782aa586688d6ce95c8da7b8994c")]
+    [InlineData("swap_state.surql", "40f8f1ba577fbb6511da0432c3a0f2616e8b28e35e0477d7bc69a0808ea2ef99")]
+    public void CompatibilityBaseline_RetainsTheShippedChecksum(string fileName, string expectedChecksum)
     {
         var path = Path.Combine(
             FindRepositoryRoot(),
             "Persistence",
             "SurrealDb",
             "CompatibilityBaselines",
-            "kyc_submission.surql");
+            fileName);
 
         var checksum = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))
             .ToLowerInvariant();
 
-        checksum.Should().Be("aad029ce96cc6009b147b5022d275abb42ae4d0a7011261f6e63a6dc633e7ac2");
+        checksum.Should().Be(expectedChecksum);
+    }
+
+    [Fact]
+    public void CompatibilityBaselines_KeepForwardMigrationsForCurrentGeneratedSchema()
+    {
+        var migrations = Path.Combine(FindRepositoryRoot(), "Persistence", "SurrealDb", "Migrations");
+        var holon = File.ReadAllText(Path.Combine(
+            migrations,
+            "20260718_135000__add_holon_transfer_reservation.surql"));
+        var confirmation = File.ReadAllText(Path.Combine(
+            migrations,
+            "20260718_136000__add_pending_confirmation_states.surql"));
+
+        holon.Should().Contain("transfer_reservation_key")
+            .And.Contain("transfer_target_avatar_id")
+            .And.Contain("transfer_reserved_at")
+            .And.Contain("last_transfer_settlement_key")
+            .And.Contain("holon_transfer_reservation")
+            .And.NotContain("OVERWRITE");
+        confirmation.Should().Contain("DEFINE PARAM OVERWRITE $operation_log_status")
+            .And.Contain("DEFINE FIELD OVERWRITE status ON TABLE operation_log")
+            .And.Contain("DEFINE PARAM OVERWRITE $swap_state_status")
+            .And.Contain("DEFINE FIELD OVERWRITE status ON TABLE swap_state")
+            .And.Contain("PendingConfirmation");
+    }
+
+    [Fact]
+    public void RailwaySchemaJob_UsesDockerAndSurfacesARepeatedFailure()
+    {
+        var path = Path.Combine(
+            FindRepositoryRoot(),
+            "deploy",
+            "railway",
+            "schema.railway.json");
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        var build = document.RootElement.GetProperty("build");
+        var deploy = document.RootElement.GetProperty("deploy");
+
+        build.GetProperty("builder").GetString().Should().Be("DOCKERFILE");
+        build.GetProperty("dockerfilePath").GetString().Should().Be("Dockerfile");
+        deploy.GetProperty("startCommand").GetString()
+            .Should().Be("/usr/local/bin/docker-entrypoint.sh schema");
+        deploy.GetProperty("restartPolicyType").GetString().Should().Be("ON_FAILURE");
+        deploy.GetProperty("restartPolicyMaxRetries").GetInt32().Should().Be(1);
     }
 
     [Fact]
