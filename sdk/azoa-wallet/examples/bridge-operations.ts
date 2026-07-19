@@ -1,7 +1,7 @@
 /**
  * Example: Cross-Chain Bridge Operations
  *
- * Demonstrates the bridge workflow: routes → initiate → fetch VAA → redeem → complete.
+ * Demonstrates the bridge workflow: routes → initiate → fetch VAA → redeem.
  * Bridge endpoints return bare objects (not AZOAResult-wrapped).
  * Run: npx tsx examples/bridge-operations.ts
  */
@@ -28,7 +28,7 @@ async function main() {
     targetChain: "solana",
     tokenId: "ALGO",
     recipientAddress: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
-    amount: 10,
+    amount: "10",
     mode: "Wormhole",
   });
   if (!isOk(bridge)) return console.error(bridge.error.message);
@@ -48,13 +48,7 @@ async function main() {
     console.log("Redeem tx:", redeemed.value.redemptionTxHash);
   }
 
-  // 5. Complete
-  const completed = await azoa.api.completeBridge(bridgeId);
-  if (isOk(completed)) {
-    console.log("Bridge completed:", completed.value.status);
-  }
-
-  // 6. History
+  // 5. History
   const history = await azoa.api.getBridgeHistory();
   if (isOk(history)) {
     console.log(`Bridge history: ${history.value.length} transactions`);

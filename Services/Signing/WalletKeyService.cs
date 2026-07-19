@@ -37,6 +37,17 @@ public class WalletKeyService
         };
     }
 
+    /// <summary>Generate the development-only tenant keypair without a recovery phrase.</summary>
+    public (string publicKey, string privateKeyHex, string address) GenerateCustodialKeypair(string chainType)
+    {
+        if (!string.Equals(chainType, "Algorand", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException(
+                "Tenant custodial bootstrap currently supports Algorand development simulation only.");
+
+        var generated = GenerateAlgorandKeypair(includeSeedPhrase: false);
+        return (generated.publicKey, generated.privateKeyHex, generated.address);
+    }
+
     /// <summary>Encrypt a private key hex string for storage.</summary>
     public string EncryptPrivateKey(string privateKeyHex)
     {
@@ -86,7 +97,8 @@ public class WalletKeyService
 
     // ─── Chain-specific generation ───
 
-    private (string, string, string, string?) GenerateAlgorandKeypair()
+    private (string publicKey, string privateKeyHex, string address, string? seedPhrase) GenerateAlgorandKeypair(
+        bool includeSeedPhrase = true)
     {
         // Real Ed25519 keypair via the already-referenced Algorand2 package
         // (signing-core-keystone B1). Algorand2 owns the canonical
@@ -103,7 +115,7 @@ public class WalletKeyService
         var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(privateKeyBytes);
         var publicKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKeyBytes);
         var address = account.Address.EncodeAsString();   // real SHA-512/256 checksum + base32
-        var seedPhrase = account.ToMnemonic();            // real, restorable 25-word mnemonic
+        var seedPhrase = includeSeedPhrase ? account.ToMnemonic() : null;
 
         return (publicKeyHex, privateKeyHex, address, seedPhrase);
     }

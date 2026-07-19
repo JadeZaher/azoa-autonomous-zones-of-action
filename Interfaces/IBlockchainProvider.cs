@@ -155,7 +155,7 @@ public interface IBlockchainProvider
     /// Lock an asset in a bridge vault on this chain (for outbound bridging).
     /// </summary>
     Task<AZOAResult<string>> LockForBridgeAsync(
-        string tokenId, string vaultAddress, int amount,
+        string tokenId, string vaultAddress, ulong amount,
         string targetChain, string targetRecipient, CancellationToken ct = default);
 
     /// <summary>
@@ -163,14 +163,25 @@ public interface IBlockchainProvider
     /// </summary>
     Task<AZOAResult<string>> MintWrappedAsync(
         string sourceChain, string sourceTokenId, string tokenUri,
-        int amount, string recipientAddress, CancellationToken ct = default);
+        ulong amount, string recipientAddress, CancellationToken ct = default);
 
     /// <summary>
     /// Burn a wrapped asset to release the original asset on the source chain.
     /// </summary>
     Task<AZOAResult<string>> BurnWrappedAsync(
-        string tokenId, int amount, string sourceChain,
+        string tokenId, ulong amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default);
+
+    /// <summary>
+    /// Release a previously locked source asset from the provider-controlled
+    /// bridge vault after the target burn is positively confirmed. A success
+    /// without <see cref="Models.OperationStatus.PendingConfirmationMarker"/>
+    /// means the release is chain-confirmed; a marked success is submitted but
+    /// nonterminal and must be reconciled by transaction hash.
+    /// </summary>
+    Task<AZOAResult<string>> ReleaseFromBridgeAsync(
+        string tokenId, string vaultAddress, ulong amount,
+        string recipientAddress, CancellationToken ct = default);
 
     // Cross-chain proof/VAA verification is intentionally NOT a provider method.
     // The single hardened verification path is WormholeAdapter +
@@ -179,7 +190,8 @@ public interface IBlockchainProvider
     // removed so no always-true verifier can exist. See Providers/Blockchain/AGENTS.md.
 
     /// <summary>
-    /// Check if this provider supports bridging operations natively.
+    /// Check if this provider supports the complete lock, wrapped mint, wrapped
+    /// burn, and source release lifecycle. Partial primitives must return false.
     /// </summary>
     bool SupportsBridging { get; }
 }

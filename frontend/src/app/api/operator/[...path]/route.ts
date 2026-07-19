@@ -7,6 +7,7 @@ import {
   requireSameOriginMutation,
   sanitizedOperatorResponse,
 } from '@/lib/operator-bff'
+import { KYC_PROVIDER_DISPLAY_NAME_MAX_LENGTH } from '@/lib/operator-contracts'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +18,15 @@ const PROVIDER_PATH = /^kyc\/providers\/[a-z0-9][a-z0-9_-]{0,63}$/
 const TENANT_PROVIDER_PATH = /^tenants\/[0-9a-f-]{36}\/kyc-provider$/i
 const DECISION_PATH = /^kyc\/submissions\/[0-9a-f-]{36}\/decision$/i
 const SESSION_REVOKE_PATH = /^session\/revoke$/
+const TENANT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const EMPTY_TENANT_ID = '00000000-0000-0000-0000-000000000000'
+const PROVIDER_KEY = /^[a-z0-9][a-z0-9_-]{0,63}$/
+const AUDIT_ACTIONS = new Set([
+  'profile.trust-change',
+  'profile.metadata-change',
+  'tenant.provider-selection',
+])
+const AUDIT_QUERY_KEYS = new Set(['limit', 'cursor', 'tenantId', 'providerKey', 'action'])
 
 function resolvePath(parts: string[], request: NextRequest, method: string): string | null {
   const path = parts.join('/')
@@ -29,9 +39,47 @@ function resolvePath(parts: string[], request: NextRequest, method: string): str
     if (!['pending', 'approved', 'rejected'].includes(status)) return null
     return withPaging(`${path}?status=${encodeURIComponent(status)}`, request, false)
   }
+  if (method === 'GET' && path === 'kyc/audit') {
+    return withAuditFilters(path, request)
+  }
   if (method === 'PUT' && (PROVIDER_PATH.test(path) || TENANT_PROVIDER_PATH.test(path))) return path
   if (method === 'POST' && (DECISION_PATH.test(path) || SESSION_REVOKE_PATH.test(path))) return path
   return null
+}
+
+function withAuditFilters(path: string, request: NextRequest): string | null {
+  const params = request.nextUrl.searchParams
+  let validKeys = true
+  params.forEach((_value, key) => {
+    if (!AUDIT_QUERY_KEYS.has(key) || params.getAll(key).length !== 1) validKeys = false
+  })
+  if (!validKeys) return null
+
+  const rawLimit = params.get('limit') ?? '25'
+  if (!/^\d{1,3}$/.test(rawLimit)) return null
+  const limit = Number(rawLimit)
+  if (limit < 1 || limit > 100) return null
+
+  const cursor = params.get('cursor')
+  if (cursor !== null && (cursor.length < 1 || cursor.length > 512 || !/^[A-Za-z0-9_-]+$/.test(cursor))) {
+    return null
+  }
+
+  const tenantId = params.get('tenantId')
+  if (tenantId !== null && (!TENANT_ID.test(tenantId) || tenantId.toLowerCase() === EMPTY_TENANT_ID)) return null
+
+  const providerKey = params.get('providerKey')
+  if (providerKey !== null && !PROVIDER_KEY.test(providerKey)) return null
+
+  const action = params.get('action')
+  if (action !== null && !AUDIT_ACTIONS.has(action)) return null
+
+  const query = new URLSearchParams({ limit: String(limit) })
+  if (cursor) query.set('cursor', cursor)
+  if (tenantId) query.set('tenantId', tenantId)
+  if (providerKey) query.set('providerKey', providerKey)
+  if (action) query.set('action', action)
+  return `${path}?${query.toString()}`
 }
 
 function withPaging(path: string, request: NextRequest, allowSearch: boolean): string | null {
@@ -67,7 +115,7 @@ function sanitizeMutationBody(
   body: Record<string, unknown>,
 ): Record<string, unknown> | null {
   if (PROVIDER_PATH.test(path)) {
-    const displayName = stringField(body, 'displayName', 120)
+    const displayName = stringField(body, 'displayName', KYC_PROVIDER_DISPLAY_NAME_MAX_LENGTH)
     const adapterKey = stringField(body, 'adapterKey', 64)
     const policyVersion = stringField(body, 'policyVersion', 64)
     const assuranceLevel = stringField(body, 'assuranceLevel', 64)
@@ -109,9 +157,15 @@ async function proxy(
     const rejected = requireSameOriginMutation(request)
     if (rejected) return rejected
   }
-  const path = resolvePath((await context.params).path, request, method)
+  const requestedParts = (await context.params).path
+  const requestedPath = requestedParts.join('/')
+  const path = resolvePath(requestedParts, request, method)
   if (!path) {
-    return NextResponse.json({ message: 'Unknown operator action.' }, { status: 404, headers: NO_STORE_HEADERS })
+    const invalidAuditQuery = method === 'GET' && requestedPath === 'kyc/audit'
+    return NextResponse.json(
+      { message: invalidAuditQuery ? 'The audit filters were invalid.' : 'Unknown operator action.' },
+      { status: invalidAuditQuery ? 400 : 404, headers: NO_STORE_HEADERS },
+    )
   }
   const token = (await cookies()).get(OPERATOR_COOKIE_NAME)?.value
   if (!token) {

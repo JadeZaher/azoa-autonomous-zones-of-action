@@ -10,6 +10,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Bridge;
+using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
@@ -31,6 +32,7 @@ public class CrossChainBridgeServiceTests
         _wormholeMock = new Mock<IWormholeAdapter>();
         _providerMock = new Mock<IBlockchainProvider>();
         _config = new WormholeConfig { DefaultMode = BridgeMode.Wormhole };
+        _config.BridgeVaults["Solana"].VaultAddress = "solana_bridge_vault_for_algorand";
 
         _providerMock.Setup(p => p.SupportsBridging).Returns(true);
         _providerMock.Setup(p => p.ChainType).Returns("Solana");
@@ -49,7 +51,8 @@ public class CrossChainBridgeServiceTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             // RealValueEnabled=true: these tests exercise the live flows behind the gate.
             Options.Create(new BridgeOptions { RealValueEnabled = true }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
     }
 
     // ─── Initiation ───
@@ -66,13 +69,13 @@ public class CrossChainBridgeServiceTests
     {
         using var harness = new FakeBridgeHarness();
         harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "lock_tx" });
 
         harness.ProviderMock.Setup(p => p.MintWrappedAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "mint_tx" });
 
         var (svc, _) = harness.CreateService();
@@ -84,10 +87,58 @@ public class CrossChainBridgeServiceTests
         result.Result.Mode.Should().Be(BridgeMode.Trusted);
         result.Result.LockTxHash.Should().Be("lock_tx");
         result.Result.MintTxHash.Should().Be("mint_tx");
+        result.Result.SourceAddress.Should().Be("solana_bridge_vault_for_algorand");
     }
 
     [Fact]
-    public async Task InitiateBridge_WormholeMode_ReturnsAwaitingVAA()
+    public async Task InitiateBridge_PendingLock_PersistsHandleAndNeverMints()
+    {
+        using var harness = new FakeBridgeHarness();
+        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<string>
+            {
+                IsError = false,
+                Result = "lock_pending_tx",
+                Message = $"{OperationStatus.PendingConfirmationMarker}: awaiting round",
+            });
+
+        var (svc, _) = harness.CreateService();
+        var result = await svc.InitiateBridgeAsync(
+            "Solana", "Algorand", "token1", "recipient", Guid.NewGuid(), 1, BridgeMode.Trusted);
+
+        result.IsError.Should().BeFalse();
+        result.Result!.Status.Should().Be(BridgeStatus.Locking);
+        result.Result.LockTxHash.Should().Be("lock_pending_tx");
+        result.Result.SourceAddress.Should().Be("solana_bridge_vault_for_algorand");
+        harness.ProviderMock.Verify(p => p.MintWrappedAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task InitiateBridge_LockStatePersistenceFails_NeverMints()
+    {
+        using var harness = new FakeBridgeHarness { RejectNextLockPersistence = true };
+        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "lock_tx" });
+
+        var (svc, _) = harness.CreateService();
+        var result = await svc.InitiateBridgeAsync(
+            "Solana", "Algorand", "token1", "recipient", Guid.NewGuid(), 1, BridgeMode.Trusted);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("durable bridge state");
+        harness.ProviderMock.Verify(p => p.MintWrappedAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task InitiateBridge_WormholeMode_IsRejectedBeforePersistence()
     {
         using var harness = new FakeBridgeHarness();
         harness.WormholeMock.Setup(w => w.IsRouteSupported("Solana", "Algorand")).Returns(true);
@@ -110,68 +161,47 @@ public class CrossChainBridgeServiceTests
         var result = await svc.InitiateBridgeAsync(
             "Solana", "Algorand", "token1", "recipient", Guid.NewGuid(), 1, BridgeMode.Wormhole);
 
-        result.IsError.Should().BeFalse();
-        result.Result!.Status.Should().Be(BridgeStatus.AwaitingVAA);
-        result.Result.Mode.Should().Be(BridgeMode.Wormhole);
-        result.Result.WormholeSequence.Should().Be(42);
-        result.Result.WormholeEmitterChainId.Should().Be(1);
-        result.Result.Id.Should().StartWith("wh_bridge_");
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("Wormhole bridge mode is disabled");
+        harness.WormholeMock.Verify(w => w.InitiateTransferAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task InitiateBridge_WormholeUnsupported_FallsBackToTrusted()
+    public async Task InitiateBridge_WormholeUnsupported_DoesNotFallbackToTrusted()
     {
         using var harness = new FakeBridgeHarness();
         harness.WormholeMock.Setup(w => w.IsRouteSupported("Solana", "Algorand")).Returns(false);
 
         harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "lock_tx" });
 
         harness.ProviderMock.Setup(p => p.MintWrappedAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "mint_tx" });
 
         var (svc, _) = harness.CreateService();
         var result = await svc.InitiateBridgeAsync(
             "Solana", "Algorand", "token1", "recipient", Guid.NewGuid(), 1, BridgeMode.Wormhole);
 
-        result.IsError.Should().BeFalse();
-        result.Result!.Mode.Should().Be(BridgeMode.Trusted);
-        result.Result.Status.Should().Be(BridgeStatus.Completed);
+        result.IsError.Should().BeTrue();
+        harness.ProviderMock.Verify(p => p.LockForBridgeAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ─── Full Wormhole lifecycle ───
 
     [Fact]
-    public async Task WormholeBridge_FullLifecycle_InitiateFetchRedeem()
+    public async Task ExistingWormholeBridge_FetchRedeemLifecycle()
     {
         using var harness = new FakeBridgeHarness();
-        var avatarId = Guid.NewGuid();
-
-        // Step 1: Initiate
-        harness.WormholeMock.Setup(w => w.IsRouteSupported("Solana", "Algorand")).Returns(true);
-        harness.WormholeMock.Setup(w => w.InitiateTransferAsync(
-            "Solana", "Algorand", "token1", It.IsAny<string>(), "recipient",
-            1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<WormholeTransferInitiation>
-            {
-                IsError = false,
-                Result = new WormholeTransferInitiation
-                {
-                    TxHash = "wh_tx", EmitterChainId = 1,
-                    EmitterAddress = "emitter", Sequence = 100
-                }
-            });
-
         var (svc, _) = harness.CreateService();
-        var initResult = await svc.InitiateBridgeAsync(
-            "Solana", "Algorand", "token1", "recipient", avatarId, 1, BridgeMode.Wormhole);
-
-        initResult.IsError.Should().BeFalse();
-        var bridgeId = initResult.Result!.Id;
+        var bridgeId = harness.SeedAwaitingVaaBridge(1, "emitter", 100);
 
         // Step 2: Fetch VAA
         harness.WormholeMock.Setup(w => w.FetchVAAAsync(1, "emitter", 100, It.IsAny<CancellationToken>()))
@@ -222,12 +252,12 @@ public class CrossChainBridgeServiceTests
     {
         using var harness = new FakeBridgeHarness();
         harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx" });
         harness.ProviderMock.Setup(p => p.MintWrappedAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx" });
 
         var (svc, _) = harness.CreateService();
@@ -245,28 +275,9 @@ public class CrossChainBridgeServiceTests
     public async Task RedeemWithVAA_NotVAAReady_ReturnsError()
     {
         using var harness = new FakeBridgeHarness();
-        harness.WormholeMock.Setup(w => w.IsRouteSupported("Solana", "Algorand")).Returns(true);
-        harness.WormholeMock.Setup(w => w.InitiateTransferAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
-            It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<WormholeTransferInitiation>
-            {
-                IsError = false,
-                Result = new WormholeTransferInitiation
-                {
-                    TxHash = "tx", EmitterChainId = 1,
-                    EmitterAddress = "e", Sequence = 1
-                }
-            });
-
         var (svc, _) = harness.CreateService();
-        var initResult = await svc.InitiateBridgeAsync(
-            "Solana", "Algorand", "token1", "r", Guid.NewGuid(), 1, BridgeMode.Wormhole);
-        initResult.IsError.Should().BeFalse("the Wormhole initiate must reach AwaitingVAA on the fake store");
-        var bridgeId = initResult.Result!.Id;
+        var bridgeId = harness.SeedAwaitingVaaBridge(1, "emitter", 1);
 
-        // Try to redeem without fetching VAA first
         var redeemResult = await svc.RedeemWithVAAAsync(bridgeId);
         redeemResult.IsError.Should().BeTrue();
         redeemResult.Message.Should().Contain("No VAA available");
@@ -341,7 +352,7 @@ public class CrossChainBridgeServiceTests
     // ─── Routes ───
 
     [Fact]
-    public async Task GetSupportedRoutes_IncludesWormholeInfo()
+    public async Task GetSupportedRoutes_DoesNotAdvertiseDisabledWormholeMode()
     {
         _factoryMock.Setup(f => f.GetAllEnabledProviders())
             .Returns(new[]
@@ -362,8 +373,8 @@ public class CrossChainBridgeServiceTests
         routes.Should().HaveCount(2);
 
         var solToAlgo = routes.First(r => r.SourceChain == "Solana" && r.TargetChain == "Algorand");
-        solToAlgo.WormholeSupported.Should().BeTrue();
-        solToAlgo.AvailableModes.Should().Contain(BridgeMode.Wormhole);
+        solToAlgo.WormholeSupported.Should().BeFalse();
+        solToAlgo.AvailableModes.Should().Equal(BridgeMode.Trusted);
         solToAlgo.WormholeSourceChainId.Should().Be(1);
         solToAlgo.WormholeTargetChainId.Should().Be(8);
     }
@@ -376,12 +387,12 @@ public class CrossChainBridgeServiceTests
         var avatarId = Guid.NewGuid();
 
         _providerMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx" });
         _providerMock.Setup(p => p.MintWrappedAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx" });
 
         await _service.InitiateBridgeAsync("Solana", "Algorand", "t1", "r", avatarId, 1, BridgeMode.Trusted);
@@ -418,7 +429,7 @@ public class CrossChainBridgeServiceTests
         using var harness = new FakeBridgeHarness();
 
         harness.ProviderMock.Setup(p => p.BurnWrappedAsync(
-            It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "burn_tx_ok" });
 
@@ -434,6 +445,9 @@ public class CrossChainBridgeServiceTests
             "marker is the explicit Reversing state (success predicate is " +
             "WHERE Status==Reversing)");
         row.RedemptionTxHash.Should().Be("burn_tx_ok");
+        row.ProofData.Should().Be("release_tx_ok");
+        harness.ProviderMock.Verify(p => p.ReleaseFromBridgeAsync(
+            "token1", "src", 1, "source_refund_addr", It.IsAny<CancellationToken>()), Times.Once);
         row.Status.Should().NotBe(BridgeStatus.Redeeming,
             "reversal must NOT reuse the forward-redeem Redeeming state");
     }
@@ -450,7 +464,7 @@ public class CrossChainBridgeServiceTests
         using var harness = new FakeBridgeHarness();
 
         harness.ProviderMock.Setup(p => p.BurnWrappedAsync(
-            It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = true, Message = "chain rejected burn" });
 
@@ -467,6 +481,33 @@ public class CrossChainBridgeServiceTests
             "Completed→Reversing→Failed — reachable only via the explicit " +
             "Reversing in-flight state (failure predicate is WHERE Status==Reversing)");
         row.ErrorMessage.Should().Contain("MANUAL INTERVENTION REQUIRED");
+    }
+
+    [Fact]
+    public async Task ReverseBridge_PendingBurn_NeverReleasesOrRefunds()
+    {
+        using var harness = new FakeBridgeHarness();
+        harness.ProviderMock.Setup(p => p.BurnWrappedAsync(
+                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<string>
+            {
+                IsError = false,
+                Result = "burn_pending_tx",
+                Message = $"{OperationStatus.PendingConfirmationMarker}: awaiting round",
+            });
+
+        var bridgeId = harness.SeedCompletedBridge(targetTokenId: "wrapped_token_3");
+        var (svc, _) = harness.CreateService();
+        var result = await svc.ReverseBridgeAsync(bridgeId, "source_refund_addr");
+
+        result.IsError.Should().BeTrue();
+        var row = harness.GetBridge(bridgeId);
+        row.Status.Should().Be(BridgeStatus.Reversing);
+        row.RedemptionTxHash.Should().Be("burn_pending_tx");
+        harness.ProviderMock.Verify(p => p.ReleaseFromBridgeAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ─── Pre-launch bridge safety: financial-correctness invariants under
@@ -565,13 +606,10 @@ public class CrossChainBridgeServiceTests
     }
 
     /// <summary>
-    /// Duplicate Wormhole initiate (identical inputs) ⇒ exactly one bridge row
-    /// reaches AwaitingVAA. Dedupe is enforced by the idempotency store's
-    /// INSERT-WINS primitive (FakeIdempotencyStore uses ConcurrentDictionary.TryAdd —
-    /// exactly one caller wins).
+    /// New Wormhole initiation is disabled and must remain side-effect free on retries.
     /// </summary>
     [Fact]
-    public async Task DuplicateWormholeInitiate_YieldsOneBridgeRow_OneOnChainLock()
+    public async Task DuplicateWormholeInitiate_IsRejectedBeforeOnChainLockOrPersistence()
     {
         using var harness = new FakeBridgeHarness();
         var avatarId = Guid.NewGuid();
@@ -584,7 +622,7 @@ public class CrossChainBridgeServiceTests
                 "Solana", "Algorand", "token1", It.IsAny<string>(), "recipient",
                 1, It.IsAny<CancellationToken>()))
             .Returns(async (string _, string __, string ___, string ____,
-                            string _____, int ______, CancellationToken _______) =>
+                            string _____, ulong ______, CancellationToken _______) =>
             {
                 Interlocked.Increment(ref lockInvocations);
                 await Task.Yield();
@@ -603,29 +641,17 @@ public class CrossChainBridgeServiceTests
         var (svc1, _) = harness.CreateService();
         var first = await svc1.InitiateBridgeAsync(
             "Solana", "Algorand", "token1", "recipient", avatarId, 1, BridgeMode.Wormhole);
-        first.IsError.Should().BeFalse();
-        first.Result!.Status.Should().Be(BridgeStatus.AwaitingVAA);
 
         var (svc2, _) = harness.CreateService();
         var second = await svc2.InitiateBridgeAsync(
             "Solana", "Algorand", "token1", "recipient", avatarId, 1, BridgeMode.Wormhole);
 
-        var awaiting = harness.BridgesWithEmitter(1, "emitter", 777)
-            .Where(b => b.Status == BridgeStatus.AwaitingVAA)
-            .ToList();
-        awaiting.Should().HaveCount(1,
-            "the unique (emitter,address,sequence) index permits one live bridge per message");
-
-        if (!second.IsError)
-        {
-            second.Result!.Id.Should().Be(first.Result!.Id,
-                "a non-error duplicate must resolve to the SAME bridge, not a new one");
-        }
-
-        lockInvocations.Should().BeLessThanOrEqualTo(2);
-        harness.BridgesWithEmitter(1, "emitter", 777)
-            .Count(b => b.Status is BridgeStatus.AwaitingVAA or BridgeStatus.Completed)
-            .Should().Be(1, "only one bridge can hold the (emitter,seq) lock");
+        first.IsError.Should().BeTrue();
+        second.IsError.Should().BeTrue();
+        first.Message.Should().Contain("disabled");
+        second.Message.Should().Contain("disabled");
+        lockInvocations.Should().Be(0);
+        harness.BridgesWithEmitter(1, "emitter", 777).Should().BeEmpty();
     }
 
     /// <summary>
@@ -870,16 +896,131 @@ public class CrossChainBridgeServiceTests
             "the invariant here is strictly: no double mint");
     }
 
-    // ─── Fake-store harness ───
+    [Fact]
+    public async Task TrustedInitiate_CrashAfterClaim_HasDurableRowAndRecoversOnce()
+    {
+        using var harness = new FakeBridgeHarness();
+        var idempotency = new CrashAfterClaimIdempotencyStore();
+        var lockCalls = 0;
+        var mintCalls = 0;
+        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                Interlocked.Increment(ref lockCalls);
+                return new AZOAResult<string> { Result = "lock_tx" };
+            });
+        harness.ProviderMock.Setup(p => p.MintWrappedAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                Interlocked.Increment(ref mintCalls);
+                return new AZOAResult<string> { Result = "mint_tx" };
+            });
 
-    /// <summary>
-    /// Wraps <see cref="FakeBridgeStore"/> + <see cref="FakeIdempotencyStore"/>
-    /// with Wormhole/provider mocks and seed/query helpers. Both fakes are
-    /// SHARED across all CreateService() calls so concurrent callers contend on
-    /// the same in-memory state — mirroring how the SQLite harness shared one
-    /// file-backed DB. A <see cref="TrackingBridgeStore"/> wraps the fake to
-    /// expose consumed-VAA inspection without modifying FakeBridgeStore.
-    /// </summary>
+        var avatarId = Guid.NewGuid();
+        var (firstService, store) = harness.CreateService(idempotency, staleClaimTakeoverSeconds: 0);
+        var first = await firstService.InitiateBridgeAsync(
+            "Solana", "Algorand", "token1", "recipient", avatarId, 1,
+            BridgeMode.Trusted, clientIdempotencyKey: "crash-recovery-key");
+
+        first.IsError.Should().BeTrue();
+        store.GetServiceAddedBridgeIds().Should().ContainSingle();
+        harness.GetBridge(store.GetServiceAddedBridgeIds().Single()).Status
+            .Should().Be(BridgeStatus.Initiated);
+        lockCalls.Should().Be(0);
+        mintCalls.Should().Be(0);
+
+        var (retryService, _) = harness.CreateService(idempotency, staleClaimTakeoverSeconds: 0);
+        var retry = await retryService.InitiateBridgeAsync(
+            "Solana", "Algorand", "token1", "recipient", avatarId, 1,
+            BridgeMode.Trusted, clientIdempotencyKey: "crash-recovery-key");
+
+        retry.IsError.Should().BeFalse();
+        retry.Result!.Status.Should().Be(BridgeStatus.Completed);
+        store.GetServiceAddedBridgeIds().Should().ContainSingle();
+        lockCalls.Should().Be(1);
+        mintCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TrustedInitiate_ConfirmedPendingLock_ResumesMintExactlyOnce()
+    {
+        using var harness = new FakeBridgeHarness();
+        var lockCalls = 0;
+        var mintCalls = 0;
+        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                Interlocked.Increment(ref lockCalls);
+                return new AZOAResult<string>
+                {
+                    Result = "pending_lock_tx",
+                    Message = $"{OperationStatus.PendingConfirmationMarker}: awaiting round",
+                };
+            });
+        harness.ProviderMock.Setup(p => p.MintWrappedAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                Interlocked.Increment(ref mintCalls);
+                return new AZOAResult<string> { Result = "resumed_mint_tx" };
+            });
+
+        var avatarId = Guid.NewGuid();
+        var idempotency = new FakeIdempotencyStore();
+        var (service, store) = harness.CreateService(idempotency, staleClaimTakeoverSeconds: 0);
+        var first = await service.InitiateBridgeAsync(
+            "Solana", "Algorand", "token1", "recipient", avatarId, 1,
+            BridgeMode.Trusted, clientIdempotencyKey: "pending-lock-resume");
+
+        first.IsError.Should().BeFalse();
+        first.Result!.Status.Should().Be(BridgeStatus.Locking);
+        await store.TryTransitionBridgeStatusAsync(
+            first.Result.Id, BridgeStatus.Locking, BridgeStatus.Locked, null);
+
+        var (retryService, _) = harness.CreateService(idempotency, staleClaimTakeoverSeconds: 0);
+        var retry = await retryService.InitiateBridgeAsync(
+            "Solana", "Algorand", "token1", "recipient", avatarId, 1,
+            BridgeMode.Trusted, clientIdempotencyKey: "pending-lock-resume");
+
+        retry.IsError.Should().BeFalse();
+        retry.Result!.Status.Should().Be(BridgeStatus.Completed);
+        retry.Result.MintTxHash.Should().Be("resumed_mint_tx");
+        lockCalls.Should().Be(1, "a confirmed persisted lock must never be broadcast again");
+        mintCalls.Should().Be(1);
+    }
+
+    private sealed class CrashAfterClaimIdempotencyStore : IIdempotencyStore
+    {
+        private readonly FakeIdempotencyStore _inner = new();
+        private int _crashOnce = 1;
+
+        public async Task<IdempotencyClaim> TryClaimAsync(
+            string key, string operationType, CancellationToken ct)
+        {
+            var claim = await _inner.TryClaimAsync(key, operationType, ct);
+            if (Interlocked.Exchange(ref _crashOnce, 0) == 1)
+                throw new InvalidOperationException("simulated crash after durable claim");
+            return claim;
+        }
+
+        public Task CompleteAsync(string key, string resultPayload, CancellationToken ct)
+            => _inner.CompleteAsync(key, resultPayload, ct);
+
+        public Task FailAsync(string key, string error, CancellationToken ct)
+            => _inner.FailAsync(key, error, ct);
+
+        public Task<IdempotencyRecord?> GetAsync(string key, CancellationToken ct)
+            => _inner.GetAsync(key, ct);
+    }
+
+    /// <summary>Shared fake stores plus provider seams for service tests.</summary>
     private sealed class FakeBridgeHarness : IDisposable
     {
         private readonly TrackingBridgeStore _trackingStore;
@@ -888,6 +1029,11 @@ public class CrossChainBridgeServiceTests
         public Mock<IWormholeAdapter> WormholeMock { get; } = new();
         public Mock<IBlockchainProviderFactory> FactoryMock { get; } = new();
         public Mock<IBlockchainProvider> ProviderMock { get; } = new();
+        public bool RejectNextLockPersistence
+        {
+            get => _trackingStore.RejectNextLockPersistence;
+            set => _trackingStore.RejectNextLockPersistence = value;
+        }
 
         // All seeded bridge IDs — used by BridgesWithEmitter to enumerate the store.
         private readonly List<string> _seededIds = new();
@@ -897,21 +1043,38 @@ public class CrossChainBridgeServiceTests
             _trackingStore = new TrackingBridgeStore(new FakeBridgeStore());
             ProviderMock.Setup(p => p.SupportsBridging).Returns(true);
             ProviderMock.Setup(p => p.ChainType).Returns("Solana");
+            ProviderMock.Setup(p => p.ReleaseFromBridgeAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
+                    It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AZOAResult<string>
+                {
+                    IsError = false,
+                    Result = "release_tx_ok",
+                });
             FactoryMock.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
                 .Returns(ProviderMock.Object);
         }
 
-        public (CrossChainBridgeService Service, TrackingBridgeStore Store) CreateService()
+        public (CrossChainBridgeService Service, TrackingBridgeStore Store) CreateService(
+            IIdempotencyStore? idempotency = null,
+            int? staleClaimTakeoverSeconds = null)
         {
+            var config = new WormholeConfig { DefaultMode = BridgeMode.Wormhole };
+            config.BridgeVaults["Solana"].VaultAddress = "solana_bridge_vault_for_algorand";
             var svc = new CrossChainBridgeService(
                 FactoryMock.Object,
                 WormholeMock.Object,
-                Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Wormhole }),
+                Options.Create(config),
                 _trackingStore,
-                _fakeIdempotency,
+                idempotency ?? _fakeIdempotency,
                 Mock.Of<ILogger<CrossChainBridgeService>>(),
-                Options.Create(new BridgeOptions { RealValueEnabled = true }),
-                new ConfigurationBuilder().Build());
+                Options.Create(new BridgeOptions
+                {
+                    RealValueEnabled = true,
+                    StaleClaimTakeoverSeconds = staleClaimTakeoverSeconds ?? 120,
+                }),
+                new ConfigurationBuilder().Build(),
+                new ApprovedRealValueKycGate());
             return (svc, _trackingStore);
         }
 
@@ -936,6 +1099,31 @@ public class CrossChainBridgeServiceTests
                 WormholeEmitterAddress = emitterAddress,
                 WormholeSequence = sequence,
                 CreatedAt = DateTime.UtcNow
+            });
+            lock (_seededIds) { _seededIds.Add(id); }
+            return id;
+        }
+
+        public string SeedAwaitingVaaBridge(int emitterChainId, string emitterAddress, long sequence)
+        {
+            var id = $"wh_bridge_{Guid.NewGuid():N}";
+            _trackingStore.SeedBridge(new BridgeTransactionResult
+            {
+                Id = id,
+                AvatarId = Guid.NewGuid(),
+                SourceChain = "Solana",
+                TargetChain = "Algorand",
+                SourceTokenId = "token1",
+                SourceAddress = "source-vault",
+                TargetAddress = "recipient",
+                Amount = 1,
+                Mode = BridgeMode.Wormhole,
+                Status = BridgeStatus.AwaitingVAA,
+                LockTxHash = "existing-lock-tx",
+                WormholeEmitterChainId = emitterChainId,
+                WormholeEmitterAddress = emitterAddress,
+                WormholeSequence = sequence,
+                CreatedAt = DateTime.UtcNow,
             });
             lock (_seededIds) { _seededIds.Add(id); }
             return id;
@@ -1011,6 +1199,7 @@ public class CrossChainBridgeServiceTests
     private sealed class TrackingBridgeStore : IBridgeStore
     {
         private readonly FakeBridgeStore _inner;
+        public bool RejectNextLockPersistence { get; set; }
         private readonly object _vaaLock = new();
         private readonly List<ConsumedVaaRecord> _consumed = new();
         private readonly object _bridgeLock = new();
@@ -1100,6 +1289,14 @@ public class CrossChainBridgeServiceTests
             string id, BridgeStatus expected, BridgeStatus next, BridgeStatusMutation? alsoSet,
             CancellationToken ct = default)
         {
+            if (RejectNextLockPersistence
+                && expected == BridgeStatus.Locking
+                && alsoSet?.LockTxHash is not null)
+            {
+                RejectNextLockPersistence = false;
+                return 0;
+            }
+
             // Enforce the emitter-tuple uniqueness constraint that SQLite's UNIQUE
             // filtered index would enforce: when a transition would SET emitter fields,
             // reject it (return 0) if another non-terminal bridge already holds that
@@ -1121,7 +1318,7 @@ public class CrossChainBridgeServiceTests
                 // all non-terminal statuses and a broad window.
                 var nonTerminal = new List<BridgeStatus>
                 {
-                    BridgeStatus.Initiated, BridgeStatus.Locked, BridgeStatus.AwaitingVAA,
+                    BridgeStatus.Initiated, BridgeStatus.Locking, BridgeStatus.Locked, BridgeStatus.AwaitingVAA,
                     BridgeStatus.VAAReady, BridgeStatus.Redeeming, BridgeStatus.Reversing
                 };
                 var candidateIds = await _inner.GetNonTerminalBridgeIdsAsync(
@@ -1152,9 +1349,6 @@ public class CrossChainBridgeServiceTests
 
         public Task RecordVaaFetchErrorAsync(string id, string errorMessage, CancellationToken ct = default)
             => _inner.RecordVaaFetchErrorAsync(id, errorMessage, ct);
-
-        public Task<int> ForceCompleteBridgeAsync(string id, CancellationToken ct = default)
-            => _inner.ForceCompleteBridgeAsync(id, ct);
 
         public Task<IReadOnlyList<string>> GetFailedBridgesWithLockedFundsAsync(
             int maxIds, CancellationToken ct = default)

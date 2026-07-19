@@ -11,9 +11,8 @@ namespace AZOA.WebAPI.Services.Quest.Handlers;
 /// Handles <see cref="QuestNodeType.Bridge"/> — Tier-2 chain action (final-hardening
 /// D1 fractionalization rail). Locks/bridges an asset cross-chain through the REAL
 /// Phase-B <see cref="ICrossChainBridgeService.InitiateBridgeAsync"/>: on an Algorand
-/// route the lock/burn is a real broadcast; a Solana route is fail-closed at the
-/// provider level and surfaces here as a node failure (correct — never fabricated
-/// success). The node MOVES value only and derives no economic meaning; peg/valuation
+/// route providers must advertise the complete lock/mint/burn/release lifecycle or
+/// the operation fails closed. The node MOVES value only and derives no economic meaning; peg/valuation
 /// stays tenant-side (Emit). See Services/Quest/AGENTS.md §fractionalization.
 /// </summary>
 public sealed class BridgeNodeHandler : IQuestNodeHandler

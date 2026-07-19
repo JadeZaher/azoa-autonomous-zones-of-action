@@ -30,4 +30,4 @@ docker-entrypoint.sh text eol=lf
 *.ico           binary
 *.dll           binary
 *.so            binary
-*.surql         text
+*.surql         text eol=lf

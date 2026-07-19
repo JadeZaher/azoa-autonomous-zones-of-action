@@ -93,7 +93,6 @@
 | BridgeController | `InitiateBridge` | `POST /api/bridge/initiate` + `[EnableRateLimiting("financial")]` | Inherited `[Authorize]` (class) | MultiScheme |
 | BridgeController | `FetchVAA` | `POST /api/bridge/{id}/fetch-vaa` | Inherited `[Authorize]` (class) | MultiScheme |
 | BridgeController | `RedeemWithVAA` | `POST /api/bridge/{id}/redeem` + `[EnableRateLimiting("financial")]` | Inherited `[Authorize]` (class) | MultiScheme |
-| BridgeController | `CompleteBridge` | `POST /api/bridge/{id}/complete` | Inherited `[Authorize]` (class) | MultiScheme |
 | BridgeController | `ReverseBridge` | `POST /api/bridge/{id}/reverse` + `[EnableRateLimiting("financial")]` | Inherited `[Authorize]` (class) | MultiScheme |
 | BridgeController | `GetBridgeStatus` | `GET /api/bridge/{id}` | Inherited `[Authorize]` (class) | MultiScheme |
 | BridgeController | `GetHistory` | `GET /api/bridge/history` | Inherited `[Authorize]` (class) | MultiScheme |

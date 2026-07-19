@@ -1,28 +1,118 @@
+using System.Text.Json;
+using System.Security.Cryptography;
+using AZOA.WebAPI.Core.Surreal;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 
 namespace AZOA.WebAPI.Tests.Core;
 
 public sealed class SurrealDeploymentLeastPrivilegeContractTests
 {
     [Fact]
+    public void KycCompatibilityBaseline_RetainsTheShippedChecksum()
+    {
+        var path = Path.Combine(
+            FindRepositoryRoot(),
+            "Persistence",
+            "SurrealDb",
+            "CompatibilityBaselines",
+            "kyc_submission.surql");
+
+        var checksum = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))
+            .ToLowerInvariant();
+
+        checksum.Should().Be("aad029ce96cc6009b147b5022d275abb42ae4d0a7011261f6e63a6dc633e7ac2");
+    }
+
+    [Fact]
     public void ProductionEntrypoint_RequiresExternalMigrationsAndNeverForcesChecksums()
     {
         var entrypoint = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "docker-entrypoint.sh"));
 
         entrypoint.Should().Contain("Production refuses API-boot migrations")
+            .And.Contain("DEFINE USER OVERWRITE")
+            .And.Contain("ROLES EDITOR")
+            .And.Contain("setpriv --reuid")
             .And.NotContain("--force");
     }
 
     [Fact]
-    public void RailwayTemplate_DoesNotInjectRootOrSchemaCredentialsIntoApi()
+    public void RailwayTemplate_SeparatesSchemaOwnerFromDatabaseScopedRuntimeCredentials()
     {
-        var template = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "deploy", "railway", "template.json"));
+        var path = Path.Combine(FindRepositoryRoot(), "deploy", "railway", "template.json");
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        var services = document.RootElement.GetProperty("services").EnumerateArray().ToArray();
+        var databaseVariables = services.Single(service => service.GetProperty("name").GetString() == "surrealdb")
+            .GetProperty("variables");
+        var databaseService = services.Single(service => service.GetProperty("name").GetString() == "surrealdb");
+        var schemaService = services.Single(service => service.GetProperty("name").GetString() == "azoa-schema");
+        var schemaVariables = schemaService.GetProperty("variables");
+        var apiService = services.Single(service => service.GetProperty("name").GetString() == "azoa-api");
+        var apiVariables = apiService.GetProperty("variables");
+        var frontendService = services.Single(service => service.GetProperty("name").GetString() == "azoa-frontend");
 
-        template.Should().Contain("\"AZOA_SKIP_MIGRATIONS\": \"1\"")
+        databaseVariables.GetProperty("SURREAL_USER").GetString().Should().Be("azoa_schema_owner");
+        databaseVariables.GetProperty("SURREAL_PASS").GetString().Should().Be("${{secret(48)}}");
+        databaseVariables.GetProperty("PORT").GetString().Should().Be("8000");
+        databaseVariables.GetProperty("RAILWAY_RUN_UID").GetString().Should().Be("0");
+        databaseVariables.GetProperty("SURREAL_BIND").GetString().Should().Be("0.0.0.0:8000");
+        databaseVariables.GetProperty("SURREAL_PATH").GetString().Should().Be("rocksdb:///data/db");
+        databaseService.GetProperty("source").GetProperty("image").GetString().Should().Be(
+            "docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60");
+        databaseService.GetProperty("deploy").GetProperty("startCommand").GetString()
+            .Should().Be("/surreal start");
+        schemaVariables.GetProperty("SURREALFORGE_USER").GetString()
+            .Should().Be("${{surrealdb.SURREAL_USER}}");
+        schemaVariables.GetProperty("SURREALFORGE_PASS").GetString()
+            .Should().Be("${{surrealdb.SURREAL_PASS}}");
+        schemaVariables.GetProperty("AZOA_RUNTIME_USER").GetString().Should().Be("azoa_runtime");
+        schemaVariables.GetProperty("AZOA_RUNTIME_PASSWORD").GetString().Should().Be("${{secret(48)}}");
+        apiVariables.GetProperty("SurrealRuntime__User").GetString()
+            .Should().Be("${{azoa-schema.AZOA_RUNTIME_USER}}");
+        apiVariables.GetProperty("SurrealRuntime__Password").GetString()
+            .Should().Be("${{azoa-schema.AZOA_RUNTIME_PASSWORD}}");
+        apiVariables.GetProperty("Blockchain__Bridge__RealValueEnabled").GetString()
+            .Should().Be("false");
+        apiVariables.GetProperty("NodeOperator__Username").GetString().Should().Be("node-operator");
+        apiVariables.GetProperty("NodeOperator__Password").GetString().Should().Be("${{secret(48)}}");
+        apiVariables.GetProperty("NodeOperator__CredentialRevision").GetString().Should().Be("1");
+        apiVariables.GetProperty("NodeOperator__SessionMinutes").GetString().Should().Be("20");
+        apiVariables.GetProperty("Kyc__Provider").GetString().Should().Be("unavailable");
+        apiVariables.GetProperty("Kyc__ApprovalPolicy__AllowManualInDevelopment").GetString().Should().Be("false");
+        apiVariables.GetProperty("Kyc__VeriffApiKey").GetString().Should().BeEmpty();
+        apiVariables.GetProperty("Kyc__Hosted__ApiKey").GetString().Should().BeEmpty();
+        apiVariables.GetProperty("Kyc__Hosted__WebhookSecret").GetString().Should().BeEmpty();
+        apiVariables.GetProperty("Kyc__Hosted__BaseUrl").GetString().Should().BeEmpty();
+        apiVariables.GetProperty("RAILWAY_RUN_UID").GetString().Should().Be("0");
+        schemaService.GetProperty("source").GetProperty("image").GetString()
+            .Should().Be(apiService.GetProperty("source").GetProperty("image").GetString());
+        schemaService.GetProperty("deploy").GetProperty("startCommand").GetString()
+            .Should().Be("/usr/local/bin/docker-entrypoint.sh schema");
+        frontendService.GetProperty("source").GetProperty("image").GetString()
+            .Should().Be("<PROMOTED_FRONTEND_IMAGE_REFERENCE>");
+
+        var resolvedProductionConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SurrealRuntime:Endpoint"] = "http://surrealdb.internal:8000",
+                ["SurrealRuntime:Namespace"] = apiVariables.GetProperty("SurrealRuntime__Namespace").GetString(),
+                ["SurrealRuntime:Database"] = apiVariables.GetProperty("SurrealRuntime__Database").GetString(),
+                ["SurrealRuntime:User"] = "generated-runtime-user",
+                ["SurrealRuntime:Password"] = "generated-runtime-password",
+                ["AZOA_SKIP_MIGRATIONS"] = apiVariables.GetProperty("AZOA_SKIP_MIGRATIONS").GetString()
+            })
+            .Build();
+
+        var guard = () => SurrealRuntimeConfigurationGuard.GuardProduction(
+            resolvedProductionConfig, isProduction: true);
+        guard.Should().NotThrow();
+
+        var template = File.ReadAllText(path);
+        template.Should().Contain("<PROMOTED_API_IMAGE_REFERENCE>")
+            .And.Contain("<PROMOTED_FRONTEND_IMAGE_REFERENCE>")
+            .And.NotContain("\"branch\"")
             .And.NotContain("SurrealDb__User")
-            .And.NotContain("SurrealDb__Password")
-            .And.NotContain("SURREALFORGE_USER")
-            .And.NotContain("SURREALFORGE_PASS");
+            .And.NotContain("SurrealDb__Password");
     }
 
     private static string FindRepositoryRoot()

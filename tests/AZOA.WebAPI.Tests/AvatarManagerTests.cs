@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -32,7 +33,7 @@ public class AvatarManagerTests
 
         var environment = new Mock<IHostEnvironment>();
         environment.Setup(e => e.EnvironmentName).Returns("Development");
-        _manager = new AvatarManager(_store.Object, config, environment.Object);
+        _manager = new AvatarManager(_store.Object, config);
     }
 
     [Fact]
@@ -78,6 +79,12 @@ public class AvatarManagerTests
 
         result.IsError.Should().BeFalse();
         result.Result.Should().NotBeNullOrEmpty();
+        var token = new JwtSecurityTokenHandler().ReadJwtToken(result.Result);
+        token.Claims.Should().Contain(claim =>
+            claim.Type == AZOA.WebAPI.Core.AzoaClaims.TokenUse
+            && claim.Value == AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin);
+        token.Claims.Should().Contain(claim =>
+            claim.Type == AZOA.WebAPI.Core.AzoaClaims.AuthTime);
     }
 
     [Fact]

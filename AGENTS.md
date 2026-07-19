@@ -12,7 +12,9 @@ SurrealDB image: `surrealdb/surrealdb:v3.1.4`.
 
 ## Local stack — `dev-up.ps1` / `dev-up.sh`
 
-Full stack = SurrealDB (`:8000`) + .NET API (`:5000`) + Next.js frontend (`:3000`) via `docker-compose.dev.yml`.
+Full stack = SurrealDB (`:8000`) + .NET API (`:5000`) + Next.js frontend
+(`:3000` by default) via `docker-compose.dev.yml`. Set
+`AZOA_FRONTEND_HOST_PORT` process-locally when another app already owns 3000.
 
 ```powershell
 .\dev-up.ps1                 # rebuild images + SDK dist, keep volume, apply pending schema
@@ -20,6 +22,7 @@ Full stack = SurrealDB (`:8000`) + .NET API (`:5000`) + Next.js frontend (`:3000
 .\dev-up.ps1 -ResetDb        # DESTRUCTIVE: wipe SurrealDB volume before bringing up
 .\dev-up.ps1 -Reset          # keep volume but wipe + reapply schema
 .\dev-up.ps1 -Logs           # tail combined logs after startup
+$env:AZOA_FRONTEND_HOST_PORT = "3100"; .\dev-up.ps1 # coexist with another frontend
 .\dev-down.ps1               # stop containers, keep volume
 .\dev-down.ps1 -Wipe         # stop + drop SurrealDB volume (alias: -ResetDb)
 ```
@@ -34,7 +37,7 @@ Bash equivalents (`./dev-up.sh`, `./dev-down.sh`) use same flags in `--kebab-cas
 
 - Storage URI: `rocksdb:///data/db` (G1 durability).
 - Connection: `SurrealDb:Endpoint=http://surrealdb:8000` (from-API), namespace `azoa`, database `azoa`, user/pass `root`/`root`.
-- Schema: lives in `Persistence/SurrealDb/Generated/Schemas/` (26 `.surql` files emitted from C# POCOs).
+- Schema: lives in `Persistence/SurrealDb/Generated/Schemas/` (`.surql` files emitted from C# POCOs).
 - Schema sync: idempotent; runs from API entrypoint on boot and from host via `surrealforge up`.
 - Healthcheck: `/surreal isready --conn http://localhost:8000`.
 - REPL: `podman exec -it azoa-dev-surrealdb /surreal sql --conn http://localhost:8000 --user root --pass root --ns azoa --db azoa`
@@ -47,7 +50,7 @@ dotnet build azoa.sln    -c Debug           # whole solution (incl. test project
 ```
 
 - Green = 0 errors. Baseline warnings = 25 (reserved crypto/value files and MSBuild notes). Do not chase them; adding new warnings is a regression.
-- Do not run frontend typecheck (known pre-existing noise). Gates are `dotnet build` + SDK `tsc` only.
+- Frontend gates are `npm run typecheck`, `npm run lint`, `npm run build`, and `npm audit`; the Docker build uses the committed lockfile with `npm ci`.
 - No EF Core migrations. Schema changes are POCO edits + re-emitting `.surql` via `SurrealForge.Schema`.
 
 ## Test

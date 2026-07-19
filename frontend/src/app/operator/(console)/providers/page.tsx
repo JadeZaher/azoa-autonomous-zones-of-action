@@ -24,9 +24,10 @@ import {
 } from '@/components/operator/operator-ui'
 import { isProviderReady, humanizeReadiness } from '@/lib/kyc-provider-state'
 import { operatorRequest, OperatorRequestError } from '@/lib/operator-client'
-import type {
-  KycProviderProfileResponse,
-  KycProviderProfileUpdate,
+import {
+  KYC_PROVIDER_DISPLAY_NAME_MAX_LENGTH,
+  type KycProviderProfileResponse,
+  type KycProviderProfileUpdate,
 } from '@/lib/operator-contracts'
 
 export default function OperatorProvidersPage() {
@@ -239,7 +240,7 @@ function ProviderEditor({
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Display name" id="provider-name">
-            <Input id="provider-name" value={draft.displayName} onChange={(event) => { setDraft({ ...draft, displayName: event.target.value }); setConfirming(false) }} maxLength={120} className="min-h-11 rounded-none" />
+            <Input id="provider-name" value={draft.displayName} onChange={(event) => { setDraft({ ...draft, displayName: event.target.value }); setConfirming(false) }} maxLength={KYC_PROVIDER_DISPLAY_NAME_MAX_LENGTH} className="min-h-11 rounded-none" />
           </Field>
           <Field label="Adapter key" id="adapter-key">
             <Input id="adapter-key" value={draft.adapterKey} readOnly aria-readonly="true" className="min-h-11 rounded-none bg-muted font-mono text-xs" />

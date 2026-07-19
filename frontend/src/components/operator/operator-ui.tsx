@@ -9,12 +9,14 @@ export function OperatorPageHeader({
   description,
   onRefresh,
   refreshing = false,
+  refreshLabel = 'Refresh snapshot',
 }: {
   eyebrow: string
   title: string
   description: string
   onRefresh?: () => void
   refreshing?: boolean
+  refreshLabel?: string
 }) {
   return (
     <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
@@ -26,7 +28,7 @@ export function OperatorPageHeader({
       {onRefresh && (
         <Button variant="outline" className="min-h-11 rounded-none self-start" onClick={onRefresh} disabled={refreshing}>
           <RefreshCw className={cn('mr-2 h-4 w-4', refreshing && 'animate-spin')} aria-hidden="true" />
-          Refresh snapshot
+          {refreshLabel}
         </Button>
       )}
     </div>

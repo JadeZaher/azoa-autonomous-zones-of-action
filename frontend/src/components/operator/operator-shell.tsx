@@ -7,6 +7,7 @@ import {
     Activity,
     Building2,
     ClipboardCheck,
+    History,
     LayoutDashboard,
     LogOut,
     RefreshCw,
@@ -21,6 +22,7 @@ const OPERATOR_LINKS = [
     { href: "/operator/providers", label: "Providers", icon: ShieldCheck },
     { href: "/operator/tenants", label: "Tenants", icon: Building2 },
     { href: "/operator/reviews", label: "Reviews", icon: ClipboardCheck },
+    { href: "/operator/audit", label: "Audit", icon: History },
 ];
 
 export function OperatorShell({ children }: { children: React.ReactNode }) {

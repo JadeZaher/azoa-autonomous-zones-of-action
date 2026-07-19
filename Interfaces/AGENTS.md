@@ -15,6 +15,23 @@ package. A private static helper may remain beside one implementation only when
 it is tiny, single-purpose, and has no second call site. On the second use, move
 it instead of copying it.
 
+## Tenant custodial account boundary
+
+`ITenantCustodialAccountManager` accepts the tenant id only from the
+authenticated controller claim and an opaque external subject. Its account and
+KYC DTOs are deliberate allowlists: no signing material, wallet ciphertext,
+document reference, reviewer field, or provider payload is part of the contract.
+The underlying `ITenantManager`, `IWalletManager`, and `IKycManager` remain the
+authoritative aggregates. The idempotency key is tenant-partitioned and hashed
+before persistence; reusing it for another external subject is a conflict.
+
+## Real-value KYC gate
+
+`IRealValueKycGate` is deliberately stricter than the general profile-status
+projection: a real-value authorization requires the latest ledger approval to
+carry an explicit future expiry. This isolates the economic boundary from legacy
+or non-value flows that may still represent an approval with no expiry.
+
 ## NFT transfer reservation contract
 
 `IHolonStore` reservation methods form a conditional ownership workflow:

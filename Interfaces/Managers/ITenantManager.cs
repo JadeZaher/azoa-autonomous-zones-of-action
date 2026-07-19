@@ -39,14 +39,12 @@ public static class TenantAuthorizationError
 public interface ITenantManager
 {
     /// <summary>
-    /// user-sovereign-identity HARD CUTOVER (AC6): provisions a SELF-OWNED avatar
-    /// (<c>OwnerTenantId = null</c>) the user can later CLAIM — NOT a tenant-locked
-    /// child. There is no longer any path that permanently locks an avatar to a
-    /// tenant. The avatar is recorded with the tenant's <c>ExternalUserId</c> for
-    /// onboarding correlation only; it grants the tenant NO standing authority — a
-    /// tenant acts for the user solely through a live <c>ConsentGrant</c>
-    /// (see <see cref="IssueChildCredentialAsync"/>). Idempotent on
-    /// <c>(tenantId, externalUserId)</c> correlation.
+    /// Provisions a claimable avatar using a deterministic, create-only
+    /// <c>(tenantId, externalUserId)</c> identity. <c>OwnerTenantId</c> is an
+    /// unclaimed onboarding correlation only and is cleared on user claim; the
+    /// deterministic identity still makes post-claim retries resolve the original
+    /// avatar without updating it. The binding grants no signing authority: a
+    /// tenant acts for the user solely through a live <c>ConsentGrant</c>.
     /// </summary>
     Task<AZOAResult<ChildAvatarResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default);
 
@@ -58,8 +56,9 @@ public interface ITenantManager
     Task<AZOAResult<IEnumerable<ChildAvatarResponse>>> ListChildrenAsync(Guid tenantId, string? externalUserId, CancellationToken ct = default);
 
     /// <summary>
-    /// Resolves one child by the tenant's own external user id (the primary
-    /// tenant lookup path). Cross-tenant / no match → <see cref="TenantAuthorizationError.NotFound"/>.
+    /// Resolves one child by the tenant's own external user id, including after
+    /// user claim via the deterministic tenant-partitioned identity. Cross-tenant
+    /// / no match → <see cref="TenantAuthorizationError.NotFound"/>.
     /// </summary>
     Task<AZOAResult<ChildAvatarResponse>> ResolveChildAsync(Guid tenantId, string externalUserId, CancellationToken ct = default);
 

@@ -9,7 +9,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- KycSubmission.KycProvider
-DEFINE PARAM IF NOT EXISTS $kyc_submission_provider VALUE ["MANUAL", "VERIFF"];
+DEFINE PARAM IF NOT EXISTS $kyc_submission_provider VALUE ["MANUAL", "VERIFF", "GENERIC_HOSTED"];
 -- KycSubmission.KycStatus
 DEFINE PARAM IF NOT EXISTS $kyc_submission_status VALUE ["PENDING", "IN_REVIEW", "APPROVED", "REJECTED", "EXPIRED"];
 
@@ -21,10 +21,16 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE kyc_submission TYPE string
 
 -- Owner avatar (Guid('N') hex record link); indexed for owner lookups
 DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE kyc_submission TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE kyc_submission TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS provider_selection_version ON TABLE kyc_submission TYPE int
+    DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS provider_trust_revision ON TABLE kyc_submission TYPE int
+    DEFAULT 0;
 
 -- Verification provider that owns this submission
 DEFINE FIELD IF NOT EXISTS provider ON TABLE kyc_submission TYPE string
     ASSERT $value INSIDE $kyc_submission_provider;
+DEFINE FIELD IF NOT EXISTS provider_key ON TABLE kyc_submission TYPE string;
 
 -- Lifecycle status
 DEFINE FIELD IF NOT EXISTS status ON TABLE kyc_submission TYPE string
@@ -37,6 +43,10 @@ DEFINE FIELD IF NOT EXISTS rejection_reason ON TABLE kyc_submission TYPE option<
 
 -- Provider session linkage (manual provider stamps the avatar id as a pseudo-session)
 DEFINE FIELD IF NOT EXISTS provider_session_id ON TABLE kyc_submission TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS hosted_verification ON TABLE kyc_submission TYPE bool;
+DEFINE FIELD IF NOT EXISTS accepts_document_references ON TABLE kyc_submission TYPE bool;
+DEFINE FIELD IF NOT EXISTS verification_url ON TABLE kyc_submission TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS session_instructions ON TABLE kyc_submission TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS provider_result ON TABLE kyc_submission TYPE option<string>;
 
 -- Timestamps

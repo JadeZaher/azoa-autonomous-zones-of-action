@@ -1,7 +1,4 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
-using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using AZOA.WebAPI.Core;
@@ -20,23 +17,23 @@ public class AvatarManager : IAvatarManager
 {
     private readonly IAvatarStore _avatarStore;
     private readonly IConfiguration _config;
-    private readonly IHostEnvironment _environment;
     private readonly IAdminBootstrapStateStore? _adminBootstrapStateStore;
 
     public AvatarManager(
         IAvatarStore avatarStore,
         IConfiguration config,
-        IHostEnvironment environment,
         IAdminBootstrapStateStore? adminBootstrapStateStore = null)
     {
         _avatarStore = avatarStore;
         _config = config;
-        _environment = environment;
         _adminBootstrapStateStore = adminBootstrapStateStore;
     }
 
     public async Task<AZOAResult<IAvatar>> RegisterAsync(AvatarRegisterModel model, AZOARequest? request = null)
     {
+        if (string.Equals(model.Email?.Trim(), NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase))
+            return new AZOAResult<IAvatar> { IsError = true, Message = "This account identity is reserved." };
+
         // Check for duplicate email
         var allAvatars = await _avatarStore.GetAllAsync(default);
         if (allAvatars.Result?.Any(a => a.Email.Equals(model.Email, StringComparison.OrdinalIgnoreCase)) == true)
@@ -66,23 +63,26 @@ public class AvatarManager : IAvatarManager
 
         if (avatar == null || !BCrypt.Net.BCrypt.Verify(model.Password, avatar.PasswordHash))
             return new AZOAResult<string> { IsError = true, Message = "Invalid credentials." };
+        if (avatar.Id == NodeOperatorIdentity.AvatarId)
+            return new AZOAResult<string> { IsError = true, Message = "Invalid credentials." };
 
-        var bootstrap = await ResolveBootstrapAuthorityAsync(avatar, model.BootstrapSecret);
-        if (bootstrap.IsError)
-            return new AZOAResult<string> { IsError = true, Message = bootstrap.Message };
-
-        var token = GenerateJwt(avatar, bootstrap.Result == true);
+        var token = GenerateJwt(avatar);
         return new AZOAResult<string> { Result = token, Message = "Login successful." };
     }
 
     public async Task<AZOAResult<IAvatar>> GetAsync(Guid id, AZOARequest? request = null)
     {
+        if (id == NodeOperatorIdentity.AvatarId)
+            return new AZOAResult<IAvatar> { IsError = true, Message = "Avatar not found." };
         return await _avatarStore.GetByIdAsync(id, default);
     }
 
     public async Task<AZOAResult<IEnumerable<IAvatar>>> GetAllAsync(AZOARequest? request = null)
     {
-        return await _avatarStore.GetAllAsync(default);
+        var result = await _avatarStore.GetAllAsync(default);
+        if (!result.IsError && result.Result is not null)
+            result.Result = result.Result.Where(avatar => avatar.Id != NodeOperatorIdentity.AvatarId).ToList();
+        return result;
     }
 
     public async Task<AZOAResult<IAvatar>> UpdateAsync(Guid id, AvatarUpdateModel model, Guid avatarId, AZOARequest? request = null)
@@ -91,6 +91,8 @@ public class AvatarManager : IAvatarManager
         // must match the authenticated avatar identity.
         if (id != avatarId)
             return new AZOAResult<IAvatar> { IsError = true, Message = "You may only update your own avatar." };
+        if (id == NodeOperatorIdentity.AvatarId)
+            return new AZOAResult<IAvatar> { IsError = true, Message = "The node operator identity is managed only through operator credential rotation." };
 
         var existing = await _avatarStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
@@ -101,6 +103,12 @@ public class AvatarManager : IAvatarManager
             var emailValidation = await ValidateEmailUpdateAsync(avatar, model.Email);
             if (emailValidation.IsError)
                 return new AZOAResult<IAvatar> { IsError = true, Message = emailValidation.Message };
+        }
+        if (model.Username is not null)
+        {
+            var usernameValidation = await ValidateUsernameUpdateAsync(avatar, model.Username);
+            if (usernameValidation.IsError)
+                return new AZOAResult<IAvatar> { IsError = true, Message = usernameValidation.Message };
         }
         if (model.Username != null) avatar.Username = model.Username;
         if (model.Email != null) avatar.Email = model.Email;
@@ -117,12 +125,16 @@ public class AvatarManager : IAvatarManager
         // IDOR guard: an avatar may only delete its own record.
         if (id != avatarId)
             return new AZOAResult<bool> { IsError = true, Message = "You may only delete your own avatar." };
+        if (id == NodeOperatorIdentity.AvatarId)
+            return new AZOAResult<bool> { IsError = true, Message = "The node operator identity cannot be deleted through the avatar API." };
 
         return await _avatarStore.DeleteAsync(id, default);
     }
 
     public async Task<AZOAResult<bool>> LogoutEverywhereAsync(Guid avatarId, CancellationToken ct = default)
     {
+        if (avatarId == NodeOperatorIdentity.AvatarId)
+            return new AZOAResult<bool> { IsError = true, Message = "Use the node operator session revocation endpoint." };
         // Subject comes from the authenticated token (controller), never a request body.
         var existing = await _avatarStore.GetByIdAsync(avatarId, ct);
         if (existing.IsError || existing.Result is null)
@@ -152,6 +164,12 @@ public class AvatarManager : IAvatarManager
             };
 
         var normalized = AzoaDappRoles.Normalize(role);
+        if (targetAvatarId == NodeOperatorIdentity.AvatarId)
+            return new AZOAResult<IAvatar>
+            {
+                IsError = true,
+                Message = "The node operator identity cannot receive DApp roles."
+            };
 
         // Authority ladder (fail-closed): operator may set anything (incl. manager, the
         // bootstrap path); a manager may set only developer/user; everyone else denied.
@@ -185,7 +203,7 @@ public class AvatarManager : IAvatarManager
         return await _avatarStore.UpsertAsync(existing.Result, ct);
     }
 
-    private string GenerateJwt(IAvatar avatar, bool isBootstrapGovernor)
+    private string GenerateJwt(IAvatar avatar)
     {
         var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
         var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
@@ -196,13 +214,15 @@ public class AvatarManager : IAvatarManager
             new Claim(JwtRegisteredClaimNames.Sub, avatar.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, avatar.Email),
             new Claim(ClaimTypes.Name, avatar.Username),
+            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
+            new Claim(
+                AzoaClaims.AuthTime,
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ClaimValueTypes.Integer64),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
         StampDappRoleClaims(avatar, claims);
-
-        if (isBootstrapGovernor)
-            StampOperatorAdmin(claims);
 
         var token = new JwtSecurityToken(
             issuer: _config["Jwt:Issuer"],
@@ -214,80 +234,15 @@ public class AvatarManager : IAvatarManager
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    /// <summary>
-    /// H2 admin-token mint bootstrap: stamps <see cref="AzoaScopes.Operator"/> +
-    /// the interim <c>role=Admin</c> claim onto the JWT for exactly the
-    /// configured seed avatar. See Services/Admin/AGENTS.md for the fail-closed
-    /// rationale and NODE-HOST.md §8.9 for the operator procedure.
-    /// </summary>
-    private async Task<AZOAResult<bool>> ResolveBootstrapAuthorityAsync(
-        IAvatar avatar,
-        string? presentedSecret)
-    {
-        var options = _config.GetSection(AdminBootstrapOptions.SectionName).Get<AdminBootstrapOptions>()
-                      ?? new AdminBootstrapOptions();
-
-        var hasEmail = !string.IsNullOrWhiteSpace(options.SeedEmail);
-        var hasSecret = !string.IsNullOrWhiteSpace(options.SeedSecret);
-
-        if (!hasEmail && !hasSecret)
-            return new AZOAResult<bool> { Result = false, Message = "Bootstrap is off." };
-
-        if (hasEmail != hasSecret)
-        {
-            // Fail-closed: a PARTIAL config (one of the two set) never stamps.
-            // In Production this is also treated as a hard misconfiguration —
-            // SeedAdminHostedService already throws at boot for this case, so
-            // reaching a live request with a partial config in Production means
-            // config was hot-reloaded after boot; refuse here too rather than
-            // silently ignore it.
-            if (_environment.IsProduction())
-                throw new InvalidOperationException(
-                    "AdminBootstrap is misconfigured (SeedEmail/SeedSecret must both be set or both unset).");
-            return new AZOAResult<bool> { Result = false, Message = "Bootstrap is misconfigured." };
-        }
-
-        if (_adminBootstrapStateStore is null)
-            return new AZOAResult<bool> { IsError = true, Message = "Bootstrap state storage is unavailable." };
-
-        var existing = await _adminBootstrapStateStore.GetAsync();
-        if (existing.IsError)
-            return new AZOAResult<bool> { IsError = true, Message = "Bootstrap state is unavailable." };
-
-        var avatarLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatar.Id));
-        if (existing.Result is not null)
-            return new AZOAResult<bool>
-            {
-                Result = string.Equals(existing.Result.AvatarId, avatarLink, StringComparison.Ordinal),
-                Message = "Bootstrap binding resolved.",
-            };
-
-        if (!string.Equals(avatar.Email, options.SeedEmail, StringComparison.OrdinalIgnoreCase)
-            || !SecretEquals(options.SeedSecret!, presentedSecret))
-        {
-            return new AZOAResult<bool> { Result = false, Message = "Bootstrap proof was not accepted." };
-        }
-
-        var bound = await _adminBootstrapStateStore.BindOnceAsync(new AZOA.WebAPI.Persistence.SurrealDb.Models.AdminBootstrapState
-        {
-            Id = AZOA.WebAPI.Persistence.SurrealDb.Models.AdminBootstrapState.LocalId,
-            AvatarId = avatarLink ?? string.Empty,
-            ActivatedAt = DateTimeOffset.UtcNow,
-        });
-        if (bound.IsError || bound.Result is null)
-            return new AZOAResult<bool> { IsError = true, Message = "Bootstrap state could not be recorded." };
-
-        return new AZOAResult<bool>
-        {
-            Result = string.Equals(bound.Result.AvatarId, avatarLink, StringComparison.Ordinal),
-            Message = "Bootstrap binding resolved.",
-        };
-    }
-
     private async Task<AZOAResult<bool>> ValidateEmailUpdateAsync(IAvatar avatar, string requestedEmail)
     {
         if (string.IsNullOrWhiteSpace(requestedEmail))
             return new AZOAResult<bool> { IsError = true, Message = "Email cannot be empty." };
+        if (avatar.Id != NodeOperatorIdentity.AvatarId
+            && string.Equals(requestedEmail.Trim(), NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            return new AZOAResult<bool> { IsError = true, Message = "This account identity is reserved." };
+        }
 
         var all = await _avatarStore.GetAllAsync();
         if (all.IsError)
@@ -324,22 +279,36 @@ public class AvatarManager : IAvatarManager
         return new AZOAResult<bool> { Result = true, Message = "Email is valid." };
     }
 
-    private static bool SecretEquals(string configuredSecret, string? presentedSecret)
+    private async Task<AZOAResult<bool>> ValidateUsernameUpdateAsync(IAvatar avatar, string requestedUsername)
     {
-        if (string.IsNullOrEmpty(presentedSecret))
-            return false;
+        var normalized = requestedUsername.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return new AZOAResult<bool> { IsError = true, Message = "Username cannot be empty." };
 
-        var expected = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(configuredSecret));
-        var actual = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(presentedSecret));
-        return CryptographicOperations.FixedTimeEquals(expected, actual);
-    }
+        var all = await _avatarStore.GetAllAsync();
+        if (all.IsError)
+            return new AZOAResult<bool> { IsError = true, Message = "Username uniqueness could not be verified." };
+        if (all.Result?.Any(candidate => candidate.Id != avatar.Id
+                && string.Equals(candidate.Username, normalized, StringComparison.OrdinalIgnoreCase)) == true)
+        {
+            return new AZOAResult<bool> { IsError = true, Message = "This username is already taken." };
+        }
 
-    private static void StampOperatorAdmin(List<Claim> claims)
-    {
-        claims.Add(new Claim("scope", AzoaScopes.Operator));
-        claims.Add(new Claim("scope", AzoaScopes.NodeGovern));
-        claims.Add(new Claim("role", "Admin"));
-        claims.Add(new Claim(ClaimTypes.Role, "Admin"));
+        var binding = _adminBootstrapStateStore is null
+            ? null
+            : await _adminBootstrapStateStore.GetAsync();
+        if (binding?.Result?.CredentialRevision > 0)
+        {
+            var reserved = await _avatarStore.GetByIdAsync(NodeOperatorIdentity.AvatarId);
+            if (!reserved.IsError
+                && reserved.Result is not null
+                && string.Equals(reserved.Result.Username, normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                return new AZOAResult<bool> { IsError = true, Message = "This username is reserved." };
+            }
+        }
+
+        return new AZOAResult<bool> { Result = true, Message = "Username is valid." };
     }
 
     private static void StampDappRoleClaims(IAvatar avatar, List<Claim> claims)

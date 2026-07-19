@@ -37,11 +37,14 @@ public class BridgeInitiateRequestValidator : AbstractValidator<BridgeInitiateRe
             .MaximumLength(128).WithMessage("RecipientAddress must not exceed 128 characters.")
             .Matches(@"^[A-Za-z0-9:_\-+/=\.]{20,128}$").WithMessage("RecipientAddress is not a valid address.");
 
-        // Amount is a precision-safe decimal string (base units can exceed
-        // int/long for 18-decimal tokens). Validate it as a positive integer.
+        // The provider boundary is ulong; validate the exact wire value here.
         RuleFor(x => x.Amount)
             .NotEmpty().WithMessage("Amount is required.")
-            .Must(a => System.Numerics.BigInteger.TryParse(a, out var v) && v > 0)
-            .WithMessage("Amount must be a positive integer.");
+            .Must(a => ulong.TryParse(
+                a,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var value) && value > 0)
+            .WithMessage("Amount must be a positive unsigned 64-bit integer.");
     }
 }

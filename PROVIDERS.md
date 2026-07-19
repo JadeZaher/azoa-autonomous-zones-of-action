@@ -2,9 +2,9 @@
 
 ## Overview
 
-AZOA is a .NET 8 WebAPI with 15 controllers backed by 10 managers. The sole storage engine is SurrealDB (via `SurrealForge.*` packages). Two authentication schemes are supported: JWT (Bearer token) and X-Api-Key (auto-detected by header). Rate limiting is applied globally, with strict "financial" policies on value-moving endpoints.
+AZOA is a .NET 10 WebAPI. The sole storage engine is SurrealDB (via `SurrealForge.*` packages). JWT and `X-Api-Key` authentication are supported, and stricter rate limits apply to value-moving endpoints.
 
-_Last reconciled: 2026-06-11 (post quest-api phase-F + self-audit-one-fix)._
+_Last reconciled: 2026-07-18 (operator/KYC/custody and fail-closed bridge stopping point)._
 
 ## Architecture
 
@@ -12,10 +12,20 @@ _Last reconciled: 2026-06-11 (post quest-api phase-F + self-audit-one-fix)._
 Each business aggregate (Avatar, Wallet, Holon, NFT, etc.) has a manager exposing business logic and a corresponding SurrealDB store (`I*Store` interface + `Surreal*Store` implementation) handling persistence.
 
 **Blockchain Providers:**
-Algorand and Solana are plugged via `IBlockchainProvider` factory (indexed by chain ID). Both implement the full interface symmetrically. Adding a new chain requires implementing `IBlockchainProvider` + registering one DI line in `Program.cs`.
+Algorand and Solana plug into the `IBlockchainProvider` factory. The common interface is complete, but capability flags deliberately keep real bridge execution unavailable until a provider implements and passes review for the entire lock/mint/burn/release lifecycle and production custody. Adding a chain requires an implementation, registration, and conformance review; registration alone does not make it launchable.
 
 **DEX Adapters:**
 Swap routing is dispatched by `SwapManager` to chain-specific `IDexAdapter` implementations (Tinyman for Algorand, Jupiter for Solana). Adding a DEX requires implementing `IDexAdapter` + one DI line.
+
+**KYC Providers:**
+Identity verification is selected through `Kyc:Provider` and the
+`IKycProviderService` seam. `manual` is Development-only; `veriff` and the
+operator-named `hosted` adapter are fail-closed scaffolds until reviewed
+integrations land. Availability alone never grants trust: operators must also
+set an exact `Kyc:ApprovalPolicy` provider allow-list, policy version, and
+assurance label. Attempts persist that profile in a versioned provenance
+envelope, so provider or policy rotation requires re-verification. See
+`docs/TENANT-CUSTODIAL-ONBOARDING.md`.
 
 ## Controllers (15)
 
@@ -49,7 +59,6 @@ Swap routing is dispatched by `SwapManager` to chain-specific `IDexAdapter` impl
 - `GET /api/bridge/routes` — List available bridge routes
 - `POST /api/bridge/initiate` — Start a bridge transaction
 - `GET /api/bridge/{id}` — Get bridge status
-- `POST /api/bridge/{id}/complete` — Complete bridge redemption
 
 ### DappCompositionController
 - `GET /api/dappcomposition/{id}` — Get dapp composition

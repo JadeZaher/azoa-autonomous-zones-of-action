@@ -99,7 +99,9 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         {
             // ── Step 3: KYC gate (fail-closed) ────────────────────────────────
             // A rejected avatar produces NO side effect at all under a won claim.
-            var gate = await _kycGate.RequireVerifiedAsync(avatarId);
+            var gate = actingTenantId is { } tenantId
+                ? await _kycGate.RequireVerifiedAsync(avatarId, tenantId)
+                : await _kycGate.RequireVerifiedAsync(avatarId);
             if (gate.IsError)
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, gate.Message, CancellationToken.None);

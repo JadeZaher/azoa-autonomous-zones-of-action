@@ -112,6 +112,26 @@ that reduce an unexpected failure to `ex.Message`; when touching an existing
 method, prune that pattern if its callers already run behind a request, worker,
 or CLI exception boundary.
 
+Tenant identity/KYC stores are the narrow exception to the general bubbling
+rule: their legacy `AZOAResult.Detail` path could serialize captured exceptions
+in development. These stores log the full exception with trace correlation and
+an internal entity id, then return fixed public `*_STORE_UNAVAILABLE` messages
+without an attached exception. Tenant managers translate those once more to
+fixed `TENANT_*_UNAVAILABLE` messages.
+
+`SurrealKycStore.CreateSubmissionAsync` and `AttachDocumentsIfAbsentAsync` use
+parameterized raw transactions because their invariants span an
+active-submission CAS and a batch of document creates. Creation admits only one
+active attempt. Attachment lets the first document set win, so concurrent or
+replayed submissions read the existing set and never partially replace it.
+Replace these seams when SurrealForge exposes conditional update plus looped
+creates in one typed transaction.
+
+`TryReviewAsync` is a parameterized conditional update: only an unexpired,
+active manual attempt can accept one operator decision. A concurrent loser
+returns no row and must not overwrite the winning terminal decision. Replace
+this seam when a typed conditional-update builder is available.
+
 ## Typed mutation boundary
 
 This directory documents datastore mechanics only. Domain policy belongs in the
@@ -128,6 +148,12 @@ variants for one descending `(occurred_at,id)` keyset pagination path because
 the current typed read builder cannot express the required disjunction plus
 record-id ordering. The active `azoa-code-style-backpropagation` track owns the
 SurrealForge.Client remediation; the reviewed waiver expires 2026-09-30.
+
+`SurrealKycControlStore` uses the same fully parameterized composite predicate
+for its filtered operator audit timeline. The boolean first-page sentinel is
+paired with valid dummy cursor values, keeping one stable query shape while the
+exclusive `(occurred_at,id)` anchor prevents concurrent inserts from shifting
+later pages. It shares the 2026-09-30 typed-builder waiver above.
 
 Temporary waiver: `SurrealHolonStore` retains one delete and three conditional
 transfer mutations until the tested SurrealForge.Client 0.4 mutation package is

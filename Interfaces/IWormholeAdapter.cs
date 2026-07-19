@@ -17,7 +17,7 @@ public interface IWormholeAdapter
     Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
         string sourceChain, string targetChain,
         string tokenId, string senderAddress, string recipientAddress,
-        int amount, CancellationToken ct = default);
+        ulong amount, CancellationToken ct = default);
 
     /// <summary>
     /// Poll the Guardian network for a signed VAA matching the given emitter/sequence.

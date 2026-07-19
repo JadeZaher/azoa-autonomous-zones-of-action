@@ -6,19 +6,85 @@ using AZOA.WebAPI.Services.Auth;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Services.Admin;
 
 namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Policy = "FirstPartyLogin")]
 public class ApiKeyController : ControllerBase
 {
     private readonly IApiKeyStore _store;
+    private readonly IAvatarStore _avatars;
 
-    public ApiKeyController(IApiKeyStore store)
+    public ApiKeyController(IApiKeyStore store, IAvatarStore avatars)
     {
         _store = store;
+        _avatars = avatars;
+    }
+
+    /// <summary>Operator-only issuance of one fixed-scope tenant integration key.</summary>
+    [HttpPost("tenant")]
+    [Authorize(Policy = "Operator")]
+    [Authorize(Policy = "RecentNodeOperatorSession")]
+    [EnableRateLimiting("financial")]
+    public async Task<IActionResult> CreateTenantKey([FromBody] CreateTenantApiKeyRequest request)
+    {
+        if (request.TenantAvatarId == Guid.Empty)
+            return BadRequest(AZOAResult<CreateApiKeyResponse>.Failure("TenantAvatarId is required."));
+        if (request.TenantAvatarId == NodeOperatorIdentity.AvatarId)
+            return BadRequest(AZOAResult<CreateApiKeyResponse>.Failure(
+                "The reserved node operator identity cannot own API keys."));
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 100)
+            return BadRequest(AZOAResult<CreateApiKeyResponse>.Failure(
+                "Name must be a non-empty value of at most 100 characters."));
+
+        var expiresInDays = request.ExpiresInDays ?? 90;
+        if (expiresInDays is < 1 or > 365)
+            return BadRequest(AZOAResult<CreateApiKeyResponse>.Failure(
+                "ExpiresInDays must be between 1 and 365."));
+
+        var tenant = await _avatars.GetByIdAsync(
+            request.TenantAvatarId,
+            HttpContext.RequestAborted);
+        if (tenant.Message.StartsWith("AVATAR_STORE_UNAVAILABLE:", StringComparison.Ordinal))
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                AZOAResult<CreateApiKeyResponse>.Failure("Tenant avatar could not be verified."));
+        if (tenant.IsError || tenant.Result is null)
+            return NotFound(AZOAResult<CreateApiKeyResponse>.Failure("Tenant avatar not found."));
+
+        const string tenantScopes =
+            $"{AzoaScopes.TenantProvision},{AzoaScopes.WalletManage},{AzoaScopes.KycRead},{AzoaScopes.KycSubmit}";
+        var rawKey = ApiKeyAuthenticationHandler.GenerateRawKey();
+        var apiKey = new ApiKey
+        {
+            AvatarId = request.TenantAvatarId,
+            Name = request.Name.Trim(),
+            KeyHash = ApiKeyAuthenticationHandler.HashKey(rawKey),
+            KeyPrefix = rawKey[..16],
+            ExpiresAt = DateTime.UtcNow.AddDays(expiresInDays),
+            Scopes = tenantScopes,
+            AllowedOrigins = null
+        };
+
+        await _store.CreateAsync(apiKey, HttpContext.RequestAborted);
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers.Pragma = "no-cache";
+
+        return Ok(AZOAResult<CreateApiKeyResponse>.Success(new CreateApiKeyResponse
+        {
+            Id = apiKey.Id,
+            Name = apiKey.Name,
+            Key = rawKey,
+            KeyPrefix = apiKey.KeyPrefix,
+            ExpiresAt = apiKey.ExpiresAt,
+            Scopes = apiKey.Scopes,
+            AllowedOrigins = null,
+            CreatedDate = apiKey.CreatedDate
+        }, "Tenant API key created. Store it securely; it will not be shown again."));
     }
 
     private Guid GetAvatarId()
@@ -39,22 +105,34 @@ public class ApiKeyController : ControllerBase
         if (avatarId == Guid.Empty)
             return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
 
-        // Validate requested scopes at issuance. Empty/null keeps the legacy full-key
-        // shape; explicit scopes must be self-issuable by the caller's current role.
-        if (!string.IsNullOrWhiteSpace(request.Scopes))
-        {
-            var rejected = request.Scopes
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(s => !User.CanSelfIssueApiKeyScope(s))
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 100)
+            return BadRequest(AZOAResult<object>.Failure(
+                "Name must be a non-empty value of at most 100 characters."));
+        if (request.ExpiresInDays is < 1 or > 365)
+            return BadRequest(AZOAResult<object>.Failure(
+                "ExpiresInDays must be between 1 and 365."));
+        if (string.IsNullOrWhiteSpace(request.Scopes))
+            return BadRequest(AZOAResult<object>.Failure(
+                "Select at least one explicit API-key scope."));
 
-            if (rejected.Count > 0)
-                return BadRequest(new AZOAResult<object>
-                {
-                    IsError = true,
-                    Message = $"The following scope(s) may not be issued on your own key: {string.Join(", ", rejected)}.",
-                });
+        var requestedScopes = request.Scopes
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (requestedScopes.Count == 0)
+            return BadRequest(AZOAResult<object>.Failure(
+                "Select at least one explicit API-key scope."));
+
+        var rejected = requestedScopes
+            .Where(s => !User.CanSelfIssueApiKeyScope(s))
+            .ToList();
+        if (rejected.Count > 0)
+        {
+            return BadRequest(new AZOAResult<object>
+            {
+                IsError = true,
+                Message = $"The following scope(s) may not be issued on your own key: {string.Join(", ", rejected)}.",
+            });
         }
 
         var rawKey = ApiKeyAuthenticationHandler.GenerateRawKey();
@@ -63,13 +141,13 @@ public class ApiKeyController : ControllerBase
         var apiKey = new ApiKey
         {
             AvatarId = avatarId,
-            Name = request.Name,
+            Name = request.Name.Trim(),
             KeyHash = keyHash,
             KeyPrefix = rawKey[..16],
             ExpiresAt = request.ExpiresInDays.HasValue
                 ? DateTime.UtcNow.AddDays(request.ExpiresInDays.Value)
                 : null,
-            Scopes = request.Scopes,
+            Scopes = string.Join(',', requestedScopes),
             AllowedOrigins = request.AllowedOrigins,
         };
 
@@ -244,6 +322,14 @@ public class CreateApiKeyRequest
     public int? ExpiresInDays { get; set; }
     public string? Scopes { get; set; }
     public string? AllowedOrigins { get; set; }
+}
+
+/// <summary>Operator request that binds a fixed-scope key to an existing avatar.</summary>
+public sealed class CreateTenantApiKeyRequest
+{
+    public Guid TenantAvatarId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int? ExpiresInDays { get; set; }
 }
 
 public class CreateApiKeyResponse

@@ -31,6 +31,17 @@ public partial class AdminBootstrapState : ISurrealRecord
     public string AvatarId { get; set; } = string.Empty;
 
     [Column(Order = 3)]
+    [Default("0")]
+    public long CredentialRevision { get; set; }
+
+    [Column(Order = 4)]
+    [Default("0")]
+    public long SessionRevision { get; set; }
+
+    [Column(Order = 5)]
+    public DateTimeOffset? CredentialUpdatedAt { get; set; }
+
+    [Column(Order = 6)]
     [Default("time::now()")]
     [ReadOnly]
     public DateTimeOffset ActivatedAt { get; set; }

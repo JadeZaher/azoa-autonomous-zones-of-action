@@ -6,14 +6,14 @@ graph LR
     %% Slices in this diagram:
     %%   bridge: bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, node_fee_atomic_group, node_fee_settlement, operation_log, quest_webhook_event, saga_steps, webhook_registration
     %%   dapp_composition: dapp_series, dapp_series_quest, ecosystem, ecosystem_node
-    %%   identity: admin_bootstrap_state, api_key, avatar, consent_audit, consent_grant, holon, holon_type_registry, kyc_document, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, star_odk, wallet_auth_challenge, wallet_auth_claim_token
+    %%   identity: admin_bootstrap_state, api_key, avatar, consent_audit, consent_grant, holon, holon_type_registry, kyc_control_audit, kyc_document, kyc_provider_profile, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, star_odk, tenant_kyc_provider_selection, wallet_auth_challenge, wallet_auth_claim_token
     %%   quest: executes, forked_from, quest, quest_access_request, quest_dependency, quest_edge, quest_node, quest_node_execution, quest_run
     %%   quest_templates: quest_node_template, quest_template
     %%   wallet_nft: nft_ownership, swap_state, wallet
     %% 
     %% Enums:
     %%   bridge_tx.mode: Trusted, Wormhole  (BridgeTx.ModeKind)
-    %%   bridge_tx.status: Initiated, Locked, AwaitingVAA, VAAReady, Redeeming, Completed, Failed, Refunded, Reversing  (BridgeTx.StatusKind)
+    %%   bridge_tx.status: Initiated, Locking, Locked, AwaitingVAA, VAAReady, Redeeming, Completed, Failed, Refunded, Reversing  (BridgeTx.StatusKind)
     %%   consent_audit.action: Granted, Revoked, Expired, TenantSignAllowed, TenantSignDenied
     %%   consent_grant.origin: UserExplicit, Participation
     %%   consent_webhook_event.event_type: Granted, Revoked, Expired  (ConsentWebhookEvent.WebhookEventType)
@@ -22,7 +22,7 @@ graph LR
     %%   ecosystem_node.ref_kind: DappSeries, StarOdk  (EcosystemNode.RefKindValue)
     %%   idempotency_key_store.state: InProgress, Completed, Failed  (IdempotencyKeyStore.StateKind)
     %%   kyc_document.type: GOVERNMENT_ID, PASSPORT, DRIVERS_LICENSE, SELFIE, PROOF_OF_ADDRESS  (KycDocument.KycDocumentType)
-    %%   kyc_submission.provider: MANUAL, VERIFF  (KycSubmission.KycProvider)
+    %%   kyc_submission.provider: MANUAL, VERIFF, GENERIC_HOSTED  (KycSubmission.KycProvider)
     %%   kyc_submission.status: PENDING, IN_REVIEW, APPROVED, REJECTED, EXPIRED  (KycSubmission.KycStatus)
     %%   node_fee_atomic_group.state: Submitted, PendingConfirmation, Confirmed  (NodeFeeAtomicGroup.StateKind)
     %%   node_fee_audit.action: ScheduleUpdated
@@ -78,7 +78,9 @@ graph LR
         consent_grant["consent_grant: Node"]:::nodeClass
         holon["holon: Node"]:::nodeClass
         holon_type_registry["holon_type_registry: Node"]:::nodeClass
+        kyc_control_audit["kyc_control_audit: Node"]:::nodeClass
         kyc_document["kyc_document: Node"]:::nodeClass
+        kyc_provider_profile["kyc_provider_profile: Node"]:::nodeClass
         kyc_submission["kyc_submission: Node"]:::nodeClass
         node_fee_audit["node_fee_audit: Node"]:::nodeClass
         node_fee_schedule["node_fee_schedule: Node"]:::nodeClass
@@ -87,6 +89,7 @@ graph LR
         node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
         node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
         star_odk["star_odk: Node"]:::nodeClass
+        tenant_kyc_provider_selection["tenant_kyc_provider_selection: Node"]:::nodeClass
         wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
         wallet_auth_claim_token["wallet_auth_claim_token: Node"]:::nodeClass
     end
@@ -140,8 +143,12 @@ graph LR
     holon -- "transfer_target_avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
     holon -- "source_holon_id [N:0..1]" --> holon
+    kyc_control_audit -- "tenant_id [N:0..1]" --> avatar
+    kyc_control_audit -- "actor_avatar_id [N:1]" --> avatar
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
+    kyc_provider_profile -- "updated_by_avatar_id [N:1]" --> avatar
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
+    kyc_submission -- "tenant_id [N:0..1]" --> avatar
     nft_ownership -- "avatar_id [N:1]" --> avatar
     node_fee_atomic_group -- "settlement_id [N:1]" --> node_fee_settlement
     node_fee_audit -- "actor_avatar_id [N:1]" --> avatar
@@ -190,6 +197,8 @@ graph LR
     quest_webhook_event -- "run_id [N:1]" --> quest_run
     star_odk -- "avatar_id [N:0..1]" --> avatar
     swap_state -- "avatar_id [N:1]" --> avatar
+    tenant_kyc_provider_selection -- "tenant_id [N:1]" --> avatar
+    tenant_kyc_provider_selection -- "updated_by_avatar_id [N:1]" --> avatar
     wallet -- "avatar_id [N:1]" --> avatar
     wallet_auth_claim_token -- "target_avatar_id [N:1]" --> avatar
     wallet_auth_claim_token -- "tenant_id [N:1]" --> avatar

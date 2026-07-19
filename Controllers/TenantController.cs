@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -20,10 +22,102 @@ namespace AZOA.WebAPI.Controllers;
 public class TenantController : ControllerBase
 {
     private readonly ITenantManager _manager;
+    private readonly ITenantCustodialAccountManager _custodialAccounts;
 
-    public TenantController(ITenantManager manager)
+    public TenantController(ITenantManager manager, ITenantCustodialAccountManager custodialAccounts)
     {
         _manager = manager;
+        _custodialAccounts = custodialAccounts;
+    }
+
+    /// <summary>Reports whether custody, chain, and KYC dependencies are available.</summary>
+    [HttpGet("custodial-accounts/capabilities")]
+    public async Task<ActionResult<AZOAResult<TenantCustodialCapabilitiesResponse>>> GetCustodialCapabilities()
+    {
+        var tenantId = GetTenantIdFromClaims();
+        if (tenantId is null) return Unauthorized();
+        return TranslateResult(await _custodialAccounts.GetCapabilitiesAsync(
+            tenantId.Value,
+            HttpContext.RequestAborted));
+    }
+
+    /// <summary>Idempotently ensures one Azoa avatar and platform wallet for an external subject.</summary>
+    [HttpPut("custodial-accounts/{externalSubject}")]
+    [EnableRateLimiting("tenant-custodial")]
+    public async Task<ActionResult<AZOAResult<TenantCustodialAccountStatusResponse>>> EnsureCustodialAccount(
+        string externalSubject,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+    {
+        var tenantId = GetTenantIdFromClaims();
+        if (tenantId is null) return Unauthorized();
+        if (!User.HasScope(AzoaScopes.WalletManage) || !User.HasScope(AzoaScopes.KycRead))
+            return MissingScope<TenantCustodialAccountStatusResponse>($"{AzoaScopes.WalletManage}, {AzoaScopes.KycRead}");
+
+        var result = await _custodialAccounts.EnsureAsync(
+            tenantId.Value,
+            externalSubject,
+            idempotencyKey ?? string.Empty,
+            HttpContext.RequestAborted);
+        return TranslateResult(result);
+    }
+
+    /// <summary>Returns the secret-free authoritative account, wallet, and KYC status.</summary>
+    [HttpGet("custodial-accounts/{externalSubject}")]
+    [EnableRateLimiting("tenant-custodial")]
+    public async Task<ActionResult<AZOAResult<TenantCustodialAccountStatusResponse>>> GetCustodialAccount(
+        string externalSubject)
+    {
+        var tenantId = GetTenantIdFromClaims();
+        if (tenantId is null) return Unauthorized();
+        if (!User.HasScope(AzoaScopes.KycRead))
+            return MissingScope<TenantCustodialAccountStatusResponse>(AzoaScopes.KycRead);
+
+        var result = await _custodialAccounts.GetStatusAsync(
+            tenantId.Value,
+            externalSubject,
+            HttpContext.RequestAborted);
+        return TranslateResult(result);
+    }
+
+    /// <summary>Begins either a hosted or document-reference KYC flow.</summary>
+    [HttpPost("custodial-accounts/{externalSubject}/kyc/session")]
+    [EnableRateLimiting("tenant-custodial")]
+    public async Task<ActionResult<AZOAResult<TenantKycSessionResponse>>> BeginCustodialKyc(
+        string externalSubject,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+    {
+        var tenantId = GetTenantIdFromClaims();
+        if (tenantId is null) return Unauthorized();
+        if (!User.HasScope(AzoaScopes.KycSubmit))
+            return MissingScope<TenantKycSessionResponse>(AzoaScopes.KycSubmit);
+
+        var result = await _custodialAccounts.BeginKycAsync(
+            tenantId.Value,
+            externalSubject,
+            idempotencyKey ?? string.Empty,
+            HttpContext.RequestAborted);
+        return TranslateResult(result);
+    }
+
+    /// <summary>Submits validated HTTPS document references to Azoa's KYC ledger.</summary>
+    [HttpPost("custodial-accounts/{externalSubject}/kyc/submissions")]
+    [EnableRateLimiting("tenant-custodial")]
+    [RequestSizeLimit(KycDocumentRequestLimits.MaxRequestBodyBytes)]
+    public async Task<ActionResult<AZOAResult<TenantKycSubmissionResponse>>> SubmitCustodialKyc(
+        string externalSubject,
+        [FromBody] TenantKycSubmissionRequest request)
+    {
+        var tenantId = GetTenantIdFromClaims();
+        if (tenantId is null) return Unauthorized();
+        if (!User.HasScope(AzoaScopes.KycSubmit))
+            return MissingScope<TenantKycSubmissionResponse>(AzoaScopes.KycSubmit);
+
+        var result = await _custodialAccounts.SubmitKycAsync(
+            tenantId.Value,
+            externalSubject,
+            request,
+            HttpContext.RequestAborted);
+        return TranslateResult(result);
     }
 
     /// <summary>Provision a new child avatar under the authenticated tenant.</summary>
@@ -62,17 +156,12 @@ public class TenantController : ControllerBase
 
     /// <summary>Issue a short-lived child-scoped credential to act as that child.</summary>
     [HttpPost("avatars/{id:guid}/credential")]
-    public async Task<ActionResult<AZOAResult<ChildCredentialResponse>>> IssueChildCredential(Guid id, [FromBody] IssueChildCredentialModel? model)
+    public ActionResult<AZOAResult<ChildCredentialResponse>> IssueChildCredential(Guid id, [FromBody] IssueChildCredentialModel? model)
     {
-        var tenantId = GetTenantIdFromClaims();
-        if (tenantId is null) return Unauthorized();
-
-        var requested = model?.Scopes ?? new List<string>();
-        var tenantScopes = User.GetScopes();
-
-        var result = await _manager.IssueChildCredentialAsync(
-            tenantId.Value, id, requested, tenantScopes, HttpContext.RequestAborted);
-        return TranslateResult(result);
+        return StatusCode(
+            StatusCodes.Status503ServiceUnavailable,
+            AZOAResult<ChildCredentialResponse>.Failure(
+                "Delegated child credentials are unavailable until every accepting endpoint has an explicit scope policy."));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -81,7 +170,8 @@ public class TenantController : ControllerBase
     /// Maps a manager result to the right HTTP status. A
     /// <see cref="TenantAuthorizationError.NotFound"/>-prefixed message → 404; a
     /// <see cref="TenantAuthorizationError.Forbidden"/>-prefixed message → 403;
-    /// any other error → 400. Cross-tenant / unowned targets are NOT_FOUND by
+    /// retryable in-progress custody/KYC results → 409; any other error → 400.
+    /// Cross-tenant / unowned targets are NOT_FOUND by
     /// construction (the manager never emits FORBIDDEN for them), so they 404.
     /// </summary>
     private ActionResult<AZOAResult<T>> TranslateResult<T>(AZOAResult<T> result)
@@ -94,8 +184,23 @@ public class TenantController : ControllerBase
         if (result.Message?.StartsWith(TenantAuthorizationError.NotFound, StringComparison.Ordinal) == true)
             return NotFound(result);
 
+        if (result.Message?.StartsWith(
+                TenantCustodialOperationError.CustodyInProgress,
+                StringComparison.Ordinal) == true
+            || result.Message?.StartsWith(
+                TenantCustodialOperationError.KycSessionInProgress,
+                StringComparison.Ordinal) == true)
+        {
+            return Conflict(result);
+        }
+
         return BadRequest(result);
     }
+
+    private ActionResult<AZOAResult<T>> MissingScope<T>(string scopes)
+        => StatusCode(
+            StatusCodes.Status403Forbidden,
+            AZOAResult<T>.Failure($"Caller lacks required scope: {scopes}."));
 
     /// <summary>
     /// The tenant id is the authenticated key's owner avatar id — ALWAYS from the

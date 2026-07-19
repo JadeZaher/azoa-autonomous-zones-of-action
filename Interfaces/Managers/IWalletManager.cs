@@ -18,6 +18,9 @@ public interface IWalletManager
     /// </summary>
     Task<AZOAResult<IWallet>> GenerateWalletAsync(WalletGenerateRequest model, Guid avatarId, AZOARequest? request = null);
 
+    /// <summary>Idempotently creates or returns the platform wallet for an avatar and chain.</summary>
+    Task<AZOAResult<IWallet>> BootstrapWalletAsync(WalletGenerateRequest model, Guid avatarId, AZOARequest? request = null);
+
     /// <summary>
     /// Connect an external wallet (e.g., MetaMask) by verifying signed message ownership.
     /// </summary>

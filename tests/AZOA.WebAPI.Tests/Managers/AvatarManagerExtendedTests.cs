@@ -32,7 +32,7 @@ public class AvatarManagerExtendedTests
 
         var environment = new Mock<IHostEnvironment>();
         environment.Setup(e => e.EnvironmentName).Returns("Development");
-        _manager = new AvatarManager(_store.Object, config, environment.Object);
+        _manager = new AvatarManager(_store.Object, config);
     }
 
     [Fact]

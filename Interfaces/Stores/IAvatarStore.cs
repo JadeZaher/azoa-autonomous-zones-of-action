@@ -14,6 +14,12 @@ public interface IAvatarStore
     /// <summary>Inserts or updates an avatar.</summary>
     Task<AZOAResult<IAvatar>> UpsertAsync(IAvatar avatar, CancellationToken ct = default);
 
+    /// <summary>
+    /// Creates a deterministic onboarding avatar without ever updating an
+    /// existing row. A concurrent duplicate returns the authoritative row.
+    /// </summary>
+    Task<AZOAResult<IAvatar>> CreateIfAbsentAsync(IAvatar avatar, CancellationToken ct = default);
+
     /// <summary>Deletes an avatar by id.</summary>
     Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default);
 
@@ -43,4 +49,11 @@ public interface IAvatarStore
     /// another auth method (AC2b).
     /// </summary>
     Task<AZOAResult<IAvatar>> GetByAuthWalletAsync(string address, string chainType, CancellationToken ct = default);
+
+    /// <summary>Returns a bounded page of active principals with a live tenant-provision key.</summary>
+    Task<AZOAResult<IReadOnlyList<IAvatar>>> ListTenantPrincipalsPageAsync(
+        int offset,
+        int limit,
+        string? search,
+        CancellationToken ct = default);
 }

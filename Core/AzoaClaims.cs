@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using System.Security.Claims;
+
 namespace AZOA.WebAPI.Core;
 
 /// <summary>
@@ -25,4 +27,35 @@ public static class AzoaClaims
     /// <c>TenantManager.IssueChildCredentialAsync</c>. ALWAYS carries
     /// <c>act_as_tenant</c> and a clamped set of <c>scope</c> claims.</summary>
     public const string TokenUseChild = "child";
+
+    /// <summary>A short-lived dedicated node-operator session.</summary>
+    public const string TokenUseNodeOperator = "node_operator";
+
+    /// <summary>Monotonic durable operator credential revision.</summary>
+    public const string OperatorRevision = "operator_revision";
+
+    /// <summary>Monotonic revocation epoch for all active operator sessions.</summary>
+    public const string OperatorSessionRevision = "operator_session_revision";
+
+    /// <summary>Unix timestamp of the interactive authentication event.</summary>
+    public const string AuthTime = "auth_time";
+
+    public static bool IsChildCredential(ClaimsPrincipal? principal)
+        => string.Equals(
+            principal?.FindFirst(TokenUse)?.Value,
+            TokenUseChild,
+            StringComparison.Ordinal);
+
+    public static bool IsNodeOperator(ClaimsPrincipal? principal)
+        => string.Equals(
+            principal?.FindFirst(TokenUse)?.Value,
+            TokenUseNodeOperator,
+            StringComparison.Ordinal);
+
+    public static bool TryGetSubjectId(ClaimsPrincipal? principal, out Guid subjectId)
+    {
+        var value = principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? principal?.FindFirst("sub")?.Value;
+        return Guid.TryParse(value, out subjectId);
+    }
 }

@@ -1,5 +1,74 @@
 # Managers — design notes
 
+## Tenant profile provisioning
+
+`TenantManager.ProvisionChildAsync` is idempotent on the authenticated tenant id
+plus `ExternalUserId`. The unclaimed avatar retains `OwnerTenantId` only as the
+tenant-scoped onboarding/list/resolve correlation required by the Surreal unique
+index. It does not grant signing authority: child credentials still require a
+live user consent grant, carry `act_as_tenant`, and are scope-ceilinged. User
+claim clears `OwnerTenantId` and invalidates older child credentials.
+
+Avatar ids created by this path are deterministic SHA-256-derived identities of
+`(tenantId, externalUserId, v1)`, so concurrent retries converge on one row in
+addition to the composite unique index. Creation uses the store's create-only
+boundary; it never UPSERTs a deterministic identity. After user claim clears
+`OwnerTenantId`, resolve/retry reads that deterministic id, verifies the external
+subject and tenant-compatible ownership state, and returns the original without
+touching password, auth-wallet, KYC, or ownership fields. Synthetic
+usernames/emails use only a short digest rather than embedding the subject.
+
+`TenantCustodialAccountManager` composes this existing avatar with
+`IWalletManager.BootstrapWalletAsync` and `IKycManager`; it is orchestration, not
+a second identity store. Ensure is a stable `PUT` resource and the wallet id is
+deterministic per `(avatar, chain, v1)`. Its raw tenant idempotency key is hashed
+inside a tenant-partitioned ledger key; replay is bound to the original external
+subject and then refreshes current status without a second create. Status is
+ready only when custody,
+provider, platform-wallet ciphertext/address, and authoritative Azoa KYC approval
+are all present. Configuration/provider failures return an explicit unavailable
+state and never start provisioning.
+
+The present key wrapper is not production custody. Capabilities allow it only
+under `DevelopmentOnly` + Development host + simulated blockchain mode. Live or
+non-development runtimes fail closed, and `KmsHsm` stays unavailable until a real
+adapter is registered. Tenant bootstrap retains no encrypted seed phrase.
+Identity and KYC are separate readiness dimensions: unavailable wallet custody
+does not prevent deterministic avatar creation or an available KYC flow.
+`WalletProvisioningReady` gates only wallet creation; aggregate readiness still
+requires identity, provider, wallet, and approved KYC.
+
+A completed ensure replay is convergent rather than frozen: after validating the
+cached tenant/subject binding it reruns only create-only/idempotent stages. An
+identity-only success therefore adds its deterministic wallet later when an
+approved custody adapter becomes available, using the same stable key.
+
+Once a caller wins an idempotency claim, the deterministic provisioning work and
+ledger settlement run independently of request cancellation; cancellation is
+propagated only after that claim reaches a terminal state. A caller that loses a
+live `InProgress` claim performs a bounded read-only wait and replays the owner's
+terminal result. It never executes or settles the shared effect. Failed claims
+stay terminal until the store gains an atomic lease/reclaim operation; a loser
+cannot safely appoint itself the new owner. Operation types include the external-
+subject hash, so one subject cannot observe or advance another subject's claim.
+
+KYC completed replays remain `ensure active attempt`: after a terminal completion,
+`IKycManager` may reuse the current attempt or roll an expired/rejected attempt
+forward. A concurrent observer that first saw `InProgress` instead replays the
+owner's cached response without calling the provider a second time. A later
+transient provider failure never overwrites the earlier completed record.
+
+The KYC session route defines its stable key as `ensure active attempt`. The KYC
+ledger, not the tenant, owns attempt sequencing: an unexpired pending attempt is
+replayed, a rejected/expired attempt permits one new pending attempt, and a live
+approval refuses redundant enrollment. Begin persists the attempt before any
+documents exist; submit atomically attaches the first validated document set.
+Each attempt is stamped with the current provider/policy/assurance provenance.
+Begin expires rather than replays an attempt after any of those values change.
+Direct document submission rejects a stale attempt and requires Begin to create
+the new provider-owned attempt, so one adapter never validates another's row.
+Tenant projections omit provider session ids and stored document references.
+
 ## §skip-semantics — QuestManager.ExecuteAsync skip loop
 
 The in-process executor walks nodes in topological order and skips a node when

@@ -52,7 +52,7 @@ public class AllocationController : ControllerBase
             return Unauthorized(new AZOAResult<AllocationResult> { IsError = true, Message = "Invalid token." });
 
         // The allocation is authorised by the API-key scope, not the body.
-        if (!User.HasScope(AzoaScopes.NftMint) && !User.HasScope(AzoaScopes.WalletManage))
+        if (!User.HasScope(AzoaScopes.NftMint))
             return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<AllocationResult>
             {
                 IsError = true,
@@ -73,7 +73,7 @@ public class AllocationController : ControllerBase
 
         // AC4: a tenant-driven child credential carries an act_as_tenant claim; pass
         // it so the signing seam runs the live consent check before key decrypt.
-        var actingTenantId = User.GetActingTenantId();
+        var actingTenantId = callerAvatarId;
 
         var result = await _allocationManager.AllocateAsync(
             avatarId, request, callerAvatarId.Value, idempotencyKey, apiKeyId, actingTenantId);

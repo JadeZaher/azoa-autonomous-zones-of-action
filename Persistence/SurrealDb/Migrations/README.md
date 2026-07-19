@@ -33,8 +33,8 @@ operator scanning `ls` output can read the description fluently.
 ## Apply order
 
 ```
-surrealforge up
-  -> Persistence/SurrealDb/Generated/Schemas/*.surql   (lexical)
+container schema job
+  -> Generated/Schemas/*.surql overlaid by CompatibilityBaselines/*.surql
   -> Persistence/SurrealDb/Migrations/*.surql          (lexical)
 ```
 
@@ -43,13 +43,22 @@ touch is guaranteed to exist. Both directories funnel through the same
 `schema_migration` ledger (keyed by file name + SHA-256), so re-running
 `surrealforge up` is a no-op when no files changed.
 
+Generated schemas are current-state goldens, but an already-shipped filename
+cannot change in the runtime input without triggering checksum drift. For that
+case, preserve its exact shipped bytes under `../CompatibilityBaselines/` and
+add a new timestamped forward migration here. The container entrypoint overlays
+the immutable baseline before invoking SurrealForge, so both fresh and upgraded
+databases take the same forward-only path without `--force`.
+
 ## Authoring rules
 
 1. **Idempotent writes only.** Migrations get re-applied to fresh
    namespaces all the time. Wrap inserts in `UPSERT` or in a
    `IF NOT EXISTS` predicate. Never `DELETE FROM table` blindly.
-2. **No DDL.** Schema DDL belongs in the POCO; the generator emits the
-   `.surql`. If you need a new column, edit the POCO, not a migration.
+2. **DDL overlays are exceptional.** Ordinary schema DDL belongs in the POCO.
+   If that changes an already-shipped generated filename, also retain its exact
+   compatibility baseline and add the idempotent forward DDL here. Never edit an
+   applied file or use `--force` in an ordinary release.
 3. **One purpose per file.** A migration that mixes a backfill with a
    seed-data row is harder to roll forward + harder to read in
    diff review.

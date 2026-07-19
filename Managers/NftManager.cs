@@ -98,7 +98,9 @@ public class NftManager : INftManager
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = mintFeeBlocker };
 
         // KYC remains mandatory before a mint writes its Holon or operation.
-        var gate = await _kycGate.RequireVerifiedAsync(avatarId);
+        var gate = actingTenantId is { } tenantId
+            ? await _kycGate.RequireVerifiedAsync(avatarId, tenantId)
+            : await _kycGate.RequireVerifiedAsync(avatarId);
         if (gate.IsError)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
 

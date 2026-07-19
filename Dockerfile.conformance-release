@@ -2,9 +2,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-RUN apt-get update && apt-get install -y --no-install-recommends unzip \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY . .
 RUN dotnet restore AZOA.WebAPI.csproj
 
@@ -17,13 +14,10 @@ RUN case "$SOURCE_REVISION" in \
 
 ARG SURREALFORGE_SCHEMA_VERSION=0.1.1
 RUN set -eu; \
-    url="https://api.nuget.org/v3-flatcontainer/surrealforge.schema/${SURREALFORGE_SCHEMA_VERSION}/surrealforge.schema.${SURREALFORGE_SCHEMA_VERSION}.nupkg"; \
-    curl -fsSL "$url" -o /tmp/sfs.nupkg; \
+    source_dir="/root/.nuget/packages/surrealforge.schema/${SURREALFORGE_SCHEMA_VERSION}/tools/net10.0/any"; \
+    test -d "$source_dir"; \
     mkdir -p /app/schema-cli; \
-    cd /app/schema-cli; \
-    unzip -q -o /tmp/sfs.nupkg "tools/net10.0/any/*" -d /tmp/sfs; \
-    cp -r /tmp/sfs/tools/net10.0/any/* /app/schema-cli/; \
-    rm -rf /tmp/sfs /tmp/sfs.nupkg; \
+    cp -r "$source_dir"/* /app/schema-cli/; \
     test -f /app/schema-cli/SurrealForge.Schema.dll
 
 RUN mkdir -p /app/persistence && cp -r Persistence/SurrealDb /app/persistence/SurrealDb
@@ -31,7 +25,8 @@ RUN mkdir -p /app/persistence && cp -r Persistence/SurrealDb /app/persistence/Su
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+RUN apt-get update && apt-get install -y --no-install-recommends curl util-linux \
+    && command -v setpriv \
     && rm -rf /var/lib/apt/lists/*
 
 ARG SOURCE_REVISION

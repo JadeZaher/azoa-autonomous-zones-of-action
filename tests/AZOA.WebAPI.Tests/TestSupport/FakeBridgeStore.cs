@@ -19,8 +19,7 @@ namespace AZOA.WebAPI.Tests.TestSupport;
 ///   <item>
 ///   <b>Conditional transitions.</b>
 ///   <see cref="TryTransitionBridgeStatusAsync"/> /
-///   <see cref="TryTransitionOperationStatusAsync"/> /
-///   <see cref="ForceCompleteBridgeAsync"/> hold the store lock for the
+///   <see cref="TryTransitionOperationStatusAsync"/> hold the store lock for the
 ///   predicate-check + mutation, so under concurrent calls exactly one caller
 ///   sees affected==1 and the rest see 0. Same arbitration the EF
 ///   <c>ExecuteUpdateAsync</c> + DB row lock provides.
@@ -191,6 +190,7 @@ public sealed class FakeBridgeStore : IBridgeStore
                 if (alsoSet.RedemptionTxHash is not null)     row.RedemptionTxHash = alsoSet.RedemptionTxHash;
                 if (alsoSet.MintTxHash is not null)           row.MintTxHash = alsoSet.MintTxHash;
                 if (alsoSet.TargetTokenId is not null)        row.TargetTokenId = alsoSet.TargetTokenId;
+                if (alsoSet.ProofData is not null)            row.ProofData = alsoSet.ProofData;
                 if (alsoSet.WormholeEmitterChainId is not null)  row.WormholeEmitterChainId = alsoSet.WormholeEmitterChainId;
                 if (alsoSet.WormholeEmitterAddress is not null)  row.WormholeEmitterAddress = alsoSet.WormholeEmitterAddress;
                 if (alsoSet.WormholeSequence is not null)        row.WormholeSequence = alsoSet.WormholeSequence;
@@ -222,18 +222,6 @@ public sealed class FakeBridgeStore : IBridgeStore
             if (_bridges.TryGetValue(id, out var row)) row.ErrorMessage = errorMessage;
         }
         return Task.CompletedTask;
-    }
-
-    public Task<int> ForceCompleteBridgeAsync(string id, CancellationToken ct = default)
-    {
-        lock (_lock)
-        {
-            if (!_bridges.TryGetValue(id, out var row)) return Task.FromResult(0);
-            if (row.Status == BridgeStatus.Completed) return Task.FromResult(0);
-            row.Status = BridgeStatus.Completed;
-            row.CompletedAt = DateTime.UtcNow;
-            return Task.FromResult(1);
-        }
     }
 
     public Task<IReadOnlyList<string>> GetFailedBridgesWithLockedFundsAsync(

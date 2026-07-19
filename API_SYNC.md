@@ -42,13 +42,17 @@ This document tracks drift between backend endpoints and SDK method coverage. Us
 | | /api/avatarnft/{id}/transfer | POST | `transferAvatarNFT` | client.ts | OK |
 | | /api/avatarnft/{id}/burn | POST | `burnAvatarNFT` | client.ts | OK |
 | **Bridge** | /api/bridge/routes | GET | `getBridgeRoutes` | client.ts | OK |
-| | /api/bridge | POST | `initiateBridge` | client.ts | OK |
+| | /api/bridge/initiate | POST | `initiateBridge` | client.ts | OK |
 | | /api/bridge/{id} | GET | `getBridgeStatus` | client.ts | OK |
-| | /api/bridge/{id}/complete | POST | `completeBridge` | client.ts | OK |
-| | /api/bridge/{id}/vaa | POST | `fetchVAA` | client.ts | OK |
+| | /api/bridge/{id}/fetch-vaa | POST | `fetchVAA` | client.ts | OK |
 | | /api/bridge/{id}/redeem | POST | `redeemBridge` | client.ts | OK |
 | | /api/bridge/{id}/reverse | POST | `reverseBridge` | client.ts | OK |
 | | /api/bridge/history | GET | `getBridgeHistory` | client.ts | OK |
+| **Tenant custodial account** | /api/tenant/custodial-accounts/capabilities | GET | `getTenantCustodialCapabilities` | client.ts | OK |
+| | /api/tenant/custodial-accounts/{externalSubject} | PUT | `ensureTenantCustodialAccount` | client.ts | OK |
+| | /api/tenant/custodial-accounts/{externalSubject} | GET | `getTenantCustodialAccount` | client.ts | OK |
+| | /api/tenant/custodial-accounts/{externalSubject}/kyc/session | POST | `beginTenantKyc` | client.ts | OK |
+| | /api/tenant/custodial-accounts/{externalSubject}/kyc/submissions | POST | `submitTenantKyc` | client.ts | OK |
 | **BlockchainOperation** | /api/blockchainoperation/{id} | GET | `getBlockchainOperation` | client.ts | OK |
 | | /api/blockchainoperation/avatar/{avatarId} | GET | `getBlockchainOperationsByAvatar` | client.ts | OK |
 | **STARODK** | /api/starodk/{id} | GET | `getSTARODK` | client.ts | OK |
@@ -142,6 +146,14 @@ This document tracks drift between backend endpoints and SDK method coverage. Us
 
 **CI does not validate this document.** It is a manual gate at PR-review. The author of a PR touching controllers or the SDK is responsible for syncing this table before merge.
 
-**Last reconciled:** 2026-07-02 (quest-dag-semantic-hardening Phase G — publish/unpublish SDK methods added)
+**Last reconciled:** 2026-07-18 (tenant custody/KYC SDK contract and bridge route corrections)
 
 **Note:** The quests page (`frontend/src/app/(dashboard)/quests/page.tsx`) uses `azoa.api.request(...)` directly rather than the typed SDK quest methods. The publish/unpublish calls on the page are therefore direct HTTP calls, not `publishQuest`/`unpublishQuest`. The typed SDK methods exist for external SDK consumers. This gap is tracked as part of the existing quest sub-resource SDK gap (row 8 in "Open Drift" above).
+
+## Next integration track
+
+The next named track is **Arda Nova financial workflow conformance**. It should
+consume the public Azoa API/SDK contract as a partner dependency, add end-to-end
+coverage for Arda Nova onboarding and financial workflows, and keep a clean
+versioned seam so future agents and external partners do not depend on Azoa
+internals or a shared repository checkout.

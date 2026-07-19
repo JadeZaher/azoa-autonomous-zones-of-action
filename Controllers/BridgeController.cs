@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Responses;
@@ -8,11 +9,8 @@ using AZOA.WebAPI.Models.Responses;
 namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
-/// Cross-chain bridge endpoints supporting both trusted (custodial)
-/// and trustless (Wormhole) bridging modes.
-///
-/// Trusted flow:  POST /initiate → Completed immediately
-/// Wormhole flow: POST /initiate → POST /{id}/fetch-vaa → POST /{id}/redeem
+/// Cross-chain bridge endpoints. Launch initiation is limited to providers
+/// that advertise the complete trusted custody lifecycle; Wormhole is blocked.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -27,7 +25,7 @@ public class BridgeController : ControllerBase
     }
 
     /// <summary>
-    /// Get all supported bridge routes between chains (including Wormhole availability).
+    /// Get all supported bridge routes between chains.
     /// </summary>
     [HttpGet("routes")]
     [ProducesResponseType(typeof(IEnumerable<BridgeRouteInfo>), 200)]
@@ -41,9 +39,7 @@ public class BridgeController : ControllerBase
     }
 
     /// <summary>
-    /// Initiate a cross-chain bridge.
-    /// Set mode to "Wormhole" for trustless bridging (requires follow-up VAA fetch + redeem).
-    /// Defaults to the server-configured default mode.
+    /// Initiate a trusted bridge on a complete, server-controlled route.
     /// </summary>
     [HttpPost("initiate")]
     [EnableRateLimiting("financial")]
@@ -53,16 +49,14 @@ public class BridgeController : ControllerBase
         [FromBody] BridgeInitiateRequest request,
         CancellationToken ct)
     {
-        var avatarId = GetAvatarId();
+        if (!TryGetAvatarId(out var avatarId))
+            return Unauthorized();
 
-        // Amount is a precision-safe string on the wire; reject non-positive or
-        // out-of-range before handing to the service. The service amount
-        // parameter is still int — values above int.MaxValue are rejected here
-        // until that signature is widened to string end-to-end.
-        if (!System.Numerics.BigInteger.TryParse(request.Amount, out var amount) || amount <= 0)
-            return BadRequest(new { error = "Amount must be a positive integer." });
-        if (amount > int.MaxValue)
-            return BadRequest(new { error = "Amount exceeds the currently supported bridge range." });
+        // Amount is a precision-safe string on the wire and is parsed once into
+        // the provider-safe unsigned base-unit range.
+        if (!ulong.TryParse(request.Amount, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var amount) || amount == 0)
+            return BadRequest(new { error = "Amount must be a positive unsigned 64-bit integer." });
 
         // Optional client Idempotency-Key — avatar-namespaced by the service so a
         // retried initiate collapses to one chain effect without cross-avatar collisions.
@@ -71,7 +65,7 @@ public class BridgeController : ControllerBase
 
         var result = await _bridgeService.InitiateBridgeAsync(
             request.SourceChain, request.TargetChain, request.TokenId,
-            request.RecipientAddress, avatarId, (int)amount,
+            request.RecipientAddress, avatarId, amount,
             request.Mode, ct, idempotencyKey);
 
         if (result.IsError)
@@ -90,7 +84,9 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(404)]
     public async Task<IActionResult> FetchVAA(string id, CancellationToken ct)
     {
-        var result = await _bridgeService.FetchVAAAsync(id, ct, GetAvatarId());
+        if (!TryGetAvatarId(out var avatarId))
+            return Unauthorized();
+        var result = await _bridgeService.FetchVAAAsync(id, ct, avatarId);
         if (result.IsError)
         {
             if (result.Message.Contains("not found"))
@@ -113,28 +109,16 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(404)]
     public async Task<IActionResult> RedeemWithVAA(string id, CancellationToken ct)
     {
+        if (!TryGetAvatarId(out var avatarId))
+            return Unauthorized();
         var idempotencyKey = ReadIdempotencyKey();
-        var result = await _bridgeService.RedeemWithVAAAsync(id, ct, idempotencyKey, GetAvatarId());
+        var result = await _bridgeService.RedeemWithVAAAsync(id, ct, idempotencyKey, avatarId);
         if (result.IsError)
         {
             if (result.Message.Contains("not found"))
                 return NotFound(result.ToErrorPayload());
             return BadRequest(result.ToErrorPayload());
         }
-
-        return Ok(result.Result);
-    }
-
-    /// <summary>
-    /// Mark a bridge transaction as completed (trusted mode).
-    /// </summary>
-    [HttpPost("{id}/complete")]
-    [ProducesResponseType(typeof(BridgeTransactionResult), 200)]
-    public async Task<IActionResult> CompleteBridge(string id, CancellationToken ct)
-    {
-        var result = await _bridgeService.CompleteBridgeAsync(id, ct, GetAvatarId());
-        if (result.IsError)
-            return NotFound(result.ToErrorPayload());
 
         return Ok(result.Result);
     }
@@ -150,8 +134,10 @@ public class BridgeController : ControllerBase
         [FromBody] BridgeReverseRequest request,
         CancellationToken ct)
     {
+        if (!TryGetAvatarId(out var avatarId))
+            return Unauthorized();
         var idempotencyKey = ReadIdempotencyKey();
-        var result = await _bridgeService.ReverseBridgeAsync(id, request.SourceRecipientAddress, ct, idempotencyKey, GetAvatarId());
+        var result = await _bridgeService.ReverseBridgeAsync(id, request.SourceRecipientAddress, ct, idempotencyKey, avatarId);
         if (result.IsError)
             return BadRequest(result.ToErrorPayload());
 
@@ -165,7 +151,9 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(typeof(BridgeTransactionResult), 200)]
     public async Task<IActionResult> GetBridgeStatus(string id, CancellationToken ct)
     {
-        var result = await _bridgeService.GetBridgeStatusAsync(id, ct, GetAvatarId());
+        if (!TryGetAvatarId(out var avatarId))
+            return Unauthorized();
+        var result = await _bridgeService.GetBridgeStatusAsync(id, ct, avatarId);
         if (result.IsError)
             return NotFound(result.ToErrorPayload());
 
@@ -179,7 +167,8 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<BridgeTransactionResult>), 200)]
     public async Task<IActionResult> GetHistory(CancellationToken ct)
     {
-        var avatarId = GetAvatarId();
+        if (!TryGetAvatarId(out var avatarId))
+            return Unauthorized();
         var result = await _bridgeService.GetBridgeHistoryAsync(avatarId, ct);
         if (result.IsError)
             return BadRequest(result.ToErrorPayload());
@@ -204,26 +193,13 @@ public class BridgeController : ControllerBase
         return null;
     }
 
-    private Guid GetAvatarId()
+    private bool TryGetAvatarId(out Guid avatarId)
     {
         var avatarClaim = User.FindFirst("avatarId")?.Value;
-        if (Guid.TryParse(avatarClaim, out var avatarId))
-            return avatarId;
+        if (!string.IsNullOrWhiteSpace(avatarClaim))
+            return Guid.TryParse(avatarClaim, out avatarId) && avatarId != Guid.Empty;
 
-        // Fallback: try NameIdentifier claim (sub)
-        var subClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                     ?? User.FindFirst("sub")?.Value;
-        if (Guid.TryParse(subClaim, out var subId))
-            return subId;
-
-        // Last resort: derive a deterministic GUID from the identity name
-        var userId = User.Identity?.Name
-                  ?? User.FindFirst("client_id")?.Value
-                  ?? "anonymous";
-        var bytes = System.Text.Encoding.UTF8.GetBytes(userId);
-        var guidBytes = new byte[16];
-        Array.Copy(bytes, guidBytes, Math.Min(bytes.Length, 16));
-        return new Guid(guidBytes);
+        return AzoaClaims.TryGetSubjectId(User, out avatarId) && avatarId != Guid.Empty;
     }
 }
 
@@ -237,9 +213,8 @@ public class BridgeInitiateRequest
     public string RecipientAddress { get; set; } = string.Empty;
 
     /// <summary>
-    /// Bridge amount in base units, as a decimal string for arbitrary precision
-    /// (18-decimal base units overflow int). Validated as a positive integer by
-    /// <c>BridgeInitiateRequestValidator</c>.
+    /// Bridge amount in base units as a decimal string in the provider-safe
+    /// unsigned 64-bit range.
     /// </summary>
     public string Amount { get; set; } = "1";
 

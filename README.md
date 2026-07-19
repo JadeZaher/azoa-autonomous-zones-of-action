@@ -78,6 +78,22 @@ configuration, and rail credentials are operator responsibilities that AZOA
 documents and gates explicitly (see `RUNBOOK.md` and the residual-risk runbook),
 rather than pretending a config it can't verify is safe.
 
+### Operate the node from the node
+
+Each deployment seeds one durable, reserved node-operator identity from
+host-managed `NodeOperator__*` variables. Its dedicated, short-lived session is
+separate from avatar login and tenant API keys. After deployment, the operator
+can sign in at `/operator/login` to see node readiness, configure secret-free
+KYC provider policy, assign providers to tenants, and work the bounded review
+queue. Provider credentials, webhook secrets, and the operator password never
+leave Railway or the host secret store.
+
+KYC is multi-tenant and fail-closed. A provider becomes selectable only when
+its installed adapter, host configuration, secrets, and versioned policy are
+all ready. Each tenant then selects from that ready catalog in its own `/kyc`
+profile. Provider or policy changes advance trust state, so approvals tied to
+an older profile cannot silently authorize value actions.
+
 ## Open source
 
 AZOA is licensed under the [Apache License, Version 2.0](LICENSE). It is meant
@@ -90,12 +106,14 @@ the responsibility pattern above end to end.
 
 Pre-launch (Alpha Gate). The core platform features have been shipped and hardened:
 - **User Self-Sovereignty & Consent Delegation**: Shipped and code-complete. End users own their avatars (wallet-challenge login, ed25519), and tenants can only act on behalf of an avatar under a live, revocable `ConsentGrant`. The security review has been completed and all findings remediated (commit `10e5dad`).
+- **Tenant onboarding + Azoa-owned KYC control plane**: The authenticated tenant can idempotently ensure one avatar identity per external subject, begin or submit KYC from a profile flow, and read a secret-free readiness projection. Wallet creation is limited to explicit Development simulation until a reviewed production custody adapter exists. See [`docs/TENANT-CUSTODIAL-ONBOARDING.md`](docs/TENANT-CUSTODIAL-ONBOARDING.md).
+- **Node operator control plane**: A reserved, revisioned operator identity and mobile-first `/operator` console expose deployment readiness, KYC provider/tenant policy, and human review without exposing host secrets. See [`docs/NODE-HOST.md`](docs/NODE-HOST.md) §8.9.
 - **Durable Quests & Stepwise Execution**: Shipped. Features stepwise saga execution (`QuestNodeStepHandler`), run-scoped variable data bindings (`run.<node>.<field>`), control-cascade skips (failed check nodes stop downstream payout chains), and publish-time semantic/executability validation.
 - **Visual Quest Builder**: Shipped. Replaced the legacy JSON textarea builder with an interactive drag-and-drop React Flow builder interface in the Next.js frontend.
 - **SurrealDB Persistence Cutover**: Shipped. SurrealDB is the sole persistent data engine backing the WebAPI, operating with RocksDB-backed G1 durability.
 - **API Key Scopes & Allowed Origins**: Dynamic CORS allowed origins per API key is implemented / in-flight to secure public and developer-scoped SDK requests.
 
-The solution contains 1,330 unit tests (1,329 passing / 1 skipped) and 216 passing integration tests running under isolated namespaces. Real value transfers on Solana/Wormhole routes remain disabled (`RealValueEnabled=false` safety switch) pending upcoming chain-value-routes work. See `conductor/tracks.md` for the full roadmap.
+The repository includes unit, integration, schema-equivalence, and release-contract suites. All real-value bridge routes are disabled by default (`RealValueEnabled=false`) and remain non-launchable: no provider currently implements the complete reviewed lock/mint/burn/release plus production-custody lifecycle. Simulated routes remain available for development. See `conductor/tracks.md` for the full roadmap.
 
 ## Under the hood
 
@@ -108,7 +126,7 @@ A quick orientation for contributors:
   truth; balances are read, never stored.
 - **@azoa/sdk** — TypeScript SDK (`AzoaClient` facade) with pluggable
   `ChainProvider` and `DexAdapter` points.
-- **Next.js 14 frontend** — reference UI, including a visual quest builder.
+- **Next.js 16 frontend** — reference UI, including a visual quest builder.
 
 ### Repo layout
 
@@ -120,7 +138,7 @@ A quick orientation for contributors:
 - `https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.*` — SurrealDB toolkit (C#-first schema authoring +
   Roslyn injection-guard analyzer)
 - `sdk/azoa-wallet/` — TypeScript SDK
-- `frontend/` — Next.js 14 app
+- `frontend/` — Next.js 16 app
 - `conductor/tracks/` — narrative tracks documenting every shipped feature and
   the decisions behind it
 - `tests/` — xUnit unit + integration projects
@@ -149,6 +167,12 @@ cd frontend && npm install && npm run dev
 This brings up SurrealDB, the WebAPI, and the frontend via
 `docker-compose.dev.yml`, then applies the schema. Tear down with
 `./dev-down.sh`.
+
+The local composition seeds the development-only operator credentials
+`node-operator` / `azoa-local-operator-only-2026`; open
+`http://localhost:3000/operator/login`. Override `AZOA_NODE_OPERATOR_*` before
+sharing a development environment. Production uses a generated host secret and
+must never reuse the local convenience password.
 
 **Self-hosting / running a node:** AZOA is meant to be self-hosted. To stand up
 and run a real node (the .NET 10 WebAPI + the SurrealDB it owns) beyond the local

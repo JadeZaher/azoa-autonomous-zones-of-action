@@ -26,6 +26,8 @@ the local cookie. Operator sessions are capped by the API at 30 minutes.
 
 The UI may edit only secret-free provider policy: display name, enabled state,
 policy version, and assurance level. Adapter identity is immutable in this UI.
+The shared operator contract caps display names at 80 characters in both the
+form and BFF, matching the backend manager boundary.
 Provider API keys, webhook secrets, operator credentials, and deployment
 secrets remain in Railway or another host secret store. The console may report
 `requiredConfigurationKeys`, `missingConfigurationKeys`, configured booleans,
@@ -58,10 +60,24 @@ clears its scoped cookie and returns through `/operator/login`; tenant
 self-service offers `/login`. Both validate an internal return path so the
 person resumes the page where the action began.
 
+## Audit history
+
+`/operator/audit` is a read-only view of KYC control-plane changes. It shows
+minimized before/after policy fields, tenant/provider references, the
+token-derived actor reference, revision, and timestamp. It must never infer or
+display provider credentials, verification payloads, document references,
+identity evidence, or session material.
+
+The BFF accepts only `limit`, opaque base64url `cursor`, canonical `tenantId`,
+canonical lowercase `providerKey`, and the three stable action filters. Unknown,
+duplicate, oversized, or malformed query values fail at the same-origin
+boundary. Cursors are round-tripped unchanged; the browser treats them only as
+opaque pagination tokens.
+
 ## Interaction rules
 
 - Operator and tenant actions use at least 44px touch targets.
 - Consequential changes require an impact confirmation tied to the exact draft.
 - Rejection requires a reason; the reviewer identity is token-derived.
 - Conflicts refresh canonical state and explain why the draft was reset.
-- Monitoring is presented as a point-in-time snapshot, never a fake live feed.
+- Monitoring states when data was generated and never implies a live feed.

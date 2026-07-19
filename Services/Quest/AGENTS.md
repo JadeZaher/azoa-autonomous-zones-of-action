@@ -252,9 +252,11 @@ rails** — no new value primitive. Two Tier-2 nodes wrap the real Phase-B bridg
   `$from`-bound to the upstream Bridge node's output `id`.
 
 **Security discipline (reviewer-checked):**
-- **No fabricated success.** Both route through the real bridge, which is
-  fail-closed for unimplemented paths (Solana lock/burn) and gated by the
-  `RealValueEnabled` kill switch. A service error maps to a Failed node.
+- **No fabricated success.** Both route through the real bridge, which requires
+  providers to advertise the complete lock/mint/burn/release lifecycle and is
+  gated by the `RealValueEnabled` kill switch. Real providers remain fail-closed;
+  only the simulated route currently advertises the full capability. A service
+  error maps to a Failed node.
 - **Idempotency.** Each node seeds `{runId}:{nodeId}` as the client idempotency
   key; the bridge service avatar-namespaces it, so a re-evaluated node dedupes to
   ONE irreversible lock/burn — no double-bridge / double-burn.

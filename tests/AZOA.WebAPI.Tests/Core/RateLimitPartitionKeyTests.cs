@@ -35,6 +35,50 @@ public sealed class RateLimitPartitionKeyTests
             .Be("apikey:6a4575a6-4187-46ad-a248-baa0b9823138");
     }
 
+    [Fact]
+    public void TenantCustodialPartition_IsStablePerTenantAndExternalSubject()
+    {
+        var tenantId = Guid.NewGuid().ToString("D");
+        var first = new DefaultHttpContext { User = Principal(new Claim(ClaimTypes.NameIdentifier, tenantId)) };
+        var same = new DefaultHttpContext { User = Principal(new Claim(ClaimTypes.NameIdentifier, tenantId)) };
+        var other = new DefaultHttpContext { User = Principal(new Claim(ClaimTypes.NameIdentifier, tenantId)) };
+        first.Request.RouteValues["externalSubject"] = "arda-user-42";
+        same.Request.RouteValues["externalSubject"] = " arda-user-42 ";
+        other.Request.RouteValues["externalSubject"] = "arda-user-43";
+
+        var firstKey = RateLimitPartitionKey.ResolveTenantSubject(first);
+
+        firstKey.Should().Be(RateLimitPartitionKey.ResolveTenantSubject(same));
+        firstKey.Should().NotBe(RateLimitPartitionKey.ResolveTenantSubject(other));
+        firstKey.Should().StartWith($"tenant-subject:{tenantId}:");
+        firstKey.Should().NotContain("arda-user-42");
+    }
+
+    [Fact]
+    public void TenantApiKeys_ShareTenantAggregatePartitionAcrossKeyRotation()
+    {
+        var tenantId = Guid.NewGuid().ToString("D");
+        var first = new DefaultHttpContext
+        {
+            User = Principal(
+                new Claim("AuthMethod", "ApiKey"),
+                new Claim("ApiKeyId", Guid.NewGuid().ToString("D")),
+                new Claim(ClaimTypes.NameIdentifier, tenantId),
+                new Claim("scope", AZOA.WebAPI.Core.AzoaScopes.TenantProvision))
+        };
+        var rotated = new DefaultHttpContext
+        {
+            User = Principal(
+                new Claim("AuthMethod", "ApiKey"),
+                new Claim("ApiKeyId", Guid.NewGuid().ToString("D")),
+                new Claim(ClaimTypes.NameIdentifier, tenantId),
+                new Claim("scope", AZOA.WebAPI.Core.AzoaScopes.TenantProvision))
+        };
+
+        RateLimitPartitionKey.Resolve(first).Should().Be($"tenant:{tenantId}");
+        RateLimitPartitionKey.Resolve(rotated).Should().Be($"tenant:{tenantId}");
+    }
+
     private static DefaultHttpContext AnonymousContext(string apiKey)
     {
         var context = new DefaultHttpContext();

@@ -30,7 +30,11 @@ public static class HealthCheckExtensions
             .AddCheck<ProviderHealthMonitorHealthCheck>(
                 name: "provider-monitor",
                 failureStatus: HealthStatus.Degraded,
-                tags: ["ready", "providers"]);
+                tags: ["ready", "providers"])
+            .AddCheck<RealValueReadinessHealthCheck>(
+                name: "real-value-configuration",
+                failureStatus: HealthStatus.Unhealthy,
+                tags: ["ready", "blockchain"]);
 
         return services;
     }

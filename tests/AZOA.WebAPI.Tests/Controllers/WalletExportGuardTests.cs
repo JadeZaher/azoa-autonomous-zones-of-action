@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using AZOA.WebAPI.Controllers;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
@@ -54,6 +55,7 @@ public class WalletExportGuardTests
         // act_as_tenant. The shared subject is exactly what makes the bypass possible.
         var principal = PrincipalWith(
             new Claim(ClaimTypes.NameIdentifier, avatarId.ToString()),
+            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseChild),
             new Claim("act_as_tenant", tenantId.ToString()));
         var controller = BuildController(principal);
 
@@ -72,7 +74,9 @@ public class WalletExportGuardTests
         var avatarId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
         // A plain user login: sub but NO act_as_tenant.
-        var principal = PrincipalWith(new Claim(ClaimTypes.NameIdentifier, avatarId.ToString()));
+        var principal = PrincipalWith(
+            new Claim(ClaimTypes.NameIdentifier, avatarId.ToString()),
+            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin));
         var controller = BuildController(principal);
 
         _walletManager.Setup(m => m.ExportWalletAsync(walletId, avatarId, It.IsAny<AZOARequest>()))
@@ -90,6 +94,7 @@ public class WalletExportGuardTests
         var result = await controller.Export(walletId, null);
 
         result.Result.Should().BeOfType<OkObjectResult>();
+        controller.Response.Headers.CacheControl.ToString().Should().Be("no-store");
         // The user's own export DOES go through to the manager.
         _walletManager.Verify(m => m.ExportWalletAsync(walletId, avatarId, It.IsAny<AZOARequest>()), Times.Once);
     }
@@ -104,6 +109,21 @@ public class WalletExportGuardTests
         var result = await controller.Export(Guid.NewGuid(), null);
 
         result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        _walletManager.Verify(m => m.ExportWalletAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<AZOARequest>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Export_ApiKeyPrincipal_IsForbidden()
+    {
+        var avatarId = Guid.NewGuid();
+        var controller = BuildController(PrincipalWith(
+            new Claim(ClaimTypes.NameIdentifier, avatarId.ToString()),
+            new Claim("AuthMethod", "ApiKey")));
+
+        var result = await controller.Export(Guid.NewGuid(), null);
+
+        result.Result.Should().BeOfType<ForbidResult>();
         _walletManager.Verify(m => m.ExportWalletAsync(
             It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<AZOARequest>()), Times.Never);
     }

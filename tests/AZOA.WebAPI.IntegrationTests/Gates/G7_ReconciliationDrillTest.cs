@@ -331,7 +331,7 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
 
         public Task<AZOAResult<string>> MintWrappedAsync(
             string sourceChain, string sourceTokenId, string tokenUri,
-            int amount, string recipientAddress, CancellationToken ct = default) =>
+            ulong amount, string recipientAddress, CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(MintWrappedAsync));
 
         public Task<AZOAResult<string>> BurnAsync(
@@ -340,7 +340,7 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             MutationNotExpected<string>(nameof(BurnAsync));
 
         public Task<AZOAResult<string>> BurnWrappedAsync(
-            string tokenId, int amount, string sourceChain,
+            string tokenId, ulong amount, string sourceChain,
             string sourceRecipient, string walletAddress, CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(BurnWrappedAsync));
 
@@ -384,9 +384,14 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             MutationNotExpected<Dictionary<string, object>>(nameof(GetChainInfoAsync));
 
         public Task<AZOAResult<string>> LockForBridgeAsync(
-            string tokenId, string vaultAddress, int amount,
+            string tokenId, string vaultAddress, ulong amount,
             string targetChain, string targetRecipient, CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(LockForBridgeAsync));
+
+        public Task<AZOAResult<string>> ReleaseFromBridgeAsync(
+            string tokenId, string vaultAddress, ulong amount,
+            string recipientAddress, CancellationToken ct = default) =>
+            MutationNotExpected<string>(nameof(ReleaseFromBridgeAsync));
 
         // VerifyBridgeProofAsync removed from IBlockchainProvider (B2) — no stub needed.
 

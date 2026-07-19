@@ -26,6 +26,12 @@ const res = await azoa.workflow.templates /* … */;
 if (isOk(res)) { /* res.value */ } else { /* res.error: SdkError */ }
 ```
 
+Bridge base-unit amounts are decimal strings in both request and response
+contracts. This preserves every value through `ulong.MaxValue` without crossing
+JavaScript's unsafe-number boundary. Tenant custody capabilities and KYC session
+responses also expose `developmentSimulation`; integrations should display that
+state and must not present simulated verification as production KYC.
+
 ---
 
 ## Workflow SDK (`azoa.workflow`)

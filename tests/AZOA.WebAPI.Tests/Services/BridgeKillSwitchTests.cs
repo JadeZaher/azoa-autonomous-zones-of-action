@@ -13,6 +13,7 @@ using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
+using AZOA.WebAPI.Tests.TestSupport;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -46,7 +47,8 @@ public class BridgeKillSwitchTests
             idempotencyStore.Object,
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = realValueEnabled }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
 
         return (svc, bridgeStore, idempotencyStore);
     }
@@ -145,7 +147,8 @@ public class BridgeKillSwitchTests
             idempotencyStore.Object,
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = false }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
 
         var result = await svc.InitiateBridgeAsync(
             "SimChainA", "SimChainB", "tok1", "addr", Guid.NewGuid(), 1, BridgeMode.Trusted);
@@ -223,15 +226,19 @@ public class BridgeKillSwitchTests
                 CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
             }));
 
+        var wormholeConfig = new WormholeConfig { DefaultMode = BridgeMode.Trusted };
+        wormholeConfig.BridgeVaults["Solana"].VaultAddress = "test-solana-bridge-vault";
+
         var svc = new CrossChainBridgeService(
             factory.Object,
             Mock.Of<IWormholeAdapter>(),
-            Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Trusted }),
+            Options.Create(wormholeConfig),
             bridgeStore.Object,
             idempotencyStore.Object,
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
 
         var result = await svc.InitiateBridgeAsync(
             "Solana", "Algorand", "tok1", "addr", Guid.NewGuid(), 1, BridgeMode.Trusted);
@@ -308,7 +315,8 @@ public class BridgeKillSwitchTests
             idempotencyStore.Object,
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = false }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
 
         // Redeem must be refused before TryClaimAsync.
         var redeemResult = await svc.RedeemWithVAAAsync("wh_bridge_test");
@@ -371,7 +379,8 @@ public class BridgeKillSwitchTests
             new Mock<IIdempotencyStore>().Object,
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = false }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
 
         var routesOff = (await svcOff.GetSupportedRoutesAsync()).Result!.ToList();
 
@@ -395,7 +404,8 @@ public class BridgeKillSwitchTests
             new Mock<IIdempotencyStore>().Object,
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
 
         var routesOn = (await svcOn.GetSupportedRoutesAsync()).Result!.ToList();
 

@@ -22,6 +22,12 @@ public static class AzoaScopes
     /// <summary>A child credential may create/manage wallets for its avatar.</summary>
     public const string WalletManage = "wallet:manage";
 
+    /// <summary>May read the avatar's minimal authoritative KYC status projection.</summary>
+    public const string KycRead = "kyc:read";
+
+    /// <summary>May begin and submit KYC verification for a tenant-correlated avatar.</summary>
+    public const string KycSubmit = "kyc:submit";
+
     /// <summary>
     /// security-review HIGH-2: the operator/admin capability that gates the
     /// destructive cross-avatar admin surfaces (key rotation, data backfill). It is
@@ -177,6 +183,8 @@ public static class AzoaScopes
             DappDevelop,
             DappManage,
             WalletManage,
+            KycRead,
+            KycSubmit,
             NftMint,
             QuestExecute,
             SwapSign,
@@ -209,6 +217,8 @@ public static class AzoaScopes
             [DappDevelop]     = "Author/edit holons, quests, and dApp-series (the dApp-developer write surface).",
             [DappManage]      = "Manage DApp lifecycle actions such as compose, generate, deploy, and membership.",
             [WalletManage]    = "Create and manage wallets.",
+            [KycRead]         = "Read a minimal authoritative KYC status.",
+            [KycSubmit]       = "Begin and submit identity verification.",
             [NftMint]         = "Mint, transfer, and burn NFTs.",
             [QuestExecute]    = "Execute quests (non-value participation).",
             [SwapSign]        = "Sign a token swap with the avatar's key.",

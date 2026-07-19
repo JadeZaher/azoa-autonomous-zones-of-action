@@ -35,6 +35,7 @@ public sealed class AllocationManager : IAllocationManager
     private readonly IIdempotencyStore _idempotencyStore;
     private readonly INodeGovernanceGuard _nodeGovernance;
     private readonly INodeFeeScheduleManager _nodeFees;
+    private readonly IAvatarStore? _avatars;
 
     public AllocationManager(
         IKycGateService kycGate,
@@ -45,7 +46,8 @@ public sealed class AllocationManager : IAllocationManager
         IBlockchainOperationManager blockchainOps,
         IIdempotencyStore idempotencyStore,
         INodeFeeScheduleManager nodeFees,
-        INodeGovernanceGuard? nodeGovernance = null)
+        INodeGovernanceGuard? nodeGovernance = null,
+        IAvatarStore? avatars = null)
     {
         _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
         _walletManager = walletManager ?? throw new ArgumentNullException(nameof(walletManager));
@@ -56,6 +58,7 @@ public sealed class AllocationManager : IAllocationManager
         _idempotencyStore = idempotencyStore ?? throw new ArgumentNullException(nameof(idempotencyStore));
         _nodeGovernance = nodeGovernance ?? NodeGovernanceGuard.Unrestricted;
         _nodeFees = nodeFees ?? throw new ArgumentNullException(nameof(nodeFees));
+        _avatars = avatars;
     }
 
     /// <inheritdoc />
@@ -73,6 +76,15 @@ public sealed class AllocationManager : IAllocationManager
             return AZOAResult<AllocationResult>.Failure("ChainType is required.");
         if (string.IsNullOrWhiteSpace(apiKeyId))
             return AZOAResult<AllocationResult>.Failure("Caller API key context is required.");
+        if (actingTenantId is { } tenantId)
+        {
+            if (tenantId != callerAvatarId || _avatars is null)
+                return AZOAResult<AllocationResult>.Failure("Tenant allocation authority is unavailable.");
+            var target = await _avatars.GetByIdAsync(avatarId);
+            if (target.IsError || target.Result is null || target.Result.OwnerTenantId != tenantId)
+                return AZOAResult<AllocationResult>.Failure(
+                    TenantAuthorizationError.NotFound + "Custodial avatar not found.");
+        }
 
         var governance = await _nodeGovernance.EnsureAllowedAsync(
             request.ChainType,
@@ -102,7 +114,9 @@ public sealed class AllocationManager : IAllocationManager
             // Per D3, the value-bearing allocation is gated. Provisioning may
             // precede approval, but we gate before generating the wallet too so
             // a rejected avatar produces NO side effect at all under a won claim.
-            var gate = await _kycGate.RequireVerifiedAsync(avatarId);
+            var gate = actingTenantId.HasValue
+                ? await _kycGate.RequireVerifiedAsync(avatarId, actingTenantId.Value)
+                : await _kycGate.RequireVerifiedAsync(avatarId);
             if (gate.IsError)
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, gate.Message, CancellationToken.None);

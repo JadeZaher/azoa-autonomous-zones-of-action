@@ -25,9 +25,30 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.dev.yml"
 
+SOURCE_REVISION="$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || true)"
+if ! printf '%s' "$SOURCE_REVISION" | grep -Eq '^[0-9a-f]{40}$'; then
+    echo "[dev-up] FATAL: unable to resolve a 40-character Git SOURCE_REVISION." >&2
+    exit 1
+fi
+export SOURCE_REVISION
+
 if [ ! -f "$COMPOSE_FILE" ]; then
     echo "[dev-up] FATAL: $COMPOSE_FILE not found." >&2
     exit 1
+fi
+
+COMPOSE_OVERRIDE_FILE=""
+if [ -n "${AZOA_SURREAL_VOLUME_NAME:-}" ]; then
+    if ! printf '%s' "$AZOA_SURREAL_VOLUME_NAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]*$'; then
+        echo "[dev-up] FATAL: AZOA_SURREAL_VOLUME_NAME must be a Docker/Podman-safe volume name." >&2
+        exit 1
+    fi
+    COMPOSE_OVERRIDE_FILE="$SCRIPT_DIR/docker-compose.qa-volume.yml"
+    if [ ! -f "$COMPOSE_OVERRIDE_FILE" ]; then
+        echo "[dev-up] FATAL: $COMPOSE_OVERRIDE_FILE not found." >&2
+        exit 1
+    fi
+    echo "[dev-up] Using isolated SurrealDB volume: $AZOA_SURREAL_VOLUME_NAME"
 fi
 
 # ── Detect compose runtime ────────────────────────────────────────────────────
@@ -68,6 +89,17 @@ COMPOSE="$(find_compose)" || {
 
 echo "[dev-up] Using compose runtime: $COMPOSE"
 
+compose_run() {
+    if [ -n "$COMPOSE_OVERRIDE_FILE" ]; then
+        # COMPOSE intentionally word-splits `docker compose` / `podman compose`.
+        # shellcheck disable=SC2086
+        $COMPOSE -f "$COMPOSE_FILE" -f "$COMPOSE_OVERRIDE_FILE" "$@"
+    else
+        # shellcheck disable=SC2086
+        $COMPOSE -f "$COMPOSE_FILE" "$@"
+    fi
+}
+
 # ── Parse args ────────────────────────────────────────────────────────────────
 #
 # Defaults mirror dev-up.ps1:
@@ -102,13 +134,20 @@ done
 DO_REBUILD=1
 [ "$NO_BUILD" -eq 1 ] && DO_REBUILD=0
 
+# The API container entrypoint owns ordinary schema application. For an
+# explicit reset, start it without `up`; reset is
+# invoked below through the packaged CLI inside the running API container.
+if [ "$DO_RESET_SCHEMA" -eq 1 ]; then
+    export AZOA_SKIP_MIGRATIONS=1
+fi
+
 PROJECT_NAME="$(basename "$SCRIPT_DIR")"
 
 # ── Teardown (default: preserve volume; --reset-db to wipe) ──────────────────
 
 if [ "$DO_WIPE" -eq 1 ]; then
     echo "[dev-up] --reset-db: tearing down stack + wiping database and cursor-key volumes..."
-    $COMPOSE -f "$COMPOSE_FILE" down -v --remove-orphans || true
+    compose_run down -v --remove-orphans || true
     if [ "${COMPOSE%% *}" = "podman" ] || [ "${COMPOSE%% *}" = "podman-compose" ]; then
         VOL_RUNTIME=podman
     else
@@ -232,7 +271,7 @@ prebuild_for_podman() {
     fi
     echo "[dev-up] podman runtime detected -- pre-building images per Dockerfile"
     echo "[dev-up]   (works around podman-compose v1.5.0 'dockerfile:' bug)"
-    podman build -f Dockerfile -t "localhost/${PROJECT_NAME}_azoa-api:latest" "$SCRIPT_DIR"
+    podman build --build-arg "SOURCE_REVISION=$SOURCE_REVISION" -f Dockerfile -t "localhost/${PROJECT_NAME}_azoa-api:latest" "$SCRIPT_DIR"
     podman build -f frontend/Dockerfile -t "localhost/${PROJECT_NAME}_azoa-frontend:latest" "$SCRIPT_DIR"
 }
 
@@ -247,7 +286,10 @@ BUILD_FLAG=""
 # and triggering compose's broken builder would tag azoa-frontend with
 # the wrong image content.
 case "$COMPOSE" in
-    *podman*) BUILD_FLAG="" ;;
+    # Force Compose to reuse the explicitly-tagged images above. Some
+    # podman-compose versions rebuild services with a build section even when
+    # the expected tag exists, re-entering the broken Dockerfile selection path.
+    *podman*) BUILD_FLAG="--no-build" ;;
     *)        [ "$DO_REBUILD" -eq 1 ] && BUILD_FLAG="--build" ;;
 esac
 
@@ -259,97 +301,31 @@ NO_DEPS_FLAG=""
 
 echo "[dev-up] Starting stack ..."
 # shellcheck disable=SC2086
-$COMPOSE -f "$COMPOSE_FILE" up -d --remove-orphans $BUILD_FLAG $NO_DEPS_FLAG $COMPOSE_UP_SERVICES
+compose_run up -d --remove-orphans $BUILD_FLAG $NO_DEPS_FLAG $COMPOSE_UP_SERVICES
 
 echo "[dev-up] Stack started. Service status:"
-$COMPOSE -f "$COMPOSE_FILE" ps
+compose_run ps
 
 # ── SurrealDB schema sync ─────────────────────────────────────────────────────
 #
-# Default: `surrealforge up` -- idempotent. The CLI tracks applied files
-# via the schema_migration table, so re-running is a no-op when nothing
-# has changed and applies only pending files when there's drift.
-#
-# --reset: destructive wipe + full re-apply (delegates to the `reset` verb).
-# AZOA_SKIP_RESET=1: skip the schema step entirely (preserves DB state,
-#   useful when iterating on UI without touching schema).
+# Ordinary bundled and external-DB launches use the API container entrypoint,
+# which carries the exact schema CLI payload extracted by Dockerfile. The host
+# never restores the NuGet package as a dotnet tool (it is not tool-packaged).
+# --reset starts the API with migrations skipped, then invokes that packaged
+# CLI inside the container for an explicit destructive reset.
 
-if [ "${AZOA_SKIP_RESET:-}" = "1" ]; then
-    echo "[dev-up] AZOA_SKIP_RESET=1 set -- skipping schema sync"
+if [ "$DO_RESET_SCHEMA" -eq 1 ]; then
+    case "$COMPOSE" in
+        *podman*) SCHEMA_RUNTIME=podman ;;
+        *)        SCHEMA_RUNTIME=docker ;;
+    esac
+    echo "[dev-up] --reset: running packaged schema reset inside azoa-dev-api..."
+    "$SCHEMA_RUNTIME" exec azoa-dev-api /bin/sh -c \
+        'exec dotnet /app/schema-cli/SurrealForge.Schema.dll reset --connection "$SURREALFORGE_URL" --user "$SURREALFORGE_USER" --pass "$SURREALFORGE_PASS" --namespace "$SURREALFORGE_NS" --database "$SURREALFORGE_DB" --schemas-dir /app/persistence/SurrealDb/Generated/Schemas --migrations-dir /app/persistence/SurrealDb/Migrations --applied-by "azoa-local/dev-up-reset"'
+elif [ "${AZOA_SKIP_MIGRATIONS:-}" = "1" ]; then
+    echo "[dev-up] AZOA_SKIP_MIGRATIONS=1 -- API entrypoint skipped schema sync."
 else
-    : "${SURREALFORGE_NS:=azoa}"
-    : "${SURREALFORGE_DB:=azoa}"
-    : "${SURREALFORGE_USER:=root}"
-    : "${SURREALFORGE_PASS:=root}"
-    export SURREALFORGE_NS SURREALFORGE_DB SURREALFORGE_USER SURREALFORGE_PASS
-
-    # Schema CLI runs on the HOST. The SURREALFORGE_URL set earlier for
-    # the API container points at host.containers.internal which won't
-    # resolve here -- override for the CLI call, restore after.
-    SCHEMA_URL_BACKUP="${SURREALFORGE_URL:-}"
-    export SURREALFORGE_URL="http://127.0.0.1:${SURREALDB_HOST_PORT}"
-
-    # Wait for SurrealDB to be reachable.
-    SURREAL_READY=0
-    for _ in $(seq 1 20); do
-        if curl -sfo /dev/null --max-time 2 "$SURREALFORGE_URL/health" 2>/dev/null; then
-            SURREAL_READY=1
-            break
-        fi
-        sleep 0.5
-    done
-
-    if [ "$SURREAL_READY" -ne 1 ]; then
-        export SURREALFORGE_URL="$SCHEMA_URL_BACKUP"
-        echo "" >&2
-        echo "[dev-up] SurrealDB at http://127.0.0.1:${SURREALDB_HOST_PORT} never became reachable." >&2
-        echo "[dev-up] Dumping bundled surrealdb container state + logs to diagnose:" >&2
-        case "$COMPOSE" in
-            *podman*) RUNTIME=podman ;;
-            *)        RUNTIME=docker ;;
-        esac
-        if command -v "$RUNTIME" >/dev/null 2>&1; then
-            echo "---- $RUNTIME ps (azoa-dev-surrealdb) ----" >&2
-            "$RUNTIME" ps -a --filter 'name=azoa-dev-surrealdb' --format '{{.Status}}  {{.Names}}' 2>&1 >&2 || true
-            echo "---- $RUNTIME logs --tail=50 azoa-dev-surrealdb ----" >&2
-            "$RUNTIME" logs --tail=50 azoa-dev-surrealdb 2>&1 >&2 || true
-            echo "---- end ----" >&2
-        else
-            echo "[dev-up] (no '$RUNTIME' on PATH to dump logs)" >&2
-        fi
-        echo "" >&2
-        echo "[dev-up] Common causes:" >&2
-        echo "  * Storage URI rejected by surrealdb v3.1.4 (look for 'failed to parse' in the log above)." >&2
-        echo "  * Rootless podman volume ownership (look for 'permission denied' on /data)." >&2
-        echo "  * Port 8000 already bound on host (look for 'address already in use')." >&2
-        echo "  * Set AZOA_SKIP_RESET=1 to bypass schema sync while you investigate." >&2
-        echo "[dev-up] Aborting -- SurrealDB unreachable. Logs above should name the cause." >&2
-        exit 1
-    fi
-
-    echo ""
-    # `|| SCHEMA_EXIT=$?` captures the failure WITHOUT tripping `set -e`, so
-    # the guidance block below can actually print. A bare invocation would
-    # abort the script before SCHEMA_EXIT is read.
-    # Restore the SurrealForge.Schema CLI (pinned in .config/dotnet-tools.json).
-    dotnet tool restore >/dev/null || { echo "[dev-up] dotnet tool restore failed" >&2; exit 1; }
-    SCHEMA_EXIT=0
-    if [ "$DO_RESET_SCHEMA" -eq 1 ]; then
-        echo "[dev-up] --reset: wiping + re-applying SurrealDB schema..."
-        dotnet surrealforge reset || SCHEMA_EXIT=$?
-    else
-        echo "[dev-up] syncing SurrealDB schema (idempotent; use --reset to wipe)..."
-        dotnet surrealforge up || SCHEMA_EXIT=$?
-    fi
-    export SURREALFORGE_URL="$SCHEMA_URL_BACKUP"
-    if [ "$SCHEMA_EXIT" -ne 0 ]; then
-        if [ "$DO_RESET_SCHEMA" -eq 1 ]; then
-            echo "[dev-up] SurrealDB reset failed (exit $SCHEMA_EXIT). Set AZOA_SKIP_RESET=1 to skip, or pass --reset-db for a clean volume wipe." >&2
-        else
-            echo "[dev-up] SurrealDB up failed (exit $SCHEMA_EXIT). Set AZOA_SKIP_RESET=1 to skip, or pass --reset to force a clean schema apply." >&2
-        fi
-        exit "$SCHEMA_EXIT"
-    fi
+    echo "[dev-up] Schema sync is owned by the API container entrypoint (bundled or external SurrealDB)."
 fi
 
 echo ""
@@ -378,5 +354,5 @@ echo ""
 if [ "$TAIL_LOGS" -eq 1 ]; then
     echo ""
     echo "[dev-up] Tailing combined logs (Ctrl-C to stop):"
-    exec $COMPOSE -f "$COMPOSE_FILE" logs -f
+    compose_run logs -f
 fi

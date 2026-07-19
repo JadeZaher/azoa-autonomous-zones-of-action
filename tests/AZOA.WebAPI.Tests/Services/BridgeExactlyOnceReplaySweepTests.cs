@@ -219,7 +219,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
 
             // Trusted-flow chain primitives count invocations (exactly-once proof).
             _provider.Setup(p => p.LockForBridgeAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .Returns(() =>
                 {
@@ -228,7 +228,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
                 });
             _provider.Setup(p => p.MintWrappedAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                    It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .Returns(() =>
                 {
                     Interlocked.Increment(ref MintCalls);
@@ -252,19 +252,25 @@ public sealed class BridgeExactlyOnceReplaySweepTests
                 });
         }
 
-        public CrossChainBridgeService Bridge() => new(
-            _factory.Object,
-            WormholeMock.Object,
-            Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Trusted }),
-            BridgeStore,
-            Idempotency,
-            Mock.Of<ILogger<CrossChainBridgeService>>(),
-            Options.Create(new BridgeOptions
-            {
-                RealValueEnabled = _realValue,
-                StaleClaimTakeoverSeconds = _staleSeconds
-            }),
-            new ConfigurationBuilder().Build());
+        public CrossChainBridgeService Bridge()
+        {
+            var config = new WormholeConfig { DefaultMode = BridgeMode.Trusted };
+            config.BridgeVaults["Algorand"].VaultAddress = "test-algorand-bridge-vault";
+            return new CrossChainBridgeService(
+                _factory.Object,
+                WormholeMock.Object,
+                Options.Create(config),
+                BridgeStore,
+                Idempotency,
+                Mock.Of<ILogger<CrossChainBridgeService>>(),
+                Options.Create(new BridgeOptions
+                {
+                    RealValueEnabled = _realValue,
+                    StaleClaimTakeoverSeconds = _staleSeconds
+                }),
+                new ConfigurationBuilder().Build(),
+                new ApprovedRealValueKycGate());
+        }
 
         public ReconciliationService Recon() => new(
             BridgeStore,

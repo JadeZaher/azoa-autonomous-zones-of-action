@@ -81,24 +81,13 @@ These MUST either broadcast a real transaction and return the real tx id, or fai
 A fabricated-success `Ok(op-id)` on a value path is forbidden (it makes the bridge record
 value that never moved).
 
-**Algorand — REAL.** Uses the existing `BuildSignSubmitAsync` pipeline
-(build typed txn → canonical msgpack encode → sign via custody choke point → broadcast →
-poll to confirmation). Mirrors the mint/transfer/ASA-create precedents.
-- `LockForBridgeAsync` = platform-signed `AssetTransferTransaction` moving `amount` of the
-  ASA into the bridge `vaultAddress` (custodial-trusted model: the platform custodies the
-  locked value; the vault must have opted into the ASA out-of-band).
-- `BurnWrappedAsync` = platform-signed `AssetDestroyTransaction` on the platform-managed
-  wrapped ASA (the wrapped ASA is created by `MintWrappedAsync` with the platform as
-  manager/reserve). Destroy requires the platform to hold the full outstanding supply;
-  otherwise the tx is rejected on-chain and the error surfaces (fail-loud).
-- Sender address is derived from the **same** platform mnemonic the signer uses
-  (`AZOA:Algorand:PlatformMnemonic`, via `ResolvePlatformAddress()`) so Sender == signing
-  key. Missing mnemonic ⇒ **fail-closed** config error, never a fabricated lock.
-- Idempotency/no-double-broadcast: `BuildSignSubmitCoreAsync` never auto-retries after the
-  POST /v2/transactions send (`RetrySafety.Broadcast`); a confirm-timeout returns the tx id
-  with `OperationStatus.PendingConfirmationMarker` (success carrying the hash) so the caller
-  records Pending + TxHash and reconciliation settles it — a slow-but-valid tx is never
-  re-sent and never false-Failed.
+**Algorand — PARTIAL, therefore FAIL-CLOSED.** `LockForBridgeAsync` can broadcast a
+platform-signed ASA transfer, but `SupportsBridging` remains false because a partial
+primitive is not a safe route. The former wrapped-mint path assigned ASA control to the
+recipient and did not implement canonical platform ASA creation, recipient opt-in, then
+transfer; its paired destroy model therefore could not prove platform ownership of the
+full supply. `MintWrappedAsync`, `BurnWrappedAsync`, and `ReleaseFromBridgeAsync` now
+refuse explicitly. See `Algorand/AGENTS.md`.
 
 **Solana — FAIL-CLOSED.** `LockForBridgeAsync`, `BurnWrappedAsync`, and `MintWrappedAsync`
 return explicit errors. The Solana provider has **no** build→sign→submit pipeline: no
@@ -136,8 +125,7 @@ Until a real Solana pipeline is built to this contract, the Solana bridge primit
 fail-closed (above).
 
 ### Security invariants (reviewer checklist)
-- No fabricated-success return on any lock/burn/mint value path (Algorand broadcasts;
-  Solana fails closed).
+- No fabricated-success return on any lock/burn/mint/release value path.
 - No always-true verifier anywhere (provider-level verify removed; Wormhole path is the
   only verifier and is fail-closed).
 - Missing signer/config ⇒ explicit error, never a silent fake-Ok.

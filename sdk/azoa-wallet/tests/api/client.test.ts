@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AzoaApiClient } from "../../src/api/client.js";
 import { isOk, isErr } from "../../src/core/result.js";
+import { SdkError, SdkErrorCode } from "../../src/core/errors.js";
 import { ApiConfigBuilder } from "../builders/index.js";
 
 const mockFetch = vi.fn();
@@ -127,19 +128,55 @@ describe("AzoaApiClient", () => {
       );
     });
 
-    it("initiateBridge sends POST with BridgeInitiateRequest", async () => {
-      mockFetch.mockReturnValueOnce(bareResponse({ id: "bridge1", status: "Pending" }));
-      await client.initiateBridge({
+    it("initiateBridge preserves amounts above Number.MAX_SAFE_INTEGER exactly", async () => {
+      const amount = "9007199254740993";
+      mockFetch.mockReturnValueOnce(bareResponse({ id: "bridge1", status: "Pending", amount }));
+      const result = await client.initiateBridge({
         sourceChain: "algorand",
         targetChain: "solana",
         tokenId: "12345",
         recipientAddress: "SOLADDR",
-        amount: 100,
+        amount,
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.sourceChain).toBe("algorand");
-      expect(body.amount).toBe(100);
+      expect(body.amount).toBe(amount);
+      expect(isOk(result) && result.value.amount).toBe(amount);
+    });
+
+    it("initiateBridge rejects values above ulong.MaxValue before fetch", async () => {
+      await expect(client.initiateBridge({
+        sourceChain: "algorand",
+        targetChain: "solana",
+        tokenId: "12345",
+        recipientAddress: "SOLADDR",
+        amount: "18446744073709551616",
+      })).rejects.toThrow("between 1 and");
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["number", 1],
+      ["undefined", undefined],
+    ])("initiateBridge rejects a runtime %s amount with SdkError", async (_label, amount) => {
+      let thrown: unknown;
+      try {
+        await client.initiateBridge({
+          sourceChain: "algorand",
+          targetChain: "solana",
+          tokenId: "12345",
+          recipientAddress: "SOLADDR",
+          amount: amount as unknown as string,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(SdkError);
+      expect(thrown).toMatchObject({ code: SdkErrorCode.INVALID_INPUT });
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 

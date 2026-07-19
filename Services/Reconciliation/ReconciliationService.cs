@@ -46,12 +46,13 @@ public sealed class ReconciliationService : IReconciliationService
     private static readonly BridgeStatus[] NonTerminalBridge =
     {
         BridgeStatus.Initiated,
+        BridgeStatus.Locking,
         BridgeStatus.Locked,
         BridgeStatus.AwaitingVAA,
         BridgeStatus.VAAReady,
         BridgeStatus.Redeeming,
-        // Reversal-in-flight: still swept so a stuck reversal is flagged for
-        // MANUAL INTERVENTION (never auto-advanced/auto-reversed — see below).
+        // Reversal-in-flight: bare rows are flagged; a persisted source-release
+        // hash may advance only from positive source-chain confirmation.
         BridgeStatus.Reversing,
     };
 
@@ -170,16 +171,11 @@ public sealed class ReconciliationService : IReconciliationService
         // task 6): Initiated/Locked/AwaitingVAA with a LockTxHash → verify the
         // lock landed; we advance the lifecycle flag or flag for manual review,
         // but NEVER auto-reverse funds here.
-        // MEDIUM-3 guard (now EXPLICIT provenance): a Reversing row is a
-        // reversal in flight — CrossChainBridgeService.ReverseBridgeAsync moves
-        // Completed→Reversing, then terminal Refunded/Failed. It is NOT a redeem
-        // awaiting confirmation; advancing it would mask an in-flight
-        // refund/burn. Reconciliation MUST NOT auto-advance, auto-reverse, or
-        // otherwise mutate it (same conservative rule as the rest of the
-        // service) — the operator resolves the reversal outcome. The state is
-        // now an explicit BridgeStatus, so there is no CompletedAt/IdempotencyKey
-        // inference: a Reversing row IS reversal-in-flight, by construction.
-        if (tx.Status == BridgeStatus.Reversing)
+        // A bare Reversing row has no durable source-release proof and remains
+        // manual-only. When ProofData carries a submitted release hash, the
+        // normal probe below may advance to Refunded only from positive source
+        // confirmation; reconciliation never broadcasts either reversal leg.
+        if (tx.Status == BridgeStatus.Reversing && string.IsNullOrWhiteSpace(tx.ProofData))
         {
             _logger.LogError(
                 "Reconciliation: MANUAL INTERVENTION REQUIRED — bridge tx {BridgeId} is " +
@@ -235,7 +231,7 @@ public sealed class ReconciliationService : IReconciliationService
                 // <expected current>. If a concurrent live request already
                 // moved it, affected == 0 and we simply no-op (idempotent).
                 var expected = tx.Status;
-                var alsoSet = advanceTo == BridgeStatus.Completed
+                var alsoSet = advanceTo is BridgeStatus.Completed or BridgeStatus.Refunded
                     ? new BridgeStatusMutation { SetCompletedAtUtcNow = true }
                     : new BridgeStatusMutation { ClearCompletedAt = true };
 
@@ -253,7 +249,7 @@ public sealed class ReconciliationService : IReconciliationService
                     // may settle the owning idempotency record. Advancing to a
                     // non-terminal phase (e.g. Initiated→Locked) leaves the
                     // op in flight — the record must stay InProgress.
-                    if (advanceTo == BridgeStatus.Completed)
+                    if (advanceTo is BridgeStatus.Completed or BridgeStatus.Refunded)
                         await SettleBridgeIdempotencyAsync(
                             tx, settleCompleted: true,
                             payloadOrReason: txHash!, ct);
@@ -317,7 +313,14 @@ public sealed class ReconciliationService : IReconciliationService
         // recovery: a stale Initiated/Locked/AwaitingVAA carrying a LockTxHash
         // is verified here; we only advance the flag or (if hard-stuck and
         // indeterminate) flag for manual reversal — never reverse on-chain.
-        BridgeStatus.Initiated or BridgeStatus.Locked or BridgeStatus.AwaitingVAA
+        BridgeStatus.Initiated or BridgeStatus.Locking or BridgeStatus.AwaitingVAA
+            => (tx.LockTxHash, tx.SourceChain, BridgeStatus.Locked, "lock"),
+
+        // Locked + mint hash is a submitted target mint. Only positive target
+        // confirmation may make it Completed; without a mint hash, re-probe the lock.
+        BridgeStatus.Locked when !string.IsNullOrWhiteSpace(tx.MintTxHash)
+            => (tx.MintTxHash, tx.TargetChain, BridgeStatus.Completed, "mint"),
+        BridgeStatus.Locked
             => (tx.LockTxHash, tx.SourceChain, BridgeStatus.Locked, "lock"),
 
         // Redeem/mint on the target chain confirmed → Completed.
@@ -331,9 +334,14 @@ public sealed class ReconciliationService : IReconciliationService
             => (tx.RedemptionTxHash ?? tx.MintTxHash, tx.TargetChain,
                BridgeStatus.Completed, "redeem"),
 
-        // Terminal (Completed/Failed/Refunded) or Reversing. Reversing is
-        // intercepted by the explicit early return in ReconcileOneBridgeAsync
-        // and never reaches here; this default is the defensive backstop —
+        // A reversal reaches Refunded only when a durable source-release hash
+        // exists and that release is positively confirmed on the source chain.
+        BridgeStatus.Reversing when !string.IsNullOrWhiteSpace(tx.ProofData)
+            => (tx.ProofData, tx.SourceChain, BridgeStatus.Refunded, "source release"),
+
+        // Terminal (Completed/Failed/Refunded) or a bare Reversing row. The
+        // latter is intercepted by the explicit early return above; this
+        // default is the defensive backstop —
         // null txHash ⇒ flag-only via MaybeFlagStuckBridge, never a mutation
         // or a mis-mapped advance.
         _ => (null, tx.TargetChain, tx.Status, "unknown"),

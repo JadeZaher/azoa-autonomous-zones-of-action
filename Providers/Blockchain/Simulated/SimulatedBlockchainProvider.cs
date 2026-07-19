@@ -54,6 +54,7 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
     public const string SimulatedMarkerKey = "simulated";
 
     public override string ChainType => "Simulated";
+    public override bool SupportsBridging => true;
 
     // (address, tokenId) → balance. tokenId "" represents the native/default unit.
     // ConcurrentDictionary keeps the ledger safe under the singleton provider's
@@ -237,6 +238,58 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider
     }
 
     // ─── Ledger primitives ───
+
+    public override Task<AZOAResult<string>> LockForBridgeAsync(
+        string tokenId, string vaultAddress, ulong amount,
+        string targetChain, string targetRecipient, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(tokenId) || string.IsNullOrWhiteSpace(vaultAddress) || amount == 0)
+            return Task.FromResult(Error<string>("Token, vault, and positive amount are required"));
+
+        var hash = SimTxHash("bridge-lock", vaultAddress, tokenId, amount,
+            $"{targetChain}:{targetRecipient}");
+        Credit(vaultAddress, tokenId, amount);
+        return Task.FromResult(Ok(hash, "Simulated bridge lock confirmed"));
+    }
+
+    public override Task<AZOAResult<string>> MintWrappedAsync(
+        string sourceChain, string sourceTokenId, string tokenUri,
+        ulong amount, string recipientAddress, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceTokenId) || string.IsNullOrWhiteSpace(recipientAddress) || amount == 0)
+            return Task.FromResult(Error<string>("Source token, recipient, and positive amount are required"));
+
+        var wrappedId = SimTxHash("bridge-mint", recipientAddress, sourceTokenId, amount, sourceChain);
+        Credit(recipientAddress, wrappedId, amount);
+        return Task.FromResult(Ok(wrappedId, "Simulated wrapped mint confirmed"));
+    }
+
+    public override Task<AZOAResult<string>> BurnWrappedAsync(
+        string tokenId, ulong amount, string sourceChain,
+        string sourceRecipient, string walletAddress, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(tokenId) || string.IsNullOrWhiteSpace(walletAddress) || amount == 0)
+            return Task.FromResult(Error<string>("Wrapped token, wallet, and positive amount are required"));
+
+        var hash = SimTxHash("bridge-burn", walletAddress, tokenId, amount,
+            $"{sourceChain}:{sourceRecipient}");
+        Debit(walletAddress, tokenId, amount);
+        return Task.FromResult(Ok(hash, "Simulated wrapped burn confirmed"));
+    }
+
+    public override Task<AZOAResult<string>> ReleaseFromBridgeAsync(
+        string tokenId, string vaultAddress, ulong amount,
+        string recipientAddress, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(tokenId) || string.IsNullOrWhiteSpace(vaultAddress)
+            || string.IsNullOrWhiteSpace(recipientAddress) || amount == 0)
+            return Task.FromResult(Error<string>("Token, vault, recipient, and positive amount are required"));
+
+        var hash = SimTxHash("bridge-release", vaultAddress, tokenId, amount, recipientAddress);
+        Debit(vaultAddress, tokenId, amount);
+        Credit(recipientAddress, tokenId, amount);
+        return Task.FromResult(Ok(hash, "Simulated source release confirmed"));
+    }
 
     private void Credit(string address, string tokenId, ulong amount)
     {

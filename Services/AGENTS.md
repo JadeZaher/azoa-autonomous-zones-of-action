@@ -23,10 +23,12 @@ to any one must preserve the whole:
    point — `InitiateBridgeAsync`, `RedeemWithVAAAsync`, `ReverseBridgeAsync` —
    refuses to move value when the flag is off UNLESS both chains resolve to the
    Simulated provider (`IsSimulatedRoute`, fail-closed on unknown chains).
-2. **Avatar-scoped idempotency keys.** A client-supplied `Idempotency-Key` is
-   namespaced by the authenticated avatar (`{avatarId:N}:{key}`) so two avatars
-   sending the same key never collide on one claim. Absent a client key, a
-   deterministic content key is derived (never random) so duplicates collapse.
+2. **Avatar-scoped, request-bound idempotency keys.** A client-supplied
+   `Idempotency-Key` is trimmed, hashed, and namespaced by the authenticated
+   avatar. Its ledger `OperationType` includes an operation-specific request
+   fingerprint, so reusing one key for another bridge action or payload rejects
+   before any chain effect. Absent a client key, a deterministic content key is
+   derived (never random) so duplicates collapse.
 3. **VAA replay ledger** (`ConsumedVaas`, UNIQUE-on-digest). The canonical
    digest is `SHA-256` over the base64-DECODED VAA bytes
    (`WormholeAdapter.ComputeVaaDigest`); malformed base64 is rejected BEFORE any
@@ -42,6 +44,17 @@ to any one must preserve the whole:
    ADVANCES on a positive on-chain signal, FAILS on an explicit negative signal,
    and otherwise leaves the row untouched (flagging MANUAL INTERVENTION past the
    hard-stuck threshold). It NEVER auto-reverses funds and NEVER re-broadcasts.
+
+### Real-value KYC authorization
+
+Every non-simulated initiate, redeem, and reverse resolves the canonical
+transaction owner and calls `IRealValueKycGate` before an idempotency claim,
+status CAS, or chain effect. The gate reads Azoa's authoritative submission
+ledger and requires the latest entry to be `APPROVED` with an explicit future
+expiry plus provenance matching the active provider, operator policy version,
+and assurance level. Missing/invalid provenance, a retired provider or policy,
+manual approval outside Development, revocation/rejection, expiry, and storage
+failure all deny. Fully simulated routes deliberately skip this real-value gate.
 
 ### G2 doc/canonicalization notes (final-hardening-cutover)
 
@@ -89,6 +102,13 @@ after a 0-row conditional update; reconciliation's `SettleBridgeIdempotency`
 settles the record only once chain truth proves a terminal state, resolving the
 key from the row's persisted `IdempotencyKey` column (never fabricated).
 
+Trusted initiation persists a deterministic tracking row before claiming the
+idempotency ledger. After a claim, it must win `Initiated → Locking` before
+broadcasting the source lock. A crash before the broadcast can therefore be
+recovered after the configured stale-claim interval, with the row CAS electing
+one retry. A row already in `Locking` is ambiguous and is never re-broadcast;
+reconciliation must establish chain truth.
+
 ### Ambiguous crash windows fail CLOSED
 
 If a consume-ledger row exists but the bridge is still `Redeeming` (or a reversal
@@ -109,6 +129,26 @@ otherwise a submitted transaction disappears from the recovery queue.
 Provider resolution uses the persisted `ChainType` and `ChainNetwork`; an
 invalid network fails closed, while a missing network retains the legacy
 Devnet fallback for rows created before the field existed.
+
+### Bridge submission boundaries and launch posture
+
+Trusted flow treats `OperationStatus.PendingConfirmationMarker` as nonterminal.
+A submitted source lock is persisted as `Locking` plus `LockTxHash`; target mint
+is not called until the lock result is positively confirmed. A submitted target
+mint remains `Locked` plus `MintTxHash`, and reconciliation alone may advance it
+from positive target-chain truth. Every persistence CAS is checked before the
+next chain effect; a zero-row write stops the flow and requires intervention.
+
+`SourceAddress` is the server-selected source custody/vault address, never a
+transaction hash and never caller-supplied wallet identity. Reversal persists the
+target burn reference before attempting source release, and reaches `Refunded`
+only after a confirmed source release. A pending release stays `Reversing` with
+its release transaction reference in `ProofData` for reconciliation.
+
+Wormhole initiation is launch-blocked before persistence or chain calls. Real
+providers advertise `SupportsBridging=false` until they implement the complete
+lock/mint/burn/release lifecycle; only the explicitly simulated provider currently
+advertises the full capability.
 
 ### Tests
 

@@ -41,6 +41,14 @@ public class AZOAResult<T>
     public string Message { get; set; } = string.Empty;
     public T? Result { get; set; }
 
+    /// <summary>Stable machine-readable discriminator for actionable failures.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Code { get; set; }
+
+    /// <summary>Cooldown advertised by bounded operations such as authentication.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? RetryAfterSeconds { get; set; }
+
     /// <summary>
     /// The captured exception. Never serialized directly — see <see cref="Detail"/>.
     /// </summary>
@@ -64,6 +72,10 @@ public class AZOAResult<T>
     /// <summary>Create an expected typed failure without capturing an exception.</summary>
     public static AZOAResult<T> Failure(string message, T? result = default)
         => new() { IsError = true, Result = result, Message = message };
+
+    /// <summary>Create an expected failure with a stable wire discriminator.</summary>
+    public static AZOAResult<T> FailureWithCode(string message, string code, T? result = default)
+        => new() { IsError = true, Result = result, Message = message, Code = code };
 
     /// <summary>
     /// Record an exception against this result. Marks it as an error and uses
@@ -90,6 +102,17 @@ public class AZOAResult<T>
         message = Message,
         detail = Detail,
     };
+}
+
+public static class AzoaErrorCodes
+{
+    public const string InvalidRequest = "INVALID_REQUEST";
+    public const string DependencyUnavailable = "DEPENDENCY_UNAVAILABLE";
+    public const string NotFound = "NOT_FOUND";
+    public const string Conflict = "CONFLICT";
+    public const string Forbidden = "FORBIDDEN";
+    public const string PolicyUnavailable = "POLICY_UNAVAILABLE";
+    public const string OperationNotAllowed = "OPERATION_NOT_ALLOWED";
 }
 
 public class AZOAResponse

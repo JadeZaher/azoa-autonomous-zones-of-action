@@ -33,10 +33,21 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [References(typeof(Avatar), Optional = true)]
         public string? AvatarId { get; set; }
 
+        [References(typeof(Avatar), Optional = true)]
+        public string? TenantId { get; set; }
+
+        [Default("0")]
+        public long ProviderSelectionVersion { get; set; }
+
+        [Default("0")]
+        public long ProviderTrustRevision { get; set; }
+
         [FieldGroup("Verification provider that owns this submission")]
-        [Inside("MANUAL", "VERIFF")]
+        [Inside("MANUAL", "VERIFF", "GENERIC_HOSTED")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public KycProvider Provider { get; set; }
+
+        public string ProviderKey { get; set; } = string.Empty;
 
         [FieldGroup("Lifecycle status")]
         [Inside("PENDING", "IN_REVIEW", "APPROVED", "REJECTED", "EXPIRED")]
@@ -53,6 +64,15 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Provider session linkage (manual provider stamps the avatar id as a pseudo-session)")]
         public string? ProviderSessionId { get; set; }
 
+        public bool HostedVerification { get; set; }
+
+        public bool AcceptsDocumentReferences { get; set; }
+
+        public string? VerificationUrl { get; set; }
+
+        public string? SessionInstructions { get; set; }
+
+        /// <summary>Server-stamped trust envelope; see <c>Services/Kyc/AGENTS.md</c>.</summary>
         public string? ProviderResult { get; set; }
 
         [FieldGroup("Timestamps")]

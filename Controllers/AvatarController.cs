@@ -73,7 +73,7 @@ public class AvatarController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize]
+    [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IAvatar>>> Update(Guid id, [FromBody] AvatarUpdateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -85,7 +85,7 @@ public class AvatarController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize]
+    [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -102,7 +102,7 @@ public class AvatarController : ControllerBase
     /// taken from the token (never the body) per the IDOR rule.
     /// </summary>
     [HttpPost("logout")]
-    [Authorize]
+    [Authorize(Policy = "FirstPartyLogin")]
     public async Task<IActionResult> LogoutEverywhere()
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -122,7 +122,7 @@ public class AvatarController : ControllerBase
     /// AzoaDappRoles allowlist. See Controllers/AGENTS.md §avatar-dapp-rbac.
     /// </summary>
     [HttpPut("{id:guid}/dapp-role")]
-    [Authorize]
+    [Authorize(Policy = "DappRoleAssignment")]
     public async Task<ActionResult<AZOAResult<IAvatar>>> AssignDappRole(
         Guid id, [FromBody] AvatarRoleAssignmentModel model)
     {
@@ -157,9 +157,8 @@ public class AvatarController : ControllerBase
         if (string.Equals(User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        return User.HasScope(AzoaScopes.Operator)
-            || User.IsInRole("Admin")
-            || string.Equals(User.FindFirst("role")?.Value, "Admin", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(User.FindFirst("is_admin")?.Value, "true", StringComparison.OrdinalIgnoreCase);
+        return AzoaClaims.IsNodeOperator(User)
+            && User.HasScope(AzoaScopes.Operator)
+            && GetAvatarIdFromClaims() == AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId;
     }
 }

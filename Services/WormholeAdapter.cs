@@ -60,7 +60,7 @@ public class WormholeAdapter : IWormholeAdapter
     public async Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
         string sourceChain, string targetChain,
         string tokenId, string senderAddress, string recipientAddress,
-        int amount, CancellationToken ct = default)
+        ulong amount, CancellationToken ct = default)
     {
         if (!IsRouteSupported(sourceChain, targetChain))
             return Error<WormholeTransferInitiation>(

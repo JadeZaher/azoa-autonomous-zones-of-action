@@ -68,7 +68,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
 
     public override string ChainType => "Algorand";
     public string CapabilityName => "Algorand.ASA";
-    public override bool SupportsBridging => true;
+    public override bool SupportsBridging => false;
 
     /// <inheritdoc/>
     public bool SupportsAtomicTransferGroups => true;
@@ -771,7 +771,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     /// The vault must have opted into the ASA out-of-band. See Providers/Blockchain/AGENTS.md §bridge.
     /// </summary>
     public override async Task<AZOAResult<string>> LockForBridgeAsync(
-        string tokenId, string vaultAddress, int amount,
+        string tokenId, string vaultAddress, ulong amount,
         string targetChain, string targetRecipient, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(tokenId) || !ulong.TryParse(tokenId, out var assetIndex))
@@ -791,8 +791,6 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
                 + "(set AZOA:Algorand:PlatformMnemonic / platform custody).");
 
         var vault = new Address(vaultAddress);
-        var lockAmount = checked((ulong)amount);
-
         _logger.LogInformation(
             "Bridge lock: {Amount} of ASA {TokenId} {From} → vault {Vault} (target {TargetChain}/{TargetRecipient})",
             amount, tokenId, platformAddress, vaultAddress, targetChain, targetRecipient);
@@ -804,68 +802,42 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
                 Sender = sender,
                 XferAsset = assetIndex,
                 AssetReceiver = vault,
-                AssetAmount = lockAmount,
+                AssetAmount = amount,
             },
             opLabel: $"lock {amount} of ASA {tokenId} into bridge vault {vaultAddress} for {targetChain}",
             signingContext: SigningContext.Platform,
             ct: ct);
     }
 
-    public override async Task<AZOAResult<string>> MintWrappedAsync(
+    /// <inheritdoc/>
+    public override Task<AZOAResult<string>> MintWrappedAsync(
         string sourceChain, string sourceTokenId, string tokenUri,
-        int amount, string recipientAddress, CancellationToken ct = default)
+        ulong amount, string recipientAddress, CancellationToken ct = default)
     {
-        var wrappedName = $"w{sourceChain}-{sourceTokenId}";
-        return await CreateASAAsync(
-            wrappedName, wrappedName[..Math.Min(8, wrappedName.Length)].ToUpperInvariant(),
-            amount, 0, recipientAddress, recipientAddress,
-            recipientAddress, recipientAddress, recipientAddress, ct);
+        return Task.FromResult(Error<string>(
+            "Algorand wrapped mint is disabled: the current ASA-create model assigns control "
+            + "to the recipient and cannot prove canonical platform custody, recipient opt-in, "
+            + "and transfer. Refusing to lock source value for an unsafe wrapped mint."));
     }
 
-    /// <summary>
-    /// Real wrapped-asset burn (inbound reversal): destroys the platform-managed
-    /// wrapped ASA <paramref name="tokenId"/> so the original asset can be released on
-    /// <paramref name="sourceChain"/>. The wrapped ASA is minted by
-    /// <see cref="MintWrappedAsync"/> with the platform as manager/reserve, so a
-    /// platform-signed <see cref="AssetDestroyTransaction"/> is the burn primitive
-    /// (mirrors <see cref="BurnAsync"/>). Broadcasts a real tx and returns its id;
-    /// a confirm-timeout returns the tx id with the pending marker (never a fake Ok).
-    /// The platform must hold the full outstanding supply for destroy to succeed —
-    /// otherwise the tx is rejected on-chain and this returns that error (fail-loud).
-    /// See Providers/Blockchain/AGENTS.md §bridge.
-    /// </summary>
-    public override async Task<AZOAResult<string>> BurnWrappedAsync(
-        string tokenId, int amount, string sourceChain,
+    /// <inheritdoc/>
+    public override Task<AZOAResult<string>> BurnWrappedAsync(
+        string tokenId, ulong amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(tokenId) || !ulong.TryParse(tokenId, out var assetIndex))
-            return Error<string>("A numeric wrapped-asset ID is required to burn for release");
-        if (amount <= 0)
-            return Error<string>("Wrapped burn amount must be positive");
+        return Task.FromResult(Error<string>(
+            "Algorand wrapped burn is disabled because no canonical platform-controlled "
+            + "wrapped ASA lifecycle is implemented. Refusing to claim wrapped supply was burned."));
+    }
 
-        // The wrapped ASA is platform-managed (created via MintWrappedAsync); the
-        // manager address is the platform account, derived from the same mnemonic the
-        // signer uses so Sender matches the signing key. Missing config fails CLOSED.
-        var platformAddress = ResolvePlatformAddress();
-        if (string.IsNullOrWhiteSpace(platformAddress) || !ValidateAddressFormat(platformAddress))
-            return Error<string>(
-                "Cannot burn wrapped asset: no valid platform signing address is configured "
-                + "(set AZOA:Algorand:PlatformMnemonic / platform custody).");
-
-        _logger.LogInformation(
-            "Bridge burn-wrapped: destroy ASA {TokenId} (amount={Amount}) on Algorand → release on {SourceChain} to {SourceRecipient}",
-            tokenId, amount, sourceChain, sourceRecipient);
-
-        return await BuildSignSubmitAsync(
-            platformAddress,
-            (paramsInfo, sender) => new AssetDestroyTransaction
-            {
-                Sender = sender,
-                AssetIndex = assetIndex,
-            },
-            opLabel: $"burn wrapped ASA {tokenId} → release on {sourceChain}",
-            signingContext: SigningContext.Platform,
-            ct: ct);
+    /// <inheritdoc/>
+    public override Task<AZOAResult<string>> ReleaseFromBridgeAsync(
+        string tokenId, string vaultAddress, ulong amount,
+        string recipientAddress, CancellationToken ct = default)
+    {
+        return Task.FromResult(Error<string>(
+            "Algorand bridge release is disabled: the configured vault is not proven to be "
+            + "controlled by the platform signer. Refusing to claim locked source value was released."));
     }
 
     // VerifyBridgeProofAsync removed (final-hardening-cutover B2): the always-true

@@ -36,9 +36,10 @@ network, fiat settlement partners) is reached over the network per config.
 - **podman or Docker** — to run SurrealDB (and, for the full local stack, the
   WebAPI + frontend images). The `dev-up` scripts auto-detect `docker compose`
   v2, `docker-compose` v1, `podman-compose`, or `podman compose`.
-- **SurrealDB** — pinned image, **`surrealdb/surrealdb:v3.1.4`** everywhere
-  (local `docker-compose.dev.yml` and the Railway prod service alike — the
-  1.5.4→3.x cutover, tracked at `surrealdb-major-upgrade`, is closed). **Pin
+- **SurrealDB** — local compose pins **`surrealdb/surrealdb:v3.1.4`**;
+  Railway pins that release's multi-arch OCI index as
+  **`docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60`**
+  (the 1.5.4→3.x cutover, tracked at `surrealdb-major-upgrade`, is closed). **Pin
   the same SurrealDB version your schema was generated and tested against.**
 - **Node 20+** — only if you also run the reference frontend.
 
@@ -90,15 +91,22 @@ surreal start --user root --pass <pass> --bind 0.0.0.0:8000 rocksdb:///data/db
 The node's schema lives generated in `Persistence/SurrealDb/Generated/Schemas/`
 plus `Persistence/SurrealDb/Migrations/`. It is applied by the **`surrealforge`
 schema CLI**, idempotently, via a `schema_migration` ledger (already-applied
-files are skipped). Two paths, both from `RUNBOOK.md`:
+files are skipped). Development and production deliberately use different paths:
 
-- **`dev-up`** runs the host-side schema sync automatically on every run (needs
-  `dotnet` on the host; the CLI runs from source). Set `AZOA_SKIP_RESET=1` to
-  skip the host-side sync and let the WebAPI container's entrypoint apply it.
-- **Container entrypoint** — the production WebAPI image bundles `surrealforge`
-  and runs `surrealforge up` on every boot (waits for SurrealDB `/health`,
-  applies `Generated/Schemas/` then `Migrations/`, then execs the host). Skip
-  with `AZOA_SKIP_MIGRATIONS=1` if a prior deploy step already applied them.
+- **Development** — the API container entrypoint applies schema automatically.
+  Explicit `-Reset` / `--reset` asks the launcher to invoke that same packaged
+  CLI; the host does not restore or run a separate .NET tool.
+- **Production** — a one-shot `azoa-schema` service runs
+  `/usr/local/bin/docker-entrypoint.sh schema` from the exact digest promoted
+  for `azoa-api`. It applies schema with owner credentials and provisions the
+  database-scoped runtime user. The API requires `AZOA_SKIP_MIGRATIONS=1` and
+  refuses owner/schema credentials.
+
+The entrypoint overlays immutable shipped files from
+`Persistence/SurrealDb/CompatibilityBaselines/` before running timestamped
+forward migrations. This prevents a generated-schema edit from bypassing or
+tripping SurrealForge's filename-and-checksum ledger. Never use `--force` for a
+normal upgrade.
 
 A fresh SurrealDB needs no out-of-band setup: the runner bootstraps
 `DEFINE NAMESPACE/DATABASE IF NOT EXISTS`. Check applied migrations with
@@ -108,28 +116,34 @@ A fresh SurrealDB needs no out-of-band setup: the runner bootstraps
 
 ## 3. Required environment / config
 
-The WebAPI binds its SurrealDB connection from the `SurrealDb` config section
-(`Extensions/SurrealDbServiceCollectionExtensions.cs` → `SurrealConnectionOptions`).
-Double-underscore env-var form (`SurrealDb__Endpoint`) overrides appsettings.
+Production binds the WebAPI from the isolated `SurrealRuntime` config section.
+Development may fall back to `SurrealDb`; Production rejects that credential
+family so schema-owner authority cannot enter the API process.
 
 | Variable | Required | Notes |
 |---|---|---|
-| `SurrealDb__Endpoint` | yes (prod) | SurrealDB URL, e.g. `http://surrealdb.railway.internal:8000`. Dev default `http://127.0.0.1:8000`. |
-| `SurrealDb__Namespace` | yes | e.g. `azoa`. |
-| `SurrealDb__Database` | yes | e.g. `azoa`. |
-| `SurrealDb__User` / `SurrealDb__Password` | yes (prod) | SurrealDB root credentials. |
-| `SurrealDb__G1DurabilityAcknowledged` | yes | Must be `true` outside `IntegrationTest` or the node **refuses to boot** (§6). Operator's ack that the store fsyncs per commit. |
+| `SurrealRuntime__Endpoint` | yes (prod) | SurrealDB URL, e.g. `http://surrealdb.railway.internal:8000`. |
+| `SurrealRuntime__Namespace` | yes | e.g. `azoa`. |
+| `SurrealRuntime__Database` | yes | e.g. `azoa`. |
+| `SurrealRuntime__User` / `SurrealRuntime__Password` | yes (prod) | Database-scoped runtime `EDITOR` credentials provisioned by `azoa-schema`; never owner/root credentials. |
+| `SurrealRuntime__G1DurabilityAcknowledged` | yes | Must be `true` outside `IntegrationTest` or the node **refuses to boot** (§6). Operator's ack that the store fsyncs per commit. |
+| `AZOA_SKIP_MIGRATIONS` | yes (prod) | Must be `1`; Production API boot never applies schema. |
 | `ASPNETCORE_ENVIRONMENT` | yes | `Production` gates Swagger off and enforces the secret guards + G1 ack. |
 | `ForwardedHeaders__Enabled` | proxy deploys | Disabled by default. Enable only with explicit `KnownProxies`/`KnownNetworks`, or with both trust-all and edge-only acknowledgement on a platform whose edge is the sole ingress. |
 | `ForwardedHeaders__TrustAll` / `ForwardedHeaders__EdgeOnlyDeploymentAcknowledged` | Railway template | Both are `true` in the Railway edge-only template. They are unsafe on a directly reachable self-hosted port. |
 | `Jwt__Key` | yes (**SECRET**) | JWT signing key, ≥32 chars. No default — boot fails without it outside Development/IntegrationTest. |
 | `Jwt__Issuer` / `Jwt__Audience` | optional | Default `AZOA.WebAPI` / `AZOA.Client`. |
+| `NodeOperator__Username` | yes on first boot | Static reserved-operator username, 3–64 canonical lowercase characters. |
+| `NodeOperator__Password` | yes on first boot (**SECRET**) | Generated 24–72 byte secret; only its bcrypt hash is persisted. |
+| `NodeOperator__CredentialRevision` | yes on first boot | Positive monotonic integer. Increment for every username/password rotation; rollback is refused. |
+| `NodeOperator__SessionMinutes` | optional | Dedicated operator-session lifetime, 5–30 minutes (default 20). |
 | `AZOA__WalletEncryptionKey` | yes (**SECRET**) | At-rest key for platform wallet generation. No default — `WalletKeyService` throws without it. |
+| `AUTOMAPPER_LICENSE_KEY` | yes (hosted prod, **SECRET**) | Registered AutoMapper 15+ commercial or Community key. `LUCKYPENNY_LICENSE_KEY` is accepted as the vendor alias; `/health` is unhealthy in Production when both are absent. |
 | `PORT` | injected | On Railway the entrypoint binds `ASPNETCORE_URLS=http://0.0.0.0:$PORT` (falls back to 5000). Do not also pin `ASPNETCORE_URLS`. |
 
-The `SurrealDb__*` family is consumed by **both** the .NET host and the
-entrypoint's `surrealforge` pre-step — wire one family. The entrypoint also
-accepts `SURREALFORGE_*` aliases (`_URL` / `_NS` / `_DB` / `_USER` / `_PASS`).
+Only the separate schema job receives `SURREALFORGE_*` (`_URL`, `_NS`, `_DB`,
+`_USER`, `_PASS`) plus `AZOA_RUNTIME_USER` / `AZOA_RUNTIME_PASSWORD`. Its owner
+credentials must not be copied to `azoa-api`.
 
 Production also requires a persistent Data Protection key ring at
 `DataProtection__KeyRingPath` (the Railway template mounts `/app/data`). All
@@ -138,12 +152,13 @@ name.
 
 ### Secrets
 
-`Jwt__Key`, `AZOA__WalletEncryptionKey`, `SurrealDb__Password`, and any faucet
+`Jwt__Key`, `NodeOperator__Password`, `AZOA__WalletEncryptionKey`, `AUTOMAPPER_LICENSE_KEY`,
+`SurrealRuntime__Password`, the schema job's `SURREALFORGE_PASS`, and any faucet
 mnemonic **must come from a secret store / deploy env, never committed
 appsettings**. The base `appsettings.json` ships these as empty placeholders on
 purpose — a real deploy MUST replace them before any wallet or seed is created.
 For the full per-key list and the secret audit gate, see **`GO-TO-PROD.md` §2**
-(read its `SurrealDb__*` reality through this guide, not its Postgres DSN row).
+(read its storage reality through this guide, not its Postgres DSN row).
 
 ---
 
@@ -177,20 +192,18 @@ Not every chain's value path is production-real yet. The node is built so the
 unfinished ones are **fail-closed** — they refuse rather than move value badly —
 but an operator MUST know which is which before flipping anything on:
 
-- **Algorand — real.** Real Ed25519 keygen, real server-side signing, and real
-  on-chain lock/burn/transfer/mint run end-to-end through the custodial signer.
-  This is the supported real-value chain.
+- **Algorand — partial primitives, no launchable bridge.** Ed25519 keygen,
+  signing, and selected on-chain operations exist, but the complete reviewed
+  lock/mint/burn/release lifecycle and production custody do not. Its bridge
+  capability therefore remains fail-closed.
 - **Solana / Wormhole / Ethereum — fail-closed, keep disabled.** These value
-  routes are **not production-complete** and MUST stay off
-  (`Blockchain__Bridge__RealValueEnabled=false`) until their follow-ups land:
-  a real Solana SPL transfer pipeline, real Wormhole VAA **sequence parsing**,
-  and real Ethereum **secp256k1** keygen/signing. Until then these paths
-  deliberately refuse to move value; do **not** set `RealValueEnabled=true` or
-  enable a non-Algorand mainnet chain expecting cross-chain value to flow.
+  routes are also **not production-complete**. Missing work includes a real
+  Solana SPL transfer pipeline, Wormhole VAA **sequence parsing**, Ethereum
+  **secp256k1** keygen/signing, and reviewed production custody.
 
-**Verify:** with `RealValueEnabled=false`, a Solana/Wormhole/ETH value attempt is
-rejected (fail-closed) rather than silently no-op'd; only Algorand real value
-transacts.
+**Verify:** with `RealValueEnabled=false`, every real-chain bridge value attempt,
+including Algorand, is rejected rather than silently no-op'd. Wormhole requests
+remain hard-blocked even if the global switch is accidentally enabled.
 
 **Forward-compat residual (record before you make quests shareable).** Value-node
 actor derivation currently reads the **quest definition** owner (`quest.AvatarId`).
@@ -269,13 +282,18 @@ purpose. Always required:
 - `Jwt__Key` — JWT signing key, ≥32 chars, random and rotated.
 - `AZOA__WalletEncryptionKey` — at-rest key material for platform wallet
   generation.
-- `SurrealDb__Password` — SurrealDB root password (must match the value the
-  SurrealDB service starts with).
+- `SurrealRuntime__Password` — database-scoped API runtime password, shared by
+  reference from the schema job.
+- `SURREALFORGE_PASS` — SurrealDB owner password, present only on the one-shot
+  schema service.
 
 Required only if you enable the matching feature:
 
-- The **KYC provider secret** (`Kyc__VeriffApiKey` + base URL / webhook secret)
-  — only when automated KYC is turned on (§8.5).
+- The selected external **KYC provider metadata and secrets**
+  (`Kyc__VeriffApiKey` + `Kyc__VeriffBaseUrl`, or
+  `Kyc__Hosted__ProviderName` + `Kyc__Hosted__BaseUrl` +
+  `Kyc__Hosted__ApiKey` + `Kyc__Hosted__WebhookSecret`) — keep values in the
+  host store and never set an external profile ready until §8.5 is satisfied.
 - The **platform signing mnemonic** (`Blockchain__Faucet__Algorand__Mnemonic`,
   and any custodial platform-account seed) — testnet-only for the faucet; do not
   fund on mainnet unless deliberate.
@@ -292,19 +310,23 @@ the `SurrealDb__*` reality of this guide, not its legacy Postgres DSN).
 
 ### 8.2 Choose your key custody (recommended for real value)
 
-By default, wallet keys are AES-GCM encrypted under a data key **derived from a
-config secret** (`AZOA__WalletEncryptionKey`). That is fine for a beta / internal
-cut, but a config-derived secret is **not production-grade custody for
-value-bearing keys**.
+The tenant custodial-account capability treats the current AES-GCM key derived
+from `AZOA__WalletEncryptionKey` as **development-only**. It reports ready only
+with `CustodialAccounts__CustodyMode=DevelopmentOnly`, a `Development` host, and
+`Blockchain__Mode=Simulated`. It stores no recovery seed phrase for these
+bootstrap wallets. A live/non-development node fails wallet provisioning
+closed, while deterministic identity creation and an available KYC provider
+remain usable as independent readiness dimensions.
 
-For production custody, provision a **KMS/HSM-backed key store** and wire your
-KMS provider in at deploy time. The code exposes a custody seam
+For production custody, implement and provision a **KMS/HSM-backed key store**.
+The code exposes a custody seam
 (`IKeyCustodyService`) that is the single audited decrypt→sign→zero choke point,
-so a KMS-backed implementation drops in **without touching the signing path** —
-your KMS provider slots in behind the same interface.
+but no production KMS/HSM implementation is registered in this release. Setting
+`CustodialAccounts__CustodyMode=KmsHsm` is therefore an explicit unavailable
+state, not a feature toggle.
 
-**This is a recommended-for-real-value step, not mandatory for a beta/internal
-cut.** If you are moving real value, do it before flipping mainnet (§8.3).
+**This is mandatory for real/live value.** Development-only simulated custody
+exists solely for local E2E and must not be promoted to a live network.
 
 **Verify:** with the KMS store wired, no value-bearing private key is
 recoverable from app config alone.
@@ -327,10 +349,9 @@ sign off a documented checklist. Do **not** flip these until every box is true:
 
 - Real on-chain signing has been verified on testnet (a real transaction signs,
   broadcasts, and confirms).
-- The chain you are enabling has a **real** value route. Today only **Algorand**
-  does; **Solana / Wormhole / Ethereum value routes are fail-closed and must stay
-  disabled** (`RealValueEnabled=false`) until their follow-ups land (§4.1). Do not
-  flip `RealValueEnabled=true` for a non-Algorand chain.
+- The chain you are enabling has a complete, independently reviewed real-value
+  route. **No chain meets that gate today**; keep `RealValueEnabled=false` until
+  the missing provider and custody work in §4.1 lands and passes review.
 - Production key custody is in place (§8.2).
 - Guardian sets for the target network are provisioned **and** independently
   verified (§8.7 / `GUARDIAN-SET-SETUP.md`).
@@ -354,15 +375,61 @@ fees. This is pure ops:
 **Verify:** the account holds a working balance and an alert fires on a test
 threshold.
 
-### 8.5 Enable KYC (only if you need automated verification)
+### 8.5 Select KYC deliberately
 
-The default is **manual admin-review KYC**, which needs no secrets — leave
-`Kyc:Provider=manual` for a beta cut. To enable **automated KYC (Veriff)**:
+Base/production configuration uses `Kyc__Provider=unavailable` and a bounded
+`Kyc__SubmissionExpiryDays=30`. Development explicitly selects `manual`, the
+only implemented provider, with a 30-minute session TTL. It accepts validated
+credential-free HTTPS document references and requires an Azoa operator to
+approve/reject them. An explicit production `manual` override still fails
+closed until private upload, scanning, retention, and review operations exist.
 
-- Set `Kyc__Provider=veriff`.
-- Supply `Kyc__VeriffApiKey`, the provider base URL, and the webhook signing
-  secret from the secret store (empty placeholders in the `Kyc` section of
-  `appsettings.json` — never commit real values).
+The node control plane stores multiple secret-free provider profiles and a
+versioned selection per tenant. A profile key is bound to its installed adapter
+key and cannot be repointed after creation. The operator edits display name,
+enabled state, policy version, and assurance level at `/operator/providers`;
+the API evaluates host configuration separately. Responses expose only
+`requiredConfigurationKeys`, `missingConfigurationKeys`, configured booleans,
+profile `version`, and `trustRevision`. They never expose API keys or webhook
+secrets. A tenant sees and selects only profiles whose readiness is exactly
+`READY`.
+
+Profile changes use compare-and-swap (`expectedVersion`) so two operator
+browsers cannot silently overwrite one another. Trust-bearing changes advance
+`trustRevision`; submissions and approvals remain bound to the tenant
+selection, provider, policy, and assurance provenance that produced them.
+
+Provider selection is not sufficient to authorize KYC. Configure the reviewed
+trust profile explicitly:
+
+```text
+Kyc__ApprovalPolicy__PolicyVersion=<operator-controlled-version>
+Kyc__ApprovalPolicy__AssuranceLevel=<reviewed-assurance-label>
+Kyc__ApprovalPolicy__TrustedProviderKeys__0=<active-provider-key>
+Kyc__ApprovalPolicy__AllowManualInDevelopment=false
+```
+
+All four fields fail closed by default. Policy/assurance labels are exact-match;
+changing either requires re-verification. `AllowManualInDevelopment=true` is
+valid only for a Development host with `Blockchain__Mode=Simulated` and
+`Blockchain__Bridge__RealValueEnabled=false`. Manual approval is explicitly
+non-authoritative and cannot satisfy a value-operation KYC gate. Approvals
+without a future expiry or the current versioned provenance envelope are denied.
+
+External options are explicit but unavailable until reviewed integrations land:
+
+- `Kyc__Provider=veriff` selects the fail-closed Veriff adapter stub.
+- `Kyc__Provider=hosted` selects the generic hosted-provider scaffold. Its keys
+  are `Kyc__Hosted__ProviderName`, `Kyc__Hosted__BaseUrl`,
+  `Kyc__Hosted__ApiKey`, `Kyc__Hosted__WebhookSecret`,
+  `Kyc__Hosted__SessionPath`, and `Kyc__Hosted__StatusPath`.
+- Any other value is unknown and fails closed; it never falls back to manual.
+
+Both external choices report unavailable even when their config is complete.
+They are extension contracts, not working integrations. Do not enable one until
+it has durable idempotent attempts, persisted hosted sessions, raw-body webhook
+signature verification, event replay protection, attempt/avatar mapping, and
+CAS terminal status. Full contract: `TENANT-CUSTODIAL-ONBOARDING.md`.
 
 **Note:** the **mint path is KYC-gated** — an unverified avatar is rejected at
 the single mint choke point with no asset created, whether it arrives via the
@@ -370,8 +437,10 @@ allocation door or a raw mint call. Whether wallet-generation should also be
 gated pre-KYC (a zero-balance wallet before verification) is a deployment policy
 decision you make; by default wallet provisioning is allowed pre-KYC.
 
-**Verify:** an unverified avatar is denied at mint (403); with `veriff`
-configured, a verification session round-trips against the provider.
+**Verify:** an unverified, expired, indefinite, or stale-policy avatar is denied
+at mint (403); `manual` reports available only in Development; production
+manual, `veriff`, `hosted`, and unknown values report unavailable and do not
+create a submission.
 
 ### 8.6 Onboard the first tenant
 
@@ -379,11 +448,14 @@ The provisioning surface (`api/tenant`) and the step-by-step onboarding runbook
 already exist. As the operator you actually execute them for your first tenant:
 
 - Register the first tenant avatar.
-- Mint its **tenant-scoped API key** and provision that key as an env secret for
-  the tenant (e.g. the tenant authenticates its allocation calls with this key —
-  it carries the tenant's mint/manage scope; never commit it).
-- Populate the tenant's **user→avatar mapping** so external user ids resolve to
-  AZOA avatars.
+- Mint its **tenant-scoped API key** with `tenant:provision`, `wallet:manage`,
+  `kyc:read`, and `kyc:submit` by calling JWT-Operator-only
+  `POST /api/apikey/tenant` with the existing tenant avatar id, a name, and a
+  1–365 day expiry. The raw key is returned once with no-store headers; store it
+  as a tenant-side secret. The endpoint accepts no arbitrary scopes or origins.
+- Call the create-only `PUT /api/tenant/custodial-accounts/{externalSubject}`
+  with a stable `Idempotency-Key`, then persist only the returned public ids and
+  readiness fields. A claimed avatar is resolved, never overwritten.
 
 Follow the generic onboarding steps: register tenant → mint tenant-scoped key →
 provision children → issue child credential → resolve by external id.
@@ -400,18 +472,20 @@ across at least two independent authoritative sources, drop it into the
 per-environment appsettings under `Blockchain:Wormhole:GuardianSets`, and sign
 the verification checklist. Full procedure: **`GUARDIAN-SET-SETUP.md`**.
 
-**The deploy.** Production runs as a WebAPI image (bundling the `surrealforge`
-schema CLI) plus a **separate SurrealDB service**; the container entrypoint waits
-for SurrealDB `/health`, applies schema + migrations idempotently, then execs the
-host. The full Railway procedure — required env vars, entrypoint behavior, and
-the SurrealDB service definition — is in **`RUNBOOK.md` §2**.
+**The deploy.** Production uses digest-pinned API and frontend images, a
+**separate SurrealDB service**, and an `azoa-schema` one-shot job built from the
+same digest as the API. Require the schema job to finish successfully before
+promoting the API. It alone receives database-owner credentials; the API runs
+with the database-scoped runtime account and refuses boot migrations. The full
+Railway procedure is in **`deploy/railway/DEPLOY.md`** and **`RUNBOOK.md` §2**.
 
 **SurrealDB version note.** Match the SurrealDB version in production to the one
 your schema was generated and tested against. Both dev/local
-(`docker-compose.dev.yml`) and the Railway prod service (`RUNBOOK.md` §2) are
-pinned to `surrealdb/surrealdb:v3.1.4` — **verify your deploy's Railway service
-config still matches** before going live; a version mismatch across environments
-enforces different namespace/DDL strictness and is the failure mode to avoid.
+(`docker-compose.dev.yml`) uses `surrealdb/surrealdb:v3.1.4`; the Railway prod
+service (`RUNBOOK.md` §2) pins the reviewed v3.1.4 OCI index digest. **Verify the
+digest still matches the release artifact** before going live; a version
+mismatch across environments enforces different namespace/DDL strictness and
+is the failure mode to avoid.
 
 **Verify:** `/health` returns 200 with `storage-db` Healthy, `surrealforge
 migrate status` matches the on-disk files, and for testnet/mainnet the Guardian
@@ -427,55 +501,70 @@ the brand boundary cannot silently regress.
 **Verify:** the check runs as a required stage and fails the build on a
 deliberately introduced brand string.
 
-### 8.9 Mint your first operator-admin principal
+### 8.9 Seed and operate the reserved node authority
 
-Operator-only endpoints are guarded by an **Operator policy** that accepts an
-`operator:admin` scope (or the legacy `role=Admin`/`is_admin` claim — see below).
-That scope is **API-key-forbidden by design** — an `X-Api-Key` principal can
-never carry it, so a leaked tenant/API key cannot reach operator surface. On a
-fresh deploy there is no admin yet, so it must be **bootstrapped once** via the
-seed mechanism below (`Services/Admin/AGENTS.md` has the full design rationale).
+Node authority no longer promotes an ordinary avatar. The API owns one reserved
+identity (`a20a0000-0000-4000-8000-000000000001`,
+`node-operator@azoa.invalid`) and binds it durably on first launch. Its token is
+dedicated to node operations, API-key-forbidden, and never enters ordinary
+avatar or tenant login.
 
-**How it works.** `AvatarManager` stamps `operator:admin` (+ the legacy
-`role=Admin` claim) onto a JWT at login time, but ONLY for the one avatar named
-by two env vars — both required together, fail-closed if only one is set:
+Set this complete triplet on the API before the first Production boot:
 
-- `AdminBootstrap__SeedEmail` — the email of the avatar to promote.
-- `AdminBootstrap__SeedSecret` — a shared secret proving you (the operator, with
-  deploy/config access) intend to arm the bootstrap. Not sent in any request —
-  it only needs to be present in the running process's config.
+```text
+NodeOperator__Username=node-operator
+NodeOperator__Password=<generated 24-72 byte secret>
+NodeOperator__CredentialRevision=1
+NodeOperator__SessionMinutes=20
+```
 
-**Step-by-step (executable as written):**
+`SessionMinutes` may be 5–30. The password belongs in the host secret store; the
+database receives only a bcrypt hash. A partial seed, invalid credential shape,
+or absent first-boot seed refuses Production startup. The Railway template
+creates the username, revision, session lifetime, and a generated password slot.
+Capture the usable password in the node owner's password manager.
 
-1. **Register a normal account first** (`POST /api/avatar/register`) with the
-   email you want to promote — e.g. `ops@yourorg.example`. This step can happen
-   before or after step 2.
-2. **Set both env vars** on the host, then (re)start the API:
-   ```
-   AdminBootstrap__SeedEmail=ops@yourorg.example
-   AdminBootstrap__SeedSecret=<any random string you generate — e.g. `openssl rand -hex 24`>
-   ```
-   At boot, `SeedAdminHostedService` logs `Admin bootstrap is ARMED for seed
-   email ...` if both vars are set consistently. If only one is set, it logs a
-   warning in Dev/IntegrationTest — **and throws at startup in Production**
-   (fail-closed: a half-configured bootstrap must not boot silently).
-3. **Log in as that avatar** (`POST /api/avatar/login`). The returned JWT now
-   carries `scope=operator:admin` (and `role=Admin`) — use it as your Bearer
-   token against the operator endpoints.
-4. **Unset both env vars and restart** once you've minted your first admin (or
-   any subsequent admins you need). The bootstrap seam persists nothing to the
-   database — with the env vars gone, no JWT is ever stamped again until you
-   re-arm it, which is the intended one-shot shape.
+After the serial deployment is healthy, open the frontend at
+`/operator/login`. The operator session lasts no longer than 30 minutes and
+carries `token_use=node_operator`, the current credential revision,
+`operator:admin`, and `node:govern`. It is held only by the frontend's
+SameSite=Strict, HttpOnly operator cookie. Do not copy it into browser storage or
+use it as an ordinary Bearer/API-key credential.
 
-**Interim (unchanged, still safe):** the legacy `role=Admin` / `is_admin` claim
-path keeps working independently of the above — it was never removed. It is
-safe because only a **validly-signed admin JWT** reaches it — there is no
-API-key or unauthenticated bypass.
+Use the console in this order:
 
-**Verify:** a token minted via the seed path (or carrying `operator:admin`/
-`role=Admin` some other way) reaches the operator endpoints; the same request
-bearing an `X-Api-Key` (no JWT) is rejected; booting with only one of the two
-env vars set in a Production environment refuses to start.
+1. Verify persistence and service readiness on `/operator`.
+2. Configure provider credentials in Railway/the host secret store, redeploy,
+   and use `/operator/providers` to inspect the exact required/missing variable
+   names. The console never reads secret values.
+3. Enable and version only a `READY` provider profile. `trustRevision` advances
+   when trust-bearing policy changes, making older approval provenance stale.
+4. Let each authenticated tenant choose from the ready catalog at `/kyc`, or
+   manage assignments from `/operator/tenants`.
+5. Work `/operator/reviews` only when the API reports
+   `humanReviewAllowed=true`. Manual review is Development simulation, not an
+   external-provider override.
+
+**Rotation:** change the static username and/or password, increment
+`NodeOperator__CredentialRevision`, and redeploy. The same revision with
+different credentials and every revision rollback are refused. A restart may
+omit the seed only after the durable binding exists, but keeping the current
+secret-backed seed makes configuration drift detectable.
+
+**Session response:** **End operator session** clears only this browser. The
+separately confirmed **Revoke all operator sessions** action is for credential
+exposure, handoff, or incident response and invalidates every operator session
+server-side.
+
+`AdminBootstrap__SeedEmail` / `AdminBootstrap__SeedSecret` remain a legacy
+compatibility check only. Do not configure them for a new node. Production
+still refuses a half-configured legacy pair so an old deployment error cannot
+remain silent.
+
+**Verify:** the reserved credentials reach `/operator`; an ordinary avatar JWT
+and an `X-Api-Key` do not. Rotation succeeds only with a higher revision, global
+revocation signs out all browsers, and ordinary sign-out leaves other browsers
+active.
 
 ---
 

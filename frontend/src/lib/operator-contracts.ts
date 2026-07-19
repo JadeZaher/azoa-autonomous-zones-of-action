@@ -1,4 +1,5 @@
 export const OPERATOR_REQUEST_HEADER = "x-azoa-operator-request";
+export const KYC_PROVIDER_DISPLAY_NAME_MAX_LENGTH = 80;
 
 export interface OperatorSessionView {
     authenticated: boolean;
@@ -107,6 +108,34 @@ export interface OperatorKycSubmissionQueueItem {
     expiresAt: string;
     humanReviewAllowed: boolean;
     reviewMode: "development_simulation" | "external_provider";
+}
+
+export type KycControlAuditAction =
+    | "profile.trust-change"
+    | "profile.metadata-change"
+    | "tenant.provider-selection";
+
+export interface KycControlAuditResponse {
+    id: string;
+    action: string;
+    tenantId?: string | null;
+    providerKey?: string | null;
+    previousProviderKey?: string | null;
+    version: number;
+    previousDisplayName?: string | null;
+    displayName?: string | null;
+    previousAdapterKey?: string | null;
+    adapterKey?: string | null;
+    previousEnabled?: boolean | null;
+    enabled?: boolean | null;
+    previousPolicyVersion?: string | null;
+    policyVersion?: string | null;
+    previousAssuranceLevel?: string | null;
+    assuranceLevel?: string | null;
+    previousTrustRevision?: number | null;
+    trustRevision?: number | null;
+    actorAvatarId: string;
+    occurredAt: string;
 }
 
 export interface CursorPage<T> {

@@ -20,7 +20,7 @@ namespace AZOA.WebAPI.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/avatar/consent")]
-[Authorize]
+[Authorize(Policy = "FirstPartyLogin")]
 public class ConsentController : ControllerBase
 {
     private readonly IConsentManager _manager;

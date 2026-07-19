@@ -178,12 +178,12 @@ public class QuestDagExecutabilityValidatorTests
         Assert.True(result.IsValid, string.Join("; ", result.Errors));
     }
 
-    // ── 7. scalar type mismatch → rejected ────────────────────────────────────
+    // ── 7. precision-safe bridge amounts bind as strings ─────────────────────
 
     [Fact]
-    public void Binding_ScalarTypeMismatch_Rejected()
+    public void Binding_BridgeDecimalStringAmount_ToStringField_Passes()
     {
-        // Bridge.Amount is Number; Back.BridgeTransactionId is a string config field.
+        // Bridge.Amount is emitted as a decimal JSON string so ulong values stay exact.
         var a = Guid.NewGuid();
         var b = Guid.NewGuid();
         var quest = Quest(
@@ -192,6 +192,26 @@ public class QuestDagExecutabilityValidatorTests
                 Node(a, "A", QuestNodeType.Bridge, entry: true),
                 Node(b, "B", QuestNodeType.Back,
                     config: """{"BridgeTransactionId":{"$from":"upstream.A.Amount"}}""", terminal: true),
+            },
+            new[] { Edge(a, b) });
+
+        var result = _validator.Validate(quest);
+
+        Assert.True(result.IsValid, string.Join("; ", result.Errors));
+    }
+
+    [Fact]
+    public void Binding_ScalarTypeMismatch_Rejected()
+    {
+        // Bridge.Status is a numeric enum; Back.BridgeTransactionId expects a string.
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var quest = Quest(
+            new[]
+            {
+                Node(a, "A", QuestNodeType.Bridge, entry: true),
+                Node(b, "B", QuestNodeType.Back,
+                    config: """{"BridgeTransactionId":{"$from":"upstream.A.Status"}}""", terminal: true),
             },
             new[] { Edge(a, b) });
 

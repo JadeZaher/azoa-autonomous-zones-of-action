@@ -168,13 +168,10 @@ public class AlgorandProviderTransactTests
     }
 
     [Fact]
-    public async Task BurnWrapped_pool_error_surfaces_as_error_not_false_pending()
+    public async Task BurnWrapped_fails_closed_before_any_broadcast()
     {
-        // Test gap #3 (final-hardening-cutover G2): an on-chain rejection of the
-        // bridge burn (e.g. destroy attempted while the platform does not hold the
-        // full outstanding supply) comes back as a non-empty `pool-error` on the
-        // pending-tx read. WaitForConfirmationAsync MUST surface that as a fail-loud
-        // error — never swallow it as a still-pending / false-Ok.
+        // Algorand has no reviewed canonical wrapped-asset lifecycle yet, so the
+        // adapter must reject before it reaches any submission or confirmation seam.
         using var stub = RunStub(
             confirmedRound: 0,
             assetIndex: null,
@@ -186,9 +183,9 @@ public class AlgorandProviderTransactTests
             sourceRecipient: _platform.Address.EncodeAsString(),
             walletAddress: _platform.Address.EncodeAsString());
 
-        result.IsError.Should().BeTrue("a pool-error rejection must surface fail-loud, not as false-pending");
-        result.Message.Should().Contain("rejected by the pool");
-        _submitCount.Should().Be(1, "the burn is broadcast exactly once before the pool rejects it");
+        result.IsError.Should().BeTrue("the Algorand adapter does not implement a launch-safe wrapped burn");
+        result.Message.Should().Contain("disabled");
+        _submitCount.Should().Be(0, "fail-closed bridge primitives must never reach the network");
     }
 
     [Fact]

@@ -29,6 +29,15 @@ signing hot path (a .NET `string` cannot be reliably zeroed). The caller MUST
 `CryptographicOperations.ZeroMemory` the returned buffer after use;
 `KeyCustodyService.DecryptSignZeroAsync` does exactly this in a `finally`.
 
+## Tenant bootstrap limitation
+
+`WalletKeyService.GenerateCustodialKeypair` is deliberately Algorand-only and
+does not derive or return a mnemonic. `WalletManager.BootstrapWalletAsync`
+persists no encrypted seed phrase. This path is gated by tenant capabilities to
+Development + simulated mode because its private key still transiently exists as
+an immutable hex string before config-key encryption. It is not a production
+KMS/HSM boundary.
+
 Internals:
 - `AesGcmDecryptBytes` decrypts into an owned plaintext `byte[]` (no plaintext
   string). On a GCM tag/format failure it zeroes any transient buffer and rethrows

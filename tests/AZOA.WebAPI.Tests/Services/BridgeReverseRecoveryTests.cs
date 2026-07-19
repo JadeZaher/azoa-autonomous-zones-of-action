@@ -67,7 +67,7 @@ public class BridgeReverseRecoveryTests
         record!.State.Should().Be(IdempotencyState.Completed);
 
         h.ProviderMock.Verify(p => p.BurnWrappedAsync(
-            It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -105,9 +105,9 @@ public class BridgeReverseRecoveryTests
         int burnCalls = 0;
         h.ProviderMock
             .Setup(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string _, int __, string ___, string ____, string _____, CancellationToken ______) =>
+            .Returns(async (string _, ulong __, string ___, string ____, string _____, CancellationToken ______) =>
             {
                 Interlocked.Increment(ref burnCalls);
                 await Task.Yield();
@@ -162,7 +162,7 @@ public class BridgeReverseRecoveryTests
             "the bridge must NOT be transitioned to Failed when parked for reconciliation");
 
         h.ProviderMock.Verify(p => p.BurnWrappedAsync(
-            It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -194,9 +194,9 @@ public class BridgeReverseRecoveryTests
         int burnCalls = 0;
         h.ProviderMock
             .Setup(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string _, int __, string ___, string ____, string _____, CancellationToken ______) =>
+            .Returns(async (string _, ulong __, string ___, string ____, string _____, CancellationToken ______) =>
             {
                 Interlocked.Increment(ref burnCalls);
                 await Task.Yield();
@@ -253,6 +253,10 @@ public class BridgeReverseRecoveryTests
             _staleSeconds = staleSeconds;
             ProviderMock.Setup(p => p.SupportsBridging).Returns(true);
             ProviderMock.Setup(p => p.ChainType).Returns("Solana");
+            ProviderMock.Setup(p => p.ReleaseFromBridgeAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
+                    It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "release-tx" });
             _factory.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
                 .Returns(ProviderMock.Object);
         }
@@ -265,7 +269,8 @@ public class BridgeReverseRecoveryTests
             IdempotencyStore,
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true, StaleClaimTakeoverSeconds = _staleSeconds }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
 
         /// <summary>Seeds a bridge row and returns its ID.</summary>
         public string SeedBridge(BridgeTransactionResult tx)

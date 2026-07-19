@@ -74,15 +74,6 @@ public interface IBridgeStore
     Task RecordVaaFetchErrorAsync(string id, string errorMessage, CancellationToken ct = default);
 
     /// <summary>
-    /// Force-completes a bridge from any non-Completed status: UPDATE … WHERE
-    /// Id=id AND Status != Completed SET Status=Completed, CompletedAt=UtcNow.
-    /// Returns affected-row count VERBATIM (0 = already Completed / not found;
-    /// 1 = transitioned). The store NEVER asserts==1, retries, or RMW.
-    /// Mirrors the legacy CompleteBridgeAsync force-complete pattern.
-    /// </summary>
-    Task<int> ForceCompleteBridgeAsync(string id, CancellationToken ct = default);
-
-    /// <summary>
     /// Looks up the bridge row stamped with the given idempotency key, or null
     /// if no row has been stamped. Used by the idempotent-replay path of
     /// InitiateTrustedBridgeAsync to return the prior committed row when the

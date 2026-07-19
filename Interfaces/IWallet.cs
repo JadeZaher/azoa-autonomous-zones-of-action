@@ -12,7 +12,9 @@ public interface IWallet
     string? Label { get; set; }
     bool IsDefault { get; set; }
     WalletType WalletType { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
     string? EncryptedPrivateKey { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
     string? EncryptedSeedPhrase { get; set; }
     DateTime CreatedDate { get; set; }
 }

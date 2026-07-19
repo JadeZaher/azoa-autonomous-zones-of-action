@@ -9,6 +9,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.Base;
+using AZOA.WebAPI.Helpers;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -394,6 +395,64 @@ public class WalletManager : IWalletManager
         {
             return new AZOAResult<IWallet> { IsError = true, Message = ex.Message };
         }
+    }
+
+    public async Task<AZOAResult<IWallet>> BootstrapWalletAsync(WalletGenerateRequest model, Guid avatarId, AZOARequest? request = null)
+    {
+        if (avatarId == Guid.Empty)
+            return AZOAResult<IWallet>.Failure("An authenticated avatar is required.");
+
+        var chainType = WalletBootstrapIdentity.CanonicalChain(model.ChainType);
+        if (chainType is null)
+            return AZOAResult<IWallet>.Failure($"Chain type '{model.ChainType}' is not supported for wallet generation.");
+
+        var walletId = WalletBootstrapIdentity.For(avatarId, chainType);
+        var existing = await _walletStore.GetByIdAsync(walletId, default);
+        if (!existing.IsError && existing.Result is not null)
+            return ValidateBootstrapWallet(existing.Result, avatarId, chainType);
+
+        try
+        {
+            var (publicKey, privateKeyHex, address) = _keyService.GenerateCustodialKeypair(chainType);
+            var candidate = new Wallet
+            {
+                Id = walletId,
+                AvatarId = avatarId,
+                ChainType = chainType,
+                Address = address,
+                PublicKey = publicKey,
+                Label = string.IsNullOrWhiteSpace(model.Label) ? $"{chainType} custodial wallet" : model.Label,
+                IsDefault = model.IsDefault,
+                WalletType = WalletType.Platform,
+                EncryptedPrivateKey = _keyService.EncryptPrivateKey(privateKeyHex),
+                EncryptedSeedPhrase = null
+            };
+
+            var created = await _walletStore.CreateIfAbsentAsync(candidate, default);
+            if (created.IsError || created.Result is null)
+                return created;
+
+            if (created.Result.IsDefault)
+                await UnsetPreviousDefaultAsync(avatarId, chainType, walletId);
+
+            return ValidateBootstrapWallet(created.Result, avatarId, chainType);
+        }
+        catch (NotSupportedException ex)
+        {
+            return AZOAResult<IWallet>.Failure(ex.Message);
+        }
+    }
+
+    private static AZOAResult<IWallet> ValidateBootstrapWallet(IWallet wallet, Guid avatarId, string chainType)
+    {
+        if (wallet.AvatarId != avatarId
+            || wallet.WalletType != WalletType.Platform
+            || !string.Equals(wallet.ChainType, chainType, StringComparison.OrdinalIgnoreCase))
+        {
+            return AZOAResult<IWallet>.Failure("The deterministic wallet id is already bound to a different wallet.");
+        }
+
+        return AZOAResult<IWallet>.Success(wallet, "Platform wallet is ready.");
     }
 
     // ─── New: Connect an external wallet (MetaMask, Ghost, etc.) ───

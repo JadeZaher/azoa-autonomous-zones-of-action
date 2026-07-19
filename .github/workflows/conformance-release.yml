@@ -11,6 +11,14 @@ on:
         description: Successful CI run that produced the conformance-evidence artifact.
         required: true
         type: string
+      surreal_mode:
+        description: Preserve an already-pinned healthy database or explicitly promote the reviewed digest.
+        required: true
+        default: already-healthy
+        type: choice
+        options:
+          - already-healthy
+          - redeploy
 
 concurrency:
   group: conformance-promotion
@@ -22,6 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: conformance-promotion
+    outputs:
+      api_image: ${{ steps.release_refs.outputs.api_image }}
+      frontend_image: ${{ steps.release_refs.outputs.frontend_image }}
     permissions:
       actions: read
       contents: read
@@ -132,9 +143,11 @@ jobs:
               (destination_path / name).write_bytes(payloads[name])
           PY
 
-      - name: Derive image name
+      - name: Derive image names
         id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "api=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${GITHUB_REPOSITORY,,}-frontend" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
@@ -143,30 +156,124 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish verified image
-        id: push
+      - name: Build and publish verified API image
+        id: push-api
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: Dockerfile.conformance-release
           push: true
           build-args: SOURCE_REVISION=${{ inputs.source_sha }}
-          tags: ${{ steps.image.outputs.name }}:${{ inputs.source_sha }}
+          tags: ${{ steps.image.outputs.api }}:${{ inputs.source_sha }}
 
-      - name: Attest release image
+      - name: Attest API release image
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
-          subject-name: ${{ steps.image.outputs.name }}
-          subject-digest: ${{ steps.push.outputs.digest }}
+          subject-name: ${{ steps.image.outputs.api }}
+          subject-digest: ${{ steps.push-api.outputs.digest }}
           push-to-registry: true
 
-      - name: Publish immutable deployment reference
+      - name: Build and publish verified frontend image
+        id: push-frontend
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: ${{ steps.image.outputs.frontend }}:${{ inputs.source_sha }}
+
+      - name: Attest frontend release image
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ${{ steps.image.outputs.frontend }}
+          subject-digest: ${{ steps.push-frontend.outputs.digest }}
+          push-to-registry: true
+
+      - name: Materialize immutable Railway blueprint
         env:
-          IMAGE_NAME: ${{ steps.image.outputs.name }}
-          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+          API_IMAGE_NAME: ${{ steps.image.outputs.api }}
+          API_IMAGE_DIGEST: ${{ steps.push-api.outputs.digest }}
+          FRONTEND_IMAGE_NAME: ${{ steps.image.outputs.frontend }}
+          FRONTEND_IMAGE_DIGEST: ${{ steps.push-frontend.outputs.digest }}
+          RELEASE_TEMPLATE: ${{ runner.temp }}/azoa-railway-template-${{ inputs.source_sha }}.json
         run: |
+          python3 deploy/railway/render-template.py \
+            --api-image "$API_IMAGE_NAME@$API_IMAGE_DIGEST" \
+            --frontend-image "$FRONTEND_IMAGE_NAME@$FRONTEND_IMAGE_DIGEST" \
+            --output "$RELEASE_TEMPLATE"
+
+      - name: Upload immutable Railway blueprint
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: azoa-railway-template-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/azoa-railway-template-${{ inputs.source_sha }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish immutable deployment references
+        id: release_refs
+        env:
+          API_IMAGE_NAME: ${{ steps.image.outputs.api }}
+          API_IMAGE_DIGEST: ${{ steps.push-api.outputs.digest }}
+          FRONTEND_IMAGE_NAME: ${{ steps.image.outputs.frontend }}
+          FRONTEND_IMAGE_DIGEST: ${{ steps.push-frontend.outputs.digest }}
+        run: |
+          echo "api_image=$API_IMAGE_NAME@$API_IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=$FRONTEND_IMAGE_NAME@$FRONTEND_IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
           {
-            echo "## Verified AZOA release image"
+            echo "## Verified AZOA release images"
             echo
-            echo "Deploy only \`$IMAGE_NAME@$IMAGE_DIGEST\` after Railway service review."
+            echo "Deploy API and schema job only from \`$API_IMAGE_NAME@$API_IMAGE_DIGEST\`."
+            echo
+            echo "Deploy frontend only from \`$FRONTEND_IMAGE_NAME@$FRONTEND_IMAGE_DIGEST\`."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Promote immutable images to Railway
+    needs: promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: railway-production
+    permissions:
+      contents: read
+    steps:
+      - name: Check out verified release tooling
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+
+      - name: Install pinned Railway CLI
+        run: npm install --global @railway/cli@5.27.0
+
+      - name: Run serial immutable-image rollout
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+          ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+          SURREAL_SERVICE_ID: ${{ vars.RAILWAY_SURREAL_SERVICE_ID }}
+          SCHEMA_SERVICE_ID: ${{ vars.RAILWAY_SCHEMA_SERVICE_ID }}
+          API_SERVICE_ID: ${{ vars.RAILWAY_API_SERVICE_ID }}
+          FRONTEND_SERVICE_ID: ${{ vars.RAILWAY_FRONTEND_SERVICE_ID }}
+          API_HEALTH_URL: ${{ vars.RAILWAY_API_HEALTH_URL }}
+          FRONTEND_HEALTH_URL: ${{ vars.RAILWAY_FRONTEND_HEALTH_URL }}
+          SURREAL_MODE: ${{ inputs.surreal_mode }}
+          API_IMAGE: ${{ needs.promote.outputs.api_image }}
+          FRONTEND_IMAGE: ${{ needs.promote.outputs.frontend_image }}
+          SURREAL_IMAGE: docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60
+        run: |
+          set -euo pipefail
+          python3 deploy/railway/serial-rollout.py \
+            --project-id "$PROJECT_ID" \
+            --environment-id "$ENVIRONMENT_ID" \
+            --surreal-service-id "$SURREAL_SERVICE_ID" \
+            --schema-service-id "$SCHEMA_SERVICE_ID" \
+            --api-service-id "$API_SERVICE_ID" \
+            --frontend-service-id "$FRONTEND_SERVICE_ID" \
+            --surreal-image "$SURREAL_IMAGE" \
+            --api-image "$API_IMAGE" \
+            --frontend-image "$FRONTEND_IMAGE" \
+            --surreal-mode "$SURREAL_MODE" \
+            --api-health-url "$API_HEALTH_URL" \
+            --frontend-health-url "$FRONTEND_HEALTH_URL" \
+            --confirm "PROMOTE $PROJECT_ID/$ENVIRONMENT_ID"

@@ -6,7 +6,7 @@
 #
 # Services:
 #   - surrealdb       RocksDB-backed v3.1.4 instance (port 8000)
-#   - azoa-api       .NET 8 WebAPI (port 5000) -- runs `surrealforge up`
+#   - azoa-api       .NET 10 WebAPI (port 5000) -- runs `surrealforge up`
 #                     against `surrealdb` on first boot to apply schemas,
 #                     then starts the WebAPI host.
 #   - azoa-frontend  Next.js dev frontend (port 3000) wired to azoa-api
@@ -75,6 +75,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        SOURCE_REVISION: "${SOURCE_REVISION}"
     container_name: azoa-dev-api
     restart: unless-stopped
     # When the bundled `surrealdb` service is part of the up set, wait for
@@ -120,6 +122,36 @@ services:
       SURREALFORGE_DB: "azoa"
       SURREALFORGE_USER: "root"
       SURREALFORGE_PASS: "root"
+      # The API entrypoint is the one schema owner. Launchers set this to 1
+      # only for an explicit reset/skip flow; ordinary dev remains fail-closed.
+      AZOA_SKIP_MIGRATIONS: "${AZOA_SKIP_MIGRATIONS:-0}"
+      # Development-only operator seed. Hosted environments must inject a
+      # generated password from their secret store and rotate by incrementing
+      # the credential revision; never copy this convenience password.
+      NodeOperator__Username: "${AZOA_NODE_OPERATOR_USERNAME:-node-operator}"
+      NodeOperator__Password: "${AZOA_NODE_OPERATOR_PASSWORD:-azoa-local-operator-only-2026}"
+      NodeOperator__CredentialRevision: "${AZOA_NODE_OPERATOR_CREDENTIAL_REVISION:-1}"
+      NodeOperator__SessionMinutes: "${AZOA_NODE_OPERATOR_SESSION_MINUTES:-20}"
+      AdminBootstrap__SeedEmail: "${AZOA_ADMIN_BOOTSTRAP_EMAIL:-}"
+      AdminBootstrap__SeedSecret: "${AZOA_ADMIN_BOOTSTRAP_SECRET:-}"
+      # Manual verification is allowed only because this process runs in
+      # Development. External adapters remain unavailable until all matching
+      # host metadata/secrets are supplied; the dashboard never returns them.
+      Kyc__Provider: "${AZOA_KYC_PROVIDER:-manual}"
+      Kyc__VeriffApiKey: "${AZOA_KYC_VERIFF_API_KEY:-}"
+      Kyc__VeriffBaseUrl: "${AZOA_KYC_VERIFF_BASE_URL:-}"
+      Kyc__Hosted__ProviderName: "${AZOA_KYC_HOSTED_PROVIDER_NAME:-}"
+      Kyc__Hosted__BaseUrl: "${AZOA_KYC_HOSTED_BASE_URL:-}"
+      Kyc__Hosted__ApiKey: "${AZOA_KYC_HOSTED_API_KEY:-}"
+      Kyc__Hosted__WebhookSecret: "${AZOA_KYC_HOSTED_WEBHOOK_SECRET:-}"
+      Kyc__Hosted__SessionPath: "${AZOA_KYC_HOSTED_SESSION_PATH:-/sessions}"
+      Kyc__Hosted__StatusPath: "${AZOA_KYC_HOSTED_STATUS_PATH:-/sessions/{sessionId}}"
+      Kyc__ApprovalPolicy__PolicyVersion: "${AZOA_KYC_POLICY_VERSION:-dev-manual-v1}"
+      Kyc__ApprovalPolicy__AssuranceLevel: "${AZOA_KYC_ASSURANCE_LEVEL:-development-manual}"
+      Kyc__ApprovalPolicy__TrustedProviderKeys__0: "${AZOA_KYC_TRUSTED_PROVIDER_KEY:-manual}"
+      Kyc__ApprovalPolicy__AllowManualInDevelopment: "${AZOA_KYC_ALLOW_MANUAL_IN_DEVELOPMENT:-true}"
+      Kyc__SubmissionExpiryDays: "${AZOA_KYC_SUBMISSION_EXPIRY_DAYS:-30}"
+      Kyc__SessionExpiryMinutes: "${AZOA_KYC_SESSION_EXPIRY_MINUTES:-30}"
     ports:
       - "5000:5000"
     volumes:
@@ -155,13 +187,19 @@ services:
       # server layer, so repointing the UI needs only a restart, not a rebuild.
       # The former NEXT_PUBLIC_API_URL was baked at `next build` and is now dead.
       API_URL: "http://localhost:5000"
+      AZOA_ALLOW_INSECURE_LOCAL_API: "true"
       NODE_ENV: "production"
     ports:
-      - "3000:3000"
+      - "${AZOA_FRONTEND_HOST_PORT:-3000}:3000"
     networks:
       - azoa-dev
 
   fiat-sidecar:
+    # Optional integration: ordinary dev-up starts only the core
+    # SurrealDB/API/frontend stack. Opt in explicitly with
+    # `docker compose -f docker-compose.dev.yml --profile fiat up` after
+    # replacing the development-only Stripe/API-key placeholders below.
+    profiles: ["fiat"]
     build:
       context: .
       dockerfile: fiat-sidecar/Dockerfile

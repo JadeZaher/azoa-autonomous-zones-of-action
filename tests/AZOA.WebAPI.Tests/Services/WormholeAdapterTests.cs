@@ -246,7 +246,7 @@ public class WormholeAdapterTests
     public async Task InitiateTransferAsync_LockFails_ReturnsError()
     {
         _providerMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = true, Message = "Lock failed" });
 
@@ -265,7 +265,7 @@ public class WormholeAdapterTests
     public async Task InitiateTransferAsync_Success_ReturnsInitiation()
     {
         _providerMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx_hash_123" });
 
@@ -736,7 +736,7 @@ public class WormholeAdapterTests
         result.Message.Should().Contain("VAA verification failed");
         _providerMock.Verify(p => p.MintWrappedAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never, "an unverifiable VAA must never trigger an on-chain mint");
     }
 
@@ -757,7 +757,7 @@ public class WormholeAdapterTests
         result.Message.Should().Contain("VAA verification failed");
         _providerMock.Verify(p => p.MintWrappedAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -776,7 +776,7 @@ public class WormholeAdapterTests
 
         _providerMock.Setup(p => p.MintWrappedAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "mint_tx_456" });
 
         _factoryMock.Setup(f => f.GetProvider("Algorand", ChainNetwork.Devnet))

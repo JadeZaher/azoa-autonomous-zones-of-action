@@ -283,7 +283,7 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
     }
 
     public virtual Task<AZOAResult<string>> LockForBridgeAsync(
-        string tokenId, string vaultAddress, int amount,
+        string tokenId, string vaultAddress, ulong amount,
         string targetChain, string targetRecipient, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} LockForBridgeAsync not implemented"));
@@ -291,16 +291,23 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
 
     public virtual Task<AZOAResult<string>> MintWrappedAsync(
         string sourceChain, string sourceTokenId, string tokenUri,
-        int amount, string recipientAddress, CancellationToken ct = default)
+        ulong amount, string recipientAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} MintWrappedAsync not implemented"));
     }
 
     public virtual Task<AZOAResult<string>> BurnWrappedAsync(
-        string tokenId, int amount, string sourceChain,
+        string tokenId, ulong amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} BurnWrappedAsync not implemented"));
+    }
+
+    public virtual Task<AZOAResult<string>> ReleaseFromBridgeAsync(
+        string tokenId, string vaultAddress, ulong amount,
+        string recipientAddress, CancellationToken ct = default)
+    {
+        return Task.FromResult(Error<string>($"{ChainType} ReleaseFromBridgeAsync not implemented"));
     }
 
     // VerifyBridgeProofAsync removed (final-hardening-cutover B2): cross-chain proof

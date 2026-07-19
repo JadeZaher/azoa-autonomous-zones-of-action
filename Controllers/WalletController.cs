@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
@@ -16,10 +17,14 @@ namespace AZOA.WebAPI.Controllers;
 public class WalletController : ControllerBase
 {
     private readonly IWalletManager _walletManager;
+    private readonly ILogger<WalletController> _logger;
 
-    public WalletController(IWalletManager walletManager)
+    public WalletController(
+        IWalletManager walletManager,
+        ILogger<WalletController>? logger = null)
     {
         _walletManager = walletManager;
+        _logger = logger ?? NullLogger<WalletController>.Instance;
     }
 
     [HttpGet("{id:guid}")]
@@ -46,6 +51,7 @@ public class WalletController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IWallet>>> Create([FromBody] WalletCreateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -58,6 +64,7 @@ public class WalletController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IWallet>>> Update(Guid id, [FromBody] WalletUpdateModel model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -70,6 +77,7 @@ public class WalletController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -82,6 +90,7 @@ public class WalletController : ControllerBase
     }
 
     [HttpPost("{id:guid}/set-default")]
+    [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<bool>>> SetDefault(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -108,6 +117,7 @@ public class WalletController : ControllerBase
     // ─── Generate a new wallet on-platform ───
 
     [HttpPost("generate")]
+    [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IWallet>>> Generate([FromBody] WalletGenerateRequest model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -122,6 +132,7 @@ public class WalletController : ControllerBase
     // ─── Connect an external wallet (MetaMask, Ghost, etc.) ───
 
     [HttpPost("connect")]
+    [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IWallet>>> Connect([FromBody] WalletConnectRequest model, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
@@ -136,24 +147,44 @@ public class WalletController : ControllerBase
     // ─── Export a platform wallet's private key ───
 
     [HttpPost("{id:guid}/export")]
+    [Authorize(Policy = "RecentFirstPartyLogin")]
+    [EnableRateLimiting("financial")]
     public async Task<ActionResult<AZOAResult<WalletExportResult>>> Export(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
             return Unauthorized(new AZOAResult<WalletExportResult> { IsError = true, Message = "Invalid token." });
 
-        // Security-review fix (custody bypass): raw-key export is the ONE path that
-        // hands out cleartext signing material, sidestepping the consent gate entirely.
-        // A tenant-driven child credential (act_as_tenant) has the user's avatar id as
-        // its subject, so without this guard a tenant could export the user's key and
-        // sign offline — defeating every consent grant, scope ceiling, and revocation.
-        // Export is a USER-ONLY action: a tenant principal, even with a live grant, is
-        // forbidden. 403 (not 404) — the caller is authenticated but not permitted.
-        if (User.GetActingTenantId() is not null)
+        // See Controllers/AGENTS.md § tenant credential and recovery boundaries.
+        if (User.GetActingTenantId() is not null
+            || string.Equals(User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                User.FindFirst(AzoaClaims.TokenUse)?.Value,
+                AzoaClaims.TokenUseLogin,
+                StringComparison.Ordinal))
+        {
             return Forbid();
+        }
 
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers.Pragma = "no-cache";
+        _logger.LogWarning(
+            "Sensitive wallet recovery requested by avatar {AvatarId} for wallet {WalletId}.",
+            avatarId.Value,
+            id);
         var result = await _walletManager.ExportWalletAsync(id, avatarId.Value, request);
-        if (result.IsError) return BadRequest(result);
+        if (result.IsError)
+        {
+            _logger.LogWarning(
+                "Sensitive wallet recovery failed for avatar {AvatarId} and wallet {WalletId}.",
+                avatarId.Value,
+                id);
+            return BadRequest(result);
+        }
+        _logger.LogInformation(
+            "Sensitive wallet recovery completed for avatar {AvatarId} and wallet {WalletId}.",
+            avatarId.Value,
+            id);
         return Ok(result);
     }
 

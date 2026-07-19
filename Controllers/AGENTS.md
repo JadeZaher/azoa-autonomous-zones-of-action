@@ -1,5 +1,48 @@
 # Controllers — directory notes
 
+## Precision-safe bridge amounts
+
+Bridge request and response amounts are decimal strings on the JSON boundary.
+Requests are accepted only when the exact string is in `1..ulong.MaxValue`; the
+domain and provider layers retain `ulong`, while response serialization writes
+the same value as a string so browser and SDK consumers cannot lose precision.
+
+## Tenant-driven profile KYC
+
+`GET /api/kyc/status/summary` reads the authenticated avatar from the credential
+subject. Every API key and every tenant-driven child credential must carry the
+literal `kyc:read` scope; issuance of a child credential remains tenant- and
+live-consent-scoped. The response is a minimal latest-submission projection.
+Detailed status, submission, get-by-id, and document-reference routes require a
+`FirstPartyLogin` JWT, even when an API key carries `kyc:read` or `kyc:submit`.
+Service integrations use the purpose-built custodial-account routes below.
+
+The service-to-service onboarding surface lives under
+`/api/tenant/custodial-accounts/{externalSubject}`. `TenantScope` supplies the
+tenant from the authenticated API-key subject; the route never accepts a tenant
+id. Ensure additionally requires `wallet:manage` + `kyc:read`, status requires
+`kyc:read`, and KYC begin/submit require `kyc:submit`. Tenant KYC responses are
+purpose-built projections: document references, reviewer fields, provider
+payloads, ciphertext, seeds, and private keys never cross this boundary.
+Concurrent requests that observe an owned operation still in progress return
+HTTP 409 with a retryable discriminator; they are not malformed 400 requests.
+
+The first tenant key is issued through `POST /api/apikey/tenant`. The action is
+`Operator` policy only (therefore JWT-only), loads an existing target avatar,
+and ignores arbitrary scope input by having none: it always stamps exactly
+`tenant:provision,wallet:manage,kyc:read,kyc:submit`. It returns the raw key once
+under `Cache-Control: no-store`; no value-signing or operator scope can enter.
+
+Delegated child JWTs are temporarily disabled at validation and issuance. They
+remain default-deny until every future accepting endpoint has an explicit scope
+policy. Consent, avatar ownership mutations, API-key management, and wallet
+ownership mutations require a first-party login JWT. Service-to-service wallet
+setup uses the tenant custodial-account routes instead.
+
+Raw platform-wallet recovery is a separate recent-login action. It rejects API
+keys and tenant provenance, is financially rate-limited, emits audit events that
+contain identifiers but never signing material, and returns `no-store` headers.
+
 ## §per-endpoint-signing-scope
 
 Money-moving REST endpoints carry a per-endpoint, server-side signing-scope check
@@ -22,8 +65,8 @@ principals never have — hence this second, per-endpoint enforcement.
 Read-only endpoints (`/nft` GET/query, `/wallet` get/list/query/portfolio,
 `/swap/quote`) carry no signing-scope check, but the holon/star/nft read endpoints
 ARE owner-or-public scoped — see §cross-tenant-read-scope. `POST /wallet/{id}/export`
-is unchanged — it already Forbids tenant principals outright (raw-key export is a
-user-only action).
+is a recent first-party recovery action and never accepts an API key or tenant
+principal.
 
 ### Lock-out-avoidance semantics (`HasSigningScope`)
 

@@ -66,6 +66,11 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
             return AuthenticateResult.Fail("API key has expired.");
         }
 
+        if (apiKey.AvatarId == AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId)
+        {
+            return AuthenticateResult.Fail("API keys cannot authenticate the reserved node operator identity.");
+        }
+
         var avatarStore = scope.ServiceProvider.GetRequiredService<IAvatarStore>();
         var avatar = await avatarStore.GetByIdAsync(apiKey.AvatarId, Context.RequestAborted);
         if (avatar.IsError || avatar.Result is null || !avatar.Result.IsActive)

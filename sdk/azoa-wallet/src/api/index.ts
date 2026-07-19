@@ -2,6 +2,12 @@ export { AzoaApiClient, DAPP_ROLES } from "./client.js";
 export type {
   AzoaApiConfig,
   AvatarResponse,
+  TenantKycStatus,
+  TenantCustodialAccountStatus,
+  TenantCustodialCapabilities,
+  TenantKycSession,
+  TenantKycDocumentReference,
+  TenantKycSubmission,
   // avatar-dapp-rbac: assignable DApp role allowlist
   DappRole,
   NftResult,

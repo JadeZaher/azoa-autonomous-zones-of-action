@@ -13,4 +13,23 @@ public interface IAdminBootstrapStateStore
     Task<AZOAResult<AdminBootstrapState>> BindOnceAsync(
         AdminBootstrapState state,
         CancellationToken ct = default);
+
+    /// <summary>Atomically rotates the bound operator avatar hash and monotonic revision.</summary>
+    Task<AZOAResult<AdminBootstrapState>> RotateCredentialsAsync(
+        Guid avatarId,
+        string username,
+        string passwordHash,
+        long expectedRevision,
+        long nextRevision,
+        DateTimeOffset changedAt,
+        CancellationToken ct = default);
+
+    /// <summary>Atomically advances only the reserved operator session watermark.</summary>
+    Task<AZOAResult<long>> AdvanceSessionWatermarkAsync(
+        long expectedCredentialRevision,
+        long expectedSessionRevision,
+        DateTimeOffset changedAt,
+        CancellationToken ct = default)
+        => Task.FromResult(AZOAResult<long>.Failure(
+            "Node operator session revocation is not supported by this store."));
 }

@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
 using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -17,8 +18,8 @@ namespace AZOA.WebAPI.Tests.Managers;
 /// <summary>
 /// Unit coverage for the tenant manager AFTER the user-self-sovereignty hard
 /// cutover (2026-06-22). The load-bearing facts proven here:
-///  • ProvisionChild mints a SELF-OWNED avatar (OwnerTenantId == null) — there is
-///    no tenant-locked child any more (AC6).
+///  • ProvisionChild is tenant/external-user idempotent; the onboarding binding
+///    does not bypass the live-consent credential gate.
 ///  • IssueChildCredential requires a LIVE ConsentGrant; with no grant it is
 ///    NotFound (404, never 403 — the isolation crux); the scope ceiling is
 ///    (tenant ∩ granted ∩ requested) (AC2/M2/M3); the token carries act_as_tenant
@@ -47,6 +48,8 @@ public class TenantManagerTests
         // Default: no grants for any grantor (the consent-gated path denies).
         _grants.Setup(g => g.ListByGrantorAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IEnumerable<ConsentGrant>> { Result = Array.Empty<ConsentGrant>() });
+        _store.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar> { IsError = true, Message = "Avatar not found." });
 
         _manager = new TenantManager(_store.Object, config, _grants.Object);
     }
@@ -73,21 +76,105 @@ public class TenantManagerTests
     // ── Hard cutover: provision mints SELF-OWNED (AC6) ────────────────────────
 
     [Fact]
-    public async Task ProvisionChild_MintsSelfOwnedAvatar_NeverTenantLocked()
+    public async Task ProvisionChild_BindsUnclaimedAvatarToAuthenticatedTenant()
     {
         var tenantId = Guid.NewGuid();
         _store.Setup(s => s.GetByTenantAndExternalUserAsync(tenantId, "user-42", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
-        _store.Setup(s => s.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()))
+        _store.Setup(s => s.CreateIfAbsentAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IAvatar a, CancellationToken _) => new AZOAResult<IAvatar> { Result = a });
 
         var result = await _manager.ProvisionChildAsync(tenantId, new ProvisionChildModel { ExternalUserId = "user-42" });
 
         result.IsError.Should().BeFalse();
-        // The persisted avatar is SELF-OWNED — OwnerTenantId is null (no lock).
-        _store.Verify(s => s.UpsertAsync(
-            It.Is<IAvatar>(a => a.OwnerTenantId == null && a.ExternalUserId == "user-42"),
+        _store.Verify(s => s.CreateIfAbsentAsync(
+            It.Is<IAvatar>(a => a.OwnerTenantId == tenantId && a.ExternalUserId == "user-42"),
             It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProvisionChild_RetryReturnsExistingAvatarWithoutCreatingAnother()
+    {
+        var tenantId = Guid.NewGuid();
+        var existing = new Avatar
+        {
+            Id = Guid.NewGuid(),
+            OwnerTenantId = tenantId,
+            ExternalUserId = "user-42",
+            Username = "existing",
+            Email = "existing@example.test"
+        };
+        _store.Setup(s => s.GetByTenantAndExternalUserAsync(tenantId, "user-42", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar> { Result = existing });
+
+        var result = await _manager.ProvisionChildAsync(
+            tenantId, new ProvisionChildModel { ExternalUserId = "user-42" });
+
+        result.IsError.Should().BeFalse();
+        result.Result!.AvatarId.Should().Be(existing.Id);
+        _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProvisionChild_PostClaimRetryReturnsOriginalWithoutOverwriting()
+    {
+        var tenantId = Guid.NewGuid();
+        var deterministicId = TenantAvatarId(tenantId, "user-42");
+        var claimed = new Avatar
+        {
+            Id = deterministicId,
+            OwnerTenantId = null,
+            ExternalUserId = "user-42",
+            PasswordHash = "claimed-password-hash",
+            AuthWalletAddress = "claimed-wallet"
+        };
+        _store.Setup(s => s.GetByTenantAndExternalUserAsync(
+                tenantId, "user-42", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
+        _store.Setup(s => s.GetByIdAsync(deterministicId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar> { Result = claimed });
+
+        var result = await _manager.ProvisionChildAsync(
+            tenantId,
+            new ProvisionChildModel { ExternalUserId = "user-42" });
+
+        result.IsError.Should().BeFalse();
+        result.Result!.AvatarId.Should().Be(deterministicId);
+        claimed.PasswordHash.Should().Be("claimed-password-hash");
+        claimed.AuthWalletAddress.Should().Be("claimed-wallet");
+        _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProvisionChild_DeterministicIdConflictNeverOverwrites()
+    {
+        var tenantId = Guid.NewGuid();
+        var deterministicId = TenantAvatarId(tenantId, "user-42");
+        _store.Setup(s => s.GetByTenantAndExternalUserAsync(
+                tenantId, "user-42", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
+        _store.Setup(s => s.GetByIdAsync(deterministicId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar>
+            {
+                Result = new Avatar
+                {
+                    Id = deterministicId,
+                    OwnerTenantId = Guid.NewGuid(),
+                    ExternalUserId = "different-user"
+                }
+            });
+
+        var result = await _manager.ProvisionChildAsync(
+            tenantId,
+            new ProvisionChildModel { ExternalUserId = "user-42" });
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("already bound");
+        _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -261,6 +348,44 @@ public class TenantManagerTests
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(TenantAuthorizationError.NotFound);
     }
+
+    [Fact]
+    public async Task ResolveChild_StoreFailureNeverExposesInternalException()
+    {
+        var tenantId = Guid.NewGuid();
+        _store.Setup(s => s.GetByTenantAndExternalUserAsync(
+                tenantId, "user-42", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar>
+            {
+                IsError = true,
+                Message = "AVATAR_STORE_UNAVAILABLE: sql details",
+                Exception = new InvalidOperationException("credential-bearing internal detail")
+            });
+        var debugWasEnabled = AZOAResultDebug.Enabled;
+
+        try
+        {
+            AZOAResultDebug.Enabled = true;
+            var result = await _manager.ResolveChildAsync(tenantId, "user-42");
+
+            result.IsError.Should().BeTrue();
+            result.Message.Should().Be(
+                "TENANT_IDENTITY_UNAVAILABLE: Tenant identity persistence is temporarily unavailable.");
+            result.Message.Should().NotContain("sql details");
+            result.Detail.Should().BeNull();
+        }
+        finally
+        {
+            AZOAResultDebug.Enabled = debugWasEnabled;
+        }
+    }
+
+    private static Guid TenantAvatarId(Guid tenantId, string externalUserId)
+    {
+        var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            $"azoa:tenant-avatar:v1:{tenantId:N}:{externalUserId}"));
+        return new Guid(hash.AsSpan(0, 16));
+    }
 }
 
 /// <summary>
@@ -400,4 +525,5 @@ public class ClaimsPrincipalScopeTests
             }, "Test"));
         p.CanSelfIssueApiKeyScope(AzoaScopes.NodeGovern).Should().BeFalse();
     }
+
 }

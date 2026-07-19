@@ -1,33 +1,98 @@
 {
-  "$comment": "Azoa node — Railway template blueprint. Describes the 3-service topology validated in production (JadeZaher/azoa-autonomous-zones-of-action). Use this as the source of truth when publishing the one-click template via Railway's dashboard 'Create Template from Project' flow, or when standing a node up by hand per deploy/railway/DEPLOY.md.",
+  "$comment": "Azoa node Railway release blueprint. The protected promotion workflow replaces each whole <PROMOTED_*_IMAGE_REFERENCE> value with an attested name@sha256 reference. Deploy in service order: surrealdb, azoa-schema (must reach SUCCESS), azoa-api, then azoa-frontend. The placeholders deliberately make this file non-deployable as committed.",
   "name": "Azoa Node",
-  "description": "A self-hostable Azoa node: .NET 10 WebAPI backend + Next.js frontend + SurrealDB. Blockchain honesty posture — Algorand real value LIVE; Solana/Wormhole/Ethereum fail-closed and disabled by default.",
+  "description": "A self-hostable Azoa node: .NET 10 WebAPI backend + Next.js frontend + SurrealDB. Real-value execution is fail-closed and disabled until an operator supplies the complete supported-chain configuration.",
   "repo": "JadeZaher/azoa-autonomous-zones-of-action",
   "services": [
     {
       "name": "surrealdb",
-      "source": { "template": "surrealdb-3x" },
-      "notes": "Provision from the public SurrealDB 3.x template with a /data volume. Its bootstrap credentials are for controlled setup only and must not be injected into the API service.",
+      "source": { "image": "docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60" },
+      "notes": "Pinned SurrealDB v3.1.4 with synchronous RocksDB durability at /data/db. Do not replace the start command, storage path, version, or SURREAL_SYNC_DATA setting without a separately reviewed storage migration.",
+      "deploy": {
+        "startCommand": "/surreal start",
+        "healthcheckPath": "/health",
+        "healthcheckTimeout": 120,
+        "restartPolicyType": "ALWAYS"
+      },
+      "variables": {
+        "PORT": "8000",
+        "RAILWAY_RUN_UID": "0",
+        "SURREAL_USER": "azoa_schema_owner",
+        "SURREAL_PASS": "${{secret(48)}}",
+        "SURREAL_BIND": "0.0.0.0:8000",
+        "SURREAL_LOG": "info",
+        "SURREAL_PATH": "rocksdb:///data/db",
+        "SURREAL_SYNC_DATA": "true",
+        "SURREAL_HTTP_PRIVATE_URL": "http://${{RAILWAY_PRIVATE_DOMAIN}}:${{PORT}}"
+      },
       "volume": { "mountPath": "/data" }
     },
     {
-      "name": "azoa-api",
-      "source": { "repo": "JadeZaher/azoa-autonomous-zones-of-action", "branch": "main" },
-      "build": { "dockerfilePath": "Dockerfile" },
-      "deploy": { "healthcheckPath": "/health", "healthcheckTimeout": 300 },
+      "name": "azoa-schema",
+      "source": { "image": "<PROMOTED_API_IMAGE_REFERENCE>" },
+      "notes": "Release order 2/4. One-shot prerequisite: it applies the forward-only schema with owner credentials and then creates or rotates the database-scoped EDITOR account. Require terminal SUCCESS before releasing the matching API digest.",
+      "deploy": {
+        "startCommand": "/usr/local/bin/docker-entrypoint.sh schema",
+        "restartPolicyType": "NEVER"
+      },
       "variables": {
         "ASPNETCORE_ENVIRONMENT": "Production",
+        "SURREALFORGE_URL": "${{surrealdb.SURREAL_HTTP_PRIVATE_URL}}",
+        "SURREALFORGE_NS": "azoa",
+        "SURREALFORGE_DB": "azoa",
+        "SURREALFORGE_USER": "${{surrealdb.SURREAL_USER}}",
+        "SURREALFORGE_PASS": "${{surrealdb.SURREAL_PASS}}",
+        "AZOA_RUNTIME_USER": "azoa_runtime",
+        "AZOA_RUNTIME_PASSWORD": "${{secret(48)}}"
+      }
+    },
+    {
+      "name": "azoa-api",
+      "source": { "image": "<PROMOTED_API_IMAGE_REFERENCE>" },
+      "notes": "Release order 3/4. Deploy only after the matching azoa-schema digest reaches terminal SUCCESS. The API never receives SURREALFORGE_* or database-owner credentials. Railway seeds a durable node-operator identity; KYC remains unavailable until the operator supplies host-managed provider secrets and enables a ready profile.",
+      "deploy": {
+        "healthcheckPath": "/health",
+        "healthcheckTimeout": 300,
+        "numReplicas": 1
+      },
+      "variables": {
+        "ASPNETCORE_ENVIRONMENT": "Production",
+        "RAILWAY_RUN_UID": "0",
         "ForwardedHeaders__Enabled": "true",
         "ForwardedHeaders__TrustAll": "true",
         "ForwardedHeaders__EdgeOnlyDeploymentAcknowledged": "true",
-        "RAILWAY_DOCKERFILE_PATH": "Dockerfile",
         "AZOA_SKIP_MIGRATIONS": "1",
+        "DataProtection__ApplicationName": "AZOA.WebAPI.NodeTransparency.v1",
+        "DataProtection__KeyRingPath": "/app/data/data-protection-keys",
         "SurrealRuntime__Endpoint": "${{surrealdb.SURREAL_HTTP_PRIVATE_URL}}",
         "SurrealRuntime__Namespace": "azoa",
         "SurrealRuntime__Database": "azoa",
+        "SurrealRuntime__User": "${{azoa-schema.AZOA_RUNTIME_USER}}",
+        "SurrealRuntime__Password": "${{azoa-schema.AZOA_RUNTIME_PASSWORD}}",
         "SurrealRuntime__G1DurabilityAcknowledged": "true",
+        "Blockchain__Bridge__RealValueEnabled": "false",
+        "Blockchain__Wormhole__DefaultMode": "Trusted",
         "Jwt__Key": "${{secret(48)}}",
         "AZOA__WalletEncryptionKey": "${{secret(32)}}",
+        "AUTOMAPPER_LICENSE_KEY": "${{shared.AUTOMAPPER_LICENSE_KEY}}",
+        "NodeOperator__Username": "node-operator",
+        "NodeOperator__Password": "${{secret(48)}}",
+        "NodeOperator__CredentialRevision": "1",
+        "NodeOperator__SessionMinutes": "20",
+        "Kyc__Provider": "unavailable",
+        "Kyc__VeriffApiKey": "",
+        "Kyc__VeriffBaseUrl": "",
+        "Kyc__Hosted__ProviderName": "",
+        "Kyc__Hosted__BaseUrl": "",
+        "Kyc__Hosted__ApiKey": "",
+        "Kyc__Hosted__WebhookSecret": "",
+        "Kyc__Hosted__SessionPath": "/sessions",
+        "Kyc__Hosted__StatusPath": "/sessions/{sessionId}",
+        "Kyc__ApprovalPolicy__PolicyVersion": "",
+        "Kyc__ApprovalPolicy__AssuranceLevel": "",
+        "Kyc__ApprovalPolicy__AllowManualInDevelopment": "false",
+        "Kyc__SubmissionExpiryDays": "30",
+        "Kyc__SessionExpiryMinutes": "30",
         "Cors__AllowedOrigins__0": "https://${{azoa-frontend.RAILWAY_PUBLIC_DOMAIN}}"
       },
       "volume": { "mountPath": "/app/data" },
@@ -35,11 +100,11 @@
     },
     {
       "name": "azoa-frontend",
-      "source": { "repo": "JadeZaher/azoa-autonomous-zones-of-action", "branch": "main" },
-      "build": { "dockerfilePath": "frontend/Dockerfile", "$comment": "frontend/Dockerfile installs the published azoa-sdk from npm (frontend/package.json) and builds the Next.js app — no local SDK build step." },
+      "source": { "image": "<PROMOTED_FRONTEND_IMAGE_REFERENCE>" },
+      "notes": "Release order 4/4. Use only the frontend digest emitted and attested by the same protected promotion run as the API image.",
+      "deploy": { "healthcheckPath": "/api/health", "healthcheckTimeout": 120 },
       "variables": {
         "NODE_ENV": "production",
-        "RAILWAY_DOCKERFILE_PATH": "frontend/Dockerfile",
         "API_URL": "https://${{azoa-api.RAILWAY_PUBLIC_DOMAIN}}"
       },
       "domain": true

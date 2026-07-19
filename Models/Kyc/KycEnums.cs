@@ -28,8 +28,9 @@ public enum KycStatus
 
 /// <summary>
 /// Which verification provider produced/owns a submission. The default
-/// <see cref="MANUAL"/> provider is admin-review only; <see cref="VERIFF"/>
-/// is a config-gated external provider (deploy-stub).
+/// <see cref="MANUAL"/> provider is admin-review only. External values remain
+/// explicit persistence discriminators while the runtime API stays
+/// provider-neutral through <c>ProviderKey</c> and capability metadata.
 /// </summary>
 public enum KycProvider
 {
@@ -37,7 +38,13 @@ public enum KycProvider
     MANUAL,
 
     /// <summary>External automated provider (config-gated; stub until provisioned).</summary>
-    VERIFF
+    VERIFF,
+
+    /// <summary>Operator-configured generic hosted-provider adapter.</summary>
+    GENERIC_HOSTED,
+
+    /// <summary>Unknown or invalid provider configuration; never persisted.</summary>
+    UNAVAILABLE
 }
 
 /// <summary>

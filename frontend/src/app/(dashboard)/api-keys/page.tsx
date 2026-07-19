@@ -139,15 +139,18 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (selectedScopes.size === 0) {
+      setError('Choose at least one permission for this API key.')
+      return
+    }
     setLoading(true)
     setError(null)
 
-    // No boxes checked = empty CSV = legacy full access. Otherwise the CSV of picks.
     const scopeList = Array.from(selectedScopes)
 
     const body: Record<string, unknown> = { name }
     if (expiresInDays.trim()) body.expiresInDays = parseInt(expiresInDays, 10)
-    if (scopeList.length > 0) body.scopes = scopeList.join(',')
+    body.scopes = scopeList.join(',')
 
     const res = await azoa.api.request<CreateApiKeyResponse>('POST', '/api/apikey', body)
 
@@ -197,7 +200,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
           <div className="space-y-2">
             <Label>Scopes</Label>
             <p className="text-xs text-muted-foreground">
-              Leave all unchecked for a full-access key. DApp roles control which authoring and management scopes appear here.
+              Choose only the permissions this key needs. DApp roles control which authoring and management scopes are available.
             </p>
             {scopesLoading ? (
               <p className="text-xs text-muted-foreground">Loading scopes…</p>
@@ -222,7 +225,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
             )}
           </div>
 
-          <Button type="submit" disabled={loading || !name.trim()}>
+          <Button type="submit" disabled={loading || scopesLoading || !name.trim() || selectedScopes.size === 0}>
             {loading ? 'Creating...' : 'Create API Key'}
           </Button>
 

@@ -11,7 +11,9 @@ graph LR
     consent_grant["consent_grant: Node"]:::nodeClass
     holon["holon: Node"]:::nodeClass
     holon_type_registry["holon_type_registry: Node"]:::nodeClass
+    kyc_control_audit["kyc_control_audit: Node"]:::nodeClass
     kyc_document["kyc_document: Node"]:::nodeClass
+    kyc_provider_profile["kyc_provider_profile: Node"]:::nodeClass
     kyc_submission["kyc_submission: Node"]:::nodeClass
     node_fee_audit["node_fee_audit: Node"]:::nodeClass
     node_fee_schedule["node_fee_schedule: Node"]:::nodeClass
@@ -20,6 +22,7 @@ graph LR
     node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
     node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
     star_odk["star_odk: Node"]:::nodeClass
+    tenant_kyc_provider_selection["tenant_kyc_provider_selection: Node"]:::nodeClass
     wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
     wallet_auth_claim_token["wallet_auth_claim_token: Node"]:::nodeClass
 
@@ -36,8 +39,12 @@ graph LR
     holon -- "transfer_target_avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
     holon -- "source_holon_id [N:0..1]" --> holon
+    kyc_control_audit -- "tenant_id [N:0..1]" --> avatar
+    kyc_control_audit -- "actor_avatar_id [N:1]" --> avatar
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
+    kyc_provider_profile -- "updated_by_avatar_id [N:1]" --> avatar
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
+    kyc_submission -- "tenant_id [N:0..1]" --> avatar
     node_fee_audit -- "actor_avatar_id [N:1]" --> avatar
     node_fee_schedule -- "updated_by_avatar_id [N:0..1]" --> avatar
     node_governance_audit -- "actor_avatar_id [N:1]" --> avatar
@@ -45,6 +52,8 @@ graph LR
     node_treasury_audit -- "actor_avatar_id [N:1]" --> avatar
     node_treasury_destination -- "updated_by_avatar_id [N:0..1]" --> avatar
     star_odk -- "avatar_id [N:0..1]" --> avatar
+    tenant_kyc_provider_selection -- "tenant_id [N:1]" --> avatar
+    tenant_kyc_provider_selection -- "updated_by_avatar_id [N:1]" --> avatar
     wallet_auth_claim_token -- "target_avatar_id [N:1]" --> avatar
     wallet_auth_claim_token -- "tenant_id [N:1]" --> avatar
 

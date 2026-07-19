@@ -299,7 +299,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
             TargetTokenId  = null,
             SourceAddress  = $"G1_SRC_{id}",
             TargetAddress  = $"G1_TGT_{id}",
-            Amount         = 100 + i,
+            Amount         = 100UL + (ulong)i,
             Status         = BridgeStatus.Initiated,
             Mode           = BridgeMode.Trusted,
             CreatedAt      = DateTime.UtcNow,

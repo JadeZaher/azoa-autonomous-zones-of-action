@@ -57,6 +57,30 @@ public class ManualKycProviderServiceTests
     }
 
     [Fact]
+    public async Task ValidateDocuments_RejectsCredentialBearingOrInlineReferences()
+    {
+        var querySecret = ValidDoc();
+        querySecret.FileUrl = "https://blob.example/doc.png?token=secret";
+        var inline = ValidDoc();
+        inline.FileUrl = "data:image/png;base64,AAAA";
+
+        (await _provider.ValidateDocumentsAsync(new[] { querySecret })).IsError.Should().BeTrue();
+        (await _provider.ValidateDocumentsAsync(new[] { inline })).IsError.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task BeginSession_AdvertisesDocumentReferencesWithoutProviderSecrets()
+    {
+        var result = await _provider.BeginSessionAsync(Guid.NewGuid());
+
+        result.IsError.Should().BeFalse();
+        result.Result!.HostedVerification.Should().BeFalse();
+        result.Result.AcceptsDocumentReferences.Should().BeTrue();
+        result.Result.ProviderSessionId.Should().BeNull();
+        result.Result.VerificationUrl.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ValidateDocuments_ValidSet_ReturnsSuccess()
     {
         var result = await _provider.ValidateDocumentsAsync(new[] { ValidDoc(), ValidDoc(mime: "application/pdf") });

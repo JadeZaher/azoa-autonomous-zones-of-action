@@ -127,5 +127,7 @@ public class TokenUseClaimTests
         // The child credential is unambiguously scoped/tenant-driven.
         jwt.Claims.Should().Contain(c => c.Type == AzoaClaims.TokenUse && c.Value == AzoaClaims.TokenUseChild);
         jwt.Claims.Should().Contain(c => c.Type == TenantManager.ActAsTenantClaim && c.Value == tenantId.ToString());
+        AzoaClaims.IsChildCredential(new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(jwt.Claims, "test"))).Should().BeTrue();
     }
 }

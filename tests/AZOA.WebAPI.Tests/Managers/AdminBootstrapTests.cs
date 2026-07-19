@@ -1,7 +1,10 @@
 using System.IdentityModel.Tokens.Jwt;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
@@ -11,14 +14,14 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Services.Admin;
 using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Tests.Managers;
 
 /// <summary>
-/// final-hardening-cutover H2: AvatarManager.GenerateJwt's operator:admin
-/// bootstrap seam (Services/Admin/AGENTS.md). Covers armed/off/partial and the
-/// Production fail-closed throw.
+/// Verifies ordinary avatar login never receives node-operator authority and
+/// legacy partial bootstrap configuration fails during hosted startup.
 /// </summary>
 public class AdminBootstrapTests
 {
@@ -32,7 +35,7 @@ public class AdminBootstrapTests
 
     private static AvatarManager MakeManager(
         Mock<IAvatarStore> store,
-        string environmentName,
+        string _environmentName,
         string? seedEmail = null,
         string? seedSecret = null,
         FakeAdminBootstrapStateStore? bootstrapState = null)
@@ -48,16 +51,9 @@ public class AdminBootstrapTests
 
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
-        // IHostEnvironment.IsProduction() is an extension method (not mockable
-        // directly) that compares EnvironmentName against Environments.Production
-        // — so mocking EnvironmentName alone drives it correctly.
-        var environment = new Mock<IHostEnvironment>();
-        environment.Setup(e => e.EnvironmentName).Returns(environmentName);
-
         return new AvatarManager(
             store.Object,
             config,
-            environment.Object,
             bootstrapState ?? new FakeAdminBootstrapStateStore());
     }
 
@@ -71,7 +67,7 @@ public class AdminBootstrapTests
     private static JwtSecurityToken Decode(string jwt) => new JwtSecurityTokenHandler().ReadJwtToken(jwt);
 
     [Fact]
-    public async Task Login_WithMatchingEmailAndVerifiedOneTimeSecret_StampsOperatorAdmin()
+    public async Task Login_WithMatchingLegacySeed_NeverStampsOperatorAuthority()
     {
         var avatar = MakeAvatar("admin@azoa.test");
         var store = MakeStore(avatar);
@@ -86,9 +82,9 @@ public class AdminBootstrapTests
 
         result.IsError.Should().BeFalse();
         var token = Decode(result.Result!);
-        token.Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.Operator);
-        token.Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
-        token.Claims.Should().Contain(c => c.Type == "role" && c.Value == "Admin");
+        token.Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.Operator);
+        token.Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
+        token.Claims.Should().NotContain(c => c.Type == "role" && c.Value == "Admin");
     }
 
     [Fact]
@@ -187,14 +183,19 @@ public class AdminBootstrapTests
     }
 
     [Fact]
-    public async Task Login_WithPartialSeedConfig_InProduction_FailsClosedByThrowing()
+    public async Task HostedStartup_WithPartialLegacySeed_InProduction_FailsClosedByThrowing()
     {
-        var avatar = MakeAvatar("admin@azoa.test");
-        var store = MakeStore(avatar);
         // Only SeedSecret set, no SeedEmail — partial config, Production environment.
-        var manager = MakeManager(store, "Production", seedSecret: "seed-secret");
+        var environment = new Mock<IHostEnvironment>();
+        environment.SetupGet(value => value.EnvironmentName).Returns(Environments.Production);
+        var hosted = new SeedAdminHostedService(
+            Options.Create(new AdminBootstrapOptions { SeedSecret = "seed-secret" }),
+            Options.Create(new NodeOperatorOptions()),
+            environment.Object,
+            Mock.Of<IServiceScopeFactory>(),
+            Mock.Of<ILogger<SeedAdminHostedService>>());
 
-        var act = async () => await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+        var act = async () => await hosted.StartAsync(CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -219,7 +220,7 @@ public class AdminBootstrapTests
     }
 
     [Fact]
-    public async Task Login_AfterBinding_ReplaysOnlyForBoundAvatar()
+    public async Task Login_WithLegacyBinding_NeverGrantsEitherAvatarNodeAuthority()
     {
         var seed = MakeAvatar("admin@azoa.test");
         var attacker = MakeAvatar("attacker@azoa.test");
@@ -242,7 +243,7 @@ public class AdminBootstrapTests
             BootstrapSecret = "seed-secret",
         });
 
-        Decode(first.Result!).Claims.Should().Contain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
+        Decode(first.Result!).Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
         Decode(replay.Result!).Claims.Should().NotContain(c => c.Type == "scope" && c.Value == AzoaScopes.NodeGovern);
     }
 
@@ -278,6 +279,24 @@ public class AdminBootstrapTests
         {
             _state ??= state;
             return Task.FromResult(new AZOAResult<AdminBootstrapState> { Result = _state, Message = "Success" });
+        }
+
+        public Task<AZOAResult<AdminBootstrapState>> RotateCredentialsAsync(
+            Guid avatarId,
+            string username,
+            string passwordHash,
+            long expectedRevision,
+            long nextRevision,
+            DateTimeOffset changedAt,
+            CancellationToken ct = default)
+        {
+            if (_state is null || _state.CredentialRevision != expectedRevision)
+                return Task.FromResult(AZOAResult<AdminBootstrapState>.Failure("Revision conflict."));
+
+            _state.CredentialRevision = nextRevision;
+            _state.SessionRevision++;
+            _state.CredentialUpdatedAt = changedAt;
+            return Task.FromResult(AZOAResult<AdminBootstrapState>.Success(_state));
         }
     }
 }

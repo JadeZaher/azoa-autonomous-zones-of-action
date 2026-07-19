@@ -35,16 +35,44 @@ public static class KycAuthorizationError
 /// </summary>
 public interface IKycManager
 {
+    /// <summary>Reports the active provider without exposing its credentials.</summary>
+    KycProviderCapabilitiesModel GetCapabilities();
+
+    /// <summary>Reports the provider selected by the authenticated tenant authority.</summary>
+    Task<AZOAResult<KycProviderCapabilitiesModel>> GetCapabilitiesAsync(
+        Guid tenantId,
+        CancellationToken ct = default);
+
+    /// <summary>Begins or resumes a current-policy verification flow.</summary>
+    Task<AZOAResult<KycSessionStartModel>> BeginAsync(Guid avatarId, CancellationToken ct = default);
+
+    Task<AZOAResult<KycSessionStartModel>> BeginAsync(
+        Guid avatarId,
+        Guid tenantId,
+        CancellationToken ct = default);
+
     /// <summary>
     /// Submits a KYC request for <paramref name="avatarId"/>. Rejects when an
     /// active (PENDING/IN_REVIEW) submission already exists; validates documents
     /// via the active provider; persists the submission + its documents; opens a
-    /// provider session and stamps the provider session id.
+    /// provider session and stamps the provider session id. A provider/policy
+    /// mismatch requires a fresh Begin call and never reuses the stale attempt.
     /// </summary>
     Task<AZOAResult<KycSubmissionModel>> SubmitAsync(SubmitKycModel model, Guid avatarId, CancellationToken ct = default);
 
+    Task<AZOAResult<KycSubmissionModel>> SubmitAsync(
+        SubmitKycModel model,
+        Guid avatarId,
+        Guid tenantId,
+        CancellationToken ct = default);
+
     /// <summary>The most-recent submission for the avatar (status read).</summary>
     Task<AZOAResult<KycSubmissionModel>> GetStatusAsync(Guid avatarId, CancellationToken ct = default);
+
+    Task<AZOAResult<KycSubmissionModel>> GetStatusAsync(
+        Guid avatarId,
+        Guid tenantId,
+        CancellationToken ct = default);
 
     /// <summary>
     /// IDOR-scoped get-by-id: loads the submission then requires it to be owned by
@@ -61,12 +89,12 @@ public interface IKycManager
     Task<AZOAResult<IEnumerable<KycSubmissionModel>>> GetPendingAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Approves a submission: status → APPROVED and the owning avatar's
-    /// <c>IsVerified</c> flips true. <paramref name="reviewerAvatarId"/> is the
-    /// admin's claim-sourced id, never a body field.
+    /// Conditionally approves a MANUAL, active, unexpired, current-policy submission.
+    /// The KYC ledger is authoritative; no avatar verification projection is written.
+    /// <paramref name="reviewerAvatarId"/> is claim-sourced, never a body field.
     /// </summary>
     Task<AZOAResult<KycSubmissionModel>> ApproveAsync(Guid submissionId, Guid reviewerAvatarId, string? notes, CancellationToken ct = default);
 
-    /// <summary>Rejects a submission: status → REJECTED with an optional reason.</summary>
+    /// <summary>Conditionally rejects a MANUAL, active, unexpired submission.</summary>
     Task<AZOAResult<KycSubmissionModel>> RejectAsync(Guid submissionId, Guid reviewerAvatarId, string? notes, string? rejectionReason, CancellationToken ct = default);
 }

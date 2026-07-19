@@ -43,14 +43,11 @@ Tear down: `./dev-down.sh` (or `.ps1`). Wipe the DB volume too:
 4. **Bring up the frontend** — Next.js dev image talking to the WebAPI
    at the host-mapped port. Depends on the WebAPI's `/health` being
    green.
-5. **Host-side schema sync** — after compose is up, `dev-up` invokes
-   `surrealforge up` from the host against `127.0.0.1:8000`. This is
-   idempotent: the `schema_migration` ledger skips already-applied files
-   and only applies new ones. Safe to re-run any time. Pass `-Reset`
-   (PowerShell) / `--reset` (bash) to wipe the namespace and re-apply
-   from scratch. Defaults for `SURREALFORGE_NS` / `_DB` / `_USER` /
-   `_PASS` (`azoa` / `azoa` / `root` / `root`) are applied if unset,
-   so a fresh clone needs zero env config.
+5. **Container-owned schema sync** — the API image runs the exact
+   `SurrealForge.Schema` payload restored during its build. Ordinary startup
+   applies `up` idempotently. Pass `-Reset` (PowerShell) / `--reset` (bash) to
+   start without ordinary migration, wipe the namespace, and re-apply it from
+   the packaged CLI inside the same container.
 
 ## Variants
 
@@ -61,7 +58,6 @@ Tear down: `./dev-down.sh` (or `.ps1`). Wipe the DB volume too:
 ./dev-up.sh --reset-db     # DESTRUCTIVE: wipe SurrealDB volume before bringing up
 ./dev-up.sh --reset        # keep volume but wipe + re-apply schema
 ./dev-up.sh --logs         # tail combined logs after startup
-AZOA_SKIP_RESET=1 ./dev-up.sh   # skip the host-side schema sync entirely
 ```
 
 Rebuild is on by default; volume preservation is on by default. Legacy
@@ -69,10 +65,7 @@ Rebuild is on by default; volume preservation is on by default. Legacy
 no-op / alias forms. PowerShell equivalents use PascalCase
 (`-NoBuild`, `-ResetDb`, `-Reset`, `-Logs`).
 
-The host-side schema sync step still needs `dotnet` on the host (the
-schema CLI runs from source via `dotnet run`). If you don't have it,
-either set `AZOA_SKIP_RESET=1` (the WebAPI container's entrypoint
-applies `surrealforge up` on its own) or follow Option B.
+No host .NET installation is needed for this path.
 
 ### Option B: Host-run WebAPI against a containerised SurrealDB
 Useful when iterating on the C# side and you want the debugger attached:

@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
+using AZOA.WebAPI.Helpers;
 
 namespace AZOA.WebAPI.Models.Responses;
 
@@ -29,13 +31,15 @@ public class BridgeTransactionResult
     [MaxLength(256)]
     public string? TargetTokenId { get; set; }
 
+    /// <summary>Server-selected source-chain custody/vault address.</summary>
     [MaxLength(512)]
     public string SourceAddress { get; set; } = string.Empty;
 
     [MaxLength(512)]
     public string TargetAddress { get; set; } = string.Empty;
 
-    public int Amount { get; set; }
+    [JsonConverter(typeof(UlongDecimalStringJsonConverter))]
+    public ulong Amount { get; set; }
 
     public BridgeStatus Status { get; set; }
 
@@ -91,13 +95,14 @@ public class BridgeTransactionResult
 public enum BridgeStatus
 {
     Initiated,
+    /// <summary>Durable reservation immediately before a trusted source lock.</summary>
+    Locking,
     Locked,
     AwaitingVAA,
     VAAReady,
     Redeeming,
-    // NOTE: 'Minted' was removed (Wave 1) — it was dead code. The lifecycle is
-    // strictly Initiated→Locked→AwaitingVAA→VAAReady→Redeeming→Completed
-    // (Failed/Refunded terminal). No code ever assigned BridgeStatus.Minted.
+    // NOTE: 'Minted' was removed (Wave 1) — it was dead code. Redeeming is the
+    // exclusive target-side mint/redeem reservation for both bridge modes.
     Completed,
     Failed,
     Refunded,

@@ -67,6 +67,12 @@ export type {
   // avatar-dapp-rbac: assignable DApp role allowlist + avatar DTO
   AvatarResponse,
   DappRole,
+  TenantKycStatus,
+  TenantCustodialAccountStatus,
+  TenantCustodialCapabilities,
+  TenantKycSession,
+  TenantKycDocumentReference,
+  TenantKycSubmission,
   NftQueryParams,
   SwapQuoteParams,
   SwapExecuteParams,

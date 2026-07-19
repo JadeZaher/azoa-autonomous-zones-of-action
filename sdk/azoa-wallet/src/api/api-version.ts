@@ -118,7 +118,6 @@ export const API_PATHS = {
   BRIDGE_STATUS: (id: string) => `/api/bridge/${id}`,
   BRIDGE_FETCH_VAA: (id: string) => `/api/bridge/${id}/fetch-vaa`,
   BRIDGE_REDEEM: (id: string) => `/api/bridge/${id}/redeem`,
-  BRIDGE_COMPLETE: (id: string) => `/api/bridge/${id}/complete`,
   BRIDGE_REVERSE: (id: string) => `/api/bridge/${id}/reverse`,
   BRIDGE_HISTORY: "/api/bridge/history",
 
@@ -167,6 +166,13 @@ export const API_PATHS = {
   // Tenant onboarding (tenant-onboarding) — child credential issuance the
   // `forActor` actor abstraction threads (tenant acts FOR a child avatar).
   TENANT_CHILD_CREDENTIAL: (avatarId: string) => `/api/tenant/avatars/${avatarId}/credential`,
+  TENANT_CUSTODIAL_CAPABILITIES: "/api/tenant/custodial-accounts/capabilities",
+  TENANT_CUSTODIAL_ACCOUNT: (externalSubject: string) =>
+    `/api/tenant/custodial-accounts/${encodeURIComponent(externalSubject)}`,
+  TENANT_CUSTODIAL_KYC_SESSION: (externalSubject: string) =>
+    `/api/tenant/custodial-accounts/${encodeURIComponent(externalSubject)}/kyc/session`,
+  TENANT_CUSTODIAL_KYC_SUBMISSIONS: (externalSubject: string) =>
+    `/api/tenant/custodial-accounts/${encodeURIComponent(externalSubject)}/kyc/submissions`,
 
   // Opt-in Holon AssetType registry (final-hardening-cutover F5). Reads are open
   // to any authenticated caller; register/deactivate/delete are Operator-scoped.

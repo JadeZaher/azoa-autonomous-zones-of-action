@@ -11,6 +11,11 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE admin_bootstrap_state TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE admin_bootstrap_state TYPE record<avatar>
     READONLY;
+DEFINE FIELD IF NOT EXISTS credential_revision ON TABLE admin_bootstrap_state TYPE int
+    DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS session_revision ON TABLE admin_bootstrap_state TYPE int
+    DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS credential_updated_at ON TABLE admin_bootstrap_state TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS activated_at ON TABLE admin_bootstrap_state TYPE datetime
     DEFAULT time::now()
     READONLY;

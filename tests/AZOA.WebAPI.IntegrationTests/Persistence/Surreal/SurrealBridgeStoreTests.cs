@@ -129,6 +129,7 @@ public class SurrealBridgeStoreTests : IntegrationTestBase
         var nonTerminal = new[]
         {
             BridgeStatus.Initiated,
+            BridgeStatus.Locking,
             BridgeStatus.Locked,
             BridgeStatus.AwaitingVAA,
             BridgeStatus.VAAReady,

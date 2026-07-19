@@ -45,9 +45,8 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// <see cref="BridgeTx"/>:
 /// <list type="bullet">
 ///   <item><c>AvatarId</c>: Guid → 32-char "N" string.</item>
-///   <item><c>Amount</c>: int → string (BridgeTx column is arbitrary-precision
-///         string per schema; legacy domain int is widened/narrowed at the
-///         seam).</item>
+///   <item><c>Amount</c>: ulong → canonical decimal string (BridgeTx keeps the
+///         wire-safe representation while the domain prevents signed overflow).</item>
 ///   <item><c>WormholeEmitterChainId</c>: int? → long? (POCO storage is wider).</item>
 ///   <item><c>WormholeSequence</c>: long? → long?.</item>
 ///   <item><c>VaaSignatureCount</c>: int? → long?.</item>
@@ -155,25 +154,6 @@ public sealed class SurrealBridgeStore : IBridgeStore
 
         var response = await _executor.ExecuteAsync(q, ct);
         response.EnsureAllOk();
-    }
-
-    public async Task<int> ForceCompleteBridgeAsync(string id, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(id))
-            throw new ArgumentException("Bridge id must not be empty.", nameof(id));
-
-        var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET status = $_completed, completed_at = $_now WHERE status != $_completed RETURN AFTER")
-            .WithParam("_t",         BridgeTable)
-            .WithParam("_id",        id)
-            .WithParam("_completed", BridgeStatus.Completed.ToString())
-            .WithParam("_now",       DateTimeOffset.UtcNow);
-
-        var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0) return 0;
-        var stmt = response[0];
-        if (!stmt.IsOk) return 0;
-        return stmt.AffectedCount();
     }
 
     public async Task<IReadOnlyList<BridgeTransactionResult>> GetBridgeHistoryAsync(
@@ -443,6 +423,11 @@ public sealed class SurrealBridgeStore : IBridgeStore
                 setParts.Add("target_token_id = type::string($_target_token)");
                 paramBag["_target_token"] = alsoSet.TargetTokenId;
             }
+            if (alsoSet.ProofData is not null)
+            {
+                setParts.Add("proof_data = type::string($_proof_data)");
+                paramBag["_proof_data"] = alsoSet.ProofData;
+            }
             if (alsoSet.WormholeEmitterChainId is not null)
             {
                 setParts.Add("wormhole_emitter_chain_id = $_emit_chain");
@@ -596,8 +581,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         TargetTokenId          = poco.TargetTokenId,
         SourceAddress          = poco.SourceAddress,
         TargetAddress          = poco.TargetAddress,
-        Amount                 = int.TryParse(poco.Amount, System.Globalization.NumberStyles.Integer,
-                                              System.Globalization.CultureInfo.InvariantCulture, out var amt) ? amt : 0,
+        Amount                 = ParseBridgeAmount(poco.Amount, poco.Id),
         Status                 = ParseBridgeStatusKind(poco.Status),
         Mode                   = ParseBridgeModeKind(poco.Mode),
         LockTxHash             = poco.LockTxHash,
@@ -667,8 +651,8 @@ public sealed class SurrealBridgeStore : IBridgeStore
             CreatedDate   = poco.CreatedDate.UtcDateTime,
             CompletedDate = poco.CompletedDate?.UtcDateTime,
             TokenUri      = poco.TokenUri,
-            // Stored as a non-negative i64; read back as the domain ulong losslessly.
-            Amount        = poco.Amount.HasValue ? (ulong)poco.Amount.Value : 0UL,
+            // Persisted corruption must fail closed instead of wrapping a negative i64.
+            Amount        = poco.Amount.HasValue ? checked((ulong)poco.Amount.Value) : 0UL,
             AssetType     = poco.AssetType,
             SourceHolonId = poco.SourceHolonId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.SourceHolonId)!) : null,
             TargetHolonId = poco.TargetHolonId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.TargetHolonId)!) : null,
@@ -690,6 +674,22 @@ public sealed class SurrealBridgeStore : IBridgeStore
             ? s
             : throw new InvalidOperationException(
                 $"BridgeTx.StatusKind '{kind}' has no corresponding BridgeStatus — schema and domain enum drifted.");
+
+    private static ulong ParseBridgeAmount(string? value, string recordId)
+    {
+        if (!ulong.TryParse(
+                value,
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var amount)
+            || amount == 0)
+        {
+            throw new InvalidDataException(
+                $"Bridge '{StripSurrealIdPrefix(recordId, BridgeTable)}' contains an invalid persisted amount.");
+        }
+
+        return amount;
+    }
 
     private static BridgeTx.ModeKind ParseBridgeMode(BridgeMode mode) =>
         Enum.TryParse<BridgeTx.ModeKind>(mode.ToString(), ignoreCase: false, out var k)

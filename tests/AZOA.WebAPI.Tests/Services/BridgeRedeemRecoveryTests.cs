@@ -511,7 +511,8 @@ public class BridgeRedeemRecoveryTests
             IdempotencyStore,
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true, StaleClaimTakeoverSeconds = _staleSeconds }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
 
         /// <summary>Seeds a VAAReady bridge and returns its ID.</summary>
         public string SeedVaaReady(string vaaBytes, int emitterChainId, string emitterAddress, long sequence)

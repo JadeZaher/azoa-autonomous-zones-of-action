@@ -167,6 +167,36 @@ public class ReconciliationBridgeHardeningTests
         harness.AssertNoOnChainMutation();
     }
 
+    [Fact]
+    public async Task LockedWithSubmittedMint_AdvancesOnlyFromPositiveTargetConfirmation()
+    {
+        using var harness = new BridgeHardeningHarness();
+        const string idempotencyKey = "idem:trusted-mint:pending";
+        harness.SeedIdempotency(idempotencyKey, IdempotencyState.InProgress, "bridge-trusted");
+
+        var bridgeId = harness.SeedBridge(b =>
+        {
+            b.Status = BridgeStatus.Locked;
+            b.SourceChain = "Solana";
+            b.TargetChain = "Algorand";
+            b.LockTxHash = "confirmed-lock";
+            b.MintTxHash = "submitted-mint";
+            b.IdempotencyKey = idempotencyKey;
+            b.CreatedAt = DateTime.UtcNow.AddMinutes(-30);
+        });
+        harness.SetupTxStatus("submitted-mint", new Dictionary<string, object>
+        {
+            ["confirmed"] = true,
+        });
+
+        var report = await harness.CreateService().ReconcileBridgeAsync(CancellationToken.None);
+
+        report.Advanced.Should().Be(1);
+        harness.GetBridge(bridgeId).Status.Should().Be(BridgeStatus.Completed);
+        harness.GetIdempotency(idempotencyKey)!.State.Should().Be(IdempotencyState.Completed);
+        harness.AssertNoOnChainMutation();
+    }
+
     // ── Test 4: Regression — VAAReady/Redeeming + Confirmed → Completed ────────
 
     /// <summary>
@@ -283,6 +313,36 @@ public class ReconciliationBridgeHardeningTests
             Times.Never,
             "no transition must be attempted on a Reversing row");
 
+        harness.AssertNoOnChainMutation();
+    }
+
+    [Fact]
+    public async Task ReversingWithSubmittedSourceRelease_RefundsOnlyAfterPositiveConfirmation()
+    {
+        using var harness = new BridgeHardeningHarness();
+        const string idempotencyKey = "idem:reverse:release-pending";
+        harness.SeedIdempotency(idempotencyKey, IdempotencyState.InProgress, "bridge-reverse");
+
+        var bridgeId = harness.SeedBridge(b =>
+        {
+            b.Status = BridgeStatus.Reversing;
+            b.SourceChain = "Solana";
+            b.TargetChain = "Algorand";
+            b.RedemptionTxHash = "confirmed-burn";
+            b.ProofData = "submitted-release";
+            b.IdempotencyKey = idempotencyKey;
+            b.CreatedAt = DateTime.UtcNow.AddMinutes(-30);
+        });
+        harness.SetupTxStatus("submitted-release", new Dictionary<string, object>
+        {
+            ["success"] = true,
+        });
+
+        var report = await harness.CreateService().ReconcileBridgeAsync(CancellationToken.None);
+
+        report.Advanced.Should().Be(1);
+        harness.GetBridge(bridgeId).Status.Should().Be(BridgeStatus.Refunded);
+        harness.GetIdempotency(idempotencyKey)!.State.Should().Be(IdempotencyState.Completed);
         harness.AssertNoOnChainMutation();
     }
 
@@ -549,6 +609,7 @@ public class ReconciliationBridgeHardeningTests
         var statuses = new[]
         {
             BridgeStatus.Initiated,
+            BridgeStatus.Locking,
             BridgeStatus.Locked,
             BridgeStatus.Redeeming,
         };
@@ -741,12 +802,12 @@ public class ReconciliationBridgeHardeningTests
                 It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.MintWrappedAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+                It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.BurnAsync(
                 It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
                 It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.TransferAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
@@ -758,7 +819,7 @@ public class ReconciliationBridgeHardeningTests
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.LockForBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.DeployContractAsync(
                 It.IsAny<byte[]>(), It.IsAny<string>(),

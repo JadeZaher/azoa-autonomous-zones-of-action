@@ -1,0 +1,5 @@
+# Optional local-QA override selected by dev-up when AZOA_SURREAL_VOLUME_NAME is set.
+# The logical volume key remains unchanged; only its engine-level name changes.
+volumes:
+  surrealdb_data:
+    name: "${AZOA_SURREAL_VOLUME_NAME:?AZOA_SURREAL_VOLUME_NAME must be set}"

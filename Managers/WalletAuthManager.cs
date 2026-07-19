@@ -22,6 +22,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Admin;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -192,6 +193,12 @@ public sealed class WalletAuthManager : IWalletAuthManager
         IAvatar avatar;
         if (bound.Result is not null)
         {
+            if (bound.Result.Id == NodeOperatorIdentity.AvatarId)
+            {
+                result.IsError = true;
+                result.Message = "Wallet authentication is not available for this identity.";
+                return result;
+            }
             avatar = bound.Result;
         }
         else
@@ -224,6 +231,13 @@ public sealed class WalletAuthManager : IWalletAuthManager
         CancellationToken ct = default)
     {
         var result = new AZOAResult<bool>();
+
+        if (authedAvatarId == NodeOperatorIdentity.AvatarId)
+        {
+            result.IsError = true;
+            result.Message = "Wallet authentication is not available for this identity.";
+            return result;
+        }
 
         var proof = await ConsumeAndVerifyAsync(address, chainType, signature, message, ct);
         if (proof.IsError || proof.Result is null)
@@ -384,6 +398,13 @@ public sealed class WalletAuthManager : IWalletAuthManager
         {
             result.IsError = true;
             result.Message = "A claim token or an authenticated principal is required.";
+            return result;
+        }
+
+        if (targetAvatarId == NodeOperatorIdentity.AvatarId)
+        {
+            result.IsError = true;
+            result.Message = TenantAuthorizationError.NotFound + "No such avatar to claim.";
             return result;
         }
 
@@ -689,6 +710,10 @@ public sealed class WalletAuthManager : IWalletAuthManager
             // unambiguous (full-authority user login vs scoped tenant child). It never
             // carries act_as_tenant, so it can never be mistaken for a tenant-driven token.
             new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
+            new Claim(
+                AzoaClaims.AuthTime,
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ClaimValueTypes.Integer64),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 

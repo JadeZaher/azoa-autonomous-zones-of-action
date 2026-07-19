@@ -8,6 +8,9 @@ using AZOA.WebAPI.Services.Reconciliation;
 
 namespace AZOA.WebAPI.Tests.Services.Reconciliation;
 
+[CollectionDefinition("Reconciliation hosted service", DisableParallelization = true)]
+public sealed class ReconciliationHostedServiceCollection { }
+
 /// <summary>
 /// <see cref="ReconciliationHostedService"/> safety tests (api-safety-hardening
 /// plan tasks 15/16 — the background sweep half).
@@ -27,6 +30,7 @@ namespace AZOA.WebAPI.Tests.Services.Reconciliation;
 /// <c>OperationCanceledException</c> path on its interval delay long before 10s
 /// elapses. No real long sleeps anywhere.</para>
 /// </summary>
+[Collection("Reconciliation hosted service")]
 public class ReconciliationHostedServiceTests
 {
     /// <summary>

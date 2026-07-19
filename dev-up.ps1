@@ -80,9 +80,31 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $ScriptDir "docker-compose.dev.yml"
 
+$SourceRevision = (& git -C $ScriptDir rev-parse HEAD 2>$null).Trim()
+if ($LASTEXITCODE -ne 0 -or $SourceRevision -notmatch '^[0-9a-f]{40}$') {
+    Write-Error "[dev-up] FATAL: unable to resolve a 40-character Git SOURCE_REVISION."
+    exit 1
+}
+$env:SOURCE_REVISION = $SourceRevision
+
 if (-not (Test-Path $ComposeFile)) {
     Write-Error "[dev-up] FATAL: $ComposeFile not found."
     exit 1
+}
+
+$ComposeFiles = @('-f', $ComposeFile)
+if (-not [string]::IsNullOrWhiteSpace($env:AZOA_SURREAL_VOLUME_NAME)) {
+    if ($env:AZOA_SURREAL_VOLUME_NAME -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*$') {
+        Write-Error "[dev-up] FATAL: AZOA_SURREAL_VOLUME_NAME must be a Docker/Podman-safe volume name."
+        exit 1
+    }
+    $VolumeOverrideFile = Join-Path $ScriptDir 'docker-compose.qa-volume.yml'
+    if (-not (Test-Path $VolumeOverrideFile)) {
+        Write-Error "[dev-up] FATAL: $VolumeOverrideFile not found."
+        exit 1
+    }
+    $ComposeFiles += @('-f', $VolumeOverrideFile)
+    Write-Host "[dev-up] Using isolated SurrealDB volume: $($env:AZOA_SURREAL_VOLUME_NAME)"
 }
 
 # ── Detect compose runtime ────────────────────────────────────────────────────
@@ -133,6 +155,7 @@ function Invoke-Compose {
     param([string[]]$Arguments)
     $full = @()
     $full += $compose.PreArgs
+    $full += $ComposeFiles
     $full += $Arguments
     & $compose.Exe @full
 }
@@ -144,7 +167,7 @@ $ProjectName = Split-Path -Leaf $ScriptDir
 
 if ($DoWipe) {
     Write-Host "[dev-up] -ResetDb: tearing down stack + wiping SurrealDB volume..."
-    Invoke-Compose @('-f', $ComposeFile, 'down', '-v', '--remove-orphans')
+    Invoke-Compose @('down', '-v', '--remove-orphans')
     # `volume` is an engine subcommand, not a compose one -- docker-compose /
     # podman-compose have no `volume ls`. Drive the engine binary directly
     # (mirrors dev-down.ps1).
@@ -172,10 +195,18 @@ if ($DoWipe) {
 
 if (-not $env:SURREALDB_HOST_PORT) { $env:SURREALDB_HOST_PORT = '8000' }
 $SurrealHostPort = $env:SURREALDB_HOST_PORT
+if (-not $env:AZOA_FRONTEND_HOST_PORT) { $env:AZOA_FRONTEND_HOST_PORT = '3000' }
+$FrontendHostPort = $env:AZOA_FRONTEND_HOST_PORT
 
 # Snapshot SURREALFORGE_URL so the host.containers.internal / 127.0.0.1
 # rewrites below don't leak into the caller's shell. Restored in finally.
 $AzoaSurrealUrlEntry = $env:SURREALFORGE_URL
+$AzoaSkipMigrationsEntry = $env:AZOA_SKIP_MIGRATIONS
+if ($Reset) {
+    # Reset must start the API without its normal `up`, then run the packaged
+    # schema CLI's destructive reset explicitly inside that same container.
+    $env:AZOA_SKIP_MIGRATIONS = '1'
+}
 try {
 
 # A responder on the host port is only "external" when it ISN'T our own
@@ -294,7 +325,7 @@ if ($compose.Exe -like '*podman*') {
     if ($DoRebuild -or -not $apiCached -or -not $frontendCached) {
         Write-Host "[dev-up] podman runtime detected -- pre-building images per Dockerfile"
         Write-Host "[dev-up]   (works around podman-compose v1.5.0 'dockerfile:' bug)"
-        & podman build -f Dockerfile -t $apiImage $ScriptDir
+        & podman build --build-arg "SOURCE_REVISION=$SourceRevision" -f Dockerfile -t $apiImage $ScriptDir
         if ($LASTEXITCODE -ne 0) { Write-Error "[dev-up] podman build (API) failed."; exit 1 }
         & podman build -f frontend/Dockerfile -t $frontendImage $ScriptDir
         if ($LASTEXITCODE -ne 0) { Write-Error "[dev-up] podman build (frontend) failed."; exit 1 }
@@ -305,11 +336,19 @@ if ($compose.Exe -like '*podman*') {
 
 # ── Build + start ────────────────────────────────────────────────────────────
 
-$upArgs = @('-f', $ComposeFile, 'up', '-d', '--remove-orphans')
+$upArgs = @('up', '-d', '--remove-orphans')
 # Don't pass --build for podman runtimes -- we already pre-built above,
 # and triggering compose's broken builder would re-tag azoa-frontend with
 # the wrong image content.
-if ($DoRebuild -and ($compose.Exe -notlike '*podman*')) { $upArgs += '--build' }
+if ($compose.Exe -like '*podman*') {
+    # podman-compose may decide to rebuild services that carry a build section
+    # even when matching tags already exist. Force reuse of the two images that
+    # were built explicitly above, where each service's Dockerfile and API
+    # SOURCE_REVISION build argument are under our control.
+    $upArgs += '--no-build'
+} elseif ($DoRebuild) {
+    $upArgs += '--build'
+}
 # When an external SurrealDB was detected, only bring up the API + frontend.
 # --no-deps tells compose to ignore depends_on so it doesn't try to start
 # the bundled surrealdb service (which would collide on port 8000).
@@ -326,95 +365,34 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "[dev-up] Stack started. Service status:"
-Invoke-Compose @('-f', $ComposeFile, 'ps')
+Invoke-Compose @('ps')
 
 # ── SurrealDB schema sync ─────────────────────────────────────────────────────
 #
-# Default: run `surrealforge up` -- idempotent. The CLI tracks applied files
-# via the schema_migration table, so re-running is a no-op when nothing has
-# changed and applies only pending files when there's drift. This is the
-# "newcomer clones the repo and runs ./dev-up.ps1" path.
-#
-# -Reset: destructive wipe + full re-apply (delegates to `reset` verb).
-# AZOA_SKIP_RESET=1: skip the schema step entirely (preserves DB state,
-#   useful when iterating on UI without touching schema).
+# Ordinary bundled and external-DB launches use the API container entrypoint,
+# which carries the exact schema CLI payload extracted by Dockerfile. The host
+# never restores the NuGet package as a dotnet tool (it is not tool-packaged).
+# -Reset starts the API with migrations skipped, then invokes that packaged CLI
+# inside the container for an explicit destructive reset.
 
-if ($env:AZOA_SKIP_RESET -eq "1") {
-    Write-Host "[dev-up] AZOA_SKIP_RESET=1 set -- skipping schema sync"
-} else {
-    if (-not $env:SURREALFORGE_NS)   { $env:SURREALFORGE_NS   = 'azoa' }
-    if (-not $env:SURREALFORGE_DB)   { $env:SURREALFORGE_DB   = 'azoa' }
-    if (-not $env:SURREALFORGE_USER) { $env:SURREALFORGE_USER = 'root' }
-    if (-not $env:SURREALFORGE_PASS) { $env:SURREALFORGE_PASS = 'root' }
-
-    # Schema CLI runs on the HOST. The SURREALFORGE_URL set earlier for
-    # the API container points at host.containers.internal which won't
-    # resolve here -- override for the CLI call, restore after.
-    $schemaUrlBackup = $env:SURREALFORGE_URL
-    $env:SURREALFORGE_URL = "http://127.0.0.1:$SurrealHostPort"
-
-    # Wait for SurrealDB to be reachable (the container case needs a beat).
-    $surrealReady = $false
-    for ($i = 0; $i -lt 20; $i++) {
-        try {
-            $null = Invoke-WebRequest -Uri "$env:SURREALFORGE_URL/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
-            $surrealReady = $true
-            break
-        } catch {
-            Start-Sleep -Milliseconds 500
-        }
-    }
-    if (-not $surrealReady) {
-        $probedUrl = $env:SURREALFORGE_URL
-        $env:SURREALFORGE_URL = $schemaUrlBackup
-        Write-Host ""
-        Write-Host "[dev-up] SurrealDB at $probedUrl never became reachable." -ForegroundColor Yellow
-        Write-Host "[dev-up] Dumping bundled surrealdb container state + logs to diagnose:" -ForegroundColor Yellow
-        $runtime = if ($compose.Exe -like '*podman*') { 'podman' } else { 'docker' }
-        if (Get-Command $runtime -ErrorAction SilentlyContinue) {
-            Write-Host "---- $runtime ps (azoa-dev-surrealdb) ----"
-            & $runtime ps -a --filter 'name=azoa-dev-surrealdb' --format '{{.Status}}  {{.Names}}' 2>&1
-            Write-Host "---- $runtime logs --tail=50 azoa-dev-surrealdb ----"
-            & $runtime logs --tail=50 azoa-dev-surrealdb 2>&1
-            Write-Host "---- end ----"
-        } else {
-            Write-Host "[dev-up] (no '$runtime' on PATH to dump logs)"
-        }
-        Write-Host ""
-        Write-Host "[dev-up] Common causes:" -ForegroundColor Yellow
-        Write-Host "  * Storage URI rejected by surrealdb v3.1.4 (look for 'failed to parse' in the log above)."
-        Write-Host "  * Rootless podman volume ownership (look for 'permission denied' on /data)."
-        Write-Host "  * Port 8000 already bound on host (look for 'address already in use')."
-        Write-Host "  * Set AZOA_SKIP_RESET=1 to bypass schema sync while you investigate."
-        Write-Error "[dev-up] Aborting -- SurrealDB unreachable. Logs above should name the cause."
-        exit 1
-    }
-
-    Write-Host ""
-    # Restore the SurrealForge.Schema CLI (pinned in .config/dotnet-tools.json).
-    dotnet tool restore | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Error "[dev-up] dotnet tool restore failed"; exit 1 }
-    if ($Reset) {
-        Write-Host "[dev-up] -Reset: wiping + re-applying SurrealDB schema..."
-        dotnet surrealforge reset
-    } else {
-        Write-Host "[dev-up] syncing SurrealDB schema (idempotent; use -Reset to wipe)..."
-        dotnet surrealforge up
-    }
-    $schemaExit = $LASTEXITCODE
-    $env:SURREALFORGE_URL = $schemaUrlBackup
-    $global:LASTEXITCODE = $schemaExit
+if ($Reset) {
+    $schemaRuntime = if ($compose.Exe -like '*podman*') { 'podman' } else { 'docker' }
+    Write-Host "[dev-up] -Reset: running packaged schema reset inside azoa-dev-api..."
+    & $schemaRuntime exec azoa-dev-api /bin/sh -c 'exec dotnet /app/schema-cli/SurrealForge.Schema.dll reset --connection "$SURREALFORGE_URL" --user "$SURREALFORGE_USER" --pass "$SURREALFORGE_PASS" --namespace "$SURREALFORGE_NS" --database "$SURREALFORGE_DB" --schemas-dir /app/persistence/SurrealDb/Generated/Schemas --migrations-dir /app/persistence/SurrealDb/Migrations --applied-by "azoa-local/dev-up-reset"'
     if ($LASTEXITCODE -ne 0) {
-        $verb = if ($Reset) { 'reset' } else { 'up' }
-        Write-Error "SurrealDB $verb failed (exit $LASTEXITCODE). Set AZOA_SKIP_RESET=1 to skip, or pass -Reset to force a clean wipe."
+        Write-Error "[dev-up] Containerized SurrealDB reset failed (exit $LASTEXITCODE)."
         exit 1
     }
+} elseif ($env:AZOA_SKIP_MIGRATIONS -eq '1') {
+    Write-Host "[dev-up] AZOA_SKIP_MIGRATIONS=1 -- API entrypoint skipped schema sync."
+} else {
+    Write-Host "[dev-up] Schema sync is owned by the API container entrypoint (bundled or external SurrealDB)."
 }
 
 Write-Host ""
 Write-Host "[dev-up] Endpoints:"
 Write-Host "  WebAPI:    http://localhost:5000  (health: /health)"
-Write-Host "  Frontend:  http://localhost:3000"
+Write-Host "  Frontend:  http://localhost:$FrontendHostPort"
 Write-Host "  SurrealDB: http://localhost:8000  (root / root)"
 Write-Host ""
 Write-Host "[dev-up] Tear down: ./dev-down.ps1"
@@ -437,7 +415,7 @@ Write-Host ""
 if ($Logs) {
     Write-Host ""
     Write-Host "[dev-up] Tailing combined logs (Ctrl-C to stop):"
-    Invoke-Compose @('-f', $ComposeFile, 'logs', '-f')
+    Invoke-Compose @('logs', '-f')
 }
 } finally {
     # Restore the caller's SURREALFORGE_URL so host.containers.internal /
@@ -446,5 +424,10 @@ if ($Logs) {
         Remove-Item Env:SURREALFORGE_URL -ErrorAction SilentlyContinue
     } else {
         $env:SURREALFORGE_URL = $AzoaSurrealUrlEntry
+    }
+    if ($null -eq $AzoaSkipMigrationsEntry) {
+        Remove-Item Env:AZOA_SKIP_MIGRATIONS -ErrorAction SilentlyContinue
+    } else {
+        $env:AZOA_SKIP_MIGRATIONS = $AzoaSkipMigrationsEntry
     }
 }

@@ -623,6 +623,25 @@ public class BridgeInitiateRequestValidatorTests
         var m = Valid(); m.Amount = amount;
         _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.Amount);
     }
+
+    [Theory]
+    [InlineData("9007199254740993")]
+    [InlineData("18446744073709551615")]
+    public void PrecisionSafeUlongAmount_Passes(string amount)
+    {
+        var m = Valid(); m.Amount = amount;
+        _validator.TestValidate(m).IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("18446744073709551616")]
+    [InlineData("1.0")]
+    [InlineData("+1")]
+    public void AmountOutsideCanonicalUlongRange_Fails(string amount)
+    {
+        var m = Valid(); m.Amount = amount;
+        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.Amount);
+    }
 }
 
 public class BridgeReverseRequestValidatorTests

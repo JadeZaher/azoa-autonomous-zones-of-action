@@ -16,8 +16,8 @@ namespace AZOA.WebAPI.Tests.Signing;
 /// <summary>
 /// final-hardening-cutover B2: the bridge value primitives must either broadcast a
 /// REAL transaction or fail CLOSED — never return a fabricated-success Ok on a value
-/// path. Algorand lock/burn-wrapped broadcast real ASA transactions (asserted at the
-/// wire); a missing platform mnemonic fails closed. Solana lock/burn/mint fail closed
+/// path. Algorand lock broadcasts a real ASA transaction (asserted at the wire), while
+/// wrapped burn/mint remain disabled; a missing platform mnemonic fails closed. Solana lock/burn/mint fail closed
 /// (no real signer/submit pipeline). Also proves the always-true provider verifier is
 /// gone (the interface no longer declares VerifyBridgeProofAsync — enforced at compile
 /// time by this file referencing IBlockchainProvider without it).
@@ -108,12 +108,10 @@ public class BridgePrimitivesTests
     }
 
     [Fact]
-    public async Task Algorand_burn_wrapped_broadcasts_real_asset_destroy()
+    public async Task Algorand_burn_wrapped_fails_closed_without_canonical_wrapped_asset()
     {
         const ulong assetId = 7788UL;
-        using var stub = RunStub(confirmedRound: 4);
-
-        var provider = NewAlgorandProvider(handler: stub);
+        var provider = NewAlgorandProvider();
         var result = await provider.BurnWrappedAsync(
             tokenId: assetId.ToString(),
             amount: 3,
@@ -121,15 +119,9 @@ public class BridgePrimitivesTests
             sourceRecipient: _platform.Address.EncodeAsString(),
             walletAddress: _platform.Address.EncodeAsString());
 
-        result.IsError.Should().BeFalse(result.Message);
-        result.Result.Should().NotBeNullOrWhiteSpace("a real tx id must be returned, not a fabricated op-id");
-        _submitCount.Should().Be(1, "the wrapped burn must broadcast exactly one real transaction");
-
-        _lastSubmittedBody.Should().NotBeNullOrEmpty();
-        var signedTxn = Algorand.Utils.Encoder.DecodeFromMsgPack<SignedTransaction>(_lastSubmittedBody!);
-        signedTxn.Sig.Should().NotBeNull("the burn tx must carry a real Ed25519 signature");
-        var destroy = signedTxn.Tx.Should().BeOfType<AssetDestroyTransaction>().Subject;
-        destroy.AssetIndex.Should().Be(assetId, "the wrapped ASA id must reach the wire");
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("disabled");
+        _submitCount.Should().Be(0, "unsafe wrapped supply must never be destroyed or reported burned");
     }
 
     // ─── Algorand: fail-closed (no fabricated Ok) ───
@@ -164,6 +156,19 @@ public class BridgePrimitivesTests
             "not-a-number", _vault.Address.EncodeAsString(), 5, "Solana", _platform.Address.EncodeAsString());
 
         result.IsError.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Algorand_mint_wrapped_fails_closed_without_canonical_platform_asa()
+    {
+        var provider = NewAlgorandProvider();
+        var result = await provider.MintWrappedAsync(
+            "Solana", "source-token", "bridge://source-token", 5, _platform.Address.EncodeAsString());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("disabled");
+        provider.SupportsBridging.Should().BeFalse();
+        _submitCount.Should().Be(0);
     }
 
     // ─── Solana: fail-closed (no real pipeline) ───

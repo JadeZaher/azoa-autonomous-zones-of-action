@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using System.Security.Cryptography;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Interfaces;
@@ -15,6 +16,7 @@ using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
+using AZOA.WebAPI.Tests.TestSupport;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -27,10 +29,8 @@ namespace AZOA.WebAPI.Tests.Services;
 public class BridgeIdempotencyScopingTests
 {
     // ─── Key-format constants (must mirror CrossChainBridgeService exactly) ──
-    // Trusted:   client → "{avatarId:N}:{clientKey}",  none → "bridge-trusted:{avatarId:N}:..."
-    // WH init:   client → "{avatarId:N}:{clientKey}",  none → "bridge-wh-initiate:{avatarId:N}:..."
-    // Redeem:    client → "{tx.AvatarId:N}:{clientKey}", none → "bridge-redeem:{tx.Id}:{digest}"
-    // Reverse:   client → "{tx.AvatarId:N}:{clientKey}", none → "bridge-reverse:{tx.Id}:{addr}"
+    // Client keys use bridge-client:{avatar:N}:{sha256(client key)} for every
+    // operation; OperationType separately binds the action + request payload.
 
     // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -74,12 +74,16 @@ public class BridgeIdempotencyScopingTests
         var provider = new Mock<IBlockchainProvider>();
         provider.Setup(p => p.ChainType).Returns("Solana");
         provider.Setup(p => p.SupportsBridging).Returns(true);
+        provider.Setup(p => p.ReleaseFromBridgeAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "release-tx" });
         // Reverse's on-chain burn must return a non-null result so the reverse flow
         // completes past the idempotency claim (these tests assert the claim key,
         // not the burn — but an un-stubbed Task<AZOAResult<string>> yields a null
         // result and NREs before the assertion).
         provider.Setup(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "burn_tx" });
 
@@ -132,15 +136,18 @@ public class BridgeIdempotencyScopingTests
                 Result = new WormholeRedemptionResult { TxHash = "redeem_tx" }
             });
 
+        var config = new WormholeConfig { DefaultMode = BridgeMode.Trusted };
+        config.BridgeVaults["Solana"].VaultAddress = "test-solana-bridge-vault";
         return new CrossChainBridgeService(
             factory.Object,
             wormhole.Object,
-            Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Trusted }),
+            Options.Create(config),
             store.Object,
             idempotency.Object,
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true }),
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new ApprovedRealValueKycGate());
     }
 
     // ─── Test 8: Two avatars, same client key → distinct claim keys ──────────
@@ -179,12 +186,14 @@ public class BridgeIdempotencyScopingTests
         // Each key must embed its avatar id in N format (no dashes) before the client key.
         keyA.Should().Contain(avatarA.ToString("N"),
             "avatar A's key must be namespaced with its own guid");
-        keyA.Should().Contain(sharedClientKey);
+        keyA.Should().Be(
+            $"bridge-client:{avatarA:N}:{IdempotencyReplay.ContentHash(sharedClientKey)}");
         keyA.Should().NotContain(avatarB.ToString("N"));
 
         keyB.Should().Contain(avatarB.ToString("N"),
             "avatar B's key must be namespaced with its own guid");
-        keyB.Should().Contain(sharedClientKey);
+        keyB.Should().Be(
+            $"bridge-client:{avatarB:N}:{IdempotencyReplay.ContentHash(sharedClientKey)}");
         keyB.Should().NotContain(avatarA.ToString("N"));
     }
 
@@ -216,8 +225,8 @@ public class BridgeIdempotencyScopingTests
         capturedKeys[0].Should().Be(capturedKeys[1],
             "same avatar + same client key must produce the same claim key across retries");
 
-        // The key is "{avatarId:N}:{clientKey}".
-        capturedKeys[0].Should().Be($"{avatarId:N}:{clientKey}");
+        capturedKeys[0].Should().Be(
+            $"bridge-client:{avatarId:N}:{IdempotencyReplay.ContentHash(clientKey)}");
     }
 
     // ─── Test 10: Redeem/Reverse with client key → "{tx.AvatarId:N}:{clientKey}" ──
@@ -300,11 +309,11 @@ public class BridgeIdempotencyScopingTests
         var reverseKey = capturedKeys[1];
 
         // Redeem: "{tx.AvatarId:N}:{clientKey}"
-        redeemKey.Should().Be($"{txAvatarId:N}:{clientKey}",
+        redeemKey.Should().Be($"bridge-client:{txAvatarId:N}:{IdempotencyReplay.ContentHash(clientKey)}",
             "redeem key must be namespaced by tx.AvatarId in N format");
 
         // Reverse: "{tx.AvatarId:N}:{clientKey}"
-        reverseKey.Should().Be($"{txAvatarId:N}:{clientKey}",
+        reverseKey.Should().Be($"bridge-client:{txAvatarId:N}:{IdempotencyReplay.ContentHash(clientKey)}",
             "reverse key must be namespaced by tx.AvatarId in N format");
     }
 
@@ -318,6 +327,68 @@ public class BridgeIdempotencyScopingTests
     ///   Redeem:           "bridge-redeem:{tx.Id}:{vaaDigest}"
     ///   Reverse:          "bridge-reverse:{tx.Id}:{sourceRecipientAddr}"
     /// </summary>
+    [Fact]
+    public async Task Reverse_ClientKeyBoundToInitiate_RejectsWithoutBurning()
+    {
+        var avatarId = Guid.NewGuid();
+        const string clientKey = "one-client-operation";
+        var bridge = new BridgeTransactionResult
+        {
+            Id = "bridge_cross_operation_key",
+            AvatarId = avatarId,
+            SourceChain = "SimulatedA",
+            TargetChain = "SimulatedB",
+            SourceTokenId = "token",
+            TargetTokenId = "wrapped-token",
+            SourceAddress = "vault",
+            TargetAddress = "recipient",
+            Amount = 1,
+            Mode = BridgeMode.Trusted,
+            Status = BridgeStatus.Completed,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-2),
+            CompletedAt = DateTime.UtcNow.AddMinutes(-1),
+        };
+        var provider = new Mock<IBlockchainProvider>();
+        provider.SetupGet(value => value.ChainType).Returns("Simulated");
+        provider.SetupGet(value => value.SupportsBridging).Returns(true);
+        var factory = new Mock<IBlockchainProviderFactory>();
+        factory.Setup(value => value.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
+            .Returns(provider.Object);
+        var store = new Mock<IBridgeStore>();
+        store.Setup(value => value.GetBridgeAsync(bridge.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(bridge);
+        var idempotency = new Mock<IIdempotencyStore>();
+        idempotency.Setup(value => value.TryClaimAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string key, string _, CancellationToken _) => new IdempotencyClaim(
+                false,
+                new IdempotencyRecord
+                {
+                    Key = key,
+                    OperationType = $"bridge-trusted:{new string('a', 48)}",
+                    State = IdempotencyState.Completed,
+                    ResultPayload = "prior-initiate",
+                    CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+                    UpdatedAt = DateTime.UtcNow,
+                }));
+        var service = BuildService(factory, idempotency, store);
+
+        var result = await service.ReverseBridgeAsync(
+            bridge.Id,
+            "source-refund",
+            clientIdempotencyKey: clientKey,
+            callerAvatarId: avatarId);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("already bound");
+        provider.Verify(value => value.BurnWrappedAsync(
+            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        store.Verify(value => value.TryTransitionBridgeStatusAsync(
+            It.IsAny<string>(), It.IsAny<BridgeStatus>(), It.IsAny<BridgeStatus>(),
+            It.IsAny<BridgeStatusMutation?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task Operations_NoClientKey_UseDeterministicContentKeys()
     {
@@ -551,5 +622,36 @@ public class BridgeIdempotencyScopingTests
         idempotency.Verify(s => s.TryClaimAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never,
             "TryClaimAsync must NOT be called when base64 decoding fails");
+    }
+
+    [Fact]
+    public async Task TrustedInitiate_ClientKeyBoundToAnotherOperation_RejectsBeforeTracking()
+    {
+        var avatarId = Guid.NewGuid();
+        var existing = new IdempotencyRecord
+        {
+            Key = "bound-key",
+            OperationType = $"bridge-reverse:{new string('a', 48)}",
+            State = IdempotencyState.InProgress,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        var idempotency = new Mock<IIdempotencyStore>();
+        idempotency.Setup(store => store.GetAsync(
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+        var bridgeStore = new Mock<IBridgeStore>();
+        var service = BuildService(SolanaFactory(), idempotency, bridgeStore);
+
+        var result = await service.InitiateBridgeAsync(
+            "Solana", "Algorand", "token", "recipient", avatarId, 1,
+            BridgeMode.Trusted, clientIdempotencyKey: "shared-client-key");
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("already bound");
+        bridgeStore.Verify(store => store.AddBridgeAsync(
+            It.IsAny<BridgeTransactionResult>(), It.IsAny<CancellationToken>()), Times.Never);
+        idempotency.Verify(store => store.TryClaimAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

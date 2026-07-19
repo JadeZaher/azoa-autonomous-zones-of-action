@@ -84,9 +84,15 @@ builder.Services.AddSingleton<INodeConformanceManifestService, NodeConformanceMa
 builder.Services.AddSingleton<AZOA.WebAPI.Services.Governance.NodeTransparencyHistoryCheckpointStore>();
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
-// AutoMapper 15.x: AddAutoMapper takes a config action; AddMaps scans the assembly
-// for Profile types (was the removed AddAutoMapper(Assembly) overload).
-builder.Services.AddAutoMapper(cfg => cfg.AddMaps(typeof(Program).Assembly));
+var autoMapperLicenseKey = Environment.GetEnvironmentVariable("AUTOMAPPER_LICENSE_KEY")
+    ?? Environment.GetEnvironmentVariable("LUCKYPENNY_LICENSE_KEY");
+builder.Services.AddAutoMapper(cfg =>
+{
+    if (!string.IsNullOrWhiteSpace(autoMapperLicenseKey))
+        cfg.LicenseKey = autoMapperLicenseKey;
+
+    cfg.AddMaps(typeof(Program).Assembly);
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -177,7 +183,8 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key))
+        IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key)),
+        ClockSkew = TimeSpan.FromSeconds(30)
     };
 
     // user-sovereign-identity AC3b (security-review fix): the per-avatar
@@ -193,6 +200,68 @@ builder.Services.AddAuthentication(options =>
         OnTokenValidated = async context =>
         {
             var principal = context.Principal;
+            if (AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal))
+            {
+                context.Fail("Delegated child credentials are disabled until accepting endpoints are explicitly scope-allowlisted.");
+                return;
+            }
+
+            if (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(principal))
+            {
+                var operatorPolicies = context.HttpContext.GetEndpoint()?.Metadata
+                    .GetOrderedMetadata<Microsoft.AspNetCore.Authorization.IAuthorizeData>()
+                    .Select(metadata => metadata.Policy)
+                    .Where(policy => !string.IsNullOrWhiteSpace(policy))
+                    .ToHashSet(StringComparer.Ordinal)
+                    ?? new HashSet<string>(StringComparer.Ordinal);
+                if (!operatorPolicies.Overlaps([
+                        "NodeOperatorSession",
+                        "RecentNodeOperatorSession",
+                        "DappRoleAssignment",
+                        "Operator",
+                        "NodeGovern"]))
+                {
+                    context.Fail("Node operator sessions are not accepted by this endpoint.");
+                    return;
+                }
+
+                var operatorSubject = principal?.FindFirst("sub")?.Value
+                    ?? principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (!Guid.TryParse(operatorSubject, out var operatorAvatarId)
+                    || operatorAvatarId != AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId
+                    || principal!.GetActingTenantId() is not null
+                    || !long.TryParse(
+                        principal.FindFirst(AZOA.WebAPI.Core.AzoaClaims.OperatorRevision)?.Value,
+                        System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out var tokenRevision)
+                    || !long.TryParse(
+                        principal.FindFirst(AZOA.WebAPI.Core.AzoaClaims.OperatorSessionRevision)?.Value,
+                        System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out var tokenSessionRevision))
+                {
+                    context.Fail("Node operator credential is malformed.");
+                    return;
+                }
+
+                var stateStore = context.HttpContext.RequestServices
+                    .GetRequiredService<AZOA.WebAPI.Interfaces.Stores.IAdminBootstrapStateStore>();
+                var state = await stateStore.GetAsync(context.HttpContext.RequestAborted);
+                var expectedLink = SurrealForge.Client.SurrealLink.ToLink(
+                    "avatar",
+                    SurrealForge.Client.SurrealId.ToSurrealId(operatorAvatarId));
+                if (state.IsError
+                    || state.Result is null
+                    || state.Result.CredentialRevision != tokenRevision
+                    || state.Result.SessionRevision != tokenSessionRevision
+                    || !string.Equals(state.Result.AvatarId, expectedLink, StringComparison.Ordinal))
+                {
+                    context.Fail("Node operator credential revision is stale.");
+                    return;
+                }
+            }
+
             var sub = principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                       ?? principal?.FindFirst("sub")?.Value;
             if (!Guid.TryParse(sub, out var avatarId))
@@ -209,6 +278,31 @@ builder.Services.AddAuthentication(options =>
             {
                 // Fail-closed: a token whose subject avatar cannot be loaded is rejected.
                 context.Fail("Subject avatar could not be verified.");
+                return;
+            }
+
+            if (avatarId == AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId
+                && !AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(principal))
+            {
+                context.Fail("The reserved node operator subject requires a node-operator session.");
+                return;
+            }
+
+            if (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(principal)
+                && (!loaded.Result.IsActive
+                    || loaded.Result.Id != AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId
+                    || !string.Equals(
+                        loaded.Result.Email,
+                        AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.ReservedEmail,
+                        StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(
+                        loaded.Result.Username,
+                        principal?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value,
+                        StringComparison.Ordinal)
+                    || !AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.IsValidUsername(loaded.Result.Username)
+                    || !AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.IsStructurallyValidPasswordHash(loaded.Result.PasswordHash)))
+            {
+                context.Fail("Node operator identity integrity check failed.");
                 return;
             }
 
@@ -264,6 +358,107 @@ builder.Services.AddAuthentication(options =>
 //      convention, now additionally fenced behind the scheme floor.
 builder.Services.AddAuthorization(o =>
 {
+    o.AddPolicy("FirstPartyLogin", p =>
+    {
+        p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
+        p.RequireAuthenticatedUser();
+        p.RequireAssertion(ctx =>
+        {
+            var isFirstPartyLogin = string.Equals(
+                ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.TokenUse)?.Value,
+                AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin,
+                StringComparison.Ordinal)
+                && ctx.User.GetActingTenantId() is null
+                && !string.Equals(
+                ctx.User.FindFirst("AuthMethod")?.Value,
+                "ApiKey",
+                StringComparison.OrdinalIgnoreCase);
+            if (isFirstPartyLogin)
+                return true;
+
+            if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
+                || ctx.Resource is not HttpContext httpContext)
+            {
+                return false;
+            }
+
+            var endpointPolicies = httpContext.GetEndpoint()?.Metadata
+                .GetOrderedMetadata<Microsoft.AspNetCore.Authorization.IAuthorizeData>()
+                .Select(metadata => metadata.Policy)
+                .Where(policy => !string.IsNullOrWhiteSpace(policy))
+                .ToHashSet(StringComparer.Ordinal);
+            return endpointPolicies?.Overlaps([
+                "Operator",
+                "RecentNodeOperatorSession",
+                "NodeOperatorSession"]) == true;
+        });
+    });
+    o.AddPolicy("RecentFirstPartyLogin", p =>
+    {
+        p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
+        p.RequireAuthenticatedUser();
+        p.RequireAssertion(ctx =>
+        {
+            if (!string.Equals(
+                    ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.TokenUse)?.Value,
+                    AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin,
+                    StringComparison.Ordinal)
+                || ctx.User.GetActingTenantId() is not null
+                || string.Equals(
+                    ctx.User.FindFirst("AuthMethod")?.Value,
+                    "ApiKey",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!long.TryParse(
+                    ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.AuthTime)?.Value,
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var authTime))
+            {
+                return false;
+            }
+
+            var age = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(authTime);
+            return age >= TimeSpan.FromMinutes(-1) && age <= TimeSpan.FromMinutes(10);
+        });
+    });
+    o.AddPolicy("NodeOperatorSession", p =>
+    {
+        p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
+        p.RequireAuthenticatedUser();
+        p.RequireAssertion(ctx =>
+            AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
+            && AZOA.WebAPI.Core.AzoaClaims.TryGetSubjectId(ctx.User, out var subject)
+            && subject == AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId
+            && ctx.User.GetActingTenantId() is null
+            && !string.Equals(ctx.User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase));
+    });
+    o.AddPolicy("RecentNodeOperatorSession", p =>
+    {
+        p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
+        p.RequireAuthenticatedUser();
+        p.RequireAssertion(ctx =>
+        {
+            if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
+                || !AZOA.WebAPI.Core.AzoaClaims.TryGetSubjectId(ctx.User, out var subject)
+                || subject != AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId
+                || ctx.User.GetActingTenantId() is not null
+                || !long.TryParse(
+                    ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.AuthTime)?.Value,
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var authTime))
+            {
+                return false;
+            }
+
+            var age = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(authTime);
+            return age >= TimeSpan.FromMinutes(-1) && age <= TimeSpan.FromMinutes(10);
+        });
+    });
     o.AddPolicy("TenantScope", p =>
         p.RequireAssertion(ctx =>
             ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision)));
@@ -311,6 +506,26 @@ builder.Services.AddAuthorization(o =>
             return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappManage)
                 && ctx.User.HasDappManagerRole();
         }));
+    o.AddPolicy("DappRoleAssignment", p =>
+    {
+        p.RequireAuthenticatedUser();
+        p.RequireAssertion(ctx =>
+        {
+            if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User))
+                return ctx.User.HasDappManagerRole();
+            if (!ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.Operator)
+                || !long.TryParse(
+                    ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.AuthTime)?.Value,
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var authTime))
+            {
+                return false;
+            }
+            var age = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(authTime);
+            return age >= TimeSpan.FromMinutes(-1) && age <= TimeSpan.FromMinutes(10);
+        });
+    });
     o.AddPolicy("Operator", p =>
         p.RequireAssertion(ctx =>
         {
@@ -321,10 +536,9 @@ builder.Services.AddAuthorization(o =>
                 return false;
 
             // Axis 2: require an explicit admin/operator capability on the JWT.
-            return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.Operator)
-                || ctx.User.IsInRole("Admin")
-                || string.Equals(ctx.User.FindFirst("role")?.Value, "Admin", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(ctx.User.FindFirst("is_admin")?.Value, "true", StringComparison.OrdinalIgnoreCase);
+            return AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
+                && ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.Operator)
+                && ctx.User.GetActingTenantId() is null;
         }));
     o.AddPolicy("NodeGovern", p =>
         p.RequireAssertion(ctx =>
@@ -333,7 +547,9 @@ builder.Services.AddAuthorization(o =>
             if (string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.NodeGovern);
+            return AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
+                && ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.NodeGovern)
+                && ctx.User.GetActingTenantId() is null;
         }));
 });
 
@@ -349,15 +565,18 @@ builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationM
 //
 // Partition strategy (most-specific identity wins, so each principal is
 // metered independently):
-//   1. authenticated API key     -> partition per server-issued key id
+//   1. tenant API key            -> partition per authenticated tenant subject
+//      (stable across tenant-key rotation); other API keys remain per key id
 //   2. else authenticated avatar -> partition per avatar/user id
 //   3. else anonymous            -> partition per client IP
 //
-// Two limiters:
-//   • a permissive GLOBAL limiter applied to every endpoint, and
-//   • a STRICT named policy ("financial") attached to the irreversible /
+// Three limiters:
+//   1. a permissive GLOBAL limiter applied to every endpoint;
+//   2. a STRICT named policy ("financial") attached to the irreversible /
 //     value-moving endpoints (bridge initiate/redeem/reverse, swap execute,
-//     wallet transfer, wallet topup) via [EnableRateLimiting("financial")].
+//     wallet transfer, wallet topup) via [EnableRateLimiting("financial")]; and
+//   3. a tenant-custodial subject policy composed with the global tenant
+//     aggregate partition.
 //
 // All limits are config-overridable from the "RateLimiting" section
 // (config-driven preference); the literals below are conservative fallbacks.
@@ -369,12 +588,24 @@ var rlGlobalQueue = rlSection.GetValue<int?>("Global:QueueLimit") ?? 0;
 var rlFinancialPermit = rlSection.GetValue<int?>("Financial:PermitLimit") ?? 10;
 var rlFinancialWindowSeconds = rlSection.GetValue<int?>("Financial:WindowSeconds") ?? 60;
 var rlFinancialQueue = rlSection.GetValue<int?>("Financial:QueueLimit") ?? 0;
+var rlTenantCustodialPermit = rlSection.GetValue<int?>("TenantCustodial:PermitLimit") ?? 20;
+var rlTenantCustodialWindowSeconds = rlSection.GetValue<int?>("TenantCustodial:WindowSeconds") ?? 60;
+var rlTenantCustodialQueue = rlSection.GetValue<int?>("TenantCustodial:QueueLimit") ?? 0;
+var rlOperatorLoginPermit = Math.Clamp(
+    rlSection.GetValue<int?>("OperatorLogin:PermitLimit") ?? 20,
+    1,
+    10_000);
+var rlOperatorLoginWindowSeconds = Math.Clamp(
+    rlSection.GetValue<int?>("OperatorLogin:WindowSeconds") ?? 900,
+    60,
+    86_400);
 
 var rlDevMultiplier = builder.Environment.IsDevelopment()
     ? Math.Max(1, rlSection.GetValue<int?>("DevMultiplier") ?? 1)
     : 1;
 rlGlobalPermit    *= rlDevMultiplier;
 rlFinancialPermit *= rlDevMultiplier;
+rlTenantCustodialPermit *= rlDevMultiplier;
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -412,6 +643,36 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
+    // Subject policy composes with the global API-key limiter: one external
+    // subject cannot consume every tenant request, while the global partition
+    // remains the aggregate ceiling shared by all subjects and rotated keys for that tenant.
+    options.AddPolicy("tenant-custodial", httpContext =>
+    {
+        if (!rlEnabled)
+            return RateLimitPartition.GetNoLimiter("disabled");
+
+        var key = RateLimitPartitionKey.ResolveTenantSubject(httpContext);
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = rlTenantCustodialPermit,
+            Window = TimeSpan.FromSeconds(rlTenantCustodialWindowSeconds),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = rlTenantCustodialQueue
+        });
+    });
+
+    options.AddPolicy("operator-login", httpContext =>
+    {
+        var address = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter($"operator-login:{address}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = rlOperatorLoginPermit,
+            Window = TimeSpan.FromSeconds(rlOperatorLoginWindowSeconds),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+
     options.OnRejected = (context, _) =>
     {
         // Emit a Retry-After that matches the policy that actually rejected
@@ -426,10 +687,16 @@ builder.Services.AddRateLimiter(options =>
         }
         else
         {
-            var matchedFinancial = context.HttpContext.GetEndpoint()?
+            var matchedPolicy = context.HttpContext.GetEndpoint()?
                 .Metadata.GetMetadata<EnableRateLimitingAttribute>()?
-                .PolicyName == "financial";
-            retryAfterSeconds = matchedFinancial ? rlFinancialWindowSeconds : rlGlobalWindowSeconds;
+                .PolicyName;
+            retryAfterSeconds = matchedPolicy switch
+            {
+                "financial" => rlFinancialWindowSeconds,
+                "tenant-custodial" => rlTenantCustodialWindowSeconds,
+                "operator-login" => rlOperatorLoginWindowSeconds,
+                _ => rlGlobalWindowSeconds
+            };
         }
 
         context.HttpContext.Response.Headers["Retry-After"] =
@@ -479,6 +746,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEcosystemStore,
 // kyc-module: KYC submission/document persistence (SurrealDB).
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKycStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealKycStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKycControlStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealKycControlStore>();
 // surrealdb-migration wave-2 round-3 close (residual task 9): IQuestStore
 // flips to the SurrealDB-backed adapter now that the definition-side
 // schema files (150_quest / 160_quest_node / 170_quest_edge) and the
@@ -597,10 +866,18 @@ builder.Services.AddScoped<IAvatarManager, AvatarManager>();
 // only makes a PARTIAL AdminBootstrap config loud at boot. See Services/Admin/AGENTS.md.
 builder.Services.AddOptions<AZOA.WebAPI.Services.Admin.AdminBootstrapOptions>()
     .Bind(builder.Configuration.GetSection(AZOA.WebAPI.Services.Admin.AdminBootstrapOptions.SectionName));
+builder.Services.AddOptions<AZOA.WebAPI.Services.Admin.NodeOperatorOptions>()
+    .Bind(builder.Configuration.GetSection(AZOA.WebAPI.Services.Admin.NodeOperatorOptions.SectionName));
+builder.Services.Configure<AZOA.WebAPI.Services.Admin.NodeOperatorLoginThrottleOptions>(
+    builder.Configuration.GetSection("RateLimiting:OperatorLogin"));
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Admin.NodeOperatorLoginThrottle>();
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Admin.SeedAdminHostedService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeOperatorManager,
+    AZOA.WebAPI.Managers.NodeOperatorManager>();
 builder.Services.AddSingleton<WalletKeyService>();
 builder.Services.AddSingleton<IAlgorandFaucet, AlgorandFaucet>();
 builder.Services.AddScoped<IWalletManager, WalletManager>();
+builder.Services.AddScoped<ITenantCustodialAccountManager, TenantCustodialAccountManager>();
 builder.Services.AddScoped<IHolonManager, HolonManager>();
 // final-hardening-cutover F5: opt-in Holon AssetType registry manager (CRUD + the
 // validation hook HolonManager consults on every holon create/update).
@@ -681,21 +958,48 @@ builder.Services.AddHttpClient(AZOA.WebAPI.Services.Webhooks.WebhookOptions.Ques
         ConnectCallback = AZOA.WebAPI.Core.Webhooks.WebhookSsrfGuard.CreateGuardedConnectCallback(),
     });
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Webhooks.QuestWebhookDeliveryWorker>();
-// kyc-module: KycSettings bound from the "Kyc" section; the provider is selected
-// by Kyc:Provider (manual default; veriff = config-gated deploy-stub, throws).
+// KYC selection is explicit and fail-closed. Unknown values never inherit the
+// manual provider; hosted and Veriff remain unavailable until reviewed adapters land.
 builder.Services.Configure<AZOA.WebAPI.Settings.KycSettings>(
     builder.Configuration.GetSection(AZOA.WebAPI.Settings.KycSettings.SectionName));
-if (string.Equals(
-        builder.Configuration[$"{AZOA.WebAPI.Settings.KycSettings.SectionName}:Provider"],
-        "veriff", StringComparison.OrdinalIgnoreCase))
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.ManualKycProviderService>();
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.VeriffKycProviderService>();
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.GenericHostedKycProviderService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderRegistry,
+    AZOA.WebAPI.Services.Kyc.KycProviderRegistry>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycControlPlaneManager,
+    AZOA.WebAPI.Managers.KycControlPlaneManager>();
+var configuredKycProvider = builder.Configuration[
+    $"{AZOA.WebAPI.Settings.KycSettings.SectionName}:Provider"]?.Trim().ToLowerInvariant();
+switch (configuredKycProvider)
 {
-    builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
-        AZOA.WebAPI.Providers.Kyc.VeriffKycProviderService>();
-}
-else
-{
-    builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
-        AZOA.WebAPI.Providers.Kyc.ManualKycProviderService>();
+    case null:
+    case "":
+    case "manual":
+        if (builder.Environment.IsDevelopment())
+        {
+            builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
+                AZOA.WebAPI.Providers.Kyc.ManualKycProviderService>();
+        }
+        else
+        {
+            builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
+                AZOA.WebAPI.Providers.Kyc.UnavailableKycProviderService>();
+        }
+        break;
+    case "veriff":
+        builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
+            AZOA.WebAPI.Providers.Kyc.VeriffKycProviderService>();
+        break;
+    case "hosted":
+    case "generic-hosted":
+        builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
+            AZOA.WebAPI.Providers.Kyc.GenericHostedKycProviderService>();
+        break;
+    default:
+        builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
+            AZOA.WebAPI.Providers.Kyc.UnavailableKycProviderService>();
+        break;
 }
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycManager,
     AZOA.WebAPI.Managers.KycManager>();
@@ -840,6 +1144,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeFeeSettlementAto
 builder.Services.AddOptions<AZOA.WebAPI.Services.Bridge.BridgeOptions>()
     .Bind(builder.Configuration.GetSection(
         AZOA.WebAPI.Services.Bridge.BridgeOptions.SectionName));
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IRealValueKycGate,
+    AZOA.WebAPI.Services.Bridge.RealValueKycGate>();
 builder.Services.AddScoped<ICrossChainBridgeService, CrossChainBridgeService>();
 
 // ─── Chain reconciliation (api-safety-hardening tasks 14/15) ───
@@ -921,6 +1227,10 @@ builder.Services.AddScoped<IQuestNodeHandlerRegistry, QuestNodeHandlerRegistry>(
 // ─── Observability (W5): OpenTelemetry tracing/metrics + /health ───
 builder.Services.AddAzoaObservability(builder.Configuration);
 builder.Services.AddAzoaHealthChecks();
+builder.Services.AddHealthChecks().AddCheck<AZOA.WebAPI.Observability.AutoMapperLicenseHealthCheck>(
+    "automapper-license",
+    failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
+    tags: ["ready", "configuration"]);
 
 // Validate Cors:AllowedOrigins in Production at startup
 if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("IntegrationTest"))

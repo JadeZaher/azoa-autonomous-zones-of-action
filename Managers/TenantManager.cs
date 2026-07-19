@@ -1,6 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
+using System.Security.Cryptography;
 using Microsoft.IdentityModel.Tokens;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
@@ -15,11 +15,12 @@ namespace AZOA.WebAPI.Managers;
 /// <summary>
 /// Tenant provisioning manager — REARCHITECTED by user-self-sovereignty (2026-06-22).
 ///
-/// <para><b>HARD CUTOVER (user-sovereign-identity AC6).</b> A tenant no longer OWNS
-/// its users. <see cref="ProvisionChildAsync"/> mints a SELF-OWNED avatar
-/// (<c>OwnerTenantId = null</c>) the user can claim — never a tenant-locked child.
-/// The tenant-provision-and-lock model is gone; no path here permanently locks an
-/// avatar to a tenant.</para>
+/// <para><b>Custodial onboarding correlation.</b> <see cref="ProvisionChildAsync"/>
+/// binds an unclaimed avatar to the provisioning tenant so the tenant/external-user
+/// pair is unique and retry-safe. Claiming clears <c>OwnerTenantId</c>, while the
+/// deterministic id remains a create-only correlation so a retry cannot reclaim
+/// or reset the account. It never grants signing authority, which still requires
+/// a live consent grant.</para>
 ///
 /// <para><b>Consent-gated issuance (tenant-consent-delegation AC2/M2).</b>
 /// <see cref="IssueChildCredentialAsync"/> ALWAYS requires a LIVE
@@ -58,27 +59,65 @@ public class TenantManager : ITenantManager
     {
         var result = new AZOAResult<ChildAvatarResponse>();
 
-        if (string.IsNullOrWhiteSpace(model.ExternalUserId))
+        if (string.IsNullOrWhiteSpace(model.ExternalUserId)
+            || model.ExternalUserId.Trim().Length > 128
+            || model.ExternalUserId.Any(char.IsControl))
         {
             result.IsError = true;
-            result.Message = "externalUserId is required.";
+            result.Message = "externalUserId must be a non-empty value of at most 128 characters.";
             return result;
         }
 
         var externalUserId = model.ExternalUserId.Trim();
+        var deterministicId = DeterministicAvatarId(tenantId, externalUserId);
 
-        // HARD CUTOVER (AC6): mint a SELF-OWNED avatar (OwnerTenantId = null), NOT a
-        // tenant-locked child. The user owns it from birth and can claim a login
-        // credential later (WalletAuthManager.ClaimAsync). The tenant gets NO
-        // standing authority from provisioning — only a live ConsentGrant lets it
-        // act. We correlate the row to the tenant's onboarding via ExternalRef
-        // (tenant:{id}:{extuser}) for the claim-invite lookup, NOT via ownership.
-        var seed = $"onboard-{tenantId:N}-{externalUserId}";
+        var existing = await _avatarStore.GetByTenantAndExternalUserAsync(tenantId, externalUserId, ct);
+        if (existing.IsError)
+            return new AZOAResult<ChildAvatarResponse>
+            {
+                IsError = true,
+                Message = SafePersistenceMessage(existing.Message)
+            };
+        if (existing.Result is not null)
+            return new AZOAResult<ChildAvatarResponse>
+            {
+                Result = ToResponse(existing.Result),
+                Message = "Avatar already provisioned for this tenant user."
+            };
+
+        // Claim severs OwnerTenantId by design. Resolve the immutable deterministic
+        // id before create so a post-claim retry returns the original user account
+        // and can never overwrite credentials or reattach tenant ownership.
+        var deterministicExisting = await _avatarStore.GetByIdAsync(deterministicId, ct);
+        if (!deterministicExisting.IsError && deterministicExisting.Result is not null)
+        {
+            if (!MatchesCorrelation(deterministicExisting.Result, tenantId, externalUserId, deterministicId))
+                return CorrelationConflict();
+
+            return new AZOAResult<ChildAvatarResponse>
+            {
+                Result = ToResponse(deterministicExisting.Result),
+                Message = "Avatar already provisioned for this tenant user."
+            };
+        }
+        if (deterministicExisting.IsError
+            && IsPersistenceUnavailable(deterministicExisting.Message))
+        {
+            return new AZOAResult<ChildAvatarResponse>
+            {
+                IsError = true,
+                Message = SafePersistenceMessage(deterministicExisting.Message)
+            };
+        }
+
+        var correlationHash = CorrelationHash(tenantId, externalUserId);
+        var seed = $"onboard-{Convert.ToHexString(correlationHash.AsSpan(0, 12)).ToLowerInvariant()}";
         var username = string.IsNullOrWhiteSpace(model.Username) ? seed : model.Username.Trim();
         var email = string.IsNullOrWhiteSpace(model.Email) ? $"{seed}@onboard.azoa.local" : model.Email.Trim();
 
         var child = new Avatar
         {
+            Id = deterministicId,
             Username = username,
             Email = email,
             // No password login path yet; the USER sets their own credential at
@@ -87,8 +126,8 @@ public class TenantManager : ITenantManager
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N")),
             IsActive = true,
             IsVerified = false,
-            // AC6: NEVER lock to the tenant. Self-owned from birth.
-            OwnerTenantId = null,
+            // Tenant-bound until the user claims the custodial onboarding record.
+            OwnerTenantId = tenantId,
             ExternalUserId = externalUserId,
             // Correlation for the tenant's claim-invite flow (not an ownership link).
             ExternalRef = string.IsNullOrWhiteSpace(model.ExternalRef)
@@ -96,17 +135,21 @@ public class TenantManager : ITenantManager
                 : model.ExternalRef.Trim(),
         };
 
-        var saved = await _avatarStore.UpsertAsync(child, ct);
+        var saved = await _avatarStore.CreateIfAbsentAsync(child, ct);
         if (saved.IsError || saved.Result is null)
         {
             result.IsError = true;
-            result.Message = saved.IsError ? saved.Message : "Failed to provision avatar.";
-            result.Exception = saved.Exception;
+            result.Message = saved.IsError
+                ? SafePersistenceMessage(saved.Message)
+                : "Failed to provision avatar.";
             return result;
         }
 
+        if (!MatchesCorrelation(saved.Result, tenantId, externalUserId, deterministicId))
+            return CorrelationConflict();
+
         result.Result = ToResponse(saved.Result);
-        result.Message = "Self-owned avatar provisioned (claimable; not tenant-locked).";
+        result.Message = "Tenant-bound avatar provisioned (claimable by the user).";
         return result;
     }
 
@@ -118,8 +161,7 @@ public class TenantManager : ITenantManager
         if (owned.IsError)
         {
             result.IsError = true;
-            result.Message = owned.Message;
-            result.Exception = owned.Exception;
+            result.Message = SafePersistenceMessage(owned.Message);
             return result;
         }
 
@@ -147,12 +189,38 @@ public class TenantManager : ITenantManager
             return result;
         }
 
-        var found = await _avatarStore.GetByTenantAndExternalUserAsync(tenantId, externalUserId.Trim(), ct);
-        if (found.IsError || found.Result is null)
+        externalUserId = externalUserId.Trim();
+        var found = await _avatarStore.GetByTenantAndExternalUserAsync(tenantId, externalUserId, ct);
+        if (found.IsError)
         {
             result.IsError = true;
+            result.Message = SafePersistenceMessage(found.Message);
+            return result;
+        }
+        if (found.Result is null)
+        {
+            // A claimed avatar no longer carries OwnerTenantId. Its deterministic
+            // id remains the immutable, tenant-partitioned correlation key.
+            var deterministicId = DeterministicAvatarId(tenantId, externalUserId);
+            var claimed = await _avatarStore.GetByIdAsync(deterministicId, ct);
+            if (!claimed.IsError
+                && claimed.Result is not null
+                && MatchesCorrelation(claimed.Result, tenantId, externalUserId, deterministicId))
+            {
+                result.Result = ToResponse(claimed.Result);
+                result.Message = "Success";
+                return result;
+            }
+
+            if (claimed.IsError && IsPersistenceUnavailable(claimed.Message))
+            {
+                result.IsError = true;
+                result.Message = SafePersistenceMessage(claimed.Message);
+                return result;
+            }
+
+            result.IsError = true;
             result.Message = TenantAuthorizationError.NotFound + "No child avatar for that external user id.";
-            result.Exception = found.Exception;
             return result;
         }
 
@@ -268,6 +336,36 @@ public class TenantManager : ITenantManager
         Username = a.Username,
         Email = a.Email,
     };
+
+    private static byte[] CorrelationHash(Guid tenantId, string externalUserId)
+        => SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            $"azoa:tenant-avatar:v1:{tenantId:N}:{externalUserId}"));
+
+    private static Guid DeterministicAvatarId(Guid tenantId, string externalUserId)
+        => new(CorrelationHash(tenantId, externalUserId).AsSpan(0, 16));
+
+    private static bool MatchesCorrelation(
+        IAvatar avatar,
+        Guid tenantId,
+        string externalUserId,
+        Guid deterministicId)
+        => avatar.Id == deterministicId
+            && string.Equals(avatar.ExternalUserId, externalUserId, StringComparison.Ordinal)
+            && (avatar.OwnerTenantId is null || avatar.OwnerTenantId == tenantId);
+
+    private static AZOAResult<ChildAvatarResponse> CorrelationConflict() => new()
+    {
+        IsError = true,
+        Message = "The deterministic tenant identity is already bound to a different account."
+    };
+
+    private static bool IsPersistenceUnavailable(string? message)
+        => message?.StartsWith("AVATAR_STORE_UNAVAILABLE:", StringComparison.Ordinal) == true;
+
+    private static string SafePersistenceMessage(string? message)
+        => IsPersistenceUnavailable(message)
+            ? "TENANT_IDENTITY_UNAVAILABLE: Tenant identity persistence is temporarily unavailable."
+            : "TENANT_IDENTITY_ERROR: Tenant identity could not be processed.";
 
     /// <summary>
     /// Minimal symmetric child-token primitive. Subject = the USER's avatar id (so

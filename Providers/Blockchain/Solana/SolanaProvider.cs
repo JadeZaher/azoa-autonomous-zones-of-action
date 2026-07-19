@@ -20,7 +20,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
     public override string ChainType => "Solana";
     public string CapabilityName => "Solana.Metaplex";
-    public override bool SupportsBridging => true;
+    public override bool SupportsBridging => false;
 
     // Solana devnet/testnet top-up is a CLIENT-side RPC airdrop (requestAirdrop):
     // the frontend performs it. The provider supports the faucet path but only
@@ -385,7 +385,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
     /// land — see Providers/Blockchain/AGENTS.md §bridge (Solana canonical bytes).
     /// </summary>
     public override Task<AZOAResult<string>> LockForBridgeAsync(
-        string tokenId, string vaultAddress, int amount,
+        string tokenId, string vaultAddress, ulong amount,
         string targetChain, string targetRecipient, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>(
@@ -404,7 +404,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
     /// </summary>
     public override Task<AZOAResult<string>> MintWrappedAsync(
         string sourceChain, string sourceTokenId, string tokenUri,
-        int amount, string recipientAddress, CancellationToken ct = default)
+        ulong amount, string recipientAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>(
             "Solana wrapped-asset mint is not implemented: no Solana transaction "
@@ -420,7 +420,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
     /// (final-hardening-cutover B2). See Providers/Blockchain/AGENTS.md §bridge.
     /// </summary>
     public override Task<AZOAResult<string>> BurnWrappedAsync(
-        string tokenId, int amount, string sourceChain,
+        string tokenId, ulong amount, string sourceChain,
         string sourceRecipient, string walletAddress, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>(
@@ -428,6 +428,15 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             + "build/sign/submit pipeline exists in the provider (the Solana signer is a "
             + "fail-loud stub). Refusing to record a fake burn on a value path. Configure "
             + "real Solana signing and an SPL-burn path before enabling Solana bridge reversal."));
+    }
+
+    public override Task<AZOAResult<string>> ReleaseFromBridgeAsync(
+        string tokenId, string vaultAddress, ulong amount,
+        string recipientAddress, CancellationToken ct = default)
+    {
+        return Task.FromResult(Error<string>(
+            "Solana bridge release is not implemented: no provider-controlled SPL vault "
+            + "release pipeline exists. Refusing to report source value as released."));
     }
 
     // VerifyBridgeProofAsync removed (final-hardening-cutover B2): the always-true

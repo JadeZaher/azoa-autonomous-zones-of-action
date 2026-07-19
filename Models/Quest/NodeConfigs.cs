@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 
@@ -167,8 +169,8 @@ public class FungibleTokenCreateNodeConfig
 /// <c>ICrossChainBridgeService.InitiateBridgeAsync</c>. The node MOVES value only —
 /// it derives no economic meaning; peg/valuation stays tenant-side (Emit). The
 /// actor avatar is taken from the run context (never a config-body avatar). On an
-/// Algorand route the lock/burn is a real broadcast; a Solana route is
-/// fail-closed at the provider level (surfaced as a node failure — correct).
+/// Real-chain routes remain fail-closed until a provider implements the complete
+/// lock/mint/burn/release lifecycle; simulated routes remain available.
 /// </summary>
 public class BridgeNodeConfig
 {
@@ -185,7 +187,8 @@ public class BridgeNodeConfig
     public string RecipientAddress { get; set; } = string.Empty;
 
     /// <summary>Units to bridge. Must be positive; the bridge rejects &lt;= 0.</summary>
-    public int Amount { get; set; } = 1;
+    [JsonConverter(typeof(UlongDecimalStringJsonConverter))]
+    public ulong Amount { get; set; } = 1;
 
     /// <summary>
     /// Optional bridge mode ("Trusted" or "Wormhole"). Null lets the service pick

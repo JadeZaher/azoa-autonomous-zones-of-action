@@ -13,6 +13,21 @@ namespace AZOA.WebAPI.Interfaces.Providers;
 /// </summary>
 public interface IKycProviderService
 {
+    /// <summary>The authoritative provider represented by this implementation.</summary>
+    KycProvider Provider { get; }
+
+    /// <summary>Stable public provider key used in provider-neutral API metadata.</summary>
+    string ProviderKey { get; }
+
+    /// <summary>Reports whether this provider can begin and accept verification work.</summary>
+    KycProviderCapabilitiesModel GetCapabilities();
+
+    /// <summary>
+    /// Begins a safe verification flow. Hosted providers return an HTTPS redirect;
+    /// the manual provider returns document-reference instructions instead.
+    /// </summary>
+    Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid avatarId, CancellationToken ct = default);
+
     /// <summary>
     /// Begins a provider session for the avatar's documents and returns the
     /// provider session id. The manual provider has no external session and

@@ -108,6 +108,32 @@ public sealed class SurrealWalletStore : IWalletStore
         }
     }
 
+    public async Task<AZOAResult<IWallet>> CreateIfAbsentAsync(IWallet wallet, CancellationToken ct = default)
+    {
+        if (wallet.Id == Guid.Empty)
+            return new AZOAResult<IWallet> { IsError = true, Message = "A deterministic wallet id is required." };
+
+        try
+        {
+            var response = await _executor.ExecuteAsync(SurrealWriter.Create(ToPoco(wallet)), ct);
+            response.EnsureAllOk();
+            var saved = response.GetValues<GeneratedWallet>(0).FirstOrDefault();
+            return new AZOAResult<IWallet> { Result = saved is null ? wallet : FromPoco(saved), Message = "Created." };
+        }
+        catch (Exception ex)
+        {
+            // CREATE is the concurrency boundary. A duplicate deterministic id means
+            // another request won; return that authoritative record. Any other failure
+            // remains an error because the follow-up read will not find a row.
+            var existing = await GetByIdAsync(wallet.Id, ct);
+            if (!existing.IsError && existing.Result is not null)
+                return new AZOAResult<IWallet> { Result = existing.Result, Message = "Already bootstrapped." };
+
+            return new AZOAResult<IWallet>().CaptureException(ex,
+                $"SurrealWalletStore.CreateIfAbsentAsync failed: {ex.Message}");
+        }
+    }
+
     public async Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         try

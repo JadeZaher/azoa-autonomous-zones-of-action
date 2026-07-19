@@ -16,7 +16,7 @@ public sealed record BridgeStatusMutation
     /// <summary>Source-chain lock transaction hash.</summary>
     public string? LockTxHash { get; init; }
 
-    /// <summary>Source-chain sender address.</summary>
+    /// <summary>Server-selected source-chain custody/vault address.</summary>
     public string? SourceAddress { get; init; }
 
     /// <summary>Target-chain redemption transaction hash.</summary>
@@ -27,6 +27,9 @@ public sealed record BridgeStatusMutation
 
     /// <summary>Target-chain token id minted/credited.</summary>
     public string? TargetTokenId { get; init; }
+
+    /// <summary>Durable proof/reference for the current bridge phase.</summary>
+    public string? ProofData { get; init; }
 
     /// <summary>Wormhole emitter chain id of the originating message.</summary>
     public int? WormholeEmitterChainId { get; init; }

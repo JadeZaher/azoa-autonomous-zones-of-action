@@ -192,7 +192,7 @@ public static class QuestNodeOutputSchema
         ("TargetTokenId", OutputFieldType.String),
         ("SourceAddress", OutputFieldType.String),
         ("TargetAddress", OutputFieldType.String),
-        ("Amount", OutputFieldType.Number),
+        ("Amount", OutputFieldType.String),
         ("Status", OutputFieldType.Number),             // BridgeStatus enum → int
         ("Mode", OutputFieldType.Number),               // BridgeMode enum → int
         ("LockTxHash", OutputFieldType.String),

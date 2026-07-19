@@ -44,6 +44,68 @@ export interface AvatarResponse {
   isActive: boolean;
 }
 
+export type TenantKycStatus = "Unknown" | "Pending" | "Approved" | "Rejected";
+
+/** Secret-free tenant account projection returned to platforms such as ArdaNova. */
+export interface TenantCustodialAccountStatus {
+  tenantId: string;
+  externalSubject: string;
+  /** Compatibility alias emitted for the initial ArdaNova integration. */
+  ardanovaUserId: string;
+  avatarId: string | null;
+  walletId: string | null;
+  walletAddress: string | null;
+  kycStatus: TenantKycStatus;
+  identityReady: boolean;
+  kycReady: boolean;
+  walletReady: boolean;
+  ready: boolean;
+  unavailableReason: string | null;
+}
+
+export interface TenantCustodialCapabilities {
+  enabled: boolean;
+  walletChain: string;
+  custodyMode: string;
+  custodyAvailable: boolean;
+  blockchainProviderAvailable: boolean;
+  kycProvider: string;
+  kycAvailable: boolean;
+  hostedVerification: boolean;
+  acceptsDocumentReferences: boolean;
+  developmentSimulation: boolean;
+  identityReady: boolean;
+  kycReady: boolean;
+  walletProvisioningReady: boolean;
+  ready: boolean;
+  unavailableReason: string | null;
+}
+
+export interface TenantKycSession {
+  provider: string;
+  hostedVerification: boolean;
+  acceptsDocumentReferences: boolean;
+  developmentSimulation: boolean;
+  verificationUrl: string | null;
+  expiresAt: string | null;
+  instructions: string | null;
+}
+
+export interface TenantKycDocumentReference {
+  type: "GOVERNMENT_ID" | "PASSPORT" | "DRIVERS_LICENSE" | "SELFIE" | "PROOF_OF_ADDRESS";
+  referenceUrl: string;
+  fileName: string;
+  mimeType?: string;
+  fileSizeBytes?: number;
+}
+
+export interface TenantKycSubmission {
+  submissionId: string;
+  status: TenantKycStatus;
+  submittedAt: string;
+  expiresAt: string | null;
+}
+
 /**
  * Assignable DApp role — the closed allowlist the `PUT /api/avatar/{id}/dapp-role`
  * endpoint accepts (mirrors `Core/AzoaDappRoles.cs`). `operator:admin` is
@@ -96,8 +158,9 @@ export interface BridgeTransactionResult {
   targetTokenId?: string;
   sourceAddress: string;
   targetAddress: string;
-  amount: number;
-  /** BridgeStatus enum: "Initiated"|"Locked"|"AwaitingVAA"|"VAAReady"|"Redeeming"|"Minted"|"Completed"|"Failed"|"Refunded" */
+  /** Unsigned base-unit amount encoded as a decimal string. */
+  amount: string;
+  /** BridgeStatus enum returned by the API. */
   status: string;
   /** BridgeMode: "Trusted"|"Wormhole" */
   mode: string;
@@ -250,7 +313,8 @@ export interface BridgeInitiateParams {
   targetChain: string;
   tokenId: string;
   recipientAddress: string;
-  amount?: number;
+  /** Unsigned base-unit amount in the inclusive range 1..2^64-1. */
+  amount: string;
   mode?: "Trusted" | "Wormhole";
 }
 
@@ -950,6 +1014,7 @@ export interface DappSeriesAddQuestParams {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ULONG_MAX = 18_446_744_073_709_551_615n;
 
 /** Validates that an ID is a UUID before URL interpolation. Prevents path traversal. */
 function assertUuid(id: string, paramName: string): void {
@@ -970,6 +1035,23 @@ function assertUuid(id: string, paramName: string): void {
 function assertNonEmpty(value: string, paramName: string): void {
   if (!value || value.trim().length === 0) {
     throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: must be a non-empty string`);
+  }
+}
+
+function assertPositiveUlongDecimal(value: string, paramName: string): void {
+  if (typeof value !== "string" || value.length > 20 || !/^[0-9]+$/.test(value)) {
+    throw new SdkError(
+      SdkErrorCode.INVALID_INPUT,
+      `Invalid ${paramName}: expected a positive unsigned 64-bit decimal string`
+    );
+  }
+
+  const parsed = BigInt(value);
+  if (parsed === 0n || parsed > ULONG_MAX) {
+    throw new SdkError(
+      SdkErrorCode.INVALID_INPUT,
+      `Invalid ${paramName}: expected a value between 1 and ${ULONG_MAX}`
+    );
   }
 }
 
@@ -1013,6 +1095,62 @@ export class AzoaApiClient {
   /** Whether verbose diagnostics are currently enabled. */
   get debug(): boolean {
     return this.config.debug ?? false;
+  }
+
+  // Tenant custodial onboarding
+
+  async getTenantCustodialCapabilities(): Promise<Result<TenantCustodialCapabilities, SdkError>> {
+    return this.request("GET", API_PATHS.TENANT_CUSTODIAL_CAPABILITIES);
+  }
+
+  async ensureTenantCustodialAccount(
+    externalSubject: string,
+    idempotencyKey: string
+  ): Promise<Result<TenantCustodialAccountStatus, SdkError>> {
+    assertNonEmpty(externalSubject, "externalSubject");
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request(
+      "PUT",
+      API_PATHS.TENANT_CUSTODIAL_ACCOUNT(externalSubject),
+      undefined,
+      false,
+      { "Idempotency-Key": idempotencyKey }
+    );
+  }
+
+  async getTenantCustodialAccount(
+    externalSubject: string
+  ): Promise<Result<TenantCustodialAccountStatus, SdkError>> {
+    assertNonEmpty(externalSubject, "externalSubject");
+    return this.request("GET", API_PATHS.TENANT_CUSTODIAL_ACCOUNT(externalSubject));
+  }
+
+  /** Ensure/resume the active KYC attempt using one stable per-subject key. */
+  async beginTenantKyc(
+    externalSubject: string,
+    idempotencyKey: string
+  ): Promise<Result<TenantKycSession, SdkError>> {
+    assertNonEmpty(externalSubject, "externalSubject");
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request(
+      "POST",
+      API_PATHS.TENANT_CUSTODIAL_KYC_SESSION(externalSubject),
+      undefined,
+      false,
+      { "Idempotency-Key": idempotencyKey }
+    );
+  }
+
+  async submitTenantKyc(
+    externalSubject: string,
+    documents: TenantKycDocumentReference[]
+  ): Promise<Result<TenantKycSubmission, SdkError>> {
+    assertNonEmpty(externalSubject, "externalSubject");
+    return this.request(
+      "POST",
+      API_PATHS.TENANT_CUSTODIAL_KYC_SUBMISSIONS(externalSubject),
+      { documents }
+    );
   }
 
   // ─── Avatar ───
@@ -1168,17 +1306,13 @@ export class AzoaApiClient {
   }
 
   async initiateBridge(params: BridgeInitiateParams): Promise<Result<BridgeTransactionResult, SdkError>> {
+    assertPositiveUlongDecimal(params.amount, "amount");
     return this.requestBare("POST", "/api/bridge/initiate", params);
   }
 
   async getBridgeStatus(bridgeId: string): Promise<Result<BridgeTransactionResult, SdkError>> {
     assertUuid(bridgeId, "bridgeId");
     return this.requestBare("GET", `/api/bridge/${bridgeId}`);
-  }
-
-  async completeBridge(bridgeId: string): Promise<Result<BridgeTransactionResult, SdkError>> {
-    assertUuid(bridgeId, "bridgeId");
-    return this.requestBare("POST", `/api/bridge/${bridgeId}/complete`);
   }
 
   async fetchVAA(bridgeId: string): Promise<Result<BridgeTransactionResult, SdkError>> {

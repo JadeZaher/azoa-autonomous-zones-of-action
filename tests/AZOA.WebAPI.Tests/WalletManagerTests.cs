@@ -106,6 +106,59 @@ public class WalletManagerTests
     }
 
     [Fact]
+    public async Task BootstrapWalletAsync_RetryReturnsSameCreateOnlyWalletWithoutSerializingKeyMaterial()
+    {
+        var avatarId = Guid.NewGuid();
+        IWallet? persisted = null;
+        _walletStore.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => persisted is not null && persisted.Id == id
+                ? AZOAResult<IWallet>.Success(persisted)
+                : AZOAResult<IWallet>.Failure("Wallet not found."));
+        _walletStore.Setup(s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IWallet wallet, CancellationToken _) =>
+            {
+                persisted ??= wallet;
+                return AZOAResult<IWallet>.Success(persisted);
+            });
+
+        var request = new WalletGenerateRequest { ChainType = "Algorand", IsDefault = false };
+        var first = await _manager.BootstrapWalletAsync(request, avatarId);
+        var retry = await _manager.BootstrapWalletAsync(request, avatarId);
+
+        first.IsError.Should().BeFalse();
+        retry.IsError.Should().BeFalse();
+        retry.Result!.Id.Should().Be(first.Result!.Id);
+        retry.Result.Address.Should().Be(first.Result.Address);
+        retry.Result.AvatarId.Should().Be(avatarId);
+        retry.Result.WalletType.Should().Be(WalletType.Platform);
+        retry.Result.EncryptedSeedPhrase.Should().BeNull();
+        _walletStore.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(first.Result);
+        json.Should().NotContain("EncryptedPrivateKey");
+        json.Should().NotContain("EncryptedSeedPhrase");
+    }
+
+    [Fact]
+    public async Task BootstrapWalletAsync_DeterministicIdCollisionWithDifferentOwnerFailsClosed()
+    {
+        _walletStore.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IWallet>.Success(new Wallet
+            {
+                AvatarId = Guid.NewGuid(),
+                ChainType = "Algorand",
+                WalletType = WalletType.Platform
+            }));
+
+        var result = await _manager.BootstrapWalletAsync(
+            new WalletGenerateRequest { ChainType = "Algorand" }, Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("different wallet");
+        _walletStore.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task UpdateAsync_ShouldApplyPartialChanges()
     {
         var wallet = new Wallet { Id = Guid.NewGuid(), AvatarId = Guid.NewGuid(), ChainType = "Solana", Address = "addr", Label = "Old", IsDefault = false };
