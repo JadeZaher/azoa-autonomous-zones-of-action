@@ -219,10 +219,7 @@ names, sources, and the `${{service.VAR}}` references must match).
    database-scoped Basic identity. The promoted image embeds bounded
    conformance evidence read-only at `/app/conformance`.
    Required secrets: strong random `Jwt__Key`, `AZOA__WalletEncryptionKey`, and
-   `NodeOperator__Password`, plus a registered AutoMapper 15+ hosted-use key
-   in the sealed shared variable `AUTOMAPPER_LICENSE_KEY` (the runtime also
-   accepts the vendor alias `LUCKYPENNY_LICENSE_KEY`). `/health` is unhealthy in
-   Production without that license; never commit it or bake it into an image.
+   `NodeOperator__Password`. Never commit them or bake them into an image.
    Seed the reserved node authority with `NodeOperator__Username=node-operator`,
    `NodeOperator__CredentialRevision=1`, and
    `NodeOperator__SessionMinutes=20`. The password must be a generated 24–72

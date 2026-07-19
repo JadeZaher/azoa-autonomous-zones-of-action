@@ -100,6 +100,13 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
     [SkippableFact]
     public async Task G1_HardKill_DurableInserts_SurviveRestart()
     {
+        var containerReady = IsCrashContainerReady();
+        if (!containerReady && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CI")))
+            throw new InvalidOperationException(
+                $"G1 requires a running {ContainerRuntime} container named '{SurrealContainerName}' in CI.");
+        Skip.IfNot(containerReady,
+            $"G1 requires a running {ContainerRuntime} container named '{SurrealContainerName}'.");
+
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             $"SurrealDB container not reachable at {SurrealTestDefaults.Endpoint} — start the dev stack via `./dev-up.ps1` (brings up the `azoa-dev-surrealdb` v3.1.4 container).");
 
@@ -373,6 +380,42 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
         };
         return Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start `{ContainerRuntime} {arguments}`.");
+    }
+
+    /// <summary>Checks that the named runtime container is running before the destructive chaos test begins.</summary>
+    private static bool IsCrashContainerReady()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = ContainerRuntime,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("inspect");
+            psi.ArgumentList.Add("--format");
+            psi.ArgumentList.Add("{{.State.Running}}");
+            psi.ArgumentList.Add(SurrealContainerName);
+
+            using var process = Process.Start(psi);
+            if (process is null)
+                return false;
+            if (!process.WaitForExit((int)TimeSpan.FromSeconds(5).TotalMilliseconds))
+            {
+                process.Kill(entireProcessTree: true);
+                return false;
+            }
+
+            return process.ExitCode == 0
+                && string.Equals(process.StandardOutput.ReadToEnd().Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

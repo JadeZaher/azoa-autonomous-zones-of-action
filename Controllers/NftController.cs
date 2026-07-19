@@ -51,30 +51,31 @@ public class NftController : ControllerBase
     }
 
     [HttpPost("mint")]
-    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Mint([FromBody] NftMintRequest request, [FromQuery] AZOARequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Mint([FromBody] NftMintRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<BlockchainOperationResponse> { IsError = true, Message = "Invalid token." });
 
         if (!User.HasSigningScope(AzoaScopes.NftMint))
-            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<IBlockchainOperation>
+            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<BlockchainOperationResponse>
             {
                 IsError = true,
                 Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to mint an NFT."
             });
 
         var result = await _nftManager.MintAsync(request, avatarId.Value, providerRequest);
-        if (!result.IsError) return Ok(result);
+        var response = BlockchainOperationResponse.Project(result);
+        if (!response.IsError) return Ok(response);
 
         // value-path-wiring H3: the KYC gate now lives in NftManager.MintAsync. A
         // fail-closed KYC rejection carries the KYC_FORBIDDEN: prefix → 403,
         // consistent with the kyc-module convention (AllocationController.cs:80,
         // KycController.cs:124). Any other error stays 400.
         if (result.Message?.StartsWith(KycAuthorizationError.Forbidden, StringComparison.Ordinal) == true)
-            return StatusCode(StatusCodes.Status403Forbidden, result);
+            return StatusCode(StatusCodes.Status403Forbidden, response);
 
-        return BadRequest(result);
+        return BadRequest(response);
     }
 
     /// <summary>
@@ -174,42 +175,44 @@ public class NftController : ControllerBase
     }
 
     [HttpPost("{id:guid}/transfer")]
-    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Transfer(Guid id, [FromBody] NftTransferRequest request, [FromQuery] AZOARequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Transfer(Guid id, [FromBody] NftTransferRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<BlockchainOperationResponse> { IsError = true, Message = "Invalid token." });
 
         if (!User.HasSigningScope(AzoaScopes.TransferSign))
-            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<IBlockchainOperation>
+            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<BlockchainOperationResponse>
             {
                 IsError = true,
                 Message = $"Caller lacks the '{AzoaScopes.TransferSign}' scope required to transfer an NFT."
             });
 
         var result = await _nftManager.TransferAsync(id, request, avatarId.Value, providerRequest);
-        if (result.IsError) return BadRequest(result);
-        return Ok(result);
+        var response = BlockchainOperationResponse.Project(result);
+        if (response.IsError) return BadRequest(response);
+        return Ok(response);
     }
 
     [HttpPost("{id:guid}/burn")]
-    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Burn(Guid id, [FromBody] NftBurnRequest request, [FromQuery] AZOARequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Burn(Guid id, [FromBody] NftBurnRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<BlockchainOperationResponse> { IsError = true, Message = "Invalid token." });
 
         // Burn maps to nft:mint per AzoaScopes.OperationScopeMap.
         if (!User.HasSigningScope(AzoaScopes.NftMint))
-            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<IBlockchainOperation>
+            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<BlockchainOperationResponse>
             {
                 IsError = true,
                 Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to burn an NFT."
             });
 
         var result = await _nftManager.BurnAsync(id, request.WalletId, avatarId.Value, providerRequest);
-        if (result.IsError) return BadRequest(result);
-        return Ok(result);
+        var response = BlockchainOperationResponse.Project(result);
+        if (response.IsError) return BadRequest(response);
+        return Ok(response);
     }
 
     [HttpGet("{id:guid}/metadata")]

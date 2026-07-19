@@ -76,7 +76,6 @@
         "Blockchain__Wormhole__DefaultMode": "Trusted",
         "Jwt__Key": "${{secret(48)}}",
         "AZOA__WalletEncryptionKey": "${{secret(32)}}",
-        "AUTOMAPPER_LICENSE_KEY": "${{shared.AUTOMAPPER_LICENSE_KEY}}",
         "NodeOperator__Username": "node-operator",
         "NodeOperator__Password": "${{secret(48)}}",
         "NodeOperator__CredentialRevision": "1",

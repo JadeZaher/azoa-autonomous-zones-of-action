@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 using AZOA.WebAPI.Services.Auth;
 
 namespace AZOA.WebAPI.IntegrationTests.Factories;
@@ -53,6 +56,15 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>Forwarding policy scheme (test-only) that routes X-Api-Key requests to
     /// the real ApiKey handler and everything else to TestAuthHandler.</summary>
     private const string TestAuthForwardScheme = "TestAuthForward";
+
+    /// <summary>Creates the isolated namespace before application hosted services start.</summary>
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        SurrealTestSchema.BootstrapHostedServicePrerequisitesAsync(TestNamespace)
+            .GetAwaiter()
+            .GetResult();
+        return base.CreateHost(builder);
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -124,6 +136,14 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
                         : TestAuthHandler.SchemeName;
             });
 
+            // Production first-party policies intentionally select Bearer. In this
+            // test host only, forward that scheme to the synthetic login principal.
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                options.ForwardAuthenticate = TestAuthHandler.SchemeName;
+                options.ForwardChallenge = TestAuthHandler.SchemeName;
+            });
+
             // Wave 2 placeholder: when Worker B's ISurrealDbRepository is
             // registered in Program.cs, add any test-overrides here.
             // For now the EF-backed adapters from Program.cs remain wired.
@@ -157,16 +177,17 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
 
     /// <summary>
     /// avatar-dapp-rbac: an operator-authenticated client (JWT-equivalent scheme with
-    /// operator:admin + role=Admin stamped). Used to exercise operator-gated surfaces
-    /// and the role-assignment bootstrap path. Optionally pins an avatar id.
+    /// operator:admin + role=Admin stamped). Defaults to the canonical node operator
+    /// identity; callers may supply an avatar id for policy-only coverage.
     /// </summary>
     public HttpClient CreateOperatorClient(Guid? avatarId = null)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
         client.DefaultRequestHeaders.Add(TestAuthHandler.OperatorHeaderName, "true");
-        if (avatarId.HasValue)
-            client.DefaultRequestHeaders.Add(TestAuthHandler.AvatarHeaderName, avatarId.Value.ToString());
+        client.DefaultRequestHeaders.Add(
+            TestAuthHandler.AvatarHeaderName,
+            (avatarId ?? AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId).ToString());
         return client;
     }
 

@@ -66,7 +66,6 @@ const BRIDGE_TRANSACTION_SHAPE: NodeOutputShapeMirror = {
     VaaBytes: 'scalar',
     VaaSignatureCount: 'scalar',
     RedemptionTxHash: 'scalar',
-    IdempotencyKey: 'scalar',
     Network: 'scalar',
   },
 }

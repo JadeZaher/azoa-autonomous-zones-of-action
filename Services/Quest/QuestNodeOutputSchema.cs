@@ -146,9 +146,9 @@ public static class QuestNodeOutputSchema
             // ── Avatar NFT (serialize whole AZOAResult<AvatarNFTCompositeResult>) ──
             [QuestNodeType.AvatarNFTGetComposite] = WrappedObject(),
 
-            // ── Blockchain (serialize whole AZOAResult<IBlockchainOperation>) ──
-            // The nested Result.Parameters bag is provider-dependent (open), but the
-            // top-level wrapper shape is known.
+            // ── Blockchain (serialize whole safe AZOAResult<BlockchainOperationResponse>) ──
+            // The nested Result is a strict allowlist; internal provider parameters
+            // and idempotency/initiator metadata never become durable output.
             [QuestNodeType.BlockchainExecute] = WrappedObject(),
 
             // ── Internal / control-flow ──
@@ -166,11 +166,11 @@ public static class QuestNodeOutputSchema
             // Tier-2 economic nodes serialize the WHOLE AZOAResult<T>.
             // Result = SwapQuoteResponse
             [QuestNodeType.Swap] = WrappedObject(),
-            // Result = IBlockchainOperation (Grant mint / Transfer / Refund reverse-transfer)
+            // Result = strict BlockchainOperationResponse (Grant / Transfer / Refund)
             [QuestNodeType.Grant] = WrappedObject(),
             [QuestNodeType.Transfer] = WrappedObject(),
             [QuestNodeType.Refund] = WrappedObject(),
-            // Result = FungibleTokenResult
+            // Result = strict FungibleTokenResultResponse
             [QuestNodeType.FungibleTokenCreate] = WrappedObject(),
 
             // ── Fractionalization rails — serialize r.Result DIRECTLY (unwrapped) ──
@@ -207,7 +207,6 @@ public static class QuestNodeOutputSchema
         ("VaaBytes", OutputFieldType.String),
         ("VaaSignatureCount", OutputFieldType.Number),
         ("RedemptionTxHash", OutputFieldType.String),
-        ("IdempotencyKey", OutputFieldType.String),
         ("Network", OutputFieldType.Number));           // ChainNetwork enum → int
 
     /// <summary>

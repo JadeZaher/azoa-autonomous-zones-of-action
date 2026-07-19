@@ -20,4 +20,17 @@ public sealed class BridgeAmountContractTests
         JsonSerializer.Deserialize<BridgeTransactionResult>(json, options)!
             .Amount.Should().Be(ulong.MaxValue);
     }
+
+    [Fact]
+    public void Response_DoesNotSerializeServerIdempotencyKey()
+    {
+        const string ledgerKey = "bridge-redeem:private-avatar:payment-intent";
+        var response = new BridgeTransactionResult { IdempotencyKey = ledgerKey };
+
+        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        json.Should().NotContain(ledgerKey)
+            .And.NotContain("idempotencyKey");
+        response.IdempotencyKey.Should().Be(ledgerKey);
+    }
 }

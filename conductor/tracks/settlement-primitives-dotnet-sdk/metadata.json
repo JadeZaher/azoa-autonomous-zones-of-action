@@ -1,0 +1,22 @@
+{
+  "id": "settlement-primitives-dotnet-sdk",
+  "description": "Generic AZOA .NET SDK and developer-experience foundation for account capability/readiness, idempotent allocation, durable operation receipts, and reconciliation without consumer product economics or payment-provider logic.",
+  "type": "feature",
+  "created_at": "2026-07-19T00:00:00Z",
+  "status": "in_progress",
+  "horizon": "alpha",
+  "phase": "Phase 0 defines the neutral settlement contract and delivery gates. Package implementation begins only from versioned AZOA contracts; consumer-specific onboarding stays gated on the ArdaNova conformance decision.",
+  "blocks": [
+    "ardanova-financial-workflow-conformance"
+  ],
+  "depends_on": [
+    "integration-test-isolation-debt"
+  ],
+  "related": [
+    "ardanova-financial-workflow-conformance",
+    "node-operator-governance",
+    "fiat-stripe-bridge",
+    "apiKey-allowed-origins",
+    "dotnet-client-sdk"
+  ]
+}

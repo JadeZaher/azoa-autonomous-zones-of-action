@@ -125,6 +125,41 @@ public class QuestNodeHandlerTests
     }
 
     [Fact]
+    public async Task NftMintNodeHandler_SerializesOnlyTheSafeOperationProjection()
+    {
+        var avatarId = Guid.NewGuid();
+        var operationId = Guid.NewGuid();
+        var operation = new BlockchainOperation
+        {
+            Id = operationId,
+            AvatarId = avatarId,
+            OperationType = "Mint",
+            Status = "Completed",
+            InitiatorApiKeyId = Guid.NewGuid(),
+            Parameters = new Dictionary<string, string>
+            {
+                ["TxHash"] = "public-tx",
+                ["IdempotencyKey"] = "alloc:private-api-key:payment-intent",
+            },
+        };
+        var mgr = new Mock<INftManager>();
+        mgr.Setup(m => m.MintAsync(It.IsAny<NftMintRequest>(), avatarId, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
+           .ReturnsAsync(AZOAResult<IBlockchainOperation>.Success(operation));
+        var handler = new NftMintNodeHandler(mgr.Object);
+        var node = NodeWith(QuestNodeType.NftMint, JsonSerializer.Serialize(new NftMintRequest()));
+
+        var result = await handler.HandleAsync(CtxFor(node, avatarId));
+
+        result.Output.Should().Contain("public-tx")
+            .And.NotContain("alloc:private-api-key")
+            .And.NotContain("Parameters")
+            .And.NotContain("InitiatorApiKeyId");
+        using var output = JsonDocument.Parse(result.Output!);
+        output.RootElement.GetProperty("Result").GetProperty("Id").GetGuid()
+            .Should().Be(operationId, "a downstream $from binding may still use Result.Id");
+    }
+
+    [Fact]
     public async Task NftBurnNodeHandler_InvokesBurn_WithConfiguredIds()
     {
         var nftId = Guid.NewGuid();

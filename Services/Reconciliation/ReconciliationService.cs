@@ -63,6 +63,18 @@ public sealed class ReconciliationService : IReconciliationService
         OperationStatus.PendingConfirmation,
     };
 
+    private static readonly string[] SuccessfulTerminalOperation =
+    {
+        OperationStatus.Completed,
+        OperationStatus.Minted,
+        OperationStatus.Burned,
+        OperationStatus.Exchanged,
+        OperationStatus.Swapped,
+        OperationStatus.Transferred,
+        OperationStatus.Deployed,
+        OperationStatus.Called,
+    };
+
     public ReconciliationService(
         IBridgeStore bridgeStore,
         IBlockchainProviderFactory chainFactory,
@@ -420,7 +432,8 @@ public sealed class ReconciliationService : IReconciliationService
             {
                 // Per-record reports carry Scanned == 0, so Combine preserves
                 // the batch scan count set above.
-                report = report.Combine(await ReconcileOneOperationAsync(id, now, ct));
+                report = report.Combine(await ReconcileOneOperationAsync(
+                    id, now, includeTerminalForSettlement: false, ct: ct));
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
@@ -434,12 +447,37 @@ public sealed class ReconciliationService : IReconciliationService
         return report;
     }
 
+    /// <inheritdoc />
+    public async Task<ReconciliationReport> ReconcileOperationAsync(Guid id, CancellationToken ct)
+    {
+        if (id == Guid.Empty)
+            throw new ArgumentException("Operation id is required", nameof(id));
+
+        // A receipt-triggered check deliberately bypasses the background sweep's
+        // staleness threshold. It still performs only the same read-only chain
+        // observation and conditional state transitions as the sweep.
+        var op = await _bridgeStore.GetOperationAsync(id, ct);
+        if (op is null)
+            return ReconciliationReport.Empty;
+
+        var report = await ReconcileOneOperationAsync(
+            id, DateTime.UtcNow, includeTerminalForSettlement: true, ct: ct);
+        return report with { Scanned = 1 };
+    }
+
     private async Task<ReconciliationReport> ReconcileOneOperationAsync(
-        Guid id, DateTime now, CancellationToken ct)
+        Guid id,
+        DateTime now,
+        bool includeTerminalForSettlement,
+        CancellationToken ct)
     {
         var op = await _bridgeStore.GetOperationAsync(id, ct);
 
-        if (op is null || !NonTerminalOperation.Contains(op.Status))
+        if (op is null)
+            return ReconciliationReport.Empty;
+
+        var isNonTerminal = NonTerminalOperation.Contains(op.Status);
+        if (!isNonTerminal && !includeTerminalForSettlement)
             return ReconciliationReport.Empty;
 
         var ageSeconds = (now - op.CreatedDate).TotalSeconds;
@@ -498,6 +536,24 @@ public sealed class ReconciliationService : IReconciliationService
         {
             case ChainVerdict.Confirmed:
             {
+                if (!isNonTerminal)
+                {
+                    if (SuccessfulTerminalOperation.Contains(op.Status))
+                    {
+                        await SettleOperationIdempotencyAsync(
+                            op, settleCompleted: true, payloadOrReason: txHash!, ct);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Reconciliation: operation {OperationId} is locally terminal as {Status}, " +
+                            "but chain reports confirmed. Leaving the conflicting local state untouched.",
+                            op.Id, op.Status);
+                    }
+
+                    return ReconciliationReport.Empty;
+                }
+
                 var expected = op.Status;
                 int affected = await _bridgeStore.TryTransitionOperationStatusAsync(
                     op.Id, expected, OperationStatus.Completed, DateTime.UtcNow, ct);
@@ -524,6 +580,27 @@ public sealed class ReconciliationService : IReconciliationService
 
             case ChainVerdict.FailedOnChain:
             {
+                if (!isNonTerminal)
+                {
+                    if (op.Status == OperationStatus.Failed)
+                    {
+                        await SettleOperationIdempotencyAsync(
+                            op, settleCompleted: false,
+                            payloadOrReason:
+                                $"Reconciliation: operation tx {txHash} reported FAILED on-chain.",
+                            ct);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Reconciliation: operation {OperationId} is locally terminal as {Status}, " +
+                            "but chain reports failure. Leaving the conflicting local state untouched.",
+                            op.Id, op.Status);
+                    }
+
+                    return ReconciliationReport.Empty;
+                }
+
                 var expected = op.Status;
                 int affected = await _bridgeStore.TryTransitionOperationStatusAsync(
                     op.Id, expected, OperationStatus.Failed, DateTime.UtcNow, ct);

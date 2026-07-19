@@ -8,6 +8,10 @@ public class BlockchainOperation : IBlockchainOperation, IMintOperation, IExchan
     public Guid? AvatarId { get; set; }
     public Guid? WalletId { get; set; }
 
+    public string? IdempotencyKey { get; set; }
+    public Guid? InitiatorAvatarId { get; set; }
+    public Guid? InitiatorApiKeyId { get; set; }
+
     // tenant-consent-delegation AC4 — see IBlockchainOperation.
     public Guid? ActingTenantId { get; set; }
     public string? SigningScope { get; set; }

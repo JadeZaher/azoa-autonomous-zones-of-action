@@ -74,8 +74,8 @@ public sealed class AllocationManager : IAllocationManager
             return AZOAResult<AllocationResult>.Failure("Allocation request is required.");
         if (string.IsNullOrWhiteSpace(request.ChainType))
             return AZOAResult<AllocationResult>.Failure("ChainType is required.");
-        if (string.IsNullOrWhiteSpace(apiKeyId))
-            return AZOAResult<AllocationResult>.Failure("Caller API key context is required.");
+        if (!Guid.TryParse(apiKeyId, out var callerApiKeyId) || callerApiKeyId == Guid.Empty)
+            return AZOAResult<AllocationResult>.Failure("Caller API key context is invalid.");
         if (actingTenantId is { } tenantId)
         {
             if (tenantId != callerAvatarId || _avatars is null)
@@ -94,18 +94,16 @@ public sealed class AllocationManager : IAllocationManager
             return AZOAResult<AllocationResult>.Failure(governance.Message);
 
         // ── Step 1: idempotency key ───────────────────────────────────────────
-        // Client key wins; absent ⇒ deterministic content key over
-        // (avatarId, asset descriptor, amount). NEVER a random per-request key.
-        // The whole key is partitioned by apiKeyId so two tenants reusing the
-        // same human-friendly key (e.g. "1") cannot collide.
-        var idempotencyKey = BuildIdempotencyKey(apiKeyId, avatarId, request, clientIdempotencyKey);
+        var allocationIdempotency = AllocationIdempotency.Create(
+            callerApiKeyId, avatarId, request, clientIdempotencyKey);
+        var ledgerKey = allocationIdempotency.LedgerKey;
 
         // ── Step 2: idempotency claim ─────────────────────────────────────────
         // TryClaim BEFORE any irreversible effect. On a lost claim we replay the
         // stored original result and perform NO second mint/transfer.
-        var claim = await _idempotencyStore.TryClaimAsync(idempotencyKey, OperationType, CancellationToken.None);
+        var claim = await _idempotencyStore.TryClaimAsync(ledgerKey, OperationType, CancellationToken.None);
         if (!claim.Won)
-            return ReplayFromRecord(claim.Record, idempotencyKey);
+            return ReplayFromRecord(claim.Record);
 
         var effectMayHaveStarted = false;
         try
@@ -119,7 +117,7 @@ public sealed class AllocationManager : IAllocationManager
                 : await _kycGate.RequireVerifiedAsync(avatarId);
             if (gate.IsError)
             {
-                await _idempotencyStore.FailAsync(idempotencyKey, gate.Message, CancellationToken.None);
+                await _idempotencyStore.FailAsync(ledgerKey, gate.Message, CancellationToken.None);
                 return AZOAResult<AllocationResult>.Failure(gate.Message);
             }
 
@@ -130,7 +128,7 @@ public sealed class AllocationManager : IAllocationManager
             // terminal (Failed), never leaked InProgress, and nothing is broadcast.
             if (!TryParseAmount(request.Amount, out var amount, out var amountError))
             {
-                await _idempotencyStore.FailAsync(idempotencyKey, amountError, CancellationToken.None);
+                await _idempotencyStore.FailAsync(ledgerKey, amountError, CancellationToken.None);
                 return AZOAResult<AllocationResult>.Failure(amountError);
             }
 
@@ -138,7 +136,7 @@ public sealed class AllocationManager : IAllocationManager
             if (feeQuoteResult.IsError || feeQuoteResult.Result is null)
             {
                 var msg = feeQuoteResult.IsError ? feeQuoteResult.Message : "Node fee quote produced no result.";
-                await _idempotencyStore.FailAsync(idempotencyKey, msg, CancellationToken.None);
+                await _idempotencyStore.FailAsync(ledgerKey, msg, CancellationToken.None);
                 return AZOAResult<AllocationResult>.Failure(msg);
             }
             var feeQuote = feeQuoteResult.Result;
@@ -147,7 +145,7 @@ public sealed class AllocationManager : IAllocationManager
             var (wallet, provisioned, walletError) = await EnsureWalletAsync(avatarId, request.ChainType);
             if (wallet is null)
             {
-                await _idempotencyStore.FailAsync(idempotencyKey, walletError, CancellationToken.None);
+                await _idempotencyStore.FailAsync(ledgerKey, walletError, CancellationToken.None);
                 return AZOAResult<AllocationResult>.Failure(walletError);
             }
 
@@ -160,17 +158,18 @@ public sealed class AllocationManager : IAllocationManager
             var opResult = request.Kind switch
             {
                 AllocationKind.Mint => await MintAsync(
-                    avatarId, wallet, provisioned, request, feeQuote, idempotencyKey, actingTenantId),
+                    avatarId, wallet, provisioned, request, feeQuote, ledgerKey,
+                    allocationIdempotency.Correlation, callerAvatarId, callerApiKeyId, actingTenantId),
                 AllocationKind.Transfer => await TransferAsync(
                     avatarId, callerAvatarId, wallet, provisioned, request, feeQuote,
-                    idempotencyKey, actingTenantId),
+                    ledgerKey, allocationIdempotency.Correlation, callerAvatarId, callerApiKeyId, actingTenantId),
                 _ => Operation.Invalid($"Unsupported allocation kind: {request.Kind}.")
             };
 
             if (opResult.IsError || opResult.Result is null)
             {
                 var msg = opResult.IsError ? opResult.Message : "Allocation produced no operation.";
-                await _idempotencyStore.FailAsync(idempotencyKey, msg, CancellationToken.None);
+                await _idempotencyStore.FailAsync(ledgerKey, msg, CancellationToken.None);
                 return AZOAResult<AllocationResult>.Failure(msg);
             }
 
@@ -182,7 +181,7 @@ public sealed class AllocationManager : IAllocationManager
             // op did not record a TxHash, leave the allocation record InProgress so a
             // redelivered request replays "in progress" — NOT a false success.
             var result = BuildAllocationResult(
-                avatarId, wallet, provisioned, op.Id, idempotencyKey, feeQuote);
+                avatarId, wallet, provisioned, op.Id, feeQuote);
 
             var txHash = op.Parameters.GetValueOrDefault("TxHash", string.Empty);
             if (string.IsNullOrWhiteSpace(txHash))
@@ -196,7 +195,7 @@ public sealed class AllocationManager : IAllocationManager
             }
 
             await _idempotencyStore.CompleteAsync(
-                idempotencyKey, SerializeForReplay(result), CancellationToken.None);
+                ledgerKey, SerializeForReplay(result), CancellationToken.None);
 
             return new AZOAResult<AllocationResult> { Result = result, Message = "Allocation completed." };
         }
@@ -204,7 +203,7 @@ public sealed class AllocationManager : IAllocationManager
         {
             if (!effectMayHaveStarted)
                 await IdempotencyClaimRecovery.TryFailAsync(
-                    _idempotencyStore, idempotencyKey, UnexpectedFailureMessage, ex);
+                    _idempotencyStore, ledgerKey, UnexpectedFailureMessage, ex);
             throw;
         }
     }
@@ -243,7 +242,10 @@ public sealed class AllocationManager : IAllocationManager
     private async Task<AZOAResult<IBlockchainOperation>> MintAsync(
         Guid avatarId, IWallet wallet, bool walletProvisioned, AllocationRequest request,
         AllocationFeeQuote feeQuote,
-        string idempotencyKey,
+        string ledgerKey,
+        string correlation,
+        Guid callerAvatarId,
+        Guid callerApiKeyId,
         Guid? actingTenantId = null)
     {
         // Step A: record allocation metadata within the already-owned claim.
@@ -280,10 +282,13 @@ public sealed class AllocationManager : IAllocationManager
             // custody seam runs the live consent check before key decrypt.
             ActingTenantId = actingTenantId,
             SigningScope = actingTenantId.HasValue ? AzoaScopes.NftMint : null,
-            Parameters = BuildOpParameters(wallet, request, feeQuote, idempotencyKey, holonResult.Result.Id.ToString())
+            IdempotencyKey = correlation,
+            InitiatorAvatarId = callerAvatarId,
+            InitiatorApiKeyId = callerApiKeyId,
+            Parameters = BuildOpParameters(wallet, request, feeQuote, ledgerKey, holonResult.Result.Id.ToString())
         };
         op.Parameters[IdempotencyParameterNames.ResultPayload] = SerializeForReplay(BuildAllocationResult(
-            avatarId, wallet, walletProvisioned, op.Id, idempotencyKey, feeQuote));
+            avatarId, wallet, walletProvisioned, op.Id, feeQuote));
 
         return await _blockchainOps.ExecuteAsync(op);
     }
@@ -295,7 +300,10 @@ public sealed class AllocationManager : IAllocationManager
         bool walletProvisioned,
         AllocationRequest request,
         AllocationFeeQuote feeQuote,
-        string idempotencyKey,
+        string ledgerKey,
+        string correlation,
+        Guid callerAvatarId,
+        Guid callerApiKeyId,
         Guid? actingTenantId = null)
     {
         if (request.AssetRecordId is null || request.AssetRecordId == Guid.Empty)
@@ -334,14 +342,17 @@ public sealed class AllocationManager : IAllocationManager
             // AC4: tenant-driven transfer signs with the USER's key — gate it.
             ActingTenantId = actingTenantId,
             SigningScope = actingTenantId.HasValue ? AzoaScopes.TransferSign : null,
+            IdempotencyKey = correlation,
+            InitiatorAvatarId = callerAvatarId,
+            InitiatorApiKeyId = callerApiKeyId,
             Parameters = BuildOpParameters(
-                sourceWallet, request, feeQuote, idempotencyKey,
+                sourceWallet, request, feeQuote, ledgerKey,
                 holonId)
         };
         if (!string.IsNullOrWhiteSpace(request.AssetId))
             op.Parameters["SourceTokenId"] = request.AssetId!;
         op.Parameters[IdempotencyParameterNames.ResultPayload] = SerializeForReplay(BuildAllocationResult(
-            targetAvatarId, targetWallet, walletProvisioned, op.Id, idempotencyKey, feeQuote));
+            targetAvatarId, targetWallet, walletProvisioned, op.Id, feeQuote));
 
         return await _blockchainOps.ExecuteAsync(op);
     }
@@ -364,7 +375,7 @@ public sealed class AllocationManager : IAllocationManager
     /// need: the wallet address the provider signs/moves from, the asset
     /// descriptor, the arbitrary-precision <c>Amount</c> string (the value channel
     /// for op types with NO typed amount field — Transfer/Burn), the chain, and
-    /// (H1) the alloc idempotency key so an orphaned claim can be released by
+    /// (H1) the raw internal allocation ledger key so an orphaned claim can be released by
     /// <c>ReconciliationService</c>. For Mint the typed <see cref="IMintOperation.Amount"/>
     /// ulong is authoritative; this string entry is the fallback for the typeless
     /// op types and storage rehydration.
@@ -373,7 +384,7 @@ public sealed class AllocationManager : IAllocationManager
         IWallet wallet,
         AllocationRequest request,
         AllocationFeeQuote feeQuote,
-        string idempotencyKey,
+        string ledgerKey,
         string? holonId)
     {
         var p = new Dictionary<string, string>
@@ -387,9 +398,9 @@ public sealed class AllocationManager : IAllocationManager
                 System.Globalization.CultureInfo.InvariantCulture),
             ["AssetType"] = request.Name,
             ["ChainType"] = request.ChainType,
-            // H1: persist the alloc:{apiKeyId}:… key so reconciliation can settle an
-            // orphaned InProgress claim from chain truth (bridge precedent).
-            ["IdempotencyKey"] = idempotencyKey,
+            // This parameter is internal reconciliation state. The durable operation
+            // field holds only the opaque correlation safe for receipts and listings.
+            ["IdempotencyKey"] = ledgerKey,
         };
         if (!string.IsNullOrWhiteSpace(request.AssetId))
             p["TokenUri"] = request.AssetId!;
@@ -511,7 +522,6 @@ public sealed class AllocationManager : IAllocationManager
         IWallet wallet,
         bool walletProvisioned,
         Guid operationId,
-        string idempotencyKey,
         AllocationFeeQuote feeQuote)
         => new()
         {
@@ -521,7 +531,6 @@ public sealed class AllocationManager : IAllocationManager
             WalletProvisioned = walletProvisioned,
             OperationId = operationId,
             Replayed = false,
-            IdempotencyKey = idempotencyKey,
             GrossAmount = FormatAmount(feeQuote.GrossAmount),
             NodeFeeAmount = FormatAmount(feeQuote.FeeAmount),
             NetAmount = FormatAmount(feeQuote.NetAmount),
@@ -581,34 +590,8 @@ public sealed class AllocationManager : IAllocationManager
 
     // ── Idempotency helpers ────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Builds the partitioned idempotency key. Always prefixed with the API-key
-    /// id so the dedup namespace is per-tenant. The tail is the client key when
-    /// present, else a deterministic SHA-256 over the allocation content.
-    /// </summary>
-    private static string BuildIdempotencyKey(
-        string apiKeyId, Guid avatarId, AllocationRequest request, string? clientIdempotencyKey)
-    {
-        var tail = !string.IsNullOrWhiteSpace(clientIdempotencyKey)
-            ? clientIdempotencyKey.Trim()
-            : DeterministicContentKey(avatarId, request);
-        return $"alloc:{apiKeyId}:{tail}";
-    }
-
-    private static string DeterministicContentKey(Guid avatarId, AllocationRequest request)
-    {
-        var canonical = string.Join('|',
-            avatarId.ToString("N"),
-            request.Kind.ToString(),
-            request.ChainType.ToLowerInvariant(),
-            request.Amount,
-            request.AssetId ?? string.Empty,
-            request.AssetRecordId?.ToString("N") ?? string.Empty);
-        return IdempotencyReplay.ContentHash(canonical);
-    }
-
     private static AZOAResult<AllocationResult> ReplayFromRecord(
-        IdempotencyRecord record, string idempotencyKey)
+        IdempotencyRecord record)
         => IdempotencyReplay.ReplayFromRecord<AllocationResult>(
             record,
             DeserializeForReplay,
@@ -616,8 +599,7 @@ public sealed class AllocationManager : IAllocationManager
             "Duplicate request: returning the result of the original allocation (not re-executed).",
             "Duplicate request: original allocation result could not be replayed.",
             "Original allocation failed.",
-            $"Allocation for key '{idempotencyKey}' is already in progress; " +
-            "retry once the original request settles.");
+            "An allocation is already being processed. Retry once the original request settles.");
 
     private static string SerializeForReplay(AllocationResult result)
         => IdempotencyReplay.SerializeForReplay(result);

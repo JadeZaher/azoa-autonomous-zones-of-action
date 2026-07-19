@@ -90,13 +90,11 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
                     // PermitLimit=10) would reject 40 of the 50 with HTTP 429 before
                     // idempotency even runs.
                     ["RateLimiting:Enabled"] = "false",
-                    // bridge-safety-hardening: IntegrationTest env resolves
-                    // Blockchain:Mode=Live (no Development overlay), so Solana/Algorand
-                    // chains are non-simulated. Without this override the kill switch
-                    // refuses every redeem before idempotency runs, making the gate
-                    // vacuously pass. The subject under test IS the idempotency+VAA gate,
-                    // not the kill switch — enable real-value to reach that seam.
-                    ["Blockchain:Bridge:RealValueEnabled"] = "true",
+                    // The gate observes idempotency and VAA consumption, not a live
+                    // target-chain settlement provider. Simulated mode reaches that seam
+                    // deterministically without weakening real-value production routes.
+                    ["Blockchain:Mode"] = "Simulated",
+                    ["Blockchain:DefaultChain"] = "Simulated",
                     ["AZOA:DebugErrors"] = "true",
                     ["RateLimiting:Global:PermitLimit"] = "1000",
                     ["RateLimiting:Financial:PermitLimit"] = "1000",

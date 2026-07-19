@@ -168,6 +168,19 @@ public class QuestNodeOutputSchemaGoldenTests
     public static IEnumerable<object[]> FlatTypes() =>
         FlatBridgeShape.Select(t => new object[] { t });
 
+    [Fact]
+    public void FlatBridgeOutput_DoesNotSerializeServerIdempotencyKey()
+    {
+        var json = Serialize(new BridgeTransactionResult
+        {
+            IdempotencyKey = "bridge:private-avatar:payment-intent",
+        });
+
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.TryGetProperty(nameof(BridgeTransactionResult.IdempotencyKey), out _)
+            .Should().BeFalse();
+    }
+
     // ── 5. GateCheck matches its fixed literal {"pass":true} ───────────────────
 
     [Fact]

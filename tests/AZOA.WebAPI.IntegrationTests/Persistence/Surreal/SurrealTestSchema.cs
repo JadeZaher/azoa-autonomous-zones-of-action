@@ -29,6 +29,10 @@ internal static class SurrealTestSchema
     public static Task BootstrapAsync(string testNamespace, params string[] tableGoldenNames)
         => BootstrapWithExtraAsync(testNamespace, null, tableGoldenNames);
 
+    /// <summary>Bootstraps the tables read by enabled hosted services during host startup.</summary>
+    public static Task BootstrapHostedServicePrerequisitesAsync(string testNamespace)
+        => BootstrapAsync(testNamespace, "admin_bootstrap_state", "saga_steps");
+
     /// <summary>
     /// As <see cref="BootstrapAsync(string, string[])"/>, plus an
     /// <paramref name="extraDdl"/> block applied after the goldens — for tables

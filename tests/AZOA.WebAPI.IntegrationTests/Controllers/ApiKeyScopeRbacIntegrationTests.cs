@@ -7,9 +7,11 @@ using Microsoft.Extensions.DependencyInjection;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Controllers;
 using AZOA.WebAPI.IntegrationTests.Factories;
+using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Auth;
 
 namespace AZOA.WebAPI.IntegrationTests.Controllers;
 
@@ -113,11 +115,13 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
         }, "ApiKey"));
         var jwtWithOperatorOnly = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
+            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseNodeOperator),
             new Claim("scope", AzoaScopes.Operator),
             new Claim("role", "Admin"),
         }, "Bearer"));
         var jwtWithNodeGovern = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
+            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseNodeOperator),
             new Claim("scope", AzoaScopes.NodeGovern),
         }, "Bearer"));
 
@@ -190,9 +194,8 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    // AC2 (empty-CSV legacy carve-out): a genuinely-empty-scope key keeps its legacy
-    // full-access shape, but the DappDevelop policy STILL requires the owner's current
-    // developer role. Against a demoted (plain-user) owner it must 403.
+    // AC2: new keys require explicit scopes, while a pre-hardening persisted empty-scope
+    // key remains compatible. Its owner still needs the current developer role.
     [Fact]
     public async Task ApiKey_EmptyCsvLegacyKey_AgainstDemotedAvatar_Returns403()
     {
@@ -201,8 +204,7 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
 
         (await AssignRoleAsync(operatorClient, avatar.Id, AzoaDappRoles.Developer))
             .StatusCode.Should().Be(HttpStatusCode.OK);
-        using var developer = Factory.CreateAuthenticatedClientForAvatar(avatar.Id, AzoaDappRoles.Developer);
-        var rawKey = await MintRealApiKeyAsync(developer, scopes: null); // empty CSV → legacy full access
+        var rawKey = await SeedLegacyApiKeyAsync(avatar.Id);
 
         (await AssignRoleAsync(operatorClient, avatar.Id, AzoaDappRoles.User))
             .StatusCode.Should().Be(HttpStatusCode.OK);
@@ -317,4 +319,22 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
     private Task<HttpResponseMessage> AssignRoleAsync(HttpClient client, Guid avatarId, string role)
         => client.PutAsJsonAsync($"api/avatar/{avatarId}/dapp-role",
             new AvatarRoleAssignmentModel { Role = role }, JsonOptions);
+
+    private async Task<string> SeedLegacyApiKeyAsync(Guid avatarId)
+    {
+        var rawKey = ApiKeyAuthenticationHandler.GenerateRawKey();
+        var legacyKey = new ApiKey
+        {
+            AvatarId = avatarId,
+            Name = "legacy-empty-scope-key",
+            KeyHash = ApiKeyAuthenticationHandler.HashKey(rawKey),
+            KeyPrefix = rawKey[..16],
+            Scopes = null,
+        };
+
+        using var scope = Factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IApiKeyStore>();
+        await store.CreateAsync(legacyKey, CancellationToken.None);
+        return rawKey;
+    }
 }

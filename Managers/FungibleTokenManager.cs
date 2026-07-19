@@ -173,7 +173,6 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
                 WalletAddress = wallet.Address,
                 WalletProvisioned = provisioned,
                 AssetId = asaResult.Result!,
-                IdempotencyKey = idempotencyKey,
                 Replayed = false
             };
 

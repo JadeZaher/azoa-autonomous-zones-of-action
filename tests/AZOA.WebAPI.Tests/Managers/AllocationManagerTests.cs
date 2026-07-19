@@ -3,6 +3,7 @@
 using FluentAssertions;
 using Moq;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -27,6 +28,7 @@ public class AllocationManagerTests
 {
     private const string ApiKeyId = "11111111-1111-1111-1111-111111111111";
     private const string ChainType = "Algorand";
+    private static readonly Guid ApiKeyGuid = Guid.Parse(ApiKeyId);
 
     private readonly Mock<IKycGateService> _kyc = new();
     private readonly Mock<IWalletManager> _walletManager = new();
@@ -166,6 +168,9 @@ public class AllocationManagerTests
         AssetId = "PRJALPHA"
     };
 
+    private static string InternalLedgerKeyFor(string clientIdempotencyKey)
+        => $"alloc:{ApiKeyGuid}:{clientIdempotencyKey.Trim()}";
+
     [Fact]
     public async Task AllocateAsync_NodeGovernanceDisallowedChain_RejectsBeforeClaimOrSideEffects()
     {
@@ -184,7 +189,27 @@ public class AllocationManagerTests
         _walletStore.Verify(s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _holonStore.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
         _blockchainOps.Verify(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()), Times.Never);
-        (await _idempotency.GetAsync($"alloc:{ApiKeyId}:blocked", CancellationToken.None)).Should().BeNull();
+        (await _idempotency.GetAsync(
+            InternalLedgerKeyFor("blocked"), CancellationToken.None)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AllocateAsync_NonGuidApiKeyContext_RejectsBeforeSideEffects()
+    {
+        var manager = BuildManager();
+
+        var result = await manager.AllocateAsync(
+            _avatarId, MintRequest(), _callerAvatarId, "ignored", "not-a-guid");
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Be("Caller API key context is invalid.");
+        _kyc.Verify(k => k.RequireVerifiedAsync(It.IsAny<Guid>()), Times.Never);
+        _walletStore.Verify(
+            s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _holonStore.Verify(
+            s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
+        _blockchainOps.Verify(
+            b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()), Times.Never);
     }
 
     // ── Idempotency ────────────────────────────────────────────────────────────
@@ -209,6 +234,7 @@ public class AllocationManagerTests
         second.IsError.Should().BeFalse();
         second.Result!.Replayed.Should().BeTrue();
         second.Result.OperationId.Should().Be(first.Result.OperationId);
+        System.Text.Json.JsonSerializer.Serialize(second.Result).Should().NotContain("alloc:");
 
         // The irreversible effect ran exactly once across the duplicate calls.
         _holonStore.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()),
@@ -269,7 +295,7 @@ public class AllocationManagerTests
     // ── value-path-wiring C2 + H1: real broadcast + crash-replay exactly-once ──
 
     [Fact]
-    public async Task AllocateAsync_BroadcastsThroughExecuteAsync_AndPersistsIdempotencyKeyOnOpRow()
+    public async Task AllocateAsync_BroadcastsThroughExecuteAsync_AndStampsOpaqueCorrelationAndInitiators()
     {
         ApproveKyc(_avatarId);
         var wallet = WalletFor(_avatarId, ChainType);
@@ -302,14 +328,23 @@ public class AllocationManagerTests
         broadcastOp.Should().NotBeNull();
         broadcastOp!.Parameters.Should().ContainKey("TxHash");
 
-        // H1: the alloc:{apiKeyId}:… key is persisted on the op row so reconciliation
-        // can release an orphaned claim from chain truth (bridge precedent).
+        var idempotency = AllocationIdempotency.Create(
+            ApiKeyGuid, _avatarId, MintRequest(), "pi_broadcast");
+
+        // The raw ledger key remains internal reconciliation state; the durable
+        // operation fields are safe to project into a public receipt.
         broadcastOp.Parameters.Should().ContainKey("IdempotencyKey");
-        broadcastOp.Parameters["IdempotencyKey"].Should().Be(result.Result!.IdempotencyKey);
-        broadcastOp.Parameters["IdempotencyKey"].Should().StartWith($"alloc:{ApiKeyId}:");
+        broadcastOp.Parameters["IdempotencyKey"].Should().Be(InternalLedgerKeyFor("pi_broadcast"));
+        broadcastOp.IdempotencyKey.Should().Be(idempotency.Correlation);
+        broadcastOp.InitiatorAvatarId.Should().Be(_callerAvatarId);
+        broadcastOp.InitiatorApiKeyId.Should().Be(ApiKeyGuid);
+        typeof(AllocationResult).GetProperty("IdempotencyKey").Should().BeNull();
+        var serializedResult = System.Text.Json.JsonSerializer.Serialize(result.Result);
+        serializedResult.Should().NotContain("alloc:").And.NotContain("pi_broadcast").And.NotContain(ApiKeyId);
 
         // The key settled Completed (a TxHash was recorded).
-        var record = await _idempotency.GetAsync(result.Result!.IdempotencyKey, CancellationToken.None);
+        var record = await _idempotency.GetAsync(
+            InternalLedgerKeyFor("pi_broadcast"), CancellationToken.None);
         record!.State.Should().Be(IdempotencyState.Completed);
     }
 
@@ -358,12 +393,14 @@ public class AllocationManagerTests
 
         // The second call replays the still-InProgress claim (not a false success).
         second.IsError.Should().BeTrue("a duplicate against an InProgress claim replays in-progress");
-        second.Message.Should().Contain("in progress");
+        second.Message.Should().Be("An allocation is already being processed. Retry once the original request settles.");
+        second.Message.Should().NotContain("alloc:").And.NotContain("pi_crash").And.NotContain(ApiKeyId);
 
         // H1: the orphaned claim is recoverable — the op row carries the alloc key.
         broadcastOp!.Parameters.Should().ContainKey("IdempotencyKey");
-        broadcastOp.Parameters["IdempotencyKey"].Should().StartWith($"alloc:{ApiKeyId}:");
-        var orphan = await crashStore.GetAsync(broadcastOp.Parameters["IdempotencyKey"], CancellationToken.None);
+        var ledgerKey = InternalLedgerKeyFor("pi_crash");
+        broadcastOp.Parameters["IdempotencyKey"].Should().Be(ledgerKey);
+        var orphan = await crashStore.GetAsync(ledgerKey, CancellationToken.None);
         orphan!.State.Should().Be(IdempotencyState.InProgress,
             "the claim stays InProgress until reconciliation settles it from the persisted key + chain truth");
     }
@@ -390,11 +427,12 @@ public class AllocationManagerTests
         var replay = await manager.AllocateAsync(
             _avatarId, MintRequest(), _callerAvatarId, "ambiguous", ApiKeyId);
         replay.IsError.Should().BeTrue();
-        replay.Message.Should().Contain("in progress");
+        replay.Message.Should().Be("An allocation is already being processed. Retry once the original request settles.");
+        replay.Message.Should().NotContain("alloc:").And.NotContain("ambiguous").And.NotContain(ApiKeyId);
         _blockchainOps.Verify(
             b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()), Times.Once);
         var record = await _idempotency.GetAsync(
-            $"alloc:{ApiKeyId}:ambiguous", CancellationToken.None);
+            InternalLedgerKeyFor("ambiguous"), CancellationToken.None);
         record!.State.Should().Be(IdempotencyState.InProgress);
     }
 
@@ -566,7 +604,7 @@ public class AllocationManagerTests
             b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()),
             Times.Never);
         var claim = await _idempotency.GetAsync(
-            $"alloc:{ApiKeyId}:pi_fee_unavailable", CancellationToken.None);
+            InternalLedgerKeyFor("pi_fee_unavailable"), CancellationToken.None);
         claim!.State.Should().Be(IdempotencyState.Failed);
     }
 
@@ -604,7 +642,8 @@ public class AllocationManagerTests
 
         // The idempotency key is FAILED (terminal) — not leaked as a perpetual
         // InProgress duplicate.
-        var record = await _idempotency.GetAsync($"alloc:{ApiKeyId}:pi_bad", CancellationToken.None);
+        var record = await _idempotency.GetAsync(
+            InternalLedgerKeyFor("pi_bad"), CancellationToken.None);
         record!.State.Should().Be(IdempotencyState.Failed);
     }
 
@@ -709,6 +748,52 @@ public class AllocationManagerTests
         captured.TargetAvatarId.Should().NotBe(attacker);
     }
 
+    [Fact]
+    public async Task AllocateAsync_TransferStampsOpaqueCorrelationAndCallerInitiators()
+    {
+        ApproveKyc(_avatarId);
+        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        HasWallet(_callerAvatarId, WalletFor(_callerAvatarId, ChainType));
+        _nft.Setup(n => n.TransferAsync(
+                It.IsAny<Guid>(), It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
+            .ReturnsAsync(new AZOAResult<IBlockchainOperation>
+            {
+                Result = new BlockchainOperation(),
+            });
+
+        var manager = BuildManager();
+        IBlockchainOperation? broadcastOp = null;
+        _blockchainOps
+            .Setup(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()))
+            .ReturnsAsync((IBlockchainOperation op, AZOARequest? _) =>
+            {
+                broadcastOp = op;
+                op.Parameters["TxHash"] = "algo_tx_transfer_initiator";
+                return new AZOAResult<IBlockchainOperation> { Result = op };
+            });
+        var request = new AllocationRequest
+        {
+            Kind = AllocationKind.Transfer,
+            ChainType = ChainType,
+            Amount = "100",
+            AssetRecordId = Guid.NewGuid(),
+            AssetId = "PRJALPHA",
+        };
+
+        var result = await manager.AllocateAsync(
+            _avatarId, request, _callerAvatarId, "pi_transfer_initiator", ApiKeyId);
+
+        result.IsError.Should().BeFalse(result.Message);
+        broadcastOp.Should().NotBeNull();
+        broadcastOp!.IdempotencyKey.Should().Be(
+            AllocationIdempotency.Create(
+                ApiKeyGuid, _avatarId, request, "pi_transfer_initiator").Correlation);
+        broadcastOp.InitiatorAvatarId.Should().Be(_callerAvatarId);
+        broadcastOp.InitiatorApiKeyId.Should().Be(ApiKeyGuid);
+        broadcastOp.Parameters["IdempotencyKey"].Should().Be(
+            InternalLedgerKeyFor("pi_transfer_initiator"));
+    }
+
     /// <summary>
     /// AllocationRequest carries no owner id by design (IDOR-resistant). This
     /// helper documents that even when a caller is the attacker avatar, the
@@ -784,7 +869,7 @@ public class AllocationManagerTests
     /// <summary>
     /// Models a crash BETWEEN broadcast and settle: <see cref="CompleteAsync"/> is a
     /// no-op so a won claim stays InProgress forever (the orphaned-claim state). A
-    /// duplicate must replay "in progress" and NOT re-broadcast; reconciliation later
+    /// duplicate must replay a generic processing outcome and NOT re-broadcast; reconciliation later
     /// settles it from the op row's persisted IdempotencyKey (H1).
     /// </summary>
     private sealed class CrashAfterBroadcastIdempotencyStore : IIdempotencyStore

@@ -5,6 +5,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -181,17 +182,19 @@ public class QuestController : ControllerBase
     }
 
     [HttpPost("{id:guid}/nodes/{nodeId:guid}/execute")]
-    public async Task<ActionResult<AZOAResult<QuestNodeExecution>>> ExecuteNode(Guid id, Guid nodeId, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<QuestNodeExecutionResponse>>> ExecuteNode(Guid id, Guid nodeId, [FromQuery] AZOARequest? request)
     {
-        // Single-node execution produces an ad-hoc one-node QuestRun and
-        // returns the QuestNodeExecution row for the result.
+        // Single-node execution produces an ad-hoc one-node QuestRun and returns
+        // a public projection of its node execution. The durable row retains the
+        // workflow-binding output; its HTTP projection is strictly allowlisted.
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new AZOAResult<QuestNodeExecution> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<QuestNodeExecutionResponse> { IsError = true, Message = "Invalid token." });
 
         var result = await _questManager.ExecuteNodeAsync(id, nodeId, avatarId.Value, request, User.GetActingTenantId());
-        if (result.IsError) return BadRequest(result);
-        return Ok(result);
+        var response = Project(result, QuestNodeOutputProjection.ToPublic);
+        if (response.IsError) return BadRequest(response);
+        return Ok(response);
     }
 
     [HttpPost("runs/{runId:guid}/fork")]
@@ -534,15 +537,16 @@ public class QuestController : ControllerBase
     }
 
     [HttpGet("runs/{runId:guid}/execution-state")]
-    public async Task<ActionResult<AZOAResult<QuestExecutionState>>> GetExecutionState(Guid runId, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<QuestExecutionStateResponse>>> GetExecutionState(Guid runId, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null)
-            return Unauthorized(new AZOAResult<QuestExecutionState> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<QuestExecutionStateResponse> { IsError = true, Message = "Invalid token." });
 
         var result = await _questManager.GetExecutionStateAsync(runId, avatarId.Value, request);
-        if (result.IsError || result.Result == null) return NotFound(result);
-        return Ok(result);
+        var response = Project(result, QuestNodeOutputProjection.ToPublic);
+        if (response.IsError || response.Result == null) return NotFound(response);
+        return Ok(response);
     }
 
     [HttpPost("runs/{runId:guid}/complete")]
@@ -675,5 +679,22 @@ public class QuestController : ControllerBase
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;
         return Guid.TryParse(sub, out var id) ? id : null;
+    }
+
+    private static AZOAResult<TOutput> Project<TInput, TOutput>(
+        AZOAResult<TInput> result,
+        Func<TInput, TOutput> project)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(project);
+
+        return new AZOAResult<TOutput>
+        {
+            IsError = result.IsError,
+            Message = result.Message,
+            Result = result.Result is null ? default : project(result.Result),
+            Code = result.Code,
+            RetryAfterSeconds = result.RetryAfterSeconds,
+        };
     }
 }

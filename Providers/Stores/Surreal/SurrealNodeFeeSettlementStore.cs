@@ -427,20 +427,35 @@ public sealed class SurrealNodeFeeSettlementStore : INodeFeeSettlementStore
                 .WithParam("_receipt_id", receiptId),
             SurrealQuery.Of("COMMIT"));
 
-        return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        try
         {
-            var response = await _executor.ExecuteAsync(atomic, ct);
-            response.EnsureAllOk();
-            if (response.Count < 6)
-                throw new InvalidOperationException("Accepted atomic group transaction returned an incomplete response.");
+            return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var response = await _executor.ExecuteAsync(atomic, ct);
+                response.EnsureAllOk();
+                if (response.Count < 6)
+                    throw new InvalidOperationException("Accepted atomic group transaction returned an incomplete response.");
 
-            var persisted = response.GetValues<NodeFeeAtomicGroup>(4).SingleOrDefault();
-            if (persisted is null)
-                return AZOAResult<NodeFeeAtomicGroup?>.Success(null, "Accepted atomic group lease contention.");
-            return ReceiptMatches(persisted, lease.SettlementId, request, submission)
-                ? AZOAResult<NodeFeeAtomicGroup?>.Success(persisted, "Accepted atomic group recorded.")
+                var persisted = response.GetValues<NodeFeeAtomicGroup>(4).SingleOrDefault();
+                if (persisted is null)
+                    return AZOAResult<NodeFeeAtomicGroup?>.Success(null, "Accepted atomic group lease contention.");
+                return ReceiptMatches(persisted, lease.SettlementId, request, submission)
+                    ? AZOAResult<NodeFeeAtomicGroup?>.Success(persisted, "Accepted atomic group recorded.")
+                    : AZOAResult<NodeFeeAtomicGroup?>.Failure("Accepted atomic group conflicts with the immutable receipt.");
+            }, ct);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            var replayedReceipt = await _executor.QuerySingleAsync<NodeFeeAtomicGroup>(
+                SurrealQuery<NodeFeeAtomicGroup>.Key(receiptId),
+                ct);
+            if (replayedReceipt is null)
+                throw;
+
+            return ReceiptMatches(replayedReceipt, lease.SettlementId, request, submission)
+                ? AZOAResult<NodeFeeAtomicGroup?>.Success(replayedReceipt, "Accepted atomic group already recorded.")
                 : AZOAResult<NodeFeeAtomicGroup?>.Failure("Accepted atomic group conflicts with the immutable receipt.");
-        }, ct);
+        }
     }
 
     /// <inheritdoc/>

@@ -22,7 +22,8 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 ///
 /// AZOA holds NO payment-provider secret, runs NO checkout, and runs NO webhook
 /// handler. The tenant decides the gross amount and its product economics; AZOA
-/// applies the node's configured fee policy and the tenant's idempotency key.
+/// applies the node's configured fee policy and derives the allocation's internal
+/// idempotency ledger key.
 /// </summary>
 public interface IAllocationManager
 {
@@ -31,10 +32,10 @@ public interface IAllocationManager
     ///
     /// Idempotency: a client key wins; absent ⇒ a deterministic content key over
     /// (<paramref name="avatarId"/>, asset descriptor, amount) — NEVER a random
-    /// per-request key. The key is partitioned by <paramref name="apiKeyId"/> so
-    /// two tenants reusing the same human-friendly key never collide. A duplicate
-    /// call under the same (apiKeyId, key) returns the ORIGINAL result and
-    /// performs NO second mint/transfer.
+    /// per-request key. AZOA partitions the internal ledger key by
+    /// <paramref name="apiKeyId"/> and exposes only an opaque correlation on the
+    /// durable operation. A duplicate call returns the ORIGINAL result and performs
+    /// NO second mint/transfer.
     ///
     /// Fail-closed KYC: when the target avatar is not APPROVED the call is
     /// rejected with a <c>KycAuthorizationError.Forbidden</c>-prefixed message and
@@ -58,7 +59,8 @@ public interface IAllocationManager
     /// Null ⇒ deterministic content-key fallback.
     /// </param>
     /// <param name="apiKeyId">
-    /// The <c>ApiKeyId</c> claim — the idempotency partition.
+    /// The non-empty GUID <c>ApiKeyId</c> claim — the internal idempotency
+    /// partition and durable operation initiator.
     /// </param>
     /// <param name="actingTenantId">
     /// tenant-consent-delegation AC4: when this allocation is DRIVEN by a tenant via

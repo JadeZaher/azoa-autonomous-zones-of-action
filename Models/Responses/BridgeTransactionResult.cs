@@ -80,12 +80,9 @@ public class BridgeTransactionResult
 
     // ─── Exactly-once / atomic-transition safety fields (Wave 1 contract) ───
 
-    /// <summary>
-    /// Idempotency key for the irreversible operation that produced/advances
-    /// this bridge transaction (e.g., the redeem request's Idempotency-Key).
-    /// Nullable for back-compat with rows created before this field existed.
-    /// </summary>
+    /// <summary>Server-only idempotency ledger key; persisted but never serialized to callers.</summary>
     [MaxLength(200)]
+    [JsonIgnore]
     public string? IdempotencyKey { get; set; }
 
     /// <summary>Network the bridge was initiated on. Nullable — absent on rows written before this field existed.</summary>

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
@@ -83,7 +82,6 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
         // tenant-driven refund (reverse transfer) stamps it on the op for the
         // seam's consent gate.
         var r = await _nftManager.TransferAsync(cfg.NftId, reversal, context.ActingAvatarId, actingTenantId: context.ActingTenantId);
-        var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
 
         // Forward the broadcast tx hash on BOTH outcomes (a refund is a reverse
         // transfer): a broadcast-then-confirmation-timeout surfaces as IsError while
@@ -92,6 +90,7 @@ public sealed class RefundNodeHandler : IQuestNodeHandler
         // (blockchain-recovery-and-portable-wallets §1.3).
         var opTxHash = ChainOperationOutputs.ReadTxHash(r.Result);
         var opChainType = ChainOperationOutputs.ReadChainType(r.Result);
+        var outputJson = QuestNodeOutputProjection.SerializeOperation(r);
 
         if (r.IsError) return QuestNodeResults.Fail(r.Message, txHash: opTxHash, chainType: opChainType ?? "Algorand");
         return QuestNodeResults.Ok(outputJson, txHash: opTxHash, chainType: opChainType ?? "Algorand");

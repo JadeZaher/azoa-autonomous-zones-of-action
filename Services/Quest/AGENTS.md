@@ -103,6 +103,10 @@ catalogued shape is the flat `BridgeTransactionResult`. `GateCheck` is a fixed l
 `{"pass":true}`. Deep validation into `Result.<field>` is a follow-up; the catalog is
 faithful at the top level.
 
+The persisted bridge `IdempotencyKey` is `[JsonIgnore]` and therefore deliberately
+absent from the Bridge/Back flat output catalog. It remains available only to the
+bridge store, replay, and reconciliation paths.
+
 **Sync contract (load-bearing).** The catalog is only as trustworthy as its match to
 the handlers — a wrong field name silently defeats the validator. When a handler's
 `Output` changes (a new serialized field, a switch between whole-`AZOAResult<T>` and
@@ -111,6 +115,19 @@ same change. `GetShape` throws `NotSupportedException` for any unmapped `QuestNo
 (same guard as `QuestNodeConfigRegistry.GetConfigType`), so a newly-added node type
 can't silently skip its schema — but it can't catch a stale field list. Treat the
 catalog as part of the handler's contract surface.
+
+## §quest-operation-output-projection
+
+Operation-producing handlers serialize the strict BlockchainOperationResponse
+allowlist, and the fungible-token handler serializes FungibleTokenResultResponse.
+These are the supported durable $from contracts: operation id, lifecycle, account
+ids, and public transaction reference remain bindable; raw operation Parameters,
+idempotency, initiator, tenant, signing, and provider fields never become workflow
+output. QuestController also projects both single-node and execution-state reads
+through safe DTOs, so legacy persisted output is redacted at the HTTP boundary while
+the unmodified durable QuestNodeExecution.Output still serves internal binding.
+Malformed legacy JSON fails closed to a null public output; exception Detail is
+never a public node-output field.
 
 ## §output-binding: $from config bindings (quest-value-engine-expressiveness F1)
 

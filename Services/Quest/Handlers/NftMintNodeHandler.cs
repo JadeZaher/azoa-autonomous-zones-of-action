@@ -1,9 +1,7 @@
-using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Requests;
-using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Quest;
 
 namespace AZOA.WebAPI.Services.Quest.Handlers;
@@ -22,7 +20,7 @@ public sealed class NftMintNodeHandler : IQuestNodeHandler
         if (!QuestNodeConfig.TryDeserialize<NftMintRequest>(context.Node.Config, nameof(QuestNodeType.NftMint), out var model, out var cfgError))
             return QuestNodeResults.Fail(cfgError);
         var r = await _nftManager.MintAsync(model, context.ActingAvatarId);
-        var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
+        var outputJson = QuestNodeOutputProjection.SerializeOperation(r);
         if (r.IsError) return QuestNodeResults.Fail(r.Message);
         return QuestNodeResults.Ok(outputJson);
     }

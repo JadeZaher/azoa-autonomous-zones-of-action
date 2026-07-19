@@ -42,7 +42,12 @@ DEFINE FIELD IF NOT EXISTS exchange_rate ON TABLE operation_log TYPE option<stri
 DEFINE FIELD IF NOT EXISTS recipient_address ON TABLE operation_log TYPE option<string>;
 
 -- G2 idempotency
-DEFINE FIELD IF NOT EXISTS idempotency_key ON TABLE operation_log TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS idempotency_key ON TABLE operation_log TYPE option<string>
+    ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
+
+-- Allocation receipt initiator context
+DEFINE FIELD IF NOT EXISTS initiator_avatar_id ON TABLE operation_log TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS initiator_api_key_id ON TABLE operation_log TYPE option<record<api_key>>;
 
 -- Error detail (populated on failure)
 DEFINE FIELD IF NOT EXISTS error ON TABLE operation_log TYPE option<string>;

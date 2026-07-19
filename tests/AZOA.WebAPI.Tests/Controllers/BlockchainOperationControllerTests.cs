@@ -61,6 +61,40 @@ public class BlockchainOperationControllerTests
     }
 
     [Fact]
+    public async Task Get_Existing_ProjectsOnlyTheSafeOperationAllowlist()
+    {
+        var id = Guid.NewGuid();
+        var operation = new BlockchainOperation
+        {
+            Id = id,
+            AvatarId = AuthenticatedAvatarId,
+            InitiatorApiKeyId = Guid.NewGuid(),
+            IdempotencyKey = new string('a', 64),
+            Parameters = new Dictionary<string, string>
+            {
+                ["ChainType"] = "Algorand",
+                ["ChainNetwork"] = "Devnet",
+                ["TxHash"] = "public-transaction",
+                ["IdempotencyKey"] = "alloc:private-api-key:payment-intent",
+                ["IdempotencyResultPayload"] = "{\"secret\":\"internal\"}",
+                ["Error"] = "provider-only detail",
+            },
+        };
+        _manager.Setup(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+            .ReturnsAsync(AZOAResult<IBlockchainOperation>.Success(operation));
+
+        var action = await _controller.Get(id, null);
+
+        var payload = ((OkObjectResult)action.Result!).Value;
+        var json = System.Text.Json.JsonSerializer.Serialize(payload);
+        json.Should().Contain("public-transaction")
+            .And.NotContain("alloc:private-api-key")
+            .And.NotContain("IdempotencyResultPayload")
+            .And.NotContain("provider-only detail")
+            .And.NotContain("InitiatorApiKeyId");
+    }
+
+    [Fact]
     public async Task GetByAvatar_ReturnsOk()
     {
         var avatarId = AuthenticatedAvatarId;

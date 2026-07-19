@@ -4,6 +4,17 @@
 
 This document tracks drift between backend endpoints and SDK method coverage. Use this before shipping a controller change to catch missing SDK methods. The mapping is maintained manually at PR-review time; CI does not validate it.
 
+## Unreleased Contract Change — SDK 0.3.0
+
+Operation reads and operation-producing mutation routes now return a strict
+public operation projection. Consumers must not depend on `parameters`, raw
+idempotency keys, initiator/API-key metadata, signing context, or
+operation-specific implementation fields. `BlockchainOperationResult` models
+server-emitted nullable fields as `null` rather than omitted. Allocation,
+fungible-token, and bridge responses likewise do not return raw idempotency
+keys; use the request header to correlate a caller-owned request and the
+allocation receipt endpoint for allocation status.
+
 ## Method Mapping Table
 
 | Controller | Endpoint | HTTP | SDK Method | SDK File | Status |
@@ -33,28 +44,31 @@ This document tracks drift between backend endpoints and SDK method coverage. Us
 | | /api/holon/{id}/compose | GET | `getComposite` | holon-query.ts | OK |
 | **NFT** | /api/nft/{id} | GET | `getNft` | client.ts | OK |
 | | /api/nft | GET | `listNfts` | client.ts | OK |
-| | /api/nft | POST | `mintNft` | client.ts | OK |
-| | /api/nft/{id} | POST (transfer) | `transferNft` | client.ts | OK |
-| | /api/nft/{id} | POST (burn) | `burnNft` | client.ts | OK |
+| | /api/nft/mint | POST | `mintNft` | client.ts | OK (safe operation projection) |
+| | /api/nft/{id}/transfer | POST | `transferNft` | client.ts | OK (safe operation projection) |
+| | /api/nft/{id}/burn | POST | `burnNft` | client.ts | OK (safe operation projection) |
+| | /api/nft/fungible-mint | POST | `fungibleMint` | client.ts | OK (safe response) |
 | | /api/nft/{id}/metadata | GET | `getNftMetadata` | client.ts | OK |
 | **AvatarNFT** | /api/avatarnft | POST | `mintAvatarNFT` | client.ts | OK |
 | | /api/avatarnft/{id} | GET | `getAvatarNFT` | client.ts | OK |
 | | /api/avatarnft/{id}/transfer | POST | `transferAvatarNFT` | client.ts | OK |
 | | /api/avatarnft/{id}/burn | POST | `burnAvatarNFT` | client.ts | OK |
 | **Bridge** | /api/bridge/routes | GET | `getBridgeRoutes` | client.ts | OK |
-| | /api/bridge/initiate | POST | `initiateBridge` | client.ts | OK |
-| | /api/bridge/{id} | GET | `getBridgeStatus` | client.ts | OK |
-| | /api/bridge/{id}/fetch-vaa | POST | `fetchVAA` | client.ts | OK |
-| | /api/bridge/{id}/redeem | POST | `redeemBridge` | client.ts | OK |
-| | /api/bridge/{id}/reverse | POST | `reverseBridge` | client.ts | OK |
-| | /api/bridge/history | GET | `getBridgeHistory` | client.ts | OK |
+| | /api/bridge/initiate | POST | `initiateBridge` | client.ts | OK (safe response) |
+| | /api/bridge/{id} | GET | `getBridgeStatus` | client.ts | OK (safe response) |
+| | /api/bridge/{id}/fetch-vaa | POST | `fetchVAA` | client.ts | OK (safe response) |
+| | /api/bridge/{id}/redeem | POST | `redeemBridge` | client.ts | OK (safe response) |
+| | /api/bridge/{id}/reverse | POST | `reverseBridge` | client.ts | OK (safe response) |
+| | /api/bridge/history | GET | `getBridgeHistory` | client.ts | OK (safe response) |
 | **Tenant custodial account** | /api/tenant/custodial-accounts/capabilities | GET | `getTenantCustodialCapabilities` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject} | PUT | `ensureTenantCustodialAccount` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject} | GET | `getTenantCustodialAccount` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject}/kyc/session | POST | `beginTenantKyc` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject}/kyc/submissions | POST | `submitTenantKyc` | client.ts | OK |
-| **BlockchainOperation** | /api/blockchainoperation/{id} | GET | `getBlockchainOperation` | client.ts | OK |
-| | /api/blockchainoperation/avatar/{avatarId} | GET | `getBlockchainOperationsByAvatar` | client.ts | OK |
+| **BlockchainOperation** | /api/blockchainoperation/{id} | GET | `getBlockchainOperation` | client.ts | OK (safe projection) |
+| | /api/blockchainoperation/avatar/{avatarId} | GET | `getBlockchainOperationsByAvatar` | client.ts | OK (safe projection) |
+| **Allocation receipt** | /api/allocation/receipt | GET | — | — | SDK gap (API-key caller surface; .NET SDK track) |
+| | /api/allocation/receipt/reconcile | POST | — | — | SDK gap (API-key caller surface; .NET SDK track) |
 | **STARODK** | /api/starodk/{id} | GET | `getSTARODK` | client.ts | OK |
 | | /api/starodk | GET | `listSTARODK` | client.ts | OK |
 | | /api/starodk | POST | `createSTARODK` | client.ts | OK |

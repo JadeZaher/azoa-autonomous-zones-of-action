@@ -92,7 +92,6 @@ digest as the API before every API rollout.
 | `NodeOperator__CredentialRevision` | yes on first boot | Positive monotonic integer. Start at `1` and increment whenever username or password changes; rollback and same-revision drift refuse startup. |
 | `NodeOperator__SessionMinutes` | optional | Dedicated operator JWT lifetime, 5–30 minutes; default/template value is `20`. |
 | `AZOA__WalletEncryptionKey` | yes | Symmetric key for platform wallet generation. No default — `WalletKeyService` throws without it. |
-| `AUTOMAPPER_LICENSE_KEY` | yes (hosted prod) | Registered AutoMapper 15+ key. The vendor alias `LUCKYPENNY_LICENSE_KEY` is also accepted; `/health` is unhealthy in Production when neither is set. |
 | `SurrealRuntime__Endpoint` | yes | URL of the SurrealDB service (e.g. `http://surrealdb.railway.internal:8000`). |
 | `SurrealRuntime__Namespace` | yes | e.g. `azoa`. |
 | `SurrealRuntime__Database` | yes | e.g. `azoa`. |

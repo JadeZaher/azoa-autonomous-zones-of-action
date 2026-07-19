@@ -67,11 +67,24 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
         var isNodeGovernor = Request.Headers.TryGetValue(NodeGovernHeaderName, out var node)
             && string.Equals(node.ToString(), "true", StringComparison.OrdinalIgnoreCase);
 
+        claims.Add(new Claim(
+            AZOA.WebAPI.Core.AzoaClaims.AuthTime,
+            DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
         if (isOperator)
         {
+            claims.Add(new Claim(
+                AZOA.WebAPI.Core.AzoaClaims.TokenUse,
+                AZOA.WebAPI.Core.AzoaClaims.TokenUseNodeOperator));
             claims.Add(new Claim("scope", AZOA.WebAPI.Core.AzoaScopes.Operator));
             claims.Add(new Claim("role", "Admin"));
             claims.Add(new Claim(ClaimTypes.Role, "Admin"));
+        }
+        else
+        {
+            claims.Add(new Claim(
+                AZOA.WebAPI.Core.AzoaClaims.TokenUse,
+                AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin));
         }
 
         if ((isOperator && !isOperatorOnly) || isNodeGovernor)

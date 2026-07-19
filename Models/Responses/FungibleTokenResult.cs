@@ -26,9 +26,6 @@ public sealed class FungibleTokenResult
     /// <summary>The chain-native asset id of the created fungible token (ASA id).</summary>
     public string AssetId { get; set; } = string.Empty;
 
-    /// <summary>The idempotency key the launch was deduped on (diagnostics).</summary>
-    public string IdempotencyKey { get; set; } = string.Empty;
-
     /// <summary>
     /// <c>true</c> when this response replays a prior launch under the same
     /// idempotency key — no second token was created.

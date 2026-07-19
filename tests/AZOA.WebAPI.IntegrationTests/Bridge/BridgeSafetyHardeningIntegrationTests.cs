@@ -29,12 +29,10 @@ namespace AZOA.WebAPI.IntegrationTests.Bridge;
 /// </para>
 ///
 /// <para>
-/// Kill-switch note: the factory applies Blockchain:Bridge:RealValueEnabled=true
-/// for the HTTP double-redeem test (Test 2) because the seeded bridge row uses
-/// real chain names (Solana/Algorand) and IntegrationTest env resolves
-/// Blockchain:Mode=Live (no Development override). Simulated routes would also
-/// satisfy the gate but require separate chain-type config plumbing; the flag
-/// override is the minimal one-line fix (same pattern as G2's RateLimiting:Enabled).
+/// Test 2 uses a dedicated globally simulated factory because its assertion is
+/// the idempotency/consumed-VAA seam, not live target-chain settlement. This
+/// preserves the production real-value kill switch while making provider routing
+/// deterministic and keeping the counting Wormhole adapter observable.
 /// </para>
 ///
 /// <para>
@@ -165,9 +163,9 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
     ///
     /// <para>
     /// IWormholeAdapter is replaced with a counting stub (Moq is not available in
-    /// this project — same precedent as G2's CountingWormholeAdapter). The kill
-    /// switch is overridden to true because the seeded chains (Solana/Algorand) are
-    /// non-simulated under IntegrationTest's Live Blockchain:Mode.
+    /// this project; same precedent as G2's CountingWormholeAdapter). A dedicated
+    /// simulated factory keeps settlement deterministic without enabling real-value
+    /// movement in the test host.
     /// </para>
     /// </summary>
     [SkippableFact]
@@ -180,11 +178,9 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
         var wormholeStub = new BridgeSafetyCountingWormholeAdapter();
         var testNs = TestNamespace;
 
-        // ── 2. Derived factory: isolated NS + kill-switch on + stubbed adapter ─
-        // Kill switch override: bridge-safety-hardening track. The IntegrationTest
-        // environment resolves Blockchain:Mode=Live (no Development overlay), so
-        // Solana/Algorand chains are non-simulated → RealValueEnabled must be true
-        // or the service refuses before the idempotency gate is ever reached.
+        // Derived factory: isolated namespace, simulated routing, and stubbed adapter.
+        // This gate observes idempotency and VAA consumption, not live target-chain
+        // settlement, so it uses deterministic simulated provider routing.
         await using var derivedFactory = Factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, cfg) =>
@@ -194,9 +190,10 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
                     ["SurrealDb:Namespace"]                 = testNs,
                     ["SurrealDb:Database"]                  = "test",
                     ["RateLimiting:Enabled"]                = "false",
-                    // bridge-safety-hardening: enable real-value so non-simulated routes
-                    // reach the idempotency+consumed-VAA gate (the subject under test).
-                    ["Blockchain:Bridge:RealValueEnabled"]  = "true",
+                    // The assertion observes idempotency and VAA consumption, not a
+                    // live target-chain provider. Simulated mode reaches that seam.
+                    ["Blockchain:Mode"]                     = "Simulated",
+                    ["Blockchain:DefaultChain"]             = "Simulated",
                     ["AZOA:DebugErrors"]                    = "true",
                     ["RateLimiting:Global:PermitLimit"]     = "1000",
                     ["RateLimiting:Financial:PermitLimit"]  = "1000",

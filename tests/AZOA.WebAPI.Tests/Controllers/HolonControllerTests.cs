@@ -180,6 +180,37 @@ public class HolonControllerTests
     }
 
     [Fact]
+    public async Task Mint_Success_ProjectsOnlyTheSafeOperationAllowlist()
+    {
+        var operation = new BlockchainOperation
+        {
+            IdempotencyKey = new string('b', 64),
+            InitiatorApiKeyId = Guid.NewGuid(),
+            Parameters = new Dictionary<string, string>
+            {
+                ["TxHash"] = "public-transaction",
+                ["IdempotencyKey"] = "holon:private-api-key:purchase-a",
+                ["IdempotencyResultPayload"] = "{\"internal\":true}",
+            },
+        };
+        _blockchainManager.Setup(m => m.BuildAndExecuteAsync(
+                It.IsAny<Func<BlockchainOperationBuilder, IBlockchainOperation>>(),
+                It.IsAny<AZOARequest?>()))
+            .ReturnsAsync(AZOAResult<IBlockchainOperation>.Success(operation));
+
+        var action = await _controller.Mint(
+            Guid.NewGuid(),
+            new MintRequest { WalletId = Guid.NewGuid(), TokenUri = "uri", Amount = 1, AssetType = "NFT" },
+            null);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(((OkObjectResult)action.Result!).Value);
+        json.Should().Contain("public-transaction")
+            .And.NotContain("holon:private-api-key")
+            .And.NotContain("IdempotencyResultPayload")
+            .And.NotContain("InitiatorApiKeyId");
+    }
+
+    [Fact]
     public async Task Mint_Error_ReturnsBadRequest()
     {
         _blockchainManager.Setup(m => m.BuildAndExecuteAsync(It.IsAny<Func<BlockchainOperationBuilder, IBlockchainOperation>>(), It.IsAny<AZOARequest?>()))

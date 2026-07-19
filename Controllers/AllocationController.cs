@@ -47,6 +47,14 @@ public class AllocationController : ControllerBase
     public async Task<ActionResult<AZOAResult<AllocationResult>>> Allocate(
         Guid avatarId, [FromBody] AllocationRequest request)
     {
+        if (!string.Equals(User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                AZOAResult<AllocationResult>.FailureWithCode(
+                    "Allocation requires an API-key principal.",
+                    AzoaErrorCodes.Forbidden));
+        }
+
         var callerAvatarId = GetAvatarIdFromClaims();
         if (callerAvatarId is null)
             return Unauthorized(new AZOAResult<AllocationResult> { IsError = true, Message = "Invalid token." });
@@ -105,7 +113,8 @@ public class AllocationController : ControllerBase
 
     private Guid? GetAvatarIdFromClaims()
     {
-        var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        var sub = User.FindFirst("AvatarId")?.Value
+                 ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;
         return Guid.TryParse(sub, out var id) ? id : null;
     }

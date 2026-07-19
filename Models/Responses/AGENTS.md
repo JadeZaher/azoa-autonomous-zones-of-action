@@ -36,3 +36,30 @@ The generic `externalSubject` field is canonical; `ardanovaUserId` is emitted as
 a compatibility alias for the initial ArdaNova client.
 Identity, KYC-provider, and wallet readiness are separate fields so a missing
 production custody adapter does not hide a provisioned identity or block KYC.
+
+## Blockchain operation reads
+
+`BlockchainOperationResponse` is a strict public allowlist for the generic
+operation-read routes. It may expose the operation identity, lifecycle state,
+timestamps, chain/network labels, and public transaction reference. It must not
+grow a generic `Parameters` bag or initiator/idempotency fields: those can carry
+payment-provider correlation, replay payloads, custody instructions, or other
+server-only data. Add a purpose-built response model when a consumer needs a
+new fact.
+
+## Bridge transaction responses
+
+`BridgeTransactionResult.IdempotencyKey` remains a persisted, server-only
+exactly-once key. Its JSON serialization is explicitly suppressed so direct
+bridge endpoints and flat Bridge/Back quest outputs cannot disclose a raw
+client key or its avatar-namespaced ledger derivative. Store mappings preserve
+the field for replay and reconciliation; do not replace it with a public
+diagnostic field.
+
+## Allocation receipts
+
+`AllocationReceiptResponse` is the caller-authorized settlement projection. It
+contains only an opaque receipt/operation reference, target account facts,
+public transaction reference, timing, fee facts, and a bounded failure code.
+It must never add the raw idempotency key, API-key or tenant identity, operation
+parameters, provider/error payload, KYC material, or custody secrets.

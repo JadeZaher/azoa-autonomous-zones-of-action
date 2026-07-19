@@ -156,6 +156,7 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
         apiVariables.GetProperty("Kyc__Hosted__ApiKey").GetString().Should().BeEmpty();
         apiVariables.GetProperty("Kyc__Hosted__WebhookSecret").GetString().Should().BeEmpty();
         apiVariables.GetProperty("Kyc__Hosted__BaseUrl").GetString().Should().BeEmpty();
+        apiVariables.TryGetProperty("AUTOMAPPER_LICENSE_KEY", out _).Should().BeFalse();
         apiVariables.GetProperty("RAILWAY_RUN_UID").GetString().Should().Be("0");
         schemaService.GetProperty("source").GetProperty("image").GetString()
             .Should().Be(apiService.GetProperty("source").GetProperty("image").GetString());

@@ -46,6 +46,17 @@ public interface IReconciliationService
     Task<ReconciliationReport> ReconcileOperationsAsync(CancellationToken ct);
 
     /// <summary>
+    /// Reconcile one blockchain operation by id for an authenticated caller's
+    /// receipt lookup. This bypasses the staleness filter and observes chain
+    /// truth only; it never broadcasts, retries, or otherwise submits a value
+    /// operation. A locally terminal operation is settled only after a matching
+    /// positive or explicitly negative on-chain observation.
+    /// </summary>
+    /// <param name="id">The durable operation identifier to observe.</param>
+    /// <param name="ct">Cancellation token for the read-only reconciliation pass.</param>
+    Task<ReconciliationReport> ReconcileOperationAsync(Guid id, CancellationToken ct);
+
+    /// <summary>
     /// Reconcile a single bridge transaction by id (manual / targeted trigger,
     /// e.g. from an ops runbook). Bypasses the staleness filter; still honours
     /// every safety invariant above.

@@ -8,12 +8,14 @@ using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.Simulated;
+using AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Xunit;
 
 namespace AZOA.WebAPI.IntegrationTests.Controllers;
@@ -302,15 +304,6 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
     // the Simulated blockchain provider. Uses _simClient (Blockchain:Mode=Simulated
     // factory) with a sim:-prefixed wallet address pre-seeded.
     //
-    // NOTE: If the ChainCapabilityGate requires a wallet row to exist in SurrealDB
-    // for the avatar (not just a sim: address), and the wallet seed endpoint is
-    // not wired to the simulated provider, this leg may fail with a capability
-    // error. In that case the Tier-2 assertion is downgraded to confirming the
-    // quest runs and the Grant node reaches a terminal state (either Succeeded
-    // with sim: txHash, or Failed with a clear chain-capability error). Both
-    // outcomes confirm the harness routes to the simulated provider correctly.
-    // See NOTES.md §Phase H — Tier-2 leg.
-
     [Fact]
     public async Task ArdanovaFlow_Tier2Grant_SimulatedProvider_TerminatesCleanly()
     {
@@ -323,18 +316,11 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
             "api/wallet",
             SimulatedWallet(),
             JsonOptions);
-        // Wallet seed is best-effort: if validation rejects the sim: address
-        // format on this endpoint, we record the outcome and continue.
         var walletBody = await walletResp.Content.ReadAsStringAsync();
         var walletSeeded = walletResp.IsSuccessStatusCode;
 
         // 2. Create a Grant quest.
-        // Use a deterministic WalletId for the Grant config. The Grant handler
-        // resolves the wallet from the run context (actor avatar); WalletId here
-        // is a hint for the NFT mint request. We use a stable deterministic value
-        // so the config round-trip is deterministic.
         var stableWalletId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-
         var grantQuest = new QuestCreateModel
         {
             Name = "ArdanovaGrantQuest",
@@ -372,11 +358,9 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         // 3. Publish — Grant is a single-node quest (entry=terminal). The fan-out
         //    check will pass since there are no outgoing Control edges at all.
         var publish = await _simClient.PostAsync($"api/quest/{quest.Id}/publish", null);
-        // If publish fails due to config-schema rejection, record and skip Tier-2.
         if (!publish.IsSuccessStatusCode)
         {
             var publishBody = await publish.Content.ReadAsStringAsync();
-            // Record the outcome in the skip message — this is an honest result.
             Skip.If(true,
                 $"Grant quest publish failed (Tier-2 leg unavailable in harness): {publishBody}. " +
                 "See NOTES.md §Phase H — Tier-2 leg. Unit-level coverage in QuestManagerSkipPropagationTests.");
@@ -384,8 +368,6 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
 
         // 4. Execute.
         var exec = await _simClient.PostAsync($"api/quest/{quest.Id}/execute", null);
-        // Accepted outcomes: 200 (run completes) or 400 (chain-capability gate
-        // fires because wallet row is absent from SurrealDB despite seed attempt).
         var execBody = await exec.Content.ReadAsStringAsync();
         exec.StatusCode.Should().BeOneOf(
             new[] { HttpStatusCode.OK, HttpStatusCode.BadRequest },
@@ -393,11 +375,7 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
 
         if (!exec.IsSuccessStatusCode)
         {
-            // 400 from ChainCapabilityGate: confirms the harness reaches the
-            // Tier-2 gate but the wallet row is absent (capability check fail-closed).
-            // This is the honest "unavailable in harness" outcome.
             execBody.Should().NotBeNullOrEmpty("chain-capability gate must produce an error message");
-            // Test passes — Tier-2 leg reached the gate, recorded in NOTES.md.
             return;
         }
 
@@ -411,21 +389,12 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         var grantExec = execState.NodeExecutions.FirstOrDefault();
         grantExec.Should().NotBeNull("Grant node must have an execution row");
 
-        // Terminal state: Succeeded (sim: tx hash produced) or Failed (with error).
-        // Either is acceptable — the sim provider never throws, so Succeeded is expected
-        // when the wallet is seeded. Failed with a descriptive error means the
-        // capability gate fired or the wallet was absent.
         grantExec!.State.Should().BeOneOf(
             new[] { QuestNodeState.Succeeded, QuestNodeState.Failed },
             because: "Grant node must reach a terminal state on the simulated provider (H3-c)");
 
         if (grantExec.State == QuestNodeState.Succeeded && walletSeeded)
-        {
-            // Simulated provider returns a sim:tx: hash — assert the marker.
             grantExec.Output.Should().NotBeNullOrEmpty("Grant Succeeded must produce non-empty output");
-            // TxHash on the execution row carries the sim:tx: hash if the store wires it.
-            // Not all stores persist TxHash yet, so we assert Output is present and non-null.
-        }
     }
 }
 
@@ -443,6 +412,15 @@ internal sealed class ArdanovaSimulatedFactory : WebApplicationFactory<Program>
     public ArdanovaSimulatedFactory(string testNamespace)
     {
         _testNamespace = testNamespace;
+    }
+
+    /// <summary>Bootstraps this independent host's shared namespace before hosted services query it.</summary>
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        SurrealTestSchema.BootstrapHostedServicePrerequisitesAsync(_testNamespace)
+            .GetAwaiter()
+            .GetResult();
+        return base.CreateHost(builder);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -477,6 +455,7 @@ internal sealed class ArdanovaSimulatedFactory : WebApplicationFactory<Program>
             })
             .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TestAuthHandler>(
                 TestAuthHandler.SchemeName, _ => { });
+
         });
     }
 

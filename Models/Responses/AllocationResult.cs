@@ -33,9 +33,6 @@ public sealed class AllocationResult
     /// </summary>
     public bool Replayed { get; set; }
 
-    /// <summary>The idempotency key the allocation was deduped on (diagnostics).</summary>
-    public string IdempotencyKey { get; set; } = string.Empty;
-
     /// <summary>The caller-authoritative amount before the node fee was applied.</summary>
     public string GrossAmount { get; set; } = string.Empty;
 

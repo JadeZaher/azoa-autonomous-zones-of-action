@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
@@ -41,7 +40,6 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
         // tenant-driven grant stamps it on the op and the signing seam's consent
         // gate fires (null = user-driven → unchanged).
         var r = await _nftManager.MintAsync(cfg.Request, context.ActingAvatarId, actingTenantId: context.ActingTenantId);
-        var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
 
         // The op can be non-null even on failure: a broadcast-then-confirmation-
         // timeout surfaces as IsError while the tx already landed. Read the hash
@@ -50,6 +48,7 @@ public sealed class GrantNodeHandler : IQuestNodeHandler
         // — discarding it here is the double-mint hole this track closes.
         var opTxHash = ChainOperationOutputs.ReadTxHash(r.Result);
         var opChainType = ChainOperationOutputs.ReadChainType(r.Result);
+        var outputJson = QuestNodeOutputProjection.SerializeOperation(r);
 
         // On failure, surface the hash so the engine reconciles (Confirmed→no-remint,
         // NotFound→retry, Indeterminate→park) instead of blind-retrying.

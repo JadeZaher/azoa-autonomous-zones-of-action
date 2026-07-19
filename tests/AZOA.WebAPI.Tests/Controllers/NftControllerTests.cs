@@ -90,6 +90,33 @@ public class NftControllerTests
     }
 
     [Fact]
+    public async Task Mint_Success_ProjectsOnlyTheSafeOperationAllowlist()
+    {
+        var request = new NftMintRequest { Name = "NFT", ChainId = "sol", WalletId = Guid.NewGuid() };
+        var operation = new BlockchainOperation
+        {
+            IdempotencyKey = new string('a', 64),
+            InitiatorApiKeyId = Guid.NewGuid(),
+            Parameters = new Dictionary<string, string>
+            {
+                ["TxHash"] = "public-transaction",
+                ["IdempotencyKey"] = "nft:private-api-key:purchase-a",
+                ["IdempotencyResultPayload"] = "{\"internal\":true}",
+            },
+        };
+        _nftManager.Setup(m => m.MintAsync(request, It.IsAny<Guid>(), null, It.IsAny<Guid?>()))
+            .ReturnsAsync(AZOAResult<IBlockchainOperation>.Success(operation));
+
+        var action = await _controller.Mint(request, null);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(((OkObjectResult)action.Result!).Value);
+        json.Should().Contain("public-transaction")
+            .And.NotContain("nft:private-api-key")
+            .And.NotContain("IdempotencyResultPayload")
+            .And.NotContain("InitiatorApiKeyId");
+    }
+
+    [Fact]
     public async Task Mint_NoAuth_ReturnsUnauthorized()
     {
         var noAuth = new NftController(_nftManager.Object, _fungibleTokenManager.Object, _holonManager.Object);

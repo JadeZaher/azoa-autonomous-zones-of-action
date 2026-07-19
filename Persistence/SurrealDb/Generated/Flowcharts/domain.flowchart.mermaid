@@ -159,8 +159,10 @@ graph LR
     node_governance_parameters -- "updated_by_avatar_id [N:0..1]" --> avatar
     node_treasury_audit -- "actor_avatar_id [N:1]" --> avatar
     node_treasury_destination -- "updated_by_avatar_id [N:0..1]" --> avatar
+    operation_log -- "initiator_api_key_id [N:0..1]" --> api_key
     operation_log -- "acting_tenant_id [N:0..1]" --> avatar
     operation_log -- "avatar_id [N:0..1]" --> avatar
+    operation_log -- "initiator_avatar_id [N:0..1]" --> avatar
     operation_log -- "holon_id [N:0..1]" --> holon
     operation_log -- "source_holon_id [N:0..1]" --> holon
     operation_log -- "target_holon_id [N:0..1]" --> holon

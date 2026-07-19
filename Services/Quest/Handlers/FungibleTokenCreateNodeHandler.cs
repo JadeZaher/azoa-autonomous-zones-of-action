@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models;
@@ -68,7 +67,7 @@ public sealed class FungibleTokenCreateNodeHandler : IQuestNodeHandler
             context.ActingAvatarId, request, context.ActingAvatarId,
             clientIdempotencyKey, apiKeyId, context.ActingTenantId);
 
-        var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
+        var outputJson = QuestNodeOutputProjection.SerializeFungible(r);
         if (r.IsError || r.Result is null) return QuestNodeResults.Fail(r.Message);
 
         // D10 Holon↔asset link (opt-in): copy the created asset id + chain id onto

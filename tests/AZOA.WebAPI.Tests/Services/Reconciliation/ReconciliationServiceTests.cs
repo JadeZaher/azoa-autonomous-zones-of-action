@@ -522,6 +522,50 @@ public class ReconciliationServiceTests
     }
 
     /// <summary>
+    /// A receipt poll may arrive after a process persisted a locally-terminal
+    /// allocation operation but crashed before completing the outer allocation
+    /// claim. The targeted path must re-observe chain truth before settling the
+    /// claim; it never trusts the local terminal flag or broadcasts anything.
+    /// </summary>
+    [Fact]
+    public async Task TargetedTerminalOperation_ReobservesChainBeforeSettlingOuterAllocationClaim()
+    {
+        using var harness = new FakeReconHarness();
+        const string outerKey = "alloc:tenant-key:payment-123";
+        const string replayPayload = "{\"operationId\":\"receipt-operation\"}";
+        harness.SeedIdempotency(outerKey, IdempotencyState.InProgress, "fiat_allocation");
+
+        var operationId = harness.SeedOperation(o =>
+        {
+            o.Status = OperationStatus.Minted;
+            o.OperationType = "Mint";
+            o.CreatedDate = DateTime.UtcNow.AddMinutes(-30);
+            o.Parameters = new Dictionary<string, string>
+            {
+                ["TxHash"] = "receipt_confirmed",
+                ["ChainType"] = "Algorand",
+                ["IdempotencyKey"] = outerKey,
+                [IdempotencyParameterNames.ResultPayload] = replayPayload,
+            };
+        });
+        harness.SetupTxStatus("receipt_confirmed", new Dictionary<string, object>
+        {
+            ["confirmed"] = true,
+        });
+
+        var report = await harness.CreateService().ReconcileOperationAsync(
+            operationId, CancellationToken.None);
+
+        report.Scanned.Should().Be(1);
+        harness.GetOperation(operationId).Status.Should().Be(OperationStatus.Minted,
+            "targeted reconciliation does not rewrite an already-terminal operation");
+        harness.GetIdempotency(outerKey)!.State.Should().Be(IdempotencyState.Completed,
+            "only a positive chain observation may settle the orphaned outer claim");
+        harness.GetIdempotency(outerKey)!.ResultPayload.Should().Be(replayPayload);
+        harness.AssertNoOnChainMutation();
+    }
+
+    /// <summary>
     /// HIGH-3 idempotency safety: a record that is ALREADY terminal
     /// (Completed/Failed) is left strictly untouched — reconciliation never
     /// re-writes a settled record, and never errors doing the check.

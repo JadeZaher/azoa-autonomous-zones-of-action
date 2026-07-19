@@ -16,6 +16,7 @@ graph LR
     webhook_registration["webhook_registration: Node"]:::nodeClass
 
     %% Cross-slice targets (rendered as ghost nodes)
+    api_key["api_key: Node (external)"]:::externalNode
     avatar["avatar: Node (external)"]:::externalNode
     consent_grant["consent_grant: Node (external)"]:::externalNode
     holon["holon: Node (external)"]:::externalNode
@@ -33,8 +34,10 @@ graph LR
     node_fee_atomic_group -- "settlement_id [N:1]" --> node_fee_settlement
     node_fee_settlement -- "fee_operation_id [N:0..1]" --> operation_log
     node_fee_settlement -- "primary_operation_id [N:0..1]" --> operation_log
+    operation_log -- "initiator_api_key_id [N:0..1]" --> api_key
     operation_log -- "acting_tenant_id [N:0..1]" --> avatar
     operation_log -- "avatar_id [N:0..1]" --> avatar
+    operation_log -- "initiator_avatar_id [N:0..1]" --> avatar
     operation_log -- "holon_id [N:0..1]" --> holon
     operation_log -- "source_holon_id [N:0..1]" --> holon
     operation_log -- "target_holon_id [N:0..1]" --> holon

@@ -84,15 +84,6 @@ builder.Services.AddSingleton<INodeConformanceManifestService, NodeConformanceMa
 builder.Services.AddSingleton<AZOA.WebAPI.Services.Governance.NodeTransparencyHistoryCheckpointStore>();
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
-var autoMapperLicenseKey = Environment.GetEnvironmentVariable("AUTOMAPPER_LICENSE_KEY")
-    ?? Environment.GetEnvironmentVariable("LUCKYPENNY_LICENSE_KEY");
-builder.Services.AddAutoMapper(cfg =>
-{
-    if (!string.IsNullOrWhiteSpace(autoMapperLicenseKey))
-        cfg.LicenseKey = autoMapperLicenseKey;
-
-    cfg.AddMaps(typeof(Program).Assembly);
-});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -1012,6 +1003,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.INodeGovernanceGuard,
 // fiat-stripe-bridge: idempotent, KYC-gated, tenant-callable allocation primitive.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationManager,
     AZOA.WebAPI.Managers.AllocationManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationReceiptManager,
+    AZOA.WebAPI.Managers.AllocationReceiptManager>();
 // fungible-token-node: idempotent, KYC-gated fungible-token (ASA) launch seam.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleTokenManager,
     AZOA.WebAPI.Managers.FungibleTokenManager>();
@@ -1227,10 +1220,6 @@ builder.Services.AddScoped<IQuestNodeHandlerRegistry, QuestNodeHandlerRegistry>(
 // ─── Observability (W5): OpenTelemetry tracing/metrics + /health ───
 builder.Services.AddAzoaObservability(builder.Configuration);
 builder.Services.AddAzoaHealthChecks();
-builder.Services.AddHealthChecks().AddCheck<AZOA.WebAPI.Observability.AutoMapperLicenseHealthCheck>(
-    "automapper-license",
-    failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
-    tags: ["ready", "configuration"]);
 
 // Validate Cors:AllowedOrigins in Production at startup
 if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("IntegrationTest"))

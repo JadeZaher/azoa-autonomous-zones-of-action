@@ -23,9 +23,11 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 ///   - BlockchainOperation.CreatedDate (DateTime UTC) → OperationLog.CreatedDate (DateTimeOffset UTC)
 ///   - BlockchainOperation.CompletedDate (DateTime?) → OperationLog.CompletedDate (DateTimeOffset?)
 ///   - BlockchainOperation.Status (string)  → OperationLog.Status (OperationLog.StatusKind enum)
+///   - BlockchainOperation.IdempotencyKey (string?) → OperationLog.IdempotencyKey (safe correlation)
+///   - BlockchainOperation.InitiatorAvatarId (Guid?) → OperationLog.InitiatorAvatarId (record link)
+///   - BlockchainOperation.InitiatorApiKeyId (Guid?) → OperationLog.InitiatorApiKeyId (record link)
 ///
 /// Fields in OperationLog NOT in BlockchainOperation / IBlockchainOperation:
-///   - IdempotencyKey: not set by this adapter (api-safety-hardening §4 enforces upstream)
 ///   - Error: not set by this adapter (no IBlockchainOperation.Error field exists)
 /// </summary>
 public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
@@ -72,7 +74,56 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         }
     }
 
-    // ── GetByAvatarAsync ──────────────────────────────────────────────────────
+    // ── Receipt correlation and avatar history reads ───────────────────────────
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<IBlockchainOperation>> GetByIdempotencyKeyAsync(
+        string idempotencyKey,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(idempotencyKey))
+            {
+                return new AZOAResult<IBlockchainOperation>
+                {
+                    IsError = true,
+                    Message = "Idempotency key is required.",
+                    Code = AzoaErrorCodes.InvalidRequest,
+                    Result = null,
+                };
+            }
+
+            var q = SurrealQuery<OperationLog>.From()
+                .Where(operation => operation.IdempotencyKey == idempotencyKey)
+                .AsUntyped();
+            var row = await _executor.QuerySingleAsync<OperationLog>(q, ct);
+
+            if (row is null)
+            {
+                return new AZOAResult<IBlockchainOperation>
+                {
+                    IsError = true,
+                    Message = "Operation not found.",
+                    Code = AzoaErrorCodes.NotFound,
+                    Result = null,
+                };
+            }
+
+            return new AZOAResult<IBlockchainOperation>
+            {
+                Message = "Success",
+                Result = ToDomain(row),
+            };
+        }
+        catch (Exception ex)
+        {
+            var failure = new AZOAResult<IBlockchainOperation>()
+                .CaptureException(ex, "Operation lookup is temporarily unavailable.");
+            failure.Code = AzoaErrorCodes.DependencyUnavailable;
+            return failure;
+        }
+    }
 
     public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(
         Guid avatarId,
@@ -111,9 +162,31 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
     {
         try
         {
+            var existing = await _executor.QuerySingleAsync<OperationLog>(
+                SurrealQuery.SelectById(TableName, SurrealId.ToSurrealId(operation.Id)),
+                ct);
             var poco = ToPoco(operation);
 
-            var q        = SurrealWriter.Upsert(poco);
+            if (existing is not null)
+            {
+                if (HasConflictingReceiptProvenance(operation, existing))
+                {
+                    return new AZOAResult<IBlockchainOperation>
+                    {
+                        IsError = true,
+                        Message = "Operation receipt provenance cannot be changed.",
+                        Code = AzoaErrorCodes.InvalidRequest,
+                        Result = null,
+                    };
+                }
+
+                // Null option fields are omitted by the typed writer, preserving creation provenance.
+                poco.IdempotencyKey = null;
+                poco.InitiatorAvatarId = null;
+                poco.InitiatorApiKeyId = null;
+            }
+
+            var q = existing is null ? SurrealWriter.Create(poco) : SurrealWriter.Upsert(poco);
             var response = await _executor.ExecuteAsync(q, ct);
             response.EnsureAllOk();
 
@@ -133,6 +206,28 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
                 .CaptureException(ex, $"SurrealBlockchainOperationStore.UpsertAsync failed: {ex.Message}");
         }
     }
+
+    private static bool HasConflictingReceiptProvenance(
+        IBlockchainOperation operation,
+        OperationLog existing)
+    {
+        return !MatchesImmutableValue(operation.IdempotencyKey, existing.IdempotencyKey)
+            || !MatchesImmutableValue(
+                operation.InitiatorAvatarId,
+                ToOptionalGuid(existing.InitiatorAvatarId))
+            || !MatchesImmutableValue(
+                operation.InitiatorApiKeyId,
+                ToOptionalGuid(existing.InitiatorApiKeyId));
+    }
+
+    private static bool MatchesImmutableValue(string? proposed, string? persisted)
+        => proposed is null || string.Equals(proposed, persisted, StringComparison.Ordinal);
+
+    private static bool MatchesImmutableValue(Guid? proposed, Guid? persisted)
+        => !proposed.HasValue || proposed == persisted;
+
+    private static Guid? ToOptionalGuid(string? link)
+        => link is null ? null : SurrealId.FromSurrealId(SurrealLink.FromLink(link)!);
 
     // ── DeleteAsync ───────────────────────────────────────────────────────────
 
@@ -262,6 +357,15 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             // ITransferOperation
             RecipientAddress = concrete?.RecipientAddress,
 
+            // Durable allocation receipt context.
+            IdempotencyKey = op.IdempotencyKey,
+            InitiatorAvatarId = op.InitiatorAvatarId.HasValue
+                ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(op.InitiatorAvatarId.Value))
+                : null,
+            InitiatorApiKeyId = op.InitiatorApiKeyId.HasValue
+                ? SurrealLink.ToLink("api_key", SurrealId.ToSurrealId(op.InitiatorApiKeyId.Value))
+                : null,
+
             // tenant-consent-delegation AC4: persist the acting tenant + signing
             // scope so the seam's live consent check survives the async saga hop.
             ActingTenantId = op.ActingTenantId.HasValue
@@ -269,9 +373,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
                              : null,
             SigningScope   = op.SigningScope,
 
-            // IdempotencyKey and Error are NOT set here:
-            //   IdempotencyKey — must be supplied by the caller upstream (§4 validator).
-            //   Error          — no corresponding field on IBlockchainOperation.
+            // Error is not set here because IBlockchainOperation has no matching field.
         };
     }
 
@@ -316,14 +418,21 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             // ITransferOperation
             RecipientAddress = poco.RecipientAddress,
 
+            IdempotencyKey = poco.IdempotencyKey,
+            InitiatorAvatarId = poco.InitiatorAvatarId is not null
+                ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.InitiatorAvatarId)!)
+                : null,
+            InitiatorApiKeyId = poco.InitiatorApiKeyId is not null
+                ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.InitiatorApiKeyId)!)
+                : null,
+
             // tenant-consent-delegation AC4
             ActingTenantId = poco.ActingTenantId is not null
                              ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.ActingTenantId)!)
                              : null,
             SigningScope   = poco.SigningScope,
 
-            // IdempotencyKey and Error are not represented in BlockchainOperation —
-            // they are operation_log-only fields for the SurrealDB idempotency contract.
+            // Error is operation_log-only; IBlockchainOperation has no matching field.
         };
     }
 

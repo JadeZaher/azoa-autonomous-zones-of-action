@@ -201,3 +201,15 @@ errors. Its named, credential-free CORS policy allows any browser origin and
 short-circuits API-key lookup; arbitrary `X-Api-Key` values neither change the
 anonymous IP partition nor trigger a pre-limit store read. The operator
 controller remains `NodeGovern`-protected.
+
+## Allocation receipts
+
+`GET /api/allocation/receipt` and `POST /api/allocation/receipt/reconcile`
+require an API-key principal carrying `nft:mint`, a nonblank
+`Idempotency-Key`, and the `financial` rate limit. The controller derives API
+key and avatar context only from claims; it never accepts an actor, API-key id,
+or operation id in a body/query value. Missing ledger bindings plus foreign or
+mismatched operations map to the same 404 response; a caller-owned failed or
+in-progress ledger without an operation remains readable. Dependency failures
+are generic 503 responses. Reconcile is an observation request, never a replay
+or value-operation retry.

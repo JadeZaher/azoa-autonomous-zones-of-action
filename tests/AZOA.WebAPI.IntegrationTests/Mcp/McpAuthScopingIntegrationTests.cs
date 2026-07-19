@@ -11,9 +11,11 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.IntegrationTests.Factories;
+using AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 
 namespace AZOA.WebAPI.IntegrationTests.Mcp;
 
@@ -70,6 +72,7 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
                 new(ClaimTypes.Email, "test@azoa.local"),
                 new("sub",      avatarId),
                 new("AvatarId", avatarId),
+                new("dapp_role", AZOA.WebAPI.Core.AzoaDappRoles.Manager),
             };
 
             var identity  = new ClaimsIdentity(claims, TestAuthHandler.SchemeName);
@@ -83,6 +86,24 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
 
     private sealed class ParameterizedAuthFactory : WebApplicationFactory<Program>
     {
+        private readonly string _testNamespace = $"itest{Guid.NewGuid():N}";
+
+        /// <summary>Bootstraps this independent host's namespace before hosted services query it.</summary>
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            SurrealTestSchema.BootstrapAsync(
+                    _testNamespace,
+                    "admin_bootstrap_state",
+                    "saga_steps",
+                    "avatar",
+                    "holon",
+                    "holon_type_registry",
+                    "node_governance_parameters")
+                .GetAwaiter()
+                .GetResult();
+            return base.CreateHost(builder);
+        }
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("IntegrationTest");
@@ -97,6 +118,8 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
                     ["SurrealDb:Endpoint"] = SurrealTestDefaults.Endpoint,
                     ["SurrealDb:User"]     = SurrealTestDefaults.User,
                     ["SurrealDb:Password"] = SurrealTestDefaults.Password,
+                    ["SurrealDb:Namespace"] = _testNamespace,
+                    ["SurrealDb:Database"]  = AZOATestWebApplicationFactory.TestDatabase,
                     ["AZOA:DefaultProvider"] = "SurrealDb",
                 });
             });
@@ -186,31 +209,43 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
 
         // Create three holons "owned" by avatar B.  POST /api/holon uses
         // GetAvatarIdFromClaims() to stamp AvatarId on the created record.
-        var holonBIds = new List<Guid>();
-        for (var i = 0; i < 3; i++)
+        Guid targetHolonId = Guid.Empty;
+        const string targetHolonName = "BHolon0";
+        for (var i = 0; i < 2; i++)
         {
-            var seedPayload = new { Name = $"BHolon{i}", AvatarId = avatarBId };
+            var seedPayload = new
+            {
+                Name = $"BHolon{i}",
+                Description = "Cross-tenant MCP scope fixture.",
+                ProviderName = "test",
+                AvatarId = avatarBId,
+            };
             var seedResp = await clientB.PostAsJsonAsync("api/holon", seedPayload, _json);
             // If the seed endpoint returns an error here we still proceed —
             // the important assertion is that A cannot see B's data. If seeding
             // fails the holons simply don't exist, so A definitely can't see them.
-            if (seedResp.IsSuccessStatusCode)
+            var seedBody = await seedResp.Content.ReadAsStringAsync();
+            seedResp.IsSuccessStatusCode.Should().BeTrue(
+                $"avatar B holon {i} must exist before cross-tenant access is tested; response: {seedBody}");
+
+            using var seedDocument = JsonDocument.Parse(seedBody);
+            if (!seedDocument.RootElement.TryGetProperty("result", out var result)
+                || !result.TryGetProperty("id", out var idElement)
+                || !Guid.TryParse(idElement.GetString(), out var seededHolonId))
             {
-                var seedResult = await seedResp.Content
-                    .ReadFromJsonAsync<JsonElement>(_json);
-                if (seedResult.TryGetProperty("result", out var r) &&
-                    r.TryGetProperty("id", out var idEl) &&
-                    Guid.TryParse(idEl.GetString(), out var hid))
-                {
-                    holonBIds.Add(hid);
-                }
+                throw new InvalidOperationException(
+                    $"Avatar B holon {i} seed did not return a valid id: {seedBody}");
             }
+
+            if (i == 0)
+                targetHolonId = seededHolonId;
         }
 
         // Authenticate as avatar A and call the MCP tool surface, requesting
         // one of B's holon ids (or a fabricated one if seeding failed).
         using var clientA = pFactory.CreateClientForAvatar(avatarAId);
-        var targetHolonId = holonBIds.FirstOrDefault(Guid.NewGuid());
+        targetHolonId.Should().NotBe(Guid.Empty,
+            "the cross-tenant call must target a real avatar B holon");
         var mcpContent = McpToolCallPayload(
             "holon_traverse",
             new { holon_id = targetHolonId.ToString() });
@@ -218,9 +253,12 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
         var mcpResp = await clientA.PostAsync("/mcp", mcpContent);
 
         // Core assertion: response must never contain B's holon data.
-        // Acceptable outcomes: any 4xx, or a JSON-RPC error body.
+        // Acceptable outcomes: a 4xx or a JSON-RPC error body; never a 5xx.
         // Not acceptable: HTTP 200 with B's holon payload.
         var responseBody = await mcpResp.Content.ReadAsStringAsync();
+
+        ((int)mcpResp.StatusCode).Should().BeLessThan(500,
+            because: "a real cross-tenant MCP lookup must be rejected without a server fault");
 
         if (mcpResp.IsSuccessStatusCode)
         {
@@ -229,10 +267,16 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
             responseBody.Should().NotContain(
                 avatarBId.ToString(),
                 because: "avatar A must never receive avatar B's data in an MCP response");
+            responseBody.Should().NotContain(
+                targetHolonId.ToString(),
+                because: "avatar A must never receive avatar B's persisted holon id in an MCP response");
+            responseBody.Should().NotContain(
+                targetHolonName,
+                because: "avatar A must never receive avatar B's holon payload in an MCP response");
         }
         else
         {
-            // Any 4xx/5xx satisfies the isolation requirement.
+            // A client rejection proves the cross-tenant request was blocked.
             ((int)mcpResp.StatusCode).Should().BeGreaterThanOrEqualTo(400,
                 because: "a non-2xx response proves the cross-tenant request was rejected");
         }

@@ -658,6 +658,13 @@ public sealed class SurrealBridgeStore : IBridgeStore
             TargetHolonId = poco.TargetHolonId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.TargetHolonId)!) : null,
             ExchangeRate  = poco.ExchangeRate,
             RecipientAddress = poco.RecipientAddress,
+            IdempotencyKey = poco.IdempotencyKey,
+            InitiatorAvatarId = poco.InitiatorAvatarId is not null
+                ? FromSurrealGuid(SurrealLink.FromLink(poco.InitiatorAvatarId)!)
+                : null,
+            InitiatorApiKeyId = poco.InitiatorApiKeyId is not null
+                ? FromSurrealGuid(SurrealLink.FromLink(poco.InitiatorApiKeyId)!)
+                : null,
         };
     }
 

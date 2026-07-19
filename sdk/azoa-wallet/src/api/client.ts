@@ -148,7 +148,7 @@ export interface NftMetadata {
   animationUrl?: string;
 }
 
-// Matches .NET BridgeTransactionResult exactly
+// Public bridge response. Server-only idempotency metadata is deliberately omitted.
 export interface BridgeTransactionResult {
   id: string;
   avatarId: string;
@@ -254,8 +254,6 @@ export interface FungibleTokenResult {
   walletProvisioned: boolean;
   /** The chain-native asset id of the created fungible token (ASA id). */
   assetId: string;
-  /** The idempotency key the launch was deduped on (diagnostics). */
-  idempotencyKey: string;
   /** True when this response replays a prior launch — no second token was created. */
   replayed: boolean;
 }
@@ -417,20 +415,18 @@ export interface NftHolding {
 
 export interface BlockchainOperationResult {
   id: string;
-  avatarId?: string;
-  walletId?: string;
+  avatarId: string | null;
+  walletId: string | null;
   operationType: string;
   status: string;
-  parameters: Record<string, string>;
   createdDate: string;
-  completedDate?: string;
-  tokenUri?: string;
-  amount?: number;
-  assetType?: string;
-  sourceHolonId?: string;
-  targetHolonId?: string;
-  exchangeRate?: string;
-  recipientAddress?: string;
+  completedDate: string | null;
+  /** Safe public chain identifier, when the operation recorded one. */
+  chainType: string | null;
+  /** Safe public network identifier, when the operation recorded one. */
+  chainNetwork: string | null;
+  /** Public transaction reference, when the provider recorded one. */
+  transactionReference: string | null;
 }
 
 // ─── STARODK types matching .NET DTOs ───
@@ -953,9 +949,12 @@ export interface AllocationResult {
   walletId: string;
   walletAddress: string;
   walletProvisioned: boolean;
-  operationId?: string;
+  operationId: string;
   replayed: boolean;
-  idempotencyKey: string;
+  grossAmount: string;
+  nodeFeeAmount: string;
+  netAmount: string;
+  nodeFeeScheduleVersion: number;
 }
 
 // ─── DappSeries types matching .NET DTOs (DappSeriesController) ───
@@ -1248,9 +1247,9 @@ export class AzoaApiClient {
     return this.request<NftResult[]>("GET", `/api/nft${query ? `?${query}` : ""}`);
   }
 
-  async mintNft(params: NftMintParams): Promise<Result<unknown, SdkError>> {
+  async mintNft(params: NftMintParams): Promise<Result<BlockchainOperationResult, SdkError>> {
     // POST /api/nft/mint with NftMintRequest body
-    return this.request("POST", "/api/nft/mint", params);
+    return this.request<BlockchainOperationResult>("POST", "/api/nft/mint", params);
   }
 
   /**
@@ -1280,16 +1279,16 @@ export class AzoaApiClient {
     );
   }
 
-  async transferNft(nftId: string, params: NftTransferParams): Promise<Result<unknown, SdkError>> {
+  async transferNft(nftId: string, params: NftTransferParams): Promise<Result<BlockchainOperationResult, SdkError>> {
     assertUuid(nftId, "nftId");
     // POST /api/nft/{id}/transfer with NftTransferRequest body
-    return this.request("POST", `/api/nft/${nftId}/transfer`, params);
+    return this.request<BlockchainOperationResult>("POST", `/api/nft/${nftId}/transfer`, params);
   }
 
-  async burnNft(nftId: string, params: NftBurnParams): Promise<Result<unknown, SdkError>> {
+  async burnNft(nftId: string, params: NftBurnParams): Promise<Result<BlockchainOperationResult, SdkError>> {
     assertUuid(nftId, "nftId");
     // POST /api/nft/{id}/burn with NftBurnRequest body
-    return this.request("POST", `/api/nft/${nftId}/burn`, params);
+    return this.request<BlockchainOperationResult>("POST", `/api/nft/${nftId}/burn`, params);
   }
 
   async getNftMetadata(nftId: string): Promise<Result<NftMetadata, SdkError>> {

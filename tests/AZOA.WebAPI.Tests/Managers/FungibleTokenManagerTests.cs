@@ -164,8 +164,13 @@ public class FungibleTokenManagerTests
             "ALGOTESTADDRESS", "ALGOTESTADDRESS", "ALGOTESTADDRESS", "ALGOTESTADDRESS",
             "ALGOTESTADDRESS", It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()), Times.Once);
 
-        var record = await _idempotency.GetAsync(result.Result!.IdempotencyKey, CancellationToken.None);
+        var record = await _idempotency.GetAsync($"fungible:{ApiKeyId}:client_key_1", CancellationToken.None);
         record!.State.Should().Be(IdempotencyState.Completed);
+
+        var publicJson = System.Text.Json.JsonSerializer.Serialize(result.Result);
+        publicJson.Should().NotContain(ApiKeyId)
+            .And.NotContain("client_key_1")
+            .And.NotContain("idempotencyKey");
     }
 
     // ── KYC fail-closed ────────────────────────────────────────────────────────

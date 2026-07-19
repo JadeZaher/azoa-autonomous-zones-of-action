@@ -583,3 +583,18 @@ a duplicate write; revoke no-ops when absent).
   the `AzoaDappRoles` allowlist first, so an operator:admin-yielding value is
   impossible. Authority is passed as `bool actingIsOperator, bool actingCanManage`
   (computed by the controller from claims) to keep the manager free of ClaimsPrincipal.
+
+## Allocation receipt boundary
+
+`AllocationReceiptManager` reconstructs the internal ledger identity only from
+the API-key caller context plus the required client idempotency key. It locates
+the durable operation through the opaque correlation and then requires exact
+persisted API-key and initiator-avatar matches. Missing ledger bindings, foreign,
+and mismatched operation paths all return the same not-found result. A valid
+failed/in-progress ledger with no operation is still returned as its own receipt.
+
+Reconciliation is an observation-only call to `IReconciliationService`; it never
+resubmits an allocation, retries a provider action, or uses a raw operation id
+supplied by the caller. The receipt is projected from safe allocation facts only.
+Dependency failures become a generic unavailable result after cancellation is
+allowed to propagate; they never masquerade as an absent receipt.

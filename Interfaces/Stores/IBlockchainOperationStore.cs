@@ -8,6 +8,15 @@ public interface IBlockchainOperationStore
     /// <summary>Loads a single blockchain operation by id.</summary>
     Task<AZOAResult<IBlockchainOperation>> GetByIdAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Loads a single operation by its durable, public-safe idempotency correlation.
+    /// A missing correlation returns an error result; callers must separately enforce
+    /// their initiator-ownership boundary before exposing the operation.
+    /// </summary>
+    Task<AZOAResult<IBlockchainOperation>> GetByIdempotencyKeyAsync(
+        string idempotencyKey,
+        CancellationToken ct = default);
+
     /// <summary>Loads all blockchain operations for an avatar.</summary>
     Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(Guid avatarId, CancellationToken ct = default);
 

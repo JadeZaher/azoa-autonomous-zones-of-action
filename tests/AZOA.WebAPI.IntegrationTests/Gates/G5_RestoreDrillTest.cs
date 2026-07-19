@@ -126,9 +126,19 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             ? containerName
             : DefaultSurrealContainerName;
 
+    private static string ContainerRuntime
+        => Environment.GetEnvironmentVariable("AZOA_CONTAINER_RUNTIME") ?? "podman";
+
     [SkippableFact]
     public async Task G5_Backup_Wipe_Restore_PreservesEveryValueTable()
     {
+        var containerReady = IsBackupContainerReady();
+        if (!containerReady && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CI")))
+            throw new InvalidOperationException(
+                $"G5 requires a running {ContainerRuntime} container named '{SurrealContainerName}' in CI.");
+        Skip.IfNot(containerReady,
+            $"G5 requires a running {ContainerRuntime} container named '{SurrealContainerName}'.");
+
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(), "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
         // ── 0. Locate repo root and scripts ──────────────────────────────────
@@ -872,6 +882,42 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         process.WaitForExit();
 
         return (process.ExitCode, stdOut, stdErr);
+    }
+
+    /// <summary>Checks that the named runtime container is running before the destructive drill begins.</summary>
+    private static bool IsBackupContainerReady()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = ContainerRuntime,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("inspect");
+            psi.ArgumentList.Add("--format");
+            psi.ArgumentList.Add("{{.State.Running}}");
+            psi.ArgumentList.Add(SurrealContainerName);
+
+            using var process = Process.Start(psi);
+            if (process is null)
+                return false;
+            if (!process.WaitForExit((int)TimeSpan.FromSeconds(5).TotalMilliseconds))
+            {
+                process.Kill(entireProcessTree: true);
+                return false;
+            }
+
+            return process.ExitCode == 0
+                && string.Equals(process.StandardOutput.ReadToEnd().Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

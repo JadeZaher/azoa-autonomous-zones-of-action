@@ -93,7 +93,7 @@ public class HolonController : ControllerBase
 
     [HttpPost("{id:guid}/mint")]
     [Authorize(Policy = "DappDevelop")]
-    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Mint(Guid id, [FromBody] MintRequest request, [FromQuery] AZOARequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Mint(Guid id, [FromBody] MintRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _blockchainManager.BuildAndExecuteAsync(builder =>
             builder.ForAvatar(GetAvatarIdFromClaims() ?? Guid.Empty)
@@ -101,13 +101,14 @@ public class HolonController : ControllerBase
                    .Mint(request.TokenUri, request.Amount, request.AssetType)
                    .Build(), providerRequest);
 
-        if (result.IsError) return BadRequest(result);
-        return Ok(result);
+        var response = BlockchainOperationResponse.Project(result);
+        if (response.IsError) return BadRequest(response);
+        return Ok(response);
     }
 
     [HttpPost("{id:guid}/exchange")]
     [Authorize(Policy = "DappDevelop")]
-    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Exchange(Guid id, [FromBody] ExchangeRequest request, [FromQuery] AZOARequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Exchange(Guid id, [FromBody] ExchangeRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _blockchainManager.BuildAndExecuteAsync(builder =>
             builder.ForAvatar(GetAvatarIdFromClaims() ?? Guid.Empty)
@@ -115,8 +116,9 @@ public class HolonController : ControllerBase
                    .Exchange(id, request.TargetHolonId, request.ExchangeRate)
                    .Build(), providerRequest);
 
-        if (result.IsError) return BadRequest(result);
-        return Ok(result);
+        var response = BlockchainOperationResponse.Project(result);
+        if (response.IsError) return BadRequest(response);
+        return Ok(response);
     }
 
     // ─── Holarchy traversal endpoints — expose the holonic structure ───

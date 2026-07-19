@@ -91,7 +91,15 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? RecipientAddress { get; set; }
 
         [FieldGroup("G2 idempotency")]
+        [Assert("$value = NONE OR string::matches($value, \"^[0-9a-f]{64}$\")")]
         public string? IdempotencyKey { get; set; }
+
+        [FieldGroup("Allocation receipt initiator context")]
+        [References(typeof(Avatar), Optional = true)]
+        public string? InitiatorAvatarId { get; set; }
+
+        [References(typeof(ApiKey), Optional = true)]
+        public string? InitiatorApiKeyId { get; set; }
 
         [FieldGroup("Error detail (populated on failure)")]
         public string? Error { get; set; }

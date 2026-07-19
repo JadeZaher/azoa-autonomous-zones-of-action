@@ -20,18 +20,24 @@ public class BlockchainOperationController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<AZOAResult<IBlockchainOperation>>> Get(Guid id, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
         var avatarId = GetAvatarIdFromClaims();
         if (avatarId == null) return Unauthorized();
 
         var result = await _manager.GetAsync(id, avatarId.Value, request);
-        if (result.IsError || result.Result == null) return NotFound(result);
-        return Ok(result);
+        if (result.IsError || result.Result == null)
+        {
+            return NotFound(AZOAResult<BlockchainOperationResponse>.FailureWithCode(
+                "Operation not found.", AzoaErrorCodes.NotFound));
+        }
+
+        return Ok(AZOAResult<BlockchainOperationResponse>.Success(
+            BlockchainOperationResponse.From(result.Result), result.Message));
     }
 
     [HttpGet("avatar/{avatarId:guid}")]
-    public async Task<ActionResult<AZOAResult<IEnumerable<IBlockchainOperation>>>> GetByAvatar(Guid avatarId, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<BlockchainOperationResponse>>>> GetByAvatar(Guid avatarId, [FromQuery] AZOARequest? request)
     {
         var callerId = GetAvatarIdFromClaims();
         if (callerId == null) return Unauthorized();
@@ -39,7 +45,14 @@ public class BlockchainOperationController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden);
 
         var result = await _manager.GetByAvatarAsync(avatarId, request);
-        return Ok(result);
+        if (result.IsError || result.Result is null)
+        {
+            return Ok(AZOAResult<IEnumerable<BlockchainOperationResponse>>.FailureWithCode(
+                "Operation history is unavailable.", AzoaErrorCodes.DependencyUnavailable));
+        }
+
+        return Ok(AZOAResult<IEnumerable<BlockchainOperationResponse>>.Success(
+            result.Result.Select(BlockchainOperationResponse.From), result.Message));
     }
 
     private Guid? GetAvatarIdFromClaims()

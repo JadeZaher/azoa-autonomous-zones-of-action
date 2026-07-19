@@ -70,8 +70,6 @@ def validate_contract(document: dict[str, Any], rendered: bool) -> None:
         fail("API entrypoint must repair the Railway volume before dropping privileges")
     if api.get("volume", {}).get("mountPath") != "/app/data":
         fail("API durable volume must be mounted at /app/data")
-    if api.get("variables", {}).get("AUTOMAPPER_LICENSE_KEY") != "${{shared.AUTOMAPPER_LICENSE_KEY}}":
-        fail("API must consume the sealed shared AutoMapper license variable")
     if api.get("variables", {}).get("AZOA_SKIP_MIGRATIONS") != "1":
         fail("production API must leave schema authority to the one-shot job")
     api_variables = api.get("variables", {})
@@ -131,8 +129,12 @@ def validate_contract(document: dict[str, Any], rendered: bool) -> None:
     schema = services["azoa-schema"]
     if schema.get("deploy", {}).get("startCommand") != "/usr/local/bin/docker-entrypoint.sh schema":
         fail("schema job must use the image's one-shot schema entrypoint")
-    if schema.get("deploy", {}).get("restartPolicyType") != "NEVER":
-        fail("schema job must remain a one-shot service")
+    schema_deploy = schema.get("deploy", {})
+    if (
+        schema_deploy.get("restartPolicyType") != "ON_FAILURE"
+        or schema_deploy.get("restartPolicyMaxRetries") != 1
+    ):
+        fail("schema job must retry one failed one-shot execution, then remain stopped")
     expected_schema_variables = {
         "ASPNETCORE_ENVIRONMENT": "Production",
         "SURREALFORGE_URL": "${{surrealdb.SURREAL_HTTP_PRIVATE_URL}}",

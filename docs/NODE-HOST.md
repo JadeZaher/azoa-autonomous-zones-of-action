@@ -139,7 +139,6 @@ family so schema-owner authority cannot enter the API process.
 | `NodeOperator__CredentialRevision` | yes on first boot | Positive monotonic integer. Increment for every username/password rotation; rollback is refused. |
 | `NodeOperator__SessionMinutes` | optional | Dedicated operator-session lifetime, 5–30 minutes (default 20). |
 | `AZOA__WalletEncryptionKey` | yes (**SECRET**) | At-rest key for platform wallet generation. No default — `WalletKeyService` throws without it. |
-| `AUTOMAPPER_LICENSE_KEY` | yes (hosted prod, **SECRET**) | Registered AutoMapper 15+ commercial or Community key. `LUCKYPENNY_LICENSE_KEY` is accepted as the vendor alias; `/health` is unhealthy in Production when both are absent. |
 | `PORT` | injected | On Railway the entrypoint binds `ASPNETCORE_URLS=http://0.0.0.0:$PORT` (falls back to 5000). Do not also pin `ASPNETCORE_URLS`. |
 
 Only the separate schema job receives `SURREALFORGE_*` (`_URL`, `_NS`, `_DB`,
@@ -153,7 +152,7 @@ name.
 
 ### Secrets
 
-`Jwt__Key`, `NodeOperator__Password`, `AZOA__WalletEncryptionKey`, `AUTOMAPPER_LICENSE_KEY`,
+`Jwt__Key`, `NodeOperator__Password`, `AZOA__WalletEncryptionKey`,
 `SurrealRuntime__Password`, the schema job's `SURREALFORGE_PASS`, and any faucet
 mnemonic **must come from a secret store / deploy env, never committed
 appsettings**. The base `appsettings.json` ships these as empty placeholders on

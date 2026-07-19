@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.QuestExecution;
 using AZOA.WebAPI.Models.Quest;
@@ -30,7 +29,6 @@ public sealed class TransferNodeHandler : IQuestNodeHandler
         // tenant-consent-delegation AC4: forward the run's acting tenant so a
         // tenant-driven transfer stamps it on the op for the seam's consent gate.
         var r = await _nftManager.TransferAsync(cfg.NftId, cfg.Request, context.ActingAvatarId, actingTenantId: context.ActingTenantId);
-        var outputJson = JsonSerializer.Serialize(r, QuestNodeJson.Options);
 
         // Forward the broadcast tx hash on BOTH outcomes: a transfer that broadcast
         // then timed out on confirmation surfaces as IsError while the move already
@@ -38,6 +36,7 @@ public sealed class TransferNodeHandler : IQuestNodeHandler
         // truth instead of blind-retrying (blockchain-recovery-and-portable-wallets §1.3).
         var opTxHash = ChainOperationOutputs.ReadTxHash(r.Result);
         var opChainType = ChainOperationOutputs.ReadChainType(r.Result);
+        var outputJson = QuestNodeOutputProjection.SerializeOperation(r);
 
         if (r.IsError) return QuestNodeResults.Fail(r.Message, txHash: opTxHash, chainType: opChainType ?? "Algorand");
         return QuestNodeResults.Ok(outputJson, txHash: opTxHash, chainType: opChainType ?? "Algorand");
