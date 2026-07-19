@@ -23,6 +23,14 @@ load_schema_config() {
     SURREAL_PASS="${SURREALFORGE_PASS:-root}"
 }
 
+is_strong_printable_secret() {
+    [ "$#" -eq 1 ] || return 1
+    [ "${#1}" -ge 32 ] || return 1
+    case "$1" in
+        *[![:print:]]*) return 1 ;;
+    esac
+}
+
 require_schema_job_config() {
     if [ -z "${SURREALFORGE_URL:-}" ] \
         || [ -z "${SURREALFORGE_NS:-}" ] \
@@ -42,8 +50,8 @@ require_schema_job_config() {
 
     if ! printf '%s' "$SURREALFORGE_USER" | grep -Eq '^[A-Za-z][A-Za-z0-9_]{2,63}$' \
         || printf '%s' "$SURREALFORGE_USER" | grep -Eiq '^root$' \
-        || ! printf '%s' "$SURREALFORGE_PASS" | grep -Eq '^[A-Za-z0-9._~-]{32,}$'; then
-        echo "[entrypoint] Schema owner credentials must be explicit, non-root, and use a 32+ character URL-safe password." >&2
+        || ! is_strong_printable_secret "$SURREALFORGE_PASS"; then
+        echo "[entrypoint] Schema owner credentials must be explicit, non-root, and use a 32+ character printable password with no control characters." >&2
         exit 64
     fi
 

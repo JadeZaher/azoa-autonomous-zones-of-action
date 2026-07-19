@@ -37,6 +37,23 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
     }
 
     [Fact]
+    public void ProductionEntrypoint_AllowsQuotedOwnerPunctuationButKeepsRuntimePasswordUrlSafe()
+    {
+        var entrypoint = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "docker-entrypoint.sh"));
+        var schemaValidation = ShellFunction(entrypoint, "require_schema_job_config");
+        var runtimeProvisioning = ShellFunction(entrypoint, "provision_runtime_user");
+
+        ShellFunction(entrypoint, "is_strong_printable_secret")
+            .Should().Contain("[ \"${#1}\" -ge 32 ]")
+            .And.Contain("*[![:print:]]*");
+        schemaValidation.Should().Contain("is_strong_printable_secret \"$SURREALFORGE_PASS\"")
+            .And.NotContain(
+                "printf '%s' \"$SURREALFORGE_PASS\" | grep -Eq '^[A-Za-z0-9._~-]{32,}$'");
+        runtimeProvisioning.Should().Contain(
+            "printf '%s' \"$runtime_pass\" | grep -Eq '^[A-Za-z0-9._~-]{32,}$'");
+    }
+
+    [Fact]
     public void RailwayTemplate_SeparatesSchemaOwnerFromDatabaseScopedRuntimeCredentials()
     {
         var path = Path.Combine(FindRepositoryRoot(), "deploy", "railway", "template.json");
@@ -126,5 +143,15 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
         }
 
         throw new DirectoryNotFoundException("Could not locate the AZOA repository root.");
+    }
+
+    private static string ShellFunction(string script, string name)
+    {
+        script = script.ReplaceLineEndings("\n");
+        var start = script.IndexOf($"{name}() {{", StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0);
+        var end = script.IndexOf("\n}\n", start, StringComparison.Ordinal);
+        end.Should().BeGreaterThan(start);
+        return script[start..(end + 3)];
     }
 }

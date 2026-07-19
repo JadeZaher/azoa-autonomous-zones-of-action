@@ -164,6 +164,11 @@ creates or rotates a database-level `EDITOR` user. Require terminal `SUCCESS`
 before promoting the API. The built-in role removes owner/IAM authority but is
 not DDL-proof; track stricter data-only isolation separately.
 
+The schema owner's `SURREALFORGE_PASS` accepts any 32+ character printable
+secret without control characters; it is passed only as quoted CLI/basic-auth
+data. Keep `AZOA_RUNTIME_PASSWORD` URL-safe (`A-Z`, `a-z`, `0-9`, `.`, `_`,
+`~`, `-`) because the schema job interpolates it into the `DEFINE USER` query.
+
 The entrypoint first overlays exact shipped files from
 `Persistence/SurrealDb/CompatibilityBaselines/`, then applies timestamped
 forward migrations. This preserves the checksum ledger while allowing the
