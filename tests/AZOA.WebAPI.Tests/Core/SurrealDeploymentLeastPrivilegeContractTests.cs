@@ -46,11 +46,15 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
         ShellFunction(entrypoint, "is_strong_printable_secret")
             .Should().Contain("[ \"${#1}\" -ge 32 ]")
             .And.Contain("*[![:print:]]*");
-        schemaValidation.Should().Contain("is_strong_printable_secret \"$SURREALFORGE_PASS\"")
+        schemaValidation.Should()
+            .Contain("grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_-]{2,63}$'")
+            .And.Contain("is_strong_printable_secret \"$SURREALFORGE_PASS\"")
             .And.NotContain(
                 "printf '%s' \"$SURREALFORGE_PASS\" | grep -Eq '^[A-Za-z0-9._~-]{32,}$'");
         runtimeProvisioning.Should().Contain(
-            "printf '%s' \"$runtime_pass\" | grep -Eq '^[A-Za-z0-9._~-]{32,}$'");
+            "printf '%s' \"$runtime_user\" | grep -Eq '^[A-Za-z][A-Za-z0-9_]{2,63}$'")
+            .And.Contain(
+                "printf '%s' \"$runtime_pass\" | grep -Eq '^[A-Za-z0-9._~-]{32,}$'");
     }
 
     [Fact]

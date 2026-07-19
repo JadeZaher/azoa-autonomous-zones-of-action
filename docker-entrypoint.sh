@@ -48,10 +48,10 @@ require_schema_job_config() {
         exit 64
     fi
 
-    if ! printf '%s' "$SURREALFORGE_USER" | grep -Eq '^[A-Za-z][A-Za-z0-9_]{2,63}$' \
+    if ! printf '%s' "$SURREALFORGE_USER" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_-]{2,63}$' \
         || printf '%s' "$SURREALFORGE_USER" | grep -Eiq '^root$' \
         || ! is_strong_printable_secret "$SURREALFORGE_PASS"; then
-        echo "[entrypoint] Schema owner credentials must be explicit, non-root, and use a 32+ character printable password with no control characters." >&2
+        echo "[entrypoint] Schema owner credentials must use a token-safe non-root username and a 32+ character printable password with no control characters." >&2
         exit 64
     fi
 
