@@ -18,6 +18,8 @@ namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 
 internal static class SurrealTestSchema
 {
+    private static readonly TimeSpan SchemaHttpTimeout = TimeSpan.FromSeconds(8);
+
     /// <summary>
     /// Create <paramref name="testNamespace"/> (+ database "test") and apply the
     /// committed Generated/Schemas/&lt;table&gt;.surql for each requested table.
@@ -94,7 +96,11 @@ internal static class SurrealTestSchema
 
     private static HttpClient NewClient(string credentials)
     {
-        var c = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
+        var c = new HttpClient
+        {
+            BaseAddress = new Uri(SurrealTestDefaults.Endpoint),
+            Timeout = SchemaHttpTimeout
+        };
         c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);
         return c;
     }
