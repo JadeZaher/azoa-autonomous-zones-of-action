@@ -126,6 +126,7 @@ family so schema-owner authority cannot enter the API process.
 | `SurrealRuntime__Namespace` | yes | e.g. `azoa`. |
 | `SurrealRuntime__Database` | yes | e.g. `azoa`. |
 | `SurrealRuntime__User` / `SurrealRuntime__Password` | yes (prod) | Database-scoped runtime `EDITOR` credentials provisioned by `azoa-schema`; never owner/root credentials. |
+| `SurrealRuntime__AuthenticationScope` | yes (prod) | Must be `Database`. The named client adds `Surreal-Auth-NS` and `Surreal-Auth-DB` for SurrealDB 3 database-user Basic authentication. Omission remains a Development-only root compatibility path. |
 | `SurrealRuntime__G1DurabilityAcknowledged` | yes | Must be `true` outside `IntegrationTest` or the node **refuses to boot** (§6). Operator's ack that the store fsyncs per commit. |
 | `AZOA_SKIP_MIGRATIONS` | yes (prod) | Must be `1`; Production API boot never applies schema. |
 | `ASPNETCORE_ENVIRONMENT` | yes | `Production` gates Swagger off and enforces the secret guards + G1 ack. |

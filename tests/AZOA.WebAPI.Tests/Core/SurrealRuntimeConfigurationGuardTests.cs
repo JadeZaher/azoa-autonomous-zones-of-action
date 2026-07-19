@@ -39,6 +39,28 @@ public sealed class SurrealRuntimeConfigurationGuardTests
     }
 
     [Fact]
+    public void GuardProduction_MissingAuthenticationScope_RejectsStartup()
+    {
+        var configuration = ProductionRuntimeConfiguration(("SurrealRuntime:AuthenticationScope", ""));
+
+        var act = () => SurrealRuntimeConfigurationGuard.GuardProduction(configuration, isProduction: true);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*SurrealRuntime:AuthenticationScope*");
+    }
+
+    [Fact]
+    public void GuardProduction_UnsupportedAuthenticationScope_RejectsStartup()
+    {
+        var configuration = ProductionRuntimeConfiguration(("SurrealRuntime:AuthenticationScope", "Namespace"));
+
+        var act = () => SurrealRuntimeConfigurationGuard.GuardProduction(configuration, isProduction: true);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*AuthenticationScope must be Database*");
+    }
+
+    [Fact]
     public void GuardProduction_LegacyDatabaseCredentials_RejectsStartup()
     {
         var configuration = ProductionRuntimeConfiguration(("SurrealDb:User", "root"));
@@ -99,6 +121,7 @@ public sealed class SurrealRuntimeConfigurationGuardTests
             ["SurrealRuntime:Database"] = "azoa",
             ["SurrealRuntime:User"] = "azoa_runtime",
             ["SurrealRuntime:Password"] = "not-a-real-secret",
+            ["SurrealRuntime:AuthenticationScope"] = "Database",
             ["AZOA_SKIP_MIGRATIONS"] = "1",
         };
         foreach (var (key, value) in overrides)

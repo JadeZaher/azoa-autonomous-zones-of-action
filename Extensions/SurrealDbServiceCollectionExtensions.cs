@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using AZOA.WebAPI.Core.Surreal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurrealForge.Client;
@@ -36,6 +37,8 @@ namespace AZOA.WebAPI.Extensions;
 /// </summary>
 public static class SurrealDbServiceCollectionExtensions
 {
+    private const string ClientName = "SurrealForge.Client";
+
     /// <summary>
     /// Register the homebake SurrealDB client (<c>SurrealForge.Client</c>)
     /// with the application's DI container. Reads connection settings from
@@ -55,22 +58,56 @@ public static class SurrealDbServiceCollectionExtensions
         if (services      is null) throw new ArgumentNullException(nameof(services));
         if (configuration is null) throw new ArgumentNullException(nameof(configuration));
 
+        var connectionSection = configuration.GetSection(configSectionName);
+        var authenticationScope = connectionSection["AuthenticationScope"];
+
+        if (!string.IsNullOrWhiteSpace(authenticationScope) &&
+            !string.Equals(
+                authenticationScope.Trim(),
+                SurrealRuntimeConfigurationGuard.DatabaseAuthenticationScope,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"{configSectionName}:AuthenticationScope '{authenticationScope}' is unsupported. " +
+                $"Omit it for root/development compatibility or use " +
+                $"{SurrealRuntimeConfigurationGuard.DatabaseAuthenticationScope}.");
+        }
+
         // Bind options from configuration. Missing section uses property defaults
         // (host http://localhost:8442, namespace/database "azoa"); that is
         // intentional for local dev — production deployments override every field.
         services.Configure<SurrealConnectionOptions>(
-            configuration.GetSection(configSectionName));
+            connectionSection);
 
         // Register IHttpClientFactory so the HTTP transport gets a properly-managed
         // HttpClient instance (DNS refresh, connection pooling, no socket exhaustion).
-        services.AddHttpClient();
+        if (string.Equals(
+                authenticationScope?.Trim(),
+                SurrealRuntimeConfigurationGuard.DatabaseAuthenticationScope,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var authenticationNamespace = RequireAuthenticationSetting(
+                connectionSection, configSectionName, "Namespace");
+            var authenticationDatabase = RequireAuthenticationSetting(
+                connectionSection, configSectionName, "Database");
+
+            services.AddHttpClient(ClientName, http =>
+            {
+                http.DefaultRequestHeaders.Add("Surreal-Auth-NS", authenticationNamespace);
+                http.DefaultRequestHeaders.Add("Surreal-Auth-DB", authenticationDatabase);
+            });
+        }
+        else
+        {
+            services.AddHttpClient(ClientName);
+        }
 
         services.AddScoped<ISurrealConnection>(sp =>
         {
             var optionsAccessor = sp.GetRequiredService<
                 Microsoft.Extensions.Options.IOptions<SurrealConnectionOptions>>();
             var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var http        = httpFactory.CreateClient("SurrealForge.Client");
+            var http        = httpFactory.CreateClient(ClientName);
             return new HttpSurrealConnection(http, optionsAccessor.Value);
         });
 
@@ -82,5 +119,20 @@ public static class SurrealDbServiceCollectionExtensions
         services.AddScoped<ISurrealExecutor, DefaultSurrealExecutor>();
 
         return services;
+    }
+
+    private static string RequireAuthenticationSetting(
+        IConfigurationSection section,
+        string sectionName,
+        string key)
+    {
+        var value = section[key];
+        if (!string.IsNullOrWhiteSpace(value))
+            return value.Trim();
+
+        throw new InvalidOperationException(
+            $"{sectionName}:{key} is required when " +
+            $"{sectionName}:AuthenticationScope is " +
+            $"{SurrealRuntimeConfigurationGuard.DatabaseAuthenticationScope}.");
     }
 }

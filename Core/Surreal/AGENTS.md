@@ -24,9 +24,14 @@ parameter because SurrealQL evaluates both `IF` branches.
 
 `SurrealRuntimeConfigurationGuard` keeps the production API on the isolated
 `SurrealRuntime` configuration section. Production requires a non-root,
-database-scoped user and `AZOA_SKIP_MIGRATIONS=1`; the API container cannot
-receive legacy `SurrealDb` credentials or run the schema tool at boot. The
-separate schema job has `SURREALFORGE_*` credentials and remains an operations
+database-scoped user, `AuthenticationScope=Database`, and
+`AZOA_SKIP_MIGRATIONS=1`; the API container cannot receive legacy `SurrealDb`
+credentials or run the schema tool at boot. The explicit authentication scope
+causes the named SurrealForge HTTP client to send `Surreal-Auth-NS` and
+`Surreal-Auth-DB`; query selection still uses the package's `Surreal-NS` and
+`Surreal-DB` headers. An absent scope remains valid outside Production for
+root-based local development. The separate schema job has `SURREALFORGE_*`
+credentials and remains an operations
 gate until its SurrealDB 3.1.4 permissions are proven live. Built-in database
 `EDITOR` is not a DDL-proof role, so do not claim full DDL separation from the
 config split alone; see the `surreal-runtime-least-privilege` conductor track.

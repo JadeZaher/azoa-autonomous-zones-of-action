@@ -30,10 +30,11 @@
     {
       "name": "azoa-schema",
       "source": { "image": "<PROMOTED_API_IMAGE_REFERENCE>" },
-      "notes": "Release order 2/4. One-shot prerequisite: it applies the forward-only schema with owner credentials and then creates or rotates the database-scoped EDITOR account. Require terminal SUCCESS before releasing the matching API digest.",
+      "notes": "Release order 2/4. One-shot prerequisite: it applies the forward-only schema with owner credentials and then creates or rotates the database-scoped EDITOR account. Require terminal SUCCESS plus the explicit completion log marker before releasing the matching API digest.",
       "deploy": {
         "startCommand": "/usr/local/bin/docker-entrypoint.sh schema",
-        "restartPolicyType": "NEVER"
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 1
       },
       "variables": {
         "ASPNETCORE_ENVIRONMENT": "Production",
@@ -69,6 +70,7 @@
         "SurrealRuntime__Database": "azoa",
         "SurrealRuntime__User": "${{azoa-schema.AZOA_RUNTIME_USER}}",
         "SurrealRuntime__Password": "${{azoa-schema.AZOA_RUNTIME_PASSWORD}}",
+        "SurrealRuntime__AuthenticationScope": "Database",
         "SurrealRuntime__G1DurabilityAcknowledged": "true",
         "Blockchain__Bridge__RealValueEnabled": "false",
         "Blockchain__Wormhole__DefaultMode": "Trusted",

@@ -201,17 +201,22 @@ names, sources, and the `${{service.VAR}}` references must match).
 3. **azoa-schema** — create the one-shot service from the promoted API digest.
    Configure its custom start command as
    `/usr/local/bin/docker-entrypoint.sh schema`, give it the `SURREALFORGE_*`
-   owner references shown in the blueprint, and keep restart policy `NEVER`.
+   owner references shown in the blueprint, and use `ON_FAILURE` with one
+   bounded retry so a nonzero exit remains visible.
    The image's non-root runtime applies schema, provisions the database runtime
    user, and exits without ever starting the WebAPI host.
-   Deploy it and require terminal `SUCCESS` before continuing. Failure or schema
+   Deploy it and require terminal `SUCCESS` plus the explicit `Schema job
+   completed successfully` log marker before continuing. Failure or schema
    checksum drift blocks the release; never add `--force`.
 
 4. **azoa-api** — create the service from the exact same promoted API digest.
    The production backend reads the isolated `SurrealRuntime__*` env family
    (see `docs/NODE-HOST.md`). Its user and password reference
    `azoa-schema.AZOA_RUNTIME_*`; neither `SURREALFORGE_*` nor SurrealDB owner
-   credentials belong on this service. The promoted image embeds bounded
+   credentials belong on this service. Set
+   `SurrealRuntime__AuthenticationScope=Database`; this makes the client send
+   SurrealDB 3's `Surreal-Auth-NS` and `Surreal-Auth-DB` headers for the
+   database-scoped Basic identity. The promoted image embeds bounded
    conformance evidence read-only at `/app/conformance`.
    Required secrets: strong random `Jwt__Key`, `AZOA__WalletEncryptionKey`, and
    `NodeOperator__Password`, plus a registered AutoMapper 15+ hosted-use key

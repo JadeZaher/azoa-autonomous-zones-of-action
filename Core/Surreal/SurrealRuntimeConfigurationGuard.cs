@@ -6,6 +6,7 @@ namespace AZOA.WebAPI.Core.Surreal;
 public static class SurrealRuntimeConfigurationGuard
 {
     public const string RuntimeSectionName = "SurrealRuntime";
+    public const string DatabaseAuthenticationScope = "Database";
 
     /// <summary>Chooses the isolated runtime section, with legacy development compatibility only.</summary>
     public static string ResolveRuntimeSectionName(IConfiguration configuration, bool isProduction)
@@ -36,6 +37,11 @@ public static class SurrealRuntimeConfigurationGuard
         Require(runtime, "Database");
         var user = Require(runtime, "User");
         Require(runtime, "Password");
+        var authenticationScope = Require(runtime, "AuthenticationScope");
+
+        if (!string.Equals(authenticationScope.Trim(), DatabaseAuthenticationScope, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"SurrealRuntime:AuthenticationScope must be {DatabaseAuthenticationScope} in Production.");
 
         if (string.Equals(user.Trim(), "root", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(

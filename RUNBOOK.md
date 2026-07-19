@@ -98,6 +98,7 @@ digest as the API before every API rollout.
 | `SurrealRuntime__Database` | yes | e.g. `azoa`. |
 | `SurrealRuntime__User` | yes | Database-scoped non-root user provisioned by `azoa-schema`. |
 | `SurrealRuntime__Password` | yes | Runtime password shared by reference from `azoa-schema`; never the owner password. |
+| `SurrealRuntime__AuthenticationScope` | yes | Must be `Database`. Adds SurrealDB 3's database-authentication headers for the runtime Basic identity; omitting it is supported only outside Production for root-based development. |
 | `SurrealRuntime__G1DurabilityAcknowledged` | yes | Must be `true`. Outside `IntegrationTest`, `Program.cs` refuses to boot unless this is set — it is the operator's acknowledgement that the SurrealDB storage URI runs with per-commit WAL sync (see §2 durability note). |
 | `AZOA_SKIP_MIGRATIONS` | yes | Must be `1`; Production refuses API-boot migrations. |
 | `Kyc__Provider` | yes | Keep `unavailable` until a reviewed provider is configured. `manual` is Development-only. |

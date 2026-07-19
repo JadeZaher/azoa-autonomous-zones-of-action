@@ -17,7 +17,8 @@ and keep schema/bootstrap authority outside the API process.
 
 - `SurrealRuntime` is the only production API connection section.
 - Production rejects root, empty runtime credentials, legacy `SurrealDb`
-  credentials, and an unset `AZOA_SKIP_MIGRATIONS=1`.
+  credentials, a missing/non-database authentication scope, and an unset
+  `AZOA_SKIP_MIGRATIONS=1`.
 - The entrypoint refuses production API-boot migrations and no longer applies
   schema-ledger checksum overrides with `--force`.
 - Development retains an explicit legacy fallback only to avoid breaking local
@@ -36,21 +37,21 @@ isolation.
 
 SurrealDB v3 requires `Surreal-Auth-NS` and `Surreal-Auth-DB` in addition to
 the query `Surreal-NS`/`Surreal-DB` headers when Basic credentials name a
-database user. Installed `SurrealForge.Client` 0.2.0 cannot express that
-authentication scope, so the production runtime split remains fail-closed.
-The local SurrealForge source now has a backwards-compatible explicit
-`AuthenticationScope=Database` transport option with unit and live proof, but
-AZOA must consume a published/reviewed version before deployment is permitted.
+database user. Installed `SurrealForge.Client` 0.2.0 cannot express that scope,
+so AZOA configures its named package `HttpClient` with those two headers only
+when `AuthenticationScope=Database` is explicit. Production requires that
+setting; root-based Development may omit it and retains package-native behavior.
 
 ## Acceptance criteria
 
 1. Production API startup fails unless `SurrealRuntime` contains endpoint,
-   namespace, database, a non-root user, and a password.
+   namespace, database, a non-root user, a password, and database authentication
+   scope.
 2. Production API startup fails if it receives legacy `SurrealDb` credentials
    or can run migrations at boot.
 3. Production deployment has a distinct schema job with schema credentials
    absent from the API process; it does not pass `--force`.
-4. Before runtime activation, the consumed SurrealForge client proves a
+4. Before runtime activation, the configured SurrealForge transport proves a
    database-scoped runtime user can authenticate and perform required API
    reads/writes without using root credentials.
 5. A separate, independently enforced mitigation prevents the runtime identity

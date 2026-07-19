@@ -142,6 +142,8 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
             .Should().Be("${{azoa-schema.AZOA_RUNTIME_USER}}");
         apiVariables.GetProperty("SurrealRuntime__Password").GetString()
             .Should().Be("${{azoa-schema.AZOA_RUNTIME_PASSWORD}}");
+        apiVariables.GetProperty("SurrealRuntime__AuthenticationScope").GetString()
+            .Should().Be("Database");
         apiVariables.GetProperty("Blockchain__Bridge__RealValueEnabled").GetString()
             .Should().Be("false");
         apiVariables.GetProperty("NodeOperator__Username").GetString().Should().Be("node-operator");
@@ -159,6 +161,10 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
             .Should().Be(apiService.GetProperty("source").GetProperty("image").GetString());
         schemaService.GetProperty("deploy").GetProperty("startCommand").GetString()
             .Should().Be("/usr/local/bin/docker-entrypoint.sh schema");
+        schemaService.GetProperty("deploy").GetProperty("restartPolicyType").GetString()
+            .Should().Be("ON_FAILURE");
+        schemaService.GetProperty("deploy").GetProperty("restartPolicyMaxRetries").GetInt32()
+            .Should().Be(1);
         frontendService.GetProperty("source").GetProperty("image").GetString()
             .Should().Be("<PROMOTED_FRONTEND_IMAGE_REFERENCE>");
 
@@ -170,6 +176,8 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
                 ["SurrealRuntime:Database"] = apiVariables.GetProperty("SurrealRuntime__Database").GetString(),
                 ["SurrealRuntime:User"] = "generated-runtime-user",
                 ["SurrealRuntime:Password"] = "generated-runtime-password",
+                ["SurrealRuntime:AuthenticationScope"] = apiVariables
+                    .GetProperty("SurrealRuntime__AuthenticationScope").GetString(),
                 ["AZOA_SKIP_MIGRATIONS"] = apiVariables.GetProperty("AZOA_SKIP_MIGRATIONS").GetString()
             })
             .Build();
