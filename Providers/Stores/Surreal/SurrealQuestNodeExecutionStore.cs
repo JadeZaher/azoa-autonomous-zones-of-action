@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
@@ -180,11 +181,20 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
             // stricter race-resolution is needed in the future, swap this
             // for an explicit conditional UPDATE with the same SET clause
             // listing each column individually.
+            // Transaction ids such as the simulated provider's `sim:...` values
+            // must stay scalar strings. Binding them inside CONTENT lets Surreal
+            // coerce colon-bearing values into record ids, rejecting the whole
+            // terminal update and leaving a successfully handled node Running.
+            // Keep the ordinary POCO body, then override this one field with the
+            // coercion-safe scalar expression.
+            poco.TxHash = null;
             var updateQ = SurrealQuery
-                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t",    ExecTable)
-                .WithParam("_id",   surrealId)
-                .WithParam("_body", poco);
+                .Of("UPSERT type::record($_t, $_id) CONTENT object::extend($_body, { tx_hash: IF $_has_tx_hash { array::join($_tx_hash_chars, '') } ELSE { NONE } }) RETURN AFTER")
+                .WithParam("_t",             ExecTable)
+                .WithParam("_id",            surrealId)
+                .WithParam("_body",          poco)
+                .WithParam("_has_tx_hash",   !string.IsNullOrWhiteSpace(execution.TxHash))
+                .WithParam("_tx_hash_chars", SurrealScalarString.ToCharacters(execution.TxHash));
 
             var resp = await _executor.ExecuteAsync(updateQ, ct);
             resp.EnsureAllOk();

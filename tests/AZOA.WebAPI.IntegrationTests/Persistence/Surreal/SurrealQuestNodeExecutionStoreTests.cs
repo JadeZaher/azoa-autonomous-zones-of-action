@@ -99,6 +99,7 @@ public class SurrealQuestNodeExecutionStoreTests : IntegrationTestBase
 
         exec.State   = QuestNodeState.Succeeded;
         exec.Output  = "{\"holonId\":\"abc\"}";
+        exec.TxHash  = "sim:quest-terminal-state";
         exec.EndedAt = DateTime.UtcNow;
 
         var updated = await store.UpdateAsync(exec);
@@ -107,6 +108,7 @@ public class SurrealQuestNodeExecutionStoreTests : IntegrationTestBase
         var fetched = await store.GetByIdAsync(exec.Id);
         fetched.Result!.State.Should().Be(QuestNodeState.Succeeded);
         fetched.Result.Output.Should().Be("{\"holonId\":\"abc\"}");
+        fetched.Result.TxHash.Should().Be("sim:quest-terminal-state");
         fetched.Result.EndedAt.Should().NotBeNull();
     }
 

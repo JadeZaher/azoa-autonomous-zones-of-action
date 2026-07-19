@@ -318,6 +318,8 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
             JsonOptions);
         var walletBody = await walletResp.Content.ReadAsStringAsync();
         var walletSeeded = walletResp.IsSuccessStatusCode;
+        Skip.IfNot(walletSeeded,
+            $"Simulated wallet bootstrap is required for the Grant terminal-state regression: {walletBody}");
 
         // 2. Create a Grant quest.
         var stableWalletId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -380,6 +382,8 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         }
 
         var run = (await ReadResultAsync<QuestRun>(exec))!.Result!;
+        run.Status.Should().Be(QuestRunStatus.Succeeded,
+            "a successful simulated Grant must project a successful run");
 
         // 5. Read execution state.
         var stateResp = await _simClient.GetAsync($"api/quest/runs/{run.Id}/execution-state");
@@ -389,12 +393,9 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         var grantExec = execState.NodeExecutions.FirstOrDefault();
         grantExec.Should().NotBeNull("Grant node must have an execution row");
 
-        grantExec!.State.Should().BeOneOf(
-            new[] { QuestNodeState.Succeeded, QuestNodeState.Failed },
-            because: "Grant node must reach a terminal state on the simulated provider (H3-c)");
-
-        if (grantExec.State == QuestNodeState.Succeeded && walletSeeded)
-            grantExec.Output.Should().NotBeNullOrEmpty("Grant Succeeded must produce non-empty output");
+        grantExec!.State.Should().Be(QuestNodeState.Succeeded,
+            "the successful run response and persisted Grant node must agree on its terminal state");
+        grantExec.Output.Should().NotBeNullOrEmpty("Grant Succeeded must produce non-empty output");
     }
 }
 
