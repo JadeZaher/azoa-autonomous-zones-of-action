@@ -30,6 +30,20 @@ external-provider outcomes remain fail-closed. The Veriff and generic-hosted
 implementations are configuration-safe scaffolds, not production adapters,
 until signed provider outcome handling is implemented.
 
+## Value-access decision
+
+`IValueAccessService` is the single server-side participant-readiness decision
+for value-bearing consumer actions. It delegates to `IKycGateService`, which in
+turn resolves the current provider through `IKycProviderService` and the
+provider registry. This keeps consumer policy out of AZOA while ensuring a
+manual, unavailable, stale, or untrusted provider approval never opens a value
+path. Projects and non-value collaboration must not use this gate.
+
+`KycRuntimeSafety.GuardStartup` rejects configured manual/mock KYC or an admin
+override when Production or Mainnet is selected. The admin override key is not
+an implementation seam: it remains unsupported until an audited, durable
+override ledger and reviewer workflow are introduced.
+
 Configuration mutations append non-secret before/after evidence to
 `kyc_control_audit`. The operator-only `GET /api/operator/kyc/audit` surface is
 bounded and optionally filters by tenant, built-in provider key, or one of the

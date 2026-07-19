@@ -78,4 +78,47 @@ public sealed class KycRuntimeSafetyTests
         result.Code.Should().Be(AzoaErrorCodes.PolicyUnavailable);
         result.Message.Should().Be(KycRuntimeSafety.ManualSimulationUnavailable);
     }
+
+    [Theory]
+    [InlineData("Production", "Devnet", "manual", false)]
+    [InlineData("Development", "Mainnet", "unavailable", true)]
+    [InlineData("Production", "Devnet", "unavailable", true)]
+    [InlineData("Staging", "Devnet", "mock", false)]
+    public void Startup_RejectsSimulationKycAndAdminOverridesOnProductionOrMainnet(
+        string environmentName,
+        string network,
+        string provider,
+        bool adminOverrideEnabled)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Blockchain:DefaultNetwork"] = network,
+                ["Kyc:Provider"] = provider,
+                ["Kyc:AdminOverride:Enabled"] = adminOverrideEnabled.ToString(),
+            })
+            .Build();
+
+        var act = () => KycRuntimeSafety.GuardStartup(
+            Mock.Of<IHostEnvironment>(item => item.EnvironmentName == environmentName), configuration);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Startup_AllowsManualKycInLocalSimulation()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Blockchain:DefaultNetwork"] = "Devnet",
+                ["Kyc:Provider"] = "manual",
+            })
+            .Build();
+
+        var act = () => KycRuntimeSafety.GuardStartup(
+            Mock.Of<IHostEnvironment>(item => item.EnvironmentName == Environments.Development), configuration);
+
+        act.Should().NotThrow();
+    }
 }

@@ -157,6 +157,7 @@ var surrealRuntimeConfigSection = SurrealRuntimeConfigurationGuard.ResolveRuntim
 // never happen in Production; Dev/IntegrationTest/other envs are unaffected.
 AZOA.WebAPI.Providers.Blockchain.BlockchainProviderFactory.GuardAgainstSimulatedModeInProduction(
     builder.Configuration, builder.Environment.IsProduction());
+AZOA.WebAPI.Services.Kyc.KycRuntimeSafety.GuardStartup(builder.Environment, builder.Configuration);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -996,6 +997,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycManager,
     AZOA.WebAPI.Managers.KycManager>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycGateService,
     AZOA.WebAPI.Services.Kyc.KycGateService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IValueAccessService,
+    AZOA.WebAPI.Services.Kyc.ValueAccessService>();
 builder.Services.Configure<AZOA.WebAPI.Services.Governance.NodeGovernanceOptions>(
     builder.Configuration.GetSection(AZOA.WebAPI.Services.Governance.NodeGovernanceOptions.SectionName));
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.INodeGovernanceGuard,
