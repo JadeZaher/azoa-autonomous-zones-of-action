@@ -21,6 +21,7 @@ type: tracks-catalog
 | [azoa-code-style-backpropagation](tracks/azoa-code-style-backpropagation/spec.md) | Active reliability sweep: extend generic SurrealForge typed mutation primitives, ratchet down raw CRUD/catch-all debt, centralize unexpected-exception observability, inherit interface contracts, and enforce changed-file pruning. |
 | [node-public-governance-transparency](tracks/node-public-governance-transparency/spec.md) | Anonymous privacy-safe current governance and bounded audit reads plus trusted-forwarder hardening have landed; integrated verification remains before archive. |
 | [surreal-runtime-least-privilege](tracks/surreal-runtime-least-privilege/spec.md) | Production API configuration now fails closed without a separate non-root runtime identity and external schema job; SurrealDB 3.1.4 live role/CLI proof remains required because built-in `EDITOR` is not DDL-proof. |
+| [ardanova-azoa-settlement-integration](tracks/ardanova-azoa-settlement-integration/spec.md) | ArdaNova-owned Stripe collection, participant readiness, and exactly-once receipt reconciliation through the generic AZOA .NET settlement SDK, with Identomat as the first proposed live KYC adapter. |
 
 
 ## Pending (post-launch backlog — consolidated 2026-07-06)

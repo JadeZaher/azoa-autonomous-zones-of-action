@@ -1,0 +1,20 @@
+{
+  "id": "ardanova-azoa-settlement-integration",
+  "description": "ArdaNova-owned Stripe collection, provider-neutral participant readiness, and exactly-once consumption of AZOA settlement primitives through the .NET SDK.",
+  "type": "feature",
+  "created_at": "2026-07-19T00:00:00Z",
+  "status": "in_progress",
+  "horizon": "alpha",
+  "phase": "Contract and provider decisions are recorded; implementation waits on the versioned AZOA .NET settlement client and durable hosted-KYC outcome lifecycle.",
+  "blocks": [
+    "ardanova-financial-launch"
+  ],
+  "depends_on": [
+    "settlement-primitives-dotnet-sdk",
+    "ardanova-financial-workflow-conformance"
+  ],
+  "related": [
+    "fiat-stripe-bridge",
+    "node-operator-governance"
+  ]
+}
