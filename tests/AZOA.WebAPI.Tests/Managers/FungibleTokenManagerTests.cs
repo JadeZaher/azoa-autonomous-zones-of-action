@@ -30,7 +30,7 @@ public class FungibleTokenManagerTests
     private const string ApiKeyId = "22222222-2222-2222-2222-222222222222";
     private const string ChainType = "Algorand";
 
-    private readonly Mock<IKycGateService> _kyc = new();
+    private readonly Mock<IValueAccessService> _valueAccess = new();
     private readonly Mock<IWalletManager> _walletManager = new();
     private readonly Mock<IWalletStore> _walletStore = new();
     private readonly Mock<IBlockchainProviderFactory> _factory = new();
@@ -47,7 +47,7 @@ public class FungibleTokenManagerTests
         WireProviderResolvesAsa();
         SetupCreateAsaSucceeds();
         return new(
-            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _valueAccess.Object, _walletManager.Object, _walletStore.Object,
             _factory.Object, _idempotency, nodeGovernance);
     }
 
@@ -76,17 +76,31 @@ public class FungibleTokenManagerTests
     // ── KYC helpers ────────────────────────────────────────────────────────────
 
     private void ApproveKyc(Guid avatarId)
-        => _kyc.Setup(k => k.RequireVerifiedAsync(avatarId))
+        => _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
                .ReturnsAsync(new AZOAResult<bool> { Result = true, Message = "Success" });
 
     private void DenyKyc(Guid avatarId)
-        => _kyc.Setup(k => k.RequireVerifiedAsync(avatarId))
+        => _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
                .ReturnsAsync(new AZOAResult<bool>
                {
                    IsError = true,
                    Result = false,
                    Message = $"{KycAuthorizationError.Forbidden}{KycAuthorizationError.VerificationRequiredMessage}"
                });
+
+    [Fact]
+    public async Task CreateAsync_TenantRequest_ForwardsTenantToValueAccess()
+    {
+        var tenantId = Guid.NewGuid();
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(_avatarId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<bool>.Failure("participant is not ready"));
+        var manager = BuildManager();
+
+        await manager.CreateAsync(_avatarId, CreateRequest(), _callerAvatarId, "tenant-readiness", ApiKeyId, tenantId);
+
+        _valueAccess.Verify(
+            access => access.RequireValueAccessAsync(_avatarId, tenantId, It.IsAny<CancellationToken>()), Times.Once);
+    }
 
     // ── Wallet helpers ─────────────────────────────────────────────────────────
 
@@ -129,7 +143,7 @@ public class FungibleTokenManagerTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Node governance disallows fungible-token:create on asset type 'FungibleToken'");
-        _kyc.Verify(k => k.RequireVerifiedAsync(It.IsAny<Guid>()), Times.Never);
+        _valueAccess.Verify(k => k.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
         _walletStore.Verify(s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _factory.Verify(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()), Times.Never);
         _asa.Verify(a => a.CreateASAAsync(
@@ -233,7 +247,7 @@ public class FungibleTokenManagerTests
     [Fact]
     public async Task CreateAsync_UnexpectedPreEffectFailure_BubblesAndSettlesSafeFailure()
     {
-        _kyc.Setup(k => k.RequireVerifiedAsync(_avatarId))
+        _valueAccess.Setup(k => k.RequireValueAccessAsync(_avatarId, null, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("sensitive diagnostic"));
         var manager = BuildManager();
 

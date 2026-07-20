@@ -14,7 +14,7 @@ public class NftManagerTests
 {
     private readonly Mock<IHolonStore> _holonStore;
     private readonly Mock<IBlockchainOperationStore> _blockchainOperationStore;
-    private readonly Mock<IKycGateService> _kycGate;
+    private readonly Mock<IValueAccessService> _valueAccess;
     private readonly Mock<INodeFeeScheduleManager> _nodeFees;
     private readonly Mock<INodeGovernanceGuard> _nodeGovernance;
     private readonly NftManager _manager;
@@ -23,13 +23,13 @@ public class NftManagerTests
     {
         _holonStore = new Mock<IHolonStore>();
         _blockchainOperationStore = new Mock<IBlockchainOperationStore>();
-        _kycGate = new Mock<IKycGateService>();
+        _valueAccess = new Mock<IValueAccessService>();
         _nodeFees = new Mock<INodeFeeScheduleManager>();
         _nodeGovernance = new Mock<INodeGovernanceGuard>();
         // value-path-wiring H3: MintAsync now gates on KYC at the choke point.
         // Default to approved so the existing mint-path tests exercise the same
         // behaviour; the dedicated H3 test overrides this to assert fail-closed.
-        _kycGate.Setup(k => k.RequireVerifiedAsync(It.IsAny<Guid>()))
+        _valueAccess.Setup(k => k.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new AZOAResult<bool> { Result = true, Message = "Success" });
         _nodeFees.Setup(f => f.GetScheduleAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<NodeFeeScheduleResponse>
@@ -43,7 +43,7 @@ public class NftManagerTests
         _manager = new NftManager(
             _holonStore.Object,
             _blockchainOperationStore.Object,
-            _kycGate.Object,
+            _valueAccess.Object,
             _nodeFees.Object,
             _nodeGovernance.Object);
     }
@@ -143,7 +143,7 @@ public class NftManagerTests
     {
         var avatarId = Guid.NewGuid();
         // KYC gate closed: the latest submission is not APPROVED.
-        _kycGate.Setup(k => k.RequireVerifiedAsync(avatarId))
+        _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new AZOAResult<bool>
                 {
                     IsError = true,
@@ -178,6 +178,22 @@ public class NftManagerTests
 
         result.IsError.Should().BeFalse();
         _holonStore.Verify(p => p.UpsertAsync(It.Is<IHolon>(h => h.AssetType == "NFT" && h.AvatarId == avatarId), default), Times.Once);
+    }
+
+    [Fact]
+    public async Task MintAndTransferAsync_TenantRequests_ForwardTenantToValueAccess()
+    {
+        var avatarId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(avatarId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<bool>.Failure("participant is not ready"));
+
+        await _manager.MintAsync(new NftMintRequest { ChainId = "Algorand" }, avatarId, actingTenantId: tenantId);
+        await _manager.TransferAsync(
+            Guid.NewGuid(), new NftTransferRequest(), avatarId, actingTenantId: tenantId);
+
+        _valueAccess.Verify(
+            access => access.RequireValueAccessAsync(avatarId, tenantId, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Theory]
@@ -245,7 +261,7 @@ public class NftManagerTests
         var result = await _manager.MintAsync(new NftMintRequest { ChainId = "Algorand" }, Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
-        _kycGate.Verify(g => g.RequireVerifiedAsync(It.IsAny<Guid>()), Times.Never);
+        _valueAccess.Verify(g => g.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
         VerifyNoMintSideEffect();
     }
 
@@ -267,6 +283,28 @@ public class NftManagerTests
 
         result.IsError.Should().BeFalse();
         nft.AvatarId.Should().Be(targetId);
+    }
+
+    [Fact]
+    public async Task TransferAsync_UnreadyParticipant_RejectsBeforeHolonOrOperationMutation()
+    {
+        var avatarId = Guid.NewGuid();
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<bool>.Failure(
+                KycAuthorizationError.Forbidden + KycAuthorizationError.VerificationRequiredMessage));
+
+        var result = await _manager.TransferAsync(
+            Guid.NewGuid(),
+            new NftTransferRequest { TargetAvatarId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
+            avatarId);
+
+        result.IsError.Should().BeTrue();
+        _valueAccess.Verify(
+            access => access.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()), Times.Once);
+        _holonStore.Verify(store => store.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _holonStore.Verify(store => store.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
+        _blockchainOperationStore.Verify(
+            store => store.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Theory]
@@ -383,6 +421,25 @@ public class NftManagerTests
 
         result.IsError.Should().BeFalse();
         nft.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task BurnAsync_UnreadyParticipant_RejectsBeforeHolonOrOperationMutation()
+    {
+        var avatarId = Guid.NewGuid();
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<bool>.Failure(
+                KycAuthorizationError.Forbidden + KycAuthorizationError.VerificationRequiredMessage));
+
+        var result = await _manager.BurnAsync(Guid.NewGuid(), Guid.NewGuid(), avatarId);
+
+        result.IsError.Should().BeTrue();
+        _valueAccess.Verify(
+            access => access.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()), Times.Once);
+        _holonStore.Verify(store => store.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _holonStore.Verify(store => store.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
+        _blockchainOperationStore.Verify(
+            store => store.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

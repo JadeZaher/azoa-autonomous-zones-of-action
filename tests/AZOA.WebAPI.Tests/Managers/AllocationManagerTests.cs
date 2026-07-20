@@ -30,7 +30,7 @@ public class AllocationManagerTests
     private const string ChainType = "Algorand";
     private static readonly Guid ApiKeyGuid = Guid.Parse(ApiKeyId);
 
-    private readonly Mock<IKycGateService> _kyc = new();
+    private readonly Mock<IValueAccessService> _valueAccess = new();
     private readonly Mock<IWalletManager> _walletManager = new();
     private readonly Mock<IWalletStore> _walletStore = new();
     private readonly Mock<IHolonStore> _holonStore = new();
@@ -78,7 +78,7 @@ public class AllocationManagerTests
     {
         SetupBroadcastReturnsTxHash();
         return new(
-            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _valueAccess.Object, _walletManager.Object, _walletStore.Object,
             _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency,
             nodeFees ?? _nodeFees.Object, nodeGovernance);
@@ -97,17 +97,40 @@ public class AllocationManagerTests
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private void ApproveKyc(Guid avatarId)
-        => _kyc.Setup(k => k.RequireVerifiedAsync(avatarId))
+        => _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
                .ReturnsAsync(new AZOAResult<bool> { Result = true, Message = "Success" });
 
     private void DenyKyc(Guid avatarId)
-        => _kyc.Setup(k => k.RequireVerifiedAsync(avatarId))
+        => _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
                .ReturnsAsync(new AZOAResult<bool>
                {
                    IsError = true,
                    Result = false,
                    Message = $"{KycAuthorizationError.Forbidden}{KycAuthorizationError.VerificationRequiredMessage}"
                });
+
+    [Fact]
+    public async Task AllocateAsync_TenantRequest_ForwardsTenantToValueAccess()
+    {
+        var tenantId = _callerAvatarId;
+        var avatars = new Mock<IAvatarStore>();
+        avatars.Setup(store => store.GetByIdAsync(_avatarId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IAvatar>
+            {
+                Result = new Avatar { Id = _avatarId, OwnerTenantId = tenantId },
+            });
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(_avatarId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<bool>.Failure("participant is not ready"));
+        var manager = new AllocationManager(
+            _valueAccess.Object, _walletManager.Object, _walletStore.Object,
+            _holonStore.Object, _nft.Object, _blockchainOps.Object, _idempotency,
+            _nodeFees.Object, avatars: avatars.Object);
+
+        await manager.AllocateAsync(_avatarId, MintRequest(), _callerAvatarId, "tenant-readiness", ApiKeyId, tenantId);
+
+        _valueAccess.Verify(
+            access => access.RequireValueAccessAsync(_avatarId, tenantId, It.IsAny<CancellationToken>()), Times.Once);
+    }
 
     private static IWallet WalletFor(Guid avatarId, string chain) =>
         Mock.Of<IWallet>(w =>
@@ -185,7 +208,7 @@ public class AllocationManagerTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Node governance disallows allocation:Mint on chain 'Algorand'");
-        _kyc.Verify(k => k.RequireVerifiedAsync(It.IsAny<Guid>()), Times.Never);
+        _valueAccess.Verify(k => k.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
         _walletStore.Verify(s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _holonStore.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
         _blockchainOps.Verify(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()), Times.Never);
@@ -203,7 +226,7 @@ public class AllocationManagerTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Be("Caller API key context is invalid.");
-        _kyc.Verify(k => k.RequireVerifiedAsync(It.IsAny<Guid>()), Times.Never);
+        _valueAccess.Verify(k => k.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
         _walletStore.Verify(
             s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _holonStore.Verify(
@@ -313,7 +336,7 @@ public class AllocationManagerTests
                 return new AZOAResult<IBlockchainOperation> { Result = op };
             });
         var manager = new AllocationManager(
-            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _valueAccess.Object, _walletManager.Object, _walletStore.Object,
             _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
@@ -377,7 +400,7 @@ public class AllocationManagerTests
         // first call — exactly the orphaned-claim state.
         var crashStore = new CrashAfterBroadcastIdempotencyStore();
         var manager = new AllocationManager(
-            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _valueAccess.Object, _walletManager.Object, _walletStore.Object,
             _holonStore.Object,
             _nft.Object, _blockchainOps.Object, crashStore, _nodeFees.Object);
 
@@ -416,7 +439,7 @@ public class AllocationManagerTests
             .Setup(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()))
             .ThrowsAsync(new InvalidOperationException("ambiguous provider failure"));
         var manager = new AllocationManager(
-            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _valueAccess.Object, _walletManager.Object, _walletStore.Object,
             _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
@@ -459,7 +482,7 @@ public class AllocationManagerTests
                 return new AZOAResult<IBlockchainOperation> { Result = op };
             });
         var manager = new AllocationManager(
-            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _valueAccess.Object, _walletManager.Object, _walletStore.Object,
             _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
@@ -620,7 +643,7 @@ public class AllocationManagerTests
         HasWallet(_avatarId, wallet);
         SetupMintSucceeds();
         var manager = new AllocationManager(
-            _kyc.Object, _walletManager.Object, _walletStore.Object,
+            _valueAccess.Object, _walletManager.Object, _walletStore.Object,
             _holonStore.Object,
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 

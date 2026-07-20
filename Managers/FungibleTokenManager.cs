@@ -14,8 +14,8 @@ using AZOA.WebAPI.Services.Governance;
 namespace AZOA.WebAPI.Managers;
 
 /// <summary>
-/// Composes the existing KYC gate, wallet provisioning, and the Algorand ASA
-/// capability module into one idempotent, KYC-gated, tenant-callable seam for
+/// Composes the participant readiness gate, wallet provisioning, and the Algorand ASA
+/// capability module into one idempotent, readiness-gated, tenant-callable seam for
 /// launching a FUNGIBLE token (real supply + decimals) — the parallel to the
 /// supply-1 mint path that <see cref="AllocationManager"/> drives (see
 /// <see cref="IFungibleTokenManager"/>). Holds no payment-provider secret and runs
@@ -30,7 +30,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
     /// <summary>Algorand ASA decimals are constrained to 0..19 by the protocol.</summary>
     private const int MaxDecimals = 19;
 
-    private readonly IKycGateService _kycGate;
+    private readonly IValueAccessService _valueAccess;
     private readonly IWalletManager _walletManager;
     private readonly IWalletStore _walletStore;
     private readonly IBlockchainProviderFactory _providerFactory;
@@ -38,14 +38,14 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
     private readonly INodeGovernanceGuard _nodeGovernance;
 
     public FungibleTokenManager(
-        IKycGateService kycGate,
+        IValueAccessService valueAccess,
         IWalletManager walletManager,
         IWalletStore walletStore,
         IBlockchainProviderFactory providerFactory,
         IIdempotencyStore idempotencyStore,
         INodeGovernanceGuard? nodeGovernance = null)
     {
-        _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
+        _valueAccess = valueAccess ?? throw new ArgumentNullException(nameof(valueAccess));
         _walletManager = walletManager ?? throw new ArgumentNullException(nameof(walletManager));
         _walletStore = walletStore ?? throw new ArgumentNullException(nameof(walletStore));
         _providerFactory = providerFactory ?? throw new ArgumentNullException(nameof(providerFactory));
@@ -99,9 +99,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         {
             // ── Step 3: KYC gate (fail-closed) ────────────────────────────────
             // A rejected avatar produces NO side effect at all under a won claim.
-            var gate = actingTenantId is { } tenantId
-                ? await _kycGate.RequireVerifiedAsync(avatarId, tenantId)
-                : await _kycGate.RequireVerifiedAsync(avatarId);
+            var gate = await _valueAccess.RequireValueAccessAsync(avatarId, actingTenantId);
             if (gate.IsError)
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, gate.Message, CancellationToken.None);

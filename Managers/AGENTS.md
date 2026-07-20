@@ -1,5 +1,20 @@
 # Managers — design notes
 
+## Value-access choke points
+
+`IValueAccessService` is the shared fail-closed readiness decision for direct
+allocation, fungible-token creation, and NFT mint/transfer/burn. Managers call it
+before wallet, Holon mutation, operation persistence, or provider work; an outer
+idempotency or immutable denial record may already exist so a rejected retry is
+auditable. Tenant-driven calls pass the authenticated acting tenant, while
+direct calls resolve node-default authority. This centralizes readiness without
+moving ArdaNova project/task economics into AZOA or replacing AZOA's independent
+ownership, consent, governance, fee, and custody checks.
+
+Project definition and ordinary collaboration paths do not consume this gate.
+Quest value nodes inherit it through the same managers; a new value-bearing
+manager must use this seam rather than call `IKycGateService` directly.
+
 ## Tenant profile provisioning
 
 `TenantManager.ProvisionChildAsync` is idempotent on the authenticated tenant id
@@ -598,3 +613,12 @@ resubmits an allocation, retries a provider action, or uses a raw operation id
 supplied by the caller. The receipt is projected from safe allocation facts only.
 Dependency failures become a generic unavailable result after cancellation is
 allowed to propagate; they never masquerade as an absent receipt.
+
+## Participant readiness ordering
+
+Economic route-availability checks (node governance and direct-route fee
+containment) intentionally run before `IValueAccessService` participant
+readiness. They are configuration-only, side-effect-free denials and avoid
+consulting participant verification for a route the node cannot offer. Once a
+route is available, value access is required before any idempotency claim,
+wallet/holon mutation, or blockchain operation write.

@@ -15,8 +15,8 @@ using AZOA.WebAPI.Services.Governance;
 namespace AZOA.WebAPI.Managers;
 
 /// <summary>
-/// Composes the existing KYC gate, wallet provisioning, and mint/transfer
-/// primitives into one idempotent, KYC-gated, tenant-callable allocation seam
+/// Composes value readiness, wallet provisioning, and mint/transfer primitives
+/// into one idempotent, readiness-gated, tenant-callable allocation seam
 /// (see <see cref="IAllocationManager"/>). Holds no payment-provider secret and
 /// applies the node's configured fee schedule to the tenant-decided gross amount,
 /// then materialises the wallet and moves the net asset amount exactly once.
@@ -26,7 +26,7 @@ public sealed class AllocationManager : IAllocationManager
     private const string OperationType = "fiat_allocation";
     private const string UnexpectedFailureMessage = "Allocation failed unexpectedly.";
 
-    private readonly IKycGateService _kycGate;
+    private readonly IValueAccessService _valueAccess;
     private readonly IWalletManager _walletManager;
     private readonly IWalletStore _walletStore;
     private readonly IHolonStore _holonStore;
@@ -38,7 +38,7 @@ public sealed class AllocationManager : IAllocationManager
     private readonly IAvatarStore? _avatars;
 
     public AllocationManager(
-        IKycGateService kycGate,
+        IValueAccessService valueAccess,
         IWalletManager walletManager,
         IWalletStore walletStore,
         IHolonStore holonStore,
@@ -49,7 +49,7 @@ public sealed class AllocationManager : IAllocationManager
         INodeGovernanceGuard? nodeGovernance = null,
         IAvatarStore? avatars = null)
     {
-        _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
+        _valueAccess = valueAccess ?? throw new ArgumentNullException(nameof(valueAccess));
         _walletManager = walletManager ?? throw new ArgumentNullException(nameof(walletManager));
         _walletStore = walletStore ?? throw new ArgumentNullException(nameof(walletStore));
         _holonStore = holonStore ?? throw new ArgumentNullException(nameof(holonStore));
@@ -112,9 +112,7 @@ public sealed class AllocationManager : IAllocationManager
             // Per D3, the value-bearing allocation is gated. Provisioning may
             // precede approval, but we gate before generating the wallet too so
             // a rejected avatar produces NO side effect at all under a won claim.
-            var gate = actingTenantId.HasValue
-                ? await _kycGate.RequireVerifiedAsync(avatarId, actingTenantId.Value)
-                : await _kycGate.RequireVerifiedAsync(avatarId);
+            var gate = await _valueAccess.RequireValueAccessAsync(avatarId, actingTenantId);
             if (gate.IsError)
             {
                 await _idempotencyStore.FailAsync(ledgerKey, gate.Message, CancellationToken.None);

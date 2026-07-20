@@ -15,20 +15,20 @@ public class NftManager : INftManager
 {
     private readonly IHolonStore _holonStore;
     private readonly IBlockchainOperationStore _blockchainOperationStore;
-    private readonly IKycGateService _kycGate;
+    private readonly IValueAccessService _valueAccess;
     private readonly INodeFeeScheduleManager _nodeFees;
     private readonly INodeGovernanceGuard _nodeGovernance;
 
     public NftManager(
         IHolonStore holonStore,
         IBlockchainOperationStore blockchainOperationStore,
-        IKycGateService kycGate,
+        IValueAccessService valueAccess,
         INodeFeeScheduleManager nodeFees,
         INodeGovernanceGuard nodeGovernance)
     {
         _holonStore = holonStore;
         _blockchainOperationStore = blockchainOperationStore;
-        _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
+        _valueAccess = valueAccess ?? throw new ArgumentNullException(nameof(valueAccess));
         _nodeFees = nodeFees ?? throw new ArgumentNullException(nameof(nodeFees));
         _nodeGovernance = nodeGovernance ?? throw new ArgumentNullException(nameof(nodeGovernance));
     }
@@ -97,10 +97,8 @@ public class NftManager : INftManager
         if (mintFeeBlocker is not null)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = mintFeeBlocker };
 
-        // KYC remains mandatory before a mint writes its Holon or operation.
-        var gate = actingTenantId is { } tenantId
-            ? await _kycGate.RequireVerifiedAsync(avatarId, tenantId)
-            : await _kycGate.RequireVerifiedAsync(avatarId);
+        // Value readiness is mandatory before a mint writes its Holon or operation.
+        var gate = await _valueAccess.RequireValueAccessAsync(avatarId, actingTenantId);
         if (gate.IsError)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
 
@@ -143,6 +141,10 @@ public class NftManager : INftManager
         var transferFeeBlocker = await GetDirectFeeBlockerAsync(NodeFeeOperation.Transfer);
         if (transferFeeBlocker is not null)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = transferFeeBlocker };
+
+        var gate = await _valueAccess.RequireValueAccessAsync(avatarId, actingTenantId);
+        if (gate.IsError)
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
 
         // Load and verify ownership
         var holonResult = await _holonStore.GetByIdAsync(nftId, default);
@@ -216,6 +218,10 @@ public class NftManager : INftManager
 
     public async Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid avatarId, AZOARequest? providerRequest = null)
     {
+        var gate = await _valueAccess.RequireValueAccessAsync(avatarId);
+        if (gate.IsError)
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
+
         // Load and verify ownership
         var holonResult = await _holonStore.GetByIdAsync(nftId, default);
         if (holonResult.IsError || holonResult.Result == null)
