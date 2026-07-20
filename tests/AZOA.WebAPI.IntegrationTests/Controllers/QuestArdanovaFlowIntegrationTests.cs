@@ -8,13 +8,18 @@ using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.Simulated;
+using AZOA.WebAPI.Providers.Stores.Surreal;
 using AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Kyc;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Xunit;
 
@@ -114,10 +119,10 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
 
     /// <summary>
     /// Builds a simulated-address wallet for the default avatar on the Simulated chain.
-    /// The SimulatedBlockchainProvider only accepts sim:-prefixed addresses.
     /// </summary>
-    private static WalletCreateModel SimulatedWallet() => new()
+    private static Wallet SimulatedWallet() => new()
     {
+        AvatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId),
         ChainType = "Simulated",
         Address   = SimulatedBlockchainProvider.SimAddress("Simulated", "ardanova-test-wallet"),
         Label     = "Simulated test wallet",
@@ -310,19 +315,14 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         var skip = await SkipIfSurrealDbUnavailableAsync();
         Skip.IfNot(skip, "SurrealDB unavailable");
 
-        // 1. Seed a wallet with a sim:-prefixed address via the real app.
-        //    POST /api/wallet with ChainType=Simulated and sim: address.
-        var walletResp = await _simClient.PostAsJsonAsync(
-            "api/wallet",
-            SimulatedWallet(),
-            JsonOptions);
-        var walletBody = await walletResp.Content.ReadAsStringAsync();
-        var walletSeeded = walletResp.IsSuccessStatusCode;
-        Skip.IfNot(walletSeeded,
-            $"Simulated wallet bootstrap is required for the Grant terminal-state regression: {walletBody}");
+        // 1. Seed the capability prerequisite directly; the public wallet model
+        //    intentionally rejects ':' while the simulated provider reserves it.
+        var walletStore = new SurrealWalletStore(await CreateExecutorAsync(TestNamespace));
+        var walletResult = await walletStore.UpsertAsync(SimulatedWallet());
+        walletResult.IsError.Should().BeFalse(walletResult.Message);
+        var wallet = walletResult.Result!;
 
         // 2. Create a Grant quest.
-        var stableWalletId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         var grantQuest = new QuestCreateModel
         {
             Name = "ArdanovaGrantQuest",
@@ -337,7 +337,7 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
                     {
                         request = new
                         {
-                            walletId    = stableWalletId,
+                            walletId    = wallet.Id,
                             name        = "ArdanovaProjectShare",
                             description = "Simulated project share token",
                             chainId     = "Simulated",
@@ -360,26 +360,14 @@ public class QuestArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposabl
         // 3. Publish — Grant is a single-node quest (entry=terminal). The fan-out
         //    check will pass since there are no outgoing Control edges at all.
         var publish = await _simClient.PostAsync($"api/quest/{quest.Id}/publish", null);
-        if (!publish.IsSuccessStatusCode)
-        {
-            var publishBody = await publish.Content.ReadAsStringAsync();
-            Skip.If(true,
-                $"Grant quest publish failed (Tier-2 leg unavailable in harness): {publishBody}. " +
-                "See NOTES.md §Phase H — Tier-2 leg. Unit-level coverage in QuestManagerSkipPropagationTests.");
-        }
+        publish.StatusCode.Should().Be(HttpStatusCode.OK,
+            $"publish failed: {await publish.Content.ReadAsStringAsync()}");
 
         // 4. Execute.
         var exec = await _simClient.PostAsync($"api/quest/{quest.Id}/execute", null);
         var execBody = await exec.Content.ReadAsStringAsync();
-        exec.StatusCode.Should().BeOneOf(
-            new[] { HttpStatusCode.OK, HttpStatusCode.BadRequest },
-            because: $"Grant execute returned unexpected status. Body: {execBody}");
-
-        if (!exec.IsSuccessStatusCode)
-        {
-            execBody.Should().NotBeNullOrEmpty("chain-capability gate must produce an error message");
-            return;
-        }
+        exec.StatusCode.Should().Be(HttpStatusCode.OK,
+            $"Grant execute failed: {execBody}");
 
         var run = (await ReadResultAsync<QuestRun>(exec))!.Result!;
         run.Status.Should().Be(QuestRunStatus.Succeeded,
@@ -457,6 +445,15 @@ internal sealed class ArdanovaSimulatedFactory : WebApplicationFactory<Program>
             .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TestAuthHandler>(
                 TestAuthHandler.SchemeName, _ => { });
 
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                options.ForwardAuthenticate = TestAuthHandler.SchemeName;
+                options.ForwardChallenge = TestAuthHandler.SchemeName;
+            });
+
+            services.RemoveAll<IValueAccessService>();
+            services.AddSingleton<IValueAccessService, ReadyValueAccessService>();
+
         });
     }
 
@@ -465,5 +462,20 @@ internal sealed class ArdanovaSimulatedFactory : WebApplicationFactory<Program>
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
         return client;
+    }
+
+    private sealed class ReadyValueAccessService : IValueAccessService
+    {
+        public Task<ValueAccessDecision> GetDecisionAsync(
+            Guid participantId,
+            Guid? tenantId = null,
+            CancellationToken ct = default)
+            => Task.FromResult(new ValueAccessDecision(ValueAccessState.Ready));
+
+        public Task<AZOAResult<bool>> RequireValueAccessAsync(
+            Guid participantId,
+            Guid? tenantId = null,
+            CancellationToken ct = default)
+            => Task.FromResult(AZOAResult<bool>.Success(true));
     }
 }
