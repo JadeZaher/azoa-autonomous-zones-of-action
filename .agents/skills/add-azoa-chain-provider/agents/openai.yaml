@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add AZOA Chain Provider"
+  short_description: "Add chains with provider parity and conformance"
+  default_prompt: "Use $add-azoa-chain-provider to add or complete an AZOA blockchain provider or network profile."

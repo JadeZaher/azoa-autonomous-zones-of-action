@@ -1,0 +1,26 @@
+{
+  "id": "ardanova-azoa-production-readiness_20260727",
+  "description": "Produce reviewed AZOA-side production evidence for ArdaNova settlement at one exact commit without duplicating consumer or generic settlement tracks.",
+  "type": "feature",
+  "created_at": "2026-07-27T00:00:00Z",
+  "status": "pending",
+  "horizon": "production",
+  "phase": "Resolve canonical launch decisions and dependency/evidence matrices before implementation or deployment.",
+  "blocks": [
+    "ardanova-financial-launch",
+    "azoa-real-value-production-activation"
+  ],
+  "depends_on": [
+    "provider-boundary-conformance_20260727",
+    "ardanova-financial-workflow-conformance",
+    "settlement-primitives-dotnet-sdk",
+    "ardanova-azoa-settlement-integration",
+    "integration-test-isolation-debt"
+  ],
+  "related": [
+    "chain-value-routes",
+    "surreal-runtime-least-privilege",
+    "node-operator-governance",
+    "fiat-stripe-bridge"
+  ]
+}

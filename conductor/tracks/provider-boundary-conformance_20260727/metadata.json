@@ -1,0 +1,20 @@
+{
+  "id": "provider-boundary-conformance_20260727",
+  "description": "Make the provider boundary the sole owner of chain-specific logic, constants, capabilities, validation, and provider authoring.",
+  "type": "feature",
+  "created_at": "2026-07-27T00:00:00Z",
+  "status": "pending",
+  "horizon": "alpha",
+  "phase": "Boundary decisions, characterization tests, and immediate fail-closed security corrections precede capability extraction.",
+  "blocks": [
+    "ardanova-azoa-production-readiness_20260727",
+    "safe-multi-chain-expansion"
+  ],
+  "depends_on": [],
+  "related": [
+    "chain-value-routes",
+    "providers-and-cross-chain-bridge",
+    "settlement-primitives-dotnet-sdk",
+    "integration-test-isolation-debt"
+  ]
+}
