@@ -1,5 +1,25 @@
 # AZOA.WebAPI.IntegrationTests — module notes
 
+## §factory-bootstrap-order — create isolation before host startup
+
+`WebApplicationFactory.CreateClient()` starts application hosted services. Test
+class constructors run before xUnit calls `IAsyncLifetime.InitializeAsync`, so a
+hosted service that reads SurrealDB would otherwise reach the per-class namespace
+before `IntegrationTestBase` created it. `AZOATestWebApplicationFactory.CreateHost`
+therefore creates the server-generated namespace, `test` database, and the
+startup-required `admin_bootstrap_state` and `saga_steps` goldens first. `IntegrationTestBase.InitializeAsync`
+then idempotently reapplies that scope and the complete generated schema before
+test methods run. Keep bootstrap identifiers server-generated Guid hex and never
+move user-controlled input into root-scope DDL.
+
+## §test-principal-capabilities — mirror production policy conjunctions
+
+`NodeGovern` requires both a JWT node-operator identity and the `node:govern`
+scope. Operator test principals carry the production `token_use=node_operator`
+credential class, and `CreateNodeGovernClient` stamps that identity plus the
+governance capability. `CreateOperatorOnlyClient` deliberately suppresses the
+governance capability so negative policy tests remain meaningful.
+
 ## §param-binding — SurrealDB 3.x HTTP `/sql` parameter binding
 
 `ExecuteSurrealSqlAsync(sql, params)` seeds data over the raw HTTP `/sql`
@@ -89,3 +109,28 @@ only so node treasury routing can validate its explicitly requested provider wit
 network I/O. Tests that need globally simulated settlement use their dedicated
 factory and set `Blockchain:Mode=Simulated`; do not change the shared host mode to
 make a treasury test pass.
+
+## §cbor-transport — the harness runs on the SDK, not the JSON transport
+
+Every `ISurrealConnection` this harness builds is `SurrealDbNetConnection`
+(SurrealForge 1.0.0's `SurrealDb.Net`/CBOR transport). `HttpSurrealConnection`
+is gone: leaving it here would have kept the store tests on the legacy JSON
+wire, where SurrealDB coerces text into typed columns, and the suite would have
+proved nothing about the transport the app actually uses. See
+`Core/Surreal/AGENTS.md §cbor-transport` for what changes because of that.
+
+- **Endpoint is `http://127.0.0.1:8020`** (`SurrealTestDefaults`). Port 8000 is a
+  different service on this machine.
+- **Surreal settings reach the app through `UseSetting`, not
+  `ConfigureAppConfiguration`.** `Program.cs` binds the section eagerly, before
+  any `ConfigureAppConfiguration` delegate registered by a
+  `WebApplicationFactory` has run; values supplied only there arrive too late and
+  the host silently falls back to `SurrealConnectionOptions`' default endpoint
+  (`http://localhost:8442`), where nothing listens. Both the shared factory and
+  the two per-test factories (`ParameterizedAuthFactory`,
+  `ArdanovaSimulatedFactory`) do this.
+- **`SurrealCborTransportProofTests` is the guard.** It asserts the app host
+  resolves `SurrealDbNetConnection`, and that `type::of()` on real FK columns
+  reads back `record` — checked over a raw HTTP/JSON fixture, outside
+  SurrealForge, so the library cannot grade its own output. A green suite that
+  quietly fell back to the JSON transport is exactly what it exists to catch.

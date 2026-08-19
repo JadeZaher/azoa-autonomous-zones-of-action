@@ -75,3 +75,71 @@ for which saga seams are wrapped and why the single-owner transition paths
 **Only wrap genuinely-contended conditional UPDATEs.** A path where the caller
 already holds the row's `InProgress` lease has no concurrent contender, so
 wrapping it adds latency-on-error for a conflict that cannot occur.
+
+## §cbor-transport — SurrealForge 1.0.0 SDK/CBOR migration
+
+The API runs on `AddSurrealForgeSdk`, i.e. the official `SurrealDb.Net` SDK and
+the **CBOR** wire format. `HttpSurrealConnection` (SurrealForge's own JSON
+transport) is gone from both the app and the integration harness. The single
+fact that everything below follows from:
+
+> **SurrealDB coerces JSON text into typed columns. It does not coerce CBOR
+> text.** A `TYPE record<avatar>` column accepted the JSON string
+> `"avatar:abc"`; over CBOR it rejects it, and the row it now holds is a genuine
+> record link that no string will ever compare equal to.
+
+### §cbor-registration
+
+`Extensions/SurrealDbServiceCollectionExtensions.AddSurrealForge` binds the
+configuration section **eagerly** into a `SurrealConnectionOptions` instance,
+because `AddSurrealForgeSdk` needs the endpoint and auth scope at *registration*
+time (they pick the transport, the auth strategy and the name of the
+`HttpClient` the SDK resolves). Consequences:
+
+- **`AuthenticationScope=Root` is now an accepted value**, not just an omission.
+  Root Basic Auth is the one credential shape SurrealDB accepts over HTTP.
+  `Database` scope over HTTP additionally needs `TokenIssuerUser` /
+  `TokenIssuerPassword` (root), because the SDK cannot Basic-Auth a scoped user
+  and SurrealForge mints a scoped JWT instead. Pointing `Endpoint` at
+  `ws://…/rpc` avoids the root issuer entirely and is the shape that preserves
+  `SurrealRuntimeConfigurationGuard`'s least-privilege posture.
+- **Test hosts must supply Surreal settings through host configuration.**
+  `ConfigureAppConfiguration` on a `WebApplicationFactory` runs *after*
+  `Program.cs` has already registered the client, so values supplied only there
+  arrive too late and the app silently falls back to
+  `SurrealConnectionOptions`' default endpoint. `AZOATestWebApplicationFactory`
+  uses `UseSetting` for exactly this reason.
+- **Container teardown must be asynchronous.** The SDK's `SurrealDbClient` is
+  `IAsyncDisposable`-only; a hand-built provider needs `await using`.
+
+### §cbor-foreign-keys
+
+Three separate mechanisms are needed, because SurrealForge promotes a
+`table:id` string to a native record id in exactly one of them.
+
+1. **POCO properties — handled by the package.** A `string` property carrying
+   `[References(typeof(T))]` (or `[Id]`) is promoted on write. Every store's
+   private wire POCO now carries `[References]` on its record columns; several
+   previously relied on JSON coercion and had no annotation at all. `[Column(Type
+   = "record<…>")]` alone is **not** enough — the marshaller only consults
+   `[Column]` to *veto* promotion (`Type = "string"`), never to enable it.
+2. **Query parameters — `SurrealRecordParam`.** `WithParam` values carry no
+   attribute, so nothing promotes them. Any parameter compared against a record
+   column goes through `SurrealRecordParam.Of` / `.OfLink`. Getting this wrong
+   fails **silently**: the predicate matches nothing and the query returns an
+   empty set.
+3. **The package's own typed surface — handled by the package.**
+   `SurrealWriter.Create/Upsert`, `SurrealQuery<T>.Where`, `TypedUpdateOnly
+   Builder.Set/Where` and `TypedDeleteOnlyBuilder.Where` bind a record column's
+   value as a native record id, via the shared classifier
+   `SurrealForge.Client.Query.SurrealRecordLink`. Earlier they bound it as text,
+   which failed loudly on write and **silently** on read; a consumer-side shim
+   (`SurrealCborRecordLinkCompat`) covered that gap and has been deleted now that
+   the package is fixed. Note the classifier deliberately **refuses ambiguous
+   ids** — `num:42` (numeric id half) and `⟨…⟩`-escaped ids throw rather than
+   link to the wrong row.
+
+`SurrealScalarString.ToCharacters` (§scalar-string-binding) is a JSON-era
+workaround: CBOR text is unambiguously text, so SurrealDB can no longer
+reinterpret a colon-bearing string as a record id. It is retained because it is
+harmless, but it no longer protects against anything.

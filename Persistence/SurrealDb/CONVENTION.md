@@ -351,21 +351,28 @@ Closed-set enum columns marked with `[Inside("A", "B")]` emit a
 file plus `ASSERT $value INSIDE $<table>_<column>` on the column. The
 master flowchart's enum legend surfaces every closed set.
 
-### Known follow-up: SurrealDB adapter wire-format migration
+### Wire format for FK columns (resolved; see SurrealForge 1.0.0)
 
-Flipping FK columns to `record<target>` changed the wire format from
-the raw hex string (`"abc123"`) to the prefixed form
-(`"avatar:abc123"`). The store adapters in
-[`Providers/Stores/Surreal/`](../../Providers/Stores/Surreal/) still
-write the bare hex form via `ToSurrealId(guid)`; SurrealDB will reject
-those writes at runtime against the new schema. The adapter rewrite
-(introduce `ToSurrealRecordId(table, guid) -> "table:hex"` and update
-every FK assignment in `ToPoco` / `FromPoco` mapping helpers + every
-LINQ `Where(x => x.AvatarId == hexString)` clause to compare against
-the prefixed form) is a separate session of work. Unit tests pass; the
-gap surfaces only at integration-test time. The flowchart + legend +
-DDL emission work shipped on 2026-06-05 do NOT depend on this
-migration completing.
+Flipping FK columns to `record<target>` changed the wire format from the
+raw hex string (`"abc123"`) to the prefixed form (`"avatar:abc123"`). The
+store adapters in
+[`Providers/Stores/Surreal/`](../../Providers/Stores/Surreal/) build the
+prefixed form with `SurrealLink.ToLink(table, SurrealId.ToSurrealId(guid))`
+on every FK assignment, and compare against the same prefixed form in LINQ
+`Where` clauses. `SurrealId.ToSurrealId(guid)` alone still yields the bare
+hex and is correct only for a row's **own** `[Id]` column, where the table
+comes from `type::record()` in the SQL.
+
+From SurrealForge `1.0.0` the transport is CBOR, and SurrealDB does not
+coerce CBOR text into typed columns the way it coerced JSON. A string
+column carrying `[References]` (or `[Id]`) whose value has the `table:id`
+shape is auto-promoted to a **native CBOR record id** on the write path,
+which is why the prefixed form is now load-bearing rather than cosmetic: a
+bare hex value is *not* promoted, so writing one into a `record<target>`
+column fails at the server. Every store-private wire POCO therefore carries
+`[References(typeof(TargetPoco))]` on its FK columns — that attribute is
+what the classifier reads. Opt a column out with `[Column(Type = "string")]`
+or `[References(EmitAsString = true)]` when it genuinely holds free text.
 
 ## 10. Applying schemas to a live SurrealDB (`surrealforge up`)
 
@@ -480,6 +487,11 @@ for raw SurrealQL out of habit.
 - Every raw `SELECT` that stays raw for one of the above reasons carries a
   one-line `// raw: <reason>` pointer comment at the call site — no
   un-annotated raw reads.
+- Tier 1 only: a `WithParam` value bound to a `record<...>` column must go
+  through `SurrealRecordParam.Of` / `.OfLink`. Raw parameters carry no POCO
+  attributes, so the CBOR marshaller has nothing to classify and would send a
+  plain string — which SurrealDB rejects from 1.0.0 on. See
+  `Core/Surreal/AGENTS.md` §“Query parameters”.
 - This is read-path policy only. Conditional/atomic writes (e.g. the saga
   store's single-winner `UPDATE ... WHERE status = ...`) are intentionally
   raw and out of scope here — see

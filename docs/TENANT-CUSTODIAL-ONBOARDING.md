@@ -180,6 +180,12 @@ fail-closed as described above.
 
 The next named track is **Arda Nova financial workflow conformance**:
 
+See
+[`ardanova-financial-workflow-conformance`](../conductor/tracks/ardanova-financial-workflow-conformance/spec.md).
+The track must first reconcile this generic tenant-custodial mode with the
+integration contract's currently locked self-sovereign ArdaNova path; the
+example consumer name here does not silently change that decision.
+
 - define a versioned Arda Nova↔Azoa contract matrix for account bootstrap, KYC,
   wallet readiness, idempotency, and financial-operation outcomes;
 - exercise that matrix through local and CI end-to-end integration coverage;
