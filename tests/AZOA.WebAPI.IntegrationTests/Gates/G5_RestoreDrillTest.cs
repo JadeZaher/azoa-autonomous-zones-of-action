@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -191,7 +191,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             "-OutputPath", $"\"{backupFile}\"",
             "-Namespace", TestNamespace,
             "-Database", "test",
-            "-Endpoint", SurrealTestDefaults.Endpoint,
+            "-Endpoint", SurrealTestDefaults.InContainerEndpoint,
             "-User", SurrealTestDefaults.User,
             "-Pass", SurrealTestDefaults.Password,
             "-ContainerName", SurrealContainerName);
@@ -225,7 +225,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
             "-InputPath", $"\"{backupFile}\"",
             "-Namespace", TestNamespace,
             "-Database", "test",
-            "-Endpoint", SurrealTestDefaults.Endpoint,
+            "-Endpoint", SurrealTestDefaults.InContainerEndpoint,
             "-User", SurrealTestDefaults.User,
             "-Pass", SurrealTestDefaults.Password,
             "-ContainerName", SurrealContainerName,
