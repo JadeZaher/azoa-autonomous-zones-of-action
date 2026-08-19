@@ -279,6 +279,16 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         // a constant keeps the seed deterministic for the checksum round-trip.
         var ts = DateTime.UtcNow.ToString("o");
 
+        // saga_steps is the one seeded table with a live background writer:
+        // SagaProcessorHostedService claims rows WHERE status == 'Pending' AND
+        // next_run_at <= now (Sagas:Enabled defaults to true, so it polls inside
+        // the test host too). Seeding due Pending work and then asserting the
+        // rows are unchanged across backup/restore is a race the drill loses
+        // whenever a poll tick lands in the window -- it did on CI. Parking the
+        // seeded steps outside the claim window keeps the row content this gate
+        // round-trips while leaving nothing for the processor to claim.
+        var sagaNextRunAt = DateTime.UtcNow.AddYears(1).ToString("o");
+
         // ── wallet ────────────────────────────────────────────────────────────
         foreach (var (id, chain, addr) in new[]
         {
@@ -477,7 +487,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                 {
                     t = "saga_steps",
                     id,
-                    ts,
+                    ts = sagaNextRunAt,
                     body = new
                     {
                         id,
