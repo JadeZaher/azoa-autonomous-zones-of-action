@@ -40,7 +40,7 @@ jobs:
           docker run --detach \
             --name azoa-ci-surrealdb \
             --user 0:0 \
-            --publish 8000:8000 \
+            --publish 8020:8000 \
             --env SURREAL_SYNC_DATA=true \
             --volume azoa-ci-surrealdb-data:/data \
             surrealdb/surrealdb:v3.1.4 \
