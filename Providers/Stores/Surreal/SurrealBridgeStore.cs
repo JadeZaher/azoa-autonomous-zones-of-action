@@ -8,6 +8,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Bridge;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -169,14 +170,14 @@ public sealed class SurrealBridgeStore : IBridgeStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM bridge_tx WHERE avatar_id = $_avatar ORDER BY created_at DESC")
-                .WithParam("_avatar", SurrealLink.ToLink("avatar", avatarSurrealId));
+                .WithParam("_avatar", SurrealRecordParam.Of("avatar", avatarSurrealId));
             rows = await _executor.QueryAsync<BridgeTx>(q, ct);
         }
         else
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM bridge_tx WHERE avatar_id = $_avatar ORDER BY created_at ASC")
-                .WithParam("_avatar", SurrealLink.ToLink("avatar", avatarSurrealId));
+                .WithParam("_avatar", SurrealRecordParam.Of("avatar", avatarSurrealId));
             rows = await _executor.QueryAsync<BridgeTx>(q, ct);
         }
         return rows.Select(FromBridgePoco).ToList();

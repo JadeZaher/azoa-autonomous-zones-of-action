@@ -475,7 +475,7 @@ public class SurrealBridgeStoreTests : IntegrationTestBase
         };
 
         var http = new HttpClient();
-        var connection = new HttpSurrealConnection(http, options);
+        var connection = new SurrealDbNetConnection(options);
         var executor = new DefaultSurrealExecutor(connection);
         return await Task.FromResult<ISurrealExecutor>(executor);
     }

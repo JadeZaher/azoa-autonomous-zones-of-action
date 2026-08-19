@@ -4,6 +4,7 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Schema;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -242,10 +243,10 @@ public sealed class SurrealConsentWebhookOutboxStore : IConsentWebhookOutboxStor
         public string SchemaName => Table;
 
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("tenant_id")]         public string TenantId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]         public string TenantId { get; set; } = string.Empty;
         [JsonPropertyName("event_type")]        public string EventType { get; set; } = "Granted";
-        [JsonPropertyName("grant_id")]          public string GrantId { get; set; } = string.Empty;
-        [JsonPropertyName("avatar_id")]         public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.ConsentGrant))] [JsonPropertyName("grant_id")]          public string GrantId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]         public string AvatarId { get; set; } = string.Empty;
         [JsonPropertyName("scopes")]            public string Scopes { get; set; } = string.Empty;
         [JsonPropertyName("participation_ref")] public string? ParticipationRef { get; set; }
         [JsonPropertyName("occurred_at")]       public DateTimeOffset OccurredAt { get; set; }

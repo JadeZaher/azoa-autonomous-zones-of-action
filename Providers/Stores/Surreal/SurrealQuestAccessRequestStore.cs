@@ -4,6 +4,8 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Schema;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -88,7 +90,7 @@ public sealed class SurrealQuestAccessRequestStore : IQuestAccessRequestStore
     {
         try
         {
-            var questLink = SurrealLink.ToLink("quest", SurrealId.ToSurrealId(questId));
+            var questLink = SurrealRecordParam.Of("quest", SurrealId.ToSurrealId(questId));
             SurrealQuery q = status is { } s
                 ? SurrealQuery
                     .Of("SELECT * FROM quest_access_request WHERE quest_id = $_qid AND status = $_status")
@@ -113,7 +115,7 @@ public sealed class SurrealQuestAccessRequestStore : IQuestAccessRequestStore
     {
         try
         {
-            var avatarLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(requesterAvatarId));
+            var avatarLink = SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(requesterAvatarId));
             SurrealQuery q = status is { } s
                 ? SurrealQuery
                     .Of("SELECT * FROM quest_access_request WHERE requester_avatar_id = $_aid AND status = $_status")
@@ -138,8 +140,8 @@ public sealed class SurrealQuestAccessRequestStore : IQuestAccessRequestStore
     {
         try
         {
-            var questLink  = SurrealLink.ToLink("quest",  SurrealId.ToSurrealId(questId));
-            var avatarLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(requesterAvatarId));
+            var questLink  = SurrealRecordParam.Of("quest",  SurrealId.ToSurrealId(questId));
+            var avatarLink = SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(requesterAvatarId));
 
             // ≤1-Pending idempotency: at most one non-terminal request per
             // (quest, requester). LIMIT 1 is defensive — the manager upholds
@@ -292,14 +294,14 @@ public sealed class SurrealQuestAccessRequestStore : IQuestAccessRequestStore
         public string SchemaName => RequestTable;
 
         [JsonPropertyName("id")]                    public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("quest_id")]              public string QuestId { get; set; } = string.Empty;
-        [JsonPropertyName("requester_avatar_id")]   public string RequesterAvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Quest))] [JsonPropertyName("quest_id")]              public string QuestId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("requester_avatar_id")]   public string RequesterAvatarId { get; set; } = string.Empty;
         [JsonPropertyName("status")]                public string? Status { get; set; }
         [JsonPropertyName("message")]               public string? Message { get; set; }
         [JsonPropertyName("decision_reason")]       public string? DecisionReason { get; set; }
         [JsonPropertyName("created_at")]            public DateTimeOffset CreatedAt { get; set; }
         [JsonPropertyName("decided_at")]            public DateTimeOffset? DecidedAt { get; set; }
-        [JsonPropertyName("decided_by_avatar_id")]  public string? DecidedByAvatarId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("decided_by_avatar_id")]  public string? DecidedByAvatarId { get; set; }
     }
 
     private sealed class QuestAccessRequestIdProjection

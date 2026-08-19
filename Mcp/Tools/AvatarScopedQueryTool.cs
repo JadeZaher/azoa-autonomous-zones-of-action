@@ -1,6 +1,7 @@
 using System.Text.Json;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Mcp.Tools;
 
@@ -143,7 +144,8 @@ public sealed class AvatarScopedQueryTool : IMcpTool
             // so the interpolation never reaches SurrealQuery.Of (SRDB0001 safe).
             // Fluent .Where() / .Limit() append parameterized clauses.
             var q = SurrealQuery.SelectAll(tableName)
-                                .Where("avatar_id = $avatar_id", new { avatar_id = avatarIdStr });
+                                .Where("avatar_id = $avatar_id",
+                                        new { avatar_id = SurrealRecordParam.OfLink(avatarIdStr) });
 
             // Append each validated filter as an additional AND clause.
             foreach (var kv in filterParams)

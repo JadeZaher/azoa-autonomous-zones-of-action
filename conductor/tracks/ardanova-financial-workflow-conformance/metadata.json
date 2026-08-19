@@ -1,0 +1,19 @@
+{
+  "id": "ardanova-financial-workflow-conformance",
+  "description": "Versioned live-host conformance for the generic AZOA identity, wallet, KYC, allocation, and reconciliation contract consumed first by ArdaNova.",
+  "type": "feature",
+  "created_at": "2026-07-18T00:00:00Z",
+  "status": "in_progress",
+  "horizon": "alpha",
+  "phase": "Contract-model reconciliation and live integration matrix are queued behind restoration of current-main CI.",
+  "blocks": [
+    "ardanova-integration-launch"
+  ],
+  "depends_on": [
+    "integration-test-isolation-debt"
+  ],
+  "related": [
+    "node-operator-governance",
+    "node-conformance-manifest"
+  ]
+}

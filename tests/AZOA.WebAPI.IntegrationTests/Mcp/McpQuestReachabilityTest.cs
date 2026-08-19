@@ -170,8 +170,7 @@ public sealed class McpQuestReachabilityTest : IntegrationTestBase
             User      = SurrealTestDefaults.User,
             Password  = SurrealTestDefaults.Password
         };
-        var http       = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
-        var connection = new HttpSurrealConnection(http, options);
+        var connection = new SurrealDbNetConnection(options);
         return new DefaultSurrealExecutor(connection);
     }
 

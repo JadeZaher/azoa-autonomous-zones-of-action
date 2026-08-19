@@ -1,7 +1,8 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Mcp.Tools;
 
@@ -65,18 +66,20 @@ public sealed class NftOwnershipGraphTool : IMcpTool
             if (string.IsNullOrEmpty(chainFilter))
             {
                 // No chain filter — return all NFTs for this avatar
+                // raw: narrow projection — the graph only needs identity + chain columns.
                 var q = SurrealQuery
                     .Of("SELECT id, name, chain_id, provider_name, token_id, asset_type FROM holon WHERE avatar_id = $avatar_id AND asset_type = 'NFT' ORDER BY chain_id, name")
-                    .WithParam("avatar_id", avatarIdStr);
+                    .WithParam("avatar_id", SurrealRecordParam.OfLink(avatarIdStr));
 
                 rows = await context.Executor.QueryAsync<NftHolonPoco>(q, ct);
             }
             else
             {
                 // Chain-filtered path
+                // raw: narrow projection — the graph only needs identity + chain columns.
                 var q = SurrealQuery
                     .Of("SELECT id, name, chain_id, provider_name, token_id, asset_type FROM holon WHERE avatar_id = $avatar_id AND asset_type = 'NFT' AND chain_id = $chain ORDER BY chain_id, name")
-                    .WithParam("avatar_id", avatarIdStr)
+                    .WithParam("avatar_id", SurrealRecordParam.OfLink(avatarIdStr))
                     .WithParam("chain", chainFilter);
 
                 rows = await context.Executor.QueryAsync<NftHolonPoco>(q, ct);

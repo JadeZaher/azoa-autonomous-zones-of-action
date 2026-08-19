@@ -21,7 +21,7 @@ public sealed class SurrealQuestTemplateStoreTests : IAsyncLifetime
     private readonly string _testNamespace = $"test{Guid.NewGuid():N}";
     private SurrealQuestTemplateStore _store = null!;
     private ISurrealExecutor _executor = null!;
-    private HttpSurrealConnection _connection = null!;
+    private ISurrealConnection _connection = null!;
     private bool _surrealAvailable;
 
     public async Task InitializeAsync()
@@ -38,8 +38,7 @@ public sealed class SurrealQuestTemplateStoreTests : IAsyncLifetime
             Password  = SurrealTestDefaults.Password,
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
-        _connection = new HttpSurrealConnection(http, options);
+        _connection = new SurrealDbNetConnection(options);
         _executor = new DefaultSurrealExecutor(_connection);
         _store = new SurrealQuestTemplateStore(_executor);
 

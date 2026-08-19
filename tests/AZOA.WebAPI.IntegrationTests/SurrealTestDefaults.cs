@@ -10,7 +10,7 @@ namespace AZOA.WebAPI.IntegrationTests;
 /// </summary>
 internal static class SurrealTestDefaults
 {
-    public const string Endpoint = "http://127.0.0.1:8000";
+    public const string Endpoint = "http://127.0.0.1:8020";
     public const string User     = "root";
     public const string Password = "root";
 }

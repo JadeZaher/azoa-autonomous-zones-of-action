@@ -6,6 +6,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using GeneratedWallet = AZOA.WebAPI.Persistence.SurrealDb.Models.Wallet;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -69,8 +70,9 @@ public sealed class SurrealWalletStore : IWalletStore
     {
         try
         {
+            var avatarLink = SurrealLink.ToLink("avatar", avatarId.ToString("N").ToLowerInvariant());
             var q = SurrealQuery<GeneratedWallet>.From()
-                .Where(w => w.AvatarId == SurrealLink.ToLink("avatar", avatarId.ToString("N").ToLowerInvariant()));
+                .Where(w => w.AvatarId == avatarLink);
             var rows = await _executor.QueryAsync<GeneratedWallet>(q, ct);
             return new AZOAResult<IEnumerable<IWallet>>
             {

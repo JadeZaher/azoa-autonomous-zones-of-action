@@ -9,6 +9,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -63,7 +64,7 @@ public sealed class SurrealStarStore : ISTARStore
                 .Of("SELECT * FROM type::table($_t) WHERE string::lowercase(name) = string::lowercase($_name) AND avatar_id = $_avatar LIMIT 1")
                 .WithParam("_t",      StarRecord.StarTable)
                 .WithParam("_name",   name)
-                .WithParam("_avatar", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)));
+                .WithParam("_avatar", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(avatarId)));
 
             var row = await _executor.QuerySingleAsync<StarRecord>(q, ct);
             return new AZOAResult<ISTARODK>
@@ -242,6 +243,7 @@ public sealed class SurrealStarStore : ISTARStore
 
         [Column(Type = "option<record<avatar>>")]
         [JsonPropertyName("avatar_id")]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))]
         public string? AvatarId { get; set; }
 
         [Column(Type = "option<array<string>>")]

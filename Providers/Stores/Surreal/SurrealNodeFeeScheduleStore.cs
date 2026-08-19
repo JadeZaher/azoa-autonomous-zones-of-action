@@ -4,6 +4,7 @@ using SurrealForge.Client.Idempotency;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -52,7 +53,7 @@ public sealed class SurrealNodeFeeScheduleStore : INodeFeeScheduleStore
                 .WithParam("_federation_flat", schedule.FederationPublishFlatBaseUnits)
                 .WithParam("_federation_bps", schedule.FederationPublishBps)
                 .WithParam("_version", schedule.Version)
-                .WithParam("_actor", schedule.UpdatedByAvatarId)
+                .WithParam("_actor", SurrealRecordParam.OfLink(schedule.UpdatedByAvatarId))
                 .WithParam("_updated_at", schedule.UpdatedAt);
 
         var readVersion = SurrealQuery

@@ -11,6 +11,7 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Schema;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -159,8 +160,8 @@ public sealed class SurrealWalletAuthClaimTokenStore : IWalletAuthClaimTokenStor
 
         [JsonPropertyName("id")]               public string Id             { get; set; } = string.Empty;
         [JsonPropertyName("token")]            public string Token          { get; set; } = string.Empty;
-        [JsonPropertyName("target_avatar_id")] public string TargetAvatarId { get; set; } = string.Empty;
-        [JsonPropertyName("tenant_id")]        public string TenantId       { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("target_avatar_id")] public string TargetAvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]        public string TenantId       { get; set; } = string.Empty;
         [JsonPropertyName("expires_at")]       public DateTimeOffset ExpiresAt   { get; set; }
         [JsonPropertyName("consumed_at")]      public DateTimeOffset? ConsumedAt { get; set; }
         [JsonPropertyName("created_at")]       public DateTimeOffset CreatedAt   { get; set; }

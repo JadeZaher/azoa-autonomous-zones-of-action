@@ -226,8 +226,7 @@ public class SurrealQuestNodeExecutionStoreTests : IntegrationTestBase
             User       = SurrealTestDefaults.User,
             Password   = SurrealTestDefaults.Password,
         };
-        var http = new HttpClient();
-        var connection = new HttpSurrealConnection(http, options);
+        var connection = new SurrealDbNetConnection(options);
         ISurrealExecutor executor = new DefaultSurrealExecutor(connection);
         return Task.FromResult(executor);
     }

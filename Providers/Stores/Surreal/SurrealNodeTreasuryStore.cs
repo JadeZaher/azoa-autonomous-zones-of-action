@@ -5,6 +5,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -62,7 +63,7 @@ public sealed class SurrealNodeTreasuryStore : INodeTreasuryStore
             .WithParam("_network", destination.Network)
             .WithParam("_address_chars", destination.Address.Select(c => c.ToString()).ToArray())
             .WithParam("_version", destination.Version)
-            .WithParam("_actor", destination.UpdatedByAvatarId)
+            .WithParam("_actor", SurrealRecordParam.OfLink(destination.UpdatedByAvatarId))
             .WithParam("_updated_at", destination.UpdatedAt);
 
         var appendAudit = SurrealQuery

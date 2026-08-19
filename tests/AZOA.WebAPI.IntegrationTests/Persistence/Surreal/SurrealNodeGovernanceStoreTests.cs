@@ -11,7 +11,7 @@ public sealed class SurrealNodeGovernanceStoreTests : IAsyncLifetime
 {
     private readonly string _testNamespace = $"test{Guid.NewGuid():N}";
     private SurrealNodeGovernanceStore _store = null!;
-    private HttpSurrealConnection _connection = null!;
+    private ISurrealConnection _connection = null!;
     private bool _surrealAvailable;
 
     public async Task InitializeAsync()
@@ -28,9 +28,7 @@ public sealed class SurrealNodeGovernanceStoreTests : IAsyncLifetime
             User = SurrealTestDefaults.User,
             Password = SurrealTestDefaults.Password,
         };
-        _connection = new HttpSurrealConnection(
-            new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) },
-            options);
+        _connection = new SurrealDbNetConnection(options);
         _store = new SurrealNodeGovernanceStore(new DefaultSurrealExecutor(_connection));
 
         await SurrealTestSchema.BootstrapAsync(

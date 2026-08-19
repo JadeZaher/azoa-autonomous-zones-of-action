@@ -4,6 +4,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using SurrealForge.Client.Idempotency;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -71,7 +72,7 @@ public sealed class SurrealAdminBootstrapStateStore : IAdminBootstrapStateStore
                 .Of("LET $_binding = SELECT VALUE credential_revision FROM type::record($_state_table, $_state_id) WHERE avatar_id = $_avatar")
                 .WithParam("_state_table", AdminBootstrapState.SchemaNameConst)
                 .WithParam("_state_id", AdminBootstrapState.LocalId)
-                .WithParam("_avatar", avatarLink),
+                .WithParam("_avatar", SurrealRecordParam.OfLink(avatarLink)),
             SurrealQuery
                 .Of("IF array::len($_binding) != 1 OR $_binding[0] != $_expected { THROW 'Node operator credential revision conflict' }")
                 .WithParam("_expected", expectedRevision),
@@ -128,7 +129,7 @@ public sealed class SurrealAdminBootstrapStateStore : IAdminBootstrapStateStore
                 .Of("LET $_binding = SELECT credential_revision, session_revision FROM type::record($_state_table, $_state_id) WHERE avatar_id = $_avatar")
                 .WithParam("_state_table", AdminBootstrapState.SchemaNameConst)
                 .WithParam("_state_id", AdminBootstrapState.LocalId)
-                .WithParam("_avatar", avatarLink),
+                .WithParam("_avatar", SurrealRecordParam.OfLink(avatarLink)),
             SurrealQuery
                 .Of("IF array::len($_binding) != 1 OR $_binding[0].credential_revision != $_expected_credential OR $_binding[0].session_revision != $_expected_session { THROW 'Node operator session revision conflict' }")
                 .WithParam("_expected_credential", expectedCredentialRevision)

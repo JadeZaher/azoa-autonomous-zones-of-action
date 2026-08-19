@@ -24,7 +24,7 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
     // ── Per-instance state ────────────────────────────────────────────────────
 
     private readonly string _testNamespace = $"test{Guid.NewGuid():N}";
-    private HttpSurrealConnection _connection = null!;
+    private ISurrealConnection _connection = null!;
     private ISurrealExecutor _executor = null!;
     private SurrealWalletStore _walletStore = null!;
     private SurrealBridgeStore _bridgeStore = null!;
@@ -47,8 +47,7 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
             Password  = SurrealTestDefaults.Password
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
-        _connection = new HttpSurrealConnection(http, options);
+        _connection = new SurrealDbNetConnection(options);
         _executor   = new DefaultSurrealExecutor(_connection);
 
         _walletStore = new SurrealWalletStore(_executor);

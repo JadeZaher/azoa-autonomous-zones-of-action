@@ -1,7 +1,8 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Mcp.Tools;
 
@@ -64,9 +65,10 @@ public sealed class QuestReachabilityTool : IMcpTool
             var avatarIdStr  = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(context.AvatarId))!;
 
             // ── Ownership check: fetch quest head ─────────────────────────
+            // raw: narrow projection — reachability needs ids and ordering columns only.
             var questQ = SurrealQuery
                 .Of("SELECT id, avatar_id FROM quest WHERE id = $quest_id")
-                .WithParam("quest_id", questIdStr);
+                .WithParam("quest_id", SurrealRecordParam.OfLink(questIdStr));
 
             var questRows = await context.Executor.QueryAsync<QuestOwnerPoco>(questQ, ct);
             if (questRows.Count == 0)
@@ -76,13 +78,15 @@ public sealed class QuestReachabilityTool : IMcpTool
                 return Forbidden();
 
             // ── Fetch nodes + edges in one combined round-trip ────────────
+            // raw: narrow projection — reachability needs ids and ordering columns only.
             var nodesQ = SurrealQuery
                 .Of("SELECT id, name, execution_order FROM quest_node WHERE quest_id = $qid ORDER BY execution_order ASC")
-                .WithParam("qid", questIdStr);
+                .WithParam("qid", SurrealRecordParam.OfLink(questIdStr));
 
+            // raw: narrow projection — reachability needs ids and ordering columns only.
             var edgesQ = SurrealQuery
                 .Of("SELECT source_node_id, target_node_id FROM quest_edge WHERE quest_id = $qid")
-                .WithParam("qid", questIdStr);
+                .WithParam("qid", SurrealRecordParam.OfLink(questIdStr));
 
             var combined = SurrealQuery.Combine(nodesQ, edgesQ);
             var resp = await context.Executor.ExecuteAsync(combined, ct);

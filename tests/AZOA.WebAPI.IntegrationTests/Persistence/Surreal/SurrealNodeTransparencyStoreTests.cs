@@ -14,7 +14,7 @@ public sealed class SurrealNodeTransparencyStoreTests : IAsyncLifetime
     private readonly string _testNamespace = $"test{Guid.NewGuid():N}";
     private SurrealNodeTransparencyStore _transparency = null!;
     private SurrealNodeFeeScheduleStore _fees = null!;
-    private HttpSurrealConnection _connection = null!;
+    private ISurrealConnection _connection = null!;
     private bool _surrealAvailable;
 
     public async Task InitializeAsync()
@@ -31,9 +31,7 @@ public sealed class SurrealNodeTransparencyStoreTests : IAsyncLifetime
             User = SurrealTestDefaults.User,
             Password = SurrealTestDefaults.Password,
         };
-        _connection = new HttpSurrealConnection(
-            new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) },
-            options);
+        _connection = new SurrealDbNetConnection(options);
         var executor = new DefaultSurrealExecutor(_connection);
         _transparency = new SurrealNodeTransparencyStore(executor);
         _fees = new SurrealNodeFeeScheduleStore(executor);

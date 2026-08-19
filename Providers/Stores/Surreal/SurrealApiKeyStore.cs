@@ -3,6 +3,8 @@ using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
+using SurrealForge.Client.Schema;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -60,7 +62,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     {
         var q = SurrealQuery
             .Of("SELECT * FROM api_key WHERE avatar_id = $_avatar ORDER BY created_date DESC")
-            .WithParam("_avatar", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)));
+            .WithParam("_avatar", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(avatarId)));
 
         var rows = await _executor.QueryAsync<ApiKeyPoco>(q, ct);
         var result = new List<ApiKey>(rows.Count);
@@ -153,7 +155,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
             .Of("UPDATE type::record($_t, $_id) SET is_active = false, revoked_at = $_revoked WHERE avatar_id = $_avatar RETURN AFTER")
             .WithParam("_t", Table)
             .WithParam("_id", surrealId)
-            .WithParam("_avatar", avatarHex)
+            .WithParam("_avatar", SurrealRecordParam.OfLink(avatarHex))
             .WithParam("_revoked", revokedUtc);
 
         var response = await _executor.ExecuteAsync(q, ct);
@@ -170,7 +172,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
             .Of("DELETE type::record($_t, $_id) WHERE avatar_id = $_avatar RETURN BEFORE")
             .WithParam("_t", Table)
             .WithParam("_id", surrealId)
-            .WithParam("_avatar", avatarHex);
+            .WithParam("_avatar", SurrealRecordParam.OfLink(avatarHex));
 
         var response = await _executor.ExecuteAsync(q, ct);
         response.EnsureAllOk();
@@ -277,7 +279,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         public string SchemaName => Table;
 
         [JsonPropertyName("id")]              public string Id          { get; set; } = string.Empty;
-        [JsonPropertyName("avatar_id")]       public string AvatarId    { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]       public string AvatarId    { get; set; } = string.Empty;
         [JsonPropertyName("name")]            public string? Name       { get; set; }
         [JsonPropertyName("key_hash")]        public string KeyHash     { get; set; } = string.Empty;
         [JsonPropertyName("key_prefix")]      public string? KeyPrefix  { get; set; }

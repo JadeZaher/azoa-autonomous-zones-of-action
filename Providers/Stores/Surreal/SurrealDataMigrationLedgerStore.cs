@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System;
 using System.Collections.Generic;
@@ -32,6 +32,8 @@ public sealed class SurrealDataMigrationLedgerStore : IDataMigrationLedgerStore
 
     public async Task<IReadOnlyCollection<string>> GetAppliedIdsAsync(CancellationToken ct = default)
     {
+        // raw: narrow projection — only backfill_id is read, so the row shape
+        // differs from the full-row typed tier.
         var q = SurrealQuery.Of("SELECT backfill_id FROM data_migration");
         var rows = await _executor.QueryAsync<DataMigration>(q, ct);
         return rows
@@ -42,7 +44,7 @@ public sealed class SurrealDataMigrationLedgerStore : IDataMigrationLedgerStore
 
     public async Task<IReadOnlyList<AppliedBackfillRecord>> ListAppliedAsync(CancellationToken ct = default)
     {
-        var q = SurrealQuery.Of("SELECT * FROM data_migration ORDER BY applied_at DESC");
+        var q = SurrealQuery<DataMigration>.From().OrderByDescending(m => m.AppliedAt);
         var rows = await _executor.QueryAsync<DataMigration>(q, ct);
         return rows.Select(ToRecord).ToList();
     }

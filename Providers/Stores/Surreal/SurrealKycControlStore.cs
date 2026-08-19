@@ -5,6 +5,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -189,7 +190,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
                 .WithParam("_submission_table", KycSubmission.SchemaNameConst)
                 .WithParam("_expired", nameof(KycStatus.EXPIRED))
                 .WithParam("_now", selection.UpdatedAt)
-                .WithParam("_tenant", stored.TenantId)
+                .WithParam("_tenant", SurrealRecordParam.OfLink(stored.TenantId))
                 .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) }),
             SurrealQuery
                 .Of("CREATE type::record($_audit_table, $_audit_id) CONTENT $_audit RETURN NONE")
@@ -289,7 +290,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
                 .WithParam("_table", KycControlAudit.SchemaNameConst)
                 .WithParam("_has_tenant", tenantId.HasValue)
                 .WithParam("_tenant", tenantId.HasValue
-                    ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(tenantId.Value))
+                    ? SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId.Value))
                     : null)
                 .WithParam("_provider", providerKey ?? string.Empty)
                 .WithParam("_action", action ?? string.Empty)

@@ -4,6 +4,8 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Schema;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -49,7 +51,7 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM consent_audit WHERE tenant_id = $_tenant ORDER BY occurred_at DESC")
-                .WithParam("_tenant", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)));
             var rows = await _executor.QueryAsync<ConsentAuditPoco>(q, ct);
             return new AZOAResult<IEnumerable<ConsentAuditEntry>>
             {
@@ -95,8 +97,8 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
         [JsonPropertyName("id")]          public string Id { get; set; } = string.Empty;
         [JsonPropertyName("action")]      public string Action { get; set; } = string.Empty;
         [JsonPropertyName("grant_id")]    public string? GrantId { get; set; }
-        [JsonPropertyName("tenant_id")]   public string TenantId { get; set; } = string.Empty;
-        [JsonPropertyName("avatar_id")]   public string? AvatarId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]   public string TenantId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]   public string? AvatarId { get; set; }
         [JsonPropertyName("scope")]       public string? Scope { get; set; }
         [JsonPropertyName("detail")]      public string? Detail { get; set; }
         [JsonPropertyName("occurred_at")] public DateTimeOffset OccurredAt { get; set; }

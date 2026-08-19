@@ -11,6 +11,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using HolonRecord = AZOA.WebAPI.Persistence.SurrealDb.Models.Holon;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -434,10 +435,12 @@ public sealed class SurrealHolonStore : IHolonStore
 
         [Column(Type = "option<record<holon>>")]
         [JsonPropertyName("parent_holon_id")]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Holon))]
         public string? ParentHolonId { get; set; }
 
         [Column(Type = "option<record<avatar>>")]
         [JsonPropertyName("avatar_id")]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))]
         public string? AvatarId { get; set; }
 
         [Column(Type = "string")]
@@ -478,10 +481,12 @@ public sealed class SurrealHolonStore : IHolonStore
 
         [Column(Type = "option<record<holon>>")]
         [JsonPropertyName("source_holon_id")]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Holon))]
         public string? SourceHolonId { get; set; }
 
         [Column(Type = "option<record<avatar>>")]
         [JsonPropertyName("origin_avatar_id")]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))]
         public string? OriginAvatarId { get; set; }
 
         [Column(Type = "bool")]

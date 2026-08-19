@@ -4,6 +4,8 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Schema;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -223,7 +225,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM quest_run WHERE quest_id = $_qid")
-                .WithParam("_qid", SurrealLink.ToLink("quest", SurrealId.ToSurrealId(questId)));
+                .WithParam("_qid", SurrealRecordParam.Of("quest", SurrealId.ToSurrealId(questId)));
 
             var rows = await _executor.QueryAsync<QuestRunPoco>(q, ct);
             return OkMany(rows.Select(ToDomain).ToList());
@@ -242,7 +244,7 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM quest_run WHERE avatar_id = $_aid")
-                .WithParam("_aid", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId)));
+                .WithParam("_aid", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(avatarId)));
 
             var rows = await _executor.QueryAsync<QuestRunPoco>(q, ct);
             return OkMany(rows.Select(ToDomain).ToList());
@@ -444,18 +446,18 @@ public sealed class SurrealQuestRunStore : IQuestRunStore
         public string SchemaName => RunTable;
 
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
-        [JsonPropertyName("avatar_id")]         public string AvatarId { get; set; } = string.Empty;
-        [JsonPropertyName("acting_tenant_id")]  public string? ActingTenantId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Quest))] [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]         public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("acting_tenant_id")]  public string? ActingTenantId { get; set; }
         [JsonPropertyName("status")]            public string? Status { get; set; }
         [JsonPropertyName("started_at")]        public DateTimeOffset StartedAt { get; set; }
         [JsonPropertyName("ended_at")]          public DateTimeOffset? EndedAt { get; set; }
-        [JsonPropertyName("parent_run_id")]     public string? ParentRunId { get; set; }
-        [JsonPropertyName("forked_at_node_id")] public string? ForkedAtNodeId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestRun))] [JsonPropertyName("parent_run_id")]     public string? ParentRunId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestNode))] [JsonPropertyName("forked_at_node_id")] public string? ForkedAtNodeId { get; set; }
         [JsonPropertyName("fork_reason")]       public string? ForkReason { get; set; }
         [JsonPropertyName("fail_reason")]       public string? FailReason { get; set; }
-        [JsonPropertyName("source_quest_id")]   public string? SourceQuestId { get; set; }
-        [JsonPropertyName("origin_avatar_id")]  public string? OriginAvatarId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Quest))] [JsonPropertyName("source_quest_id")]   public string? SourceQuestId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("origin_avatar_id")]  public string? OriginAvatarId { get; set; }
         [JsonPropertyName("published_version_hash")] public string? PublishedVersionHash { get; set; }
     }
 

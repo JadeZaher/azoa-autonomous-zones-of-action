@@ -11,6 +11,8 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using SurrealForge.Client.Schema;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -45,7 +47,7 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
             var q = SurrealQuery
                 .Of("SELECT * FROM type::table($_t) WHERE star_odk_id = $_star LIMIT 1")
                 .WithParam("_t", EcosystemTable)
-                .WithParam("_star", SurrealLink.ToLink("star_odk", SurrealId.ToSurrealId(starOdkId)));
+                .WithParam("_star", SurrealRecordParam.Of("star_odk", SurrealId.ToSurrealId(starOdkId)));
             var row = await _executor.QuerySingleAsync<EcosystemPoco>(q, ct);
             return new AZOAResult<Ecosystem>
             {
@@ -105,7 +107,7 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
             var delNodes = SurrealQuery
                 .Of("DELETE type::table($_t) WHERE ecosystem_id = $_eco")
                 .WithParam("_t", NodeTable)
-                .WithParam("_eco", SurrealLink.ToLink("ecosystem", SurrealId.ToSurrealId(ecosystemId)));
+                .WithParam("_eco", SurrealRecordParam.Of("ecosystem", SurrealId.ToSurrealId(ecosystemId)));
             await _executor.ExecuteAsync(delNodes, ct);
 
             var delRoot = SurrealQuery.DeleteById(EcosystemTable, SurrealId.ToSurrealId(ecosystemId));
@@ -127,7 +129,7 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
             var q = SurrealQuery
                 .Of("SELECT * FROM type::table($_t) WHERE ecosystem_id = $_eco")
                 .WithParam("_t", NodeTable)
-                .WithParam("_eco", SurrealLink.ToLink("ecosystem", SurrealId.ToSurrealId(ecosystemId)));
+                .WithParam("_eco", SurrealRecordParam.Of("ecosystem", SurrealId.ToSurrealId(ecosystemId)));
             var rows = await _executor.QueryAsync<EcosystemNodePoco>(q, ct);
             return new AZOAResult<IEnumerable<EcosystemNode>>
             {
@@ -215,8 +217,8 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
         [JsonPropertyName("id")]            public string Id { get; set; } = string.Empty;
         [JsonPropertyName("name")]          public string Name { get; set; } = string.Empty;
         [JsonPropertyName("description")]   public string? Description { get; set; }
-        [JsonPropertyName("star_odk_id")]   public string StarOdkId { get; set; } = string.Empty;
-        [JsonPropertyName("avatar_id")]     public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.StarOdk))] [JsonPropertyName("star_odk_id")]   public string StarOdkId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]     public string AvatarId { get; set; } = string.Empty;
         [JsonPropertyName("target_chain")]  public string? TargetChain { get; set; }
         [JsonPropertyName("created_date")]  public DateTimeOffset CreatedDate { get; set; }
         [JsonPropertyName("modified_date")] public DateTimeOffset? ModifiedDate { get; set; }
@@ -227,8 +229,8 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
         public string SchemaName => NodeTable;
 
         [JsonPropertyName("id")]             public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("ecosystem_id")]   public string EcosystemId { get; set; } = string.Empty;
-        [JsonPropertyName("parent_node_id")] public string? ParentNodeId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Ecosystem))] [JsonPropertyName("ecosystem_id")]   public string EcosystemId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.EcosystemNode))] [JsonPropertyName("parent_node_id")] public string? ParentNodeId { get; set; }
         [JsonPropertyName("ref_kind")]       public string RefKind { get; set; } = "DappSeries";
         [JsonPropertyName("ref_id")]         public string RefId { get; set; } = string.Empty;
         [JsonPropertyName("label")]          public string? Label { get; set; }

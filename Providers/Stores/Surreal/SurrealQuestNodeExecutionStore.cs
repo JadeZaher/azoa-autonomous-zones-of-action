@@ -5,6 +5,7 @@ using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Schema;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -216,7 +217,7 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM quest_node_execution WHERE run_id = $_rid ORDER BY started_at ASC")
-                .WithParam("_rid", SurrealLink.ToLink("quest_run", SurrealId.ToSurrealId(runId)));
+                .WithParam("_rid", SurrealRecordParam.Of("quest_run", SurrealId.ToSurrealId(runId)));
 
             var rows = await _executor.QueryAsync<QuestNodeExecutionPoco>(q, ct);
             IEnumerable<QuestNodeExecution> result = rows.Select(ToDomain).ToList();
@@ -238,8 +239,8 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM quest_node_execution WHERE run_id = $_rid AND node_id = $_nid LIMIT 1")
-                .WithParam("_rid", SurrealLink.ToLink("quest_run", SurrealId.ToSurrealId(runId)))
-                .WithParam("_nid", SurrealLink.ToLink("quest_node", SurrealId.ToSurrealId(nodeId)));
+                .WithParam("_rid", SurrealRecordParam.Of("quest_run", SurrealId.ToSurrealId(runId)))
+                .WithParam("_nid", SurrealRecordParam.Of("quest_node", SurrealId.ToSurrealId(nodeId)));
 
             var rows = await _executor.QueryAsync<QuestNodeExecutionPoco>(q, ct);
             return rows.Count == 0
@@ -260,8 +261,8 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
     {
         try
         {
-            var runHex  = SurrealLink.ToLink("quest_run", SurrealId.ToSurrealId(runId));
-            var nodeHex = SurrealLink.ToLink("quest_node", SurrealId.ToSurrealId(nodeId));
+            var runHex  = SurrealRecordParam.Of("quest_run", SurrealId.ToSurrealId(runId));
+            var nodeHex = SurrealRecordParam.Of("quest_node", SurrealId.ToSurrealId(nodeId));
 
             // Existence probe so the "row missing" signal (IsError == true) is
             // distinguishable from the race-loser signal (Result == null,
@@ -404,8 +405,8 @@ public sealed class SurrealQuestNodeExecutionStore : IQuestNodeExecutionStore
         public string SchemaName => ExecTable;
 
         [JsonPropertyName("id")]         public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("run_id")]     public string RunId { get; set; } = string.Empty;
-        [JsonPropertyName("node_id")]    public string NodeId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestRun))] [JsonPropertyName("run_id")]     public string RunId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestNode))] [JsonPropertyName("node_id")]    public string NodeId { get; set; } = string.Empty;
         [JsonPropertyName("state")]      public string? State { get; set; }
         [JsonPropertyName("output")]     public string? Output { get; set; }
         [JsonPropertyName("error")]      public string? Error { get; set; }

@@ -1,7 +1,8 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Mcp.Tools;
 
@@ -62,11 +63,13 @@ public sealed class HolonTraverseTool : IMcpTool
             // record<> link columns never equal a bare-hex string. See Mcp/AGENTS.md §record-id-binding.
             var avatarIdStr = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(context.AvatarId))!;
             var holonIdStr  = SurrealLink.ToLink("holon", SurrealId.ToSurrealId(holonId))!;
+            var holonRecord = SurrealRecordParam.OfLink(holonIdStr);
 
             // ── Fetch root holon ──────────────────────────────────────────
+            // raw: narrow projection — the walk reads a fixed column subset, not the full holon row.
             var rootQ = SurrealQuery
                 .Of("SELECT id, name, description, parent_holon_id, avatar_id, provider_name, chain_id, asset_type, token_id, is_active, peer_holon_ids FROM holon WHERE id = $hid")
-                .WithParam("hid", holonIdStr);
+                .WithParam("hid", holonRecord);
 
             var rootRows = await context.Executor.QueryAsync<HolonPoco>(rootQ, ct);
             if (rootRows.Count == 0)
@@ -85,9 +88,10 @@ public sealed class HolonTraverseTool : IMcpTool
 
             while (!string.IsNullOrEmpty(current) && depth < maxDepth)
             {
+                // raw: narrow projection — the walk reads a fixed column subset, not the full holon row.
                 var parentQ = SurrealQuery
                     .Of("SELECT id, name, description, parent_holon_id, avatar_id, provider_name, chain_id, asset_type, token_id, is_active FROM holon WHERE id = $pid")
-                    .WithParam("pid", current);
+                    .WithParam("pid", SurrealRecordParam.Of("holon", current));
 
                 var parentRows = await context.Executor.QueryAsync<HolonPoco>(parentQ, ct);
                 if (parentRows.Count == 0) break;
@@ -114,9 +118,10 @@ public sealed class HolonTraverseTool : IMcpTool
                     // peer_holon_ids stores bare-hex ids (array<string>); bind the
                     // `holon:hex` link form so the record-id comparison matches.
                     var peerLink = peerId.Contains(':') ? peerId : SurrealLink.ToLink("holon", peerId);
+                    // raw: narrow projection — the walk reads a fixed column subset, not the full holon row.
                     var peerQ = SurrealQuery
                         .Of("SELECT id, name, description, parent_holon_id, avatar_id, provider_name, chain_id, asset_type, token_id, is_active FROM holon WHERE id = $pid")
-                        .WithParam("pid", peerLink);
+                        .WithParam("pid", SurrealRecordParam.OfLink(peerLink));
 
                     var peerRows = await context.Executor.QueryAsync<HolonPoco>(peerQ, ct);
                     if (peerRows.Count > 0)
@@ -150,9 +155,10 @@ public sealed class HolonTraverseTool : IMcpTool
     {
         if (currentDepth >= maxDepth) return;
 
+        // raw: narrow projection — the walk reads a fixed column subset, not the full holon row.
         var childQ = SurrealQuery
             .Of("SELECT id, name, description, parent_holon_id, avatar_id, provider_name, chain_id, asset_type, token_id, is_active FROM holon WHERE parent_holon_id = $pid")
-            .WithParam("pid", parentId);
+            .WithParam("pid", SurrealRecordParam.Of("holon", parentId));
 
         var childRows = await executor.QueryAsync<HolonPoco>(childQ, ct);
 

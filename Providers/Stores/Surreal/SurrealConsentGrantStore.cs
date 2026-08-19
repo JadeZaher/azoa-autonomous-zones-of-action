@@ -4,6 +4,8 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Schema;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -75,7 +77,7 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM consent_grant WHERE grantor_avatar_id = $_grantor ORDER BY granted_at DESC")
-                .WithParam("_grantor", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(grantorAvatarId)));
+                .WithParam("_grantor", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(grantorAvatarId)));
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             return Ok(rows);
         }
@@ -91,7 +93,7 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM consent_grant WHERE tenant_id = $_tenant ORDER BY granted_at DESC")
-                .WithParam("_tenant", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)));
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             return Ok(rows);
         }
@@ -118,8 +120,8 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
                         AND tenant_id = $_tenant
                         AND revoked_at = NONE
                         AND (expires_at = NONE OR expires_at > $_now)")
-                .WithParam("_grantor", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(grantorAvatarId)))
-                .WithParam("_tenant", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(tenantId)))
+                .WithParam("_grantor", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(grantorAvatarId)))
+                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)))
                 .WithParam("_now", nowUtc);
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             var covering = rows.Select(ToDomain).FirstOrDefault(g => g.Covers(scope, now));
@@ -140,7 +142,7 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
             // tenant's own grants only — no cross-tenant ref collision, no loose match.
             var q = SurrealQuery
                 .Of("SELECT * FROM consent_grant WHERE tenant_id = $_tenant AND participation_ref = $_ref")
-                .WithParam("_tenant", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(tenantId)))
+                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)))
                 .WithParam("_ref", participationRef);
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             return Ok(rows);
@@ -166,7 +168,7 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
                       WHERE grantor_avatar_id = $_grantor
                         AND revoked_at = NONE
                       RETURN BEFORE")
-                .WithParam("_grantor", SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(grantorAvatarId)))
+                .WithParam("_grantor", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(grantorAvatarId)))
                 .WithParam("_now", nowUtc);
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             return new AZOAResult<int> { Result = rows.Count, Message = "Revoked." };
@@ -218,8 +220,8 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
         public string SchemaName => Table;
 
         [JsonPropertyName("id")]                 public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("grantor_avatar_id")]  public string GrantorAvatarId { get; set; } = string.Empty;
-        [JsonPropertyName("tenant_id")]          public string TenantId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("grantor_avatar_id")]  public string GrantorAvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]          public string TenantId { get; set; } = string.Empty;
         [JsonPropertyName("scopes")]             public string Scopes { get; set; } = string.Empty;
         [JsonPropertyName("origin")]             public string Origin { get; set; } = "UserExplicit";
         [JsonPropertyName("participation_ref")]  public string? ParticipationRef { get; set; }

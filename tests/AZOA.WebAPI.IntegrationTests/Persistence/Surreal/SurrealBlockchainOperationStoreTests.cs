@@ -30,7 +30,7 @@ public sealed class SurrealBlockchainOperationStoreTests : IAsyncLifetime
 
     private readonly string _testNamespace = $"test{Guid.NewGuid():N}";
     private SurrealBlockchainOperationStore _store = null!;
-    private HttpSurrealConnection _connection = null!;
+    private ISurrealConnection _connection = null!;
     private HttpClient _httpClient = null!;
     private bool _surrealAvailable;
 
@@ -51,7 +51,7 @@ public sealed class SurrealBlockchainOperationStoreTests : IAsyncLifetime
         };
 
         _httpClient = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
-        _connection = new HttpSurrealConnection(_httpClient, options);
+        _connection = new SurrealDbNetConnection(options);
         var executor = new DefaultSurrealExecutor(_connection);
         _store = new SurrealBlockchainOperationStore(executor);
 

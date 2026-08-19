@@ -10,6 +10,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Admin;
 using Microsoft.Extensions.Logging.Abstractions;
 using GeneratedAvatar = AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -195,7 +196,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
             // SurrealApiKeyStore.ListByAvatarAsync matches avatar_id.
             var q = SurrealQuery
                 .Of("SELECT * FROM avatar WHERE owner_tenant_id = $_tenant ORDER BY created_date DESC")
-                .WithParam("_tenant", SurrealLink.ToLink(AvatarTable, SurrealId.ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealRecordParam.Of(AvatarTable, SurrealId.ToSurrealId(tenantId)));
             var rows = await _executor.QueryAsync<GeneratedAvatar>(q, ct);
             return new AZOAResult<IEnumerable<IAvatar>>
             {
@@ -218,7 +219,7 @@ public sealed class SurrealAvatarStore : IAvatarStore
             // ISTARStore.GetByNameAndAvatarAsync.
             var q = SurrealQuery
                 .Of("SELECT * FROM avatar WHERE owner_tenant_id = $_tenant AND external_user_id = $_ext LIMIT 1")
-                .WithParam("_tenant", SurrealLink.ToLink(AvatarTable, SurrealId.ToSurrealId(tenantId)))
+                .WithParam("_tenant", SurrealRecordParam.Of(AvatarTable, SurrealId.ToSurrealId(tenantId)))
                 .WithParam("_ext", externalUserId);
             var row = await _executor.QuerySingleAsync<GeneratedAvatar>(q, ct);
             return new AZOAResult<IAvatar>

@@ -5,6 +5,8 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Quest;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Schema;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -170,7 +172,7 @@ public sealed class SurrealQuestStore : IQuestStore
             // Two single-statement DELETEs combined into one request:
             // SurrealQuery.Of rejects a multi-statement (';'-joined) body, so
             // compose them via Combine (mirrors HydrateChildrenAsync).
-            var questLink = SurrealLink.ToLink("quest", surrealId);
+            var questLink = SurrealRecordParam.Of("quest", surrealId);
             var deleteNodesQ = SurrealQuery
                 .Of("DELETE quest_node WHERE quest_id = $_qid")
                 .WithParam("_qid", questLink);
@@ -268,7 +270,7 @@ public sealed class SurrealQuestStore : IQuestStore
             // Combine (mirrors HydrateChildrenAsync / UpsertQuestAsync). SurrealDB
             // does not emit a reliable "affected count" on DELETE across versions,
             // so we check the head row absence after the call.
-            var questLink = SurrealLink.ToLink("quest", surrealId);
+            var questLink = SurrealRecordParam.Of("quest", surrealId);
             var deleteHeadQ = SurrealQuery
                 .Of("DELETE type::record($_t, $_id)")
                 .WithParam("_t",  QuestTable)
@@ -531,7 +533,7 @@ public sealed class SurrealQuestStore : IQuestStore
     {
         var surrealId = SurrealId.ToSurrealId(quest.Id);
 
-        var questLink = SurrealLink.ToLink("quest", surrealId);
+        var questLink = SurrealRecordParam.Of("quest", surrealId);
 
         // raw: both SELECTs are fused into one wire round-trip via Combine();
         // the typed/LINQ tiers have no multi-statement combine surface — see
@@ -864,16 +866,16 @@ public sealed class SurrealQuestStore : IQuestStore
         public string SchemaName => QuestTable;
 
         [JsonPropertyName("id")]              public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("avatar_id")]       public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]       public string AvatarId { get; set; } = string.Empty;
         [JsonPropertyName("name")]            public string? Name { get; set; }
         [JsonPropertyName("description")]     public string? Description { get; set; }
-        [JsonPropertyName("template_id")]     public string? TemplateId { get; set; }
-        [JsonPropertyName("dapp_series_id")]  public string? DappSeriesId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestTemplate))] [JsonPropertyName("template_id")]     public string? TemplateId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.DappSeries))] [JsonPropertyName("dapp_series_id")]  public string? DappSeriesId { get; set; }
         [JsonPropertyName("metadata")]        public JsonElement Metadata { get; set; }
         [JsonPropertyName("status")]          public string? Status { get; set; }
         [JsonPropertyName("version")]         public long Version { get; set; }
         [JsonPropertyName("is_public")]       public bool IsPublic { get; set; }
-        [JsonPropertyName("origin_avatar_id")] public string? OriginAvatarId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("origin_avatar_id")] public string? OriginAvatarId { get; set; }
         [JsonPropertyName("published_version_hash")] public string? PublishedVersionHash { get; set; }
         [JsonPropertyName("run_access")]      public string? RunAccess { get; set; }
         [JsonPropertyName("invited_avatar_ids")] public List<string>? InvitedAvatarIds { get; set; }
@@ -885,8 +887,8 @@ public sealed class SurrealQuestStore : IQuestStore
         public string SchemaName => QuestNodeTable;
 
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
-        [JsonPropertyName("node_template_id")]  public string? NodeTemplateId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Quest))] [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestNodeTemplate))] [JsonPropertyName("node_template_id")]  public string? NodeTemplateId { get; set; }
         [JsonPropertyName("node_type")]         public string? NodeType { get; set; }
         [JsonPropertyName("name")]              public string? Name { get; set; }
         [JsonPropertyName("config")]            public string? Config { get; set; }
@@ -900,9 +902,9 @@ public sealed class SurrealQuestStore : IQuestStore
         public string SchemaName => QuestEdgeTable;
 
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
-        [JsonPropertyName("source_node_id")]    public string SourceNodeId { get; set; } = string.Empty;
-        [JsonPropertyName("target_node_id")]    public string TargetNodeId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Quest))] [JsonPropertyName("quest_id")]          public string QuestId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestNode))] [JsonPropertyName("source_node_id")]    public string SourceNodeId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestNode))] [JsonPropertyName("target_node_id")]    public string TargetNodeId { get; set; } = string.Empty;
         [JsonPropertyName("condition")]         public string? Condition { get; set; }
         [JsonPropertyName("edge_type")]         public string? EdgeType { get; set; }
     }

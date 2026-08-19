@@ -4,6 +4,7 @@ using SurrealForge.Client.Idempotency;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -56,7 +57,7 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
             .WithParam("_has_allowed_asset_types", parameters.AllowedAssetTypes is not null)
             .WithParam("_allowed_asset_types", parameters.AllowedAssetTypes ?? Array.Empty<string>())
             .WithParam("_version", parameters.Version)
-            .WithParam("_actor", parameters.UpdatedByAvatarId)
+            .WithParam("_actor", SurrealRecordParam.OfLink(parameters.UpdatedByAvatarId))
             .WithParam("_updated_at", parameters.UpdatedAt);
 
         var appendAudit = SurrealQuery

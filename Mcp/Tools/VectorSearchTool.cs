@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Mcp.Tools;
 
@@ -128,7 +129,7 @@ public sealed class VectorSearchTool : IMcpTool
                 query = SurrealQuery
                     .Of(sql)
                     .WithParam("q", embedding)
-                    .WithParam("avatar_id", avatarIdStr)
+                    .WithParam("avatar_id", SurrealRecordParam.OfLink(avatarIdStr))
                     .WithParam("k", k);
             }
             catch (Exception ex)

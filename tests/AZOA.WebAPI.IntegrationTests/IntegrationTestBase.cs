@@ -95,7 +95,7 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
             Password  = SurrealTestDefaults.Password,
         };
 
-        var connection = new HttpSurrealConnection(new HttpClient(), options);
+        var connection = new SurrealDbNetConnection(options);
         return Task.FromResult<ISurrealExecutor>(new DefaultSurrealExecutor(connection));
     }
 

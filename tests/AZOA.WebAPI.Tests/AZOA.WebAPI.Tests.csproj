@@ -36,7 +36,7 @@
          AttributePocoByteEquivalenceTests (uses AttributeSchemaScanner +
          SurqlEmitter). AZOA.WebAPI loads it as an analyzer asset only;
          the test project needs the real DLL on its compile path. -->
-    <PackageReference Include="SurrealForge.Schema" Version="0.1.1" />
+    <PackageReference Include="SurrealForge.Schema" Version="1.0.0" />
     <!-- Analyzer coverage lives in the external SurrealForge repo
          (github.com/Escherbridge/surrealforge); the SRDB0001 analyzer ships as
          the SurrealForge.Analyzer package. No tests here exercise the analyzer

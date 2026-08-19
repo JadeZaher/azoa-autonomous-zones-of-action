@@ -383,7 +383,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
         }
     }
 
-    /// Build a direct SurrealWalletStore backed by an HttpSurrealConnection using
+    /// Build a direct SurrealWalletStore backed by an ISurrealConnection using
     /// the test namespace created by IntegrationTestBase.InitializeAsync().
     private SurrealWalletStore BuildWalletStore()
     {
@@ -395,8 +395,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
             User      = SurrealTestDefaults.User,
             Password  = SurrealTestDefaults.Password
         };
-        var http       = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
-        var connection = new HttpSurrealConnection(http, options);
+        var connection = new SurrealDbNetConnection(options);
         var executor   = new DefaultSurrealExecutor(connection);
         return new SurrealWalletStore(executor);
     }

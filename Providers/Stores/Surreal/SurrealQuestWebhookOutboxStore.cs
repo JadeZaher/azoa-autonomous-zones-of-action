@@ -4,6 +4,7 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Schema;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -217,11 +218,11 @@ public sealed class SurrealQuestWebhookOutboxStore : IQuestWebhookOutboxStore
         public string SchemaName => Table;
 
         [JsonPropertyName("id")]              public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("tenant_id")]       public string TenantId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]       public string TenantId { get; set; } = string.Empty;
         [JsonPropertyName("event_type")]      public string EventType { get; set; } = string.Empty;
-        [JsonPropertyName("run_id")]          public string RunId { get; set; } = string.Empty;
-        [JsonPropertyName("node_id")]         public string NodeId { get; set; } = string.Empty;
-        [JsonPropertyName("quest_id")]        public string QuestId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestRun))] [JsonPropertyName("run_id")]          public string RunId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.QuestNode))] [JsonPropertyName("node_id")]         public string NodeId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Quest))] [JsonPropertyName("quest_id")]        public string QuestId { get; set; } = string.Empty;
         [JsonPropertyName("payload_json")]    public string PayloadJson { get; set; } = "{}";
         [JsonPropertyName("occurred_at")]     public DateTimeOffset OccurredAt { get; set; }
         [JsonPropertyName("status")]          public string Status { get; set; } = "Pending";

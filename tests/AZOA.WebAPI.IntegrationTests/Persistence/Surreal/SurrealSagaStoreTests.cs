@@ -32,7 +32,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
     private readonly string _testNamespace = $"test{Guid.NewGuid():N}";
     private SurrealSagaStore _store = null!;
-    private HttpSurrealConnection _connection = null!;
+    private ISurrealConnection _connection = null!;
     private bool _surrealAvailable;
 
     // ── IAsyncLifetime ─────────────────────────────────────────────────────────
@@ -54,8 +54,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
             Password = SurrealTestDefaults.Password
         };
 
-        var http = new HttpClient { BaseAddress = new Uri(SurrealTestDefaults.Endpoint) };
-        _connection = new HttpSurrealConnection(http, options);
+        _connection = new SurrealDbNetConnection(options);
         var executor = new DefaultSurrealExecutor(_connection);
         _store = new SurrealSagaStore(executor);
     }

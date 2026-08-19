@@ -6,6 +6,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -135,8 +136,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // SELECT * FROM operation_log WHERE avatar_id = $avatar_id
             var q = SurrealQuery<OperationLog>.From()
-                .Where(o => o.AvatarId == avatarSurrealId)
-                .AsUntyped();
+                .Where(o => o.AvatarId == avatarSurrealId);
 
             var rows = await _executor.QueryAsync<OperationLog>(q, ct);
             var results = rows.Select(r => (IBlockchainOperation)ToDomain(r)).ToList();

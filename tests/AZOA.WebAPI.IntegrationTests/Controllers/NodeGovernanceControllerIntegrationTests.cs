@@ -144,6 +144,14 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         var weakEquivalent = await anonymous.SendAsync(strongConditional);
         weakEquivalent.StatusCode.Should().Be(HttpStatusCode.NotModified);
 
+        using var wildcardConditional = new HttpRequestMessage(HttpMethod.Get, "api/node-transparency/current");
+        wildcardConditional.Headers.TryAddWithoutValidation("If-None-Match", "*");
+        using var wildcardNotModified = await anonymous.SendAsync(wildcardConditional);
+        wildcardNotModified.StatusCode.Should().Be(HttpStatusCode.NotModified);
+        wildcardNotModified.Headers.ETag.Should().Be(currentResponse.Headers.ETag);
+        wildcardNotModified.Headers.CacheControl!.Public.Should().BeTrue();
+        wildcardNotModified.Headers.Vary.Should().Contain("Accept-Encoding");
+
         var invalidCursor = await anonymous.GetAsync(
             "api/node-transparency/audit/fees?cursor=not-a-protected-cursor");
         invalidCursor.StatusCode.Should().Be(HttpStatusCode.BadRequest);

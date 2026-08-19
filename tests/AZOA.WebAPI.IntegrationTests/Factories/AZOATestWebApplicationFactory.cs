@@ -21,7 +21,7 @@ namespace AZOA.WebAPI.IntegrationTests.Factories;
 ///   - Authentication is replaced by the test-only TestAuthHandler so tests
 ///     can exercise auth-gated endpoints without real JWT tokens.
 ///   - The SurrealDB connection defaults to
-///     the developer's local SurrealDB instance on 127.0.0.1:8000 (see appsettings.Development.json).
+///     the developer's local SurrealDB instance on 127.0.0.1:8020 (see appsettings.Development.json).
 ///   - Per-test namespace isolation is owned by IntegrationTestBase — the
 ///     factory itself is shared across the test class collection (IClassFixture).
 ///
@@ -70,6 +70,26 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("IntegrationTest");
 
+        // ── Surreal connection settings must land in HOST configuration ──────
+        // SurrealForge 1.0.0's AddSurrealForgeSdk takes a concrete options
+        // instance, because it has to know the endpoint and the auth scope at
+        // *registration* time (to pick the transport, the auth strategy and the
+        // name of the HttpClient the SDK will resolve). Program.cs therefore
+        // binds the section eagerly, while it is still executing its top-level
+        // statements -- which is BEFORE any ConfigureAppConfiguration delegate
+        // this factory registers has run. Values supplied only through
+        // ConfigureAppConfiguration below arrive too late and the app silently
+        // falls back to SurrealConnectionOptions' own default endpoint
+        // (http://localhost:8442), where nothing is listening.
+        //
+        // UseSetting writes into the web host's configuration, which
+        // WebApplicationBuilder.Configuration already contains when Program.cs
+        // runs, so these are the values the eager bind actually sees. They are
+        // duplicated into the in-memory collection below so anything that reads
+        // the section late sees the same thing.
+        foreach (var (key, value) in SurrealHostSettings())
+            builder.UseSetting(key, value);
+
         builder.ConfigureAppConfiguration((_, config) =>
         {
             // Minimal JWT config so the JWT middleware initialises without
@@ -80,22 +100,6 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Jwt:Issuer"]   = "test",
                 ["Jwt:Audience"] = "test",
 
-                // SurrealDB connection for the test host (wave 2: adapter wiring).
-                // The options class properties are Endpoint / User / Password -- the
-                // ":Username" key on the previous baseline did NOT bind, so requests
-                // hit Surreal anonymous and got rejected with -32002 permission errors.
-                ["SurrealDb:Endpoint"] = SurrealTestDefaults.Endpoint,
-                ["SurrealDb:User"]     = SurrealTestDefaults.User,
-                ["SurrealDb:Password"] = SurrealTestDefaults.Password,
-
-                // Pin the app's namespace/database to the per-class test scope so
-                // the app writes to the SAME namespace IntegrationTestBase creates
-                // and schemas. Without these two keys the app fell back to the
-                // "azoa" default (SurrealConnectionOptions) which no test ever
-                // creates -> "The namespace 'azoa' does not exist" on every write.
-                ["SurrealDb:Namespace"] = TestNamespace,
-                ["SurrealDb:Database"]  = TestDatabase,
-
                 // Keep the AZOA provider key so Program.cs provider-selection code
                 // (if any) doesn't throw on missing config.
                 ["AZOA:DefaultProvider"] = "SurrealDb",
@@ -105,6 +109,9 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Blockchain:Chains:3:ChainType"] = "Simulated",
                 ["Blockchain:Chains:3:Devnet:IsEnabled"] = "true"
             });
+
+            // Same keys as UseSetting above; see the note there.
+            config.AddInMemoryCollection(SurrealHostSettings());
         });
 
         builder.ConfigureTestServices(services =>
@@ -149,6 +156,26 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
             // For now the EF-backed adapters from Program.cs remain wired.
         });
     }
+
+    /// <summary>
+    /// SurrealDB connection settings for the test host. The options class
+    /// properties are Endpoint / User / Password -- the ":Username" key on an
+    /// early baseline did NOT bind, so requests hit Surreal anonymously and were
+    /// rejected with -32002 permission errors.
+    ///
+    /// Namespace/database are pinned to this factory's per-class test scope so
+    /// the app writes to the SAME namespace IntegrationTestBase creates and
+    /// schemas; without them the app falls back to the "azoa" default that no
+    /// test ever creates ("The namespace 'azoa' does not exist" on every write).
+    /// </summary>
+    private Dictionary<string, string?> SurrealHostSettings() => new()
+    {
+        ["SurrealDb:Endpoint"]  = SurrealTestDefaults.Endpoint,
+        ["SurrealDb:User"]      = SurrealTestDefaults.User,
+        ["SurrealDb:Password"]  = SurrealTestDefaults.Password,
+        ["SurrealDb:Namespace"] = TestNamespace,
+        ["SurrealDb:Database"]  = TestDatabase,
+    };
 
     /// Create an HTTP client pre-configured with the test-auth header.
     public HttpClient CreateAuthenticatedClient(string? dappRole = AzoaDappRoles.Manager)
@@ -202,6 +229,7 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
+        client.DefaultRequestHeaders.Add(TestAuthHandler.OperatorHeaderName, "true");
         client.DefaultRequestHeaders.Add(TestAuthHandler.NodeGovernHeaderName, "true");
         if (avatarId.HasValue)
             client.DefaultRequestHeaders.Add(TestAuthHandler.AvatarHeaderName, avatarId.Value.ToString());

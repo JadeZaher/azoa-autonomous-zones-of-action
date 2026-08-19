@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System;
 using System.Collections.Generic;
@@ -10,6 +10,7 @@ using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -39,7 +40,7 @@ public sealed class SurrealHolonTypeRegistryStore : IHolonTypeRegistryStore
     {
         try
         {
-            var q = SurrealQuery.Of("SELECT * FROM holon_type_registry ORDER BY created_at DESC");
+            var q = SurrealQuery<HolonType>.From().OrderByDescending(t => t.CreatedAt);
             var rows = await _executor.QueryAsync<HolonType>(q, ct);
             return new AZOAResult<IEnumerable<HolonType>> { Result = rows.Select(Normalize).ToList(), Message = "Success" };
         }

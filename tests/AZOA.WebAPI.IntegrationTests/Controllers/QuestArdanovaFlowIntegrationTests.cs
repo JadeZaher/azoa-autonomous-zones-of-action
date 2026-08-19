@@ -416,6 +416,17 @@ internal sealed class ArdanovaSimulatedFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("IntegrationTest");
 
+        // Surreal settings go into HOST configuration: Program.cs binds the
+        // section eagerly (AddSurrealForgeSdk needs the endpoint at
+        // registration time), which happens before any
+        // ConfigureAppConfiguration delegate here runs. See
+        // AZOATestWebApplicationFactory for the full note.
+        builder.UseSetting("SurrealDb:Endpoint",  SurrealTestDefaults.Endpoint);
+        builder.UseSetting("SurrealDb:User",      SurrealTestDefaults.User);
+        builder.UseSetting("SurrealDb:Password",  SurrealTestDefaults.Password);
+        builder.UseSetting("SurrealDb:Namespace", _testNamespace);
+        builder.UseSetting("SurrealDb:Database",  AZOATestWebApplicationFactory.TestDatabase);
+
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>

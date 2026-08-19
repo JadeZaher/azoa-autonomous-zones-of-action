@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -61,11 +61,16 @@
        github.com/Escherbridge/surrealforge; formerly the in-repo
        packages/Azoa.SurrealDb.* project suite):
 
-       - SurrealForge.Client   → runtime: HTTP transport, query builder,
-                                  transactions, JSON converters. Also hosts
-                                  the [SurrealTable]/[Column]/etc. attribute
-                                  surface that POCOs in Persistence/SurrealDb/
-                                  Models/ decorate themselves with.
+       - SurrealForge.Client   → runtime: transport over the official
+                                  SurrealDb.Net SDK (CBOR wire format from
+                                  1.0.0), query builder, transactions,
+                                  marshalling. Also hosts the
+                                  [SurrealTable]/[Column]/[References]/etc.
+                                  attribute surface that POCOs in
+                                  Persistence/SurrealDb/Models/ decorate
+                                  themselves with — [References] is what
+                                  promotes a string column to a native CBOR
+                                  record id on the write path.
        - SurrealForge.Schema   → AttributeSchemaScanner + SurqlEmitter +
                                   migration runner (also ships the
                                   `surrealforge` dotnet CLI tool).
@@ -74,10 +79,10 @@
                                   analyzer asset, so PrivateAssets=all.
        ═══════════════════════════════════════════════════════════════ -->
   <ItemGroup>
-    <PackageReference Include="SurrealForge.Client" Version="0.2.0" />
-    <PackageReference Include="SurrealForge.Schema" Version="0.1.1" />
+    <PackageReference Include="SurrealForge.Client" Version="1.0.0" />
+    <PackageReference Include="SurrealForge.Schema" Version="1.0.0" />
     <!-- Analyzer ships as an analyzer asset in the package; PrivateAssets=all
          keeps it from flowing to downstream consumers of this project. -->
-    <PackageReference Include="SurrealForge.Analyzer" Version="0.1.1" PrivateAssets="all" />
+    <PackageReference Include="SurrealForge.Analyzer" Version="1.0.0" PrivateAssets="all" />
   </ItemGroup>
 </Project>

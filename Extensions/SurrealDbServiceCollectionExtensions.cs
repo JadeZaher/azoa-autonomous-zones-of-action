@@ -10,39 +10,46 @@ using SurrealForge.Client.Query;
 namespace AZOA.WebAPI.Extensions;
 
 /// <summary>
-/// DI registration helper for the homebake <c>SurrealForge.Client</c>
-/// package (surrealdb-client-package Phase 6, sub-wave 1.5a).
+/// DI registration helper for the <c>SurrealForge.Client</c> package.
 ///
-/// Replaces the previous direct registration of <c>SurrealDb.Net</c>'s
-/// <c>ISurrealDbClient</c>. The package owns the engine boundary:
+/// <para>
+/// As of SurrealForge 1.0.0 this delegates to the package's own
+/// <c>AddSurrealForgeSdk</c>, which runs on the official <c>SurrealDb.Net</c>
+/// SDK and therefore on the <b>CBOR</b> wire format. The previous registration
+/// hand-built <c>HttpSurrealConnection</c> (SurrealForge's own JSON transport)
+/// and is gone: JSON let SurrealDB coerce text into typed columns, CBOR does
+/// not, so the two are not interchangeable and only one of them can be the
+/// tested path.
+/// </para>
+///
+/// What the package registers:
 /// <list type="bullet">
-///   <item><see cref="ISurrealConnection"/> -- HTTP transport (default).
-///         WebSocket transport is reserved for sub-wave 1.5b LIVE queries.</item>
-///   <item><see cref="ISurrealExecutor"/> -- parameterized query builder
-///         execution surface that the safe-layer query types compose against.</item>
-///   <item><see cref="SurrealConnectionOptions"/> -- endpoint / credentials /
-///         pool sizing. Bound from the <c>SurrealDb</c> configuration section
-///         by default. Override the section name with the
-///         <paramref name="configSectionName"/> argument.</item>
+///   <item><c>ISurrealDbClient</c> (SDK) + <see cref="ISurrealConnection"/>
+///         (<c>SurrealDbNetConnection</c>) -- singletons.</item>
+///   <item><see cref="ISurrealExecutor"/> -- registered <b>by implementation
+///         type</b>, which <c>Program.cs</c> relies on when it swaps in the
+///         OTEL-instrumented decorator.</item>
+///   <item><see cref="SurrealConnectionOptions"/> -- bound eagerly from the
+///         supplied configuration section (the package takes an instance, not
+///         an <c>IOptions&lt;&gt;</c>). The <c>IOptions&lt;&gt;</c> surface is
+///         still registered for anything that reads it.</item>
 /// </list>
 ///
 /// <para>
-/// The registration is intentionally light: a single options object, one
-/// HTTP <see cref="ISurrealConnection"/> per scope, and one
-/// <see cref="ISurrealExecutor"/> proxy. Tests substitute either side via
-/// the standard <see cref="IServiceCollection"/> replace pattern; no extra
-/// abstractions are introduced because the package interfaces are already
-/// the seam.
+/// <b>Container teardown must be asynchronous.</b> The SDK's
+/// <c>SurrealDbClient</c> implements <c>IAsyncDisposable</c> and not
+/// <c>IDisposable</c>; Microsoft's container throws on a synchronous
+/// <c>Dispose()</c> of such a singleton. Generic-host and ASP.NET Core apps
+/// already shut down asynchronously -- hand-built providers need
+/// <c>await using</c>.
 /// </para>
 /// </summary>
 public static class SurrealDbServiceCollectionExtensions
 {
-    private const string ClientName = "SurrealForge.Client";
-
     /// <summary>
-    /// Register the homebake SurrealDB client (<c>SurrealForge.Client</c>)
-    /// with the application's DI container. Reads connection settings from
-    /// the <c>SurrealDb</c> configuration section by default.
+    /// Register the SurrealForge SDK/CBOR client with the application's DI
+    /// container, reading connection settings from the <c>SurrealDb</c>
+    /// configuration section by default.
     /// </summary>
     /// <param name="services">The DI container to extend.</param>
     /// <param name="configuration">Application configuration root.</param>
@@ -59,67 +66,76 @@ public static class SurrealDbServiceCollectionExtensions
         if (configuration is null) throw new ArgumentNullException(nameof(configuration));
 
         var connectionSection = configuration.GetSection(configSectionName);
-        var authenticationScope = connectionSection["AuthenticationScope"];
+        var configuredScope   = connectionSection["AuthenticationScope"]?.Trim();
 
-        if (!string.IsNullOrWhiteSpace(authenticationScope) &&
-            !string.Equals(
-                authenticationScope.Trim(),
-                SurrealRuntimeConfigurationGuard.DatabaseAuthenticationScope,
-                StringComparison.OrdinalIgnoreCase))
+        // Root is now an explicitly supported value, not merely an omission: the
+        // package's SurrealAuthenticationScope defaults to Root, and root Basic
+        // Auth is the one credential shape SurrealDB accepts over HTTP. Namespace
+        // scope stays unsupported -- nothing here is provisioned for a
+        // namespace-scoped identity.
+        var isDatabaseScope = string.Equals(
+            configuredScope,
+            SurrealRuntimeConfigurationGuard.DatabaseAuthenticationScope,
+            StringComparison.OrdinalIgnoreCase);
+        var isRootScope = string.Equals(configuredScope, "Root", StringComparison.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(configuredScope) && !isDatabaseScope && !isRootScope)
         {
             throw new InvalidOperationException(
-                $"{configSectionName}:AuthenticationScope '{authenticationScope}' is unsupported. " +
-                $"Omit it for root/development compatibility or use " +
+                $"{configSectionName}:AuthenticationScope '{configuredScope}' is unsupported. " +
+                $"Omit it for root/development compatibility, or use Root or " +
                 $"{SurrealRuntimeConfigurationGuard.DatabaseAuthenticationScope}.");
         }
 
-        // Bind options from configuration. Missing section uses property defaults
-        // (host http://localhost:8442, namespace/database "azoa"); that is
-        // intentional for local dev — production deployments override every field.
-        services.Configure<SurrealConnectionOptions>(
-            connectionSection);
+        // Keep the IOptions<> surface (diagnostics, tests, anything binding late).
+        services.Configure<SurrealConnectionOptions>(connectionSection);
 
-        // Register IHttpClientFactory so the HTTP transport gets a properly-managed
-        // HttpClient instance (DNS refresh, connection pooling, no socket exhaustion).
-        if (string.Equals(
-                authenticationScope?.Trim(),
-                SurrealRuntimeConfigurationGuard.DatabaseAuthenticationScope,
-                StringComparison.OrdinalIgnoreCase))
+        // AddSurrealForgeSdk takes a concrete options instance because it reads
+        // Endpoint/AuthenticationScope at *registration* time to pick the transport
+        // and the auth strategy -- so bind eagerly rather than deferring to
+        // IOptions. A missing section falls back to property defaults
+        // (http://localhost:8442, namespace/database "test"); production overrides
+        // every field.
+        var options = new SurrealConnectionOptions();
+        connectionSection.Bind(options);
+
+        if (isDatabaseScope)
         {
+            // Preserved from the pre-1.0.0 registration. These are this
+            // application's own audit headers; the SDK independently sends the
+            // native surreal-NS / surreal-DB scoping headers on every request, so
+            // they are informational rather than load-bearing. Attaching them
+            // through ConfigureHttpClient is what puts them on the client the SDK
+            // actually uses -- its HttpClient name is derived from the endpoint,
+            // so a separately-named AddHttpClient registration would never be seen.
             var authenticationNamespace = RequireAuthenticationSetting(
                 connectionSection, configSectionName, "Namespace");
             var authenticationDatabase = RequireAuthenticationSetting(
                 connectionSection, configSectionName, "Database");
 
-            services.AddHttpClient(ClientName, http =>
+            options.ConfigureHttpClient = http =>
             {
+                http.DefaultRequestHeaders.Remove("Surreal-Auth-NS");
+                http.DefaultRequestHeaders.Remove("Surreal-Auth-DB");
                 http.DefaultRequestHeaders.Add("Surreal-Auth-NS", authenticationNamespace);
                 http.DefaultRequestHeaders.Add("Surreal-Auth-DB", authenticationDatabase);
-            });
-        }
-        else
-        {
-            services.AddHttpClient(ClientName);
+            };
         }
 
-        services.AddScoped<ISurrealConnection>(sp =>
-        {
-            var optionsAccessor = sp.GetRequiredService<
-                Microsoft.Extensions.Options.IOptions<SurrealConnectionOptions>>();
-            var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var http        = httpFactory.CreateClient(ClientName);
-            return new HttpSurrealConnection(http, optionsAccessor.Value);
-        });
-
-        // HIGH#4 — ship the executor implementation the XML docs already
-        // advertised. DefaultSurrealExecutor is stateless apart from its
-        // ISurrealConnection reference, so the lifetime is bound to the
-        // connection's (Scoped). Resolves through the same DI surface
-        // safe-layer query types depend on.
-        services.AddScoped<ISurrealExecutor, DefaultSurrealExecutor>();
+        services.AddSurrealForgeSdk(options);
 
         return services;
     }
+
+    /// <summary>
+    /// Name of the <see cref="HttpClient"/> the SDK resolves for
+    /// <paramref name="endpoint"/> -- the one the registration above decorates.
+    /// Exposed so tests assert against the real client rather than a name this
+    /// application invented.
+    /// </summary>
+    public static string ResolveSurrealHttpClientName(string endpoint)
+        => SurrealForge.Client.SurrealDbServiceCollectionExtensions
+            .ResolveSdkHttpClientName(endpoint);
 
     private static string RequireAuthenticationSetting(
         IConfigurationSection section,
