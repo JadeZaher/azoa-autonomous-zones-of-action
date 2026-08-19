@@ -19,7 +19,7 @@ RUN source_revision="${SOURCE_REVISION:-$RAILWAY_GIT_COMMIT_SHA}"; \
     && dotnet publish AZOA.WebAPI.csproj -c Release -o /app/publish --no-restore -p:SourceRevisionId="$source_revision"
 
 # Stage the CLI payload from the exact NuGet package restored with this build.
-ARG SURREALFORGE_SCHEMA_VERSION=0.1.1
+ARG SURREALFORGE_SCHEMA_VERSION=1.0.0
 RUN set -eu; \
     source_dir="/root/.nuget/packages/surrealforge.schema/${SURREALFORGE_SCHEMA_VERSION}/tools/net10.0/any"; \
     test -d "$source_dir"; \
