@@ -12,7 +12,7 @@ RUN case "$SOURCE_REVISION" in \
     esac \
     && dotnet publish AZOA.WebAPI.csproj -c Release -o /app/publish --no-restore -p:SourceRevisionId="$SOURCE_REVISION"
 
-ARG SURREALFORGE_SCHEMA_VERSION=1.0.0
+ARG SURREALFORGE_SCHEMA_VERSION=1.1.0
 RUN set -eu; \
     source_dir="/root/.nuget/packages/surrealforge.schema/${SURREALFORGE_SCHEMA_VERSION}/tools/net10.0/any"; \
     test -d "$source_dir"; \
