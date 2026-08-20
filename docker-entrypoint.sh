@@ -90,12 +90,12 @@ wait_for_surreal() {
 apply_schema() {
     prepare_schema_directory
     echo "[entrypoint] Applying schemas + migrations via surrealforge up ..."
-    # The SurrealForge.Schema CLI is extracted to /app/schema-cli by the
-    # Dockerfile build stage; it is not installed through a dotnet tool manifest.
-    # Invoked as `dotnet <dll>` — the SurrealForge.Schema package ships a
-    # framework-dependent CLI payload (not an installed dotnet tool); see the
-    # Dockerfile schema-cli extraction step.
-    dotnet /app/schema-cli/SurrealForge.Schema.dll up \
+    # SurrealForge.Cli is installed into /app/schema-cli with --tool-path by the
+    # Dockerfile build stage, so it is a real executable rather than a DLL run
+    # through the `dotnet` host. Before 1.2.0 the CLI payload shipped inside the
+    # SurrealForge.Schema library package and had to be copied out of the NuGet
+    # cache; that package is now a plain library.
+    /app/schema-cli/surrealforge up \
         --connection "$SURREAL_URL" \
         --user "$SURREAL_USER" \
         --pass "$SURREAL_PASS" \

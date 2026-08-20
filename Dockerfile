@@ -18,14 +18,21 @@ RUN source_revision="${SOURCE_REVISION:-$RAILWAY_GIT_COMMIT_SHA}"; \
     esac \
     && dotnet publish AZOA.WebAPI.csproj -c Release -o /app/publish --no-restore -p:SourceRevisionId="$source_revision"
 
-# Stage the CLI payload from the exact NuGet package restored with this build.
-ARG SURREALFORGE_SCHEMA_VERSION=1.1.0
+# Stage the schema CLI. As of 1.2.0 the CLI is its own package
+# (SurrealForge.Cli, a real DotnetTool) and SurrealForge.Schema is a plain
+# library with no tools/ payload, so the old "copy out of the NuGet cache"
+# step has nothing to copy.
+#
+# The version is read from the SurrealForge.Schema PackageReference rather
+# than hard-coded: the suite publishes in lockstep, and a hard-coded copy
+# here is exactly what silently drifted from the restored package and broke
+# the image build.
 RUN set -eu; \
-    source_dir="/root/.nuget/packages/surrealforge.schema/${SURREALFORGE_SCHEMA_VERSION}/tools/net10.0/any"; \
-    test -d "$source_dir"; \
-    mkdir -p /app/schema-cli; \
-    cp -r "$source_dir"/* /app/schema-cli/; \
-    test -f /app/schema-cli/SurrealForge.Schema.dll
+    version="$(sed -n 's/.*Include="SurrealForge\.Schema"[[:space:]]*Version="\([^"]*\)".*/\1/p' AZOA.WebAPI.csproj)"; \
+    test -n "$version"; \
+    echo "Schema CLI version: $version"; \
+    dotnet tool install --tool-path /app/schema-cli SurrealForge.Cli --version "$version"; \
+    test -x /app/schema-cli/surrealforge
 
 # Also stage the committed schemas + migrations folder into the image so
 # the runtime container can apply them at boot via the schema CLI.

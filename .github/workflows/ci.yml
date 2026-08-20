@@ -180,16 +180,13 @@ jobs:
           docker logs azoa-schema-ci
           exit 1
 
-      # The CLI version must track the package the app actually restores.
-      # Reading it out of the csproj keeps the two from drifting -- a hard-coded
-      # copy in the Dockerfile is exactly how the production image ended up
-      # staging a version that was no longer restored.
-      #
-      # `dotnet tool install` does NOT work here: the package ships the tool
-      # payload (tools/net10.0/any + DotnetToolSettings.xml) but its nuspec
-      # carries no <packageTypes>, so NuGet refuses it as a .NET tool.
-      # Restoring and invoking the payload is the path the runtime image uses.
-      - name: Stage the schema CLI at the referenced version
+      # As of 1.2.0 the CLI is its own package (SurrealForge.Cli, a real
+      # DotnetTool); SurrealForge.Schema is a plain library with no tools/
+      # payload. The version is taken from the SurrealForge.Schema
+      # PackageReference because the suite publishes in lockstep, so the CLI
+      # under test cannot drift from the library the app restores -- a
+      # hard-coded copy is what broke the production image build.
+      - name: Install the schema CLI at the referenced version
         run: |
           version=$(python3 - <<'PY'
           import re, pathlib
@@ -202,19 +199,30 @@ jobs:
           )
           echo "Schema CLI version: $version"
 
-          dotnet restore AZOA.WebAPI.csproj
+          dotnet tool install --global SurrealForge.Cli --version "$version"
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
-          cli="$HOME/.nuget/packages/surrealforge.schema/$version/tools/net10.0/any/SurrealForge.Schema.dll"
-          test -f "$cli" || { echo "::error::Schema CLI payload missing at $cli"; exit 1; }
-          echo "SCHEMA_CLI=$cli" >> "$GITHUB_ENV"
+      # docker-entrypoint.sh's schema mode applies Generated/Schemas PLUS
+      # CompatibilityBaselines from one directory. Composing the same set here
+      # is what makes this job test the deploy path rather than a subset of it:
+      # the two produce different reconcile plans.
+      - name: Compose the schema set the deploy path applies
+        run: |
+          mkdir -p "$RUNNER_TEMP/azoa-schemas"
+          cp Persistence/SurrealDb/Generated/Schemas/*.surql "$RUNNER_TEMP/azoa-schemas/"
+          if [ -d Persistence/SurrealDb/CompatibilityBaselines ]; then
+            cp Persistence/SurrealDb/CompatibilityBaselines/*.surql "$RUNNER_TEMP/azoa-schemas/"
+          fi
+          echo "SCHEMAS_DIR=$RUNNER_TEMP/azoa-schemas" >> "$GITHUB_ENV"
+          echo "Composed $(ls "$RUNNER_TEMP/azoa-schemas" | wc -l) schema file(s)."
 
       - name: Apply schemas + migrations
         run: |
-          dotnet "$SCHEMA_CLI" up \
+          surrealforge up \
             --connection http://127.0.0.1:8030 \
             --user root --pass root \
             --namespace azoa --database azoa \
-            --schemas-dir Persistence/SurrealDb/Generated/Schemas \
+            --schemas-dir "$SCHEMAS_DIR" \
             --migrations-dir Persistence/SurrealDb/Migrations \
             --applied-by "ci/${{ github.sha }}" \
             | tee apply.log
@@ -225,11 +233,11 @@ jobs:
       # own spelling of a definition back as drift, so this never settled.
       - name: Re-run must be a no-op
         run: |
-          dotnet "$SCHEMA_CLI" up \
+          surrealforge up \
             --connection http://127.0.0.1:8030 \
             --user root --pass root \
             --namespace azoa --database azoa \
-            --schemas-dir Persistence/SurrealDb/Generated/Schemas \
+            --schemas-dir "$SCHEMAS_DIR" \
             --migrations-dir Persistence/SurrealDb/Migrations \
             --applied-by "ci/${{ github.sha }}-rerun" \
             | tee rerun.log
