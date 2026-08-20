@@ -245,23 +245,64 @@ jobs:
             exit 1
           fi
 
+      # Mirrors docker-entrypoint.sh's schema mode: the schema owner defines the
+      # runtime identity the API later authenticates as.
       - name: Provision the database-scoped runtime user
+        env:
+          RUNTIME_PASSWORD: ci-runtime-password-that-is-long-enough
         run: |
-          docker exec azoa-schema-ci /surreal sql \
-            --endpoint http://localhost:8000 \
-            --username root --password root \
-            --namespace azoa --database azoa \
-            --query "DEFINE USER OVERWRITE azoa_runtime ON DATABASE PASSWORD 'ci-runtime-password-that-is-long-enough' ROLES EDITOR;"
+          query="DEFINE USER OVERWRITE azoa_runtime ON DATABASE PASSWORD '$RUNTIME_PASSWORD' ROLES EDITOR;"
+          response=$(printf '%s' "$query" | curl -fsS \
+            --user "root:root" \
+            --header "Surreal-NS: azoa" \
+            --header "Surreal-DB: azoa" \
+            --header "Accept: application/json" \
+            --header "Content-Type: application/surrealql" \
+            --data-binary @- \
+            "http://127.0.0.1:8030/sql")
 
-      # The API authenticates as this scoped user and is forbidden root, so the
-      # split only holds if the user the schema job provisions can actually read.
-      - name: Runtime user can reach the schema
+          echo "$response"
+          grep -q '"status":"OK"' <<<"$response" || {
+            echo "::error::Runtime user was not provisioned."
+            exit 1
+          }
+
+      # The API is forbidden root and authenticates as this scoped user, so the
+      # least-privilege split only holds if the identity the schema job creates
+      # can actually reach the schema. SurrealDB refuses HTTP Basic Auth for a
+      # database-scoped user: it has to exchange credentials for a token first,
+      # which is what the runtime client does.
+      - name: Runtime user can reach the schema without root
+        env:
+          RUNTIME_PASSWORD: ci-runtime-password-that-is-long-enough
         run: |
-          docker exec azoa-schema-ci /surreal sql \
-            --endpoint http://localhost:8000 \
-            --username azoa_runtime --password 'ci-runtime-password-that-is-long-enough' \
-            --namespace azoa --database azoa \
-            --query "INFO FOR DB;"
+          credentials=$(python3 -c 'import json, os; print(json.dumps({"ns": "azoa", "db": "azoa", "user": "azoa_runtime", "pass": os.environ["RUNTIME_PASSWORD"]}))')
+
+          token=$(curl -fsS -X POST "http://127.0.0.1:8030/signin" \
+            --header "Accept: application/json" \
+            --header "Content-Type: application/json" \
+            --data "$credentials" \
+            | python3 -c 'import sys, json; print(json.load(sys.stdin).get("token", ""))')
+
+          if [ -z "$token" ]; then
+            echo "::error::Database-scoped runtime user could not sign in."
+            exit 1
+          fi
+
+          info=$(printf '%s' "INFO FOR DB;" | curl -fsS \
+            --header "Authorization: Bearer $token" \
+            --header "Surreal-NS: azoa" \
+            --header "Surreal-DB: azoa" \
+            --header "Accept: application/json" \
+            --header "Content-Type: application/surrealql" \
+            --data-binary @- \
+            "http://127.0.0.1:8030/sql")
+
+          grep -q '"status":"OK"' <<<"$info" || {
+            echo "::error::Runtime user cannot read the schema it must serve."
+            exit 1
+          }
+          echo "Runtime user read the schema without root."
 
   sdk:
     name: SDK build + vitest
