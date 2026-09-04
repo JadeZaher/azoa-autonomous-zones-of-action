@@ -51,10 +51,42 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
     public abstract string ChainType { get; }
     public ChainNetwork ActiveNetwork { get; protected set; }
 
+    /// <inheritdoc/>
+    /// <remarks>A chain rail names itself by its chain type.</remarks>
+    public string RailId => ChainType;
+
+    /// <inheritdoc/>
+    public RailEnvironment ActiveEnvironment => RailEnvironment.ForChain(ActiveNetwork);
+
+    /// <summary>
+    /// Chain default: once a transaction is confirmed, no third party can take it back,
+    /// so there is no reversal window at all. A chain whose reorg risk is material at the
+    /// confirmation depth it reports SHOULD override with a window rather than pretend.
+    /// </summary>
+    public virtual SettlementProfile SettlementProfile { get; } =
+        SettlementProfile.IrreversibleOnce("the transaction is confirmed on chain");
+
     protected BaseBlockchainProvider(IConfiguration config, ILogger logger)
     {
         _config = config;
         _logger = logger;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The chain-shaped binding: a chain provider needs a <see cref="ChainNetwork"/>, so a
+    /// binding whose environment is not one (a fiat rail's "live") is refused rather than
+    /// mapped onto the nearest-looking network.
+    /// </remarks>
+    public void InitializeRail(ValueRailBinding binding)
+    {
+        if (!binding.Environment.TryToChainNetwork(out var network))
+            throw new ArgumentOutOfRangeException(
+                nameof(binding), binding.Environment,
+                $"{ChainType} is a chain rail and can only bind to a chain network "
+                + $"(Devnet/Testnet/Mainnet); '{binding.Environment}' is not one.");
+
+        Initialize(binding.Endpoint, network);
     }
 
     /// <inheritdoc/>
@@ -182,21 +214,21 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
     }
 
     public virtual Task<AZOAResult<string>> MintAsync(
-        string tokenUri, ulong amount, string assetType, string walletAddress,
+        string tokenUri, RailAmount amount, string assetType, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} MintAsync not implemented"));
     }
 
     public virtual Task<AZOAResult<string>> BurnAsync(
-        string tokenId, ulong amount, string walletAddress,
+        string tokenId, RailAmount amount, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} BurnAsync not implemented"));
     }
 
     public virtual Task<AZOAResult<string>> TransferAsync(
-        string tokenId, string fromAddress, string toAddress, ulong amount,
+        string tokenId, string fromAddress, string toAddress, RailAmount amount,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
         return Task.FromResult(Error<string>($"{ChainType} TransferAsync not implemented"));
@@ -282,40 +314,18 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
         return Task.FromResult(Error<Dictionary<string, object>>($"{ChainType} GetChainInfoAsync not implemented"));
     }
 
-    public virtual Task<AZOAResult<string>> LockForBridgeAsync(
-        string tokenId, string vaultAddress, ulong amount,
-        string targetChain, string targetRecipient, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<string>($"{ChainType} LockForBridgeAsync not implemented"));
-    }
-
-    public virtual Task<AZOAResult<string>> MintWrappedAsync(
-        string sourceChain, string sourceTokenId, string tokenUri,
-        ulong amount, string recipientAddress, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<string>($"{ChainType} MintWrappedAsync not implemented"));
-    }
-
-    public virtual Task<AZOAResult<string>> BurnWrappedAsync(
-        string tokenId, ulong amount, string sourceChain,
-        string sourceRecipient, string walletAddress, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<string>($"{ChainType} BurnWrappedAsync not implemented"));
-    }
-
-    public virtual Task<AZOAResult<string>> ReleaseFromBridgeAsync(
-        string tokenId, string vaultAddress, ulong amount,
-        string recipientAddress, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<string>($"{ChainType} ReleaseFromBridgeAsync not implemented"));
-    }
-
-    // VerifyBridgeProofAsync removed (final-hardening-cutover B2): cross-chain proof
-    // verification lives ONLY on the hardened WormholeAdapter /
-    // Secp256k1VaaSignatureVerifier path. No provider-level verifier — an always-true
-    // one previously lied here. See Providers/Blockchain/AGENTS.md.
-
-    public virtual bool SupportsBridging => false;
+    // ─── Cross-Chain Bridge ───
+    // There is deliberately NO virtual lock/mint/burn/release here and no
+    // SupportsBridging boolean. The bridge capability is expressed by implementing
+    // IBridgeSourceLeg / IBridgeTargetLeg, which TryGetModule resolves at runtime.
+    // A base-class refusal body would be exactly the thing that can regress into a
+    // fabricated `Ok` on a value path; a method that does not exist cannot.
+    //
+    // VerifyBridgeProofAsync was removed in final-hardening-cutover B2: cross-chain
+    // proof verification lives ONLY on the hardened fail-closed protocol path
+    // (WormholeProtocol → WormholeAdapter → Secp256k1VaaSignatureVerifier). No
+    // provider-level verifier — an always-true one previously lied here.
+    // See Providers/Blockchain/AGENTS.md §bridge.
 
     // ─── Shared utility methods ───
 
@@ -437,6 +447,48 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
         // Everything else under Broadcast is ambiguous post-send: do NOT
         // auto-retry an irreversible broadcast. Surface for reconciliation.
         return false;
+    }
+
+    // ─── Amount boundary (D13/D15) ───
+
+    /// <summary>
+    /// Refuses an amount this chain cannot settle — today, one denominated in a fiat
+    /// currency. Returns <c>null</c> when the amount is acceptable, so a caller reads
+    /// <c>if (RejectUnsettleableAmount&lt;string&gt;(amount, "transfer") is { } refusal) return refusal;</c>.
+    /// <para>Reinterpreting fiat cents as chain base units would move a completely
+    /// different quantity of a completely different thing, and nothing downstream could
+    /// tell. This is the check that makes the shared amount type safe to share.</para>
+    /// </summary>
+    protected AZOAResult<T>? RejectUnsettleableAmount<T>(RailAmount amount, string opLabel)
+    {
+        if (amount.IsChainDenominated)
+            return null;
+
+        return Error<T>(
+            $"Cannot {opLabel} on {ChainType}: the amount is denominated in {amount.Dimension}, which this "
+            + "chain does not settle. Refusing to reinterpret it as chain base units — that would move a "
+            + "different quantity than the caller asked for.");
+    }
+
+    /// <summary>
+    /// Narrows a <see cref="RailAmount"/> to the 64-bit base-unit count a ulong-native
+    /// chain SDK takes (Algorand's ASA <c>AssetAmount</c>, an SPL token amount). Returns
+    /// <c>null</c> on success; otherwise a refusal naming the ceiling. Never truncates or
+    /// wraps: a silently wrapped amount moves value the caller never authorised.
+    /// </summary>
+    protected AZOAResult<T>? NarrowToChainBaseUnits<T>(RailAmount amount, string opLabel, out ulong baseUnits)
+    {
+        baseUnits = 0;
+
+        if (RejectUnsettleableAmount<T>(amount, opLabel) is { } unsettleable)
+            return unsettleable;
+
+        if (!amount.TryToUInt64(out baseUnits))
+            return Error<T>(
+                $"Cannot {opLabel} on {ChainType}: {amount.ToBaseUnitString()} base units exceeds the "
+                + $"{ulong.MaxValue} ceiling of this chain's 64-bit amount surface. Refusing to truncate.");
+
+        return null;
     }
 
     protected AZOAResult<T> Error<T>(string message, Exception? ex = null)

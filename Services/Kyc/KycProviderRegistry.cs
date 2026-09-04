@@ -1,5 +1,7 @@
+using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -35,6 +37,7 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
         ManualKycProviderService manual,
         VeriffKycProviderService veriff,
         GenericHostedKycProviderService hosted,
+        IdentomatKycProviderService identomat,
         IOptions<KycSettings> settings,
         IHostEnvironment environment,
         IConfiguration configuration)
@@ -48,6 +51,7 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
             ["manual"] = manual,
             ["veriff"] = veriff,
             ["generic-hosted"] = hosted,
+            [IdentomatKycProviderService.ProviderKeyValue] = identomat,
         };
     }
 
@@ -176,7 +180,12 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
             return PolicyFailure<KycProviderResolution>(evaluated.ReadinessCode);
         }
 
-        var provider = new ProfileBoundKycProviderService(profile.Id, adapter);
+        // Forwarding, not unwrapping. The wrapper exists to rebind the provider key to
+        // the operator profile, so handing the raw adapter to a caller that wants the
+        // hosted seam would discard that binding; instead the wrapper itself becomes a
+        // seam when its inner adapter is one, so tenant-scoped and node-default
+        // resolution admit exactly the same providers.
+        var provider = ProfileBoundKycProviderService.Wrap(profile.Id, adapter);
         var settings = CloneSettings(
             profile.Id,
             profile.AdapterKey,
@@ -215,8 +224,11 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
                     : !policyValid
                         ? KycProviderReadinessCodes.PolicyInvalid
                         : KycProviderReadinessCodes.Ready;
-        var needsApiKey = profile.AdapterKey is "veriff" or "generic-hosted";
-        var needsWebhook = profile.AdapterKey == "generic-hosted";
+        var needsApiKey = profile.AdapterKey is "veriff"
+            or "generic-hosted"
+            or IdentomatKycProviderService.ProviderKeyValue;
+        var needsWebhook = profile.AdapterKey is "generic-hosted"
+            or IdentomatKycProviderService.ProviderKeyValue;
         var requiredKeys = RequiredConfigurationKeys(profile.AdapterKey);
         var missingKeys = MissingConfigurationKeys(profile.AdapterKey);
         return new KycProviderProfileResponse
@@ -227,7 +239,7 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
             Enabled = profile.Enabled,
             Available = readiness == KycProviderReadinessCodes.Ready,
             ApiKeyConfigured = !needsApiKey || ApiKeyConfigured(profile.AdapterKey),
-            WebhookSecretConfigured = !needsWebhook || !string.IsNullOrWhiteSpace(_nodeSettings.Hosted.WebhookSecret),
+            WebhookSecretConfigured = !needsWebhook || WebhookSecretConfigured(profile.AdapterKey),
             ReadinessCode = readiness,
             RequiredConfigurationKeys = requiredKeys,
             MissingConfigurationKeys = missingKeys,
@@ -250,6 +262,11 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
         yield return BuiltIn("manual", "Manual development review", policyVersion, assuranceLevel);
         yield return BuiltIn("veriff", "Veriff", policyVersion, assuranceLevel);
         yield return BuiltIn("generic-hosted", "Generic hosted KYC", policyVersion, assuranceLevel);
+        yield return BuiltIn(
+            IdentomatKycProviderService.ProviderKeyValue,
+            "Identomat",
+            policyVersion,
+            assuranceLevel);
     }
 
     private static KycProviderProfile BuiltIn(
@@ -282,6 +299,8 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
             VeriffApiKey = _nodeSettings.VeriffApiKey,
             VeriffBaseUrl = _nodeSettings.VeriffBaseUrl,
             Hosted = _nodeSettings.Hosted,
+            Identomat = _nodeSettings.Identomat,
+            Identity = _nodeSettings.Identity,
             SubmissionExpiryDays = _nodeSettings.SubmissionExpiryDays,
             SessionExpiryMinutes = _nodeSettings.SessionExpiryMinutes,
             ApprovalPolicy = new KycApprovalPolicySettings
@@ -302,14 +321,29 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
             "generic-hosted" => !string.IsNullOrWhiteSpace(_nodeSettings.Hosted.ApiKey)
                 && !string.IsNullOrWhiteSpace(_nodeSettings.Hosted.WebhookSecret)
                 && ValidHttpsOrigin(_nodeSettings.Hosted.BaseUrl),
+            IdentomatKycProviderService.ProviderKeyValue =>
+                MissingConfigurationKeys(adapterKey).Count == 0,
             _ => false,
         };
 
     private bool ApiKeyConfigured(string adapterKey)
-        => adapterKey == "veriff"
-            ? !string.IsNullOrWhiteSpace(_nodeSettings.VeriffApiKey)
-            : adapterKey == "generic-hosted"
-                && !string.IsNullOrWhiteSpace(_nodeSettings.Hosted.ApiKey);
+        => adapterKey switch
+        {
+            "veriff" => !string.IsNullOrWhiteSpace(_nodeSettings.VeriffApiKey),
+            "generic-hosted" => !string.IsNullOrWhiteSpace(_nodeSettings.Hosted.ApiKey),
+            IdentomatKycProviderService.ProviderKeyValue =>
+                !string.IsNullOrWhiteSpace(_nodeSettings.Identomat.CompanyKey),
+            _ => false,
+        };
+
+    private bool WebhookSecretConfigured(string adapterKey)
+        => adapterKey switch
+        {
+            "generic-hosted" => !string.IsNullOrWhiteSpace(_nodeSettings.Hosted.WebhookSecret),
+            IdentomatKycProviderService.ProviderKeyValue =>
+                IdentomatKycProviderService.IsUsableCallbackSecret(_nodeSettings.Identomat.CallbackApiKey),
+            _ => false,
+        };
 
     private static IReadOnlyList<string> RequiredConfigurationKeys(string adapterKey)
         => adapterKey switch
@@ -319,6 +353,14 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
                 "Kyc__Hosted__ApiKey",
                 "Kyc__Hosted__WebhookSecret",
                 "Kyc__Hosted__BaseUrl"],
+            // NAMES only. The evaluated profile is projected to operator surfaces,
+            // so a value must never reach this list.
+            IdentomatKycProviderService.ProviderKeyValue => [
+                IdentomatKycSettings.BeginBaseUrlName,
+                IdentomatKycSettings.ResultBaseUrlName,
+                IdentomatKycSettings.CompanyKeyName,
+                IdentomatKycSettings.ConfigIdName,
+                IdentomatKycSettings.CallbackApiKeyName],
             _ => Array.Empty<string>(),
         };
 
@@ -336,6 +378,18 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
             if (string.IsNullOrWhiteSpace(_nodeSettings.Hosted.WebhookSecret)) missing.Add("Kyc__Hosted__WebhookSecret");
             if (!ValidHttpsOrigin(_nodeSettings.Hosted.BaseUrl)) missing.Add("Kyc__Hosted__BaseUrl");
         }
+        else if (adapterKey == IdentomatKycProviderService.ProviderKeyValue)
+        {
+            var identomat = _nodeSettings.Identomat;
+            if (!ValidHttpsOrigin(identomat.BeginBaseUrl)) missing.Add(IdentomatKycSettings.BeginBaseUrlName);
+            if (!ValidHttpsOrigin(identomat.ResultBaseUrl)) missing.Add(IdentomatKycSettings.ResultBaseUrlName);
+            if (string.IsNullOrWhiteSpace(identomat.CompanyKey)) missing.Add(IdentomatKycSettings.CompanyKeyName);
+            if (string.IsNullOrWhiteSpace(identomat.ConfigId)) missing.Add(IdentomatKycSettings.ConfigIdName);
+            // Presence is not configuration for the one secret that authenticates an
+            // anonymous endpoint; the adapter owns the floor and this mirrors it.
+            if (!IdentomatKycProviderService.IsUsableCallbackSecret(identomat.CallbackApiKey))
+                missing.Add(IdentomatKycSettings.CallbackApiKeyName);
+        }
 
         return missing;
     }
@@ -343,12 +397,17 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
     public static string NormalizeProviderKey(string? value)
         => value?.Trim().ToLowerInvariant() ?? string.Empty;
 
+    /// <summary>
+    /// Strict adapter selection. An unrecognised value returns null and the caller
+    /// resolves an UNAVAILABLE provider; it never silently inherits manual review.
+    /// </summary>
     public static string? NormalizeAdapter(string? value)
         => value?.Trim().ToLowerInvariant() switch
         {
             "manual" => "manual",
             "veriff" => "veriff",
             "hosted" or "generic-hosted" => "generic-hosted",
+            IdentomatKycProviderService.ProviderKeyValue => IdentomatKycProviderService.ProviderKeyValue,
             _ => null,
         };
 
@@ -368,7 +427,8 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
             && string.IsNullOrEmpty(uri.UserInfo)
             && string.IsNullOrEmpty(uri.Query)
             && string.IsNullOrEmpty(uri.Fragment)
-            && !uri.IsLoopback;
+            && !uri.IsLoopback
+            && !IdentomatKycProviderService.IsInternalHost(uri);
 
     private static AZOAResult<T> DependencyFailure<T>()
         => AZOAResult<T>.FailureWithCode(
@@ -378,10 +438,28 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
     private static AZOAResult<T> PolicyFailure<T>(string message)
         => AZOAResult<T>.FailureWithCode(message, AzoaErrorCodes.PolicyUnavailable);
 
-    private sealed class ProfileBoundKycProviderService(
+    /// <summary>
+    /// Rebinds an adapter's public provider key to the operator profile that selected
+    /// it. Everything else delegates.
+    ///
+    /// <para>Use <see cref="Wrap"/>, never the constructor directly: an adapter that
+    /// implements <see cref="IHostedSessionProvider"/> must come back as something
+    /// that STILL implements it. <c>KycManager</c> admits a hosted provider on the
+    /// type test <c>resolution.Provider is IHostedSessionProvider</c>, so a wrapper
+    /// that only implements <see cref="IKycProviderService"/> makes tenant-scoped
+    /// resolution refuse the very adapter node-default resolution admits — the same
+    /// provider, two answers, decided by which route reached it.</para>
+    /// </summary>
+    private class ProfileBoundKycProviderService(
         string providerKey,
         IKycProviderService inner) : IKycProviderService
     {
+        /// <summary>Preserves the hosted-session seam when the inner adapter has one.</summary>
+        public static IKycProviderService Wrap(string providerKey, IKycProviderService inner)
+            => inner is IHostedSessionProvider hosted
+                ? new ProfileBoundHostedKycProviderService(providerKey, inner, hosted)
+                : new ProfileBoundKycProviderService(providerKey, inner);
+
         public KycProvider Provider => inner.Provider;
         public string ProviderKey => providerKey;
 
@@ -416,5 +494,47 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
             => inner.HandleWebhookAsync(payload, ct);
         public Task<AZOAResult<bool>> ValidateDocumentsAsync(IReadOnlyList<SubmitKycDocumentModel> documents, CancellationToken ct = default)
             => inner.ValidateDocumentsAsync(documents, ct);
+    }
+
+    /// <summary>
+    /// The profile-bound wrapper for an adapter that also implements the hosted
+    /// seam. The hosted members forward verbatim EXCEPT the public provider key,
+    /// which stays rebound to the operator profile exactly as on the KYC side.
+    /// </summary>
+    private sealed class ProfileBoundHostedKycProviderService(
+        string providerKey,
+        IKycProviderService inner,
+        IHostedSessionProvider hosted)
+        : ProfileBoundKycProviderService(providerKey, inner), IHostedSessionProvider
+    {
+        public string FlowKind => hosted.FlowKind;
+
+        public HostedSessionCapabilities GetHostedCapabilities()
+        {
+            var source = hosted.GetHostedCapabilities();
+            return new HostedSessionCapabilities
+            {
+                // The base class already holds the rebound key; reading it here rather
+                // than re-capturing the constructor parameter keeps one source of truth.
+                ProviderKey = ProviderKey,
+                FlowKind = source.FlowKind,
+                Available = source.Available,
+                MissingConfigurationKeys = source.MissingConfigurationKeys,
+                UnavailableReason = source.UnavailableReason,
+            };
+        }
+
+        public Task<AZOAResult<HostedSessionCreation>> CreateHostedSessionAsync(
+            HostedSessionRequest request,
+            CancellationToken ct = default)
+            => hosted.CreateHostedSessionAsync(request, ct);
+
+        public AZOAResult<HostedCallbackTrigger> VerifyCallback(string rawBody)
+            => hosted.VerifyCallback(rawBody);
+
+        public Task<AZOAResult<HostedSessionOutcome>> FetchAuthoritativeOutcomeAsync(
+            string providerSessionId,
+            CancellationToken ct = default)
+            => hosted.FetchAuthoritativeOutcomeAsync(providerSessionId, ct);
     }
 }

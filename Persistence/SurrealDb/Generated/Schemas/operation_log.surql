@@ -3,7 +3,9 @@
 -- Aggregate: BlockchainOperation (Models/BlockchainOperation.cs)
 -- Guardrail: G6 SCHEMAFULL, G2 idempotency unique index
 -- Note: Status values from OperationStatus constants; Parameters is Dictionary<string,string> stored as object.
--- Note: B3 review: operation_log_idempotency_key UNIQUE on option<string>. NULL rows do NOT collide -- adapter MUST supply a non-NULL key on the claim path; api-safety-hardening §4 validator enforces this end-to-end.
+-- Note: B3 review: operation_log_idempotency_key UNIQUE on option<string>. NONE rows do NOT collide (verified on SurrealDB 3.1.4) -- adapter MUST supply a non-NONE key on the claim path; api-safety-hardening §4 validator enforces this end-to-end.
+-- Note: D13: amount is a STRING of decimal base units, not a number. The domain type is RailAmount (BigInteger base units), so a numeric column would re-impose the 64-bit ceiling the widening removed -- an ordinary wei-denominated Ethereum amount does not fit in i64. Written via RailAmount.ToBaseUnitString(), read via RailAmount.TryParse.
+-- Note: D16: value_currency_code / value_minor_units / value_rate / value_rate_as_of / value_rate_source are the fiat value stamped at settlement. They move as a group: all five NONE means the operation was never priced, which is deliberately distinguishable from value_rate = "0" (a real quote of zero). A partial stamp is not a stamp and reads back as unpriced. No rate source exists in this codebase yet -- IValueRateSource is the seam, and until something implements it every row is legitimately unstamped. Never backfill these from a later price: the point of storing the rate and its timestamp is that the figure stays auditable and re-derivable from what was actually known at settlement.
 -- ============================================================
 
 -- ── Enums ─────────────────────────────────────────────────
@@ -30,7 +32,8 @@ DEFINE FIELD IF NOT EXISTS parameters ON TABLE operation_log TYPE option<object>
 
 -- IMintOperation fields
 DEFINE FIELD IF NOT EXISTS token_uri ON TABLE operation_log TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS amount ON TABLE operation_log TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS amount ON TABLE operation_log TYPE option<string>
+    ASSERT $value = NONE OR string::matches($value, "^[0-9]+$");
 DEFINE FIELD IF NOT EXISTS asset_type ON TABLE operation_log TYPE option<string>;
 
 -- IExchangeOperation fields
@@ -60,6 +63,16 @@ DEFINE FIELD IF NOT EXISTS signing_scope ON TABLE operation_log TYPE option<stri
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE operation_log TYPE datetime
     READONLY;
 DEFINE FIELD IF NOT EXISTS completed_date ON TABLE operation_log TYPE option<datetime>;
+
+-- D16 fiat value at transaction time (all-NONE = never priced; see the table note)
+DEFINE FIELD IF NOT EXISTS value_currency_code ON TABLE operation_log TYPE option<string>
+    ASSERT $value = NONE OR string::matches($value, "^[A-Z]{3}$");
+DEFINE FIELD IF NOT EXISTS value_minor_units ON TABLE operation_log TYPE option<string>
+    ASSERT $value = NONE OR string::matches($value, "^[0-9]+$");
+DEFINE FIELD IF NOT EXISTS value_rate ON TABLE operation_log TYPE option<string>
+    ASSERT $value = NONE OR string::matches($value, "^[0-9]+(\\.[0-9]+)?$");
+DEFINE FIELD IF NOT EXISTS value_rate_as_of ON TABLE operation_log TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS value_rate_source ON TABLE operation_log TYPE option<string>;
 
 -- Holon-asset link (economic-primitive-nodes)
 DEFINE FIELD IF NOT EXISTS asset_id ON TABLE operation_log TYPE option<string>;

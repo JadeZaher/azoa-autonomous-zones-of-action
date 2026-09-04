@@ -11,11 +11,8 @@
 //   - IConfiguration              → ambient
 // Scoped lifetime matches AvatarManager/TenantManager. Register near them.
 
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.IdentityModel.Tokens;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
@@ -51,9 +48,13 @@ namespace AZOA.WebAPI.Managers;
 /// wallet to an existing account is the separate, authenticated
 /// <see cref="LinkWalletAsync"/>.</para>
 ///
-/// <para><b>JWT primitive.</b> Mirrors <c>AvatarManager.GenerateJwt</c> exactly (same
-/// <c>Jwt:Key</c> / HmacSha256 / issuer / audience and login claim shape) — the verify
-/// result is indistinguishable from a password login downstream.</para>
+/// <para><b>JWT primitive.</b> Delegates to
+/// <see cref="AZOA.WebAPI.Services.Auth.AvatarLoginTokenIssuer"/> — the same shared
+/// mint <see cref="AZOA.WebAPI.Managers.AvatarManager"/> uses — so the verify result
+/// carries the identical claim set (including <c>dapp_role</c>/<c>scope</c>) and is
+/// indistinguishable from a password login downstream. This used to be a hand-copied
+/// mirror of <c>AvatarManager.GenerateJwt</c> that drifted; see
+/// <see cref="GenerateLoginJwt"/>.</para>
 /// </summary>
 public sealed class WalletAuthManager : IWalletAuthManager
 {
@@ -691,39 +692,22 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return sb.ToString();
     }
 
-    // ── Login JWT (mirrors AvatarManager.GenerateJwt exactly) ─────────────────
+    // ── Login JWT — delegates to the single shared issuer ─────────────────────
 
+    /// <summary>Mints the wallet path's login token via the one shared issuer.</summary>
+    /// <remarks>
+    /// This used to be a hand-copied mirror of <c>AvatarManager.GenerateJwt</c> that
+    /// had silently drifted: it never stamped the dApp-role/scope claims, so a
+    /// wallet-authenticated avatar's token carried no <c>dapp_role</c> and no
+    /// <c>scope</c> claims while a password login for the SAME avatar got both — a
+    /// deny-by-default under-privilege (every claim-gated policy here reads absence as
+    /// "no authority", never as "allow"), not a fail-open. Delegating to
+    /// <see cref="AZOA.WebAPI.Services.Auth.AvatarLoginTokenIssuer"/> (the same
+    /// primitive <see cref="AZOA.WebAPI.Managers.AvatarManager"/> now uses) makes claim
+    /// parity structural instead of hoped-for: there is exactly one JWT-minting
+    /// implementation for every interactive login path, so this class of drift can no
+    /// longer recur.
+    /// </remarks>
     private string GenerateLoginJwt(IAvatar avatar)
-    {
-        var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
-        var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
-        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-
-        var claims = new[]
-        {
-            new Claim(JwtRegisteredClaimNames.Sub, avatar.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, avatar.Email),
-            new Claim(ClaimTypes.Name, avatar.Username),
-            // token-type segregation (security-review S5): a login token and a tenant
-            // child credential share key/issuer/audience/alg — distinguishing them ONLY
-            // by act_as_tenant is fragile. The explicit token_use claim makes the class
-            // unambiguous (full-authority user login vs scoped tenant child). It never
-            // carries act_as_tenant, so it can never be mistaken for a tenant-driven token.
-            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
-            new Claim(
-                AzoaClaims.AuthTime,
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ClaimValueTypes.Integer64),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
-
-        var token = new JwtSecurityToken(
-            issuer: _config["Jwt:Issuer"],
-            audience: _config["Jwt:Audience"],
-            claims: claims,
-            expires: DateTime.UtcNow.AddHours(24),
-            signingCredentials: credentials);
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
-    }
+        => AZOA.WebAPI.Services.Auth.AvatarLoginTokenIssuer.BuildLoginToken(_config, avatar);
 }

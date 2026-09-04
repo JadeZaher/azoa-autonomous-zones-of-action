@@ -12,11 +12,19 @@ using Microsoft.Extensions.Options;
 namespace AZOA.WebAPI.Services.Kyc;
 
 /// <summary>
-/// Validates the latest KYC ledger entry against the active operator trust profile.
+/// Validates the latest KYC ledger entry against the active operator trust profile,
+/// AND the latest AML screening verdict for the same (avatar, tenant) pair.
+///
+/// <para>Identity verification and sanctions screening are two independent
+/// questions. Passing identity says the person is who they claim; it says nothing
+/// about whether that person is sanctioned. This gate requires BOTH, and requires
+/// the screening answer to exist: an approval with no screening result is an
+/// unanswered question, not a clean subject.</para>
 /// </summary>
 public sealed class KycGateService : IKycGateService
 {
     private readonly IKycStore _store;
+    private readonly IKycScreeningStore _screeningStore;
     private readonly IKycProviderService _provider;
     private readonly IKycProviderRegistry? _registry;
     private readonly KycSettings _settings;
@@ -24,11 +32,13 @@ public sealed class KycGateService : IKycGateService
 
     public KycGateService(
         IKycStore store,
+        IKycScreeningStore screeningStore,
         IKycProviderService provider,
         IOptions<KycSettings> settings,
         IHostEnvironment environment)
     {
         _store = store;
+        _screeningStore = screeningStore;
         _provider = provider;
         _registry = null;
         _settings = settings.Value;
@@ -38,12 +48,14 @@ public sealed class KycGateService : IKycGateService
     [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
     public KycGateService(
         IKycStore store,
+        IKycScreeningStore screeningStore,
         IKycProviderService provider,
         IKycProviderRegistry registry,
         IOptions<KycSettings> settings,
         IHostEnvironment environment)
     {
         _store = store;
+        _screeningStore = screeningStore;
         _provider = provider;
         _registry = registry;
         _settings = settings.Value;
@@ -89,16 +101,36 @@ public sealed class KycGateService : IKycGateService
                 DateTimeOffset.UtcNow,
                 out _))
         {
-            return new AZOAResult<bool> { Result = true, Message = "Success" };
+            // Identity holds. The AML answer is a separate question and is required.
+            if (await IsAmlClearAsync(avatarId, tenantId, ct))
+                return new AZOAResult<bool> { Result = true, Message = "Success" };
         }
 
-        // No submission, or the latest is not APPROVED — gate closed.
+        // No submission, the latest is not APPROVED, or AML is not clear — gate closed.
         return new AZOAResult<bool>
         {
             IsError = true,
             Result  = false,
             Message = $"{KycAuthorizationError.Forbidden}{KycAuthorizationError.VerificationRequiredMessage}"
         };
+    }
+
+    /// <summary>
+    /// Fail-closed AML read. Only <see cref="KycScreeningDecision.NO_HIT"/> on a
+    /// non-truncated, un-erased result for this exact (avatar, tenant) pair opens the
+    /// gate. A MISSING result denies, a store error denies, MANUAL_REVIEW denies, and
+    /// a truncated hit list denies — an unread sanctions list is not a clean one, and
+    /// the whole point of screening is that an approved identity who is sanctioned
+    /// must not reach value.
+    /// </summary>
+    private async Task<bool> IsAmlClearAsync(Guid avatarId, Guid? tenantId, CancellationToken ct)
+    {
+        var screening = await _screeningStore.GetLatestResultAsync(avatarId, tenantId, ct);
+        if (screening.IsError || screening.Result is null)
+            return false;
+
+        var result = screening.Result;
+        return result.Decision == KycScreeningDecision.NO_HIT && !result.ResultsTruncated;
     }
 
     public Task<AZOAResult<KycStatus>> GetKycStatusAsync(Guid avatarId)

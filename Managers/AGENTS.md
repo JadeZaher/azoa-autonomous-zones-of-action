@@ -622,3 +622,27 @@ readiness. They are configuration-only, side-effect-free denials and avoid
 consulting participant verification for a route the node cannot offer. Once a
 route is available, value access is required before any idempotency claim,
 wallet/holon mutation, or blockchain operation write.
+## §rail-amount — the amount at the provider boundary, and what still caps it
+
+`BlockchainOperationManager` hands providers a `RailAmount` (`Core/AGENTS.md`
+§rail-amount). Two paths reach it, and they do not have the same range:
+
+- **Burn / Transfer** read `Parameters["Amount"]`, which was always a string, and parse it
+  straight to `BigInteger`. Not capped.
+- **Mint** reads the typed `IMintOperation.Amount`, which is still `ulong` on the operation
+  record, and widens losslessly. **Capped at `ulong.MaxValue` until that record widens** —
+  an Ethereum mint above ~18.45 ETH cannot be expressed through the op row even though the
+  provider surface can now carry it. Widening `IMintOperation.Amount` plus the `OperationLog`
+  POCO and its Surreal mapping is the remaining half of D13.
+
+`DeriveIdempotencyKey` is deliberately untouched by the widening: it reads the same fields it
+always did, in the same string form, so no previously-settled key changes meaning.
+
+## §chain-stamped-signing — one place stamps the chain (custody option 4)
+
+`BuildSigningContext` stamps `SigningContext.ChainType` with the settling provider's
+`ChainType` on EVERY context it builds — platform and per-user alike. That single site is
+why no provider needs an edit and none can drift: a provider that forgets to name its chain
+gets the custody door's Algorand-pinned legacy path and fails closed. Per-user contexts do
+not strictly need it (those keys come from the wallet record, which is already chain-correct)
+but stamping them too removes the "which contexts carry it" question entirely.

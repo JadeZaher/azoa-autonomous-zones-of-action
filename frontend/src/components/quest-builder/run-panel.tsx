@@ -9,10 +9,14 @@ import { Separator } from '@/components/ui/separator'
 import { JsonViewer } from '@/components/shared/json-viewer'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { azoa, isOk } from '@/lib/azoa'
-import { isTerminal, type Result, type SdkError, type WorkflowExecutionState, type WorkflowNodeExecution, type WorkflowRunResult } from 'azoa-sdk'
+import { isTerminal, type WorkflowExecutionState, type WorkflowNodeExecution, type WorkflowReconciliationResult, type WorkflowRunResult } from 'azoa-sdk'
 import { DagFlow } from './dag-flow'
+import { getOutputShapeMirror } from './node-output-schema'
 
 const POLL_INTERVAL_MS = 1500
+// Bounded: after this many *consecutive* poll failures, stop polling and
+// surface it visibly rather than retrying forever or freezing silently.
+const MAX_CONSECUTIVE_POLL_FAILURES = 4
 
 interface RunPanelQuest {
   id: string
@@ -32,7 +36,8 @@ const STATUS_COLOR: Record<string, string> = {
   AwaitingSignal: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
   AwaitingTimer: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300',
   // Reconcile-before-retry park: engine probes chain truth before retrying a
-  // chain-action node. Auto-resolves; no user action. (SDK union may lag; keyed by string.)
+  // chain-action node. Resolved by a manual reconcileRun re-probe or the
+  // backend's own sweep — never auto-retried blindly.
   AwaitingReconciliation: 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
 }
 
@@ -43,23 +48,12 @@ function statusPill(status: string) {
 /** Per-quest localStorage key holding the last-known active run id. */
 const runKey = (questId: string) => `azoa.questRun.${questId}`
 
-// listRuns(questId) + reconcileRun(runId) land in a sibling SDK bump. The on-disk
-// built package types may lag, so we assert a narrow shape here (per task guidance);
-// the panel degrades gracefully if a method is absent at runtime.
-// - listRuns → GET quest/{id}/runs, run summaries shaped like getRunStatus.
-// - reconcileRun → POST quest/runs/{runId}/reconcile, re-probes chain truth.
-type WorkflowExtras = {
-  listRuns?: (questId: string) => Promise<Result<WorkflowRunResult[], SdkError>>
-  reconcileRun?: (runId: string) => Promise<Result<unknown, SdkError>>
-}
-const workflowExtras = azoa.workflow as unknown as typeof azoa.workflow & WorkflowExtras
-
 /**
  * Durable step-based quest run panel: start a run, poll its execution state,
  * overlay live per-node status on the read-only DagFlow, and surface the
  * Advance/Signal controls for parked (Suspended/AwaitingSignal) runs.
  */
-export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
+export function RunPanel({ quest }: { quest: RunPanelQuest }) {
   const [run, setRun] = useState<WorkflowRunResult | null>(null)
   const [execState, setExecState] = useState<WorkflowExecutionState | null>(null)
   const [starting, setStarting] = useState(false)
@@ -75,6 +69,44 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
   const [signalPayload, setSignalPayload] = useState('')
   const [signaling, setSignaling] = useState(false)
   const [reconciling, setReconciling] = useState(false)
+  const [reconcileResult, setReconcileResult] = useState<WorkflowReconciliationResult | null>(null)
+
+  // True once polling has given up after MAX_CONSECUTIVE_POLL_FAILURES in a
+  // row — surfaced as a visible "stopped" banner (with a manual retry) rather
+  // than letting the run view silently freeze at its last known state.
+  const [pollStalled, setPollStalled] = useState(false)
+  // Bumped by the manual retry action to force the polling effect below to
+  // re-run for the SAME run id (run.id alone doesn't change on a manual retry).
+  const [pollGeneration, setPollGeneration] = useState(0)
+
+  // Mirrors the last quest.id this component actually rendered transient run
+  // state for. This component instance is reused across quests (no upstream
+  // `key`), so a quest switch must reset run/exec/history state synchronously —
+  // done here, during render, per React's "adjusting state when a prop changes"
+  // pattern, rather than from inside an effect (which would apply one paint late
+  // and trips react-hooks/set-state-in-effect). The actual side effects — the
+  // localStorage read and the attach/history network calls — stay in the effect
+  // below, which now only performs work, never resets state directly.
+  //
+  // Every piece of transient, per-run-or-per-quest UI state must be reset here,
+  // not just the "obvious" run/exec state: advanceFromNodeId, gateId,
+  // signalPayload, error and pollStalled all previously survived a quest
+  // switch, so a value picked (or an error raised) against quest A could be
+  // silently applied to / shown for quest B once the switch landed.
+  const [renderedQuestId, setRenderedQuestId] = useState(quest.id)
+  if (quest.id !== renderedQuestId) {
+    setRenderedQuestId(quest.id)
+    setRun(null)
+    setExecState(null)
+    setSelectedNodeId(null)
+    setHistory([])
+    setReconcileResult(null)
+    setAdvanceFromNodeId('')
+    setGateId('')
+    setSignalPayload('')
+    setError(null)
+    setPollStalled(false)
+  }
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -91,27 +123,72 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
     }
   }, [])
 
+  // Consecutive poll-failure count and the number of upcoming fixed-cadence
+  // ticks to skip (a lightweight, bounded backoff) — refs because they drive
+  // scheduling decisions inside the interval tick, not rendering.
+  const pollFailureCountRef = useRef(0)
+  const ticksToSkipRef = useRef(0)
+
   const pollOnce = useCallback(async (runId: string) => {
     const res = await azoa.workflow.getExecutionState(runId)
     if (isOk(res)) {
+      pollFailureCountRef.current = 0
+      ticksToSkipRef.current = 0
+      setPollStalled(false)
       setExecState(res.value)
       if (isTerminal(res.value.status)) clearPoll()
     } else {
-      setError(res.error.message)
-      clearPoll()
+      pollFailureCountRef.current += 1
+      if (pollFailureCountRef.current >= MAX_CONSECUTIVE_POLL_FAILURES) {
+        // Repeated failures — stop rather than silently freezing at the last
+        // known state. The banner below lets the operator resume manually.
+        setError(res.error.message)
+        setPollStalled(true)
+        clearPoll()
+      } else {
+        // Transient failure: tolerate it and back off before the next actual
+        // attempt (skip the next N fixed-cadence ticks) instead of either
+        // hammering the endpoint or giving up outright.
+        ticksToSkipRef.current = pollFailureCountRef.current
+      }
     }
   }, [clearPoll])
 
-  // (Re)start polling only when the run ID changes — NOT on every status change,
-  // else each poll (which updates status) would tear down and rebuild the interval.
-  // pollOnce/clearPoll are stable useCallbacks, so excluding them is safe here.
+  // (Re)start polling only when the run ID changes (or a manual retry bumps
+  // pollGeneration) — NOT on every status change, else each poll (which
+  // updates status) would tear down and rebuild the interval. pollOnce/clearPoll
+  // are stable useCallbacks, so excluding them is safe here. The first poll
+  // fires via a zero-delay timeout rather than a direct call, so the effect
+  // body never invokes anything that sets state synchronously on its own turn —
+  // the same subscription shape as the interval tick below, just a one-shot.
   useEffect(() => {
     if (!run || isTerminal(run.status)) return
-    void pollOnce(run.id)
-    pollRef.current = setInterval(() => void pollOnce(run.id), POLL_INTERVAL_MS)
-    return clearPoll
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on run.id only
-  }, [run?.id, pollOnce, clearPoll])
+    const runId = run.id
+    pollFailureCountRef.current = 0
+    ticksToSkipRef.current = 0
+    const tick = () => {
+      if (ticksToSkipRef.current > 0) {
+        ticksToSkipRef.current -= 1
+        return
+      }
+      void pollOnce(runId)
+    }
+    const initialPoll = setTimeout(tick, 0)
+    pollRef.current = setInterval(tick, POLL_INTERVAL_MS)
+    return () => {
+      clearTimeout(initialPoll)
+      clearPoll()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on run.id (+ manual-retry generation) only
+  }, [run?.id, pollGeneration, pollOnce, clearPoll])
+
+  // Manual resume after polling has stalled: clear the failure/backoff state
+  // and bump pollGeneration so the effect above re-subscribes for this run.
+  const handleResumePolling = useCallback(() => {
+    setError(null)
+    setPollStalled(false)
+    setPollGeneration((g) => g + 1)
+  }, [])
 
   useEffect(() => clearPoll, [clearPoll])
 
@@ -133,9 +210,16 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
     }
   }, [run, quest.id])
 
+  // Guarded the same way attachRun is: capture the quest this fetch was issued
+  // for, and bail post-await if the quest has since switched. Without this, a
+  // fast A→B quest switch can let quest A's listRuns response land after B's
+  // and overwrite B's history with A's runs (the render-phase reset above
+  // clears `history` synchronously, but that doesn't cancel A's in-flight
+  // fetch or stop its resolution from winning the race).
   const loadHistory = useCallback(async () => {
-    if (typeof workflowExtras.listRuns !== 'function') return
-    const res = await workflowExtras.listRuns(quest.id)
+    const forQuestId = quest.id
+    const res = await azoa.workflow.listRuns(forQuestId)
+    if (questIdRef.current !== forQuestId) return
     if (isOk(res)) {
       // Newest first — startedAt ISO descending.
       setHistory([...res.value].sort((a, b) => b.startedAt.localeCompare(a.startedAt)))
@@ -154,6 +238,15 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
       // run belongs to a quest that's no longer shown.
       if (questIdRef.current !== forQuestId) return
       if (isOk(res)) {
+        // Defense in depth: reject a run whose questId doesn't match the quest
+        // currently shown. This is what actually stops a contaminated history
+        // row (or a stale/tampered localStorage entry) from writing the wrong
+        // run id into THIS quest's localStorage key — the questIdRef check
+        // above only guards the in-flight-fetch race, not a mismatched result.
+        if (res.value.questId !== forQuestId) {
+          if (typeof window !== 'undefined') window.localStorage.removeItem(runKey(forQuestId))
+          return
+        }
         setRun(res.value)
         setExecState(null)
         setSelectedNodeId(null)
@@ -169,20 +262,22 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
     }
   }, [quest.id])
 
-  // Mount / quest switch: reset transient run state (this component instance is
-  // reused across quests — no `key` prop upstream), then re-attach the persisted
-  // run for THIS quest (if any) and hydrate the history list.
+  // Mount / quest switch: re-attach the persisted run for THIS quest (if any) and
+  // hydrate the history list. Transient state itself is reset synchronously during
+  // render (the renderedQuestId check above); the ref bookkeeping here is
+  // synchronous too (refs, not state), but the two network calls are deferred
+  // through a zero-delay timeout — same subscription shape as the poll effect
+  // above — so nothing that sets state is invoked directly from the effect body.
   useEffect(() => {
     if (typeof window === 'undefined') return
     questIdRef.current = quest.id // current quest generation — attachRun guards on this
-    setRun(null)
-    setExecState(null)
-    setSelectedNodeId(null)
-    setHistory([])
-    const stored = window.localStorage.getItem(runKey(quest.id))
     hydratedForRef.current = quest.id // allow the persist effect to write for this quest
-    if (stored) void attachRun(stored)
-    void loadHistory()
+    const stored = window.localStorage.getItem(runKey(quest.id))
+    const kickoff = setTimeout(() => {
+      if (stored) void attachRun(stored)
+      void loadHistory()
+    }, 0)
+    return () => clearTimeout(kickoff)
     // Keyed on quest.id only — attachRun/loadHistory are stable useCallbacks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quest.id])
@@ -192,6 +287,7 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
     setError(null)
     setExecState(null)
     setSelectedNodeId(null)
+    setReconcileResult(null)
     try {
       const res = await azoa.workflow.startWorkflow(quest.id)
       if (isOk(res)) {
@@ -209,6 +305,16 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
 
   const handleAdvance = async (fromNodeId: string) => {
     if (!run || !fromNodeId) return
+    // Defense in depth: reject a resume-from node id that isn't actually a
+    // Succeeded node on the CURRENT quest/run. advanceFromNodeId is reset on
+    // quest switch above, but this also guards a run swap (e.g. re-attaching
+    // a different run of the same quest) that leaves a picked id pointing at
+    // a node that no longer applies — so a stale/unmatched id can never be
+    // posted, not just a cross-quest one.
+    if (!advanceCandidates.some((n) => n.id === fromNodeId)) {
+      setError('The selected resume node no longer applies to this run — pick again.')
+      return
+    }
     setAdvancing(true)
     setError(null)
     try {
@@ -253,12 +359,15 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
   }
 
   const handleReconcile = async () => {
-    if (!run || typeof workflowExtras.reconcileRun !== 'function') return
+    if (!run) return
     setReconciling(true)
     setError(null)
+    setReconcileResult(null)
     try {
-      const res = await workflowExtras.reconcileRun(run.id)
-      if (!isOk(res)) {
+      const res = await azoa.workflow.reconcileRun(run.id)
+      if (isOk(res)) {
+        setReconcileResult(res.value)
+      } else {
         setError(res.error.message)
       }
       // Refresh run + execution state regardless — reconcile advances lifecycle.
@@ -316,6 +425,9 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
           <>
             {statusPill(run.status)}
             <span className="font-mono text-xs text-muted-foreground">run {run.id}</span>
+            {run.status === 'Failed' && run.failReason && (
+              <span className="text-xs text-red-600 dark:text-red-400">{run.failReason}</span>
+            )}
           </>
         )}
 
@@ -331,6 +443,15 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
       </div>
 
       {error && <ErrorBanner message={error} />}
+
+      {pollStalled && run && !isTerminal(run.status) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/10 dark:text-amber-300">
+          <span>Live updates stopped after repeated errors — the run may still be progressing on the server.</span>
+          <Button size="sm" variant="outline" onClick={handleResumePolling}>
+            Retry
+          </Button>
+        </div>
+      )}
 
       {/* Run history — shown when no run is attached. Click a row to re-attach. */}
       {!run && !attaching && history.length > 0 && (
@@ -358,11 +479,18 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
 
       {run && (
         <>
-          {/* Live DAG overlay — click a node to inspect its output/error below */}
+          {/* Live DAG overlay — click a node to inspect its output/error below.
+              React Flow sets `data-id` on node wrappers AND on handles
+              (`${rfId}-${nodeId}-${handleId}-${type}`) and edges, so the
+              nearest `data-id` ancestor isn't necessarily a real node id —
+              e.g. clicking a node's connection handle would otherwise set
+              selectedNodeId to a composite string matching no node, silently
+              closing the inspector below. Only accept it if it's an actual
+              id from this quest's node list. */}
           <div onClick={(e) => {
             const target = (e.target as HTMLElement).closest('[data-id]')
             const nodeId = target?.getAttribute('data-id')
-            if (nodeId) setSelectedNodeId(nodeId)
+            if (nodeId && quest.nodes.some((n) => n.id === nodeId)) setSelectedNodeId(nodeId)
           }}>
             <DagFlow nodes={liveNodes} edges={quest.edges} />
           </div>
@@ -428,22 +556,36 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
             </p>
           )}
 
-          {/* AwaitingReconciliation: engine is probing chain truth before retrying a
-              chain-action node (no double-mint). Auto-resolves; no user action, no
-              re-probe control exposed by the SDK. Compared as string — union may lag. */}
-          {(run.status as string) === 'AwaitingReconciliation' && (
+          {/* AwaitingReconciliation: a chain-action node's on-chain confirmation was
+              indeterminate. Resolved by a manual re-probe (reconcileRun) or the
+              backend's own sweep — never auto-retried blindly. */}
+          {run.status === 'AwaitingReconciliation' && (
             <div className="flex flex-col gap-2 rounded-md border border-violet-300 bg-violet-50 p-3 dark:border-violet-900/50 dark:bg-violet-900/10">
               <p className="text-xs text-violet-800 dark:text-violet-300">
-                Run awaiting chain reconciliation — the engine is verifying on-chain truth
-                before retrying a chain action (guards against double-execution). This
-                resolves automatically once the chain state is probed; no action needed.
+                Run awaiting chain reconciliation — re-probe checks on-chain truth: a
+                confirmed transaction resolves without re-minting, a failed one is
+                released to retry, and an indeterminate one stays parked for the next sweep.
               </p>
-              {typeof workflowExtras.reconcileRun === 'function' && (
-                <div>
-                  <Button size="sm" variant="outline" disabled={reconciling} onClick={handleReconcile}>
-                    {reconciling ? 'Probing…' : 'Re-probe chain'}
-                  </Button>
-                </div>
+              <div>
+                <Button size="sm" variant="outline" disabled={reconciling} onClick={handleReconcile}>
+                  {reconciling ? 'Probing…' : 'Re-probe chain'}
+                </Button>
+              </div>
+              {reconcileResult && (
+                <dl className="grid grid-cols-3 gap-2 text-[11px] text-violet-800 dark:text-violet-300">
+                  <div>
+                    <dt className="text-violet-600 dark:text-violet-400">Confirmed</dt>
+                    <dd className="font-mono">{reconcileResult.reconciledConfirmed}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-violet-600 dark:text-violet-400">Released to retry</dt>
+                    <dd className="font-mono">{reconcileResult.releasedFailedOnChain}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-violet-600 dark:text-violet-400">Still indeterminate</dt>
+                    <dd className="font-mono">{reconcileResult.stillIndeterminate}</dd>
+                  </div>
+                </dl>
               )}
             </div>
           )}
@@ -455,10 +597,17 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
                 <p className="text-sm font-medium">{selectedNode.name}</p>
                 {selectedExec && statusPill(selectedExec.state)}
               </div>
+              <p className="mb-2 font-mono text-[10px] text-muted-foreground">
+                {outputShapeCaption(selectedNode.nodeType)}
+              </p>
               <Separator className="mb-2" />
-              {selectedExec?.error && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{selectedExec.error}</p>}
+              {selectedExec?.error && (
+                <p className="mb-2 break-words text-xs text-red-600 dark:text-red-400">{selectedExec.error}</p>
+              )}
               {selectedExec?.output ? (
-                <JsonViewer data={tryParseJson(selectedExec.output)} />
+                <div className="max-h-64 overflow-auto break-all text-xs">
+                  <JsonViewer data={tryParseJson(selectedExec.output)} />
+                </div>
               ) : (
                 <p className="text-xs text-muted-foreground">No output recorded yet for this node.</p>
               )}
@@ -473,6 +622,13 @@ export function RunPanel({ quest }: { questId: string; quest: RunPanelQuest }) {
 function formatStarted(iso: string): string {
   const d = new Date(iso)
   return isNaN(d.getTime()) ? iso : d.toLocaleString()
+}
+
+/** One-line caption describing a node type's expected output shape, per the client-side schema mirror. */
+function outputShapeCaption(nodeType: string): string {
+  const shape = getOutputShapeMirror(nodeType)
+  if (shape.open) return 'Free-form output'
+  return `Expected fields: ${Object.keys(shape.fields).join(', ')}`
 }
 
 function tryParseJson(raw: string): unknown {

@@ -15,6 +15,8 @@ using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Tests.TestSupport;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -490,6 +492,7 @@ public class BridgeRedeemRecoveryTests
         public readonly FakeBridgeStore BridgeStore = new();
         public readonly FakeIdempotencyStore IdempotencyStore = new();
         public readonly Mock<IWormholeAdapter> WormholeMock = new();
+        public readonly BridgeLegMocks Legs;
         private readonly Mock<IBlockchainProviderFactory> _factory = new();
         private readonly Mock<IBlockchainProvider> _provider = new();
         private readonly int _staleSeconds;
@@ -497,7 +500,7 @@ public class BridgeRedeemRecoveryTests
         public RedeemHarness(int staleSeconds)
         {
             _staleSeconds = staleSeconds;
-            _provider.Setup(p => p.SupportsBridging).Returns(true);
+            Legs = _provider.WithBridgeLegs();
             _provider.Setup(p => p.ChainType).Returns("Solana");
             _factory.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
                 .Returns(_provider.Object);
@@ -505,7 +508,7 @@ public class BridgeRedeemRecoveryTests
 
         public CrossChainBridgeService CreateService() => new(
             _factory.Object,
-            WormholeMock.Object,
+            new WormholeProtocol(WormholeMock.Object, NullLogger<WormholeProtocol>.Instance),
             Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Wormhole }),
             BridgeStore,
             IdempotencyStore,

@@ -140,14 +140,16 @@ public class QuestActingAvatarAuthorizationTests
         wallets.Setup(m => m.QueryAsync(It.IsAny<WalletQueryRequest>(), Runner, It.IsAny<AZOARequest?>()))
                .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = Array.Empty<IWallet>() });
 
+        var gate = new ValueRailCapabilityGate(wallets.Object, defaultRailId: "Algorand");
+
         // The runner has no wallet ⇒ gate fails closed.
-        var runnerBound = await ChainCapabilityGate.HasWalletBoundAsync(wallets.Object, Runner);
+        var runnerBound = await gate.HasUsableDestinationAsync(Runner, railId: null);
         runnerBound.Should().BeFalse();
 
         // Sanity: the owner WOULD pass — proving the gate is identity-sensitive and
         // the pre-fix code (checking the owner) would have wrongly let the run
         // broadcast under the owner's key.
-        var ownerBound = await ChainCapabilityGate.HasWalletBoundAsync(wallets.Object, Owner);
+        var ownerBound = await gate.HasUsableDestinationAsync(Owner, railId: null);
         ownerBound.Should().BeTrue();
     }
 

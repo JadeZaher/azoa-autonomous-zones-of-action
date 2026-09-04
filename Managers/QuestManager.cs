@@ -35,9 +35,13 @@ public class QuestManager : IQuestManager
     private readonly IQuestDagExecutabilityValidator _executabilityValidator;
     private readonly IQuestNodeHandlerRegistry _registry;
     private readonly ISagaStore _sagaStore;
-    private readonly IWalletManager _walletManager;
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly QuestConfigBindingResolver _bindingResolver;
+
+    // D1/D9 pre-execution value-rail capability gate. Constructed here (not injected) so
+    // the DI signature stays positional-compatible; the pluggable half — the per-rail
+    // destination directories — IS injected. See Services/Quest/AGENTS.md §rail-capability.
+    private readonly ValueRailCapabilityGate _railGate;
 
     // Config-bound marketplace guards (see Managers/AGENTS.md §quest-run-quota
     // and §economic-consent). Materialized once from IConfiguration at construction.
@@ -68,7 +72,11 @@ public class QuestManager : IQuestManager
         // Optional (like configuration) so existing positional test fixtures compile.
         // DI always supplies the real store; the invitation surface faults with a
         // clear message when it is absent. See §quest-invitations.
-        IQuestAccessRequestStore? accessRequestStore = null)
+        IQuestAccessRequestStore? accessRequestStore = null,
+        // Optional (like configuration) so existing positional test fixtures compile. DI
+        // supplies every registered rail destination directory; with none registered the
+        // gate falls back to the rail-scoped wallet directory. See §rail-capability.
+        IEnumerable<IRailDestinationDirectory>? railDestinationDirectories = null)
     {
         _questStore = questStore;
         _runStore = runStore;
@@ -78,12 +86,13 @@ public class QuestManager : IQuestManager
         _executabilityValidator = executabilityValidator;
         _registry = registry;
         _sagaStore = sagaStore;
-        _walletManager = walletManager;
         _chainFactory = chainFactory;
         _bindingResolver = bindingResolver;
         _runQuota = configuration is null
             ? new QuestRunQuotaOptions()
             : QuestRunQuotaOptions.FromConfiguration(configuration);
+        _railGate = new ValueRailCapabilityGate(
+            walletManager, chainFactory.DefaultRailId, railDestinationDirectories);
     }
 
     /// <summary>
@@ -762,12 +771,14 @@ public class QuestManager : IQuestManager
                 result = QuestNodeResults.Fail($"Unsupported node type: {node.NodeType}");
             }
             else if (handler.RequiresChainCapability
-                && !await ChainCapabilityGate.HasWalletBoundAsync(_walletManager, run.AvatarId))
+                && !await _railGate.HasUsableDestinationAsync(
+                    run.AvatarId, handler.ResolveSettlementRailId(node)))
             {
-                // D1 pre-execution capability gate — fails closed (no broadcast):
-                // a chain-requiring node may not run unless the actor has a wallet
-                // bound. HandleAsync is SKIPPED entirely.
-                result = QuestNodeResults.Fail(ChainCapabilityGate.NoWalletBoundMessage);
+                // D1/D9 pre-execution capability gate — fails closed (no broadcast): a
+                // value-moving node may not run unless the actor has a usable destination
+                // on the rail THIS node settles on. HandleAsync is SKIPPED entirely.
+                result = QuestNodeResults.Fail(ValueRailCapabilityGate.NoDestinationMessage(
+                    _railGate.ResolveRailId(handler.ResolveSettlementRailId(node))));
             }
             else
             {
@@ -2394,7 +2405,7 @@ public class QuestManager : IQuestManager
         {
             provider = string.IsNullOrWhiteSpace(chainType)
                 ? _chainFactory.GetDefaultProvider()
-                : _chainFactory.GetProvider(chainType, ChainNetwork.Devnet);
+                : _chainFactory.GetProvider(chainType, _chainFactory.DefaultNetwork);
         }
         catch
         {

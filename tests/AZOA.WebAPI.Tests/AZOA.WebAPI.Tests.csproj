@@ -27,6 +27,12 @@
          a real transfer Message to sign. Same Solnet 8.7.0 family the app already
          references transitively (Solana.Wallet / Solana.Rpc). Test-only. -->
     <PackageReference Include="Solana.Programs" Version="8.7.0" />
+    <!-- In-memory host for the federated sign-in handler tests (Phase 1B). `state`
+         correlation and PKCE are enforced by the framework OAuth handler, so the only
+         honest way to assert they reject a tampered callback is to drive the real
+         handler. No database, no container, no network: the provider's token and
+         userinfo endpoints are a stub HttpMessageHandler. -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>

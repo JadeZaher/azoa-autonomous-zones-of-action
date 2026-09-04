@@ -38,8 +38,15 @@ public class BridgeTransactionResult
     [MaxLength(512)]
     public string TargetAddress { get; set; } = string.Empty;
 
-    [JsonConverter(typeof(UlongDecimalStringJsonConverter))]
-    public ulong Amount { get; set; }
+    /// <summary>
+    /// The bridged quantity in source-asset base units (D13). Widened from <c>ulong</c>;
+    /// <c>bridge_tx.amount</c> was already a string column, so the row can hold the full
+    /// range and <c>CrossChainBridgeService.NarrowToPersistedAmount</c>'s 64-bit refusal is
+    /// now belt-and-braces rather than a real storage limit. Wire form is unchanged: a
+    /// canonical decimal base-unit string.
+    /// </summary>
+    [JsonConverter(typeof(RailAmountBaseUnitStringJsonConverter))]
+    public RailAmount Amount { get; set; }
 
     public BridgeStatus Status { get; set; }
 

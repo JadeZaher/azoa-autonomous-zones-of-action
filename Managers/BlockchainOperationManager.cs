@@ -20,15 +20,27 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     private readonly IBlockchainOperationStore _blockchainOperationStore;
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly IIdempotencyStore _idempotencyStore;
+    private readonly IValueRateSource _valueRateSource;
+    private readonly ILogger<BlockchainOperationManager>? _logger;
 
+    /// <param name="valueRateSource">D16 seam. Optional and unregistered today: this
+    /// codebase has no price oracle, so the default never quotes and every operation is
+    /// written explicitly unpriced. See <c>Persistence/SurrealDb/Models/AGENTS.md</c>
+    /// §value-stamp.</param>
+    /// <param name="logger">Optional so the many hand-constructed instances in tests stay
+    /// two-line; the container supplies a real one.</param>
     public BlockchainOperationManager(
         IBlockchainOperationStore blockchainOperationStore,
         IBlockchainProviderFactory chainFactory,
-        IIdempotencyStore idempotencyStore)
+        IIdempotencyStore idempotencyStore,
+        IValueRateSource? valueRateSource = null,
+        ILogger<BlockchainOperationManager>? logger = null)
     {
         _blockchainOperationStore = blockchainOperationStore;
         _chainFactory = chainFactory;
         _idempotencyStore = idempotencyStore;
+        _valueRateSource = valueRateSource ?? UnpricedValueRateSource.Instance;
+        _logger = logger;
     }
 
     public async Task<AZOAResult<IBlockchainOperation>> ExecuteAsync(IBlockchainOperation operation, AZOARequest? request = null)
@@ -142,6 +154,10 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 operation.CompletedDate = DateTime.UtcNow;
             }
 
+            // D16: freeze the fiat value BEFORE the write that records the outcome, so the
+            // rate that was true at settlement is on the row rather than reconstructed later.
+            await StampValueAtSettlementAsync(operation, chainType);
+
             var saved = await _blockchainOperationStore.UpsertAsync(operation, default);
 
             if (saved.IsError
@@ -192,7 +208,14 @@ public class BlockchainOperationManager : IBlockchainOperationManager
             {
                 "mint",
                 (operation as IMintOperation)?.TokenUri ?? p.GetValueOrDefault("TokenUri", string.Empty),
-                (operation as IMintOperation)?.Amount.ToString() ?? p.GetValueOrDefault("Amount", string.Empty),
+                // MUST stay the bare decimal digits the retired `ulong.ToString()` produced.
+                // RailAmount.ToString() renders "<digits> <dimension>", which would re-hash
+                // every in-flight key and silently disarm replay protection on operations
+                // already claimed under the old spelling. ToBaseUnitString() is byte-identical
+                // to ulong.ToString() over the whole 64-bit range — both emit plain invariant
+                // digits with no sign, separators or suffix. Pinned by
+                // Managers/IdempotencyKeyStabilityGoldenTests.
+                (operation as IMintOperation)?.Amount.ToBaseUnitString() ?? p.GetValueOrDefault("Amount", string.Empty),
                 (operation as IMintOperation)?.AssetType ?? p.GetValueOrDefault("AssetType", string.Empty),
             },
             "Burn" => new object[]
@@ -422,9 +445,12 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     {
         if (operation is not IMintOperation mint) return;
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
-        // D5: the typed ulong Amount field is the single source of truth for the
-        // mint value — same field the idempotency key is derived from. No
-        // Parameters["Amount"] side-channel, no int clamp.
+        // D5: the typed Amount field is the single source of truth for the mint value —
+        // same field the idempotency key is derived from. No Parameters["Amount"]
+        // side-channel, no int clamp.
+        // D13/D15: the field, the operation row and the operation_log.amount column are
+        // all RailAmount/BigInteger-wide now, so this path carries whatever the provider
+        // surface accepts; the last narrowing left is each chain SDK's own edge.
         var amount = mint.Amount;
         // Mint = ASA-create — a platform/ASA-admin op (the platform is the asset
         // manager/reserve/freeze/clawback). tenant-consent-delegation AC4b: a Grant /
@@ -432,18 +458,18 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         // acting tenant so the seam runs the live consent check before decrypt.
         var result = await chainProvider.MintAsync(
             mint.TokenUri ?? string.Empty, amount, mint.AssetType ?? string.Empty, walletAddress,
-            BuildSigningContext(operation, platformOp: true));
+            BuildSigningContext(operation, chainProvider.ChainType, platformOp: true));
         ApplyChainResult(operation, result, OperationStatus.Minted);
     }
 
     private async Task ExecuteBurnAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
     {
         var tokenId = operation.Parameters.GetValueOrDefault("TokenId", string.Empty);
-        var amount = ReadUlongAmount(operation, fallback: 0UL);
+        var amount = ReadRailAmount(operation, fallback: 0);
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
         // Burn = AssetDestroy — a platform/ASA-admin op signed by the asset manager.
         var result = await chainProvider.BurnAsync(tokenId, amount, walletAddress,
-            BuildSigningContext(operation, platformOp: true));
+            BuildSigningContext(operation, chainProvider.ChainType, platformOp: true));
         ApplyChainResult(operation, result, OperationStatus.Burned);
     }
 
@@ -475,12 +501,12 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         var sourceTokenId = operation.Parameters.GetValueOrDefault("SourceTokenId", transfer.SourceHolonId?.ToString() ?? string.Empty);
         // value-path-wiring H4: amount defaults to 1 (single-asset move) when no
         // explicit Amount parameter is present, preserving the prior contract.
-        var amount = ReadUlongAmount(operation, fallback: 1UL);
+        var amount = ReadRailAmount(operation, fallback: 1);
         // value-path-wiring C1: a transfer FROM a user's custodial wallet must sign
         // with the USER's key — build a per-user SigningContext from the op row so
         // the custody IDOR guard runs on the real value path. A platform-owned move
         // (no owning wallet/avatar on the row) signs with the platform key.
-        var signingContext = BuildSigningContext(operation);
+        var signingContext = BuildSigningContext(operation, chainProvider.ChainType);
         var result = await chainProvider.TransferAsync(
             sourceTokenId, walletAddress, transfer.RecipientAddress ?? string.Empty, amount, signingContext);
         ApplyChainResult(operation, result, OperationStatus.Transferred);
@@ -502,9 +528,17 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// gate (fail-closed).
     /// </para>
     /// </summary>
+    /// <param name="chainType">The chain this op will settle on. Stamped onto EVERY
+    /// context built here (custody option 4) so the chain-aware platform door derives
+    /// THAT chain's key. Doing it once, at the single place the context is built, makes
+    /// every provider correct with no provider edits and leaves none able to drift: an
+    /// unstamped context silently takes the door's Algorand-pinned legacy path, which
+    /// fails closed for every other chain. Irrelevant to a per-user op — those keys come
+    /// from the wallet record, which is already chain-correct — but harmless there.</param>
     /// <param name="platformOp">When true, the base context is the platform key
     /// (Mint/Burn = ASA-admin) rather than a per-user resolve.</param>
-    private static SigningContext BuildSigningContext(IBlockchainOperation operation, bool platformOp = false)
+    private static SigningContext BuildSigningContext(
+        IBlockchainOperation operation, string chainType, bool platformOp = false)
     {
         SigningContext baseCtx;
         if (!platformOp
@@ -517,6 +551,8 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         {
             baseCtx = SigningContext.Platform;
         }
+
+        baseCtx = baseCtx.ForChain(chainType);
 
         // No acting tenant ⇒ user-driven / platform-internal; no grant required.
         if (operation.ActingTenantId is not { } tenantId || tenantId == Guid.Empty)
@@ -539,14 +575,100 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     }
 
     /// <summary>
-    /// value-path-wiring H4: read the value amount as <see cref="ulong"/> from the
-    /// op's <c>Amount</c> parameter (arbitrary-precision string), falling back to
-    /// the supplied value when the parameter is absent or unparseable.
+    /// D16: stamps the operation with its fiat value at settlement, or leaves it
+    /// explicitly unstamped when nothing can price it.
     /// </summary>
-    private static ulong ReadUlongAmount(IBlockchainOperation operation, ulong fallback)
+    /// <remarks>
+    /// Three ways an operation ends up unpriced, all of them legitimate and all of them
+    /// recorded as "no stamp at all" rather than a zero: the operation moved no single
+    /// quantity (Swap/Exchange/DeployContract/CallContract), nothing was broadcast
+    /// (Failed / AwaitingSignature / unrecognised type), or no rate source could quote.
+    /// The third is the normal case today — nothing implements
+    /// <see cref="IValueRateSource"/> — and it must stay visibly absent: a defaulted or
+    /// invented rate on a value record is worse than a missing one, and the analytics
+    /// surface reads a null stamp as "never priced" while a stamped <c>"0"</c> rate means
+    /// a source genuinely quoted zero.
+    /// <para>A rate source that throws is treated exactly like one that declines. The
+    /// chain effect has already happened by this point; letting a price lookup fail the
+    /// operation would turn an oracle outage into a settled-but-Failed row, and
+    /// substituting a guess would put a fabricated number on a financial record.</para>
+    /// </remarks>
+    private async Task StampValueAtSettlementAsync(IBlockchainOperation operation, string chainType)
+    {
+        if (operation.ValueStamp is not null)
+            return;
+        if (!HasBroadcastForValueStamp(operation.Status))
+            return;
+        if (!TryResolveStampableAmount(operation, out var amount))
+            return;
+
+        ValueRateQuote? quote;
+        try
+        {
+            quote = await _valueRateSource.TryQuoteAsync(
+                amount.Dimension, chainType, DateTimeOffset.UtcNow, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(
+                ex,
+                "Value rate source failed for operation {OperationId} ({OperationType} on {ChainType}); "
+                + "recording the operation unpriced rather than stamping a guessed value.",
+                operation.Id, operation.OperationType, chainType);
+            return;
+        }
+
+        if (quote is null)
+            return;
+
+        operation.ValueStamp = ValueStamp.From(amount, quote);
+    }
+
+    /// <summary>True only for statuses that mean a transaction actually went to the chain.</summary>
+    private static bool HasBroadcastForValueStamp(string status) =>
+        status is not (OperationStatus.Failed
+            or OperationStatus.AwaitingSignature
+            or OperationStatus.Unknown
+            or OperationStatus.Pending);
+
+    /// <summary>
+    /// The single quantity this operation moved, when it has one. Swap and Exchange move
+    /// two different assets and Deploy/Call move none, so they carry no single amount to
+    /// price and are left unstamped rather than stamped with a half-truth.
+    /// </summary>
+    private static bool TryResolveStampableAmount(IBlockchainOperation operation, out RailAmount amount)
+    {
+        switch (operation.OperationType)
+        {
+            case "Mint" when operation is IMintOperation mint:
+                amount = mint.Amount;
+                return true;
+            case "Burn":
+                amount = ReadRailAmount(operation, fallback: 0);
+                return true;
+            case "Transfer":
+                amount = ReadRailAmount(operation, fallback: 1);
+                return true;
+            default:
+                amount = RailAmount.Zero;
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Reads the value amount from the op's <c>Amount</c> parameter — a canonical
+    /// decimal base-unit string — falling back to the supplied count when the parameter
+    /// is absent or unparseable.
+    /// <para>D13/D15: parsed straight into a <see cref="RailAmount"/>, so this path is
+    /// NOT capped at <see cref="ulong.MaxValue"/>. The parameter was always a string;
+    /// only the former ulong parse imposed the ceiling.</para>
+    /// </summary>
+    private static RailAmount ReadRailAmount(IBlockchainOperation operation, int fallback)
     {
         var raw = operation.Parameters.GetValueOrDefault("Amount", string.Empty);
-        return ulong.TryParse(raw, out var parsed) ? parsed : fallback;
+        return RailAmount.TryParse(raw, ValueDimension.NativeChainAsset, out var parsed)
+            ? parsed
+            : RailAmount.OfChainAsset(fallback);
     }
 
     private async Task ExecuteDeployContractAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)

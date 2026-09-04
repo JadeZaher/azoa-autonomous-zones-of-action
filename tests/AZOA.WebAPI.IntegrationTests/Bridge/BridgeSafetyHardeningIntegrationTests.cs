@@ -495,7 +495,7 @@ internal sealed class BridgeSafetyCountingWormholeAdapter : IWormholeAdapter
 
     public Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
         string sourceChain, string targetChain, string tokenId,
-        string senderAddress, string recipientAddress, ulong amount,
+        string senderAddress, string recipientAddress, RailAmount amount,
         CancellationToken ct = default)
         => Task.FromResult(new AZOAResult<WormholeTransferInitiation>
         {

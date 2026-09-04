@@ -6,6 +6,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
@@ -19,7 +20,8 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 ///   - BlockchainOperation.Id (Guid)        → OperationLog.Id (string, "N" format, lowercase)
 ///   - BlockchainOperation.AvatarId (Guid?) → OperationLog.AvatarId (string?, "N" format)
 ///   - BlockchainOperation.WalletId (Guid?) → OperationLog.WalletId (string?, "N" format)
-///   - BlockchainOperation.Amount (ulong)   → OperationLog.Amount (long?, i64; checked on write)
+///   - BlockchainOperation.Amount (RailAmount) → OperationLog.Amount (string?, decimal base units)
+///   - BlockchainOperation.ValueStamp (D16)  → OperationLog.Value* columns (all-null = unpriced)
 ///   - BlockchainOperation.Parameters (Dictionary) → OperationLog.Parameters (JsonElement?)
 ///   - BlockchainOperation.CreatedDate (DateTime UTC) → OperationLog.CreatedDate (DateTimeOffset UTC)
 ///   - BlockchainOperation.CompletedDate (DateTime?) → OperationLog.CompletedDate (DateTimeOffset?)
@@ -338,12 +340,20 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // IMintOperation
             TokenUri  = concrete?.TokenUri,
-            // OperationLog.Amount is a 64-bit signed column (option<int> ⇒ i64). The
-            // domain Amount is ulong; a value above long.MaxValue cannot round-trip,
-            // so convert checked — an impossible-to-store amount throws loudly here
-            // rather than silently persisting an inverted (negative) value.
-            Amount    = concrete is not null ? checked((long)concrete.Amount) : null,
+            // D13: operation_log.amount is a STRING of decimal base units, so the whole
+            // BigInteger range round-trips. The former i64 column could not hold an
+            // ordinary wei-denominated amount and forced a checked narrowing here.
+            Amount    = concrete?.Amount.ToBaseUnitString(),
             AssetType = concrete?.AssetType,
+
+            // D16: the five stamp columns move together. An unpriced operation writes
+            // all of them null, which is what "never priced" looks like on the row and
+            // is distinguishable from a stamped rate of "0".
+            ValueCurrencyCode = op.ValueStamp?.CurrencyCode,
+            ValueMinorUnits   = op.ValueStamp?.MinorUnits,
+            ValueRate         = op.ValueStamp?.Rate,
+            ValueRateAsOf     = op.ValueStamp?.RateAsOf,
+            ValueRateSource   = op.ValueStamp?.RateSource,
 
             // IExchangeOperation
             SourceHolonId = concrete?.SourceHolonId.HasValue == true
@@ -406,9 +416,18 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // IMintOperation
             TokenUri  = poco.TokenUri,
-            // Stored as a non-negative i64; read back as the domain ulong losslessly.
-            Amount    = poco.Amount.HasValue ? (ulong)poco.Amount.Value : 0UL,
+            // D13: a decimal base-unit string. Absent reads as zero; present-but-corrupt
+            // fails closed, as the former checked i64 narrowing did.
+            Amount    = SurrealAmountColumn.Parse(poco.Amount, poco.Id, "Operation"),
             AssetType = poco.AssetType,
+
+            // D16: null unless every component survived — a partial stamp is not a stamp.
+            ValueStamp = ValueStamp.FromPersisted(
+                poco.ValueCurrencyCode,
+                poco.ValueMinorUnits,
+                poco.ValueRate,
+                poco.ValueRateAsOf,
+                poco.ValueRateSource),
 
             // IExchangeOperation
             SourceHolonId = poco.SourceHolonId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.SourceHolonId)!) : null,

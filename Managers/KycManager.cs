@@ -3,6 +3,7 @@
 using SurrealForge.Client;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Hosting;
+using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -165,16 +166,39 @@ public sealed class KycManager : IKycManager
                 "KYC_ALREADY_APPROVED: This identity already has an active approval.");
         }
 
-        // Hosted providers stay unavailable until they can claim a durable
-        // attempt before their external create call. The available manual flow
-        // has no external side effect, so concurrent starts safely converge on
-        // the store's single-active-submission transaction.
-        if (capabilities.HostedVerification)
+        // A hosted provider stays refused unless it implements the durable
+        // admission seam (IHostedSessionProvider / HostedSessionFlow, D11). This
+        // gates on the SEAM being used, not merely on the HostedVerification flag:
+        // GenericHostedKycProviderService and VeriffKycProviderService both report
+        // HostedVerification=true while remaining fail-closed stubs that do not
+        // implement IHostedSessionProvider, so they stay refused here regardless of
+        // whatever their own Available value happens to be. IdentomatKycProviderService
+        // implements the seam and internally routes its BeginSessionAsync through
+        // IHostedSessionFlow.BeginAsync, which claims durable admission (keyed by a
+        // stable per-(avatar, tenant) admission key) BEFORE touching the vendor -
+        // see Services/HostedSessions/AGENTS.md. That is what makes it safe for two
+        // concurrent begins to converge on one provider session instead of two: the
+        // manual flow has no external side effect, and any seam-implementing hosted
+        // provider claims its own durable row before any external side effect.
+        if (capabilities.HostedVerification && resolution.Provider is not IHostedSessionProvider)
         {
             return Error<KycSessionStartModel>(
                 "KYC provider is unavailable until durable hosted-session admission is installed.");
         }
 
+        // Ordering note (why this call site does not itself persist-before-call):
+        // for a provider gated above, the durable-admission-before-external-call
+        // invariant that Providers/Kyc/AGENTS.md requires ("persist the hosted
+        // session before returning a redirect") is enforced INSIDE this call by
+        // HostedSessionFlow.BeginAsync, not by statement order here. By the time
+        // BeginSessionAsync returns, a hosted provider has already durably claimed
+        // its hosted_session row (and, on success, attached the vendor's session id
+        // to it) - the KycSubmission this method persists afterward is a downstream
+        // ledger projection with no external side effect of its own, so writing it
+        // after the provider call is safe rather than a repeat of the ordering bug.
+        // Routing every hosted provider through HostedSessionFlow (enforced by the
+        // IHostedSessionProvider gate above) is therefore the enforced path that
+        // makes the original ordering trap structurally impossible to hit again.
         var started = await resolution.Provider.BeginSessionAsync(avatarId, ct);
         if (started.IsError || started.Result is null)
             return Error<KycSessionStartModel>(started.Message, started.Exception, started.Code);

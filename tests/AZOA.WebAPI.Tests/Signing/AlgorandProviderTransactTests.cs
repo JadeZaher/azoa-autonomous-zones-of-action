@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Core.Signing;
+using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Providers.Blockchain.Algorand;
 using Xunit;
@@ -168,24 +169,21 @@ public class AlgorandProviderTransactTests
     }
 
     [Fact]
-    public async Task BurnWrapped_fails_closed_before_any_broadcast()
+    public void Wrapped_burn_capability_is_absent_rather_than_refused_at_runtime()
     {
-        // Algorand has no reviewed canonical wrapped-asset lifecycle yet, so the
-        // adapter must reject before it reaches any submission or confirmation seam.
-        using var stub = RunStub(
-            confirmedRound: 0,
-            assetIndex: null,
-            poolError: "TransactionPool.Remember: cannot destroy asset: creator is holding only part of the total 1000000");
+        // Algorand has no reviewed canonical wrapped-asset lifecycle, so it implements no
+        // IBridgeTargetLeg. There is no wrapped-burn method here at all — the previous refusal
+        // body is gone, and with it the only thing that could ever have regressed into an Ok.
+        var provider = NewProvider();
 
-        var provider = NewProvider(stub);
-        var result = await provider.BurnWrappedAsync(
-            tokenId: "12345", amount: 1, sourceChain: "Solana",
-            sourceRecipient: _platform.Address.EncodeAsString(),
-            walletAddress: _platform.Address.EncodeAsString());
+        provider.TryGetModule<IBridgeTargetLeg>(out var targetLeg).Should().BeFalse(
+            "no canonical platform-controlled wrapped ASA lifecycle is implemented");
+        targetLeg.Should().BeNull();
 
-        result.IsError.Should().BeTrue("the Algorand adapter does not implement a launch-safe wrapped burn");
-        result.Message.Should().Contain("disabled");
-        _submitCount.Should().Be(0, "fail-closed bridge primitives must never reach the network");
+        provider.TryGetModule<IBridgeSourceLeg>(out var sourceLeg).Should().BeTrue(
+            "lock and release ARE real and proven, and that direction asymmetry is now expressible");
+        sourceLeg.Should().NotBeNull();
+        _submitCount.Should().Be(0, "a capability probe must never reach the network");
     }
 
     [Fact]

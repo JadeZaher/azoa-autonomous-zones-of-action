@@ -17,6 +17,8 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Tests.TestSupport;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -73,18 +75,14 @@ public class BridgeIdempotencyScopingTests
     {
         var provider = new Mock<IBlockchainProvider>();
         provider.Setup(p => p.ChainType).Returns("Solana");
-        provider.Setup(p => p.SupportsBridging).Returns(true);
-        provider.Setup(p => p.ReleaseFromBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        var legs = provider.WithBridgeLegs();
+        legs.Source.Setup(leg => leg.ReleaseAsync(It.IsAny<BridgeReleaseRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "release-tx" });
         // Reverse's on-chain burn must return a non-null result so the reverse flow
         // completes past the idempotency claim (these tests assert the claim key,
         // not the burn — but an un-stubbed Task<AZOAResult<string>> yields a null
         // result and NREs before the assertion).
-        provider.Setup(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        legs.Target.Setup(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "burn_tx" });
 
         var factory = new Mock<IBlockchainProviderFactory>();
@@ -140,7 +138,7 @@ public class BridgeIdempotencyScopingTests
         config.BridgeVaults["Solana"].VaultAddress = "test-solana-bridge-vault";
         return new CrossChainBridgeService(
             factory.Object,
-            wormhole.Object,
+            new WormholeProtocol(wormhole.Object, NullLogger<WormholeProtocol>.Instance),
             Options.Create(config),
             store.Object,
             idempotency.Object,
@@ -350,7 +348,7 @@ public class BridgeIdempotencyScopingTests
         };
         var provider = new Mock<IBlockchainProvider>();
         provider.SetupGet(value => value.ChainType).Returns("Simulated");
-        provider.SetupGet(value => value.SupportsBridging).Returns(true);
+        var legs = provider.WithBridgeLegs();
         var factory = new Mock<IBlockchainProviderFactory>();
         factory.Setup(value => value.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
             .Returns(provider.Object);
@@ -381,9 +379,7 @@ public class BridgeIdempotencyScopingTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("already bound");
-        provider.Verify(value => value.BurnWrappedAsync(
-            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        legs.Target.Verify(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()), Times.Never);
         store.Verify(value => value.TryTransitionBridgeStatusAsync(
             It.IsAny<string>(), It.IsAny<BridgeStatus>(), It.IsAny<BridgeStatus>(),
             It.IsAny<BridgeStatusMutation?>(), It.IsAny<CancellationToken>()), Times.Never);

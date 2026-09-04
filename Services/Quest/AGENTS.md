@@ -17,7 +17,7 @@ marketplace run — a non-owner starting another avatar's PUBLIC quest. The
 runner id end-to-end as the acting avatar:
 
 - `QuestManager.ExecuteAsync` (legacy sync) and `ExecuteNodeAsync` (single-node)
-  pass `run.AvatarId` into the binding resolver, `ChainCapabilityGate`, and the
+  pass `run.AvatarId` into the binding resolver, `ValueRailCapabilityGate`, and the
   `QuestNodeExecutionContext(actingAvatarId: run.AvatarId, …)` ctor.
 - `QuestNodeStepHandler.ExecuteAsync` (durable saga) loads the run once and uses
   `run.AvatarId` for the same three seams.
@@ -393,3 +393,40 @@ validate path (`EnsureNoDuplicateKeys`, called from `ValidateParameters`) and
 the dictionary build (`BuildParameters`) now reject duplicate keys outright
 with a clean `InvalidOperationException` — one consistent rule so the
 first-match `TryGetProperty` validation and the dictionary never disagree.
+## §rail-capability — the pre-execution value-rail capability gate (D1 + D9)
+
+`ValueRailCapabilityGate` decides whether a node that declares `RequiresChainCapability` may
+run. Both dispatch seams call it before `HandleAsync`: the legacy synchronous `QuestManager`
+executor and the durable `QuestNodeStepHandler` saga step. Enforcing it in exactly one
+helper, called from both, is what stops the durable path becoming a bypass.
+
+**What it replaced.** A static `HasWalletBoundAsync` that returned true if the actor had ANY
+wallet bound. That is wrong in both directions as soon as a second rail exists:
+
+- an Algorand-wallet holder PASSES a fiat payout they cannot receive;
+- a fiat-only user — precisely the persona who should never see a blockchain — FAILS a
+  pure fiat payout.
+
+The rule is now "does the actor have a usable destination on the rail this operation will
+settle on", which fixes both with one question.
+
+**Which rail.** `IQuestNodeHandler.ResolveSettlementRailId(node)` reads it from the node's
+declared config: a Bridge node settles its outbound leg on `SourceChain` (that is where the
+actor's value must be and where the lock is signed), a FungibleTokenCreate on its configured
+`ChainType`. Returning null means "the platform default rail", which the gate resolves from
+`IBlockchainProviderFactory.DefaultRailId`, falling back to
+`BlockchainConfig.DefaultChainFallback` so the gate and the config class cannot drift apart.
+The rail is read from the node DEFINITION rather than the `$from`-resolved config because the
+two seams resolve bindings at different points; a chain type is a static routing decision,
+not a runtime value.
+
+**How the answer is found.** A registered `IRailDestinationDirectory` for that rail wins;
+otherwise the actor's wallet directory scoped TO THAT RAIL (`WalletQueryRequest.ChainType`,
+plus a post-filter so a store that ignores the filter cannot widen the answer). The directory
+interface is the seam a fiat rail plugs into — a payout destination is a bank account or a
+card, not a wallet, and lives in its own store. When that store exists it implements
+`IRailDestinationDirectory` and neither the gate nor either dispatch seam changes.
+
+**Fails closed, without exception.** A lookup error, a directory that throws, an unnamed
+rail, and an empty result are all "no capability". A transient database fault must never be
+the reason value moves.

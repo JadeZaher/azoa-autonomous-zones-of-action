@@ -171,9 +171,10 @@ Network: ____________________   Date: __________   Operator: ___________________
 Until every box is checked for a network, leave that network's set **absent**
 (fail-closed). Do not "temporarily" insert a partial or unverified set.
 
-The `RequireFullSignatureVerification=false` escape hatch exists for
-devnet/testnet **dry runs only** and MUST NEVER be set where real value moves —
-it skips crypto entirely. It is not a substitute for this procedure.
+There is **no escape hatch**. `RequireFullSignatureVerification` was removed:
+per-signature secp256k1 verification is unconditional, so this procedure is the
+ONLY way to make a network's VAAs verifiable. A network without a verified
+Guardian set simply rejects every VAA.
 
 ---
 
@@ -188,4 +189,5 @@ it skips crypto entirely. It is not a substitute for this procedure.
 - **`Services/Wormhole/Secp256k1VaaSignatureVerifier.cs`** — the implementation
   consuming `Blockchain:Wormhole:GuardianSets` (config-driven, fail-closed).
 - **`Core/Blockchain/Wormhole/WormholeConfig.cs`** — `GuardianSets` binding
-  (`Dictionary<string, List<string>>`) + `RequireFullSignatureVerification`.
+  (`Dictionary<string, List<string>>`). Deliberately carries no verification
+  on/off switch.

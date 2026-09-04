@@ -63,3 +63,31 @@ settle both rows. The latter is a persistence protocol only: it is not a
 provider submission or worker activation seam. Stale leases, illegal state
 transitions, a mismatched parent, and any terminal reversal return `false`
 without mutating either paired row.
+## §value-rail — IValueRailProvider and why IBlockchainProvider extends it
+
+`IValueRailProvider` carries the rail-generic surface: move value (`TransferAsync`), read a
+balance, ask what became of an operation (`GetTransactionStatusAsync` /
+`GetTransactionConfirmationAsync`), declare a `SettlementProfile`, and bind to one
+environment (`InitializeRail`). `IBlockchainProvider : IValueRailProvider` adds everything
+chain-shaped — `Initialize`, `TryGetModule`, contract deploy/call, the faucet, and token
+metadata. It deliberately does NOT carry the bridge primitives: those live on the
+`IBridgeSourceLeg` / `IBridgeTargetLeg` capability modules (see
+`Providers/Blockchain/AGENTS.md` §bridge).
+
+**Depend on the narrower one where you can.** Taking `IBlockchainProvider` asserts the
+counterparty is a chain, which a fiat rail is not, and that assertion is what made a fiat
+rail impossible to introduce before (see `Providers/Blockchain/AGENTS.md`
+§value-rail-factory).
+
+Two parameter names read chain-flavoured and are kept verbatim so no named-argument call
+site breaks. Read them rail-generically: `tokenId` is "which asset", null meaning the rail's
+own unit of account; `txHash` is "the reference this rail gave us for the movement".
+`ChainConfirmation` is likewise a normalized landed / failed / in-flight / unknown verdict
+that is rail-generic despite its name. Renaming all three is a mechanical follow-up with no
+behaviour change; it was left out of the seam change to keep the diff reviewable.
+
+`SettlementProfile` and `RailAmount` live in `Core` — see `Core/AGENTS.md`
+§settlement-profile and §rail-amount.
+
+`IQuestNodeHandler.ResolveSettlementRailId` declares which rail a node settles on, read from
+the node's DECLARED config. See `Services/Quest/AGENTS.md` §rail-capability.

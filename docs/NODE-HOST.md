@@ -181,8 +181,9 @@ What each network implies for the **Wormhole bridge trust root**:
 - **Testnet / Mainnet** — the Guardian set is **NOT shipped** (absent ⇒
   fail-closed: every VAA rejected). You MUST populate and independently verify
   the real Guardian set per **`GUARDIAN-SET-SETUP.md`** before Wormhole value can
-  flow. `RealValueEnabled` / `RequireFullSignatureVerification` and the launch
-  gates in `GO-TO-PROD.md` §1 govern when real cross-chain value is allowed.
+  flow. `RealValueEnabled` and the launch gates in `GO-TO-PROD.md` §1 govern
+  when real cross-chain value is allowed; signature verification itself is
+  unconditional and has no config key.
 
 The faucet (`Blockchain:Faucet:Algorand:Mnemonic`) is a **secret**, testnet-only.
 

@@ -145,10 +145,39 @@ target burn reference before attempting source release, and reaches `Refunded`
 only after a confirmed source release. A pending release stays `Reversing` with
 its release transaction reference in `ProofData` for reconciliation.
 
-Wormhole initiation is launch-blocked before persistence or chain calls. Real
-providers advertise `SupportsBridging=false` until they implement the complete
-lock/mint/burn/release lifecycle; only the explicitly simulated provider currently
-advertises the full capability.
+Wormhole initiation is launch-blocked before persistence or chain calls.
+
+### The orchestrator is generic over capability and protocol, never over chain
+
+`CrossChainBridgeService` contains no chain name in any decision. It resolves exactly three
+things and then runs ONE lifecycle:
+
+- `IBridgeSourceLeg` on the source chain (lock, release),
+- `IBridgeTargetLeg` on the target chain (wrapped mint, wrapped burn),
+- `IBridgeProtocol<TProof>` — chosen at composition time, so `TProof` binds statically.
+
+A chain that cannot bridge does not implement the module, so `TryGetModule` returning false
+IS the fail-closed refusal: there is no `SupportsBridging` boolean to set true by mistake and
+no refusal body left to regress into an `Ok`. The direction asymmetry a single boolean could
+not express — Algorand is a proven SOURCE and deliberately not a target — is expressed
+exactly by which modules a provider implements, and `GetSupportedRoutesAsync` now advertises
+that asymmetry per direction.
+
+The bridge is generic over capability and protocol, **never over provider type**: the chain
+pair is runtime data (`GetProvider` returns `IBlockchainProvider`), so an
+`IBridgeStrategy<TSource,TTarget>` would need `MakeGenericType` reflection and forfeit the
+compile-time safety that motivated it. The protocol, by contrast, is composition-time data,
+which is why the generic earns its keep there.
+
+`WormholeProtocol` is the single seam through which VAA verification is reachable; its
+`IWormholeAdapter` is the Guardian-API transport and the hardened verifier it wraps
+(`Secp256k1VaaSignatureVerifier` stays unconditional and fail-closed). Settlement requires a
+resolved `IBridgeTargetLeg`, so a target chain with no reviewed wrapped-asset lifecycle stops
+the redeem before any proof is consumed.
+
+`Blockchain:DefaultNetwork` resolves through `ChainNetworkResolution`: absent means local dev
+(Devnet), but a PRESENT-and-unparseable value now THROWS. The old "parse failed ⇒ Devnet"
+fallback would have pinned a production deployment to devnet on a typo.
 
 ### Tests
 

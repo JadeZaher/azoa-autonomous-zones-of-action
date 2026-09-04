@@ -7,6 +7,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
+using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -17,6 +18,7 @@ namespace AZOA.WebAPI.Tests.Kyc;
 public sealed class RealValueKycGateTests
 {
     private readonly Mock<IKycStore> _store = new();
+    private readonly InMemoryKycScreeningStore _screening = new();
     private readonly Mock<IKycProviderService> _provider = ReadyProvider(
         KycProvider.VERIFF,
         "veriff");
@@ -26,6 +28,7 @@ public sealed class RealValueKycGateTests
     {
         var avatarId = Guid.NewGuid();
         SetupLatest(avatarId, KycStatus.APPROVED, DateTimeOffset.UtcNow.AddDays(1));
+        _screening.SeedResult(avatarId, null, KycScreeningDecision.NO_HIT);
 
         var result = await Gate()
             .RequireCurrentApprovalAsync(avatarId);
@@ -118,6 +121,7 @@ public sealed class RealValueKycGateTests
         settings.ApprovalPolicy.AllowManualInDevelopment = true;
         var gate = new RealValueKycGate(
             _store.Object,
+            _screening,
             provider.Object,
             Options.Create(settings),
             HostEnvironment(Environments.Production));
@@ -148,6 +152,7 @@ public sealed class RealValueKycGateTests
         settings.ApprovalPolicy.AllowManualInDevelopment = true;
         var gate = new RealValueKycGate(
             _store.Object,
+            _screening,
             provider.Object,
             Options.Create(settings),
             HostEnvironment(Environments.Development));
@@ -171,6 +176,7 @@ public sealed class RealValueKycGateTests
 
     private RealValueKycGate Gate() => new(
         _store.Object,
+        _screening,
         _provider.Object,
         Options.Create(TrustedSettings("production-v1", "substantial", "veriff")),
         HostEnvironment(Environments.Production));

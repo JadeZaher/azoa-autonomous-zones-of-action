@@ -68,6 +68,7 @@ public sealed class KycRuntimeSafetyTests
             new ManualKycProviderService(options),
             new VeriffKycProviderService(),
             new GenericHostedKycProviderService(options),
+            AZOA.WebAPI.Tests.TestSupport.IdentomatTestFactory.Create(options),
             options,
             Mock.Of<IHostEnvironment>(item => item.EnvironmentName == Environments.Development),
             configuration);

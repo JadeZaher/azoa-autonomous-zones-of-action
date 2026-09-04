@@ -95,6 +95,25 @@ public interface IKeyCustodyService
     Task<AZOAResult<T>> WithPlatformSigningKeyAsync<T>(bool isPlatformContext, SigningContext ctx, Func<byte[], Task<T>> sign);
 
     /// <summary>
+    /// The <b>chain-explicit</b> platform resolve — the preferred door. Identical
+    /// platform-authority, consent-gate, and decrypt→sign→zero contract as
+    /// <see cref="WithPlatformSigningKeyAsync{T}(bool, SigningContext, Func{byte[], Task{T}})"/>,
+    /// but <paramref name="chainType"/> names the chain whose platform key must be
+    /// derived, so the door can never hand back a key derived by another chain's rule.
+    /// <para>
+    /// A chain with no registered <see cref="AZOA.WebAPI.Services.Custody.IPlatformKeyDerivation"/>
+    /// FAILS CLOSED with an error naming the chain — it does not fall through to any
+    /// default. A blank <paramref name="chainType"/> fails closed too.
+    /// </para>
+    /// </summary>
+    /// <param name="chainType">The chain whose platform key signs (e.g. <c>"Solana"</c>).</param>
+    /// <param name="isPlatformContext">The caller's platform-authority assertion; must be <c>true</c>.</param>
+    /// <param name="ctx">Consent context; also carries the acting tenant/scope.</param>
+    /// <param name="sign">The signing callback; same lifetime/zeroing contract as the other resolves.</param>
+    Task<AZOAResult<T>> WithPlatformSigningKeyAsync<T>(
+        string chainType, bool isPlatformContext, SigningContext ctx, Func<byte[], Task<T>> sign);
+
+    /// <summary>
     /// Ownership/eligibility predicate — <b>no decrypt</b>. Lets callers pre-flight
     /// whether <paramref name="walletId"/> is signable by <paramref name="avatarId"/>
     /// (exists, owned, <see cref="WalletType.Platform"/>, has ciphertext) without

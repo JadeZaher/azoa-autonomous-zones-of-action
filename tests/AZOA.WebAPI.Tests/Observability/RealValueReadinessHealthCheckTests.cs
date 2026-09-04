@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Moq;
+using AZOA.WebAPI.Tests.TestSupport;
 
 namespace AZOA.WebAPI.Tests.Observability;
 
@@ -129,7 +130,7 @@ public sealed class RealValueReadinessHealthCheckTests
         var provider = new Mock<IBlockchainProvider>();
         provider.SetupGet(item => item.ChainType).Returns("Algorand");
         provider.SetupGet(item => item.ActiveNetwork).Returns(ChainNetwork.Testnet);
-        provider.SetupGet(item => item.SupportsBridging).Returns(true);
+        provider.WithBridgeLegs();
 
         var factory = new Mock<IBlockchainProviderFactory>();
         factory.Setup(item => item.GetProvider("Algorand", ChainNetwork.Testnet))

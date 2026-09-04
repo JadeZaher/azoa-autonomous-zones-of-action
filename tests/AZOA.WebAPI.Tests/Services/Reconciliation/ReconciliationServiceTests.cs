@@ -12,6 +12,9 @@ using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Reconciliation;
 using AZOA.WebAPI.Tests.TestSupport;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using AZOA.WebAPI.Services.Bridge;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services.Reconciliation;
 
@@ -732,8 +735,13 @@ public class ReconciliationServiceTests
         public Mock<IBlockchainProvider> ProviderMock { get; } = new();
         public Mock<IBlockchainProviderFactory> FactoryMock { get; } = new();
 
+        /// <summary>Bridge legs the provider CAN reach — attached so the no-mutation
+        /// invariant proves reconciliation never calls one even when the capability exists.</summary>
+        public BridgeLegMocks Legs { get; }
+
         public FakeReconHarness()
         {
+            Legs = ProviderMock.WithBridgeLegs();
             ProviderMock.Setup(p => p.ChainType).Returns("Solana");
             FactoryMock.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
                 .Returns(ProviderMock.Object);
@@ -847,29 +855,23 @@ public class ReconciliationServiceTests
             // value-path-wiring H4: all value amounts are ulong; direct chain calls
             // also carry a trailing SigningContext? parameter.
             ProviderMock.Verify(p => p.MintAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
-            ProviderMock.Verify(p => p.MintWrappedAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Target.Verify(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.BurnAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(),
                 It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
-            ProviderMock.Verify(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Target.Verify(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.TransferAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<ulong>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
+                It.IsAny<RailAmount>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.SwapAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<decimal>(),
                 It.IsAny<decimal>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.ExchangeAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-            ProviderMock.Verify(p => p.LockForBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Source.Verify(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.DeployContractAsync(
                 It.IsAny<byte[]>(), It.IsAny<string>(),
                 It.IsAny<Dictionary<string, object>?>(), It.IsAny<CancellationToken>()), Times.Never);

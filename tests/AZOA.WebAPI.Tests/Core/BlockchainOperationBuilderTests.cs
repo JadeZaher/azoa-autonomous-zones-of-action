@@ -60,7 +60,7 @@ public class BlockchainOperationBuilderTests
 
         op.OperationType.Should().Be("Mint");
         op.TokenUri.Should().Be("ipfs://test");
-        op.Amount.Should().Be(5);
+        op.Amount.ToBaseUnitString().Should().Be("5");
         op.AssetType.Should().Be("NFT");
         op.Parameters.Should().ContainKey("TokenUri");
         op.Parameters.Should().ContainKey("Amount");

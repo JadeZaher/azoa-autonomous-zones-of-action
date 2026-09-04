@@ -344,7 +344,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         return AZOAResult<CursorPage<OperatorKycSubmissionQueueItem>>.Success(new CursorPage<OperatorKycSubmissionQueueItem>
         {
             Items = items,
-            NextCursor = rows.Result.Count > limit ? EncodeCursor(offset + limit) : null,
+            NextCursor = rows.Result!.Count > limit ? EncodeCursor(offset + limit) : null,
         });
     }
 

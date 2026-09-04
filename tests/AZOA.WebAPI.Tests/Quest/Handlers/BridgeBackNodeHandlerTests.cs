@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Moq;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.QuestExecution;
@@ -54,7 +55,7 @@ public class BridgeBackNodeHandlerTests
         document.RootElement.GetProperty("amount").GetString()
             .Should().Be("18446744073709551615");
         JsonSerializer.Deserialize<BridgeNodeConfig>(json, options)!.Amount
-            .Should().Be(ulong.MaxValue);
+            .Should().Be(RailAmount.OfChainAsset(ulong.MaxValue));
     }
 
     [Fact]
@@ -67,9 +68,9 @@ public class BridgeBackNodeHandlerTests
         string? capturedIdemKey = null;
         var svc = new Mock<ICrossChainBridgeService>();
         svc.Setup(s => s.InitiateBridgeAsync(
-                "Algorand", "Solana", "555", "recipient", It.IsAny<Guid>(), 3,
+                "Algorand", "Solana", "555", "recipient", It.IsAny<Guid>(), RailAmount.OfChainAsset(3),
                 It.IsAny<BridgeMode?>(), It.IsAny<CancellationToken>(), It.IsAny<string?>()))
-           .Callback<string, string, string, string, Guid, ulong, BridgeMode?, CancellationToken, string?>(
+           .Callback<string, string, string, string, Guid, RailAmount, BridgeMode?, CancellationToken, string?>(
                 (_, _, _, _, av, _, _, _, key) => { capturedAvatar = av; capturedIdemKey = key; })
            .ReturnsAsync(new AZOAResult<BridgeTransactionResult>
            {
@@ -99,7 +100,7 @@ public class BridgeBackNodeHandlerTests
         var svc = new Mock<ICrossChainBridgeService>();
         svc.Setup(s => s.InitiateBridgeAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<Guid>(), It.IsAny<ulong>(), It.IsAny<BridgeMode?>(),
+                It.IsAny<Guid>(), It.IsAny<RailAmount>(), It.IsAny<BridgeMode?>(),
                 It.IsAny<CancellationToken>(), It.IsAny<string?>()))
            .ReturnsAsync(new AZOAResult<BridgeTransactionResult> { IsError = true, Message = "Solana bridging not implemented (fail-closed)" });
 
@@ -125,7 +126,7 @@ public class BridgeBackNodeHandlerTests
         result.Message.Should().Contain("unknown bridge mode");
         svc.Verify(s => s.InitiateBridgeAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<Guid>(), It.IsAny<ulong>(), It.IsAny<BridgeMode?>(),
+            It.IsAny<Guid>(), It.IsAny<RailAmount>(), It.IsAny<BridgeMode?>(),
             It.IsAny<CancellationToken>(), It.IsAny<string?>()), Times.Never);
     }
 

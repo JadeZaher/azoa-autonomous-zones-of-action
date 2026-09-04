@@ -7,13 +7,19 @@ graph LR
     admin_bootstrap_state["admin_bootstrap_state: Node"]:::nodeClass
     api_key["api_key: Node"]:::nodeClass
     avatar["avatar: Node"]:::nodeClass
+    avatar_external_login["avatar_external_login: Node"]:::nodeClass
     consent_audit["consent_audit: Node"]:::nodeClass
     consent_grant["consent_grant: Node"]:::nodeClass
     holon["holon: Node"]:::nodeClass
     holon_type_registry["holon_type_registry: Node"]:::nodeClass
+    hosted_session["hosted_session: Node"]:::nodeClass
     kyc_control_audit["kyc_control_audit: Node"]:::nodeClass
     kyc_document["kyc_document: Node"]:::nodeClass
+    kyc_identity["kyc_identity: Node"]:::nodeClass
     kyc_provider_profile["kyc_provider_profile: Node"]:::nodeClass
+    kyc_screening_monitor["kyc_screening_monitor: Node"]:::nodeClass
+    kyc_screening_poll_state["kyc_screening_poll_state: Node"]:::nodeClass
+    kyc_screening_result["kyc_screening_result: Node"]:::nodeClass
     kyc_submission["kyc_submission: Node"]:::nodeClass
     node_fee_audit["node_fee_audit: Node"]:::nodeClass
     node_fee_schedule["node_fee_schedule: Node"]:::nodeClass
@@ -21,6 +27,7 @@ graph LR
     node_governance_parameters["node_governance_parameters: Node"]:::nodeClass
     node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
     node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
+    oauth_exchange_code["oauth_exchange_code: Node"]:::nodeClass
     star_odk["star_odk: Node"]:::nodeClass
     tenant_kyc_provider_selection["tenant_kyc_provider_selection: Node"]:::nodeClass
     wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
@@ -30,6 +37,8 @@ graph LR
     admin_bootstrap_state -- "avatar_id [N:1]" --> avatar
     api_key -- "avatar_id [N:1]" --> avatar
     avatar -- "owner_tenant_id [N:0..1]" --> avatar
+    avatar_external_login -- "tenant_id [N:0..1]" --> avatar
+    avatar_external_login -- "avatar_id [N:1]" --> avatar
     consent_audit -- "avatar_id [N:0..1]" --> avatar
     consent_audit -- "tenant_id [N:1]" --> avatar
     consent_grant -- "grantor_avatar_id [N:1]" --> avatar
@@ -39,10 +48,17 @@ graph LR
     holon -- "transfer_target_avatar_id [N:0..1]" --> avatar
     holon -- "parent_holon_id [N:0..1]" --> holon
     holon -- "source_holon_id [N:0..1]" --> holon
+    hosted_session -- "subject_avatar_id [N:0..1]" --> avatar
+    hosted_session -- "tenant_id [N:0..1]" --> avatar
     kyc_control_audit -- "tenant_id [N:0..1]" --> avatar
     kyc_control_audit -- "actor_avatar_id [N:1]" --> avatar
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
+    kyc_identity -- "tenant_id [N:0..1]" --> avatar
     kyc_provider_profile -- "updated_by_avatar_id [N:1]" --> avatar
+    kyc_screening_monitor -- "subject_avatar_id [N:0..1]" --> avatar
+    kyc_screening_monitor -- "tenant_id [N:0..1]" --> avatar
+    kyc_screening_result -- "subject_avatar_id [N:0..1]" --> avatar
+    kyc_screening_result -- "tenant_id [N:0..1]" --> avatar
     kyc_submission -- "avatar_id [N:0..1]" --> avatar
     kyc_submission -- "tenant_id [N:0..1]" --> avatar
     node_fee_audit -- "actor_avatar_id [N:1]" --> avatar
@@ -51,6 +67,8 @@ graph LR
     node_governance_parameters -- "updated_by_avatar_id [N:0..1]" --> avatar
     node_treasury_audit -- "actor_avatar_id [N:1]" --> avatar
     node_treasury_destination -- "updated_by_avatar_id [N:0..1]" --> avatar
+    oauth_exchange_code -- "tenant_id [N:0..1]" --> avatar
+    oauth_exchange_code -- "avatar_id [N:1]" --> avatar
     star_odk -- "avatar_id [N:0..1]" --> avatar
     tenant_kyc_provider_selection -- "tenant_id [N:1]" --> avatar
     tenant_kyc_provider_selection -- "updated_by_avatar_id [N:1]" --> avatar

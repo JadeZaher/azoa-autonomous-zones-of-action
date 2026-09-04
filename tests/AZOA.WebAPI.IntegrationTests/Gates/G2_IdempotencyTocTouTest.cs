@@ -14,6 +14,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Sagas;
 using AZOA.WebAPI.Providers.Stores.Surreal;
 using AZOA.WebAPI.Sagas;
+using AZOA.WebAPI.Core;
 
 namespace AZOA.WebAPI.IntegrationTests.Gates;
 
@@ -444,7 +445,7 @@ internal sealed class CountingWormholeAdapter : IWormholeAdapter
 
     public Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
         string sourceChain, string targetChain, string tokenId,
-        string senderAddress, string recipientAddress, ulong amount,
+        string senderAddress, string recipientAddress, RailAmount amount,
         CancellationToken ct = default)
         => Task.FromResult(new AZOAResult<WormholeTransferInitiation>
         {

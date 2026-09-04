@@ -8,6 +8,7 @@ using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Settings;
+using AZOA.WebAPI.Tests.TestSupport;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -16,6 +17,7 @@ namespace AZOA.WebAPI.Tests.Kyc;
 public class KycGateServiceTests
 {
     private readonly Mock<IKycStore> _store = new();
+    private readonly InMemoryKycScreeningStore _screening = new();
     private readonly Mock<IKycProviderService> _provider = new();
     private readonly KycGateService _gate;
 
@@ -24,6 +26,7 @@ public class KycGateServiceTests
         ConfigureManualProvider(_provider);
         _gate = new KycGateService(
             _store.Object,
+            _screening,
             _provider.Object,
             Options.Create(TrustedManualSettings()),
             Environment(Environments.Development));
@@ -108,6 +111,7 @@ public class KycGateServiceTests
         SetupLatest(avatarId, Submission(KycStatus.APPROVED));
         var productionGate = new KycGateService(
             _store.Object,
+            _screening,
             _provider.Object,
             Options.Create(TrustedManualSettings()),
             Environment(Environments.Production));

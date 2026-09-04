@@ -14,6 +14,8 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Tests.TestSupport;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -41,7 +43,7 @@ public class BridgeKillSwitchTests
 
         var svc = new CrossChainBridgeService(
             factoryMock.Object,
-            Mock.Of<IWormholeAdapter>(),
+            new WormholeProtocol(Mock.Of<IWormholeAdapter>(), NullLogger<WormholeProtocol>.Instance),
             Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Trusted }),
             bridgeStore.Object,
             idempotencyStore.Object,
@@ -58,7 +60,7 @@ public class BridgeKillSwitchTests
     {
         var provider = new Mock<IBlockchainProvider>();
         provider.Setup(p => p.ChainType).Returns(chainType);
-        provider.Setup(p => p.SupportsBridging).Returns(true);
+        provider.WithBridgeLegs();
 
         var factory = new Mock<IBlockchainProviderFactory>();
         factory.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
@@ -72,11 +74,11 @@ public class BridgeKillSwitchTests
     {
         var srcProvider = new Mock<IBlockchainProvider>();
         srcProvider.Setup(p => p.ChainType).Returns(sourceType);
-        srcProvider.Setup(p => p.SupportsBridging).Returns(true);
+        srcProvider.WithBridgeLegs();
 
         var tgtProvider = new Mock<IBlockchainProvider>();
         tgtProvider.Setup(p => p.ChainType).Returns(targetType);
-        tgtProvider.Setup(p => p.SupportsBridging).Returns(true);
+        tgtProvider.WithBridgeLegs();
 
         var factory = new Mock<IBlockchainProviderFactory>();
         // First call resolves source, second resolves target (IsSimulatedRoute order).
@@ -141,7 +143,7 @@ public class BridgeKillSwitchTests
 
         var svc = new CrossChainBridgeService(
             factory.Object,
-            Mock.Of<IWormholeAdapter>(),
+            new WormholeProtocol(Mock.Of<IWormholeAdapter>(), NullLogger<WormholeProtocol>.Instance),
             Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Trusted }),
             bridgeStore.Object,
             idempotencyStore.Object,
@@ -231,7 +233,7 @@ public class BridgeKillSwitchTests
 
         var svc = new CrossChainBridgeService(
             factory.Object,
-            Mock.Of<IWormholeAdapter>(),
+            new WormholeProtocol(Mock.Of<IWormholeAdapter>(), NullLogger<WormholeProtocol>.Instance),
             Options.Create(wormholeConfig),
             bridgeStore.Object,
             idempotencyStore.Object,
@@ -309,7 +311,7 @@ public class BridgeKillSwitchTests
 
         var svc = new CrossChainBridgeService(
             factory.Object,
-            Mock.Of<IWormholeAdapter>(),
+            new WormholeProtocol(Mock.Of<IWormholeAdapter>(), NullLogger<WormholeProtocol>.Instance),
             Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Wormhole }),
             bridgeStore.Object,
             idempotencyStore.Object,
@@ -351,11 +353,11 @@ public class BridgeKillSwitchTests
         // Build providers: Solana (real), Simulated (sim).
         var solanaProvider = new Mock<IBlockchainProvider>();
         solanaProvider.Setup(p => p.ChainType).Returns("Solana");
-        solanaProvider.Setup(p => p.SupportsBridging).Returns(true);
+        solanaProvider.WithBridgeLegs();
 
         var simProvider = new Mock<IBlockchainProvider>();
         simProvider.Setup(p => p.ChainType).Returns("Simulated");
-        simProvider.Setup(p => p.SupportsBridging).Returns(true);
+        simProvider.WithBridgeLegs();
 
         // Factory returns Solana for "Solana", Simulated for "Simulated" — used by
         // both GetAllEnabledProviders (route enumeration) and IsSimulatedRoute.
@@ -373,7 +375,7 @@ public class BridgeKillSwitchTests
 
         // ── Flag OFF ──
         var svcOff = new CrossChainBridgeService(
-            factory.Object, wormhole.Object,
+            factory.Object, new WormholeProtocol(wormhole.Object, NullLogger<WormholeProtocol>.Instance),
             Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Trusted }),
             new Mock<IBridgeStore>().Object,
             new Mock<IIdempotencyStore>().Object,
@@ -398,7 +400,7 @@ public class BridgeKillSwitchTests
 
         // ── Flag ON ──
         var svcOn = new CrossChainBridgeService(
-            factory.Object, wormhole.Object,
+            factory.Object, new WormholeProtocol(wormhole.Object, NullLogger<WormholeProtocol>.Instance),
             Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Trusted }),
             new Mock<IBridgeStore>().Object,
             new Mock<IIdempotencyStore>().Object,

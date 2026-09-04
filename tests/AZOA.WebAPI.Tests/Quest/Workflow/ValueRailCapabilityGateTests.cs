@@ -24,18 +24,19 @@ using QuestEntity = AZOA.WebAPI.Models.Quest.Quest;
 namespace AZOA.WebAPI.Tests.Quest.Workflow;
 
 /// <summary>
-/// T9 — the pre-execution chain-capability gate (economic-primitive-nodes D1).
+/// T9 — the pre-execution value-rail capability gate (economic-primitive-nodes D1,
+/// value-rail seam D9).
 ///
 /// <para>Proves the locked rule at BOTH dispatch seams (the legacy synchronous
 /// <see cref="QuestManager"/> executor and the durable
 /// <see cref="QuestNodeStepHandler"/> saga step): a node whose handler declares
 /// <see cref="IQuestNodeHandler.RequiresChainCapability"/> <c>== true</c> is
 /// rejected BEFORE <c>HandleAsync</c> — and therefore before any broadcast — when
-/// the run's actor has no wallet bound. A Tier-1 node (capability flag false) is
-/// never gated, so a pure-metadata quest runs end to end with no wallet and no
-/// chain call.</para>
+/// the run's actor has no usable destination ON THE RAIL that node settles on. A
+/// Tier-1 node (capability flag false) is never gated, so a pure-metadata quest runs
+/// end to end with no wallet and no chain call.</para>
 /// </summary>
-public sealed class ChainCapabilityGateTests
+public sealed class ValueRailCapabilityGateTests
 {
     private static readonly Guid AvatarId = Guid.NewGuid();
 
@@ -197,7 +198,7 @@ public sealed class ChainCapabilityGateTests
 
         var exec = h.ExecutionFor(runId, transferNode.Id);
         exec.State.Should().Be(QuestNodeState.Failed, "the gate must reject a Tier-2 node with no wallet bound");
-        exec.Error.Should().Be(ChainCapabilityGate.NoWalletBoundMessage);
+        exec.Error.Should().Be(ValueRailCapabilityGate.NoDestinationMessage("Algorand"));
 
         nft.Verify(m => m.TransferAsync(
                 It.IsAny<Guid>(), It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
@@ -222,7 +223,7 @@ public sealed class ChainCapabilityGateTests
 
         var exec = h.ExecutionFor(run.Result!.Id, transferNode.Id);
         exec.State.Should().Be(QuestNodeState.Failed);
-        exec.Error.Should().Be(ChainCapabilityGate.NoWalletBoundMessage);
+        exec.Error.Should().Be(ValueRailCapabilityGate.NoDestinationMessage("Algorand"));
 
         nft.Verify(m => m.TransferAsync(
                 It.IsAny<Guid>(), It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),

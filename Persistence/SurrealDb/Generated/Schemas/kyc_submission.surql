@@ -9,7 +9,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- KycSubmission.KycProvider
-DEFINE PARAM IF NOT EXISTS $kyc_submission_provider VALUE ["MANUAL", "VERIFF", "GENERIC_HOSTED"];
+DEFINE PARAM IF NOT EXISTS $kyc_submission_provider VALUE ["MANUAL", "VERIFF", "GENERIC_HOSTED", "IDENTOMAT"];
 -- KycSubmission.KycStatus
 DEFINE PARAM IF NOT EXISTS $kyc_submission_status VALUE ["PENDING", "IN_REVIEW", "APPROVED", "REJECTED", "EXPIRED"];
 

@@ -1,6 +1,3 @@
-using System.Security.Claims;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
@@ -203,36 +200,14 @@ public class AvatarManager : IAvatarManager
         return await _avatarStore.UpsertAsync(existing.Result, ct);
     }
 
+    /// <summary>Mints the password path's login token via the one shared issuer.</summary>
+    /// <remarks>
+    /// The body moved to <see cref="AZOA.WebAPI.Services.Auth.AvatarLoginTokenIssuer"/>
+    /// so federated sign-in issues a byte-for-byte equivalent credential instead of a
+    /// hand-copied near-miss. See that type's remarks for the drift this prevents.
+    /// </remarks>
     private string GenerateJwt(IAvatar avatar)
-    {
-        var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
-        var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
-        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-
-        var claims = new List<Claim>
-        {
-            new Claim(JwtRegisteredClaimNames.Sub, avatar.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, avatar.Email),
-            new Claim(ClaimTypes.Name, avatar.Username),
-            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
-            new Claim(
-                AzoaClaims.AuthTime,
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ClaimValueTypes.Integer64),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
-
-        StampDappRoleClaims(avatar, claims);
-
-        var token = new JwtSecurityToken(
-            issuer: _config["Jwt:Issuer"],
-            audience: _config["Jwt:Audience"],
-            claims: claims,
-            expires: DateTime.UtcNow.AddHours(24),
-            signingCredentials: credentials);
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
-    }
+        => AZOA.WebAPI.Services.Auth.AvatarLoginTokenIssuer.BuildLoginToken(_config, avatar);
 
     private async Task<AZOAResult<bool>> ValidateEmailUpdateAsync(IAvatar avatar, string requestedEmail)
     {
@@ -311,19 +286,4 @@ public class AvatarManager : IAvatarManager
         return new AZOAResult<bool> { Result = true, Message = "Username is valid." };
     }
 
-    private static void StampDappRoleClaims(IAvatar avatar, List<Claim> claims)
-    {
-        var role = AzoaDappRoles.Normalize(avatar.DappRole);
-        claims.Add(new Claim("dapp_role", role));
-
-        if (AzoaDappRoles.CanDevelop(role))
-        {
-            claims.Add(new Claim("scope", AzoaScopes.DappDevelop));
-        }
-
-        if (AzoaDappRoles.CanManage(role))
-        {
-            claims.Add(new Claim("scope", AzoaScopes.DappManage));
-        }
-    }
 }

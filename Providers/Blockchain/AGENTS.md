@@ -52,49 +52,68 @@ requested chain/network. The factory tests exercise concurrent real Solana
 resolution and assert that resolving Testnet cannot retarget the cached Devnet
 provider.
 
-## §bridge — cross-chain value primitives (final-hardening-cutover B2)
+## §bridge — capability modules, not a boolean
+
+### The seam
+
+There are no bridge primitives on `IBlockchainProvider` and no `SupportsBridging` property.
+Capability is expressed by implementing a module that `TryGetModule` resolves at runtime:
+
+- `IBridgeSourceLeg` — `LockAsync`, `ReleaseAsync`
+- `IBridgeTargetLeg` — `MintWrappedAsync`, `BurnWrappedAsync`
+
+**Absence IS the fail-closed refusal, structurally.** A chain that cannot bridge does not
+implement the module, so there is no method to call, no refusal body that could regress into a
+fabricated `Ok`, and no boolean that could be set true by mistake. This is strictly stronger
+than the boolean it replaced, and it can express a direction asymmetry the boolean could not:
+Algorand is a proven SOURCE and deliberately not a target.
+
+The orchestrator (`Services/CrossChainBridgeService.cs`) resolves two legs plus one
+`IBridgeProtocol<TProof>` and runs a single lifecycle; it contains no chain name in any
+decision. See `Services/AGENTS.md` §bridge.
 
 ### Verification path (there is exactly one)
+
 Cross-chain proof / VAA verification is **not** a provider method. `IBlockchainProvider`
-deliberately has **no `VerifyBridgeProofAsync`** — it was removed in B2 because the
-provider overrides returned `true` unconditionally (an always-true verifier that lies).
-The single hardened verification path is:
+deliberately has **no `VerifyBridgeProofAsync`** — it was removed in B2 because the provider
+overrides returned `true` unconditionally (an always-true verifier that lies). Verification
+belongs to the PROTOCOL:
 
-    Services/WormholeAdapter.cs → Services/Wormhole/Secp256k1VaaSignatureVerifier.cs
+    Services/Bridge/WormholeProtocol.cs → Services/WormholeAdapter.cs
+        → Services/Wormhole/Secp256k1VaaSignatureVerifier.cs
 
-which does a fail-closed guardian-quorum secp256k1 check over the canonical VAA digest.
-Do **not** reintroduce a provider-level verifier. No always-true boolean may exist on a
-verification path anywhere in the tree.
+`WormholeProtocol` is the only seam the orchestrator can reach verification through; the
+adapter is its Guardian-API transport and the single hardened guardian-quorum implementation,
+which stays fail-closed and unconditional. Do **not** reintroduce a provider-level verifier. No
+always-true boolean may exist on a verification path anywhere in the tree.
 
-Call-site check performed at removal time: `grep '\.VerifyBridgeProofAsync('` returned
-**zero invocations** — the method was dead on the live path (only the interface decl,
-the two overrides, the base virtual, and the G7 test stub referenced it). All removed.
+**Unconditional means unconditional: there is no configuration key.** The
+`Blockchain:Wormhole:RequireFullSignatureVerification` escape hatch was REMOVED. It defaulted to
+fail-closed, but it was a switch that turned off the guardian-quorum check authorising a wrapped
+mint on the target chain, and no such switch may exist on a value path. `WormholeConfig` now
+carries no boolean at all, and `WormholeAdapterTests` pins both halves: a structurally perfect VAA
+still fails closed without a registered `IVaaSignatureVerifier`, and no combination of
+configuration produces a structural-only acceptance.
 
-### Lock / burn (real broadcast vs fail-closed)
+### Real broadcast vs absent capability
 
-The bridge orchestrator (`Services/CrossChainBridgeService.cs`, trusted flow) calls:
-- `sourceProvider.LockForBridgeAsync(tokenId, vaultAddress, amount, targetChain, targetRecipient)`
-- `targetProvider.MintWrappedAsync(...)`
-- `targetProvider.BurnWrappedAsync(...)` (reverse flow)
+A leg implementation MUST either broadcast a real transaction and return the real tx id, or
+fail loud. A fabricated-success `Ok(op-id)` on a value path is forbidden (it makes the bridge
+record value that never moved). `BridgeLock` carries an explicit `PendingConfirmation` flag so
+"broadcast but unconfirmed" can never be read as settled.
 
-These MUST either broadcast a real transaction and return the real tx id, or fail loud.
-A fabricated-success `Ok(op-id)` on a value path is forbidden (it makes the bridge record
-value that never moved).
-
-**Algorand — PARTIAL, therefore FAIL-CLOSED.** `LockForBridgeAsync` can broadcast a
-platform-signed ASA transfer, but `SupportsBridging` remains false because a partial
-primitive is not a safe route. The former wrapped-mint path assigned ASA control to the
-recipient and did not implement canonical platform ASA creation, recipient opt-in, then
-transfer; its paired destroy model therefore could not prove platform ownership of the
-full supply. `MintWrappedAsync`, `BurnWrappedAsync`, and `ReleaseFromBridgeAsync` now
-refuse explicitly. See `Algorand/AGENTS.md`.
-
-**Solana — FAIL-CLOSED.** `LockForBridgeAsync`, `BurnWrappedAsync`, and `MintWrappedAsync`
-return explicit errors. The Solana provider has **no** build→sign→submit pipeline: no
-signer factory / custody seam is injected, and `SolanaTransactionSigner.Sign` is itself a
-fail-loud stub (owned by the B1 signer worker). Rather than fabricate a success, these
-refuse. They become real once (a) the Solana signer is real AND (b) a provider-side
-SPL transfer/mint/burn pipeline is built to the canonical-byte contract below.
+- **Algorand — SOURCE leg, real and proven.** Lock and release broadcast real signed
+  transactions and prove vault control, vault balance, and recipient opt-in against chain state
+  before signing. No target leg: no canonical platform-controlled wrapped ASA lifecycle exists.
+  See `Algorand/AGENTS.md`.
+- **Solana — no legs.** `SolanaTransactionSigner` is genuinely complete; what is missing is the
+  provider-side SPL build→submit pipeline and a reviewed bridge lifecycle on top of it. The
+  refusal is never a signer problem, and `SolanaProviderSplPipelineTests` pins that by
+  asserting the real `ISolanaSPLModule` is still present alongside the absent bridge legs.
+- **Ethereum — no legs.** Same shape: the EIP-1559 value pipeline and its signer are real; the
+  bridge lifecycle is unbuilt.
+- **Simulated — both legs.** The explicitly synthetic provider is the only one that implements
+  source and target, and every identifier it returns carries the reserved `sim:` marker.
 
 ### Solana canonical-byte contract (coordination with the B1 signer worker)
 
@@ -111,23 +130,85 @@ provider pipeline MUST produce) is:
   `[compact-u16 signature count][64-byte Ed25519 signatures...][message bytes]`,
   produced by `Transaction.Populate(message, [signature]).Serialize()`. The provider
   does **NOT** reassemble anything: it base64/base58-encodes the returned bytes as-is
-  and submits them straight to the RPC `sendTransaction` boundary. (This matches the
-  shipped `SolanaTransactionSigner` and `Providers/Blockchain/Solana/AGENTS.md §signer`
-  — the signer owns wire framing, not just the raw signature.)
+  and submits them straight to the RPC `sendTransaction` boundary.
 - The signing key is the fee-payer / first required signer; the provider MUST place that
   pubkey first in the message account-keys so signature order matches. The signer
   fails closed if `Message.AccountKeys[0]` is not the signing key's public key.
 
-If the B1 signer worker documents a different canonical shape (e.g. it expects the full
-signed-tx skeleton), reconcile HERE first — the provider side must match byte-for-byte, or
-signatures will be valid over the wrong bytes and every Solana bridge tx will be rejected.
-Until a real Solana pipeline is built to this contract, the Solana bridge primitives stay
-fail-closed (above).
+Until a real Solana pipeline is built to this contract, Solana implements no bridge leg.
+
+### Conformance (FR-6) — the gate a route passes before it is enabled
+
+`tests/AZOA.WebAPI.Tests/Conformance/` is a shared, provider-agnostic battery that EVERY concrete
+`IBlockchainProvider` in this assembly is run through. Enrollment is by reflection: adding a
+provider class enrolls it, and a provider the harness cannot construct fails by name. There is no
+opt-in and no opt-out, which is the point — a chain added later inherits the whole battery instead
+of relying on someone remembering to copy the tests.
+
+It certifies eight invariants this codebase has actually violated: no fabricated success, unknown
+is never Confirmed (including the vacuous-null trap), non-retrying broadcast, confirm-timeout is a
+pending marker rather than a failure, per-user signing never falls back to a platform key, amounts
+round-trip past the old `ulong` ceiling, capability honesty, and fail-closed errors that name the
+real cause.
+
+It does NOT duplicate the per-chain pipeline suites (`Signing/AlgorandProviderTransactTests.cs`,
+`SolanaProviderSplPipelineTests.cs`, `EthereumProviderPipelineTests.cs`, `BridgePrimitivesTests.cs`).
+Those drive real build→sign→submit→confirm pipelines against chain-specific stubs and remain the
+decisive evidence for anything that needs a blockhash, a nonce or suggested params. Where the
+shared battery cannot reach such a state, that is recorded as a declared verdict with the suite
+that carries the proof — never a silent skip. See `tests/AZOA.WebAPI.Tests/Conformance/AGENTS.md`
+for the enrollment mechanism and the exemption policy; `Certification_report` prints the matrix.
 
 ### Security invariants (reviewer checklist)
 - No fabricated-success return on any lock/burn/mint/release value path.
-- No always-true verifier anywhere (provider-level verify removed; Wormhole path is the
+- A chain without a reviewed lifecycle implements NO leg — never a leg with a refusal body.
+- No always-true verifier anywhere (provider-level verify removed; the protocol path is the
   only verifier and is fail-closed).
 - Missing signer/config ⇒ explicit error, never a silent fake-Ok.
 - Real tx hash (from `BuildSignSubmitAsync`) is returned on success, not a synthetic op-id.
 - No double-broadcast: broadcast step is non-retrying; confirm-timeout ⇒ pending marker.
+- Preconditions the chain enforces (opt-in, full-supply-for-destroy, vault control) are READ
+  from chain state, never assumed.
+
+## §value-rail-factory — registering a rail that is not a chain (D9)
+
+`IBlockchainProviderFactory` now extends `IValueRailProviderFactory`. The split exists
+because the chain-typed factory made a non-chain rail **type-impossible** to register:
+registration was `Func<IBlockchainProvider>`, resolution returned `IBlockchainProvider`, and
+`ResolveEnabledNetworkConfig` demanded a `ChainNetwork`. A fiat rail is not a chain provider
+and has no Devnet.
+
+Both blockers are gone:
+
+- `ValueRailProviderRegistration(railId, Func<IValueRailProvider>, resolveEndpoint)` registers
+  any rail. `BlockchainProviderRegistration(chainType, Func<IBlockchainProvider>)` is a
+  subclass with `IsChainRail = true` and no endpoint resolver — every existing call site is
+  source-compatible, since `Func<T>` is covariant in `T`.
+- A chain rail resolves its endpoint from `Blockchain:Chains` exactly as before. A non-chain
+  rail brings its OWN `RailEnvironment -> BlockchainNetworkConfig?` resolver, because that
+  config section is keyed Devnet/Testnet/Mainnet. Returning null for an environment means
+  "disabled for this rail".
+
+`GetProvider(chainType, ChainNetwork)` still returns `IBlockchainProvider` and throws a clear
+error naming `IValueRailProvider` if asked for a rail that is not a chain. Instances are
+cached per (rail, environment **name**) rather than per `ChainNetwork`, so a rail whose
+environments are not chain networks still gets one independent instance per environment.
+
+Binding order in `CreateInitializedProvider` is narrowest-first: `BaseBlockchainProvider` gets
+the factory-only entry point that also marks the instance non-rebindable; any other chain
+provider gets the chain-shaped `Initialize`; only a rail that is not a chain gets
+`InitializeRail`.
+
+Simulated mode redirects only CHAIN rails to `SimulatedBlockchainProvider`. A non-chain rail
+is left alone: a simulated blockchain is not a stand-in for a payment processor, and treating
+it as one would fake money.
+
+`GuardAgainstUnregisteredEnabledChains` is unchanged and must stay that way. It reads
+`Blockchain:Chains` DIRECTLY and diffs against the registered chain types, deliberately not
+via `GetAllEnabledProviders`, which silently skips unregistered chains and would make the
+exact defect the guard exists to catch invisible. Its registered-chain list in `Program.cs`
+(`registeredBlockchainChainTypes`) must stay in sync with the registration array beneath it;
+`ValueRailSeamTests` asserts both directions against the real shipped `appsettings.json`.
+
+`BlockchainProviderNotFoundException` now derives from `ValueRailProviderNotFoundException`,
+so every existing `catch` keeps working.

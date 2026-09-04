@@ -257,7 +257,7 @@ function QuestList() {
                     )}
 
                     {detailTab === 'runs' && (
-                      <RunPanel questId={selected.id} quest={selected} />
+                      <RunPanel quest={selected} />
                     )}
 
                     {detailTab === 'actions' && (

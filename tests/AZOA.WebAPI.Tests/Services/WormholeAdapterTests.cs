@@ -12,6 +12,8 @@ using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using AZOA.WebAPI.Tests.TestSupport;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -23,6 +25,7 @@ public class WormholeAdapterTests
 {
     private readonly Mock<IBlockchainProviderFactory> _factoryMock;
     private readonly Mock<IBlockchainProvider> _providerMock;
+    private readonly BridgeLegMocks _legs;
     private readonly WormholeConfig _config;
     private readonly Mock<ILogger<WormholeAdapter>> _loggerMock;
 
@@ -30,6 +33,7 @@ public class WormholeAdapterTests
     {
         _factoryMock = new Mock<IBlockchainProviderFactory>();
         _providerMock = new Mock<IBlockchainProvider>();
+        _legs = _providerMock.WithBridgeLegs();
         _loggerMock = new Mock<ILogger<WormholeAdapter>>();
         _config = new WormholeConfig
         {
@@ -245,10 +249,7 @@ public class WormholeAdapterTests
     [Fact]
     public async Task InitiateTransferAsync_LockFails_ReturnsError()
     {
-        _providerMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<string> { IsError = true, Message = "Lock failed" });
+        _legs.LockFails("Lock failed");
 
         _factoryMock.Setup(f => f.GetProvider("Solana", ChainNetwork.Devnet))
             .Returns(_providerMock.Object);
@@ -264,10 +265,7 @@ public class WormholeAdapterTests
     [Fact]
     public async Task InitiateTransferAsync_Success_ReturnsInitiation()
     {
-        _providerMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx_hash_123" });
+        _legs.LockReturns("tx_hash_123");
 
         _factoryMock.Setup(f => f.GetProvider("Solana", ChainNetwork.Devnet))
             .Returns(_providerMock.Object);
@@ -358,18 +356,14 @@ public class WormholeAdapterTests
         result.Result.Should().BeFalse();
     }
 
-    // Structural validity ≠ cryptographic trust: even a perfectly valid VAA
-    // fails closed with no verifier when RequireFullSignatureVerification (the
-    // default) is true.
+    // Structural validity ≠ cryptographic trust: a perfectly valid VAA still
+    // fails closed with no verifier, and NO configuration can relax that.
 
     [Fact]
-    public async Task VerifyVAAAsync_StructurallyValid_NoVerifier_DefaultConfig_FailsClosed()
+    public async Task VerifyVAAAsync_StructurallyValid_NoVerifier_FailsClosed()
     {
-        // RequireFullSignatureVerification defaults to true. No quorum set, so
-        // 13 sigs >= MinGuardianSignatures(13) and ALL structural checks pass.
-        _config.RequireFullSignatureVerification.Should().BeTrue(
-            "this is the secure default the test depends on");
-
+        // No quorum set, so 13 sigs >= MinGuardianSignatures(13) and ALL
+        // structural checks pass. Only the crypto gate can reject it.
         var vaaBytes = BuildVaaBase64(signatures: MakeSigs(13));
         var adapter = CreateAdapter(signatureVerifier: null); // NO verifier
         var vaa = WrapVaa(vaaBytes);
@@ -383,35 +377,63 @@ public class WormholeAdapterTests
         result.Result.Should().BeFalse();
     }
 
+    // The escape hatch is GONE. A VAA authorises minting wrapped value on the
+    // target chain, so no config key may downgrade acceptance to structural-only.
+    // Two independent proofs: the config type carries no such switch, and no
+    // configuration whatsoever produces a structural-only pass.
+
     [Fact]
-    public async Task VerifyVAAAsync_StructurallyValid_NoVerifier_RequireFalse_StructuralOnlyPass()
+    public void WormholeConfig_ExposesNoSwitchThatDisablesSignatureVerification()
     {
-        // Explicit opt-out: structural-only acceptance is allowed ONLY when
-        // RequireFullSignatureVerification is explicitly false. Proves the
-        // escape hatch exists but is OFF by default (covered above).
-        _config.RequireFullSignatureVerification = false;
+        var suspiciousNames = typeof(WormholeConfig)
+            .GetProperties()
+            .Where(p => p.PropertyType == typeof(bool) || p.PropertyType == typeof(bool?))
+            .Select(p => p.Name)
+            .Where(n => n.Contains("Signature", StringComparison.OrdinalIgnoreCase)
+                     || n.Contains("Verif", StringComparison.OrdinalIgnoreCase)
+                     || n.Contains("Crypto", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        suspiciousNames.Should().BeEmpty(
+            "guardian-signature verification authorises minting wrapped value and must not be "
+            + "switchable from configuration; found {0}", string.Join(", ", suspiciousNames));
+    }
+
+    [Fact]
+    public async Task VerifyVAAAsync_NoConfigurationProducesStructuralOnlyAcceptance()
+    {
+        // Sweep every boolean knob on WormholeConfig through both states plus
+        // the permissive numeric extremes. None may yield a pass without a verifier.
+        var boolProps = typeof(WormholeConfig).GetProperties()
+            .Where(p => p.CanWrite && p.PropertyType == typeof(bool))
+            .ToList();
 
         var vaaBytes = BuildVaaBase64(signatures: MakeSigs(13));
-        var adapter = CreateAdapter(signatureVerifier: null);
         var vaa = WrapVaa(vaaBytes);
 
-        var result = await adapter.VerifyVAAAsync(vaa);
+        foreach (var flip in new[] { true, false })
+        {
+            _config.MinGuardianSignatures = 0;       // maximally permissive
+            _config.ExpectedGuardianSetSize = null;  // quorum math skipped
+            foreach (var p in boolProps) p.SetValue(_config, flip);
 
-        result.IsError.Should().BeFalse();
-        result.Result.Should().BeTrue();
-        result.Message.Should().Contain("NOT cryptographically verified");
+            var adapter = CreateAdapter(signatureVerifier: null);
+            var result = await adapter.VerifyVAAAsync(vaa);
+
+            result.IsError.Should().BeTrue(
+                "no configuration may downgrade VAA acceptance to structural-only (bools={0})", flip);
+            result.Result.Should().BeFalse();
+        }
     }
 
     // Wormhole requires signatures ordered by strictly-increasing unique
     // guardian index (duplicate = replay padding, descending = forgery signal).
-    // RequireFullSignatureVerification is false so the fail-closed gate does
-    // not mask the ordering guard under test.
+    // These structural guards run BEFORE the crypto gate, so a null verifier
+    // cannot mask which rule did the rejecting — the message is asserted.
 
     [Fact]
     public async Task VerifyVAAAsync_DuplicateGuardianIndex_Rejected()
     {
-        _config.RequireFullSignatureVerification = false; // isolate the ordering guard
-
         // 13 sigs but index 5 appears twice (positions 5 and 6 both index 5).
         var sigs = MakeSigs(13);
         sigs[6] = MakeSig(5, 0x99); // duplicate of sigs[5].Index == 5
@@ -430,7 +452,6 @@ public class WormholeAdapterTests
     [Fact]
     public async Task VerifyVAAAsync_DescendingGuardianIndices_Rejected()
     {
-        _config.RequireFullSignatureVerification = false;
 
         // 13 well-formed sigs but in DESCENDING index order (12..0).
         var sigs = new List<GuardianSig>();
@@ -458,7 +479,6 @@ public class WormholeAdapterTests
         // the quorum check (not the min-sig check) is what rejects.
         _config.ExpectedGuardianSetSize = 19;
         _config.MinGuardianSignatures = 1;
-        _config.RequireFullSignatureVerification = false;
 
         var vaaBytes = BuildVaaBase64(signatures: MakeSigs(12));
         var adapter = CreateAdapter();
@@ -505,7 +525,6 @@ public class WormholeAdapterTests
         // which is out of range for the configured set (forgery signal).
         _config.ExpectedGuardianSetSize = 13;
         _config.MinGuardianSignatures = 1;
-        _config.RequireFullSignatureVerification = false;
 
         var sigs = MakeSigs(13);
         sigs[12] = MakeSig(99, 0x77); // still strictly-increasing, but out of range
@@ -528,7 +547,6 @@ public class WormholeAdapterTests
         // 12 well-formed ordered sigs ⇒ rejected by the min-sig gate.
         _config.ExpectedGuardianSetSize = null;
         _config.MinGuardianSignatures = 13;
-        _config.RequireFullSignatureVerification = false;
 
         var vaaBytes = BuildVaaBase64(signatures: MakeSigs(12));
         var adapter = CreateAdapter();
@@ -734,9 +752,8 @@ public class WormholeAdapterTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("VAA verification failed");
-        _providerMock.Verify(p => p.MintWrappedAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+        _legs.Target.Verify(leg => leg.MintWrappedAsync(
+            It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()),
             Times.Never, "an unverifiable VAA must never trigger an on-chain mint");
     }
 
@@ -755,10 +772,7 @@ public class WormholeAdapterTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("VAA verification failed");
-        _providerMock.Verify(p => p.MintWrappedAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        _legs.VerifyMintTimes(Times.Never);
     }
 
     [Fact]
@@ -774,10 +788,7 @@ public class WormholeAdapterTests
                 It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        _providerMock.Setup(p => p.MintWrappedAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "mint_tx_456" });
+        _legs.MintReturns("mint_tx_456");
 
         _factoryMock.Setup(f => f.GetProvider("Algorand", ChainNetwork.Devnet))
             .Returns(_providerMock.Object);

@@ -48,7 +48,7 @@ namespace AZOA.WebAPI.Tests.Quest;
 /// <para>A wallet IS bound (the wallet manager returns one wallet) so the
 /// Tier-2 nodes pass the D1 chain-capability gate and the test exercises branch
 /// routing rather than the capability rejection (covered by
-/// <c>ChainCapabilityGateTests</c>).</para>
+/// <c>ValueRailCapabilityGateTests</c>).</para>
 /// </summary>
 public class ComposedDagDeterminismTests
 {

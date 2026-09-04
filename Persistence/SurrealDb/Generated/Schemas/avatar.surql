@@ -3,7 +3,7 @@
 -- Aggregate: Avatar (Models/Avatar.cs)
 -- Guardrail: G6 SCHEMAFULL
 -- Note: Wallets navigation list is NOT persisted here — owned by IWalletStore via wallet.avatar_id FK.
--- Note: Tenant ownership (tenant-onboarding): owner_tenant_id is a self-FK to the tenant principal's avatar; external_user_id is the tenant's own user id for this child. The avatar_tenant_extuser composite UNIQUE is only meaningful for rows where BOTH owner_tenant_id AND external_user_id are non-NONE — same NULL-equals-NULL collision caveat the ApiKey POCO documents (ApiKey.cs:17). A tenant-managed row ALWAYS sets both (TenantManager.ProvisionChildAsync), so dedup-per-tenant is correct by construction; legacy/self-registered avatars leave both NONE and never collide.
+-- Note: Tenant ownership (tenant-onboarding): owner_tenant_id is a self-FK to the tenant principal's avatar; external_user_id is the tenant's own user id for this child. The avatar_tenant_extuser composite UNIQUE is only meaningful for rows where BOTH owner_tenant_id AND external_user_id are non-NONE. A UNIQUE index does NOT collide NONE components -- verified empirically against SurrealDB 3.1.4, and explicit SQL NULL is unreachable under SCHEMAFULL option<T> -- so legacy/self-registered avatars that leave both NONE coexist freely and never contend. A tenant-managed row ALWAYS sets both (TenantManager.ProvisionChildAsync), so dedup-per-tenant is correct by construction. Earlier wording here inherited ApiKey.cs's 'NULL-equals-NULL collision' phrasing for a hazard that does not exist in this schema. See tests/AZOA.WebAPI.Tests/Kyc/SurrealUniqueIndexNoneSemanticsTests.cs.
 -- ============================================================
 
 DEFINE TABLE IF NOT EXISTS avatar SCHEMAFULL;

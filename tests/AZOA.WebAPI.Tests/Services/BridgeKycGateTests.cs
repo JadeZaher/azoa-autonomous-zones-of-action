@@ -14,6 +14,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using AZOA.WebAPI.Tests.TestSupport;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -26,7 +29,7 @@ public sealed class BridgeKycGateTests
         var avatarId = Guid.NewGuid();
 
         var result = await harness.Service.InitiateBridgeAsync(
-            "Algorand", "Solana", "token", "recipient", avatarId,
+            "Algorand", "Solana", "token", "recipient", avatarId, 1,
             mode: BridgeMode.Trusted);
 
         result.IsError.Should().BeTrue();
@@ -110,7 +113,7 @@ public sealed class BridgeKycGateTests
             }));
 
         await harness.Service.InitiateBridgeAsync(
-            "SimulatedA", "SimulatedB", "token", "recipient", Guid.NewGuid(),
+            "SimulatedA", "SimulatedB", "token", "recipient", Guid.NewGuid(), 1,
             mode: BridgeMode.Trusted);
 
         gate.VerifyNoOtherCalls();
@@ -135,14 +138,14 @@ public sealed class BridgeKycGateTests
         {
             Gate = gate;
             Provider.SetupGet(item => item.ChainType).Returns(chainType);
-            Provider.SetupGet(item => item.SupportsBridging).Returns(true);
+            Legs = Provider.WithBridgeLegs();
             Factory.Setup(item => item.GetProvider(
                     It.IsAny<string>(), It.IsAny<ChainNetwork>()))
                 .Returns(Provider.Object);
 
             Service = new CrossChainBridgeService(
                 Factory.Object,
-                Wormhole.Object,
+                new WormholeProtocol(Wormhole.Object, NullLogger<WormholeProtocol>.Instance),
                 Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Trusted }),
                 BridgeStore.Object,
                 Idempotency.Object,
@@ -157,6 +160,7 @@ public sealed class BridgeKycGateTests
         public Mock<IBlockchainProviderFactory> Factory { get; } = new();
         public Mock<IBlockchainProvider> Provider { get; } = new();
         public Mock<IWormholeAdapter> Wormhole { get; } = new();
+        public BridgeLegMocks Legs { get; }
         public Mock<IBridgeStore> BridgeStore { get; } = new();
         public Mock<IIdempotencyStore> Idempotency { get; } = new();
 
@@ -169,18 +173,10 @@ public sealed class BridgeKycGateTests
             BridgeStore.Verify(item => item.TryTransitionBridgeStatusAsync(
                 It.IsAny<string>(), It.IsAny<BridgeStatus>(), It.IsAny<BridgeStatus>(),
                 It.IsAny<BridgeStatusMutation?>(), It.IsAny<CancellationToken>()), Times.Never);
-            Provider.Verify(item => item.LockForBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-            Provider.Verify(item => item.MintWrappedAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-            Provider.Verify(item => item.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-            Provider.Verify(item => item.ReleaseFromBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Source.Verify(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Target.Verify(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Target.Verify(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Source.Verify(leg => leg.ReleaseAsync(It.IsAny<BridgeReleaseRequest>(), It.IsAny<CancellationToken>()), Times.Never);
             Wormhole.Verify(item => item.RedeemTransferAsync(
                 It.IsAny<string>(), It.IsAny<WormholeVAA>(),
                 It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);

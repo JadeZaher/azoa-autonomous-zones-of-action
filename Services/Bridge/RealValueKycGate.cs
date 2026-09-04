@@ -11,10 +11,20 @@ using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Services.Bridge;
 
-/// <summary>Requires current policy-bound KYC provenance before real-value work.</summary>
+/// <summary>
+/// Requires current policy-bound KYC provenance AND a clear AML screening verdict
+/// before real-value work.
+///
+/// <para>This is the SECOND value gate on the node (<c>KycGateService</c> is the
+/// first). Both read the same two facts for the same reason: identity verification
+/// says who a person is and says nothing about whether they are sanctioned, so an
+/// approved identity with a HIT — or with no screening answer at all — must not move
+/// real value.</para>
+/// </summary>
 public sealed class RealValueKycGate : IRealValueKycGate
 {
     private readonly IKycStore _store;
+    private readonly IKycScreeningStore _screeningStore;
     private readonly IKycProviderService _provider;
     private readonly IKycProviderRegistry? _registry;
     private readonly KycSettings _settings;
@@ -22,11 +32,13 @@ public sealed class RealValueKycGate : IRealValueKycGate
 
     public RealValueKycGate(
         IKycStore store,
+        IKycScreeningStore screeningStore,
         IKycProviderService provider,
         IOptions<KycSettings> settings,
         IHostEnvironment environment)
     {
         _store = store;
+        _screeningStore = screeningStore;
         _provider = provider;
         _registry = null;
         _settings = settings.Value;
@@ -36,12 +48,14 @@ public sealed class RealValueKycGate : IRealValueKycGate
     [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
     public RealValueKycGate(
         IKycStore store,
+        IKycScreeningStore screeningStore,
         IKycProviderService provider,
         IKycProviderRegistry registry,
         IOptions<KycSettings> settings,
         IHostEnvironment environment)
     {
         _store = store;
+        _screeningStore = screeningStore;
         _provider = provider;
         _registry = registry;
         _settings = settings.Value;
@@ -96,10 +110,27 @@ public sealed class RealValueKycGate : IRealValueKycGate
                 DateTimeOffset.UtcNow,
                 out _))
         {
-            return AZOAResult<bool>.Success(true);
+            // Identity holds. AML is the separate question, and it is required.
+            if (await IsAmlClearAsync(avatarId, tenantId, ct))
+                return AZOAResult<bool>.Success(true);
         }
 
         return Denied();
+    }
+
+    /// <summary>
+    /// Fail-closed AML read, identical in policy to <c>KycGateService</c>: only
+    /// NO_HIT on a non-truncated result for this exact (avatar, tenant) pair passes.
+    /// A missing result denies, a store error denies, MANUAL_REVIEW denies.
+    /// </summary>
+    private async Task<bool> IsAmlClearAsync(Guid avatarId, Guid? tenantId, CancellationToken ct)
+    {
+        var screening = await _screeningStore.GetLatestResultAsync(avatarId, tenantId, ct);
+        if (screening.IsError || screening.Result is null)
+            return false;
+
+        return screening.Result.Decision == KycScreeningDecision.NO_HIT
+            && !screening.Result.ResultsTruncated;
     }
 
     private async Task<AZOAResult<KycProviderResolution>> ResolveAuthorityAsync(

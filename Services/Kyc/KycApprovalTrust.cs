@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Settings;
 using Microsoft.Extensions.Hosting;
 
@@ -202,12 +203,20 @@ public static class KycApprovalTrust
             && value.Length <= maximumLength
             && value.All(character => !char.IsControl(character));
 
-    private static bool MatchesConfiguredProvider(string? configured, KycProvider provider)
+    /// <summary>
+    /// Maps a configured adapter key onto the enum a capability report must carry.
+    /// EVERY key <c>KycProviderRegistry.NormalizeAdapter</c> accepts needs an arm
+    /// here: a missing arm silently fails trust resolution for that adapter on BOTH
+    /// resolution paths, so the adapter can be configured, available, and still never
+    /// approve anyone. <c>KycRegisteredAdaptersTests</c> pins the two lists together.
+    /// </summary>
+    public static bool MatchesConfiguredProvider(string? configured, KycProvider provider)
         => configured?.Trim().ToLowerInvariant() switch
         {
             "manual" => provider == KycProvider.MANUAL,
             "veriff" => provider == KycProvider.VERIFF,
             "hosted" or "generic-hosted" => provider == KycProvider.GENERIC_HOSTED,
+            IdentomatKycProviderService.ProviderKeyValue => provider == KycProvider.IDENTOMAT,
             _ => false,
         };
 

@@ -15,6 +15,8 @@ using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Services.Reconciliation;
 using AZOA.WebAPI.Tests.TestSupport;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -197,6 +199,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
         public readonly FakeBridgeStore BridgeStore = new();
         public readonly FakeIdempotencyStore Idempotency = new();
         public readonly Mock<IWormholeAdapter> WormholeMock = new();
+        public readonly BridgeLegMocks Legs;
         private readonly Mock<IBlockchainProviderFactory> _factory = new();
         private readonly Mock<IBlockchainProvider> _provider = new();
         private readonly int _staleSeconds;
@@ -211,24 +214,24 @@ public sealed class BridgeExactlyOnceReplaySweepTests
             _staleSeconds = staleSeconds;
             _realValue = realValueEnabled;
 
-            _provider.Setup(p => p.SupportsBridging).Returns(true);
+            Legs = _provider.WithBridgeLegs();
             _provider.Setup(p => p.ChainType).Returns("Algorand");
             _factory.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
                 .Returns(_provider.Object);
             _factory.Setup(f => f.GetDefaultProvider()).Returns(_provider.Object);
 
             // Trusted-flow chain primitives count invocations (exactly-once proof).
-            _provider.Setup(p => p.LockForBridgeAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            Legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
                 .Returns(() =>
                 {
                     Interlocked.Increment(ref LockCalls);
-                    return Task.FromResult(new AZOAResult<string> { IsError = false, Result = "lock-tx" });
+                    return Task.FromResult(new AZOAResult<BridgeLock>
+                    {
+                        IsError = false,
+                        Result = new BridgeLock("lock-tx", PendingConfirmation: false, "confirmed"),
+                    });
                 });
-            _provider.Setup(p => p.MintWrappedAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            Legs.Target.Setup(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()))
                 .Returns(() =>
                 {
                     Interlocked.Increment(ref MintCalls);
@@ -258,7 +261,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
             config.BridgeVaults["Algorand"].VaultAddress = "test-algorand-bridge-vault";
             return new CrossChainBridgeService(
                 _factory.Object,
-                WormholeMock.Object,
+                new WormholeProtocol(WormholeMock.Object, NullLogger<WormholeProtocol>.Instance),
                 Options.Create(config),
                 BridgeStore,
                 Idempotency,

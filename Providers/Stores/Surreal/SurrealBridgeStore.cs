@@ -46,8 +46,9 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// <see cref="BridgeTx"/>:
 /// <list type="bullet">
 ///   <item><c>AvatarId</c>: Guid → 32-char "N" string.</item>
-///   <item><c>Amount</c>: ulong → canonical decimal string (BridgeTx keeps the
-///         wire-safe representation while the domain prevents signed overflow).</item>
+///   <item><c>Amount</c>: RailAmount → canonical decimal base-unit string. The column
+///         was already a string, so the D13 widening of the domain type needed no
+///         schema change: the full BigInteger range round-trips.</item>
 ///   <item><c>WormholeEmitterChainId</c>: int? → long? (POCO storage is wider).</item>
 ///   <item><c>WormholeSequence</c>: long? → long?.</item>
 ///   <item><c>VaaSignatureCount</c>: int? → long?.</item>
@@ -553,7 +554,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         TargetTokenId            = tx.TargetTokenId,
         SourceAddress            = tx.SourceAddress,
         TargetAddress            = tx.TargetAddress,
-        Amount                   = tx.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        Amount                   = tx.Amount.ToBaseUnitString(),
         Status                   = ParseBridgeStatus(tx.Status),
         Mode                     = ParseBridgeMode(tx.Mode),
         LockTxHash               = tx.LockTxHash,
@@ -652,8 +653,9 @@ public sealed class SurrealBridgeStore : IBridgeStore
             CreatedDate   = poco.CreatedDate.UtcDateTime,
             CompletedDate = poco.CompletedDate?.UtcDateTime,
             TokenUri      = poco.TokenUri,
-            // Persisted corruption must fail closed instead of wrapping a negative i64.
-            Amount        = poco.Amount.HasValue ? checked((ulong)poco.Amount.Value) : 0UL,
+            // D13: a decimal base-unit string. Absent reads as zero; present-but-corrupt
+            // fails closed, as the former checked i64 narrowing did.
+            Amount        = SurrealAmountColumn.Parse(poco.Amount, poco.Id, "Operation"),
             AssetType     = poco.AssetType,
             SourceHolonId = poco.SourceHolonId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.SourceHolonId)!) : null,
             TargetHolonId = poco.TargetHolonId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.TargetHolonId)!) : null,
@@ -666,6 +668,14 @@ public sealed class SurrealBridgeStore : IBridgeStore
             InitiatorApiKeyId = poco.InitiatorApiKeyId is not null
                 ? FromSurrealGuid(SurrealLink.FromLink(poco.InitiatorApiKeyId)!)
                 : null,
+
+            // D16: null unless every component survived — a partial stamp is not a stamp.
+            ValueStamp = ValueStamp.FromPersisted(
+                poco.ValueCurrencyCode,
+                poco.ValueMinorUnits,
+                poco.ValueRate,
+                poco.ValueRateAsOf,
+                poco.ValueRateSource),
         };
     }
 
@@ -683,18 +693,19 @@ public sealed class SurrealBridgeStore : IBridgeStore
             : throw new InvalidOperationException(
                 $"BridgeTx.StatusKind '{kind}' has no corresponding BridgeStatus — schema and domain enum drifted.");
 
-    private static ulong ParseBridgeAmount(string? value, string recordId)
+    /// <summary>
+    /// D13: the persisted amount is a canonical decimal base-unit string with no 64-bit
+    /// ceiling. A blank, non-numeric, signed or zero amount is still corruption and still
+    /// fails closed — a bridge row that cannot say how much it moves must not be readable.
+    /// </summary>
+    private static RailAmount ParseBridgeAmount(string? value, string recordId)
     {
-        if (!ulong.TryParse(
-                value,
-                System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var amount)
-            || amount == 0)
-        {
-            throw new InvalidDataException(
-                $"Bridge '{StripSurrealIdPrefix(recordId, BridgeTable)}' contains an invalid persisted amount.");
-        }
+        var id = StripSurrealIdPrefix(recordId, BridgeTable);
+        var amount = SurrealAmountColumn.Parse(value ?? string.Empty, id, "Bridge");
+
+        // A bridge row differs from an operation row: zero is never legitimate here.
+        if (amount.IsZero)
+            throw new InvalidDataException($"Bridge '{id}' contains an invalid persisted amount.");
 
         return amount;
     }

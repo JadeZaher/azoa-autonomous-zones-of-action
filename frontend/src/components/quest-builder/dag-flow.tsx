@@ -14,6 +14,7 @@ import '@xyflow/react/dist/style.css'
 import { QuestNode, type QuestNodeData } from './quest-node'
 import { layoutGraph } from './layout'
 import { categoryFor, type NodeCategory } from './node-catalog'
+import { edgeStyle } from './edge-model'
 
 const nodeTypes = { quest: QuestNode }
 
@@ -42,7 +43,7 @@ interface RunNode {
   error?: string
 }
 
-interface RunEdge {
+export interface RunEdge {
   id: string
   sourceNodeId: string
   targetNodeId: string
@@ -108,22 +109,23 @@ export function DagFlow({ nodes, edges }: { nodes: RunNode[]; edges: RunEdge[] }
   )
 }
 
-function toFlowEdge(e: RunEdge): Edge {
+/**
+ * One fetched quest edge → a React Flow edge. Exported for unit test: the spread
+ * ordering below is the whole point and is invisible from the rendered output.
+ */
+export function toFlowEdge(e: RunEdge): Edge {
   const conditional = e.edgeType === 'Conditional'
   const onFailure = e.edgeType === 'OnFailure'
-  // OnFailure = red dashed error-routing edge (mirrors quest-canvas edgeStyle).
-  const style = conditional
-    ? { stroke: '#f59e0b', strokeDasharray: '5 5' }
-    : onFailure
-    ? { stroke: '#ef4444', strokeDasharray: '4 4' }
-    : { stroke: '#94a3b8' }
   return {
     id: e.id,
     source: e.sourceNodeId,
     target: e.targetNodeId,
-    label: conditional ? (e.condition ?? 'if') : onFailure ? 'on failure' : undefined,
-    animated: conditional,
-    style,
     markerEnd: { type: MarkerType.ArrowClosed },
+    // Stroke/dash/animation come from the shared edge-model table (edge-model.ts).
+    // This spread MUST stay above `label`: `edgeStyle` is typed to return a `label`
+    // too, so the day the style table starts setting one it would silently blank
+    // every label this read-only render computes.
+    ...edgeStyle(e.edgeType),
+    label: conditional ? (e.condition ?? 'if') : onFailure ? 'on failure' : undefined,
   }
 }

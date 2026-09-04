@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Models.Responses;
 
@@ -17,7 +18,7 @@ public interface IWormholeAdapter
     Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
         string sourceChain, string targetChain,
         string tokenId, string senderAddress, string recipientAddress,
-        ulong amount, CancellationToken ct = default);
+        RailAmount amount, CancellationToken ct = default);
 
     /// <summary>
     /// Poll the Guardian network for a signed VAA matching the given emitter/sequence.

@@ -233,7 +233,9 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         error = string.Empty;
         try
         {
-            var provider = _providerFactory.GetProvider(chainType, ChainNetwork.Devnet);
+            // The configured default network, never a hardcoded Devnet: pinning this to
+            // devnet made every production fungible-token launch resolve a devnet provider.
+            var provider = _providerFactory.GetProvider(chainType, _providerFactory.DefaultNetwork);
             if (!provider.TryGetModule<IAlgorandASAModule>(out module) || module is null)
             {
                 error = $"Chain '{chainType}' does not expose the Algorand ASA capability required to launch a fungible token.";

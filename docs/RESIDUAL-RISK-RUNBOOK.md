@@ -47,7 +47,7 @@
 
 **Safety:**
 - Enforces VAA structure, version, ascending-unique guardian indices, Byzantine quorum.
-- **secp256k1 ecrecover IS implemented (2026-05-17)**: `Secp256k1VaaSignatureVerifier` (SEC1 §4.1.6 recovery on secp256k1 via vetted Bouncy Castle 2.6.2; reuses the existing managed `Keccak256`) is registered in DI. With `RequireFullSignatureVerification=true` (default), each Guardian signature is cryptographically recovered and matched against the config-driven Guardian set. The fail-closed property is preserved: if the verifier is NOT registered (or the Guardian set is empty/unconfigured), no VAA can be trusted. Crypto path proven by unit tests; live-network validation + real testnet/mainnet Guardian sets remain an ops/config gate (see §2 / §4).
+- **secp256k1 ecrecover IS implemented (2026-05-17)**: `Secp256k1VaaSignatureVerifier` (SEC1 §4.1.6 recovery on secp256k1 via vetted Bouncy Castle 2.6.2; reuses the existing managed `Keccak256`) is registered in DI. Per-signature verification is UNCONDITIONAL (the `RequireFullSignatureVerification` escape hatch was removed): each Guardian signature is cryptographically recovered and matched against the config-driven Guardian set. The fail-closed property is preserved: if the verifier is NOT registered (or the Guardian set is empty/unconfigured), no VAA can be trusted. Crypto path proven by unit tests; live-network validation + real testnet/mainnet Guardian sets remain an ops/config gate (see §2 / §4).
 
 ### Reconciliation (Chain-Source-of-Truth Re-derivation)
 **Mechanism:** `Services/Reconciliation/ReconciliationService.cs` + `ReconciliationHostedService` (hosted background sweep)
@@ -224,10 +224,9 @@ no-verifier ⇒ fail-closed path is unchanged and still tested).
    network — that is an ops validation step.
 
 **Mitigation / posture:**
-- The fail-closed escape hatch still exists: `RequireFullSignatureVerification`
-  default stays `true`; setting it `false` (devnet/testnet only, NEVER where
-  real value moves) skips crypto entirely. With the verifier now registered and
-  the default `true`, genuine verification runs.
+- The escape hatch is GONE: `RequireFullSignatureVerification` was removed, so
+  no configuration can skip crypto. With the verifier registered, genuine
+  verification always runs; without it, every VAA is rejected.
 - Do NOT enable Wormhole value flow on testnet/mainnet until items 1–2 above are
   completed and signed off by ops.
 
@@ -615,7 +614,7 @@ SELECT Id, ErrorMessage FROM BridgeTransactions WHERE Status = 'Failed' AND Erro
 | ✓ Rate limiting + per-API-key metering | DONE | Wave 3 | In-memory fixed-window; partitioned by API key hash |
 | ✓ InMemoryStorageProvider removed from production DI | DONE | Wave 3 | `EfStorageProvider` sole IAZOAStorageProvider |
 | ✓ secp256k1 ecrecover in IVaaSignatureVerifier | DONE (code) | YOU | `Services/Wormhole/Secp256k1VaaSignatureVerifier.cs` — SEC1 §4.1.6 recovery on secp256k1 via vetted Bouncy Castle 2.6.2 (`BouncyCastle.Cryptography`, alias `BCCrypto2`); reuses existing managed `Keccak256`. Crypto path proven by 17 unit tests (synthetic Guardian set, real keypair, double-keccak digest). |
-| ✓ Implement + register IVaaSignatureVerifier | DONE (code) | YOU | Registered `AddScoped<IVaaSignatureVerifier, Secp256k1VaaSignatureVerifier>()` in `Program.cs`. Guardian sets are config-driven (`Blockchain:Wormhole:GuardianSets`, per-network). `RequireFullSignatureVerification` default stays `true`; fail-closed-without-verifier path unchanged & still tested. **Pending ops gate (a):** populate + independently verify real mainnet/testnet Guardian sets per **`GUARDIAN-SET-SETUP.md`** (this track) + validate against the live Wormhole Guardian network (config/ops, not a code gap). Base `appsettings.json` ships NO testnet/mainnet set (absent ⇒ fail-closed; placeholder removed — do not re-add). **Code sign-off gate: `scripts/passoff.ps1`** (build 0 errors + full unit suite + safety-critical assertions; prints "OPS SIGN-OFF REQUIRED" for ops gates a–c). |
+| ✓ Implement + register IVaaSignatureVerifier | DONE (code) | YOU | Registered `AddScoped<IVaaSignatureVerifier, Secp256k1VaaSignatureVerifier>()` in `Program.cs`. Guardian sets are config-driven (`Blockchain:Wormhole:GuardianSets`, per-network). `RequireFullSignatureVerification` was later REMOVED — verification is unconditional; the fail-closed-without-verifier path is unchanged & still tested. **Pending ops gate (a):** populate + independently verify real mainnet/testnet Guardian sets per **`GUARDIAN-SET-SETUP.md`** (this track) + validate against the live Wormhole Guardian network (config/ops, not a code gap). Base `appsettings.json` ships NO testnet/mainnet set (absent ⇒ fail-closed; placeholder removed — do not re-add). **Code sign-off gate: `scripts/passoff.ps1`** (build 0 errors + full unit suite + safety-critical assertions; prints "OPS SIGN-OFF REQUIRED" for ops gates a–c). |
 | **VERIFY** | **MANUAL** | **QA/Ops** | **EF migration baseline: no pre-existing BridgeTransactions table** |
 | **FUTURE** | **DEFERRED** | **Wave 4+** | Tri-state provider method (Confirmed/Dropped/Pending) for reconciliation |
 | **FUTURE** | **DEFERRED** | **Wave 4+** | Distributed rate-limit store (Redis) for multi-instance scale-out |
@@ -661,9 +660,9 @@ Network switching follows the existing config pattern: the base
 `appsettings.json` holds mainnet/testnet (empty placeholders);
 `appsettings.Development.json` overrides with the devnet set.
 
-**For testnet without signature verification:** the escape hatch still exists —
-temporarily set `Blockchain:Wormhole:RequireFullSignatureVerification=false`
-(NOT for production / never where real value moves).
+**For testnet without signature verification:** not possible. The escape hatch
+was removed — supply a verified Guardian set for the network, or every VAA is
+rejected.
 
 ---
 

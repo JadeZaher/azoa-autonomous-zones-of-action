@@ -43,7 +43,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public long ProviderTrustRevision { get; set; }
 
         [FieldGroup("Verification provider that owns this submission")]
-        [Inside("MANUAL", "VERIFF", "GENERIC_HOSTED")]
+        [Inside("MANUAL", "VERIFF", "GENERIC_HOSTED", "IDENTOMAT")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public KycProvider Provider { get; set; }
 

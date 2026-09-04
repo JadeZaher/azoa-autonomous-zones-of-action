@@ -158,6 +158,26 @@ var surrealRuntimeConfigSection = SurrealRuntimeConfigurationGuard.ResolveRuntim
 AZOA.WebAPI.Providers.Blockchain.BlockchainProviderFactory.GuardAgainstSimulatedModeInProduction(
     builder.Configuration, builder.Environment.IsProduction());
 AZOA.WebAPI.Services.Kyc.KycRuntimeSafety.GuardStartup(builder.Environment, builder.Configuration);
+// Production-readiness FR-5 AC3: a Production host must resolve a REAL identity
+// provider. Keep this list in sync with the adapter keys registered in
+// KycProviderRegistry's _adapters dictionary below. Reads Kyc:Provider directly for
+// the same reason the blockchain guard reads Blockchain:Chains directly — the
+// runtime selection path silently substitutes the unavailable provider for an
+// unknown key, which would hide the exact defect this catches.
+AZOA.WebAPI.Services.Kyc.KycRuntimeSafety.GuardProductionProviderIsReal(
+    builder.Environment,
+    builder.Configuration,
+    AZOA.WebAPI.Services.Kyc.KycRegisteredAdapters.RealKeys);
+
+// Federated sign-in fail-fast guard (Phase 1B D18). Same shape as the two guards
+// above: a provider ADVERTISED as enabled whose client secret is absent stops the
+// host, rather than booting healthy and presenting a sign-in button that 500s on
+// the first user who presses it. Returns the bound options so the scheme
+// registration below and the DI registration share one validated instance.
+var externalAuthOptions = AZOA.WebAPI.Services.Auth.ExternalAuthRuntimeSafety.GuardStartup(
+    builder.Environment, builder.Configuration);
+builder.Services.Configure<AZOA.WebAPI.Services.Auth.ExternalAuthOptions>(
+    builder.Configuration.GetSection(AZOA.WebAPI.Services.Auth.ExternalAuthOptions.SectionName));
 
 builder.Services.AddAuthentication(options =>
 {
@@ -329,6 +349,130 @@ builder.Services.AddAuthentication(options =>
 {
     options.ForwardDefaultSelector = AuthenticationSchemeSelector.Resolve;
 });
+
+// ── Federated sign-in schemes (Phase 1B, D18) ────────────────────────────────
+//
+// A short-lived cookie carries the provider result the few milliseconds between the
+// handler's own callback path and ExternalAuthController.Callback, which immediately
+// consumes and deletes it. This is ASP.NET Identity's external-login shape. It is NOT
+// an application session: no endpoint authenticates against it, the MultiScheme
+// selector never forwards to it, and the controller signs it out on every path
+// (success and failure alike).
+//
+// SameSite=Lax is required, not a preference: the provider returns via a top-level
+// cross-site GET, and Strict would drop the cookie and break every sign-in.
+if (externalAuthOptions.EnabledProviderNames().Count > 0)
+{
+    builder.Services.AddAuthentication()
+        .AddCookie(AZOA.WebAPI.Controllers.ExternalAuthController.ExternalScheme, options =>
+        {
+            options.Cookie.Name = "azoa.oauth.external";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.IsEssential = true;
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
+            options.SlidingExpiration = false;
+        });
+}
+
+if (externalAuthOptions.Google.IsUsable)
+{
+    builder.Services.AddAuthentication().AddGoogle(
+        AZOA.WebAPI.Models.Auth.ExternalAuthProviderNames.Google,
+        options =>
+        {
+            options.ClientId = externalAuthOptions.Google.ClientId;
+            options.ClientSecret = externalAuthOptions.Google.ClientSecret;
+            options.SignInScheme = AZOA.WebAPI.Controllers.ExternalAuthController.ExternalScheme;
+            options.CallbackPath = "/auth/oauth/google/signin";
+
+            // state + PKCE. UsePkce defaults true on this handler; setting it
+            // explicitly makes the guarantee visible at the registration site and
+            // fails loudly if a future upgrade changes the default. The handler
+            // generates the verifier, keeps it inside the DataProtection-encrypted
+            // state, and refuses a callback whose correlation cookie does not match.
+            options.UsePkce = true;
+            options.CorrelationCookie.SameSite = SameSiteMode.Lax;
+            options.CorrelationCookie.SecurePolicy = builder.Environment.IsDevelopment()
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
+
+            options.Scope.Clear();
+            options.Scope.Add("openid");
+            options.Scope.Add("profile");
+            options.Scope.Add("email");
+
+            options.SaveTokens = false;
+        });
+}
+
+if (externalAuthOptions.GitHub.IsUsable)
+{
+    // Generic OAuth rather than a third-party package: the handler already implements
+    // the authorization-code exchange, so the only GitHub-specific parts are the three
+    // endpoint URLs and the claim mapping.
+    builder.Services.AddAuthentication().AddOAuth(
+        AZOA.WebAPI.Models.Auth.ExternalAuthProviderNames.GitHub,
+        options =>
+        {
+            options.ClientId = externalAuthOptions.GitHub.ClientId;
+            options.ClientSecret = externalAuthOptions.GitHub.ClientSecret;
+            options.SignInScheme = AZOA.WebAPI.Controllers.ExternalAuthController.ExternalScheme;
+            options.CallbackPath = "/auth/oauth/github/signin";
+
+            options.AuthorizationEndpoint = "https://github.com/login/oauth/authorize";
+            options.TokenEndpoint = "https://github.com/login/oauth/access_token";
+            options.UserInformationEndpoint = "https://api.github.com/user";
+
+            // GitHub OAuth Apps ignore code_challenge today, so `state` is the control
+            // that actually binds this callback to this browser there. PKCE is still
+            // requested: it costs nothing, it is honoured by GitHub Apps, and leaving
+            // it off would mean a future GitHub rollout silently failed to protect us.
+            options.UsePkce = true;
+            options.CorrelationCookie.SameSite = SameSiteMode.Lax;
+            options.CorrelationCookie.SecurePolicy = builder.Environment.IsDevelopment()
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
+
+            options.Scope.Clear();
+            options.Scope.Add("read:user");
+            options.Scope.Add("user:email");
+
+            options.SaveTokens = false;
+
+            // GitHub's numeric `id` is the STABLE subject. `login` is a display handle
+            // the user can change and MUST NOT key the binding; `email` must not either
+            // (D17). Mapping id -> NameIdentifier is what ExternalIdentityReader reads.
+            options.ClaimActions.MapJsonKey(System.Security.Claims.ClaimTypes.NameIdentifier, "id");
+            options.ClaimActions.MapJsonKey(System.Security.Claims.ClaimTypes.Name, "login");
+            options.ClaimActions.MapJsonKey(System.Security.Claims.ClaimTypes.Email, "email");
+
+            options.Events = new Microsoft.AspNetCore.Authentication.OAuth.OAuthEvents
+            {
+                OnCreatingTicket = async context =>
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
+                    request.Headers.Accept.Add(
+                        new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+                    request.Headers.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", context.AccessToken);
+                    // GitHub rejects requests without a User-Agent.
+                    request.Headers.UserAgent.ParseAdd("AZOA-WebAPI");
+
+                    using var response = await context.Backchannel.SendAsync(
+                        request, HttpCompletionOption.ResponseHeadersRead, context.HttpContext.RequestAborted);
+                    response.EnsureSuccessStatusCode();
+
+                    using var payload = System.Text.Json.JsonDocument.Parse(
+                        await response.Content.ReadAsStringAsync(context.HttpContext.RequestAborted));
+                    context.RunClaimActions(payload.RootElement);
+                }
+            };
+        });
+}
 
 // TenantScope policy (tenant-onboarding): a tenant-surface action requires the
 // tenant:provision scope claim (emitted per-CSV-entry by ApiKeyAuthenticationHandler).
@@ -583,6 +727,17 @@ var rlFinancialQueue = rlSection.GetValue<int?>("Financial:QueueLimit") ?? 0;
 var rlTenantCustodialPermit = rlSection.GetValue<int?>("TenantCustodial:PermitLimit") ?? 20;
 var rlTenantCustodialWindowSeconds = rlSection.GetValue<int?>("TenantCustodial:WindowSeconds") ?? 60;
 var rlTenantCustodialQueue = rlSection.GetValue<int?>("TenantCustodial:QueueLimit") ?? 0;
+// Callback budget: a legitimate provider retries a handful of times per session,
+// so a generous-but-bounded per-IP allowance is enough while still cutting off a
+// body-secret guessing flood.
+var rlKycCallbackPermit = Math.Clamp(
+    rlSection.GetValue<int?>("KycCallback:PermitLimit") ?? 60,
+    1,
+    10_000);
+var rlKycCallbackWindowSeconds = Math.Clamp(
+    rlSection.GetValue<int?>("KycCallback:WindowSeconds") ?? 60,
+    1,
+    86_400);
 var rlOperatorLoginPermit = Math.Clamp(
     rlSection.GetValue<int?>("OperatorLogin:PermitLimit") ?? 20,
     1,
@@ -653,6 +808,23 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
+    // Inbound provider callbacks have NO authenticated principal — the shared secret
+    // rides in the body — so the identity-partitioned global limiter degenerates to
+    // one bucket per source IP anyway. This policy gives the callback its own,
+    // stricter budget so a secret-guessing flood cannot also consume the request
+    // allowance of every anonymous caller behind the same address.
+    options.AddPolicy(AZOA.WebAPI.Controllers.KycCallbackController.RateLimitPolicy, httpContext =>
+    {
+        var address = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter($"kyc-callback:{address}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = rlKycCallbackPermit,
+            Window = TimeSpan.FromSeconds(rlKycCallbackWindowSeconds),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+
     options.AddPolicy("operator-login", httpContext =>
     {
         var address = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -687,6 +859,8 @@ builder.Services.AddRateLimiter(options =>
                 "financial" => rlFinancialWindowSeconds,
                 "tenant-custodial" => rlTenantCustodialWindowSeconds,
                 "operator-login" => rlOperatorLoginWindowSeconds,
+                AZOA.WebAPI.Controllers.KycCallbackController.RateLimitPolicy =>
+                    rlKycCallbackWindowSeconds,
                 _ => rlGlobalWindowSeconds
             };
         }
@@ -804,6 +978,21 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthChallengeSto
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthChallengeStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthClaimTokenStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthClaimTokenStore>();
+// Phase 1B federated sign-in: the (tenant_scope, provider, subject) binding and the
+// single-use handoff code that carries an OAuth result to the SPA.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IAvatarExternalLoginStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealAvatarExternalLoginStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IOAuthExchangeCodeStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealOAuthExchangeCodeStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Auth.IExternalLoginService,
+    AZOA.WebAPI.Services.Auth.ExternalLoginService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Auth.IOAuthExchangeCodeService,
+    AZOA.WebAPI.Services.Auth.OAuthExchangeCodeService>();
+// The ONE login-token mint. Shared with the password path (AvatarManager.GenerateJwt
+// delegates to the same implementation) so a federated session and a password session
+// are the same credential, not two shapes that drift.
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Auth.IAvatarLoginTokenIssuer,
+    AZOA.WebAPI.Services.Auth.AvatarLoginTokenIssuer>();
 // tenant-consent-delegation: the live grant store (the seam's source of truth),
 // the immutable audit trail (AC10), and the webhook outbox + registration (AC7).
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IConsentGrantStore,
@@ -957,6 +1146,55 @@ builder.Services.Configure<AZOA.WebAPI.Settings.KycSettings>(
 builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.ManualKycProviderService>();
 builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.VeriffKycProviderService>();
 builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.GenericHostedKycProviderService>();
+// ─── Identomat hosted KYC + AML screening ───
+// The named client has NO base address: the adapter genuinely spans two hosts
+// (external-api for /begin and screening, widget for the authoritative /result/),
+// so each call supplies its own absolute origin from configuration.
+builder.Services.AddHttpClient(AZOA.WebAPI.Settings.IdentomatKycSettings.HttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
+    {
+        // A redirect on an identity call would silently move a company key to
+        // another origin; never follow one.
+        AllowAutoRedirect = false,
+    });
+// Singletons: the shared per-IP budget and the per-tenant quota are node-wide
+// ceilings. Scoping them per request would make each of them count to one.
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Kyc.IIdentomatRateBudget,
+    AZOA.WebAPI.Services.Kyc.IdentomatRateBudget>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Kyc.IKycTenantQuota,
+    AZOA.WebAPI.Services.Kyc.KycTenantQuota>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Kyc.IKycPersonKeyDeriver,
+    AZOA.WebAPI.Services.Kyc.KycPersonKeyDeriver>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Kyc.IKycScreeningRiskPolicy,
+    AZOA.WebAPI.Services.Kyc.KycScreeningRiskPolicy>();
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.IIdentomatHttpTransport,
+    AZOA.WebAPI.Providers.Kyc.IdentomatHttpTransport>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.HostedSessions.IHostedSessionStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealHostedSessionStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKycIdentityStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealKycIdentityStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKycScreeningStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealKycScreeningStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.IKycIdentityBindingService,
+    AZOA.WebAPI.Services.Kyc.KycIdentityBindingService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.IKycIdentityErasureService,
+    AZOA.WebAPI.Services.Kyc.KycIdentityErasureService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.IHostedSessionOutcomeHandler,
+    AZOA.WebAPI.Services.Kyc.KycHostedSessionOutcomeHandler>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.IHostedSessionFlow,
+    AZOA.WebAPI.Services.HostedSessions.HostedSessionFlow>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.IIdentomatScreeningService,
+    AZOA.WebAPI.Services.Kyc.IdentomatScreeningService>();
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.IdentomatKycProviderService>();
+// Cold poll for AML ongoing monitoring. There is NO push channel for monitoring at
+// all, so this worker is the only change-detection path; it self-disables unless
+// Kyc:Identomat:Screening:MonitorPollEnabled is set.
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Kyc.KycScreeningMonitorPollWorker>();
+// PII retention/erasure sweep. Without this registration the retention window is
+// decorative: nothing ever expires a KYC identity record (GDPR Art. 17 vs the
+// KYC record-keeping obligation). Owned by the KYC lane; registered here because
+// Program.cs is single-writer.
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Kyc.KycIdentityRetentionSweepWorker>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderRegistry,
     AZOA.WebAPI.Services.Kyc.KycProviderRegistry>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKycControlPlaneManager,
@@ -987,6 +1225,10 @@ switch (configuredKycProvider)
     case "generic-hosted":
         builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
             AZOA.WebAPI.Providers.Kyc.GenericHostedKycProviderService>();
+        break;
+    case AZOA.WebAPI.Providers.Kyc.IdentomatKycProviderService.ProviderKeyValue:
+        builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService>(sp =>
+            sp.GetRequiredService<AZOA.WebAPI.Providers.Kyc.IdentomatKycProviderService>());
         break;
     default:
         builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Providers.IKycProviderService,
@@ -1060,6 +1302,10 @@ builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner,
 // See Providers/Blockchain/Solana/AGENTS.md §signer for the canonical byte contract.
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner,
     AZOA.WebAPI.Providers.Blockchain.Solana.SolanaTransactionSigner>();
+// Ethereum signer: real secp256k1 signing over the canonical EIP-1559 payload.
+// See Providers/Blockchain/Ethereum/AGENTS.md §signer for the canonical byte contract.
+builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner,
+    AZOA.WebAPI.Providers.Blockchain.Ethereum.EthereumTransactionSigner>();
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Signing.ITransactionSignerFactory>(sp =>
     new AZOA.WebAPI.Core.Signing.TransactionSignerFactory(
         sp.GetServices<AZOA.WebAPI.Interfaces.Signing.ITransactionSigner>()));
@@ -1083,13 +1329,34 @@ builder.Services.AddTransient<AlgorandProvider>(sp => new AlgorandProvider(
     // injected IAlgorandFaucet (WalletManager no longer depends on it directly).
     faucet: sp.GetRequiredService<IAlgorandFaucet>()));
 builder.Services.AddTransient<SolanaProvider>();
+// Ethereum: a BARE AddTransient on purpose. Constructor selection then picks the 4-arg
+// overload whose every parameter is a root-resolvable singleton (config, logger, signer
+// factory, scope factory), so the value path gets a real signer. A factory lambda would
+// invite passing IKeyCustodyService directly — it is SCOPED, while the provider factory
+// caches one provider per chain/network for the app lifetime, which would make it a
+// captive dependency. EthereumProviderPipelineTests pins this selection.
+builder.Services.AddTransient<AZOA.WebAPI.Providers.Blockchain.Ethereum.EthereumProvider>();
 builder.Services.AddTransient<AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>();
+
+// Phase 0 capability-honesty guard: keep this list in sync with the ChainType values
+// registered in the BlockchainProviderRegistration array immediately below. Fails boot
+// if Blockchain:Chains config enables a chain (e.g. "Ethereum") with no registered
+// provider, instead of letting it fail lazily at request time.
+var registeredBlockchainChainTypes = new[] { "Algorand", "Solana", "Ethereum", "Simulated" };
+BlockchainProviderFactory.GuardAgainstUnregisteredEnabledChains(
+    builder.Configuration, registeredBlockchainChainTypes);
+
 builder.Services.AddSingleton<IBlockchainProviderFactory>(sp =>
     new BlockchainProviderFactory(
         new[]
         {
             new BlockchainProviderRegistration("Algorand", sp.GetRequiredService<AlgorandProvider>),
             new BlockchainProviderRegistration("Solana", sp.GetRequiredService<SolanaProvider>),
+            // Returns an UNBOUND provider: the factory owns the network binding and a
+            // pre-initialized instance is rejected (BaseBlockchainProvider.InitializeForFactory).
+            new BlockchainProviderRegistration(
+                "Ethereum",
+                sp.GetRequiredService<AZOA.WebAPI.Providers.Blockchain.Ethereum.EthereumProvider>),
             new BlockchainProviderRegistration(
                 "Simulated",
                 sp.GetRequiredService<AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>),
@@ -1142,6 +1409,16 @@ builder.Services.AddOptions<AZOA.WebAPI.Services.Bridge.BridgeOptions>()
         AZOA.WebAPI.Services.Bridge.BridgeOptions.SectionName));
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IRealValueKycGate,
     AZOA.WebAPI.Services.Bridge.RealValueKycGate>();
+// CrossChainBridgeService takes IBridgeProtocol<WormholeVAA>; this registers the
+// protocol implementations that satisfy it. Registered by request of the bridge
+// agent, which owns the extension itself (Services/Bridge/BridgeProtocolServiceCollectionExtensions.cs).
+// MUST precede the ICrossChainBridgeService registration's first resolution — without
+// it the host builds and the unit suite stays green (those tests construct the service
+// directly) but DI resolution fails the first time a bridge request arrives.
+// Called as a plain static rather than via `using AZOA.WebAPI.Services.Bridge;` so the
+// one-line addition cannot introduce a name ambiguity elsewhere in this file.
+AZOA.WebAPI.Services.Bridge.BridgeProtocolServiceCollectionExtensions
+    .AddCrossChainBridgeProtocols(builder.Services);
 builder.Services.AddScoped<ICrossChainBridgeService, CrossChainBridgeService>();
 
 // ─── Chain reconciliation (api-safety-hardening tasks 14/15) ───
@@ -1240,6 +1517,14 @@ builder.Services.AddSingleton<Microsoft.AspNetCore.Cors.Infrastructure.ICorsPoli
 builder.Services.AddCors();
 
 var app = builder.Build();
+
+// Federated sign-in post-build guard (Phase 1B D18). The pre-build guard above proves
+// the SECRETS are present; this proves the REGISTRATIONS are, by resolving each service
+// once and confirming every advertised provider has an authentication scheme. A
+// missing DI registration otherwise builds clean, passes the unit suite (those tests
+// construct types directly), and fails only on the first real sign-in.
+AZOA.WebAPI.Services.Auth.ExternalAuthRuntimeSafety.GuardRegistrationsResolve(
+    app.Services, externalAuthOptions);
 
 // Verbose error reporting.
 //   • Opt-in via AZOA:DebugErrors (env: AZOA__DebugErrors); defaults on in Development.

@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Models.Responses;
 
@@ -20,9 +21,15 @@ public interface ICrossChainBridgeService
     /// its ledger record to the exact operation and request fingerprint. When
     /// null the service derives a deterministic content key.
     /// </param>
+    /// <param name="amount">
+    /// The value to bridge, as arbitrary-precision base units plus the dimension they are
+    /// counted in (D13/D15). Deliberately has NO default: a value-moving call must state the
+    /// quantity. A non-chain dimension, or a count above the persisted 64-bit ceiling, is
+    /// refused rather than reinterpreted or truncated.
+    /// </param>
     Task<AZOAResult<BridgeTransactionResult>> InitiateBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
-        string recipientAddress, Guid avatarId, ulong amount = 1,
+        string recipientAddress, Guid avatarId, RailAmount amount,
         BridgeMode? mode = null, CancellationToken ct = default,
         string? clientIdempotencyKey = null);
 

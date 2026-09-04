@@ -13,6 +13,9 @@ using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Reconciliation;
 using AZOA.WebAPI.Tests.TestSupport;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using AZOA.WebAPI.Services.Bridge;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -682,9 +685,14 @@ public class ReconciliationBridgeHardeningTests
         public string LastSeededId =>
             _lastSeededId ?? throw new InvalidOperationException("No bridge seeded yet.");
 
+        /// <summary>Bridge legs the provider CAN reach — attached so the no-mutation
+        /// invariant proves reconciliation never calls one even when the capability exists.</summary>
+        public BridgeLegMocks Legs { get; }
+
         public BridgeHardeningHarness(Mock<IBlockchainProvider>? providerMock = null)
         {
             ProviderMock = providerMock ?? new Mock<IBlockchainProvider>();
+            Legs = ProviderMock.WithBridgeLegs();
             ProviderMock.Setup(p => p.ChainType).Returns("Algorand");
 
             FactoryMock.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
@@ -798,29 +806,23 @@ public class ReconciliationBridgeHardeningTests
         public void AssertNoOnChainMutation()
         {
             ProviderMock.Verify(p => p.MintAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
-            ProviderMock.Verify(p => p.MintWrappedAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Target.Verify(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.BurnAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(),
                 It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
-            ProviderMock.Verify(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Target.Verify(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.TransferAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<ulong>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
+                It.IsAny<RailAmount>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.SwapAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<decimal>(),
                 It.IsAny<decimal>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.ExchangeAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-            ProviderMock.Verify(p => p.LockForBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+            Legs.Source.Verify(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()), Times.Never);
             ProviderMock.Verify(p => p.DeployContractAsync(
                 It.IsAny<byte[]>(), It.IsAny<string>(),
                 It.IsAny<Dictionary<string, object>?>(), It.IsAny<CancellationToken>()), Times.Never);

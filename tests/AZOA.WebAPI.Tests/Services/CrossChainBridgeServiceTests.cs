@@ -15,6 +15,8 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Tests.TestSupport;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -23,6 +25,7 @@ public class CrossChainBridgeServiceTests
     private readonly Mock<IBlockchainProviderFactory> _factoryMock;
     private readonly Mock<IWormholeAdapter> _wormholeMock;
     private readonly Mock<IBlockchainProvider> _providerMock;
+    private readonly BridgeLegMocks _legs;
     private readonly WormholeConfig _config;
     private readonly CrossChainBridgeService _service;
 
@@ -34,7 +37,7 @@ public class CrossChainBridgeServiceTests
         _config = new WormholeConfig { DefaultMode = BridgeMode.Wormhole };
         _config.BridgeVaults["Solana"].VaultAddress = "solana_bridge_vault_for_algorand";
 
-        _providerMock.Setup(p => p.SupportsBridging).Returns(true);
+        _legs = _providerMock.WithBridgeLegs();
         _providerMock.Setup(p => p.ChainType).Returns("Solana");
 
         _factoryMock.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
@@ -44,7 +47,7 @@ public class CrossChainBridgeServiceTests
         // the in-memory fake stores directly — no EF/SQLite required.
         _service = new CrossChainBridgeService(
             _factoryMock.Object,
-            _wormholeMock.Object,
+            new WormholeProtocol(_wormholeMock.Object, NullLogger<WormholeProtocol>.Instance),
             Options.Create(_config),
             new FakeBridgeStore(),
             new FakeIdempotencyStore(),
@@ -60,7 +63,7 @@ public class CrossChainBridgeServiceTests
     [Fact]
     public async Task InitiateBridge_EmptySourceChain_ReturnsError()
     {
-        var result = await _service.InitiateBridgeAsync("", "Algorand", "token", "addr", Guid.NewGuid());
+        var result = await _service.InitiateBridgeAsync("", "Algorand", "token", "addr", Guid.NewGuid(), 1);
         result.IsError.Should().BeTrue();
     }
 
@@ -68,14 +71,10 @@ public class CrossChainBridgeServiceTests
     public async Task InitiateBridge_TrustedMode_CompletesImmediately()
     {
         using var harness = new FakeBridgeHarness();
-        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "lock_tx" });
+        harness.Legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<BridgeLock> { IsError = false, Result = new BridgeLock("lock_tx", PendingConfirmation: false, "confirmed") });
 
-        harness.ProviderMock.Setup(p => p.MintWrappedAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Target.Setup(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "mint_tx" });
 
         var (svc, _) = harness.CreateService();
@@ -94,15 +93,9 @@ public class CrossChainBridgeServiceTests
     public async Task InitiateBridge_PendingLock_PersistsHandleAndNeverMints()
     {
         using var harness = new FakeBridgeHarness();
-        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<string>
-            {
-                IsError = false,
-                Result = "lock_pending_tx",
-                Message = $"{OperationStatus.PendingConfirmationMarker}: awaiting round",
-            });
+        harness.Legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<BridgeLock>
+            { Result = new BridgeLock("lock_pending_tx", PendingConfirmation: true, "pending") });
 
         var (svc, _) = harness.CreateService();
         var result = await svc.InitiateBridgeAsync(
@@ -112,19 +105,15 @@ public class CrossChainBridgeServiceTests
         result.Result!.Status.Should().Be(BridgeStatus.Locking);
         result.Result.LockTxHash.Should().Be("lock_pending_tx");
         result.Result.SourceAddress.Should().Be("solana_bridge_vault_for_algorand");
-        harness.ProviderMock.Verify(p => p.MintWrappedAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.Legs.Target.Verify(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task InitiateBridge_LockStatePersistenceFails_NeverMints()
     {
         using var harness = new FakeBridgeHarness { RejectNextLockPersistence = true };
-        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "lock_tx" });
+        harness.Legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<BridgeLock> { IsError = false, Result = new BridgeLock("lock_tx", PendingConfirmation: false, "confirmed") });
 
         var (svc, _) = harness.CreateService();
         var result = await svc.InitiateBridgeAsync(
@@ -132,9 +121,7 @@ public class CrossChainBridgeServiceTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("durable bridge state");
-        harness.ProviderMock.Verify(p => p.MintWrappedAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.Legs.Target.Verify(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -165,7 +152,7 @@ public class CrossChainBridgeServiceTests
         result.Message.Should().Contain("Wormhole bridge mode is disabled");
         harness.WormholeMock.Verify(w => w.InitiateTransferAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<CancellationToken>()), Times.Never);
+            It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -174,14 +161,10 @@ public class CrossChainBridgeServiceTests
         using var harness = new FakeBridgeHarness();
         harness.WormholeMock.Setup(w => w.IsRouteSupported("Solana", "Algorand")).Returns(false);
 
-        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "lock_tx" });
+        harness.Legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<BridgeLock> { IsError = false, Result = new BridgeLock("lock_tx", PendingConfirmation: false, "confirmed") });
 
-        harness.ProviderMock.Setup(p => p.MintWrappedAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Target.Setup(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "mint_tx" });
 
         var (svc, _) = harness.CreateService();
@@ -189,9 +172,7 @@ public class CrossChainBridgeServiceTests
             "Solana", "Algorand", "token1", "recipient", Guid.NewGuid(), 1, BridgeMode.Wormhole);
 
         result.IsError.Should().BeTrue();
-        harness.ProviderMock.Verify(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.Legs.Source.Verify(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ─── Full Wormhole lifecycle ───
@@ -251,13 +232,9 @@ public class CrossChainBridgeServiceTests
     public async Task FetchVAA_TrustedBridge_ReturnsError()
     {
         using var harness = new FakeBridgeHarness();
-        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx" });
-        harness.ProviderMock.Setup(p => p.MintWrappedAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<BridgeLock> { IsError = false, Result = new BridgeLock("tx", PendingConfirmation: false, "confirmed") });
+        harness.Legs.Target.Setup(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx" });
 
         var (svc, _) = harness.CreateService();
@@ -386,13 +363,9 @@ public class CrossChainBridgeServiceTests
     {
         var avatarId = Guid.NewGuid();
 
-        _providerMock.Setup(p => p.LockForBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx" });
-        _providerMock.Setup(p => p.MintWrappedAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-            It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<BridgeLock> { IsError = false, Result = new BridgeLock("tx", PendingConfirmation: false, "confirmed") });
+        _legs.Target.Setup(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx" });
 
         await _service.InitiateBridgeAsync("Solana", "Algorand", "t1", "r", avatarId, 1, BridgeMode.Trusted);
@@ -403,11 +376,12 @@ public class CrossChainBridgeServiceTests
         history.Result!.Count().Should().Be(2);
     }
 
-    private static IBlockchainProvider CreateMockProvider(string chainType, bool supportsBridging)
+    private static IBlockchainProvider CreateMockProvider(string chainType, bool bridgeCapable)
     {
         var mock = new Mock<IBlockchainProvider>();
         mock.Setup(p => p.ChainType).Returns(chainType);
-        mock.Setup(p => p.SupportsBridging).Returns(supportsBridging);
+        if (bridgeCapable)
+            mock.WithBridgeLegs();
         return mock.Object;
     }
 
@@ -428,9 +402,7 @@ public class CrossChainBridgeServiceTests
     {
         using var harness = new FakeBridgeHarness();
 
-        harness.ProviderMock.Setup(p => p.BurnWrappedAsync(
-            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Target.Setup(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "burn_tx_ok" });
 
         var bridgeId = harness.SeedCompletedBridge(targetTokenId: "wrapped_token_1");
@@ -446,8 +418,7 @@ public class CrossChainBridgeServiceTests
             "WHERE Status==Reversing)");
         row.RedemptionTxHash.Should().Be("burn_tx_ok");
         row.ProofData.Should().Be("release_tx_ok");
-        harness.ProviderMock.Verify(p => p.ReleaseFromBridgeAsync(
-            "token1", "src", 1, "source_refund_addr", It.IsAny<CancellationToken>()), Times.Once);
+        harness.Legs.Source.Verify(leg => leg.ReleaseAsync(It.IsAny<BridgeReleaseRequest>(), It.IsAny<CancellationToken>()), Times.Once);
         row.Status.Should().NotBe(BridgeStatus.Redeeming,
             "reversal must NOT reuse the forward-redeem Redeeming state");
     }
@@ -463,9 +434,7 @@ public class CrossChainBridgeServiceTests
     {
         using var harness = new FakeBridgeHarness();
 
-        harness.ProviderMock.Setup(p => p.BurnWrappedAsync(
-            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Target.Setup(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = true, Message = "chain rejected burn" });
 
         var bridgeId = harness.SeedCompletedBridge(targetTokenId: "wrapped_token_2");
@@ -487,9 +456,7 @@ public class CrossChainBridgeServiceTests
     public async Task ReverseBridge_PendingBurn_NeverReleasesOrRefunds()
     {
         using var harness = new FakeBridgeHarness();
-        harness.ProviderMock.Setup(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Target.Setup(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string>
             {
                 IsError = false,
@@ -505,9 +472,7 @@ public class CrossChainBridgeServiceTests
         var row = harness.GetBridge(bridgeId);
         row.Status.Should().Be(BridgeStatus.Reversing);
         row.RedemptionTxHash.Should().Be("burn_pending_tx");
-        harness.ProviderMock.Verify(p => p.ReleaseFromBridgeAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        harness.Legs.Source.Verify(leg => leg.ReleaseAsync(It.IsAny<BridgeReleaseRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ─── Pre-launch bridge safety: financial-correctness invariants under
@@ -903,17 +868,16 @@ public class CrossChainBridgeServiceTests
         var idempotency = new CrashAfterClaimIdempotencyStore();
         var lockCalls = 0;
         var mintCalls = 0;
-        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 Interlocked.Increment(ref lockCalls);
-                return new AZOAResult<string> { Result = "lock_tx" };
+                return new AZOAResult<BridgeLock>
+                {
+                    Result = new BridgeLock("lock_tx", PendingConfirmation: false, "confirmed"),
+                };
             });
-        harness.ProviderMock.Setup(p => p.MintWrappedAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Target.Setup(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 Interlocked.Increment(ref mintCalls);
@@ -951,21 +915,16 @@ public class CrossChainBridgeServiceTests
         using var harness = new FakeBridgeHarness();
         var lockCalls = 0;
         var mintCalls = 0;
-        harness.ProviderMock.Setup(p => p.LockForBridgeAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 Interlocked.Increment(ref lockCalls);
-                return new AZOAResult<string>
+                return new AZOAResult<BridgeLock>
                 {
-                    Result = "pending_lock_tx",
-                    Message = $"{OperationStatus.PendingConfirmationMarker}: awaiting round",
+                    Result = new BridgeLock("pending_lock_tx", PendingConfirmation: true, "pending"),
                 };
             });
-        harness.ProviderMock.Setup(p => p.MintWrappedAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        harness.Legs.Target.Setup(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 Interlocked.Increment(ref mintCalls);
@@ -1029,6 +988,7 @@ public class CrossChainBridgeServiceTests
         public Mock<IWormholeAdapter> WormholeMock { get; } = new();
         public Mock<IBlockchainProviderFactory> FactoryMock { get; } = new();
         public Mock<IBlockchainProvider> ProviderMock { get; } = new();
+        public BridgeLegMocks Legs { get; }
         public bool RejectNextLockPersistence
         {
             get => _trackingStore.RejectNextLockPersistence;
@@ -1041,11 +1001,9 @@ public class CrossChainBridgeServiceTests
         public FakeBridgeHarness()
         {
             _trackingStore = new TrackingBridgeStore(new FakeBridgeStore());
-            ProviderMock.Setup(p => p.SupportsBridging).Returns(true);
+            Legs = ProviderMock.WithBridgeLegs();
             ProviderMock.Setup(p => p.ChainType).Returns("Solana");
-            ProviderMock.Setup(p => p.ReleaseFromBridgeAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                    It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            Legs.Source.Setup(leg => leg.ReleaseAsync(It.IsAny<BridgeReleaseRequest>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new AZOAResult<string>
                 {
                     IsError = false,
@@ -1063,7 +1021,7 @@ public class CrossChainBridgeServiceTests
             config.BridgeVaults["Solana"].VaultAddress = "solana_bridge_vault_for_algorand";
             var svc = new CrossChainBridgeService(
                 FactoryMock.Object,
-                WormholeMock.Object,
+                new WormholeProtocol(WormholeMock.Object, NullLogger<WormholeProtocol>.Instance),
                 Options.Create(config),
                 _trackingStore,
                 idempotency ?? _fakeIdempotency,

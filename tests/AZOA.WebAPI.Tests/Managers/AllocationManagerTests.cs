@@ -528,7 +528,7 @@ public class AllocationManagerTests
 
         result.IsError.Should().BeFalse(result.Message);
         broadcastOp.Should().BeAssignableTo<IMintOperation>();
-        ((IMintOperation)broadcastOp!).Amount.Should().Be(93UL);
+        ((IMintOperation)broadcastOp!).Amount.ToBaseUnitString().Should().Be("93");
         broadcastOp.Parameters["GrossAmount"].Should().Be("100");
         broadcastOp.Parameters["NodeFeeAmount"].Should().Be("7");
         broadcastOp.Parameters["NetAmount"].Should().Be("93");

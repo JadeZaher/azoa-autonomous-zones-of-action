@@ -1,3 +1,5 @@
+using AZOA.WebAPI.Core;
+
 namespace AZOA.WebAPI.Interfaces;
 
 public interface IBlockchainOperation
@@ -36,4 +38,12 @@ public interface IBlockchainOperation
     Dictionary<string, string> Parameters { get; set; }
     DateTime CreatedDate { get; set; }
     DateTime? CompletedDate { get; set; }
+
+    /// <summary>
+    /// D16: the fiat value of this operation at the moment it settled, or <c>null</c> when
+    /// no rate source could price it. Stamped once, on the write that records the terminal
+    /// outcome; never recomputed on read.
+    /// See <c>Persistence/SurrealDb/Models/AGENTS.md</c> §value-stamp.
+    /// </summary>
+    ValueStamp? ValueStamp { get; set; }
 }

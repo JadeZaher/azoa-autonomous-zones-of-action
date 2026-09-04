@@ -47,10 +47,10 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
     private readonly IQuestNodeExecutionStore _executionStore;
     private readonly IQuestNodeHandlerRegistry _registry;
     private readonly ISagaStore _sagaStore;
-    private readonly IWalletManager _walletManager;
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly QuestConfigBindingResolver _bindingResolver;
     private readonly ILogger<QuestNodeStepHandler> _logger;
+    private readonly ValueRailCapabilityGate _railGate;
 
     public QuestNodeStepHandler(
         IQuestStore questStore,
@@ -61,17 +61,22 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         IWalletManager walletManager,
         IBlockchainProviderFactory chainFactory,
         QuestConfigBindingResolver bindingResolver,
-        ILogger<QuestNodeStepHandler> logger)
+        ILogger<QuestNodeStepHandler> logger,
+        // Optional so existing positional test fixtures compile; DI supplies every
+        // registered rail destination directory. See Services/Quest/AGENTS.md
+        // §rail-capability.
+        IEnumerable<IRailDestinationDirectory>? railDestinationDirectories = null)
     {
         _questStore = questStore;
         _runStore = runStore;
         _executionStore = executionStore;
         _registry = registry;
         _sagaStore = sagaStore;
-        _walletManager = walletManager;
         _chainFactory = chainFactory;
         _bindingResolver = bindingResolver;
         _logger = logger;
+        _railGate = new ValueRailCapabilityGate(
+            walletManager, chainFactory.DefaultRailId, railDestinationDirectories);
     }
 
     public async Task<StepResult> ExecuteAsync(
@@ -164,13 +169,15 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
             result = QuestNodeHandlerResult.Fail($"Unsupported node type: {node.NodeType}");
         }
         else if ((handlerRequiresChain = handler.RequiresChainCapability)
-            && !await ChainCapabilityGate.HasWalletBoundAsync(_walletManager, actingAvatarId, ct))
+            && !await _railGate.HasUsableDestinationAsync(
+                actingAvatarId, handler.ResolveSettlementRailId(node), ct))
         {
-            // D1 pre-execution capability gate — fails closed (no broadcast):
-            // a chain-requiring node may not run unless the actor has a wallet
-            // bound. HandleAsync is SKIPPED, so the durable path cannot bypass
-            // the gate the legacy executor also enforces.
-            result = QuestNodeHandlerResult.Fail(ChainCapabilityGate.NoWalletBoundMessage);
+            // D1/D9 pre-execution capability gate — fails closed (no broadcast): a
+            // value-moving node may not run unless the actor has a usable destination on
+            // the rail THIS node settles on. HandleAsync is SKIPPED, so the durable path
+            // cannot bypass the gate the legacy executor also enforces.
+            result = QuestNodeHandlerResult.Fail(ValueRailCapabilityGate.NoDestinationMessage(
+                _railGate.ResolveRailId(handler.ResolveSettlementRailId(node))));
         }
         else
         {
@@ -529,7 +536,7 @@ public sealed class QuestNodeStepHandler : IStepHandler<QuestStepPayload>
         {
             return string.IsNullOrWhiteSpace(chainType)
                 ? _chainFactory.GetDefaultProvider()
-                : _chainFactory.GetProvider(chainType, ChainNetwork.Devnet);
+                : _chainFactory.GetProvider(chainType, _chainFactory.DefaultNetwork);
         }
         catch (Exception ex)
         {

@@ -118,3 +118,83 @@ irreversible operations are throttled like the value-moving endpoints.
 `KeyCustodyServiceTests.DecryptSignZero_throwing_signer_returns_error_and_zeroes_key_without_leaking`
 locks all three properties: clean error result, no key bytes in the surfaced message,
 and the handed buffer fully zeroed after a signer throw.
+
+## §platform-key-derivation — the chain-aware platform door
+
+The platform signing key is config-sourced, not a wallet row, and it is **per chain**.
+Before this section existed the door was hardcoded to Algorand: it read
+`AZOA:Algorand:PlatformMnemonic` and ran that mnemonic through Algorand's account
+import, so a Solana or Ethereum platform op received a 32-byte Algorand Ed25519 seed —
+useless on Solana (wants Solnet's 64-byte secret) and, worse, *plausible* on Ethereum,
+where the same 32 bytes read as a valid secp256k1 scalar controlling a completely
+different account.
+
+The shape is a small registry keyed by chain, not conditionals at the call site:
+
+- `IPlatformKeyDerivation` — one chain's rule. Declares its `ChainType`, its own
+  `PlatformKeyConfigPath`, a `SecretDescription` safe to print, the exact `KeyLength`,
+  and a **total, non-throwing** `TryDerive`.
+- `PlatformKeyDerivations.cs` — Algorand (`AZOA:Algorand:PlatformMnemonic`, 25-word
+  mnemonic → 32-byte `ClearTextPrivateKey`), Solana (`AZOA:Solana:PlatformMnemonic`,
+  BIP-39 → Solnet's 64-byte secret), Ethereum (`AZOA:Ethereum:PlatformPrivateKey`,
+  0x-prefixed 32-byte secp256k1 scalar, validated by constructing an `EthECKey`).
+- `PlatformKeyDerivationRegistry` — case-insensitive chain lookup, duplicate
+  registration throws (mirrors `BlockchainProviderFactory`). `Default` is a static,
+  immutable, stateless instance: it needs no DI registration, which keeps it out of the
+  app-lifetime provider cache and away from any captive-dependency risk against the
+  **scoped** `IKeyCustodyService`.
+
+### Why config paths are per-derivation, not `AZOA:{Chain}:PlatformMnemonic`
+
+Ethereum's platform secret is a raw private key, not a mnemonic, because a BIP-39
+phrase only becomes an Ethereum key once a BIP-44 account path is chosen. Guessing the
+path produces a perfectly valid key for the wrong account — the exact failure mode this
+door exists to prevent. Letting each derivation name its own path also kept the
+Ethereum provider's already-shipped `AZOA:Ethereum:PlatformPrivateKey` as the single
+source (the two doors must accept byte-identical input or they resolve different
+senders — hence the strict, matching `0x` requirement).
+
+### Fail-closed ladder (`KeyCustodyService.ResolvePlatformKeyAsync`)
+
+Authority → chain named → derivation registered → secret configured → derives →
+length matches → sign → zero. Each rung returns an error result; none falls through to
+another chain. Unregistered chain names the chain and lists the chains that do have a
+door. Nothing on this ladder puts a secret or a key byte in a message: `TryDerive`
+swallows SDK exceptions on purpose because Algorand/NBitcoin echo the offending
+mnemonic word, and a swallowed `bool` cannot be captured into `AZOAResult.Exception`
+(which `AZOAResultDebug.Enabled` would serialize through `Detail`). This also removed a
+real pre-existing defect: the old door called `new Account(mnemonic)` outside any
+`try`, so a malformed mnemonic threw an SDK exception carrying mnemonic text straight
+out of the chokepoint.
+
+### `LegacyPlatformChainType` is a pin, not a fallback
+
+`WithPlatformSigningKeyAsync(bool, …)` and `(bool, SigningContext, …)` predate per-chain
+derivation and carry no chain. They resolve `SigningContext.ChainType` when the caller
+stamped one and otherwise pin to `Algorand` — byte-identical to historical behaviour,
+which is the point: their only production callers were Algorand paths. A caller that
+*names* a chain never reaches the pin; it gets that chain's key or a fail-closed error.
+New callers use the chain-explicit overload
+`WithPlatformSigningKeyAsync(chainType, isPlatformContext, ctx, sign)` or stamp
+`SigningContext.ChainType` / `SigningContext.PlatformFor(chain)`.
+
+Per-USER resolves are untouched and never consult any of this: their key comes from the
+wallet record's ciphertext, which is already chain-correct, and a per-user context that
+cannot be resolved still errors rather than reaching for a platform key.
+
+### Readiness
+
+`Observability/RealValueReadinessHealthCheck` now validates the platform key for every
+chain **enabled** under `Blockchain:Chains` (any of Devnet/Testnet/Mainnet), skipping
+`Simulated` and skipping chains disabled on every network. It proves the key by actually
+running `TryDerive` and then zeroing the result, so a malformed secret fails readiness
+instead of the first value operation. It reads config rather than instantiating
+providers: `BlockchainProviderFactory.GuardAgainstUnregisteredEnabledChains` already
+makes enabled-implies-registered a boot invariant.
+
+### Still out of scope
+
+`CustodialAccounts:CustodyMode` remains `Disabled` and there is no KMS/HSM adapter.
+`IKeyCustodyService` is still the swap seam for one. Absent an adapter, every platform
+path here fails closed on a missing/malformed config secret rather than degrading to a
+weaker key source.

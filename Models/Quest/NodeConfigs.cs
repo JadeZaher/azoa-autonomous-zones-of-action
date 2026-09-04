@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
@@ -186,9 +187,12 @@ public class BridgeNodeConfig
     /// <summary>Recipient address on the target chain.</summary>
     public string RecipientAddress { get; set; } = string.Empty;
 
-    /// <summary>Units to bridge. Must be positive; the bridge rejects &lt;= 0.</summary>
-    [JsonConverter(typeof(UlongDecimalStringJsonConverter))]
-    public ulong Amount { get; set; } = 1;
+    /// <summary>
+    /// Units to bridge, in source-asset base units. Must be positive; the bridge rejects 0.
+    /// D13: widened from <c>ulong</c>, wire form unchanged (a canonical decimal string).
+    /// </summary>
+    [JsonConverter(typeof(RailAmountBaseUnitStringJsonConverter))]
+    public RailAmount Amount { get; set; } = RailAmount.OfChainAsset(1);
 
     /// <summary>
     /// Optional bridge mode ("Trusted" or "Wormhole"). Null lets the service pick

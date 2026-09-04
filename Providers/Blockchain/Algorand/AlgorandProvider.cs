@@ -9,6 +9,7 @@ using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
 using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Core.Signing;
 using AZOA.WebAPI.Interfaces;
@@ -28,7 +29,8 @@ namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 /// Algorand blockchain provider using direct REST API calls to Algod and Indexer.
 /// Avoids SDK versioning issues while providing full devnet/testnet/mainnet connectivity.
 /// </summary>
-public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule, IAtomicTransferGroupObservationModule
+public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule,
+    IAtomicTransferGroupObservationModule, IBridgeSourceLeg
 {
     // Assigned in BuildClients() during the provider's one-time network binding; the
     // null-forgiving initializer documents that and clears CS8618 without a
@@ -68,7 +70,6 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
 
     public override string ChainType => "Algorand";
     public string CapabilityName => "Algorand.ASA";
-    public override bool SupportsBridging => false;
 
     /// <inheritdoc/>
     public bool SupportsAtomicTransferGroups => true;
@@ -487,10 +488,15 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     // ─── Token / Asset Lifecycle ───
 
     public override async Task<AZOAResult<string>> MintAsync(
-        string tokenUri, ulong amount, string assetType, string walletAddress,
+        string tokenUri, RailAmount amount, string assetType, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(walletAddress) || amount == 0 || string.IsNullOrWhiteSpace(assetType))
+        // D13/D15 edge: an ASA total is ulong on chain, so narrowing here is the chain's
+        // own limit rather than an interface artefact — and it refuses instead of wrapping.
+        if (NarrowToChainBaseUnits<string>(amount, "mint an ASA", out var total) is { } refusal)
+            return refusal;
+
+        if (string.IsNullOrWhiteSpace(walletAddress) || total == 0 || string.IsNullOrWhiteSpace(assetType))
             return Error<string>("Wallet address, positive amount, and asset type are required");
 
         // ASA-create is a platform/ASA-admin op (the platform is manager/reserve/
@@ -499,21 +505,32 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         // signer step (a user wallet cannot be the ASA admin here).
         return await CreateAsaCoreAsync(
             assetType, assetType.ToUpperInvariant()[..Math.Min(8, assetType.Length)],
-            amount, 0, walletAddress, walletAddress, walletAddress, walletAddress,
+            total, 0, walletAddress, walletAddress, walletAddress, walletAddress,
             walletAddress, signingContext ?? SigningContext.Platform, ct);
     }
 
     public override async Task<AZOAResult<string>> BurnAsync(
-        string tokenId, ulong amount, string walletAddress,
+        string tokenId, RailAmount amount, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
         // Burn = AssetDestroy (acfg with no params), signed by the asset manager.
         // The full supply must be held by the creator/manager for destroy to
         // succeed; the manager (platform) address is the signer — an ASA-admin op.
+        // AssetDestroy carries no amount field, but an amount denominated in something
+        // this chain cannot settle still means the caller has the wrong rail.
+        if (RejectUnsettleableAmount<string>(amount, $"burn ASA {tokenId}") is { } refusal)
+            return refusal;
         if (string.IsNullOrWhiteSpace(tokenId) || !ulong.TryParse(tokenId, out var assetIndex))
             return Error<string>("A numeric asset ID is required to burn an ASA");
         if (string.IsNullOrWhiteSpace(walletAddress) || !ValidateAddressFormat(walletAddress))
             return Error<string>("A valid manager (platform) address is required to burn an ASA");
+
+        // AssetDestroy only succeeds when the creator holds EVERY unit. Prove both facts
+        // against chain state before signing: a destroy attempted on outstanding supply is
+        // rejected on chain, and reporting the attempt as a burn would claim value was
+        // destroyed that still exists in other accounts.
+        if (await RequirePlatformHoldsFullSupplyAsync(walletAddress, assetIndex, ct) is { } unproven)
+            return unproven;
 
         return await BuildSignSubmitAsync(
             walletAddress,
@@ -528,16 +545,20 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     }
 
     public override async Task<AZOAResult<string>> TransferAsync(
-        string tokenId, string fromAddress, string toAddress, ulong amount,
+        string tokenId, string fromAddress, string toAddress, RailAmount amount,
         SigningContext? signingContext = null, CancellationToken ct = default)
     {
+        // D13/D15 edge: an ASA AssetAmount is ulong on chain, so this narrowing is the
+        // chain's own ceiling, not an interface artefact. It refuses rather than wraps.
+        if (NarrowToChainBaseUnits<string>(amount, $"transfer ASA {tokenId}", out var baseUnits) is { } refusal)
+            return refusal;
         if (string.IsNullOrWhiteSpace(tokenId) || !ulong.TryParse(tokenId, out var assetIndex))
             return Error<string>("A numeric asset ID is required to transfer an ASA");
         if (string.IsNullOrWhiteSpace(fromAddress) || !ValidateAddressFormat(fromAddress))
             return Error<string>("A valid sender address is required");
         if (string.IsNullOrWhiteSpace(toAddress) || !ValidateAddressFormat(toAddress))
             return Error<string>("A valid recipient address is required");
-        if (amount == 0)
+        if (baseUnits == 0)
             return Error<string>("Transfer amount must be positive");
 
         var receiver = new Address(toAddress);
@@ -548,9 +569,9 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
                 Sender = sender,
                 XferAsset = assetIndex,
                 AssetReceiver = receiver,
-                AssetAmount = amount,
+                AssetAmount = baseUnits,
             },
-            opLabel: $"transfer {amount} of ASA {tokenId} to {toAddress}",
+            opLabel: $"transfer {baseUnits} of ASA {tokenId} to {toAddress}",
             // A transfer FROM a user wallet must sign with that user's key. A null
             // context defaults to the platform signer (the platform moving its own
             // asset, e.g. an allocation mint distributed from the platform reserve).
@@ -761,88 +782,338 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         }
     }
 
-    // ─── Cross-Chain Bridge ───
+    // ─── Cross-Chain Bridge — IBridgeSourceLeg (source only, by design) ───
+    //
+    // Algorand implements IBridgeSourceLeg and deliberately NOT IBridgeTargetLeg. Lock and
+    // release are real, broadcast, and proven below; no canonical platform-controlled wrapped
+    // ASA lifecycle exists, so there is no wrapped mint or burn here to fake. Absence of the
+    // target module IS the refusal. See Providers/Blockchain/Algorand/AGENTS.md.
 
     /// <summary>
-    /// Real outbound-bridge lock: a platform-signed ASA transfer of <paramref name="amount"/>
-    /// of asset <paramref name="tokenId"/> into the bridge <paramref name="vaultAddress"/>
-    /// (custodial-trusted mode). Broadcasts a real transaction and returns the on-chain
-    /// tx id; a confirm-timeout returns the tx id with the pending marker (never a fake Ok).
-    /// The vault must have opted into the ASA out-of-band. See Providers/Blockchain/AGENTS.md §bridge.
+    /// Real outbound-bridge lock: a platform-signed ASA transfer into the bridge vault
+    /// (custodial-trusted mode). Broadcasts a real transaction and returns the on-chain tx id;
+    /// a confirm-timeout returns the tx id with <see cref="BridgeLock.PendingConfirmation"/>
+    /// set, never a fabricated settled Ok.
     /// </summary>
-    public override async Task<AZOAResult<string>> LockForBridgeAsync(
-        string tokenId, string vaultAddress, ulong amount,
-        string targetChain, string targetRecipient, CancellationToken ct = default)
+    /// <remarks>
+    /// The vault must be opted into the ASA before it can receive it — proven here against
+    /// chain state, not assumed, because a transfer to a non-opted-in vault is rejected on
+    /// chain and recording it as a lock would strand the caller's value.
+    /// </remarks>
+    public async Task<AZOAResult<BridgeLock>> LockAsync(
+        BridgeLockRequest request, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(tokenId) || !ulong.TryParse(tokenId, out var assetIndex))
-            return Error<string>("A numeric asset ID is required to lock an ASA for bridging");
-        if (string.IsNullOrWhiteSpace(vaultAddress) || !ValidateAddressFormat(vaultAddress))
-            return Error<string>("A valid bridge vault address is required to lock an ASA");
-        if (amount <= 0)
-            return Error<string>("Bridge lock amount must be positive");
+        if (NarrowToChainBaseUnits<BridgeLock>(
+                request.Amount, $"lock ASA {request.TokenId} for bridging", out var baseUnits) is { } refusal)
+            return refusal;
+        if (string.IsNullOrWhiteSpace(request.TokenId) || !ulong.TryParse(request.TokenId, out var assetIndex))
+            return Error<BridgeLock>("A numeric asset ID is required to lock an ASA for bridging");
+        if (string.IsNullOrWhiteSpace(request.VaultAddress) || !ValidateAddressFormat(request.VaultAddress))
+            return Error<BridgeLock>("A valid bridge vault address is required to lock an ASA");
+        if (baseUnits == 0)
+            return Error<BridgeLock>("Bridge lock amount must be positive");
 
-        // Resolve the platform (custodial) signer address — the trusted bridge locks
-        // value the platform custodies. A missing platform address fails CLOSED with a
-        // clear config error rather than fabricating a lock.
+        // Resolve the platform (custodial) signer address — the trusted bridge locks value the
+        // platform custodies. A missing platform address fails CLOSED with a clear config error
+        // rather than fabricating a lock.
         var platformAddress = ResolvePlatformAddress();
         if (string.IsNullOrWhiteSpace(platformAddress) || !ValidateAddressFormat(platformAddress))
-            return Error<string>(
+            return Error<BridgeLock>(
                 "Cannot lock for bridge: no valid platform signing address is configured "
                 + "(set AZOA:Algorand:PlatformMnemonic / platform custody).");
 
-        var vault = new Address(vaultAddress);
+        // Opt-in proof for the RECEIVING side of the lock. Algorand rejects an asset transfer
+        // to an account that has not opted in; broadcasting anyway would burn a fee and, worse,
+        // a caller could read the submitted tx id as evidence the value moved.
+        if (await RequireOptedInAsync(
+                request.VaultAddress, assetIndex, "bridge vault", ct) is { } vaultNotReady)
+            return AsFailure<BridgeLock>(vaultNotReady);
+
+        var vault = new Address(request.VaultAddress);
         _logger.LogInformation(
             "Bridge lock: {Amount} of ASA {TokenId} {From} → vault {Vault} (target {TargetChain}/{TargetRecipient})",
-            amount, tokenId, platformAddress, vaultAddress, targetChain, targetRecipient);
+            baseUnits, request.TokenId, platformAddress, request.VaultAddress,
+            request.TargetChain, request.TargetRecipient);
 
-        return await BuildSignSubmitAsync(
+        var opLabel =
+            $"lock {baseUnits} of ASA {request.TokenId} into bridge vault {request.VaultAddress} "
+            + $"for {request.TargetChain}";
+
+        var submitted = await BuildSignSubmitCoreAsync(
             platformAddress,
             (paramsInfo, sender) => new AssetTransferTransaction
             {
                 Sender = sender,
                 XferAsset = assetIndex,
                 AssetReceiver = vault,
-                AssetAmount = amount,
+                AssetAmount = baseUnits,
             },
-            opLabel: $"lock {amount} of ASA {tokenId} into bridge vault {vaultAddress} for {targetChain}",
+            opLabel,
+            SigningContext.Platform,
+            ct);
+
+        if (submitted.IsError || submitted.Result is null)
+            return Error<BridgeLock>(submitted.Message, submitted.Exception);
+
+        var confirmed = submitted.Result;
+        return Ok(
+            new BridgeLock(
+                confirmed.TxId,
+                confirmed.PendingConfirmation,
+                confirmed.PendingConfirmation
+                    ? $"{OperationStatus.PendingConfirmationMarker}: Algorand {opLabel} (tx {confirmed.TxId}) "
+                      + "submitted but not yet confirmed; reconcile against chain truth."
+                    : $"Algorand {opLabel} confirmed in round {confirmed.ConfirmedRound}"),
+            confirmed.PendingConfirmation
+                ? $"{OperationStatus.PendingConfirmationMarker}: Algorand {opLabel} (tx {confirmed.TxId})"
+                : $"Algorand {opLabel} confirmed in round {confirmed.ConfirmedRound}");
+    }
+
+    /// <summary>
+    /// Real source release: moves previously locked ASA units out of the bridge vault back to a
+    /// recipient. Three facts are PROVEN against chain state before anything is signed —
+    /// the release signer controls the vault, the vault actually holds the units, and the
+    /// recipient has opted in and is unfrozen. Any unprovable fact refuses; none is assumed.
+    /// </summary>
+    public async Task<AZOAResult<string>> ReleaseAsync(
+        BridgeReleaseRequest request, CancellationToken ct = default)
+    {
+        if (NarrowToChainBaseUnits<string>(
+                request.Amount, $"release ASA {request.TokenId} from the bridge vault", out var baseUnits) is { } refusal)
+            return refusal;
+        if (string.IsNullOrWhiteSpace(request.TokenId) || !ulong.TryParse(request.TokenId, out var assetIndex))
+            return Error<string>("A numeric asset ID is required to release an ASA from the bridge vault");
+        if (string.IsNullOrWhiteSpace(request.VaultAddress) || !ValidateAddressFormat(request.VaultAddress))
+            return Error<string>("A valid bridge vault address is required to release an ASA");
+        if (string.IsNullOrWhiteSpace(request.RecipientAddress) || !ValidateAddressFormat(request.RecipientAddress))
+            return Error<string>("A valid recipient address is required to release an ASA");
+        if (baseUnits == 0)
+            return Error<string>("Bridge release amount must be positive");
+
+        // ── Proof 1: the release signer controls the vault. ──
+        if (await RequireVaultControlledByReleaseSignerAsync(request.VaultAddress, ct) is { } notControlled)
+            return notControlled;
+
+        // ── Proof 2: the vault actually holds the units being released. ──
+        var vaultHolding = await ReadAssetHoldingAsync(request.VaultAddress, assetIndex, ct);
+        if (vaultHolding.IsError)
+            return Error<string>(
+                $"Cannot release ASA {request.TokenId}: the bridge vault holding could not be read "
+                + $"({vaultHolding.Message}). Refusing to claim locked source value was released.");
+        if (vaultHolding.Result is not { } vaultUnits)
+            return Error<string>(
+                $"Cannot release ASA {request.TokenId}: the bridge vault {request.VaultAddress} is not "
+                + "opted into this asset, so it holds none of it. Refusing to claim locked source value "
+                + "was released.");
+        if (vaultUnits.Amount < baseUnits)
+            return Error<string>(
+                $"Cannot release ASA {request.TokenId}: the bridge vault holds {vaultUnits.Amount} units "
+                + $"but {baseUnits} were requested. Refusing to submit a release the vault cannot cover.");
+        if (vaultUnits.IsFrozen)
+            return Error<string>(
+                $"Cannot release ASA {request.TokenId}: the bridge vault holding is frozen, so the release "
+                + "would be rejected on chain. Refusing to claim locked source value was released.");
+
+        // ── Proof 3: the recipient can actually receive the asset. ──
+        if (await RequireOptedInAsync(
+                request.RecipientAddress, assetIndex, "release recipient", ct) is { } recipientNotReady)
+            return recipientNotReady;
+
+        var recipient = new Address(request.RecipientAddress);
+        _logger.LogInformation(
+            "Bridge release: {Amount} of ASA {TokenId} vault {Vault} → {Recipient}",
+            baseUnits, request.TokenId, request.VaultAddress, request.RecipientAddress);
+
+        return await BuildSignSubmitAsync(
+            request.VaultAddress,
+            (paramsInfo, sender) => new AssetTransferTransaction
+            {
+                Sender = sender,
+                XferAsset = assetIndex,
+                AssetReceiver = recipient,
+                AssetAmount = baseUnits,
+            },
+            opLabel:
+                $"release {baseUnits} of ASA {request.TokenId} from bridge vault {request.VaultAddress} "
+                + $"to {request.RecipientAddress}",
             signingContext: SigningContext.Platform,
             ct: ct);
     }
 
-    /// <inheritdoc/>
-    public override Task<AZOAResult<string>> MintWrappedAsync(
-        string sourceChain, string sourceTokenId, string tokenUri,
-        ulong amount, string recipientAddress, CancellationToken ct = default)
+    // ─── Bridge proofs (chain state is the authority; an unreadable fact refuses) ───
+
+    /// <summary>
+    /// Proves the account that will sign the release is the account that controls the vault.
+    /// The vault must BE the platform signing account and must not be rekeyed away from it:
+    /// a rekeyed vault is signed by a different key than this provider holds, and a
+    /// same-address assumption there would broadcast an unauthorised transaction.
+    /// Returns null when proven; otherwise the refusal.
+    /// </summary>
+    private async Task<AZOAResult<string>?> RequireVaultControlledByReleaseSignerAsync(
+        string vaultAddress, CancellationToken ct)
     {
-        return Task.FromResult(Error<string>(
-            "Algorand wrapped mint is disabled: the current ASA-create model assigns control "
-            + "to the recipient and cannot prove canonical platform custody, recipient opt-in, "
-            + "and transfer. Refusing to lock source value for an unsafe wrapped mint."));
+        var platformAddress = ResolvePlatformAddress();
+        if (string.IsNullOrWhiteSpace(platformAddress) || !ValidateAddressFormat(platformAddress))
+            return Error<string>(
+                "Cannot release from the bridge vault: no valid platform signing address is configured "
+                + "(set AZOA:Algorand:PlatformMnemonic / platform custody).");
+
+        if (!string.Equals(vaultAddress, platformAddress, StringComparison.Ordinal))
+            return Error<string>(
+                $"Cannot release from bridge vault {vaultAddress}: it is not the platform signing account "
+                + $"({platformAddress}), so this provider cannot prove it controls the vault. Refusing to "
+                + "claim locked source value was released.");
+
+        AlgodAccountInfo? account;
+        try
+        {
+            account = await ExecuteWithRetryAsync(
+                async () => await AlgodHttpClient.GetFromJsonAsync<AlgodAccountInfo>(
+                    $"/v2/accounts/{vaultAddress}", cancellationToken: ct),
+                ct: ct,
+                safety: RetrySafety.Idempotent);
+        }
+        catch (Exception ex)
+        {
+            return Error<string>(
+                $"Cannot release from bridge vault {vaultAddress}: its control could not be read from the "
+                + $"network ({ex.Message}). Refusing to release on an unproven vault.", ex);
+        }
+
+        if (account is null)
+            return Error<string>(
+                $"Cannot release from bridge vault {vaultAddress}: the account was not found on "
+                + $"{ActiveNetwork}. Refusing to release on an unproven vault.");
+
+        // An auth-addr means the account was rekeyed: its authorised signer is now a DIFFERENT
+        // key. The platform mnemonic would produce a signature the network rejects, and any
+        // "same address" reasoning would be false.
+        if (!string.IsNullOrWhiteSpace(account.AuthAddress)
+            && !string.Equals(account.AuthAddress, platformAddress, StringComparison.Ordinal))
+        {
+            return Error<string>(
+                $"Cannot release from bridge vault {vaultAddress}: it is rekeyed to {account.AuthAddress}, "
+                + "which is not the platform signing key. Refusing to release on an unproven vault.");
+        }
+
+        return null;
     }
 
-    /// <inheritdoc/>
-    public override Task<AZOAResult<string>> BurnWrappedAsync(
-        string tokenId, ulong amount, string sourceChain,
-        string sourceRecipient, string walletAddress, CancellationToken ct = default)
+    /// <summary>
+    /// Proves <paramref name="address"/> can actually receive <paramref name="assetIndex"/>:
+    /// opted in and not frozen. Algorand rejects a transfer to a non-opted-in account, so
+    /// treating the attempt as success would be value loss. Returns null when proven.
+    /// </summary>
+    private async Task<AZOAResult<string>?> RequireOptedInAsync(
+        string address, ulong assetIndex, string role, CancellationToken ct)
     {
-        return Task.FromResult(Error<string>(
-            "Algorand wrapped burn is disabled because no canonical platform-controlled "
-            + "wrapped ASA lifecycle is implemented. Refusing to claim wrapped supply was burned."));
+        var holding = await ReadAssetHoldingAsync(address, assetIndex, ct);
+        if (holding.IsError)
+            return Error<string>(
+                $"Cannot prove the {role} {address} is opted into ASA {assetIndex} "
+                + $"({holding.Message}). Refusing to submit a transfer that the chain may reject.");
+
+        if (holding.Result is null)
+            return Error<string>(
+                $"The {role} {address} has not opted into ASA {assetIndex}. Algorand rejects a transfer "
+                + "to an account that has not opted in, and the account must sign its own opt-in — the "
+                + "platform cannot do it on its behalf. Refusing to submit a transfer that cannot land.");
+
+        if (holding.Result.IsFrozen)
+            return Error<string>(
+                $"The {role} {address} holding of ASA {assetIndex} is frozen, so the transfer would be "
+                + "rejected on chain. Refusing to submit a transfer that cannot land.");
+
+        return null;
     }
 
-    /// <inheritdoc/>
-    public override Task<AZOAResult<string>> ReleaseFromBridgeAsync(
-        string tokenId, string vaultAddress, ulong amount,
-        string recipientAddress, CancellationToken ct = default)
+    /// <summary>
+    /// Proves the platform is the asset creator AND holds every single unit — the exact
+    /// precondition Algorand enforces for AssetDestroy. Verified against chain state so a
+    /// destroy is never attempted (or reported) on supply the platform does not own.
+    /// Returns null when proven.
+    /// </summary>
+    private async Task<AZOAResult<string>?> RequirePlatformHoldsFullSupplyAsync(
+        string managerAddress, ulong assetIndex, CancellationToken ct)
     {
-        return Task.FromResult(Error<string>(
-            "Algorand bridge release is disabled: the configured vault is not proven to be "
-            + "controlled by the platform signer. Refusing to claim locked source value was released."));
+        AlgodAssetResponse? asset;
+        try
+        {
+            asset = await ExecuteWithRetryAsync(
+                async () => await AlgodHttpClient.GetFromJsonAsync<AlgodAssetResponse>(
+                    $"/v2/assets/{assetIndex}", cancellationToken: ct),
+                ct: ct,
+                safety: RetrySafety.Idempotent);
+        }
+        catch (Exception ex)
+        {
+            return Error<string>(
+                $"Cannot destroy ASA {assetIndex}: its on-chain parameters could not be read "
+                + $"({ex.Message}). Refusing to destroy supply whose ownership is unproven.", ex);
+        }
+
+        if (asset?.Params is not { } assetParams)
+            return Error<string>(
+                $"Cannot destroy ASA {assetIndex}: the asset was not found on {ActiveNetwork}. "
+                + "Refusing to report a destroy of supply that does not exist.");
+
+        if (!string.Equals(assetParams.Creator, managerAddress, StringComparison.Ordinal))
+            return Error<string>(
+                $"Cannot destroy ASA {assetIndex}: it was created by {assetParams.Creator ?? "an unknown account"}, "
+                + $"not by {managerAddress}. Algorand only allows the creator to destroy an asset — refusing "
+                + "to attempt a destroy that is not ours to make.");
+
+        var holding = await ReadAssetHoldingAsync(managerAddress, assetIndex, ct);
+        if (holding.IsError)
+            return Error<string>(
+                $"Cannot destroy ASA {assetIndex}: the creator holding could not be read "
+                + $"({holding.Message}). Refusing to destroy supply whose ownership is unproven.");
+
+        var heldUnits = holding.Result?.Amount ?? 0UL;
+        if (heldUnits != assetParams.Total)
+            return Error<string>(
+                $"Cannot destroy ASA {assetIndex}: the creator holds {heldUnits} of {assetParams.Total} units, "
+                + "so units are still outstanding in other accounts. Algorand only allows a destroy when the "
+                + "creator holds the FULL supply — refusing to attempt a destroy that cannot succeed.");
+
+        return null;
     }
 
-    // VerifyBridgeProofAsync removed (final-hardening-cutover B2): the always-true
-    // provider verifier is gone; VAA verification is the WormholeAdapter /
-    // Secp256k1VaaSignatureVerifier path only.
+    /// <summary>
+    /// Reads one account's holding of one ASA from Algod (the settlement authority, not the
+    /// lagging Indexer). <c>Ok(null)</c> means "definitively not opted in"; an error means the
+    /// fact could not be established and callers must fail closed rather than assume either way.
+    /// </summary>
+    private async Task<AZOAResult<AlgodAssetHolding?>> ReadAssetHoldingAsync(
+        string address, ulong assetIndex, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(address) || !ValidateAddressFormat(address))
+            return Error<AlgodAssetHolding?>($"'{address}' is not a valid Algorand address");
+
+        try
+        {
+            var account = await ExecuteWithRetryAsync(
+                async () => await AlgodHttpClient.GetFromJsonAsync<AlgodAccountInfo>(
+                    $"/v2/accounts/{address}", cancellationToken: ct),
+                ct: ct,
+                safety: RetrySafety.Idempotent);
+
+            if (account is null)
+                return Error<AlgodAssetHolding?>($"account {address} was not found on {ActiveNetwork}");
+
+            var holding = account.Assets?.FirstOrDefault(
+                item => item.AssetId >= 0 && (ulong)item.AssetId == assetIndex);
+            return Ok<AlgodAssetHolding?>(holding, holding is null ? "not opted in" : "holding read");
+        }
+        catch (Exception ex)
+        {
+            return Error<AlgodAssetHolding?>($"account read failed: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>Re-types a refusal so a proof written against one result type can refuse another.</summary>
+    private static AZOAResult<T> AsFailure<T>(AZOAResult<string> refusal)
+        => new() { IsError = true, Message = refusal.Message, Exception = refusal.Exception };
 
     // ─── IAlgorandASAModule ───
 
@@ -1787,6 +2058,9 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         public long Amount { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("assets")]
         public List<AlgodAssetHolding>? Assets { get; set; }
+        /// <summary>Present only when the account has been rekeyed: the key now authorised to sign for it.</summary>
+        [System.Text.Json.Serialization.JsonPropertyName("auth-addr")]
+        public string? AuthAddress { get; set; }
     }
 
     private class AlgodAssetHolding
@@ -1794,9 +2068,32 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         [System.Text.Json.Serialization.JsonPropertyName("asset-id")]
         public long AssetId { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("amount")]
-        public long Amount { get; set; }
+        public ulong Amount { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("is-frozen")]
         public bool IsFrozen { get; set; }
+    }
+
+    // Algod GET /v2/assets/{asset-id}: the settlement authority for creator + total supply.
+    private class AlgodAssetResponse
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("index")]
+        public ulong Index { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("params")]
+        public AlgodAssetOnChainParams? Params { get; set; }
+    }
+
+    private class AlgodAssetOnChainParams
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("creator")]
+        public string? Creator { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("total")]
+        public ulong Total { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("manager")]
+        public string? Manager { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("decimals")]
+        public int Decimals { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("default-frozen")]
+        public bool DefaultFrozen { get; set; }
     }
 
     private class AlgodStatus

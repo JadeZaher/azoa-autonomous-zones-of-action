@@ -33,6 +33,13 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <!-- Federated sign-in (Phase 1B). The Google handler is first-party Microsoft and
+         carries Microsoft.AspNetCore.Authentication.OAuth transitively, which supplies
+         the generic AddOAuth used for GitHub. Deliberately NO third-party provider
+         package: the authorization-code + PKCE exchange is framework code either way,
+         and the house rule is to minimise external dependencies. Hand-rolling the token
+         exchange is forbidden — see Services/Auth/AGENTS.md. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="10.0.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <!-- Vetted, pure-managed secp256k1 ECDSA recovery for Wormhole VAA Guardian
          signature verification (Secp256k1VaaSignatureVerifier). Official Bouncy
@@ -47,6 +54,26 @@
     <PackageReference Include="Algorand2" Version="2.0.0.2024051911" />
     <PackageReference Include="Solana.Rpc" Version="8.7.0" />
     <PackageReference Include="Solana.Wallet" Version="8.7.0" />
+    <!-- SPL Token / Associated Token Account / System program instruction builders
+         (Solnet). Required by the SolanaProvider build→sign→submit pipeline so the
+         SPL mint/burn/transfer instruction encoding is the SDK's, not hand-rolled. -->
+    <PackageReference Include="Solana.Programs" Version="8.7.0" />
+    <!-- Nethereum (EthereumProvider). Deliberately NOT the Nethereum.Web3 umbrella:
+         the provider owns its own HttpClient JSON-RPC transport so the house
+         RetrySafety.Broadcast double-spend guard and the in-process test stub both
+         still apply. What is imported is the part that must NOT be hand-rolled on a
+         value path — EIP-2718/EIP-1559 typed-transaction RLP (Nethereum.Signer +
+         its transitive Nethereum.Model/Nethereum.RLP), secp256k1 sign/recover
+         (EthECKey), keccak-256 + EIP-55 checksums (Nethereum.Util), ABI call
+         encoding/decoding (Nethereum.ABI), and hex quantity types (Nethereum.Hex).
+         Nethereum.Signer transitively adds Portable.BouncyCastle 1.8.x
+         (assembly BouncyCastle.Crypto); it does NOT collide with the aliased
+         BouncyCastle.Cryptography 2.6.2 above because that one is bound only
+         through `extern alias BCCrypto2` and so is absent from the global namespace. -->
+    <PackageReference Include="Nethereum.Signer" Version="4.21.4" />
+    <PackageReference Include="Nethereum.ABI" Version="4.21.4" />
+    <PackageReference Include="Nethereum.Util" Version="4.21.4" />
+    <PackageReference Include="Nethereum.Hex" Version="4.21.4" />
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
     <!-- Official Anthropic .NET MCP SDK (mcp-surface track). 1.3.0 latest stable
          as of 2026-05-24. ModelContextProtocol is the core; .AspNetCore wires

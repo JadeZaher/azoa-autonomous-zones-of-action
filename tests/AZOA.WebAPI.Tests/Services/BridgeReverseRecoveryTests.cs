@@ -15,6 +15,8 @@ using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Tests.TestSupport;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -66,9 +68,7 @@ public class BridgeReverseRecoveryTests
         var record = await h.IdempotencyStore.GetAsync(iKey, default);
         record!.State.Should().Be(IdempotencyState.Completed);
 
-        h.ProviderMock.Verify(p => p.BurnWrappedAsync(
-            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        h.Legs.Target.Verify(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -103,11 +103,10 @@ public class BridgeReverseRecoveryTests
             createdAt: DateTime.UtcNow.AddMinutes(-5)); // stale
 
         int burnCalls = 0;
-        h.ProviderMock
-            .Setup(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string _, ulong __, string ___, string ____, string _____, CancellationToken ______) =>
+        h.Legs.Target
+            .Setup(leg => leg.BurnWrappedAsync(
+                It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(async (BridgeBurnRequest _, CancellationToken __) =>
             {
                 Interlocked.Increment(ref burnCalls);
                 await Task.Yield();
@@ -161,9 +160,7 @@ public class BridgeReverseRecoveryTests
         h.GetBridge(bridgeId).Status.Should().Be(BridgeStatus.Reversing,
             "the bridge must NOT be transitioned to Failed when parked for reconciliation");
 
-        h.ProviderMock.Verify(p => p.BurnWrappedAsync(
-            It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        h.Legs.Target.Verify(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -192,11 +189,10 @@ public class BridgeReverseRecoveryTests
         });
 
         int burnCalls = 0;
-        h.ProviderMock
-            .Setup(p => p.BurnWrappedAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(async (string _, ulong __, string ___, string ____, string _____, CancellationToken ______) =>
+        h.Legs.Target
+            .Setup(leg => leg.BurnWrappedAsync(
+                It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(async (BridgeBurnRequest _, CancellationToken __) =>
             {
                 Interlocked.Increment(ref burnCalls);
                 await Task.Yield();
@@ -246,16 +242,15 @@ public class BridgeReverseRecoveryTests
         public readonly Mock<IBlockchainProvider> ProviderMock = new();
         private readonly Mock<IBlockchainProviderFactory> _factory = new();
         private readonly Mock<IWormholeAdapter> _wormhole = new();
+        public readonly BridgeLegMocks Legs;
         private readonly int _staleSeconds;
 
         public ReverseHarness(int staleSeconds)
         {
             _staleSeconds = staleSeconds;
-            ProviderMock.Setup(p => p.SupportsBridging).Returns(true);
+            Legs = ProviderMock.WithBridgeLegs();
             ProviderMock.Setup(p => p.ChainType).Returns("Solana");
-            ProviderMock.Setup(p => p.ReleaseFromBridgeAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                    It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            Legs.Source.Setup(leg => leg.ReleaseAsync(It.IsAny<BridgeReleaseRequest>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "release-tx" });
             _factory.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
                 .Returns(ProviderMock.Object);
@@ -263,7 +258,7 @@ public class BridgeReverseRecoveryTests
 
         public CrossChainBridgeService CreateService() => new(
             _factory.Object,
-            _wormhole.Object,
+            new WormholeProtocol(_wormhole.Object, NullLogger<WormholeProtocol>.Instance),
             Options.Create(new WormholeConfig { DefaultMode = BridgeMode.Wormhole }),
             BridgeStore,
             IdempotencyStore,

@@ -90,10 +90,10 @@ public sealed class WormholeVaaSignature
 /// implementation of this interface (e.g. backed by a vetted secp256k1
 /// library) into DI to enable full per-signature Guardian verification.
 ///
-/// When this seam is NOT registered and
-/// <see cref="WormholeConfig.RequireFullSignatureVerification"/> is true,
-/// <c>WormholeAdapter.VerifyVAAAsync</c> FAILS CLOSED — it refuses to treat
-/// any VAA as trusted rather than silently skipping the cryptographic check.
+/// When this seam is NOT registered, <c>WormholeAdapter.VerifyVAAAsync</c>
+/// FAILS CLOSED unconditionally — it refuses to treat any VAA as trusted
+/// rather than silently skipping the cryptographic check. There is no
+/// configuration switch that can turn the cryptographic check off.
 /// </summary>
 public interface IVaaSignatureVerifier
 {

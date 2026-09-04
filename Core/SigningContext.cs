@@ -49,17 +49,36 @@ namespace AZOA.WebAPI.Core;
 /// <param name="Scope">tenant-consent-delegation AC4: the signing scope the op
 /// requires (e.g. <c>swap:sign</c>, <c>nft:mint</c>). The live grant must cover it.
 /// Null/empty when there is no acting tenant.</param>
+/// <param name="ChainType">The chain whose PLATFORM signing key this op needs
+/// (<c>"Algorand"</c>, <c>"Solana"</c>, <c>"Ethereum"</c>). Each chain derives its
+/// platform key from its own config secret by its own rule, so the custody platform
+/// door cannot pick one without being told. Null leaves the chain-less legacy
+/// behaviour (see <c>KeyCustodyService.LegacyPlatformChainType</c>); a caller that
+/// stamps it gets that chain's key or a fail-closed error naming the chain, never
+/// another chain's key. Irrelevant to a per-user op — those keys come from the
+/// wallet record, which is already chain-correct.</param>
 public readonly record struct SigningContext(
     Guid AvatarId,
     Guid WalletId,
     bool IsPlatform,
     Guid ActingTenantId = default,
     Guid GrantorAvatarId = default,
-    string? Scope = null)
+    string? Scope = null,
+    string? ChainType = null)
 {
-    /// <summary>An ASA-admin / platform-authority signing context.</summary>
+    /// <summary>An ASA-admin / platform-authority signing context, chain unstamped.</summary>
     public static SigningContext Platform { get; } =
         new(Guid.Empty, Guid.Empty, IsPlatform: true);
+
+    /// <summary>
+    /// An ASA-admin / platform-authority signing context bound to one chain, so the
+    /// custody platform door derives THAT chain's key.
+    /// </summary>
+    public static SigningContext PlatformFor(string chainType) =>
+        new(Guid.Empty, Guid.Empty, IsPlatform: true, ChainType: chainType);
+
+    /// <summary>Stamps the chain whose platform key this op must be signed with.</summary>
+    public SigningContext ForChain(string chainType) => this with { ChainType = chainType };
 
     /// <summary>
     /// A per-user custodial signing context. Both ids must be non-empty; the

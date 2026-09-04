@@ -65,7 +65,7 @@ engineering. Tracked engineering debt deferred to `surrealdb-migration`: §5
 | 3 | Live-network VAA validation on devnet/testnet against the real Guardian network (a real VAA verifies; a tampered one is rejected) | manual e2e | Ops+Eng |
 | 4 | All secrets supplied from the secret store (NOT appsettings) — see §2 | deploy config audit | Ops |
 | 5 | Target DB provisioned, empty, migrated cleanly (greenfield: start empty) | `db.Database.Migrate()` boot OR gated job; verify tables/indexes | Ops |
-| 6 | `Reconciliation:Enabled=true`, `RateLimiting:Enabled=true`, `Blockchain:Wormhole:RequireFullSignatureVerification=true` | config audit | Ops |
+| 6 | `Reconciliation:Enabled=true`, `RateLimiting:Enabled=true` (Guardian-signature verification is unconditional — no config key) | config audit | Ops |
 | 7 | `Sagas:Enabled=false` (no consumer until durable-saga Phase 2) | config audit | Eng |
 | 8 | Review pre-launch simplifications §4 items 1–4 landed | ✅ LANDED — commit `1b25f50` | Eng |
 | 9 | One SRE has read the RESIDUAL-RISK-RUNBOOK and signed off | sign-off line | Ops |
@@ -86,7 +86,7 @@ not a bug.
 **REQUIRED non-secret config:**
 - `Jwt:Issuer`, `Jwt:Audience`.
 - `Blockchain:Wormhole:GuardianRpcUrl` — Guardian/Wormholescan RPC for the target network.
-- `Blockchain:Wormhole:RequireFullSignatureVerification` = `true` (default; never `false` outside devnet/testnet).
+- Guardian-signature verification has **no config key** — `RequireFullSignatureVerification` was REMOVED. Per-signature secp256k1 verification is unconditional; an unregistered `IVaaSignatureVerifier` or an absent Guardian set fails closed.
 - `Blockchain:Wormhole:GuardianSets` — `{ "<setIndex>": ["0x..20-byte..", ...] }`, list position = guardian index. **Per environment file.** devnet shipped+verified (`appsettings.Development.json`, index 0). **testnet + mainnet (index 4, 19 guardians) are NOT shipped — populate+verify per GUARDIAN-SET-SETUP.md. Absent ⇒ fail-closed (intended).**
 - `Blockchain:*` chain/network endpoints per the network architecture (devnet/testnet/mainnet switch).
 - `RateLimiting` — `Enabled`, `Global{PermitLimit,WindowSeconds,QueueLimit}`, `Financial{...}`. Defaults conservative; tune for expected load.

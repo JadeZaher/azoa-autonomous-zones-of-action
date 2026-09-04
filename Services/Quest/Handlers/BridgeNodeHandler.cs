@@ -25,6 +25,17 @@ public sealed class BridgeNodeHandler : IQuestNodeHandler
 
     public bool RequiresChainCapability => true;
 
+    /// <summary>
+    /// A bridge settles its outbound leg on the SOURCE chain — that is where the actor's
+    /// value has to be, and where the lock is signed. The target chain is the recipient's
+    /// problem and is addressed explicitly in the config.
+    /// </summary>
+    public string? ResolveSettlementRailId(QuestNode node) =>
+        QuestNodeConfig.TryDeserialize<BridgeNodeConfig>(
+            node.Config, nameof(QuestNodeType.Bridge), out var cfg, out _)
+            ? cfg.SourceChain
+            : null;
+
     public async Task<QuestNodeHandlerResult> HandleAsync(
         QuestNodeExecutionContext context, CancellationToken ct = default)
     {

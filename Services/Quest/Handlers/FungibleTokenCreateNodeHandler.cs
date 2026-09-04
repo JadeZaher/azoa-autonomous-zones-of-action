@@ -33,6 +33,13 @@ public sealed class FungibleTokenCreateNodeHandler : IQuestNodeHandler
 
     public bool RequiresChainCapability => true;
 
+    /// <summary>This node launches its asset on the chain its config names, not the default one.</summary>
+    public string? ResolveSettlementRailId(QuestNode node) =>
+        QuestNodeConfig.TryDeserialize<FungibleTokenCreateNodeConfig>(
+            node.Config, nameof(QuestNodeType.FungibleTokenCreate), out var cfg, out _)
+            ? cfg.ChainType
+            : null;
+
     public async Task<QuestNodeHandlerResult> HandleAsync(
         QuestNodeExecutionContext context, CancellationToken ct = default)
     {

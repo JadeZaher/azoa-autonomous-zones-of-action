@@ -1,7 +1,9 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
 using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Providers.Blockchain.Base;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Responses;
@@ -27,9 +29,8 @@ public class WormholeAdapter : IWormholeAdapter
     private readonly ILogger<WormholeAdapter> _logger;
 
     /// <summary>
-    /// Optional real secp256k1 signature verifier. When null AND
-    /// <see cref="WormholeConfig.RequireFullSignatureVerification"/> is true,
-    /// <see cref="VerifyVAAAsync"/> fails closed (refuses to trust any VAA).
+    /// Real secp256k1 signature verifier. When null, <see cref="VerifyVAAAsync"/>
+    /// fails closed unconditionally — no configuration can relax it.
     /// </summary>
     private readonly IVaaSignatureVerifier? _signatureVerifier;
 
@@ -51,43 +52,48 @@ public class WormholeAdapter : IWormholeAdapter
         _signatureVerifier = signatureVerifier;
         // Single config-driven network for provider resolution — mirrors
         // CrossChainBridgeService so lock (source) and redeem (target) resolve
-        // the SAME network the bridge stamped, never a hardcoded Devnet.
-        _network = Enum.TryParse<ChainNetwork>(
-            appConfig.GetValue<string>("Blockchain:DefaultNetwork"), ignoreCase: true, out var net)
-            ? net : ChainNetwork.Devnet;
+        // the SAME network the bridge stamped. An unparseable value THROWS rather
+        // than pinning this adapter to devnet (ChainNetworkResolution).
+        _network = ChainNetworkResolution.FromConfiguration(appConfig);
     }
 
     public async Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
         string sourceChain, string targetChain,
         string tokenId, string senderAddress, string recipientAddress,
-        ulong amount, CancellationToken ct = default)
+        RailAmount amount, CancellationToken ct = default)
     {
         if (!IsRouteSupported(sourceChain, targetChain))
             return Error<WormholeTransferInitiation>(
                 $"Wormhole route {sourceChain}→{targetChain} is not supported");
 
         var sourceMapping = _config.ChainMappings[sourceChain];
-        var targetMapping = _config.ChainMappings[targetChain];
 
         var sourceProvider = _providerFactory.GetProvider(sourceChain, _network);
 
-        // Lock the asset on the source chain via the Wormhole Core Bridge.
-        // The provider's LockForBridgeAsync should publish a Wormhole message
-        // and return the tx hash. The sequence number is derived from the tx.
-        var lockResult = await sourceProvider.LockForBridgeAsync(
-            tokenId, sourceMapping.CoreBridgeAddress, amount,
-            targetChain, recipientAddress, ct);
+        // The source chain must declare the bridge SOURCE capability. Absence is the
+        // fail-closed refusal: there is no lock primitive to call, so nothing can be
+        // faked. This is never a signer problem — see Providers/Blockchain/AGENTS.md §bridge.
+        if (!sourceProvider.TryGetModule<IBridgeSourceLeg>(out var sourceLeg) || sourceLeg is null)
+            return Error<WormholeTransferInitiation>(
+                $"{sourceChain} cannot act as a bridge source: it implements no reviewed bridge "
+                + "source lifecycle (IBridgeSourceLeg), so no asset can be locked on it.");
 
-        if (lockResult.IsError)
+        // Lock the asset on the source chain via the Wormhole Core Bridge.
+        var lockResult = await sourceLeg.LockAsync(
+            new BridgeLockRequest(
+                tokenId, sourceMapping.CoreBridgeAddress, amount, targetChain, recipientAddress),
+            ct);
+
+        if (lockResult.IsError || lockResult.Result is null)
             return Error<WormholeTransferInitiation>($"Source lock failed: {lockResult.Message}");
 
         // In production, parse the actual sequence from the on-chain tx logs.
         // For now, derive a deterministic sequence from the tx hash.
-        var sequence = DeriveSequenceFromTxHash(lockResult.Result!);
+        var sequence = DeriveSequenceFromTxHash(lockResult.Result.TransactionId);
 
         var initiation = new WormholeTransferInitiation
         {
-            TxHash = lockResult.Result!,
+            TxHash = lockResult.Result.TransactionId,
             EmitterChainId = sourceMapping.WormholeChainId,
             EmitterAddress = NormalizeEmitterAddress(sourceMapping.CoreBridgeAddress),
             Sequence = sequence
@@ -95,7 +101,7 @@ public class WormholeAdapter : IWormholeAdapter
 
         _logger.LogInformation(
             "Wormhole transfer initiated: {SourceChain}→{TargetChain} seq={Sequence} tx={TxHash}",
-            sourceChain, targetChain, sequence, lockResult.Result);
+            sourceChain, targetChain, sequence, lockResult.Result.TransactionId);
 
         return Ok(initiation);
     }
@@ -246,28 +252,19 @@ public class WormholeAdapter : IWormholeAdapter
         if (string.IsNullOrWhiteSpace(parsed.Digest))
             return Error<bool>("Canonical VAA body digest could not be computed");
 
-        // ─── 8. Cryptographic per-signature verification (FAIL CLOSED) ───
+        // ─── 8. Cryptographic per-signature verification (FAIL CLOSED, UNCONDITIONAL) ───
         // Everything above is structural and CANNOT establish that the
         // Guardians actually signed this body. That requires secp256k1
-        // ecrecover, which is not bundled in this project's dependencies.
+        // ecrecover. There is no configuration switch that can skip this step:
+        // a VAA authorises minting wrapped value on the target chain, so
+        // "structurally valid" is never sufficient. Absence of the verifier is
+        // the refusal — see Providers/Blockchain/AGENTS.md §bridge.
         if (_signatureVerifier is null)
         {
-            if (_config.RequireFullSignatureVerification)
-            {
-                return Error<bool>(
-                    "secp256k1 signature verification not available — refusing to " +
-                    "treat VAA as trusted. Register an IVaaSignatureVerifier or " +
-                    "explicitly set Blockchain:Wormhole:RequireFullSignatureVerification=false " +
-                    "(NEVER do this where real value can move).");
-            }
-
-            _logger.LogWarning(
-                "VAA seq={Sequence} chain={Chain} passed STRUCTURAL checks only; " +
-                "per-signature secp256k1 verification SKIPPED " +
-                "(RequireFullSignatureVerification=false). NOT cryptographically trusted.",
-                parsed.Sequence, parsed.EmitterChainId);
-
-            return Ok(true, "VAA structurally valid (signatures NOT cryptographically verified)");
+            return Error<bool>(
+                "secp256k1 signature verification not available — refusing to " +
+                "treat VAA as trusted. Register an IVaaSignatureVerifier. " +
+                "Signature verification cannot be disabled by configuration.");
         }
 
         // A real verifier is wired — every signature must independently verify
@@ -350,14 +347,22 @@ public class WormholeAdapter : IWormholeAdapter
 
         var targetProvider = _providerFactory.GetProvider(targetChain, _network);
 
-        // Submit the VAA to the target chain's Token Bridge.
-        // The provider's MintWrappedAsync handles the on-chain redemption.
-        var mintResult = await targetProvider.MintWrappedAsync(
-            $"wormhole:{vaa.EmitterChainId}",
-            $"seq:{vaa.Sequence}",
-            vaa.VaaBytes,   // Pass VAA bytes as the token URI for on-chain verification
-            1,              // Amount is encoded in the VAA payload
-            recipientAddress,
+        // The target chain must declare the bridge TARGET capability. Absence is the
+        // fail-closed refusal: there is no wrapped-mint primitive to call, so a redemption
+        // cannot be fabricated. Never a signer problem — see Providers/Blockchain/AGENTS.md §bridge.
+        if (!targetProvider.TryGetModule<IBridgeTargetLeg>(out var targetLeg) || targetLeg is null)
+            return Error<WormholeRedemptionResult>(
+                $"{targetChain} cannot settle a wrapped redemption: it implements no reviewed "
+                + "wrapped-asset lifecycle (IBridgeTargetLeg), so the proof cannot be redeemed on it.");
+
+        // Submit the VAA to the target chain's Token Bridge via its wrapped-mint primitive.
+        var mintResult = await targetLeg.MintWrappedAsync(
+            new BridgeMintRequest(
+                SourceChain: $"wormhole:{vaa.EmitterChainId}",
+                SourceTokenId: $"seq:{vaa.Sequence}",
+                TokenUri: vaa.VaaBytes,   // VAA bytes travel as the token URI for on-chain verification
+                Amount: RailAmount.OfChainAsset(1), // the settled amount is encoded in the VAA payload
+                RecipientAddress: recipientAddress),
             ct);
 
         var redemption = new WormholeRedemptionResult
