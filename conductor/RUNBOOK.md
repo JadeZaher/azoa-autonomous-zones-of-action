@@ -737,11 +737,22 @@ confirmed true by D24 research and now implemented.
   need to leave the container. Live version is **3.2.0** (the runbook elsewhere
   cites 3.1.4 for the empirical NONE-semantics test — that test's conclusion still
   holds, but note the version gap if you re-run it).
-- **A deployment is materialized from `CompatibilityBaselines/` plus forward
-  migrations — NOT from `Generated/Schemas/`.** Regenerating a golden is not
-  sufficient. See the §8 near-miss. On the live node the applier is a
-  **per-file checksum ledger** (`schema_migration`) driven by
-  `azoa-api/docker-entrypoint`.
+- ⚠ **CORRECTED 2026-09-06 — the statement that stood here was inverted, and it
+  had been repeated across this runbook all session.** It claimed a deployment
+  materializes from `CompatibilityBaselines/` "NOT from `Generated/Schemas/`".
+  The actual apply path is `docker-entrypoint.sh:67-73` (`prepare_schema_directory`):
+  it copies **`Generated/Schemas/*.surql` first — 60 files, the base layer — then
+  overlays `CompatibilityBaselines/*.surql` — 6 files — on top**, overwriting only
+  those six names, and passes the merged directory as `--schemas-dir` alongside
+  `--migrations-dir Migrations` (10 files).
+  **So `Generated/Schemas/` IS the deployed artifact for 54 of 60 tables.**
+  The overlay covers exactly six: `admin_bootstrap_state`, `bridge_tx`, `holon`,
+  `kyc_submission`, `operation_log`, `swap_state`. Regenerating a golden **is**
+  sufficient for every other table; for those six the baseline wins and a
+  golden-only change is silently discarded. That is precisely the §8 near-miss —
+  and it bit `operation_log`, one of the six, which is why the lesson looked
+  general when it was not. On the live node the applier is a **per-file checksum
+  ledger** (`schema_migration`).
 - **Never hand-edit `.surql`** — regenerate through the documented golden path.
 - **Renaming a column inside a UNIQUE index needs a forward migration**, not a
   golden regeneration.
@@ -793,8 +804,8 @@ review of every new Tier-2 node.
 
 **Rename surface (D28) — highest-risk spots**
 - `Persistence/SurrealDb/Models/` — decorated POCOs; schemas regenerate from these.
-- `Persistence/SurrealDb/CompatibilityBaselines/` — **what deployments are
-  materialized from.**
+- `Persistence/SurrealDb/CompatibilityBaselines/` — a **6-file overlay**
+  applied *on top of* the goldens at deploy; it wins for those six tables only.
 - `Persistence/SurrealDb/Generated/Schemas/` — goldens; regenerate, never edit.
 - ⚠ `KycIdentity.avatar_ids`, `hosted_session`'s admission key, and the
   `(tenant_scope, provider, subject)` index all carry the old noun **inside UNIQUE
@@ -1052,8 +1063,8 @@ breaks at **runtime**, not compile time). Taawun is deferred per D34.
 
 **C. One combined deployment reconciliation (D29)** — after B. Apply the new
 tables, the `operation_log.amount` forward migration, and the rename migration
-together. `CompatibilityBaselines/` is what a deployment is materialized from,
-**not** `Generated/Schemas/`.
+together. Mind the real layering: the goldens deploy for 54 of 60 tables and
+`CompatibilityBaselines/` overlays only six of them.
 
 **Live-state recon done 2026-09-04 — the divergence is now measured, not assumed:**
 
@@ -1217,8 +1228,9 @@ specification in a separate script*, not by capturing what the new build emits.
 key is not mechanical.
 
 **Regenerating the schema golden was not sufficient.** A deployed database is
-materialized from the **immutable `CompatibilityBaselines/`** plus forward
-migrations, not from `Generated/Schemas/`. `CompatibilityBaselines/operation_log.surql`
+materialized from the goldens **overlaid by** `CompatibilityBaselines/`, then
+forward migrations — and `operation_log` is one of the six tables that overlay
+covers, so the regenerated golden alone never reached the deployment. `CompatibilityBaselines/operation_log.surql`
 still declared `amount TYPE option<int>` (SurrealDB `int` is i64 — half what the
 interface already accepted), so shipping only the regenerated golden would have
 left every deployment rejecting the widened column at the SCHEMAFULL boundary. A
