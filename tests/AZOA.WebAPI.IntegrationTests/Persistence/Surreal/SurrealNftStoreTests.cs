@@ -67,7 +67,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
 
     // ── UserNFT Tests ───────────────────────────────────────────────────────
 
-    /// <summary>Test 1: Upsert creates an UserNFT; GetById retrieves it with identical fields.</summary>
+    /// <summary>Test 1: Upsert creates a UserNFT; GetById retrieves it with identical fields.</summary>
     [SkippableFact]
     public async Task UpsertUserNFT_ThenGetById_RoundTrips()
     {

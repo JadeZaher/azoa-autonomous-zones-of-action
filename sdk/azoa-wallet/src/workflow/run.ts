@@ -107,7 +107,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
 
   /**
    * Start a durable run. From a template: instantiate with `{{params}}` first,
-   * then `start-workflow` on the resulting action. From a action: `start-workflow`
+   * then `start-workflow` on the resulting action. From an action: `start-workflow`
    * directly. From a run: a no-op bind (already started). Binds the handle to the
    * returned `runId`. Chainable.
    *

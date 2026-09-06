@@ -114,7 +114,7 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// user-dapp-rbac: assign an user's DApp role. The target id is the ROUTE id
+    /// user-dapp-rbac: assign a user's DApp role. The target id is the ROUTE id
     /// (never the body). Authority: an operator (JWT-only operator:admin) may assign any
     /// role incl. manager (the operator-bootstrap path); a DApp manager may assign only
     /// developer/user. Ordinary users and developers are denied by the manager.

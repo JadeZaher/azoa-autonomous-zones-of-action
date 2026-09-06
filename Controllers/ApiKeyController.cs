@@ -172,7 +172,7 @@ public class ApiKeyController : ControllerBase
     }
 
     /// <summary>
-    /// List the scopes an user may self-issue on a new key, each with a human
+    /// List the scopes a user may self-issue on a new key, each with a human
     /// description. Drives the key-creation UI's scope checkboxes. Any authenticated
     /// user may read this — it exposes only the public scope vocabulary.
     /// </summary>
@@ -241,7 +241,7 @@ public class ApiKeyController : ControllerBase
     /// <summary>
     /// Rotate an API key: mint a NEW key inheriting the old key's name, scopes, and
     /// expiry window, revoke the old key, and return the new raw key ONCE (same shape
-    /// as Create). Scoped to (id, authenticated user) — an user may only rotate
+    /// as Create). Scoped to (id, authenticated user) — a user may only rotate
     /// its OWN key.
     /// </summary>
     [HttpPost("{id:guid}/rotate")]

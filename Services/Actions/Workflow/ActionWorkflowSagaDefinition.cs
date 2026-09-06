@@ -8,7 +8,7 @@ namespace AZOA.WebAPI.Services.Actions.Workflow;
 ///
 /// <para><b>Type-uniform step resolution.</b> Unlike <see cref="SagaDefinition"/>
 /// (whose <c>FindStep</c> is a name-keyed dictionary lookup), this definition
-/// resolves EVERY step name — each is a action node id GUID — to the SAME
+/// resolves EVERY step name — each is an action node id GUID — to the SAME
 /// <see cref="SagaStep{T}"/> instance. That is what lets one registered handler
 /// dispatch an arbitrary per-run DAG: the saga step name is the node id, and the
 /// handler reads it from the payload to select the right

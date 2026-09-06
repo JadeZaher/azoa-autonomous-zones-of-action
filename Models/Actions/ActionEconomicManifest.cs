@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Actions;
 
 /// <summary>
-/// Pre-run disclosure of the value-moving nodes in a action a NON-owner is about to
+/// Pre-run disclosure of the value-moving nodes in an action a NON-owner is about to
 /// run against themselves (marketplace consent surface). See Services/ActionDefinition/AGENTS.md
 /// §economic-manifest.
 /// </summary>

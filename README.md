@@ -11,7 +11,7 @@ It is built from three composable layers:
 - **Identity** — a self-sovereign user that a person actually owns, and a
   consent model that lets an app act on their behalf only within explicit,
   revocable permission.
-- **Actions** — durable, structured workflows. A action is a graph of steps
+- **Actions** — durable, structured workflows. An action is a graph of steps
   (gates, transfers, swaps, grants, external calls) that survives restarts,
   reconciles against real-world truth before acting again, and never
   double-spends.
@@ -20,7 +20,7 @@ It is built from three composable layers:
   plumbing.
 
 Bridges connect these workflows to the outside world: value can enter and leave
-a action over a blockchain or over a fiat settlement partner, through the same
+an action over a blockchain or over a fiat settlement partner, through the same
 structured, idempotent seam.
 
 ## Why it exists
@@ -31,7 +31,7 @@ systems and days — and they need to be **structured** — auditable, idempoten
 never running a step twice or losing one halfway. Ad-hoc scripts and cron jobs
 give you the first and none of the second.
 
-AZOA is the substrate for the second. A action is a durable state machine: it
+AZOA is the substrate for the second. An action is a durable state machine: it
 parks when it needs to wait, resumes on a signal or a timer, and — critically —
 reconciles against the source of truth (a chain confirmation, a settlement
 callback) *before* it takes the next irreversible action. The identity layer
@@ -49,7 +49,7 @@ cleared, makes one idempotent, KYC-gated call into AZOA to provision a wallet or
 allocate an asset. AZOA never runs the checkout, holds card data, or owns the
 payout — it materializes the value once and records it exactly once.
 
-A action doesn't care which rail a step settles on. That is the point: the same
+An action doesn't care which rail a step settles on. That is the point: the same
 structured workflow can move on-chain value and fiat-originated value in the
 same run.
 
@@ -105,7 +105,7 @@ the responsibility pattern above end to end.
 ## Status
 
 Pre-launch (Alpha Gate). The core platform features have been shipped and hardened:
-- **User Self-Sovereignty & Consent Delegation**: Shipped and code-complete. End users own their users (wallet-challenge login, ed25519), and tenants can only act on behalf of an user under a live, revocable `ConsentGrant`. The security review has been completed and all findings remediated (commit `10e5dad`).
+- **User Self-Sovereignty & Consent Delegation**: Shipped and code-complete. End users own their users (wallet-challenge login, ed25519), and tenants can only act on behalf of a user under a live, revocable `ConsentGrant`. The security review has been completed and all findings remediated (commit `10e5dad`).
 - **Tenant onboarding + Azoa-owned KYC control plane**: The authenticated tenant can idempotently ensure one user identity per external subject, begin or submit KYC from a profile flow, and read a secret-free readiness projection. Wallet creation is limited to explicit Development simulation until a reviewed production custody adapter exists. See [`docs/TENANT-CUSTODIAL-ONBOARDING.md`](docs/TENANT-CUSTODIAL-ONBOARDING.md).
 - **Node operator control plane**: A reserved, revisioned operator identity and mobile-first `/operator` console expose deployment readiness, KYC provider/tenant policy, and human review without exposing host secrets. See [`docs/NODE-HOST.md`](docs/NODE-HOST.md) §8.9.
 - **Durable Actions & Stepwise Execution**: Shipped. Features stepwise saga execution (`ActionNodeStepHandler`), run-scoped variable data bindings (`run.<node>.<field>`), control-cascade skips (failed check nodes stop downstream payout chains), and publish-time semantic/executability validation.

@@ -8,7 +8,7 @@ namespace AZOA.WebAPI.Mcp;
 /// build a <see cref="ToolCallContext"/> with the correct identity.
 ///
 /// Enforced only on <c>/mcp</c> paths. Rejects (401) if no parseable UserId
-/// claim is present — every MCP tool runs inside an user scope; there is no
+/// claim is present — every MCP tool runs inside a user scope; there is no
 /// anonymous MCP surface.
 ///
 /// Claim resolution order (mirrors <see cref="Controllers.HolonController"/> +

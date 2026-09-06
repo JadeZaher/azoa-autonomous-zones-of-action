@@ -7,7 +7,7 @@
 This document covers two related asks:
 
 1. A **logout flow** for the Azoa frontend (and users in general).
-2. **API keys that let an user develop their own dApps** — a key grants
+2. **API keys that let a user develop their own dApps** — a key grants
    edit rights to *that user's own* resources (holons, actions, STAR-ODK),
    never platform admin and never another user's resources.
 
@@ -35,7 +35,7 @@ because two of them sit directly in the API-key blast radius.
 
 ### API keys
 - `ApiKey` = `(UserId, Name, KeyHash, KeyPrefix, ExpiresAt?, Scopes CSV, ...)`
-  (`Models/ApiKey.cs`). **Tied to an user only — no dApp/app linkage.**
+  (`Models/ApiKey.cs`). **Tied to a user only — no dApp/app linkage.**
 - `ApiKeyAuthenticationHandler` emits `scope` claims from the CSV, strips
   `operator:admin` (`AzoaScopes.IsApiKeyIssuableScope`), and marks the principal
   `AuthMethod=ApiKey`.

@@ -4,7 +4,7 @@ using AZOA.WebAPI.Models.Actions;
 
 namespace AZOA.WebAPI.Models.Responses;
 
-/// <summary>Public projection of a action-node execution.</summary>
+/// <summary>Public projection of an action-node execution.</summary>
 public sealed class ActionNodeExecutionResponse
 {
     public Guid Id { get; init; }

@@ -11,7 +11,7 @@ public interface IWalletStore
     /// <summary>Loads every wallet.</summary>
     Task<AZOAResult<IEnumerable<IWallet>>> GetAllAsync(CancellationToken ct = default);
 
-    /// <summary>Loads all wallets owned by an user.</summary>
+    /// <summary>Loads all wallets owned by a user.</summary>
     Task<AZOAResult<IEnumerable<IWallet>>> GetByUserAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>Inserts or updates a wallet.</summary>

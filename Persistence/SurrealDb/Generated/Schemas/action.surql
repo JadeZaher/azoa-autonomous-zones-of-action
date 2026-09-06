@@ -30,7 +30,7 @@ DEFINE FIELD IF NOT EXISTS name ON TABLE action TYPE string
 -- Optional description
 DEFINE FIELD IF NOT EXISTS description ON TABLE action TYPE option<string>;
 
--- Source template id when instantiated from a ActionTemplate (null for hand-authored actions)
+-- Source template id when instantiated from an ActionTemplate (null for hand-authored actions)
 DEFINE FIELD IF NOT EXISTS template_id ON TABLE action TYPE option<record<action_template>>;
 
 -- Owning DappSeries when this action is part of a composed dApp (null for standalone actions)

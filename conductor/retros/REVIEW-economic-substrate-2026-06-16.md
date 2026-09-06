@@ -161,7 +161,7 @@ Hazards: `PropagateAsync`/`CloneAsync` write reserved metadata keys (`propagated
 **Verdict: the DAG/composition/handler-SPI layer is an excellent fit; the execution model
 and handler library are not — yet.** Two new handler types + one real engine change.
 
-How it works today: a ActionDefinition is a generic DAG of typed nodes; each node has an opaque JSON
+How it works today: an ActionDefinition is a generic DAG of typed nodes; each node has an opaque JSON
 `Config`. Definition/runtime split (`ActionDefinition`/`ActionNode` vs `ActionRun`/`ActionNodeExecution`).
 One handler per `ActionNodeType` (`IActionNodeHandler` + registry, exactly-one invariant). Every
 handler is the same shape: deserialize `Config` → call one AZOA manager → serialize result.

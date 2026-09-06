@@ -46,7 +46,7 @@ export class WorkflowClient {
   // ─── Template authoring (DESIGN once) — FR-1 ───
 
   /**
-   * Create a reusable workflow shape as a `ActionTemplate`
+   * Create a reusable workflow shape as an `ActionTemplate`
    * (`POST /api/action/templates`). Returns the typed `ActionTemplateResult`.
    */
   createTemplate(
@@ -67,7 +67,7 @@ export class WorkflowClient {
   }
 
   /**
-   * Instantiate a action from a template with `{{param}}` values
+   * Instantiate an action from a template with `{{param}}` values
    * (`POST /api/action/templates/{id}/instantiate`). Returns the raw
    * `ActionResult`; the `action()` driver wraps this to flow DESIGN → DRIVE.
    */
@@ -109,7 +109,7 @@ export class WorkflowClient {
   }
 
   /**
-   * List every run of a action definition (`GET /api/action/{actionId}/runs`),
+   * List every run of an action definition (`GET /api/action/{actionId}/runs`),
    * user-scoped, typed as {@link WorkflowRunResult}[] (each `status` is a
    * {@link import("./types.js").WorkflowRunStatus}). `assertUuid`-guarded.
    */

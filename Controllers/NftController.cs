@@ -81,7 +81,7 @@ public class NftController : ControllerBase
     /// <summary>
     /// One-shot fungible token mint (fungible-mint-and-render-model, §11.3): launch
     /// a fungible ASA with a real supply + decimals into the caller's provisioned
-    /// custodial wallet, WITHOUT authoring a action DAG. The direct parallel to the
+    /// custodial wallet, WITHOUT authoring an action DAG. The direct parallel to the
     /// <c>FungibleTokenCreate</c> action node — it shares the SAME manager path
     /// (<see cref="IFungibleTokenManager.CreateAsync"/>), the SAME fail-closed KYC
     /// gate, and the SAME idempotency discipline.

@@ -9,7 +9,7 @@ public interface IActionStore
     /// <summary>Loads a single action by id.</summary>
     Task<AZOAResult<ActionDefinition>> GetActionAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>Loads all actions owned by an user.</summary>
+    /// <summary>Loads all actions owned by a user.</summary>
     Task<AZOAResult<IEnumerable<ActionDefinition>>> GetActionsByUserAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>Loads all actions the owner opted into the public marketplace (IsPublic=true). Status filtered by the caller.</summary>
@@ -18,10 +18,10 @@ public interface IActionStore
     /// <summary>Loads all actions belonging to a dapp series.</summary>
     Task<AZOAResult<IEnumerable<ActionDefinition>>> GetActionsByDappSeriesAsync(Guid dappSeriesId, CancellationToken ct = default);
 
-    /// <summary>Inserts or updates a action (including its node/edge graph).</summary>
+    /// <summary>Inserts or updates an action (including its node/edge graph).</summary>
     Task<AZOAResult<ActionDefinition>> UpsertActionAsync(ActionDefinition action, CancellationToken ct = default);
 
-    /// <summary>Deletes a action by id.</summary>
+    /// <summary>Deletes an action by id.</summary>
     Task<AZOAResult<bool>> DeleteActionAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>
@@ -50,13 +50,13 @@ public interface IActionStore
     /// <summary>Loads every action template.</summary>
     Task<AZOAResult<IEnumerable<ActionTemplate>>> GetAllActionTemplatesAsync(CancellationToken ct = default);
 
-    /// <summary>Inserts or updates a action template.</summary>
+    /// <summary>Inserts or updates an action template.</summary>
     Task<AZOAResult<ActionTemplate>> UpsertActionTemplateAsync(ActionTemplate template, CancellationToken ct = default);
 
-    /// <summary>Deletes a action template by id.</summary>
+    /// <summary>Deletes an action template by id.</summary>
     Task<AZOAResult<bool>> DeleteActionTemplateAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>Inserts or updates a action node template.</summary>
+    /// <summary>Inserts or updates an action node template.</summary>
     Task<AZOAResult<ActionNodeTemplate>> UpsertActionNodeTemplateAsync(ActionNodeTemplate template, CancellationToken ct = default);
 
     /// <summary>Loads every action node template.</summary>

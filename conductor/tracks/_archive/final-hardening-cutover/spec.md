@@ -122,7 +122,7 @@ finding #3), and the integrated exactly-once/replay verification sweep.
 (`ChainConfirmation`, `ChainActionRecovery` decision table, provider
 `GetTransactionConfirmationAsync`). Owed: record broadcast `TxHash` on
 `ActionNodeExecution`; on chain-action node failure probe chain truth and branch
-advance-reconciled / retry / park (`AwaitingReconciliation`); a action-node
+advance-reconciled / retry / park (`AwaitingReconciliation`); an action-node
 reconciliation sweep + manual re-probe endpoint. **Prevents double-mint on the
 Grant-bounty path.**
 

@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Actions;
 
 /// <summary>
-/// A node within a ActionTemplate (parameterized, not yet instantiated).
+/// A node within an ActionTemplate (parameterized, not yet instantiated).
 /// </summary>
 public class ActionTemplateNode
 {

@@ -121,7 +121,7 @@ export class SdkError extends Error {
 }
 
 /**
- * True when `error` is the optimistic-concurrency conflict a action
+ * True when `error` is the optimistic-concurrency conflict an action
  * publish/unpublish/run-start returns after losing a race on `ActionDefinition.Version`
  * (final-hardening F6). The backend has no distinct HTTP status for this case
  * (plain 400 `AZOAResult` with a "conflict" message), so detection is by

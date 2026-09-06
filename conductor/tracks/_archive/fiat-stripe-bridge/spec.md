@@ -57,7 +57,7 @@ contract down.
   (`Core/ApiKeyAuthenticationHandler.cs:28-94`) validates `X-Api-Key`
   (`:14,30`) and emits the *same* claims as JWT — `NameIdentifier` / `sub` /
   `UserId` plus per-key `scope` claims (`:72-87`). A tenant authenticates as
-  an user-scoped principal; controllers cannot tell JWT from API key, which is
+  a user-scoped principal; controllers cannot tell JWT from API key, which is
   exactly what lets the existing wallet/NFT controllers serve a tenant caller
   unchanged.
 - **Wallet provisioning.** `WalletManager.GenerateWalletAsync`

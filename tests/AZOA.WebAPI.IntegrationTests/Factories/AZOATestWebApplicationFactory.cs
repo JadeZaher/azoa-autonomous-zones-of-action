@@ -205,7 +205,7 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>
     /// user-dapp-rbac: an operator-authenticated client (JWT-equivalent scheme with
     /// operator:admin + role=Admin stamped). Defaults to the canonical node operator
-    /// identity; callers may supply an user id for policy-only coverage.
+    /// identity; callers may supply a user id for policy-only coverage.
     /// </summary>
     public HttpClient CreateOperatorClient(Guid? userId = null)
     {

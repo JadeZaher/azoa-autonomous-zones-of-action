@@ -317,7 +317,7 @@ public sealed class ExternalLoginService : IExternalLoginService
             LastLoginAt = _clock.GetUtcNow(),
         };
 
-    /// <summary>An user can still be reached without any federated provider.</summary>
+    /// <summary>A user can still be reached without any federated provider.</summary>
     private static bool HasNonFederatedCredential(IUser user)
         => !string.IsNullOrWhiteSpace(user.AuthWalletAddress)
             || !IsSyntheticFederatedAccount(user);

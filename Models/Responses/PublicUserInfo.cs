@@ -3,7 +3,7 @@ using AZOA.WebAPI.Interfaces;
 namespace AZOA.WebAPI.Models.Responses;
 
 /// <summary>
-/// Public marketplace-safe projection of an user: no PII (Email, FirstName,
+/// Public marketplace-safe projection of a user: no PII (Email, FirstName,
 /// LastName) and no auth material (AuthWalletAddress/ChainType). Returned for
 /// any user that isn't the requesting caller — see Controllers/UserController.cs.
 /// </summary>

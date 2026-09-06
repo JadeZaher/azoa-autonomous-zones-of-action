@@ -257,7 +257,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
 
             // No row in THIS scope. One upstream monitor legitimately backs one row
             // per tenant, so recover the id another scope already holds. Only the
-            // opaque id crosses over — never a row, an user, or a tenant.
+            // opaque id crosses over — never a row, a user, or a tenant.
             if (string.IsNullOrWhiteSpace(providerMonitorId))
             {
                 var shared = await _store.GetProviderMonitorIdByQueryAsync(canonicalName, canonicalBirthday, ct);

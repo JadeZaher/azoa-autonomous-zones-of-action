@@ -41,7 +41,7 @@ public sealed class ExternalAuthLinkTicketResponse
     public string StartUrl { get; set; } = string.Empty;
 }
 
-/// <summary>A provider currently attached to an user.</summary>
+/// <summary>A provider currently attached to a user.</summary>
 public sealed class ExternalAuthLinkResponse
 {
     public string Provider { get; set; } = string.Empty;

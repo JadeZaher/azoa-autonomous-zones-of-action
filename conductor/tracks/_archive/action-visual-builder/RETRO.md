@@ -13,7 +13,7 @@ template creation, with **zero backend changes**.
 ## What shipped
 
 - `@xyflow/react` v12 as the workflow canvas — the de-facto React DAG builder.
-- A `action-builder/` component package: node catalog, custom node, dependency-free
+- An `action-builder/` component package: node catalog, custom node, dependency-free
   layered auto-layout, read-only DAG render, interactive builder canvas, node-template
   creator.
 - The page rewired to 4 working tabs (My Actions / Builder / ActionDefinition Templates /

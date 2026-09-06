@@ -36,7 +36,7 @@ state and must not present simulated verification as production KYC.
 
 ## Workflow SDK (`azoa.workflow`)
 
-DESIGN a workflow *shape* once as a `ActionTemplate` (a DAG of generic nodes with
+DESIGN a workflow *shape* once as an `ActionTemplate` (a DAG of generic nodes with
 `{{param}}` slots), then DRIVE many actors through **durable, step-addressable**
 runs of that shape. The economic / token domain stays in the consumer app; this
 SDK exposes **mechanism-only** primitives — no economic semantics.
@@ -56,7 +56,7 @@ const created = await azoa.workflow.createTemplate({
 const tpl  = await azoa.workflow.getTemplate(templateId);
 const all  = await azoa.workflow.listTemplates();
 
-// Instantiate a action from a template with {{param}} values
+// Instantiate an action from a template with {{param}} values
 const action = await azoa.workflow.instantiate(templateId, { amount: "1000" });
 ```
 

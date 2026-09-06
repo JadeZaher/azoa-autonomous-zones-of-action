@@ -61,7 +61,7 @@ holds end-to-end. Tested at
 ### 5. Dependency check -- caller-driven, not auto-gating
 
 The fork-model's runtime aggregate (`ActionRun`) decouples definition
-edits from execution attempts. A `ActionDefinition` definition with unsatisfied
+edits from execution attempts. An `ActionDefinition` definition with unsatisfied
 dependencies is still a valid graph -- callers explicitly decide
 whether to gate on `CheckDependenciesAsync` before invoking `ExecuteAsync`.
 `DependencyCheckResult` (`Models/ActionDefinition/DependencyCheckResult.cs`) returns
@@ -113,10 +113,10 @@ The four spec endpoints intentionally not implemented:
 
 | Spec endpoint | Reason omitted | Replacement on runtime aggregate |
 |---|---|---|
-| `POST /api/actions/{id}/activate` | "Draft → Active" transition is meaningless under the fork-model | `POST /api/action/{id}/execute` (pre-existing) creates a `ActionRun(Pending → Running)` |
+| `POST /api/actions/{id}/activate` | "Draft → Active" transition is meaningless under the fork-model | `POST /api/action/{id}/execute` (pre-existing) creates an `ActionRun(Pending → Running)` |
 | `POST /api/actions/{id}/complete` | ActionDefinition entity has no runtime status | `POST /api/action/runs/{runId}/complete` (new) flips `ActionRun.Status` |
 | `POST /api/actions/{id}/fail` | Same | `POST /api/action/runs/{runId}/mark-failed` (pre-existing) flips `ActionRun.Status` to `Failed` with audit reason |
-| `GET  /api/actions/{id}/execution-state` | "Current state" of a ActionDefinition is N/A; a ActionDefinition can have N concurrent / historical Runs | `GET /api/action/runs/{runId}/execution-state` (new) surfaces `ActionExecutionState` for a specific run |
+| `GET  /api/actions/{id}/execution-state` | "Current state" of an ActionDefinition is N/A; an ActionDefinition can have N concurrent / historical Runs | `GET /api/action/runs/{runId}/execution-state` (new) surfaces `ActionExecutionState` for a specific run |
 
 Net realized surface: 30 endpoints on `ActionController` (spec asked for
 34; the 4 above are intentionally absent because the underlying

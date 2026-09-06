@@ -157,7 +157,7 @@ binding syntax INSIDE config JSON.
   reachable; a node with 2 outgoing OnFailure edges fails publish and
   `StartWorkflowRunAsync` with a clear error, and is a warning on legacy
   execute.
-- AC-2e: Durable engine — a action `GateCheck →(Control) A / →(OnFailure) B`
+- AC-2e: Durable engine — an action `GateCheck →(Control) A / →(OnFailure) B`
   started via `StartWorkflowRunAsync` with a failing gate advances to B and
   the run reaches a terminal non-compensated state; with a passing gate it
   advances to A. `AGENTS.md §skip-semantics` divergence note updated to
@@ -218,12 +218,12 @@ Generalize the consent-webhook bridge (V6 — it exists; NOT descoped).
   user-scoped, type-aware, node-aware semantics (it currently checks any
   user's runs and ignores type/node — V13).
 - **Cross-game bridging note:** this is the same-user cross-action gate — the
-  user is the bridge. Game A's action completion (by an user) unlocks game
+  user is the bridge. Game A's action completion (by a user) unlocks game
   B's action (for that same user); no cross-user or cross-tenant leakage.
 
 **Acceptance criteria:**
 
-- AC-4a: A action with a Required dependency on action Q refuses `ExecuteAsync`
+- AC-4a: An action with a Required dependency on action Q refuses `ExecuteAsync`
   and `StartWorkflowRunAsync` for user X while X has no Succeeded run of Q;
   the error names Q. After X's run of Q succeeds, both start paths proceed.
 - AC-4b: User-scoped: Y's Succeeded run of Q does NOT satisfy X's gate.

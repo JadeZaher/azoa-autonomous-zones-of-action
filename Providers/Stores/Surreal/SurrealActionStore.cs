@@ -522,7 +522,7 @@ public sealed class SurrealActionStore : IActionStore
         }
     }
 
-    // ── Hydration: child rows (nodes + edges) for a action ─────────────────────
+    // ── Hydration: child rows (nodes + edges) for an action ─────────────────────
 
     /// <summary>
     /// Loads the child rows for a single action and hangs them off the supplied

@@ -197,14 +197,14 @@ The hard part already exists ([[user-sovereign-identity]] + [[consent-gate-archi
 a self-owning user presents the **same identity to multiple nodes** and issues
 **revocable, per-node-scoped consent grants**.
 
-- Federation adds: an user proves "same principal on Node A and Node B" via a signed
+- Federation adds: a user proves "same principal on Node A and Node B" via a signed
   challenge (reuse `IWalletSignatureVerifier` / the WalletAuth challenge flow). Note this is
   the **user/user** identity, distinct from the **node/agent** identity that signs Commons
   entries (see §Identity) — do not conflate them.
 - This turns N sovereign nodes into a **community a user moves through** — the actual
   consume-side value. Consent grants stay per-node and revocable, so portability never
   becomes cross-node custody.
-- AC: an user authenticates the same key against two nodes; a grant on Node A is provably
+- AC: a user authenticates the same key against two nodes; a grant on Node A is provably
   absent on Node B unless separately issued; revocation on one node does not require the other.
 
 ---
@@ -216,7 +216,7 @@ this surface small; everything else is optional or Commons-side.
 
 1. **Submit a holon for federation.** Publish a holon reference/entry to the Commons DHT
    (the L1 `HolonReference`). Default remains private/local; a holon is federated only when
-   its owner opts in per-holon (or via a action that opts in, or a template share).
+   its owner opts in per-holon (or via an action that opts in, or a template share).
 2. **Submit audit/conformance data to stay certified.** Publish the L0 certification proof
    (the machine-readable gate-result manifest) so the node remains a certified member the
    network trusts. Certification is a live, re-published fact, not a one-time badge.
@@ -228,7 +228,7 @@ Product-level federation *modes* (per-holon, action-on-complete, template federa
 reduce to function #1 with different triggers:
 
 - **User-driven per-holon:** operator/user marks a holon federatable, publishes a reference.
-- **ActionDefinition-driven on complete:** a action completion emits a signed, idempotent federation
+- **ActionDefinition-driven on complete:** an action completion emits a signed, idempotent federation
   receipt referencing run/holon outputs — never copying the local DB.
 - **Template federation:** share action/holon/node/economic templates as Commons entries;
   imported templates stay provenance-tagged and locally reviewed before activation.

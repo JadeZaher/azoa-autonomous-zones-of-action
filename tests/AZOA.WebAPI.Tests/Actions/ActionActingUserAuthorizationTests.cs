@@ -33,7 +33,7 @@ public class ActionActingUserAuthorizationTests
     private static readonly Guid Owner  = Guid.NewGuid();
     private static readonly Guid Runner = Guid.NewGuid();
 
-    /// <summary>A action OWNED by <see cref="Owner"/> containing <paramref name="node"/>.</summary>
+    /// <summary>An action OWNED by <see cref="Owner"/> containing <paramref name="node"/>.</summary>
     private static ActionEntity OwnerActionWith(ActionNode node) =>
         new() { Id = Guid.NewGuid(), UserId = Owner, Nodes = { node } };
 
@@ -97,7 +97,7 @@ public class ActionActingUserAuthorizationTests
     }
 
     // ─── C1: HolonUpdate mutation scopes to the RUNNER (also closes the prior
-    //         unscoped-IDOR gap — the handler now passes an user at all) ───
+    //         unscoped-IDOR gap — the handler now passes a user at all) ───
 
     [Fact]
     public async Task HolonUpdateNode_ScopesToRunner_NotActionOwner()

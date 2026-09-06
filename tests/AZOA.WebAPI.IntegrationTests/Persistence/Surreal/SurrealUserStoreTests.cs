@@ -105,7 +105,7 @@ public sealed class SurrealUserStoreTests : IAsyncLifetime
 
     // ── Tests ─────────────────────────────────────────────────────────────────
 
-    /// <summary>Test 1: Upsert creates an user; GetById retrieves it with matching fields.</summary>
+    /// <summary>Test 1: Upsert creates a user; GetById retrieves it with matching fields.</summary>
     [SkippableFact]
     public async Task Upsert_ThenGetById_RoundTrips()
     {

@@ -28,7 +28,12 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
     [InlineData("admin_bootstrap_state.surql", "cb3db762b7990670805a50b6179a16cd22492ca12df17701cef4d88b75b473eb")]
     [InlineData("bridge_tx.surql", "8c9da0afb2d9039ee5e48575cb58c54391605a79878d9196cf9cd16414011e19")]
     [InlineData("holon.surql", "2f8e9478702c665a2d24201eefee7dc5d29769d8efe820ebe90478f4e5281291")]
-    [InlineData("kyc_submission.surql", "722575b0a3dca2b1f55ea417497867ad059afbba4d268ddfed54d2a7f22bff0d")]
+    // kyc_submission re-pinned a second time within the SAME unshipped generation:
+    // the rename left "for an user" in a -- Note: comment and the grammar repair
+    // fixed it. Comment-only, zero schema effect. Folding it into generation 2
+    // rather than declaring a generation 3 is honest because generation 2 has
+    // never been applied to any deployment - the D31 wipe is still pending.
+    [InlineData("kyc_submission.surql", "fba8793aa7f23506b3e02a502147a86a5e631a8ece759ee472e5d49e6aa7edbe")]
     [InlineData("operation_log.surql", "fff794131ab3b093b7c6c93ce9edfa3b994433992678024f332a2af59c39744f")]
     [InlineData("swap_state.surql", "06fa0b1ec7ce82bdf60f05e1763c487a3bd4aa626b2d5f492c61204570c7735c")]
     public void CompatibilityBaseline_RetainsTheShippedChecksum(string fileName, string expectedChecksum)

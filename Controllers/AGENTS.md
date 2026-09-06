@@ -154,7 +154,7 @@ surface into two buckets:
 
 ## user-dapp-rbac — role-assignment endpoint (`UserController`)
 
-- `PUT api/user/{id}/dapp-role` sets an user's `DappRole`. Target id is the
+- `PUT api/user/{id}/dapp-role` sets a user's `DappRole`. Target id is the
   ROUTE id, never the body (IDOR rule). Body is `UserRoleAssignmentModel { Role }`.
 - Method-level `[Authorize]` only (both JWT and API-key principals may authenticate);
   authority is decided in the manager from two controller-computed flags:

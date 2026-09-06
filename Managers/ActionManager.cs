@@ -96,7 +96,7 @@ public class ActionManager : IActionManager
     }
 
     /// <summary>
-    /// Loads a action and rejects when it is owned by a different user. Returns
+    /// Loads an action and rejects when it is owned by a different user. Returns
     /// the loaded action on success, or an error result to surface verbatim.
     /// </summary>
     private async Task<AZOAResult<ActionDefinition>> LoadOwnedActionAsync(Guid actionId, Guid userId)
@@ -110,7 +110,7 @@ public class ActionManager : IActionManager
     }
 
     /// <summary>
-    /// Loads a action for a run-start (marketplace mechanic): the OWNER may start
+    /// Loads an action for a run-start (marketplace mechanic): the OWNER may start
     /// any of their own actions; a NON-owner may start it only when it is published
     /// (<see cref="ActionDefinition.IsPublic"/>) AND Active. Returns the action and whether the
     /// caller is the owner, or an error result to surface verbatim. Private actions
@@ -1481,7 +1481,7 @@ public class ActionManager : IActionManager
 
         // Cycle guard: run the DAG validator after staging the new edge and
         // reject only on cycle-class errors. We deliberately ignore the
-        // entry/terminal/orphan checks because a ActionDefinition is editable in-flight
+        // entry/terminal/orphan checks because an ActionDefinition is editable in-flight
         // — terminal/entry flags and full reachability are only required
         // immediately before ExecuteAsync (which runs the full ValidateDAGAsync).
         // Allowing orphan-class errors here would prevent any incremental
@@ -1575,7 +1575,7 @@ public class ActionManager : IActionManager
         if (model.DependsOnActionId == Guid.Empty)
             return new AZOAResult<ActionDependency> { IsError = true, Message = "DependsOnActionId must not be an empty GUID." };
         if (model.DependsOnActionId == actionId)
-            return new AZOAResult<ActionDependency> { IsError = true, Message = "A action may not depend on itself." };
+            return new AZOAResult<ActionDependency> { IsError = true, Message = "An action may not depend on itself." };
 
         var dependency = new ActionDependency
         {
@@ -2210,7 +2210,7 @@ public class ActionManager : IActionManager
         return await _accessRequestStore.CreateAsync(accessRequest);
     }
 
-    /// <summary>Owner approval queue: all requests for a action, optionally status-filtered. Owner-only.</summary>
+    /// <summary>Owner approval queue: all requests for an action, optionally status-filtered. Owner-only.</summary>
     public async Task<AZOAResult<IEnumerable<ActionAccessRequest>>> ListAccessRequestsAsync(Guid actionId, Guid ownerUserId, ActionAccessRequestStatus? status = null, AZOARequest? request = null)
     {
         var actionResult = await LoadOwnedActionAsync(actionId, ownerUserId);
@@ -2441,7 +2441,7 @@ public class ActionManager : IActionManager
         return action.Nodes.OrderBy(n => n.ExecutionOrder).FirstOrDefault();
     }
 
-    /// <summary>Enqueue a action node as a saga step (the first step of a run, or
+    /// <summary>Enqueue an action node as a saga step (the first step of a run, or
     /// a manual/signal-driven resume). Mirrors the handler's self-advance enqueue
     /// so the correlation key, step name, and idempotency key are derived
     /// identically.</summary>

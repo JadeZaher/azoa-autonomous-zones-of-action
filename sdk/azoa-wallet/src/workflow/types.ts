@@ -76,7 +76,7 @@ export function isTerminal(status: WorkflowRunStatus): boolean {
 }
 
 /**
- * One execution attempt of a action definition — the `GET /api/action/runs/{runId}`
+ * One execution attempt of an action definition — the `GET /api/action/runs/{runId}`
  * read shape. Mirrors `Models/ActionDefinition/ActionRun.cs`.
  */
 export interface WorkflowRunResult {

@@ -43,7 +43,7 @@ A single executable DAG representing a workflow unit.
 | `Nodes` | `List<ActionNode>` | Nodes in this action's DAG |
 | `Edges` | `List<ActionEdge>` | Directed edges (control dependencies) |
 | `Dependencies` | `List<ActionDependency>` | Links to prerequisite actions |
-| `TemplateId` | `Guid?` | If instantiated from a ActionTemplate |
+| `TemplateId` | `Guid?` | If instantiated from an ActionTemplate |
 | `DappSeriesId` | `Guid?` | Parent dApp series (if part of one) |
 | `Metadata` | `Dictionary<string, string>` | Custom tags, version, etc. |
 | `CreatedDate` | `DateTime` | Creation timestamp (matches codebase: `DateTime.UtcNow`) |
@@ -53,7 +53,7 @@ A single executable DAG representing a workflow unit.
 `Draft` → `Active` → `Completed` | `Failed` → `Archived`
 
 ### ActionNode
-A single task/step within a action DAG. Wraps a call to an existing AZOA manager method.
+A single task/step within an action DAG. Wraps a call to an existing AZOA manager method.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -183,7 +183,7 @@ A reusable action definition — a full DAG template that can be instantiated wi
 | `Tags` | `List<string>` | Tags |
 
 ### ActionTemplateNode
-A node within a ActionTemplate (parameterized, not yet instantiated).
+A node within an ActionTemplate (parameterized, not yet instantiated).
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -196,7 +196,7 @@ A node within a ActionTemplate (parameterized, not yet instantiated).
 | `IsTerminal` | `bool` | Terminal point in template |
 
 ### ActionTemplateEdge
-An edge within a ActionTemplate.
+An edge within an ActionTemplate.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -212,7 +212,7 @@ An edge within a ActionTemplate.
 3. **Single Terminal**: At least one terminal node (`IsTerminal = true`, no outgoing control edges).
 4. **No Orphan Nodes**: Every node must be reachable from an entry node.
 5. **Cross-ActionDefinition Dependencies**: Tracked separately via `ActionDependency`, not as DAG edges.
-6. **Node Template Compatibility**: When instantiating from a ActionNodeTemplate, the config must validate against the template's `ConfigSchema`.
+6. **Node Template Compatibility**: When instantiating from an ActionNodeTemplate, the config must validate against the template's `ConfigSchema`.
 
 ## Interfaces
 
@@ -243,7 +243,7 @@ DagValidationResult Validate(ActionDefinition action);
 ```
 
 ### `IActionInstantiator`
-Instantiates a ActionDefinition from a ActionTemplate with parameters.
+Instantiates an ActionDefinition from an ActionTemplate with parameters.
 
 ```csharp
 Task<ActionDefinition> InstantiateAsync(Guid templateId, string parametersJson, Guid userId);

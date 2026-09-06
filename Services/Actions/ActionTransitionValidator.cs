@@ -4,7 +4,7 @@ using ActionEntity = AZOA.WebAPI.Models.Actions.ActionDefinition;
 namespace AZOA.WebAPI.Services.Actions;
 
 /// <summary>
-/// Semantic, transition-legality validation layer for a action DAG
+/// Semantic, transition-legality validation layer for an action DAG
 /// (smart-gates-holon-state §8.2). It is ADDED ALONGSIDE the structural Kahn
 /// validation in <see cref="ActionDagValidator"/> — it does not replace or modify it.
 /// Where the structural validator proves the graph is a well-formed,

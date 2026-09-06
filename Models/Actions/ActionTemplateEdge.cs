@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Actions;
 
 /// <summary>
-/// An edge within a ActionTemplate.
+/// An edge within an ActionTemplate.
 /// </summary>
 public class ActionTemplateEdge
 {

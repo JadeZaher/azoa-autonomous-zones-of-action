@@ -29,7 +29,7 @@ namespace AZOA.WebAPI.Services.Auth;
 /// </remarks>
 public interface IUserLoginTokenIssuer
 {
-    /// <summary>Mints a full-authority interactive login token for an user.</summary>
+    /// <summary>Mints a full-authority interactive login token for a user.</summary>
     string IssueLoginToken(IUser user);
 }
 

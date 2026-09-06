@@ -28,7 +28,7 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">A durable state machine, drawn as a graph.</h2>
             <p>
-              A action is a graph of steps — gates, transfers, swaps, grants, calls to the outside world. It parks when it needs to wait. It resumes on a signal or a timer. And before it takes any irreversible action, it reconciles against the source of truth: a chain confirmation, a settlement callback, the real world.
+              An action is a graph of steps — gates, transfers, swaps, grants, calls to the outside world. It parks when it needs to wait. It resumes on a signal or a timer. And before it takes any irreversible action, it reconciles against the source of truth: a chain confirmation, a settlement callback, the real world.
             </p>
             <p>
               Steps carry their results forward as bindings, failed checks cascade to stop downstream payouts, and every run survives restarts. Build actions visually — drag, drop, connect — and publish only when the graph validates.
@@ -90,7 +90,7 @@ export default function Architecture() {
               AZOA treats a blockchain and a fiat partner as two kinds of settlement rail behind one uniform seam. On-chain assets move through provider adapters. Fiat clears in the partner&apos;s own checkout — then makes one exact, verified call into AZOA to materialize the value. Once, and exactly once.
             </p>
             <p>
-              A action doesn&apos;t care which rail a step settles on. That is the point: the same workflow can move on-chain value and fiat-originated value in a single run — multichain, multi-wallet, one graph.
+              An action doesn&apos;t care which rail a step settles on. That is the point: the same workflow can move on-chain value and fiat-originated value in a single run — multichain, multi-wallet, one graph.
             </p>
           </div>
         </div>
@@ -102,7 +102,7 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">Every action has an owner.</h2>
             <p>
-              At the center is a self-sovereign user — an identity a person actually owns, proven by keys they hold, not an account a platform lends them. Applications act on an user&apos;s behalf only under a live, explicit, revocable grant of consent.
+              At the center is a self-sovereign user — an identity a person actually owns, proven by keys they hold, not an account a platform lends them. Applications act on a user&apos;s behalf only under a live, explicit, revocable grant of consent.
             </p>
             <p>
               That makes every step in every workflow attributable to a real subject, and makes delegated action safe: withdraw consent, and the app&apos;s hands leave your value immediately.
@@ -117,7 +117,7 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">Wholes made of wholes.</h2>
             <p>
-              Everything a workflow can hold or move is a holon — a whole that can contain other wholes. A token, a credit, a right, a bundle of all three. Because value is modeled one way, a action built for one economy composes with value from any other. This is what makes a game reward, a material credit, and a payroll line the same kind of thing to the engine.
+              Everything a workflow can hold or move is a holon — a whole that can contain other wholes. A token, a credit, a right, a bundle of all three. Because value is modeled one way, an action built for one economy composes with value from any other. This is what makes a game reward, a material credit, and a payroll line the same kind of thing to the engine.
             </p>
           </div>
         </div>

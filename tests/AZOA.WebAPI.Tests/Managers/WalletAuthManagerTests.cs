@@ -108,7 +108,7 @@ public class WalletAuthManagerTests
         var r = await _mgr.VerifyAsync(Addr, Chain, "badsig", null);
 
         r.IsError.Should().BeTrue();
-        // Never minted an user on a bad signature.
+        // Never minted a user on a bad signature.
         _users.Verify(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 

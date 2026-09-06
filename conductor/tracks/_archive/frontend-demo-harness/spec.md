@@ -104,12 +104,12 @@ frontend/src/
 - [ ] 4.2: **STAR ODK page** — list ODKs, create form, generate dApp (shows generated code), deploy stub. Tests: all 6 STARODK endpoints
 - [ ] 4.3: **Settings page** — current session info (JWT claims, expiry), provider selection (AZOARequest.providerName), network config display, SDK version info
 - [ ] 4.4: **Workflow page** — end-to-end exercise of the durable workflow engine via `azoa.workflow` (`WorkflowClient` + `action()` factory). Covers:
-  - **Template authoring panel**: create a action template (small DAG of generic nodes using `nodeConfig` builders — `gateCheck`, `emit`; optionally `swap`/`grant`/`transfer`/`refund`), list templates, get a template, instantiate with `{{param}}` values. SDK: `azoa.workflow.createTemplate()`, `.listTemplates()`, `.getTemplate(templateId)`, `.instantiate(templateId, params)`.
+  - **Template authoring panel**: create an action template (small DAG of generic nodes using `nodeConfig` builders — `gateCheck`, `emit`; optionally `swap`/`grant`/`transfer`/`refund`), list templates, get a template, instantiate with `{{param}}` values. SDK: `azoa.workflow.createTemplate()`, `.listTemplates()`, `.getTemplate(templateId)`, `.instantiate(templateId, params)`.
   - **Fluent run driver panel — phase-by-phase**: drive a run step-by-step via `azoa.workflow.action(actionId).start({ params }).step(nodeId)` chains. Each `.step(nodeId)` issues `POST /api/action/runs/{runId}/advance {fromNodeId}`.
   - **Fluent run driver panel — start-and-signal-at-gates**: start a run then un-park a GATE node via `.signal(gateId, payload)` (`POST /api/action/runs/{runId}/signal {gateId, payload}`). Demonstrates the hybrid model: both paths compose on the same `WorkflowRunHandle`.
   - **Live run state visualizer**: poll `.status()` (`GET /api/action/runs/{runId}`) and `.getExecutionState()` (`GET /api/action/runs/{runId}/execution-state`) to display `WorkflowRunStatus` (`Pending` / `Running` / `Suspended` / `AwaitingSignal` / `AwaitingTimer` / `Succeeded` / `Failed` / `Cancelled`) and per-node `WorkflowNodeExecution` state. Use `.onSuspend(cb)` to surface when a run parks at a gate.
   - **Pure-metadata demo flow** (Tier-1, chain-free): a `HolonCreate → GateCheck → Emit` action run that completes without any wallet bound — the end-to-end proof that the durable engine + economic-primitive-nodes + workflow SDK all work together on the chain-free path.
-  - **Capability-gate demo** (Tier-2, optional): a action with a `Transfer` node where no wallet is bound; the node must fail closed, proving the capability-gate enforcement.
+  - **Capability-gate demo** (Tier-2, optional): an action with a `Transfer` node where no wallet is bound; the node must fail closed, proving the capability-gate enforcement.
   - Tests: all workflow operations in the Functional Test Matrix below.
 
 ### Phase 5: Functional Test Dashboard

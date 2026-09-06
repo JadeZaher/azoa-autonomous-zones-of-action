@@ -6,7 +6,7 @@ namespace AZOA.WebAPI.Tests.Core;
 
 /// <summary>
 /// user-sovereign-identity AC3b (security-review fix): the per-user AuthNotBefore
-/// watermark cut. When a user CLAIMS an user, any credential minted BEFORE that
+/// watermark cut. When a user CLAIMS a user, any credential minted BEFORE that
 /// instant — notably a tenant child JWT issued in the window before the claim — is
 /// stale and must be rejected on EVERY request. These cases pin the adversarial
 /// boundary: a one-second grace for second-precision JWT timestamps, but anything
@@ -23,7 +23,7 @@ public class AuthWatermarkTests
     [InlineData(600)]      // token in the future
     public void NullWatermark_NeverStale_ForAnyTokenInstant(int offsetSeconds)
     {
-        // ATTACK BLOCKED: an user that was NEVER claimed has no watermark, so a
+        // ATTACK BLOCKED: a user that was NEVER claimed has no watermark, so a
         // legitimately-minted token (at any instant) must not be spuriously rejected.
         var tokenInstant = Base.AddSeconds(offsetSeconds);
         AuthWatermark.IsTokenStale(tokenInstant, watermark: null).Should().BeFalse();

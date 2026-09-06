@@ -1,6 +1,6 @@
 'use client'
 
-// user-dapp-rbac operator console — assign an user's DApp role (PUT /api/user/{id}/dapp-role).
+// user-dapp-rbac operator console — assign a user's DApp role (PUT /api/user/{id}/dapp-role).
 // The operator-bootstrap surface: an operator promotes the first dapp:manager here.
 import { useState, useCallback } from 'react'
 import { azoa, isOk } from '@/lib/azoa'
@@ -74,7 +74,7 @@ export default function RolesPage() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight">DApp Roles</h1>
         <p className="text-sm text-muted-foreground">
-          Assign an user&apos;s DApp role — the RBAC surface for granting a team member access
+          Assign a user&apos;s DApp role — the RBAC surface for granting a team member access
         </p>
       </div>
 

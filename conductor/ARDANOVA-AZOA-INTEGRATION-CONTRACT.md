@@ -33,7 +33,7 @@ reference consumer**, used only as a concrete example.
 | **Consumer / tenant** | an application integrating AZOA (e.g. ArdaNova) | **Authors action definitions** and reads/writes via the standard API. Does **not** custody users' assets by virtue of being a consumer (§3, §5). |
 | **User** | an end identity on the node | Holds its own identity; **runs actions as itself** under its own consent (§4, §5). |
 
-> **The key correction this revision encodes:** a consumer that authors a action
+> **The key correction this revision encodes:** a consumer that authors an action
 > object does **not** thereby take custody of the users that interact with it.
 > The consumer *publishes* a workflow definition; **any user runs its own run
 > against that definition, as itself**. Custody is a property of *who hosts the
@@ -43,7 +43,7 @@ reference consumer**, used only as a concrete example.
 
 ### Boundary rules (non-negotiable)
 1. **No brand leak into AZOA.** No AZOA source may contain the string `ArdaNova`.
-   AZOA knows only "a consumer," "a node operator," "an user." (H5 grep → CI.)
+   AZOA knows only "a consumer," "a node operator," "a user." (H5 grep → CI.)
 2. **AZOA owns blockchain primitives + key custody only.** All domain economics —
    token valuation, treasury splits, equity math, funding-gate *valuation*, scrum
    state, the investment/escrow records of truth — stay in the consumer.
@@ -64,19 +64,19 @@ reference consumer**, used only as a concrete example.
 | Webhook signature verification (fiat / payment provider) | **Consumer** |
 | Authoring action **definitions** (templates / DAGs) | **Consumer** |
 | Hosting the node; **custody of user keys** (per node operator) | **Node operator** |
-| Provisioning a wallet for an user (if absent) | **AZOA node** |
+| Provisioning a wallet for a user (if absent) | **AZOA node** |
 | Minting / transferring the on-chain (or simulated) asset | **AZOA node** |
 | Deduping a redelivered trigger so an asset moves exactly once | **AZOA node** |
 | KYC **gate** (fail-closed) on the value-bearing move | **AZOA node** |
 | Reconcile-before-retry so a bounty/grant never double-mints | **AZOA node** |
 | ActionDefinition engine that orchestrates the project→fund→work lifecycle | **AZOA node** |
-| Starting / driving a action **run** (as the acting identity) | **User** (self) or **consumer under a consent grant** |
+| Starting / driving an action **run** (as the acting identity) | **User** (self) or **consumer under a consent grant** |
 
 ---
 
 ## 2. Custody follows the node operator
 
-Custody is determined by **who hosts the AZOA node**, not by who authored a action
+Custody is determined by **who hosts the AZOA node**, not by who authored an action
 or who triggered a value move:
 
 - **Self-hosted consumer node** (e.g. ArdaNova runs its own AZOA instance): that
@@ -89,7 +89,7 @@ or who triggered a value move:
 
 Mechanism (shipped): the single audited custody chokepoint is
 `KeyCustodyService` (`Managers/KeyCustodyService.cs`) — ownership-checked
-resolve, JIT decrypt, `byte[]` zeroing. Acting *as* an user that you do not own
+resolve, JIT decrypt, `byte[]` zeroing. Acting *as* a user that you do not own
 requires an `act_as_tenant` consent claim, checked live before key decrypt
 (`tenant-consent-delegation` / `consent-gate-architecture`). A revoked grant
 fails closed.
@@ -119,7 +119,7 @@ secret — webhook verification is the consumer's job.
 
 ---
 
-## 4. Identity & how an user runs a action (the corrected core)
+## 4. Identity & how a user runs an action (the corrected core)
 
 **Actions have an author and a runner, and they are different roles.**
 
@@ -127,13 +127,13 @@ secret — webhook verification is the consumer's job.
   `POST /api/action` (a concrete DAG) or `POST /api/action/templates` with
   `is_public: true` (a template any user may instantiate). The author does not
   own anyone's run.
-- **Running as self** (user — the default): an user starts its **own** run.
+- **Running as self** (user — the default): a user starts its **own** run.
   The shipped engine scopes the run to the *calling* identity:
   `POST /api/action/{id}/start-workflow` sets `Run.user_id` = the authenticated
   caller (`ActionController.StartWorkflow`). `advance` and `signal` are likewise
   caller-scoped. **The user drives its own run, under its own consent and keys.**
 - **Running on behalf** (consumer — the exception, consent-gated): a consumer
-  starts/drives a run *for* an user only when an `act_as_tenant` consent claim
+  starts/drives a run *for* a user only when an `act_as_tenant` consent claim
   is present; it is stamped onto the run (`StartWorkflowRunAsync(..., GetActingTenantId())`)
   and re-checked at every Tier-2 (value-bearing) node. Null for a plain self-run
   → no behavior change. The user can revoke the grant at any time.
@@ -161,9 +161,9 @@ publish-only/self-run consumer skips this section entirely.)
 
 ---
 
-## 5. The project lifecycle as a ActionDefinition DAG
+## 5. The project lifecycle as an ActionDefinition DAG
 
-The consumer authors a action **definition** for the project lifecycle; an user
+The consumer authors an action **definition** for the project lifecycle; a user
 (the project creator, a contributor, a supporter) runs its **own** run against it.
 Each **phase is a node**; **navigation between phases is a gated edge**. The AZOA
 durable engine advances the run, parking at gates for signals.
@@ -198,7 +198,7 @@ custody to let the user transact.
 | Call | Purpose | Scoped to |
 |---|---|---|
 | `POST /api/action` / `POST /api/action/templates` (`is_public`) | Author a definition / publish a template. | the **author** |
-| `POST /api/action/templates/{id}/instantiate` | An user materializes a public template into its own action. | the **instantiating user** |
+| `POST /api/action/templates/{id}/instantiate` | A user materializes a public template into its own action. | the **instantiating user** |
 | `POST /api/action/{id}/validate` | Structural DAG validation (Kahn + entry/terminal/orphan/reachability). | — |
 | `POST /api/action/{id}/start-workflow` | Start a durable run. `Run.user_id` = caller. | the **running user** |
 | `POST /api/action/runs/{runId}/advance` | Resume a `Suspended` run. | the **running user** |
@@ -212,7 +212,7 @@ custody to let the user transact.
 
 ## 6. Value movement — allocation (the consumer-driven value door)
 
-When the consumer settles fiat / decides a reward outside a action run, it can
+When the consumer settles fiat / decides a reward outside an action run, it can
 move value directly (provision-if-absent + idempotent mint/transfer):
 
 ### `POST /api/allocation/{userId}`
@@ -316,7 +316,7 @@ is **feature-flagged** so simulated/legacy paths coexist during migration.
 ### AZOA (`azoa/conductor/tracks/`)
 - `azoa-node-integration-contract` — this doc + contract/seam tests; neutral "consumer/operator/user" framing; the publish-vs-run distinction made explicit in API docs.
 - `action-reconcile-retry-wiring` — close **P7** (§7). The double-mint blocker. Highest priority.
-- `scrum-lifecycle-action-presets` — the create→fund→work→tasks definition(s) + public templates an user can instantiate and self-run (§5).
+- `scrum-lifecycle-action-presets` — the create→fund→work→tasks definition(s) + public templates a user can instantiate and self-run (§5).
 - `smart-gates-holon-state` — holon-state predicates + transition-legality validator (§8).
 - `fungible-mint-and-render-model` — the dedicated `POST /api/nft/fungible-mint` endpoint (KYC-gated, idempotent) + render-ready balance/portfolio DTO; SDK methods + path constants; a frontend page driving both against the live backend (§11.3, §11.5). Wallet-generate stays ungated; value seams stay gated (§11.4).
 - (pre-prod, in DEPLOY-STEPS: **B3** KMS custody. Note: **P5 is now resolved** — wallet-generate is intentionally NOT KYC-gated; the gate lives at the value seams.)

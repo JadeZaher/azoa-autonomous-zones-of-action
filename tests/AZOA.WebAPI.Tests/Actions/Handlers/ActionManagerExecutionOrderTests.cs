@@ -91,7 +91,7 @@ public class ActionManagerExecutionOrderTests
     [Fact]
     public async Task ExecuteAsync_WritesPerRunPerNodeExecution_NotActionNode()
     {
-        // After action-temporal-fork-model, ExecuteAsync produces a ActionRun
+        // After action-temporal-fork-model, ExecuteAsync produces an ActionRun
         // and per-(run, node) ActionNodeExecution rows. The ActionNode definition
         // is never mutated — this is the central invariant of the rewrite.
         var nodeId = Guid.NewGuid();

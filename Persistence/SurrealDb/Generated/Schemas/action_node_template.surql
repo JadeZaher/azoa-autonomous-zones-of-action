@@ -2,7 +2,7 @@
 -- Table: action_node_template
 -- Aggregate: ActionNodeTemplate (Models/ActionDefinition/ActionNodeTemplate.cs)
 -- Guardrail: G6 SCHEMAFULL; read-only catalog of reusable node definitions
--- Note: Reusable node definition shared across ActionTemplates. A ActionTemplate's embedded node slot (template_node) references a ActionNodeTemplate by id and supplies ParamOverrides; ActionInstantiator merges DefaultConfig + ParamOverrides + caller parameters into the runtime ActionDefinition's ActionNode.Config.
+-- Note: Reusable node definition shared across ActionTemplates. An ActionTemplate's embedded node slot (template_node) references an ActionNodeTemplate by id and supplies ParamOverrides; ActionInstantiator merges DefaultConfig + ParamOverrides + caller parameters into the runtime ActionDefinition's ActionNode.Config.
 -- Note: node_type is the ActionNodeType enum serialised as its C# name (e.g. "HolonCreate", "WalletGet"). Asserted INSIDE the full enum value set so a schema-drift typo is rejected at INSERT time rather than at the dispatch layer.
 -- ============================================================
 

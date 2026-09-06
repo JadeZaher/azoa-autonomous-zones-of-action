@@ -5,7 +5,7 @@
 **Keystone for asset fractionalization.** Expose the already-implemented Algorand
 ASA creation (`IAlgorandASAModule.CreateASAAsync`, full `total`/`decimals`
 control — [Providers/Blockchain/Algorand/AlgorandProvider.cs](../../../Providers/Blockchain/Algorand/AlgorandProvider.cs):514)
-through a action node + manager seam, so a action (and therefore the visual builder,
+through an action node + manager seam, so an action (and therefore the visual builder,
 DappSeries, and STAR-ODK) can **launch a fungible token** — not just a supply-1 NFT.
 
 Today the provider can create a fungible ASA but **nothing above it can reach it**:
@@ -14,7 +14,7 @@ correct seam: a `FungibleTokenManager` wrapping the provider call + a Tier-2
 `FungibleTokenCreate` action node.
 
 This is the single change that turns asset fractionalization from "impossible
-through the AZOA surface" into "composable in a action." Once shipped, the visual
+through the AZOA surface" into "composable in an action." Once shipped, the visual
 builder's palette surfaces it automatically (the catalog mirrors the enum).
 
 ## Relationship to other tracks

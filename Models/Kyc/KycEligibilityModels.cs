@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 namespace AZOA.WebAPI.Models.Kyc;
 
 /// <summary>
-/// Operator-side reason an user was refused. NEVER projected to a consumer:
+/// Operator-side reason a user was refused. NEVER projected to a consumer:
 /// distinguishing "already bound elsewhere" from "not verified" tells a caller
 /// that their subject exists under a different tenant on this node.
 /// </summary>

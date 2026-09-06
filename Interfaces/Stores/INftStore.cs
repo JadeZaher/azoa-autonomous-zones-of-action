@@ -9,19 +9,19 @@ namespace AZOA.WebAPI.Interfaces.Stores;
 public interface INftStore
 {
     // User NFT
-    /// <summary>Inserts or updates an user NFT.</summary>
+    /// <summary>Inserts or updates a user NFT.</summary>
     Task<AZOAResult<IUserNFT>> UpsertUserNFTAsync(IUserNFT userNFT, CancellationToken ct = default);
 
     /// <summary>Loads a single user NFT by id.</summary>
     Task<AZOAResult<IUserNFT>> GetUserNFTByIdAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>Loads an user NFT by chain/contract/token-id triple.</summary>
+    /// <summary>Loads a user NFT by chain/contract/token-id triple.</summary>
     Task<AZOAResult<IUserNFT>> GetUserNFTByTokenIdAsync(string chainType, string nftContractAddress, string tokenId, CancellationToken ct = default);
 
-    /// <summary>Loads all user NFTs owned by an user.</summary>
+    /// <summary>Loads all user NFTs owned by a user.</summary>
     Task<AZOAResult<IEnumerable<IUserNFT>>> GetUserNFTsByUserAsync(Guid userId, CancellationToken ct = default);
 
-    /// <summary>Deletes an user NFT by id.</summary>
+    /// <summary>Deletes a user NFT by id.</summary>
     Task<AZOAResult<bool>> DeleteUserNFTAsync(Guid id, CancellationToken ct = default);
 
     // Holon NFT Binding
@@ -31,7 +31,7 @@ public interface INftStore
     /// <summary>Loads a single holon NFT binding by id.</summary>
     Task<AZOAResult<IHolonNFTBinding>> GetHolonNFTBindingByIdAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>Loads all holon NFT bindings for an user NFT.</summary>
+    /// <summary>Loads all holon NFT bindings for a user NFT.</summary>
     Task<AZOAResult<IEnumerable<IHolonNFTBinding>>> GetHolonNFTBindingsByUserNFTAsync(Guid userNFTId, CancellationToken ct = default);
 
     /// <summary>Deletes a holon NFT binding by id.</summary>
@@ -44,7 +44,7 @@ public interface INftStore
     /// <summary>Loads a single wallet NFT binding by id.</summary>
     Task<AZOAResult<IWalletNFTBinding>> GetWalletNFTBindingByIdAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>Loads all wallet NFT bindings for an user NFT.</summary>
+    /// <summary>Loads all wallet NFT bindings for a user NFT.</summary>
     Task<AZOAResult<IEnumerable<IWalletNFTBinding>>> GetWalletNFTBindingsByUserNFTAsync(Guid userNFTId, CancellationToken ct = default);
 
     /// <summary>Deletes a wallet NFT binding by id.</summary>

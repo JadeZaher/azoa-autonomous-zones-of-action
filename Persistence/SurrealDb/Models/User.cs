@@ -70,7 +70,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         // AC2 wallet-challenge auth binding. The composite (auth_wallet_address,
         // auth_wallet_chain_type) is UNIQUE only for rows where BOTH are non-NONE
         // (same NULL-equals-NULL caveat as owner_tenant_id/external_user_id above):
-        // an user with no wallet auth leaves both NONE and never collides. Login
+        // a user with no wallet auth leaves both NONE and never collides. Login
         // matches this pair EXACTLY — never email/username/external_user_id.
         public string? AuthWalletAddress { get; set; }
 

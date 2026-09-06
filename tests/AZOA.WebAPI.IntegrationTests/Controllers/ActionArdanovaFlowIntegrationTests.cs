@@ -270,7 +270,7 @@ public class ActionArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposab
             "the single downstream Emit node must be Skipped when the gate fails (cascade skip)");
 
         // 5. Update the holon's Metadata.status to FUNDED — the action is Active during
-        //    this mutation; that is fine, holon mutation is not a action-definition mutation.
+        //    this mutation; that is fine, holon mutation is not an action-definition mutation.
         var updateResp = await Client.PutAsJsonAsync($"api/holon/{holonId}",
             new HolonUpdateModel
             {

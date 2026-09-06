@@ -44,7 +44,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Optional description")]
         public string? Description { get; set; }
 
-        [FieldGroup("Source template id when instantiated from a ActionTemplate (null for hand-authored actions)")]
+        [FieldGroup("Source template id when instantiated from an ActionTemplate (null for hand-authored actions)")]
         [References(typeof(ActionTemplate), Optional = true)]
         public string? TemplateId { get; set; }
 

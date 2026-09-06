@@ -5,7 +5,7 @@ namespace AZOA.WebAPI.Mcp.Tools;
 
 /// <summary>
 /// Read-only vocabulary tool for the "natural-language → DAG" flow. Returns the
-/// full set of <see cref="ActionNodeType"/> values (the nodes a action may
+/// full set of <see cref="ActionNodeType"/> values (the nodes an action may
 /// contain), the valid <see cref="ActionEdgeType"/> values, and the structural
 /// rules a DAG must satisfy. A calling model uses this to know what it can emit
 /// before invoking <c>action_author</c>.

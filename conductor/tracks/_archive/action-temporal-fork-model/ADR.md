@@ -18,7 +18,7 @@ in place: `ActionDefinition.Status`, `ActionNode.State`, `ActionNode.Output`, an
 
 The consequences this track removes:
 
-1. **A action can be executed exactly once.** Re-running mutates the same
+1. **An action can be executed exactly once.** Re-running mutates the same
    row and clobbers the previous attempt's per-node outputs. No audit trail.
 2. **Forking is impossible.** There is no lineage pointer. The prior
    attempt's outputs would be overwritten before a forked branch could
@@ -168,7 +168,7 @@ For clarity, the parts of the broader analysis we **do** adopt:
 
 ## 7. Acceptance (downstream, owned by B2 tasks 10–16)
 
-- `IActionManager.ExecuteAsync` creates a `ActionRun`, returns its `Id`.
+- `IActionManager.ExecuteAsync` creates an `ActionRun`, returns its `Id`.
 - `ActionManager` reads/writes `ActionNodeExecution` keyed by
   `(runId, nodeId)`. No mutation of `ActionNode`.
 - `IActionManager.ForkAsync(runId, atNodeId, reason)` exists with

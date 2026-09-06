@@ -20,7 +20,7 @@ public class SearchControllerTests
         _searchManager = new Mock<ISearchManager>();
         _controller = new SearchController(_searchManager.Object);
         // H-2: Search now binds scope to the authenticated caller, so the principal
-        // must carry an user-id claim or the controller fail-closes to Unauthorized.
+        // must carry a user-id claim or the controller fail-closes to Unauthorized.
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext

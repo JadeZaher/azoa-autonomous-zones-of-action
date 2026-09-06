@@ -5,7 +5,7 @@
 Two related hardening pieces needed before ArdaNova drives real value through AZOA
 actions:
 
-1. **Reconcile-before-retry for chain-action action nodes** (the urgent, high-risk
+1. **Reconcile-before-retry for chain-action nodes** (the urgent, high-risk
    piece). Today a `Grant`/`Transfer`/`Swap`/`FungibleTokenCreate` node that
    submits a tx and then loses confirmation is **retried blindly** by the saga
    (`RetryPolicy.Default` = 5 attempts). For an on-chain mint that means a

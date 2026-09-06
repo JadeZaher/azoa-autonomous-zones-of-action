@@ -70,7 +70,7 @@ graph TD
 ## 2. Core Subsystem Workflows
 
 ### 2.1 Identity, Authentication, and Revocable Consent
-AZOA avoids custodial identity. End-user users are self-sovereign; tenants can only act on behalf of an user if a valid `ConsentGrant` is present.
+AZOA avoids custodial identity. End-user users are self-sovereign; tenants can only act on behalf of a user if a valid `ConsentGrant` is present.
 
 ```mermaid
 sequenceDiagram
@@ -107,7 +107,7 @@ sequenceDiagram
 ---
 
 ### 2.2 ActionDefinition Dag Publishing and Semantic Validation
-Before a action can transition from `Draft` to `Active` (which makes it startable by users), it must pass the `ActionDagExecutabilityValidator` publishing gate.
+Before an action can transition from `Draft` to `Active` (which makes it startable by users), it must pass the `ActionDagExecutabilityValidator` publishing gate.
 
 ```mermaid
 graph TD
@@ -131,7 +131,7 @@ graph TD
 
 1. **Dominator-Based Validation**: The validator checks all `$from` output bindings (e.g. `run.NodeA.Field`). It uses dominator-tree analysis to guarantee that `NodeA` is a guaranteed ancestor along control flow paths.
 2. **Control-Edge Skip Cascades**: If a conditional check (such as a Gate Check) fails, the "skipped" status cascades down control chains to prevent downstream payout nodes from executing.
-3. **Immutability Gating**: Once a action is `Active`, its structure (nodes, edges, dependencies) is immutable. Updates require publishing a new version or unpublishing when no runs are active.
+3. **Immutability Gating**: Once an action is `Active`, its structure (nodes, edges, dependencies) is immutable. Updates require publishing a new version or unpublishing when no runs are active.
 
 ---
 

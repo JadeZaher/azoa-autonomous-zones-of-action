@@ -107,8 +107,8 @@ truth* for a run parked in `AwaitingReconciliation` and branch
 advance-reconciled / retry / park — a higher-level, chain-aware decision that
 prevents double-mint on the Grant-bounty path. This saga operator surface is the
 LOWER-LEVEL primitive beneath it: it knows nothing about chains or actions, only
-about generic outbox steps (park/dead-letter/requeue/cancel). A action that
-dead-letters at the saga layer surfaces here for a raw requeue/cancel; a action
+about generic outbox steps (park/dead-letter/requeue/cancel). An action that
+dead-letters at the saga layer surfaces here for a raw requeue/cancel; an action
 parked on `AwaitingReconciliation` at the DOMAIN layer is resolved by the action
 reconcile endpoints (which never re-broadcast). They complement — the action
 endpoints own chain-truth reconciliation, this surface owns generic step

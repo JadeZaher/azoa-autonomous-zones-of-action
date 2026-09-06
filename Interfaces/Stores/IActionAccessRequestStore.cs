@@ -18,7 +18,7 @@ public interface IActionAccessRequestStore
     /// <summary>Loads a single request by id; <c>IsError</c> when not found.</summary>
     Task<AZOAResult<ActionAccessRequest>> GetByIdAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>All requests for a action, optionally filtered to a single status (owner approval queue).</summary>
+    /// <summary>All requests for an action, optionally filtered to a single status (owner approval queue).</summary>
     Task<AZOAResult<IEnumerable<ActionAccessRequest>>> GetByActionAsync(
         Guid actionId, ActionAccessRequestStatus? status = null, CancellationToken ct = default);
 
@@ -27,7 +27,7 @@ public interface IActionAccessRequestStore
         Guid requesterUserId, ActionAccessRequestStatus? status = null, CancellationToken ct = default);
 
     /// <summary>
-    /// The single non-terminal (Pending) request for a (action, requester) pair, if any.
+    /// The single non-terminal (Pending) request for an (action, requester) pair, if any.
     /// Backs the ≤1-Pending idempotency invariant: <c>IsError</c> (not found) when
     /// none is open.
     /// </summary>

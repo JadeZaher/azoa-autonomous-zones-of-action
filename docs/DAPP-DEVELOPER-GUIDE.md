@@ -2,7 +2,7 @@
 
 This is a quickstart for a **third-party dApp developer** onboarding onto an Azoa
 node run by someone else (the "many devs, one node" model). You do not run the
-backend — a node operator does. You get an user on their node, issue a scoped
+backend — a node operator does. You get a user on their node, issue a scoped
 API key, point the SDK at their node URL, and start authoring dApps.
 
 All the code below uses the published SDK, `azoa-sdk` (TypeScript). Install it:
@@ -11,9 +11,9 @@ All the code below uses the published SDK, `azoa-sdk` (TypeScript). Install it:
 npm install azoa-sdk
 ```
 
-## 1. Register / login an user against the remote node
+## 1. Register / login a user against the remote node
 
-Point the client at the operator's node URL and create (or restore) an user.
+Point the client at the operator's node URL and create (or restore) a user.
 Authentication with email/password yields a JWT the SDK manages for you.
 
 ```ts
@@ -88,7 +88,7 @@ const dapp = new AzoaClient({
 ## 4. First dApp end-to-end: series → action → publish
 
 A **DappSeries** is an ordered collection of actions that compose into a
-deployable dApp. Create one, author a action, add it to the series, and publish the
+deployable dApp. Create one, author an action, add it to the series, and publish the
 action to the marketplace.
 
 ```ts
@@ -134,7 +134,7 @@ Manage the series' actions as your dApp grows:
 
 ## 5. Others can browse your published action
 
-Once a action is `isPublic` and Active, any user on the node can discover it via
+Once an action is `isPublic` and Active, any user on the node can discover it via
 the public marketplace and start it under their own user:
 
 ```ts
@@ -148,7 +148,7 @@ if (isOk(catalog)) {
 await azoa.api.executeAction(someActionId);
 ```
 
-In the node's web UI, the **Actions → Start a ActionDefinition** tab renders this catalog as a
+In the node's web UI, the **Actions → Start an ActionDefinition** tab renders this catalog as a
 browsable grid of cards (no id-pasting required).
 
 ## Where to go next

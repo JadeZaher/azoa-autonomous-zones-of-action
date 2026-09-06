@@ -108,7 +108,7 @@ see `Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics`.
 
 ## §publish-lifecycle — ActionDefinition definition status
 
-A ActionDefinition definition carries a `Status` field (`ActionStatus`, default `Draft`)
+An ActionDefinition definition carries a `Status` field (`ActionStatus`, default `Draft`)
 introduced by `action-dag-semantic-hardening` FR-2. The lifecycle:
 
 ```
@@ -524,7 +524,7 @@ saw/consented to. A later edit + republish recomputes a DIFFERENT hash, so:
 
 **Persistence.** `published_version_hash` is a plain `option<string>` column on both
 `action` and `action_run` (not an FK). Mapped in `SurrealActionStore` /
-`SurrealActionRunStore`; POCOs + goldens updated. Null while a action was never
+`SurrealActionRunStore`; POCOs + goldens updated. Null while an action was never
 published.
 
 **Deferred.** Full immutable-snapshot STORAGE of the whole published graph (so an old

@@ -685,7 +685,7 @@ public class ActionCreateModelValidatorTests
     private static ActionCreateModel Valid() => new()
     {
         Name = "My ActionDefinition",
-        Description = "A action",
+        Description = "An action",
         Nodes = new List<ActionNodeCreateModel>
         {
             new() { Name = "Start", NodeType = ActionNodeType.HolonCreate, IsEntry = true,  IsTerminal = false },

@@ -93,7 +93,7 @@ public class ActionForkLineageTests
     public void ActionDagValidator_LineageNotValidated()
     {
         // The validator validates the intra-iteration node DAG only. There is
-        // no API on it that consumes a ActionRun lineage chain; the chain is
+        // no API on it that consumes an ActionRun lineage chain; the chain is
         // built by IActionRunStore.GetLineageAsync and never enters the
         // validator. This test pins the invariant via type-level shape.
         var validator = typeof(ActionDagValidator);
@@ -103,7 +103,7 @@ public class ActionForkLineageTests
             .ToList();
 
         methods.Should().NotBeEmpty();
-        // The validator must NOT expose any method that takes a ActionRun /
+        // The validator must NOT expose any method that takes an ActionRun /
         // IEnumerable<ActionRun> argument — that would imply lineage is being
         // validated here, contradicting the tree-not-DAG invariant.
         methods.SelectMany(m => m.GetParameters())

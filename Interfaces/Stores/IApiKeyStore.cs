@@ -27,13 +27,13 @@ public interface IApiKeyStore
     Task<ApiKey?> GetByHashAsync(string keyHash, CancellationToken ct);
 
     /// <summary>
-    /// List every key owned by an user, newest first. Includes revoked and
+    /// List every key owned by a user, newest first. Includes revoked and
     /// expired keys (the management UI shows them with a status badge).
     /// </summary>
     Task<IReadOnlyList<ApiKey>> ListByUserAsync(Guid userId, CancellationToken ct);
 
     /// <summary>
-    /// Fetch one key by id, scoped to an user — returns <c>null</c> if the
+    /// Fetch one key by id, scoped to a user — returns <c>null</c> if the
     /// key does not belong to that user (prevents cross-account access).
     /// </summary>
     Task<ApiKey?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken ct);

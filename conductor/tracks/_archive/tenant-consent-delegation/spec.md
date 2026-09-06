@@ -124,7 +124,7 @@ action is **indistinguishable** from a user-driven one — its only check is
   - When a `tenantId` is present, the seam does a **live** `ConsentGrant` lookup
     (grantor=userId, tenant=tenantId, scope ⊇ op, `RevokedAt == null` AND
     (`ExpiresAt == null` OR `now < ExpiresAt`)) **inside the call, before key decrypt**,
-    failing closed. An user-id-only seam cannot satisfy revocation or consent.
+    failing closed. A user-id-only seam cannot satisfy revocation or consent.
 
 **(d) Single chokepoint — enumerate EVERY sign path (C2).** The grant check lives at
 ONE custody chokepoint inside `KeyCustodyService` (covering both `WithSigningKeyAsync`

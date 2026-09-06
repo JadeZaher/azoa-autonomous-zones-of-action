@@ -175,7 +175,7 @@ describe('RunPanel — C4 cross-action run bleed', () => {
   })
 })
 
-describe('RunPanel — C5 stale advance-target survives a action switch', () => {
+describe('RunPanel — C5 stale advance-target survives an action switch', () => {
   it('resets a picked advanceFromNodeId (and a stale error) on action switch, so Advance posts the NEW action run/node', async () => {
     const actionA = makeAction('action-a', [node('a-n1', 'NodeA1', 0), node('a-n2', 'NodeA2', 1)])
     const actionB = makeAction('action-b', [node('b-n1', 'NodeB1', 0)])

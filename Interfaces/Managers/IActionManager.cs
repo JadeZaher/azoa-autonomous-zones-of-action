@@ -23,7 +23,7 @@ public interface IActionManager
     // DAG validation
     Task<AZOAResult<bool>> ValidateDAGAsync(Guid actionId, AZOARequest? request = null);
 
-    // Execution — produces a ActionRun (one execution attempt). Per the
+    // Execution — produces an ActionRun (one execution attempt). Per the
     // action-temporal-fork-model track, runtime state lives on ActionRun +
     // ActionNodeExecution, never on the ActionDefinition definition.
     // tenant-consent-delegation AC4/AC4b: an optional actingTenantId threads the
@@ -159,7 +159,7 @@ public interface IActionManager
     /// <summary>Any viewer (owner||IsPublic) opens a Pending access request. Idempotent per (action, requester): a live Pending is returned; a prior terminal request does not block a fresh one. Rejects owner/already-invited.</summary>
     Task<AZOAResult<ActionAccessRequest>> RequestAccessAsync(Guid actionId, Guid requesterUserId, string? message = null, AZOARequest? request = null);
 
-    /// <summary>Owner approval queue: all requests for a action, optionally status-filtered. Owner-only.</summary>
+    /// <summary>Owner approval queue: all requests for an action, optionally status-filtered. Owner-only.</summary>
     Task<AZOAResult<IEnumerable<ActionAccessRequest>>> ListAccessRequestsAsync(Guid actionId, Guid ownerUserId, ActionAccessRequestStatus? status = null, AZOARequest? request = null);
 
     /// <summary>Owner approves (appends requester to InvitedUserIds) or rejects a Pending request. Scoped by the request's action owner. Terminal-state transitions rejected.</summary>

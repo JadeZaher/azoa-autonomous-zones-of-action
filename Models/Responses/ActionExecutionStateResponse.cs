@@ -4,7 +4,7 @@ using AZOA.WebAPI.Models.Actions;
 
 namespace AZOA.WebAPI.Models.Responses;
 
-/// <summary>Public aggregate view of a action run and its sanitized node executions.</summary>
+/// <summary>Public aggregate view of an action run and its sanitized node executions.</summary>
 public sealed class ActionExecutionStateResponse
 {
     public Guid RunId { get; init; }

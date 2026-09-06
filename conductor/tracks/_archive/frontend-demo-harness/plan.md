@@ -141,7 +141,7 @@
   Create `app/(dashboard)/workflow/page.tsx`. This page exercises the durable workflow engine + economic-primitive-nodes + workflow-sdk end-to-end via `azoa.workflow` (the `WorkflowClient` and `action()` factory composed on the AzoaClient facade).
 
   **Template authoring panel**
-  - Form to compose a action template: name, description, and a small node DAG. Use the `nodeConfig` builders from `@azoa/sdk` to construct node config strings:
+  - Form to compose an action template: name, description, and a small node DAG. Use the `nodeConfig` builders from `@azoa/sdk` to construct node config strings:
     - `nodeConfig.gateCheck({ predicate, reads? })` for gate nodes
     - `nodeConfig.emit({ payload })` for emit nodes
     - `nodeConfig.swap/grant/transfer/refund` for chain nodes (optional, Tier-2)

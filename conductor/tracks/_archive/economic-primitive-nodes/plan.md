@@ -13,7 +13,7 @@
 ## The corrected framing (the inversion)
 
 **Holonic transformations are the base layer; chain/economic actions are an
-opt-in capability on top.** A action is a DAG of operations on holons (create,
+opt-in capability on top.** An action is a DAG of operations on holons (create,
 transform, compose, link, branch, gate, emit), where a holon may be **pure
 metadata** or carry chain data. The blockchain/economic nodes (mint, swap,
 transfer, grant, refund) are the **subset** that tack on-chain actions onto a
@@ -107,7 +107,7 @@ persistence-order safety; no handler is registered for it.
 ## Decisions
 
 ### D2 — Make the wallet binding explicit? (RESOLVED: resolve-from-actor; defer explicit field)
-Do **not** add a `ActionRun.BoundWalletId` field in this track. The capability
+Do **not** add an `ActionRun.BoundWalletId` field in this track. The capability
 check resolves "has a wallet bound" from the run's actor user
 (`ActionRun.UserId:31`) via `WalletManager`. If durable-workflow-engine
 (Track 2) introduces an explicit per-run wallet binding, the capability check

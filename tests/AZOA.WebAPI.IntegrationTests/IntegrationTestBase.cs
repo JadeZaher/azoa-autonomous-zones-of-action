@@ -387,7 +387,7 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
         var builder = new WalletBuilder();
         configure?.Invoke(builder);
 
-        // Wallets require an user context. The TestAuthHandler supplies the
+        // Wallets require a user context. The TestAuthHandler supplies the
         // default user ID (TestAuthHandler.DefaultUserId) as the authenticated
         // user — WalletController reads UserId from the JWT claim.
         var model = new AZOA.WebAPI.Models.Requests.WalletCreateModel

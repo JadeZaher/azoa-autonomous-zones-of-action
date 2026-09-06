@@ -23,7 +23,7 @@ investment record. AZOA contributes an idempotent, KYC-gated, tenant-callable
 | Token-allocation math, balance credit, treasury split, funding-gate evaluation | **Tenant** |
 | The investment record (the tenant's source of truth) | **Tenant** |
 | Deciding *how much* of *which* asset to allocate | **Tenant** |
-| Provisioning a custodial wallet for an user (if absent) | **AZOA** |
+| Provisioning a custodial wallet for a user (if absent) | **AZOA** |
 | Moving the on-chain / custodial asset (mint or transfer) | **AZOA** |
 | Deduping a redelivered trigger so the asset moves exactly once | **AZOA** |
 | KYC gate (fail-closed) on the value-bearing move | **AZOA** |
@@ -36,7 +36,7 @@ AZOA receives an **already-decided amount**. It never computes economics.
 
 - The tenant authenticates to AZOA with an **`X-Api-Key`** header carrying the
   tenant's AZOA API key. AZOA validates it via the existing API-key
-  infrastructure (SHA-256 hashed at rest) and admits the request as an
+  infrastructure (SHA-256 hashed at rest) and admits the request as a
   user-scoped principal — controllers cannot distinguish it from a JWT.
 - The API key MUST carry the `nft:mint` (or `wallet:manage`) **scope** — this is
   what authorises allocation. A key without it receives `403`.

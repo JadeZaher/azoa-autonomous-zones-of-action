@@ -11,8 +11,8 @@ depends_on: [marketplace-guard-hardening]
 
 ## Why
 
-Today a action is a binary: private (owner-only) or `IsPublic` (anyone published +
-Active may run/fork). The ArdaNova many-devs-one-node model needs a middle tier: a
+Today an action is a binary: private (owner-only) or `IsPublic` (anyone published +
+Active may run/fork). The ArdaNova many-devs-one-node model needs a middle tier: an
 action that is **publicly discoverable but runnable only by invited users**, plus a
 self-service path for an interested user to **request access** and for the owner to
 **approve/reject** — an approval flow that mints an invitation.

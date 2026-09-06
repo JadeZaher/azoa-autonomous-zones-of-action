@@ -81,7 +81,7 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
 
   // Mirrors the last action.id this component actually rendered transient run
   // state for. This component instance is reused across actions (no upstream
-  // `key`), so a action switch must reset run/exec/history state synchronously —
+  // `key`), so an action switch must reset run/exec/history state synchronously —
   // done here, during render, per React's "adjusting state when a prop changes"
   // pattern, rather than from inside an effect (which would apply one paint late
   // and trips react-hooks/set-state-in-effect). The actual side effects — the
@@ -90,7 +90,7 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
   //
   // Every piece of transient, per-run-or-per-action UI state must be reset here,
   // not just the "obvious" run/exec state: advanceFromNodeId, gateId,
-  // signalPayload, error and pollStalled all previously survived a action
+  // signalPayload, error and pollStalled all previously survived an action
   // switch, so a value picked (or an error raised) against action A could be
   // silently applied to / shown for action B once the switch landed.
   const [renderedActionId, setRenderedActionId] = useState(action.id)
@@ -235,7 +235,7 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
     try {
       const res = await azoa.workflow.getRunStatus(runId)
       // Bail if the action switched while the fetch was in flight — the resolved
-      // run belongs to a action that's no longer shown.
+      // run belongs to an action that's no longer shown.
       if (actionIdRef.current !== forActionId) return
       if (isOk(res)) {
         // Defense in depth: reject a run whose actionId doesn't match the action

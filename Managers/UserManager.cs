@@ -84,7 +84,7 @@ public class UserManager : IUserManager
 
     public async Task<AZOAResult<IUser>> UpdateAsync(Guid id, UserUpdateModel model, Guid userId, AZOARequest? request = null)
     {
-        // IDOR guard: an user may only edit its own record — the route id
+        // IDOR guard: a user may only edit its own record — the route id
         // must match the authenticated user identity.
         if (id != userId)
             return new AZOAResult<IUser> { IsError = true, Message = "You may only update your own user." };
@@ -119,7 +119,7 @@ public class UserManager : IUserManager
 
     public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid userId, AZOARequest? request = null)
     {
-        // IDOR guard: an user may only delete its own record.
+        // IDOR guard: a user may only delete its own record.
         if (id != userId)
             return new AZOAResult<bool> { IsError = true, Message = "You may only delete your own user." };
         if (id == NodeOperatorIdentity.UserId)

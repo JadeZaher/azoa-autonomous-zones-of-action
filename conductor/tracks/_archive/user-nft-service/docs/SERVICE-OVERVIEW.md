@@ -15,7 +15,7 @@ The User NFT Service provides a comprehensive solution for tightly coupling user
 
 ### Core Components
 
-1. **UserNFT**: Represents an user as an NFT on blockchain
+1. **UserNFT**: Represents a user as an NFT on blockchain
 2. **HolonNFTBinding**: Links holons to user NFTs with permissions
 3. **WalletNFTBinding**: Connects wallets to user NFTs with access control
 4. **UserNFTService**: Main service orchestrating all operations
@@ -84,7 +84,7 @@ Get user NFT by ID
 Get user NFT by blockchain identifiers
 
 #### GET /api/UserNFT/user/{userId}
-Get all NFTs for an user
+Get all NFTs for a user
 
 #### POST /api/UserNFT/{id}/transfer
 Transfer user NFT to new address
@@ -173,7 +173,7 @@ Remove wallet binding
 Get comprehensive view of user NFT with all bindings
 
 #### GET /api/UserNFT/user/{userId}/composite
-Get composite views of all NFTs for an user
+Get composite views of all NFTs for a user
 
 ### Verification
 
@@ -237,7 +237,7 @@ Verify wallet access through user NFT
 
 ## Usage Examples
 
-### Example 1: Minting an User NFT with Holon Binding
+### Example 1: Minting a User NFT with Holon Binding
 
 ```csharp
 // Mint user NFT with holon binding

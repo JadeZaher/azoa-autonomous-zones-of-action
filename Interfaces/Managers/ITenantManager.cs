@@ -29,7 +29,7 @@ public static class TenantAuthorizationError
 }
 
 /// <summary>
-/// Tenant provisioning surface. A "tenant" is an User that owns an API key
+/// Tenant provisioning surface. A "tenant" is a User that owns an API key
 /// carrying the <c>tenant:provision</c> scope (Decision D1 — Option B: scope +
 /// <c>OwnerTenantId</c> self-FK, no parallel Tenant entity). Every method takes
 /// the tenant id as an explicit parameter the controller fills from the

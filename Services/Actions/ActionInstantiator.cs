@@ -8,7 +8,7 @@ using ActionEdge = AZOA.WebAPI.Models.Actions.ActionEdge;
 namespace AZOA.WebAPI.Services.Actions;
 
 /// <summary>
-/// Instantiates a ActionDefinition from a ActionTemplate with parameters.
+/// Instantiates an ActionDefinition from an ActionTemplate with parameters.
 /// Validates template parameters, substitutes placeholders, and produces a valid ActionDefinition.
 /// </summary>
 public class ActionInstantiator : IActionInstantiator

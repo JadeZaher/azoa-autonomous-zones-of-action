@@ -2,7 +2,7 @@
 
 ## Overview
 
-Reframe **STAR-ODK as a action *tree*** — a way to model an entire **dApp,
+Reframe **STAR-ODK as an action *tree*** — a way to model an entire **dApp,
 multi-dApp ecosystem, or cross-chain ecosystem**. The mental model (user, 2026-06-21):
 
 - A **action** = a single flow within a dApp.

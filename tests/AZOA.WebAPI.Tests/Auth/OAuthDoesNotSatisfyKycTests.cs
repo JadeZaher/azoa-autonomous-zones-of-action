@@ -27,7 +27,7 @@ namespace AZOA.WebAPI.Tests.Auth;
 public class OAuthDoesNotSatisfyKycTests
 {
     /// <summary>
-    /// The behavioural proof. An user created by federated sign-in has no
+    /// The behavioural proof. A user created by federated sign-in has no
     /// kyc_submission, because nothing on the OAuth path writes one. The real gate,
     /// asked about that user, refuses.
     /// </summary>
@@ -115,7 +115,7 @@ public class OAuthDoesNotSatisfyKycTests
     }
 
     /// <summary>
-    /// An user minted by federated sign-in starts unverified. IsVerified is the KYC
+    /// A user minted by federated sign-in starts unverified. IsVerified is the KYC
     /// flag; a provider asserting a verified EMAIL must never set it.
     /// </summary>
     [Fact]

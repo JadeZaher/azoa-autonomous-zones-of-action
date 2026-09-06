@@ -44,7 +44,7 @@ envelope, so provider or policy rotation requires re-verification. See
 - `DELETE /api/user/{id}` — Delete user
 
 ### UserNFTController
-- `POST /api/usernft` — Mint an user NFT
+- `POST /api/usernft` — Mint a user NFT
 - `GET /api/usernft/{id}` — Get user NFT by ID
 - `GET /api/usernft/{chainType}/{contractAddress}/{tokenId}` — Get by token
 - `GET /api/usernft/user/{userId}` — List user NFTs

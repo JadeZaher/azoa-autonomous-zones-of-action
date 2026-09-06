@@ -2,7 +2,7 @@
 
 ## Goal
 Tier 1 (architectural design + minimal in-memory cutover): split the action
-model into **definition** vs **runtime** so that a action can be **re-run**,
+model into **definition** vs **runtime** so that an action can be **re-run**,
 **forked mid-execution**, and have **failed branches preserved as
 first-class audit records** rather than overwritten. The SurrealDB schema
 ([[surrealdb-migration]] tasks 9–10) must reflect this split from day one,
@@ -21,7 +21,7 @@ instantiation, versioning) already exists today in [[action-template-existing]]
   both `Status` (lifecycle) and a `Nodes` collection whose `ActionNode.State`,
   `Output`, `Error` are mutated **in place** during execution
   (`Models/ActionDefinition/ActionNode.cs:19-28`).
-- A action can therefore only be executed **once**: re-running mutates the
+- An action can therefore only be executed **once**: re-running mutates the
   same row. Forking is impossible — there is no lineage pointer, and the
   prior attempt's per-node outputs would be overwritten.
 - `ActionDagValidator` (`Services/ActionDagValidator.cs`) enforces strict
@@ -34,10 +34,10 @@ instantiation, versioning) already exists today in [[action-template-existing]]
 ## Design (what this track produces)
 
 ### Domain model
-- `ActionDefinition` becomes the **definition** an user owns (name, nodes, edges,
+- `ActionDefinition` becomes the **definition** a user owns (name, nodes, edges,
   dependencies, template ancestry). It loses `Status`, and `ActionNode`
   loses `State`/`Output`/`Error`.
-- New `ActionRun` — one execution attempt of a `ActionDefinition`. Fields:
+- New `ActionRun` — one execution attempt of an `ActionDefinition`. Fields:
   `Id`, `ActionId`, `UserId`, `Status` (Pending/Running/Succeeded/
   Failed/Forked/Cancelled), `StartedAt`, `EndedAt`, **`ParentRunId?`**,
   **`ForkedAtNodeId?`**, **`ForkReason?`**.

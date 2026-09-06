@@ -13,7 +13,7 @@ namespace AZOA.WebAPI.Interfaces.Stores;
 public interface IKycIdentityStore
 {
     /// <summary>
-    /// Binds an user to a person key inside a scope, creating the row when absent
+    /// Binds a user to a person key inside a scope, creating the row when absent
     /// and appending the user when present. Returns the resulting binding.
     /// </summary>
     Task<AZOAResult<KycIdentity>> BindUserAsync(

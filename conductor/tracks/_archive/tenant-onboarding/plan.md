@@ -11,7 +11,7 @@ The genuinely new design choice. Two valid approaches; **recommendation: Option 
 
 | | **Option A — `Tenant` entity** | **Option B — scope + `OwnerTenantId` FK (RECOMMENDED)** |
 |---|---|---|
-| **Shape** | New `tenant` table + `Tenant` aggregate; tenant has its own API keys via a `Tenant→ApiKey` edge; User gains `TenantId` FK to the tenant table. | No new table. A tenant *is* an User that owns an API key carrying the `tenant:provision` scope. User gains a nullable `OwnerTenantId` self-FK (`record<user>`). |
+| **Shape** | New `tenant` table + `Tenant` aggregate; tenant has its own API keys via a `Tenant→ApiKey` edge; User gains `TenantId` FK to the tenant table. | No new table. A tenant *is* a User that owns an API key carrying the `tenant:provision` scope. User gains a nullable `OwnerTenantId` self-FK (`record<user>`). |
 | **New persistence** | New `tenant` SCHEMAFULL table + POCO + store + DI; second FK target. | One nullable column + one composite index on the existing `user` table. Reuses `IApiKeyStore` / `IUserStore` as-is. |
 | **Auth changes** | New principal type; `ApiKeyAuthenticationHandler.cs:72-79` must learn to emit a `TenantId` claim distinct from `UserId`. | **Zero** auth-handler change — `UserId` claim already identifies the tenant principal; `scope` claims already flow (`ApiKeyAuthenticationHandler.cs:81-87`). |
 | **IDOR reuse** | New guard shape (tenant-vs-tenant) to author from scratch. | Direct extension of the existing route-id-vs-identity guard (`UserManager.cs:76,96`) — assert `child.OwnerTenantId == claimTenantId`. |
@@ -20,7 +20,7 @@ The genuinely new design choice. Two valid approaches; **recommendation: Option 
 
 **Decision: Option B.** It reuses the strong, already-shipped ApiKey infra
 (`ApiKeyAuthenticationHandler.cs`, `ApiKeyController.cs`) instead of standing up a
-parallel principal type and a second auth claim. The tenant principal is just an
+parallel principal type and a second auth claim. The tenant principal is just a
 User with a `tenant:provision` key; ownership is one nullable self-FK; isolation
 is the existing IDOR guard extended by one equality check. Greenfield + no
 customers (project memory `greenfield-prelaunch-no-compat`) means the additive

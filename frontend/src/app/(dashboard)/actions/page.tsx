@@ -713,7 +713,7 @@ function StartPublicAction() {
     setLoading(false)
   }
 
-  /** Select a action from the browse grid — loads it straight into the start flow. */
+  /** Select an action from the browse grid — loads it straight into the start flow. */
   const handleSelect = (q: ActionDefinition) => {
     setActionId(q.id)
     setAction(q)
@@ -792,7 +792,7 @@ function StartPublicAction() {
 
       {/* Manual id-paste fallback */}
       <div className="flex flex-col gap-1.5 sm:max-w-md">
-        <Label htmlFor="public-action-id">Or paste a ActionDefinition ID</Label>
+        <Label htmlFor="public-action-id">Or paste an ActionDefinition ID</Label>
         <div className="flex gap-2">
           <Input
             id="public-action-id"
@@ -865,7 +865,7 @@ export default function ActionsPage() {
   const tabs = [
     { id: 'actions', label: 'My Actions' },
     { id: 'create', label: 'Builder' },
-    { id: 'start-public', label: 'Start a ActionDefinition' },
+    { id: 'start-public', label: 'Start an ActionDefinition' },
     { id: 'my-requests', label: 'My Requests' },
     { id: 'templates', label: 'ActionDefinition Templates' },
     { id: 'node-templates', label: 'Node Templates' },

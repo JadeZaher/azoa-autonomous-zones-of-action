@@ -11,7 +11,7 @@ public interface IUserStore
     /// <summary>Loads every user.</summary>
     Task<AZOAResult<IEnumerable<IUser>>> GetAllAsync(CancellationToken ct = default);
 
-    /// <summary>Inserts or updates an user.</summary>
+    /// <summary>Inserts or updates a user.</summary>
     Task<AZOAResult<IUser>> UpsertAsync(IUser user, CancellationToken ct = default);
 
     /// <summary>
@@ -20,7 +20,7 @@ public interface IUserStore
     /// </summary>
     Task<AZOAResult<IUser>> CreateIfAbsentAsync(IUser user, CancellationToken ct = default);
 
-    /// <summary>Deletes an user by id.</summary>
+    /// <summary>Deletes a user by id.</summary>
     Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>

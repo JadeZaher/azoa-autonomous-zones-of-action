@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Actions;
 
 /// <summary>
-/// Lifecycle status of a ActionDefinition.
+/// Lifecycle status of an ActionDefinition.
 /// </summary>
 public enum ActionStatus
 {
@@ -13,7 +13,7 @@ public enum ActionStatus
 }
 
 /// <summary>
-/// Type of operation a ActionNode dispatches to.
+/// Type of operation an ActionNode dispatches to.
 /// Maps 1:1 to existing AZOA manager methods.
 /// </summary>
 public enum ActionNodeType
@@ -140,7 +140,7 @@ public enum ActionRunAccess
     InviteOnly
 }
 
-/// <summary>Lifecycle of a ActionAccessRequest. Approved/Rejected/Withdrawn are terminal + immutable. See Persistence/SurrealDb/Models/AGENTS.md §action-access-request.</summary>
+/// <summary>Lifecycle of an ActionAccessRequest. Approved/Rejected/Withdrawn are terminal + immutable. See Persistence/SurrealDb/Models/AGENTS.md §action-access-request.</summary>
 public enum ActionAccessRequestStatus
 {
     Pending,

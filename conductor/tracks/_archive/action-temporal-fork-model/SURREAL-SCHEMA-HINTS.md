@@ -20,9 +20,9 @@ adjacent to holon tables).
 | # | Table | Layer | Owns |
 | --- | --- | --- | --- |
 | 1 | `action` | Definition | Workflow shape (name, user, template ancestry, dapp series) |
-| 2 | `action_node` | Definition | Step inside a action (type, config, entry/terminal flags, ExecutionOrder) |
+| 2 | `action_node` | Definition | Step inside an action (type, config, entry/terminal flags, ExecutionOrder) |
 | 3 | `action_edge` | Definition | Control-flow edge between nodes inside one action |
-| 4 | `action_run` | Runtime | One execution attempt of a action |
+| 4 | `action_run` | Runtime | One execution attempt of an action |
 | 5 | `action_node_execution` | Runtime | Per-`(run, node)` state, output, error |
 
 ## RELATE edges

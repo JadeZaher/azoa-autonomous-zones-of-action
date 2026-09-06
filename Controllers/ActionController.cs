@@ -224,7 +224,7 @@ public class ActionController : ControllerBase
     // ─── Durable workflow engine (durable-workflow-engine) ───
 
     /// <summary>
-    /// Start a durable, suspendable workflow run for a action. Unlike
+    /// Start a durable, suspendable workflow run for an action. Unlike
     /// <c>/{id}/execute</c> (which runs the whole DAG synchronously), this
     /// returns immediately and the engine advances the run asynchronously,
     /// suspending at manual/gate/timer nodes.
@@ -580,7 +580,7 @@ public class ActionController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Owner directly invites an user (no request needed; idempotent).</summary>
+    /// <summary>Owner directly invites a user (no request needed; idempotent).</summary>
     [HttpPost("{id:guid}/invite")]
     [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<ActionDefinition>>> Invite(Guid id, [FromBody] ActionInviteRequest body, [FromQuery] AZOARequest? request)

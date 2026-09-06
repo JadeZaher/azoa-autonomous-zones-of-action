@@ -34,7 +34,7 @@ public sealed class ActionAuthorTool : IMcpTool
                 "type": "object",
                 "properties": {
                   "name":        { "type": "string" },
-                  "node_type":   { "type": "string", "description": "A ActionNodeType name, e.g. HolonCreate. See action_catalog." },
+                  "node_type":   { "type": "string", "description": "An ActionNodeType name, e.g. HolonCreate. See action_catalog." },
                   "config":      { "type": "string", "description": "JSON config string for the node; defaults to {}." },
                   "is_entry":    { "type": "boolean" },
                   "is_terminal": { "type": "boolean" }
@@ -69,7 +69,7 @@ public sealed class ActionAuthorTool : IMcpTool
     }
 
     public string Name        => "action_author";
-    public string Description => "Create a action from a DAG spec (nodes + index-based edges). Validates the DAG structure and persists it for the calling user. Call action_catalog first for the node vocabulary and rules.";
+    public string Description => "Create an action from a DAG spec (nodes + index-based edges). Validates the DAG structure and persists it for the calling user. Call action_catalog first for the node vocabulary and rules.";
     public JsonElement InputSchema => _inputSchema;
 
     public async Task<JsonElement> ExecuteAsync(ToolCallContext context, JsonElement args, CancellationToken ct)

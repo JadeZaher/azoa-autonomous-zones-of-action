@@ -621,6 +621,38 @@ a golden is silently overwritten; edit the POCO instead.
 - **No `CreateQuestRequest` reference exists anywhere in ArdaNova** — that symbol
   appears to be Taawun-only and remains unverified (D34).
 
+### Settled 2026-09-06 (post-cutover gate)
+
+**D36 — The KMS vendor is deferred; the custody seam is built provider-agnostic
+with an environment-backed fallback.** No vendor was named anywhere in the repo,
+and the node runs on Railway which has no native KMS. So D27's adapter is built
+against an abstract **sign-without-export** interface behind
+`IPlatformKeyDerivation`, with a concrete implementation that pulls key material
+from the environment/secret store as the interim custody mode.
+⚠ **Consequence stated plainly: this does NOT clear D27's gate.** An env-backed
+key is still config-derived custody — it is a better-shaped seam, not an HSM.
+Phase 3 fiat remains gated until a real vendor lands behind the same interface.
+Record the interim mode explicitly rather than letting `CustodyMode` imply more
+assurance than exists.
+
+**D37 — Authorized: publish `azoa-sdk@0.3.0`, and wipe/re-seed the live
+database.** Both are irreversible or outward-facing and were explicitly approved.
+Also authorized: retiring legacy implementations as needed, adding/updating
+integration tests to match, and **pushing to online staging**.
+*Ordering, which matters:* the npm publish goes first because ArdaNova's CI is
+red against an unpublished pin; the database reconciliation goes **last**, after
+the Phase 5 primitives land, so the schema applies **once** — D29's own reasoning
+that doing the apply twice is pure risk.
+
+**D38 — All four Phase 5 consumer primitives ship, including soulbound
+revocation.** D19 (revocation via Algorand clawback), D20 (off-chain governance
+tally), D21 (principal-only loan tracker), D16 (analytics read surface).
+⚠ **Revocation is the one that touches a value path.** The clawback address is
+already set (`FungibleTokenManager.cs:155`), so the primitive is modest — but
+this codebase has shipped **fabricated-success bugs on exactly these paths**
+three times (§2, §8). Its brief must forbid reporting success without a real
+broadcast confirmation, and it earns an adversarial review its siblings do not.
+
 **D30 — One commit on a branch off `main`.** The owner chose a single commit over
 themed ones. **Consequence accepted knowingly:** this work is **not bisectable** —
 a regression traced into it lands on one ~8,900-line commit covering seven
@@ -1064,6 +1096,26 @@ unknown fiat contract is how the retracted D7 happened.
 step.** Money outbound is the most attack-worthy fiat surface, and escrow release
 across a reversible fiat leg and an irreversible chain leg is the money-printer
 path (D10) — a bug class this codebase has shipped twice.
+
+### ⚠ Open: four sentences where `User` collided with the English word "user"
+
+The rename mapped the *entity* `Avatar`→`User`, but prose in these four places
+already used "user" as a **different, generic** concept alongside it. Both are
+now the same word and the sentences read as nonsense. Fixing them means
+**choosing replacement terminology** (candidates: "wallets", "identities",
+"accounts", "principals") — a content decision, not a grammar fix, so the repair
+pass deliberately left them:
+
+- `docs/DEV-DOCS.md:63` — "Users own their users, authenticating…"
+- `docs/DEV-DOCS.md:73` — "End-user users are self-sovereign; tenants can only
+  act on behalf of a user…"
+- `README.md:108` — "End users own their users (wallet-challenge login…)"
+- `conductor/retros/HANDOFF-ardanova-provider-port.md:115` — "tenant User owns
+  fleet of user Users"
+
+*Why this class exists at all, worth carrying forward:* a rename whose target
+noun is already a common word in the surrounding prose will silently collapse
+two concepts. Grep the target noun in prose **before** the rename, not after.
 
 ### Outstanding, unscheduled
 

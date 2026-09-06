@@ -22,7 +22,7 @@ namespace AZOA.WebAPI.Tests.Actions;
 /// </summary>
 public class GateCheckRunScopeTests
 {
-    // A action with a prior node "mint" and a gate node with NO direct edge from mint,
+    // An action with a prior node "mint" and a gate node with NO direct edge from mint,
     // so the reference can ONLY resolve via the run-scoped root (not upstream.).
     private static (ActionEntity action, Guid gateId, Guid priorNodeId) BuildRunScopeAction(string predicate)
     {

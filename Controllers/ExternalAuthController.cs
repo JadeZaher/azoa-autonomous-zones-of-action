@@ -29,7 +29,7 @@ namespace AZOA.WebAPI.Controllers;
 ///
 /// <para><b>IDOR rule</b> (mirrors <c>WalletAuthController</c>): every owned identity id
 /// comes from the authenticated principal or a single-use token, never a request body.
-/// The link flow needs an user id across a top-level redirect that carries no
+/// The link flow needs a user id across a top-level redirect that carries no
 /// Authorization header, so it threads one through a single-use LINK code minted from
 /// an authenticated request — never a query parameter.</para>
 /// </remarks>
@@ -207,7 +207,7 @@ public sealed class ExternalAuthController : ControllerBase
     /// <remarks>
     /// Rule 1's "explicit user action from an already-authenticated session" lives here:
     /// the ticket can only be obtained with a valid login JWT, and the subsequent
-    /// redirect carries the ticket rather than an user id, so a caller can never name
+    /// redirect carries the ticket rather than a user id, so a caller can never name
     /// an account other than their own.
     /// </remarks>
     [HttpPost("{provider}/link/start")]

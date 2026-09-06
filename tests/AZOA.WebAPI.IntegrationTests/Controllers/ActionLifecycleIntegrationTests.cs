@@ -210,7 +210,7 @@ public class ActionLifecycleIntegrationTests : IntegrationTestBase
 
         var publish = await otherClient.PostAsync($"api/action/{action.Id}/publish", null);
 
-        // LoadOwnedActionAsync scopes by userId; a action owned by a different
+        // LoadOwnedActionAsync scopes by userId; an action owned by a different
         // user returns not-found semantics (IDOR-resistant pattern).
         publish.StatusCode.Should().BeOneOf(
             new[] { HttpStatusCode.BadRequest, HttpStatusCode.NotFound },

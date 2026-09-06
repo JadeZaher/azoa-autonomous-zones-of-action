@@ -126,7 +126,7 @@ swap, action completion, federation publication.** This is a `NodeFeeSchedule` c
 - **Fee model (opinionated MVP):** a flat + basis-points table keyed by operation type, e.g.
   `{ "Mint": { flatBaseUnits, bps }, "Transfer": {...}, "Swap": {...}, "ActionComplete": {...},
   "FederationPublish": {...} }`. `bps` (basis points of the moved value) covers value-scaled
-  actions; `flatBaseUnits` covers fixed actions (mint of a supply-1 NFT, a action completion).
+  actions; `flatBaseUnits` covers fixed actions (mint of a supply-1 NFT, an action completion).
 - **Where fees accrue — CRITICAL, honors [[data-engine-decision]].** The chain is the neutral
   settlement source of truth; **AZOA never holds a stored off-chain balance.** So a fee is NOT a
   ledger row AZOA debits. A fee is one of:

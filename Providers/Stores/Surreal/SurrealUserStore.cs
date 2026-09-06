@@ -89,7 +89,7 @@ public sealed class SurrealUserStore : IUserStore
         if (user.Id == NodeOperatorIdentity.UserId)
             return AZOAResult<IUser>.Failure("The reserved node operator identity cannot be mutated through the user store.");
         if (string.Equals(user.Email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase))
-            return AZOAResult<IUser>.Failure("The reserved node operator email cannot be assigned to an user.");
+            return AZOAResult<IUser>.Failure("The reserved node operator email cannot be assigned to a user.");
 
         try
         {
@@ -127,7 +127,7 @@ public sealed class SurrealUserStore : IUserStore
         if (user.Id != NodeOperatorIdentity.UserId
             && string.Equals(user.Email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase))
         {
-            return AZOAResult<IUser>.Failure("The reserved node operator email cannot be assigned to an user.");
+            return AZOAResult<IUser>.Failure("The reserved node operator email cannot be assigned to a user.");
         }
 
         try

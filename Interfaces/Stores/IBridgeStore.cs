@@ -16,7 +16,7 @@ public interface IBridgeStore
     /// <summary>Loads a single bridge transaction by id, or null if absent.</summary>
     Task<BridgeTransactionResult?> GetBridgeAsync(string id, CancellationToken ct = default);
 
-    /// <summary>Loads an user's bridge transaction history.</summary>
+    /// <summary>Loads a user's bridge transaction history.</summary>
     Task<IReadOnlyList<BridgeTransactionResult>> GetBridgeHistoryAsync(Guid userId, bool descending = false, CancellationToken ct = default);
 
     /// <summary>Loads ids of non-terminal bridges last touched before <paramref name="staleBefore"/>, capped at <paramref name="batch"/>.</summary>

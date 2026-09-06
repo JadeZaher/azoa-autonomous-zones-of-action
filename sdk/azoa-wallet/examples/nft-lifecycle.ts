@@ -44,7 +44,7 @@ async function main() {
 
   // --- User NFT (richer model with bindings) ---
 
-  // Mint an User NFT with holon + wallet bindings
+  // Mint a User NFT with holon + wallet bindings
   const userNft = await azoa.api.mintUserNFT({
     chainType: "Solana",
     name: "Soul Badge",

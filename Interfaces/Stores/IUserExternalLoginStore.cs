@@ -32,7 +32,7 @@ public interface IUserExternalLoginStore
         UserExternalLogin binding,
         CancellationToken ct = default);
 
-    /// <summary>Every federated binding attached to an user, across providers.</summary>
+    /// <summary>Every federated binding attached to a user, across providers.</summary>
     Task<AZOAResult<IReadOnlyList<UserExternalLogin>>> GetByUserAsync(
         string userId,
         CancellationToken ct = default);

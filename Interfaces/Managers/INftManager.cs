@@ -13,7 +13,7 @@ public interface INftManager
     Task<AZOAResult<INft>> GetAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null);
     Task<AZOAResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, Guid? callerUserId = null, AZOARequest? request = null);
     // tenant-consent-delegation AC4/AC4b: an optional actingTenantId stamps the
-    // tenant that drove a action Tier-2 node onto the produced BlockchainOperation
+    // tenant that drove an action Tier-2 node onto the produced BlockchainOperation
     // (along with the signing scope) so the custody seam's live consent gate fires.
     // Null (the default) = user-driven / direct caller — no op-level tenant stamp,
     // identical behaviour to before.

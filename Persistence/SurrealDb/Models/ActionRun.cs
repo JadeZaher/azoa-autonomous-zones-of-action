@@ -12,7 +12,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("action_run",
         Aggregate = "ActionRun (Models/ActionDefinition/ActionRun.cs)",
-        Guardrail = "G6 SCHEMAFULL; runtime canonical lineage carrier. One row per execution attempt of a action.")]
+        Guardrail = "G6 SCHEMAFULL; runtime canonical lineage carrier. One row per execution attempt of an action.")]
     [SurrealNote("Replaces the in-place mutation of ActionDefinition.Status that prevented re-runs from preserving prior attempt state -- see action-temporal-fork-model ADR §1. Re-running a Succeeded action creates a NEW root run (parent_run_id = null); forking a Running run creates a CHILD run with parent_run_id set.")]
     [SurrealNote("Lineage forms a TREE via parent_run_id, not a DAG. The forked_from RELATE edge (defined separately in surrealdb-migration §6.1) mirrors parent_run_id for native graph-traversal queries. Both must be kept in sync at write time.")]
     [SurrealNote("State machine invariants are enforced in ActionManager, not in the DB: Pending->Running (first claim), Running->{Succeeded|Failed|Forked|Cancelled} (terminal). fail_reason carries the supervisor-driven audit string; internal-error failures leave fail_reason null and write the error on the failed action_node_execution row instead.")]

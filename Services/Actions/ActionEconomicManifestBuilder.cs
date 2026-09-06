@@ -8,7 +8,7 @@ using ActionDef = AZOA.WebAPI.Models.Actions.ActionDefinition;
 namespace AZOA.WebAPI.Services.Actions;
 
 /// <summary>
-/// Builds a <see cref="ActionEconomicManifest"/> from a action's DAG: the value-moving
+/// Builds a <see cref="ActionEconomicManifest"/> from an action's DAG: the value-moving
 /// nodes a non-owner marketplace runner is about to auto-fire against themselves.
 /// See Services/ActionDefinition/AGENTS.md §economic-manifest.
 /// </summary>
@@ -41,7 +41,7 @@ public static class ActionEconomicManifestBuilder
         return handler.RequiresChainCapability;
     }
 
-    /// <summary>Compute the manifest for a action in topological (ExecutionOrder) order.</summary>
+    /// <summary>Compute the manifest for an action in topological (ExecutionOrder) order.</summary>
     public static ActionEconomicManifest Build(ActionDef action, IActionNodeHandlerRegistry registry, string? versionHash)
     {
         var manifest = new ActionEconomicManifest

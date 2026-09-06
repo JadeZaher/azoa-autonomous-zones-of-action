@@ -29,7 +29,7 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
 
     // Mints a REAL API key for the given user (persisted key row + hash) so a
     // subsequent X-Api-Key request exercises the real ApiKeyAuthenticationHandler.
-    // The caller must be authenticated as an user whose CURRENT role can self-issue
+    // The caller must be authenticated as a user whose CURRENT role can self-issue
     // the requested scope.
     private async Task<string> MintRealApiKeyAsync(HttpClient owner, string? scopes)
     {
@@ -286,7 +286,7 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    // The endpoint actually works: operator promotes an user to developer, and that
+    // The endpoint actually works: operator promotes a user to developer, and that
     // user can then reach a DappDevelop endpoint via a freshly-issued principal.
     [Fact]
     public async Task AssignRole_AsOperator_ToDeveloper_ThenUserCanAuthor()

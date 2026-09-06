@@ -85,7 +85,7 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
     {
         ArgumentNullException.ThrowIfNull(attributes);
         if (userId == Guid.Empty)
-            return AZOAResult<KycIdentity>.Failure("An user is required to bind an identity.");
+            return AZOAResult<KycIdentity>.Failure("A user is required to bind an identity.");
         if (!_deriver.IsConfigured)
         {
             _logger.LogError(

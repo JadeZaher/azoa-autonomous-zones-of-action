@@ -69,7 +69,7 @@ public interface ICrossChainBridgeService
         Guid? callerUserId = null);
 
     /// <summary>
-    /// Get bridge history for an user.
+    /// Get bridge history for a user.
     /// </summary>
     Task<AZOAResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
         Guid userId, CancellationToken ct = default);

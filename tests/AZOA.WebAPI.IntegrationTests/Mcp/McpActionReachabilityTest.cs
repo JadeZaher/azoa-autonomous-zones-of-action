@@ -10,7 +10,7 @@
 //
 //   ActionReachability_AcceptanceCriterion_IsSingleGraphQueryNotMultiStep
 //     Wraps ISurrealExecutor in a recording decorator that counts ExecuteAsync calls.
-//     Seeds a action with 6 nodes and 7 edges (small diamond DAG).
+//     Seeds an action with 6 nodes and 7 edges (small diamond DAG).
 //     Calls ActionReachabilityTool.ExecuteAsync.
 //     Asserts ExecuteAsync round-trip count == 1 (the combined nodes+edges query
 //     issued via SurrealQuery.Combine is a single network call — NOT 6 calls for

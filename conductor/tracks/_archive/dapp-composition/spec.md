@@ -52,7 +52,7 @@ A collection of actions that together form a dApp.
 `Draft` → `Building` → `Ready` → `Deployed` → `Archived`
 
 ### DappSeriesAction
-An entry linking a action to a dApp series, with ordering and context flow.
+An entry linking an action to a dApp series, with ordering and context flow.
 
 | Field | Type | Description |
 |-------|------|-------------|

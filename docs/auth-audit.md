@@ -670,7 +670,7 @@ These cases exist to verify rejection. E2 MUST NOT add `Authorization` headers t
 
 4. **NetworkController is class-`[AllowAnonymous]`**: Its single action also has `[AllowAnonymous]` — redundant but correct. No suite tests this controller directly.
 
-5. **Suite identity collision** (spec R-2): Every suite that registers an user uses hardcoded emails like `live@test.azoa`, `holon@test.azoa`, etc. Without `_suiteVars` + `{{suitePrefix}}` (W2-E1 + W3-E2), parallel runs collide. The `suitePrefix` fix in E2 is the correct mitigation.
+5. **Suite identity collision** (spec R-2): Every suite that registers a user uses hardcoded emails like `live@test.azoa`, `holon@test.azoa`, etc. Without `_suiteVars` + `{{suitePrefix}}` (W2-E1 + W3-E2), parallel runs collide. The `suitePrefix` fix in E2 is the correct mitigation.
 
 6. **QA/Malicious 401 case count**: Counting Table 4 entries across the 9 editable `_QA` and `_Malicious` suites gives ~30 explicit 401 cases. Together with ~155 spec-predicted auth-not-set-up cases (from suite collision), the total resolved 401 exposure is large. Post-E2, the 30 intentional 401s should remain; the ~155 collision-driven 401s should resolve to 200.
 

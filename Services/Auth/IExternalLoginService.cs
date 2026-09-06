@@ -55,13 +55,13 @@ public interface IExternalLoginService
         Guid? tenantId,
         CancellationToken ct = default);
 
-    /// <summary>Providers currently attached to an user.</summary>
+    /// <summary>Providers currently attached to a user.</summary>
     Task<AZOAResult<IReadOnlyList<UserExternalLogin>>> ListLinksAsync(
         Guid userId,
         CancellationToken ct = default);
 
     /// <summary>
-    /// Loads an user that is still allowed to sign in, re-checking its active state.
+    /// Loads a user that is still allowed to sign in, re-checking its active state.
     /// </summary>
     /// <remarks>
     /// Called at code-redemption time rather than trusting the user snapshot taken at

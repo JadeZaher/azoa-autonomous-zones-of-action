@@ -26,7 +26,7 @@ self-sovereign identity.
 - **HARD CUTOVER** — drop tenant-provision-and-lock entirely. `ProvisionChildAsync`
   is **tests-only**, no seed/production data (confirmed pre-launch, greenfield —
   consistent with [[greenfield-prelaunch-no-compat]]). There is no dual-model period.
-- A **claim** flow exists for the transitional case (a tenant created an user to
+- A **claim** flow exists for the transitional case (a tenant created a user to
   smooth onboarding) → user takes ownership; but the *default and only durable* state
   is self-owned.
 
@@ -69,14 +69,14 @@ the tenant.
   A successful verify either (a) **creates a brand-new self-owned user**
   (`OwnerTenantId = null`) for a never-seen `(address, chainType)`, or (b) **logs into
   the user already wallet-bound to that exact address**. It MUST NOT attach a wallet
-  to, or take over, an user created by another auth method (email/password, tenant
+  to, or take over, a user created by another auth method (email/password, tenant
   provision) — no matching on email/username/`ExternalUserId`. Linking a wallet to an
   *existing* account is a separate, **authenticated** action
   (`POST /api/user/wallet/link`, authed AS that account), never an unauthenticated
   verify.
 
 ### 2. Claim flow (tenant-provisioned → self-owned)
-A user claims an user the tenant provisioned for them, severing tenant custody.
+A user claims a user the tenant provisioned for them, severing tenant custody.
 - `POST /api/user/claim` (authed by a tenant-issued child JWT OR a claim token)
   with a new credential (password OR a verified wallet challenge).
 - On success: set the user's own `PasswordHash`/linked wallet, **set
@@ -95,7 +95,7 @@ A user claims an user the tenant provisioned for them, severing tenant custody.
   it requires a fresh user-controlled secret/signature (a wallet challenge or a
   user-chosen password) NOT derivable from any tenant-held child JWT. Tenant cannot set
   the credential (M1).
-- **No claim-back / shadow re-provision (M1).** After an user is claimed, a tenant
+- **No claim-back / shadow re-provision (M1).** After a user is claimed, a tenant
   MUST NOT be able to re-provision a new tenant-locked user for the same
   `ExternalUserId` (the hard cutover below makes provision-and-lock impossible anyway).
 

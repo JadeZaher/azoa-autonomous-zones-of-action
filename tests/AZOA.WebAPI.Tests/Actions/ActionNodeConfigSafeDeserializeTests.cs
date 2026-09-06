@@ -239,7 +239,7 @@ public class ActionNodeConfigSafeDeserializeTests
     [Fact]
     public async Task PublishAsync_ActionWithBadConfigNode_Fails()
     {
-        // Build a action with a structurally-valid DAG but a node whose config
+        // Build an action with a structurally-valid DAG but a node whose config
         // will fail registry strict validation.
         var entryId = Guid.NewGuid();
         var badNodeId = Guid.NewGuid();

@@ -96,7 +96,7 @@ behavior are updated, not preserved.
 
 **Acceptance criteria:**
 
-- AC-2a: Publishing a action with a structural error (e.g. cycle) fails and the
+- AC-2a: Publishing an action with a structural error (e.g. cycle) fails and the
   action stays `Draft`; publishing a valid action flips to `Active`.
 - AC-2b: `ExecuteAsync` / `StartWorkflowRunAsync` on a `Draft` action return an
   error naming the publish requirement.
@@ -120,7 +120,7 @@ behavior are updated, not preserved.
 
 **Acceptance criteria:**
 
-- AC-3a: A action with a 2-Control-out node fails `StartWorkflowRunAsync`
+- AC-3a: An action with a 2-Control-out node fails `StartWorkflowRunAsync`
   validation with a clear fan-out error (before any saga rows are written) and
   fails publish.
 - AC-3b: The same action still executes on the legacy `ExecuteAsync` path,

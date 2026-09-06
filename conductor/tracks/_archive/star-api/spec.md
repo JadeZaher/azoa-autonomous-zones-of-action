@@ -1,7 +1,7 @@
 # STAR API — Specification
 
 ## Goal
-Expose the STAR dapp-generator API. STAR is not just an ODK key manager; it scaffolds, configures, and orchestrates dapps that operate on the AZOA holon universe. Generated dapps can query holons, trigger cross-chain interactions, and manage assets on behalf of an user.
+Expose the STAR dapp-generator API. STAR is not just an ODK key manager; it scaffolds, configures, and orchestrates dapps that operate on the AZOA holon universe. Generated dapps can query holons, trigger cross-chain interactions, and manage assets on behalf of a user.
 
 ## Endpoints
 

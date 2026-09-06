@@ -72,7 +72,7 @@ export const API_PATHS = {
   USER_LIST: "/api/user",
   USER_UPDATE: (id: string) => `/api/user/${id}`,
   USER_DELETE: (id: string) => `/api/user/${id}`,
-  // user-dapp-rbac: assign an user's DApp role. Operator (JWT operator:admin)
+  // user-dapp-rbac: assign a user's DApp role. Operator (JWT operator:admin)
   // may assign any role incl. manager; a dapp:manager may assign only
   // developer/user. operator:admin is never assignable via this route.
   USER_DAPP_ROLE: (id: string) => `/api/user/${id}/dapp-role`,
@@ -144,7 +144,7 @@ export const API_PATHS = {
   ACTION_RUN_SIGNAL: (runId: string) => `/api/action/runs/${runId}/signal`,
   ACTION_RUN_STATUS: (runId: string) => `/api/action/runs/${runId}`,
   ACTION_RUN_EXECUTION_STATE: (runId: string) => `/api/action/runs/${runId}/execution-state`,
-  // All runs of a action definition (`ListRunsByAction`); user-scoped read.
+  // All runs of an action definition (`ListRunsByAction`); user-scoped read.
   ACTION_RUNS_BY_ACTION: (actionId: string) => `/api/action/${actionId}/runs`,
   // Per-run reconciliation re-probe (reconcile-before-retry §7). Un-parks an
   // `AwaitingReconciliation` run against chain truth; NEVER re-broadcasts.

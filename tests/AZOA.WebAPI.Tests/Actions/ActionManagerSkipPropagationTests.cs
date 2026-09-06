@@ -20,7 +20,7 @@ public class ActionManagerSkipPropagationTests
     // ─── Scaffolding ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Builds a action with a GateCheck →(Control) Transfer1 →(Control) Transfer2
+    /// Builds an action with a GateCheck →(Control) Transfer1 →(Control) Transfer2
     /// chain. GateCheck is wired to a failing handler so it produces Failed.
     /// Returns the manager + run after execution so callers can inspect node states.
     /// </summary>

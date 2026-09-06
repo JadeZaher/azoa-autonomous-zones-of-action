@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════════════════════════
 # BlockchainOperationController live API payloads
-# This suite seeds an user and a blockchain operation, then queries by ID and user.
+# This suite seeds a user and a blockchain operation, then queries by ID and user.
 # ═══════════════════════════════════════════════════════════════
 {"_suiteVars":{"suitePrefix":"blockchainoperationcontroller"}}
 {"id":"seed_user","description":"Register user for blockchain operation tests","method":"POST","path":"/api/user/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_blockchaintest","email":"{{suitePrefix}}_blockchain@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"userId":"result.id"},"saveAs":"buser"}

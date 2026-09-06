@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Actions;
 
 /// <summary>
-/// A single task/step within a action DAG.
+/// A single task/step within an action DAG.
 /// Wraps a call to an existing AZOA manager method.
 /// </summary>
 /// <remarks>

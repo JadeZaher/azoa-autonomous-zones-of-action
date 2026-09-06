@@ -127,7 +127,7 @@ public sealed class SurrealUserExternalLoginStore : IUserExternalLoginStore
             if (!response[0].IsOk)
             {
                 return AZOAResult<UserExternalLogin>.FailureWithCode(
-                    "This provider account is already linked to an user on this node.",
+                    "This provider account is already linked to a user on this node.",
                     AzoaErrorCodes.Conflict);
             }
 
@@ -252,7 +252,7 @@ public sealed class SurrealUserExternalLoginStore : IUserExternalLoginStore
     private AZOAResult<T> StoreFailure<T>(Exception exception, string operation, string entityId)
     {
         var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
-        // entityId is a scope or an user id, never a provider subject: a subject is
+        // entityId is a scope or a user id, never a provider subject: a subject is
         // the federated account identifier and does not belong in logs.
         _logger.LogError(
             exception,

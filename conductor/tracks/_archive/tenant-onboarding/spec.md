@@ -35,7 +35,7 @@ scoped to *that* User.
   `GetUserId()` (`:22-28`); list/revoke/delete (`:84`, `:112`, `:129`) are all
   scoped to that same user.
 - `Persistence/SurrealDb/Models/User.cs:20-83` is the user table — there is
-  **no** field linking an user to an owning tenant, and **no** field storing an
+  **no** field linking a user to an owning tenant, and **no** field storing an
   external application's user id.
 
 There is no concept of a **tenant** user that owns *many* downstream user
@@ -103,7 +103,7 @@ the *minimal* one that reuses the existing ApiKey + User infrastructure:
       index** on `(owner_tenant_id, external_user_id)` so a given tenant cannot
       provision two users for the same external user, while two different tenants
       may share an `external_user_id` value.
-- [ ] Define a tenant principal as "an user that owns an active API key carrying
+- [ ] Define a tenant principal as "a user that owns an active API key carrying
       the `tenant:provision` scope". No new entity, no new table.
 
 ### 2. Tenant-scoped provisioning surface (`TenantController`, route `api/tenant`)
@@ -199,7 +199,7 @@ change to the scope storage, only a defined vocabulary and an enforcement point.
       `/credential`, the tenant can create/list a wallet for that child user
       through the existing wallet surface. Integration test.
 - [ ] **(c) Cross-tenant rejection** — Tenant T1 cannot provision-for, read, or
-      issue a credential for an user owned by tenant T2 (or an unowned user);
+      issue a credential for a user owned by tenant T2 (or an unowned user);
       every such attempt returns 404. **This is the load-bearing security test.**
 - [ ] **(d) Scope enforcement** — A key *without* `tenant:provision` is rejected
       `403` from every `TenantController` action; a child credential cannot exceed

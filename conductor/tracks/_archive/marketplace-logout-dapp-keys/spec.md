@@ -15,7 +15,7 @@ features and hardened them. Archived as shipped. Design-of-record:
 ## What was asked
 
 1. A **logout flow** for the Azoa frontend and users in general.
-2. **API keys that let an user develop their own dApps** — the user's phrase was
+2. **API keys that let a user develop their own dApps** — the user's phrase was
    "should make them a scoped admin for it." An explicit ask to "think through this
    flow critically."
 3. Mid-session: **update frontend elements**, **SDK updates + a version bump**

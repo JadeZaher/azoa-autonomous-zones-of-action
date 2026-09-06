@@ -9,7 +9,7 @@ public interface IHolonManager
     // callerUserId scopes READS to the owner-or-public policy: a holon is returned
     // iff h.UserId == callerUserId || h.IsPublic. A null callerUserId fails
     // closed (public-only) — pass the authenticated user from the controller, or the
-    // acting user from a action node handler. Single-get of a non-owned/non-private
+    // acting user from an action node handler. Single-get of a non-owned/non-private
     // holon returns a "not found"-style result (existence is NOT confirmed).
     // See Controllers/AGENTS.md §cross-tenant-read-scope.
     Task<AZOAResult<IHolon>> GetAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null);

@@ -56,7 +56,7 @@ F9 -- HolonTraverseTool ancestor + descendant walks issue per-step QueryAsync ca
 
 F10 -- HolonTraverseTool ancestor/descendant/peer fetches do NOT re-check user_id
 - File: Mcp/Tools/HolonTraverseTool.cs:86,113,149
-- Issue: After the root holon ownership is verified at line 75-76, the parent-chain / child-subtree / peer queries fetch by id or by parent_holon_id without an user_id predicate. If the parent chain crosses into a different user holon (e.g. a shared-ancestor topology), that data would be returned.
+- Issue: After the root holon ownership is verified at line 75-76, the parent-chain / child-subtree / peer queries fetch by id or by parent_holon_id without a user_id predicate. If the parent chain crosses into a different user holon (e.g. a shared-ancestor topology), that data would be returned.
 - Defensibility: today no controller path produces cross-user parent links -- the polyhierarchy is single-tenant by construction in wave-1. CATALOG.md sec holon_traverse already documents this trade-off (ancestor/descendant queries are unrestricted by user ... structurally reachable from the scoped root only). Documented design intent, not a regression.
 - Action: if cross-user parentage ever becomes possible (the polyhierarchy-graph remodel in surrealdb-migration task 10), add AND user_id = $user_id to lines 86, 113, 149. Tracked as latent.
 

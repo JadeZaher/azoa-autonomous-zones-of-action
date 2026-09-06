@@ -16,7 +16,7 @@ layered on top — not the center.
 
 The framing inverts the old spec:
 
-- **Base layer = holonic transformations.** A action is a DAG of operations on
+- **Base layer = holonic transformations.** An action is a DAG of operations on
   holons (create, transform, compose, link, branch, gate, emit). A holon may be
   **pure metadata** or carry chain data. Most of these nodes touch nothing but
   Holon records + the holon graph + metadata.
@@ -31,7 +31,7 @@ capability check** and **refuses** to run a chain-requiring node unless the run
 has a wallet bound. **Holon transforms and chain actions are the same shape;
 the distinction is a capability check, NOT a type hierarchy** (see D1).
 
-Each node is still a `ActionNodeType` + an `IActionNodeHandler` + one DI line,
+Each node is still an `ActionNodeType` + an `IActionNodeHandler` + one DI line,
 following the existing handler shape exactly:
 `JsonSerializer.Deserialize<TConfig>(context.Node.Config)` → call one AZOA
 manager / primitive → serialize the result → `Ok`/`Fail`
@@ -142,7 +142,7 @@ gaps (GateCheck, Emit).
   copy), `MoveSubtreeAsync:393` (cycle-guarded reparent of a subtree).
 
 Each already has a node handler (`Services/ActionDefinition/Handlers/Holon*NodeHandler.cs`)
-and a `ActionNodeType` member (`ActionEnums.cs:21-35`:
+and an `ActionNodeType` member (`ActionEnums.cs:21-35`:
 `HolonCreate/Update/Delete/Get/Query/Interact/GetChildren/GetPeers/GetAncestors/
 GetDescendants/Propagate/Compose/Clone/MoveSubtree`). **These are the Tier-1
 transformation set and are all `RequiresChainCapability == false`** — they touch
@@ -245,7 +245,7 @@ same SPI shape; only the capability check differs.**
 
 ### Tier 1 — Holonic transformation nodes (`RequiresChainCapability == false`, ZERO chain dependency)
 
-Operate purely on Holon records + metadata + the holon graph. A action using
+Operate purely on Holon records + metadata + the holon graph. An action using
 only these needs **no wallet, no ASA, no blockchain at all**.
 
 **(a) Audit / confirm the existing set is coherent and chain-free.**
@@ -363,7 +363,7 @@ is **not** on this track's critical path. **Defer and note** (D9).
       **before** `HandleAsync`, never broadcasting. A test asserts a Tier-2
       node is rejected with a clear "chain capability required" message when no
       wallet/capability is bound (the gate **fails closed**).
-- [ ] **Pure-metadata action runs with no chain**: a test builds a action of
+- [ ] **Pure-metadata action runs with no chain**: a test builds an action of
       **only Tier-1 nodes** (e.g. `HolonCreate → HolonInteract → GateCheck →
       Emit`), runs it **end-to-end with NO wallet bound and NO chain call**, and
       asserts success (the capability gate is never triggered; no

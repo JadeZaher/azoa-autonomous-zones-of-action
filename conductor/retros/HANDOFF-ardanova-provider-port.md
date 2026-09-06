@@ -12,7 +12,7 @@
 
 ## 1. What this initiative is
 
-Make **AZOA** the custodial blockchain provider — an "user wallet manager" — for
+Make **AZOA** the custodial blockchain provider — a "user wallet manager" — for
 **ArdaNova** (a gamified-ICO / worker-co-op platform) and future apps. AZOA assigns
 and manages each user's Algorand wallet, abstracting the chain away entirely (brand
 requirement: the user never sees a key, fee, or signing prompt).

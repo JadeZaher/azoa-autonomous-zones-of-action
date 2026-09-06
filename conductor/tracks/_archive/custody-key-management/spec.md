@@ -140,7 +140,7 @@ resolve through the **same** `IKeyCustodyService` so the signer stays agnostic.
 
 The platform key is modeled as a **platform pseudo-wallet**: a reserved
 `walletId` (and/or a `CanSignAsync` branch) that resolves to the platform
-mnemonic instead of an User's `encrypted_private_key`. The precedent for a
+mnemonic instead of a User's `encrypted_private_key`. The precedent for a
 config-sourced platform mnemonic already exists — the Algorand faucet reads
 `Blockchain:Faucet:Algorand:Mnemonic` (`Core/AlgorandFaucet.cs:45`). The
 platform custody branch resolves a platform signing key from config the same
@@ -148,7 +148,7 @@ way, encrypts/decrypts it through the same `WalletKeyService`, and yields it via
 the same decrypt→sign→zero contract. **The signer cannot tell** whether it
 signed with a user key or the platform key — only `IKeyCustodyService` knows.
 
-The IDOR guard for the platform pseudo-wallet is a **role check**, not an
+The IDOR guard for the platform pseudo-wallet is a **role check**, not a
 `UserId` equality check: only a caller with platform/manager authority may
 resolve it. This is documented here and stubbed; enforcement detail is recorded
 in `plan.md`.

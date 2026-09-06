@@ -238,7 +238,7 @@ public class TenantManager : ITenantManager
     {
         var result = new AZOAResult<ChildCredentialResponse>();
 
-        // Load the user user. A missing user is NOT_FOUND (404) — the isolation
+        // Load the user. A missing user is NOT_FOUND (404) — the isolation
         // crux: a prober cannot distinguish "no such user" from "no grant".
         var loaded = await _userStore.GetByIdAsync(childId, ct);
         if (loaded.IsError || loaded.Result is null)

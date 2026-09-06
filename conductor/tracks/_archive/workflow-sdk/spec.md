@@ -13,7 +13,7 @@ Extend the cross-platform TypeScript SDK `@azoa/wallet-sdk` (at
 `sdk/azoa-wallet/`) so a consumer app — **ArdaNova** first, any future app
 after — can, **from its own backend**:
 
-1. **DESIGN** a workflow *shape* once as a `ActionTemplate` (a DAG of generic
+1. **DESIGN** a workflow *shape* once as an `ActionTemplate` (a DAG of generic
    nodes with `{{param}}` slots), and
 2. **DRIVE** many actors (player / user / tenant) through **durable,
    step-addressable** action runs of that shape.
@@ -115,7 +115,7 @@ already-present `createActionTemplate` / `getActionTemplate` /
 `listActionTemplates` / `instantiateActionTemplate`
 (`sdk/azoa-wallet/src/api/client.ts:1042-1061`).
 **Acceptance Criteria:**
-- `createTemplate(params)` creates a `ActionTemplate`
+- `createTemplate(params)` creates an `ActionTemplate`
   (`POST /api/action/templates`); returns the typed `ActionTemplateResult`.
 - `getTemplate(templateId)` / `listTemplates()` read templates; `assertUuid` on
   `templateId`.
@@ -129,15 +129,15 @@ already-present `createActionTemplate` / `getActionTemplate` /
 **Priority:** P0
 
 ### FR-2: Fluent run driver (the headline ergonomics — DRIVE)
-**Description:** A `action(actionOrTemplateId)` entrypoint returning a **run
+**Description:** An `action(actionOrTemplateId)` entrypoint returning a **run
 handle** whose chainable methods map 1:1 onto the durable-workflow-engine
 advancement endpoints. This is the literal `action(step1).step(step2B)`.
 **Acceptance Criteria:**
-- `action(idOrRef)` opens a handle. `idOrRef` is a action id, a template id, or a
+- `action(idOrRef)` opens a handle. `idOrRef` is an action id, a template id, or a
   prior run id (disambiguated by an explicit `.fromTemplate()` / `.forRun()`
   modifier or by the entrypoint variant — see Open Questions Q1).
 - `.start({ actor, params })` instantiates + starts a durable run for `actor`
-  (an user id; see FR-3) with `{{param}}` values. Returns the handle (now
+  (a user id; see FR-3) with `{{param}}` values. Returns the handle (now
   bound to a concrete `runId`) so the chain continues.
 - `.step(nodeId)` issues `POST runs/{runId}/advance` with body
   `{ fromNodeId: nodeId }` — the consumer-driven advance. **Chainable:**

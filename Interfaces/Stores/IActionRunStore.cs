@@ -39,7 +39,7 @@ public interface IActionRunStore
     /// <summary>All runs for a single <see cref="ActionDefinition"/> definition.</summary>
     Task<AZOAResult<IEnumerable<ActionRun>>> GetByActionIdAsync(Guid actionId, CancellationToken ct = default);
 
-    /// <summary>All runs initiated by an user across any action.</summary>
+    /// <summary>All runs initiated by a user across any action.</summary>
     Task<AZOAResult<IEnumerable<ActionRun>>> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>All runs currently in a given status (e.g. <see cref="ActionRunStatus.Running"/>).</summary>

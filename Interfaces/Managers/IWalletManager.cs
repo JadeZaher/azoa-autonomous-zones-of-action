@@ -18,7 +18,7 @@ public interface IWalletManager
     /// </summary>
     Task<AZOAResult<IWallet>> GenerateWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null);
 
-    /// <summary>Idempotently creates or returns the platform wallet for an user and chain.</summary>
+    /// <summary>Idempotently creates or returns the platform wallet for a user and chain.</summary>
     Task<AZOAResult<IWallet>> BootstrapWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null);
 
     /// <summary>

@@ -54,7 +54,7 @@ const DOMAINS = [
 ]
 
 const PRIMITIVES = [
-  { tag: 'IDENTITY', title: 'An user you actually own', body: 'Apps act for you only with consent you can see — and revoke — at any moment.' },
+  { tag: 'IDENTITY', title: 'A user you actually own', body: 'Apps act for you only with consent you can see — and revoke — at any moment.' },
   { tag: 'ACTIONS', title: 'Durable graphs of action', body: 'They wait, resume, and reconcile against reality before acting. They never double-spend.' },
   { tag: 'HOLONS', title: 'Value as nested wholes', body: 'Tokens, credits, rights, things — anything that can be held, split, and moved.' },
   { tag: 'RAILS', title: 'Chains and fiat, one seam', body: "A step doesn't care where it settles. Blockchains and banks sit behind the same door." },
@@ -92,7 +92,7 @@ export default function Home() {
         </div>
         <div className="az-hero-badge">
           <span className="az-dot" />
-          LIVE — AGENTS EXECUTING A ACTION GRAPH
+          LIVE — AGENTS EXECUTING AN ACTION GRAPH
         </div>
       </header>
 

@@ -287,7 +287,7 @@ exactly-once. None can be made real until this track ships.
   `op.Parameters["IdempotencyKey"]` (H1) and the second call replays the original
   result.
 - [ ] **KYC-gate-at-choke-point proof.** `POST /api/nft/mint`
-  (`NftController.cs:42-52`) for an user whose KYC is not approved is rejected
+  (`NftController.cs:42-52`) for a user whose KYC is not approved is rejected
   with **no** Holon and **no** `BlockchainOperation` side effect (gate in
   `NftManager.MintAsync`).
 - [ ] **C2 wiring.** An allocation mint produces a `BlockchainOperation` with a

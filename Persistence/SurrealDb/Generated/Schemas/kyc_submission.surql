@@ -2,7 +2,7 @@
 -- Table: kyc_submission
 -- Aggregate: KycSubmission (generic identity-verification module)
 -- Guardrail: G6 SCHEMAFULL
--- Note: Provider-agnostic KYC ledger keyed to User. The gate (IKycGateService) reads the most-recent APPROVED submission for an user rather than a denormalized level on the user table, so the shared user schema is untouched.
+-- Note: Provider-agnostic KYC ledger keyed to User. The gate (IKycGateService) reads the most-recent APPROVED submission for a user rather than a denormalized level on the user table, so the shared user schema is untouched.
 -- Note: status / provider persist as string enum names (JsonStringEnumConverter) to keep rows human-legible. The active-submission guard queries status IN (PENDING, IN_REVIEW).
 -- ============================================================
 

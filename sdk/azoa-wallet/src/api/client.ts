@@ -654,7 +654,7 @@ export interface ActionRunResult {
 // ─── ActionDefinition invitations + request/approval (action-invitations-approval) ───
 
 /**
- * Run-authorization mode for a action, orthogonal to `isPublic` discoverability
+ * Run-authorization mode for an action, orthogonal to `isPublic` discoverability
  * (mirrors C# `Models/ActionDefinition/ActionRunAccess`). `Open` = anyone who can view may
  * run/fork (today's default); `InviteOnly` = only owner + invited users may
  * run/fork, though the action stays viewable.
@@ -1691,13 +1691,13 @@ export class AzoaApiClient {
     return this.request("POST", "/api/action", params);
   }
 
-  /** Get a action by ID, including all nodes, edges, and dependencies. */
+  /** Get an action by ID, including all nodes, edges, and dependencies. */
   async getAction(actionId: string): Promise<Result<ActionResult, SdkError>> {
     assertUuid(actionId, "actionId");
     return this.request("GET", `/api/action/${actionId}`);
   }
 
-  /** List all actions belonging to an user. */
+  /** List all actions belonging to a user. */
   async listActionsByUser(userId: string): Promise<Result<ActionResult[], SdkError>> {
     assertUuid(userId, "userId");
     return this.request("GET", `/api/action/user/${userId}`);
@@ -1719,7 +1719,7 @@ export class AzoaApiClient {
     return this.request("PUT", `/api/action/${actionId}`, params);
   }
 
-  /** Delete a action and all its nodes/edges. */
+  /** Delete an action and all its nodes/edges. */
   async deleteAction(actionId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(actionId, "actionId");
     return this.request("DELETE", `/api/action/${actionId}`);
@@ -1771,7 +1771,7 @@ export class AzoaApiClient {
     return this.request("POST", `/api/action/${actionId}/execute`);
   }
 
-  /** Execute a single node within a action. */
+  /** Execute a single node within an action. */
   async executeActionNode(actionId: string, nodeId: string): Promise<Result<ActionNodeResult, SdkError>> {
     assertUuid(actionId, "actionId");
     assertUuid(nodeId, "nodeId");
@@ -1794,14 +1794,14 @@ export class AzoaApiClient {
     return this.request("PUT", API_PATHS.ACTION_RUN_ACCESS(actionId), body);
   }
 
-  /** Owner-only: directly invite an user to run an `InviteOnly` action (no request needed). */
+  /** Owner-only: directly invite a user to run an `InviteOnly` action (no request needed). */
   async inviteUser(actionId: string, userId: string): Promise<Result<ActionResult, SdkError>> {
     assertUuid(actionId, "actionId");
     assertUuid(userId, "userId");
     return this.request("POST", API_PATHS.ACTION_INVITE(actionId), { userId } as InviteUserRequest);
   }
 
-  /** Owner-only: revoke an user's invitation. In-flight runs are unaffected; new starts are gated. */
+  /** Owner-only: revoke a user's invitation. In-flight runs are unaffected; new starts are gated. */
   async revokeInvite(actionId: string, userId: string): Promise<Result<ActionResult, SdkError>> {
     assertUuid(actionId, "actionId");
     assertUuid(userId, "userId");
@@ -1819,7 +1819,7 @@ export class AzoaApiClient {
     return this.request("POST", API_PATHS.ACTION_ACCESS_REQUESTS(actionId), { message } as RequestAccessBody);
   }
 
-  /** Owner-only: list the approval queue for a action, optionally filtered by status. */
+  /** Owner-only: list the approval queue for an action, optionally filtered by status. */
   async listAccessRequests(actionId: string, status?: ActionAccessRequestStatus): Promise<Result<ActionAccessRequest[], SdkError>> {
     assertUuid(actionId, "actionId");
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
@@ -1855,7 +1855,7 @@ export class AzoaApiClient {
     return this.request("POST", "/api/action/templates", params);
   }
 
-  /** Get a action template by ID. */
+  /** Get an action template by ID. */
   async getActionTemplate(templateId: string): Promise<Result<ActionTemplateResult, SdkError>> {
     assertUuid(templateId, "templateId");
     return this.request("GET", `/api/action/templates/${templateId}`);
@@ -1866,7 +1866,7 @@ export class AzoaApiClient {
     return this.request("GET", "/api/action/templates");
   }
 
-  /** Instantiate a action from a template with optional parameter overrides. */
+  /** Instantiate an action from a template with optional parameter overrides. */
   async instantiateActionTemplate(templateId: string, parameters?: Record<string, string>): Promise<Result<ActionResult, SdkError>> {
     assertUuid(templateId, "templateId");
     return this.request("POST", `/api/action/templates/${templateId}/instantiate`, parameters);
@@ -1909,7 +1909,7 @@ export class AzoaApiClient {
   }
 
   /**
-   * List the scopes an user may self-issue on a new key, each with a human
+   * List the scopes a user may self-issue on a new key, each with a human
    * description (maps to `GET /api/apikey/scopes`). Drives the key-creation scope
    * picker. An empty CSV still means legacy "full access" — these are the opt-in scopes.
    */
@@ -1970,28 +1970,28 @@ export class AzoaApiClient {
     return this.request("GET", API_PATHS.DAPP_SERIES_ACTIONS(seriesId));
   }
 
-  /** Add a action to a dApp-series at a given order. Requires the `dapp:develop` scope. */
+  /** Add an action to a dApp-series at a given order. Requires the `dapp:develop` scope. */
   async addSeriesAction(seriesId: string, params: DappSeriesAddActionParams): Promise<Result<DappSeriesActionResult, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
     assertUuid(params.actionId, "actionId");
     return this.request("POST", API_PATHS.DAPP_SERIES_ACTIONS(seriesId), params);
   }
 
-  /** Remove a action from a dApp-series. Requires the `dapp:develop` scope. */
+  /** Remove an action from a dApp-series. Requires the `dapp:develop` scope. */
   async removeSeriesAction(seriesId: string, actionId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
     assertUuid(actionId, "actionId");
     return this.request("DELETE", API_PATHS.DAPP_SERIES_ACTION_REMOVE(seriesId, actionId));
   }
 
-  /** Change a action's 1-indexed order within a series. Requires the `dapp:develop` scope. */
+  /** Change an action's 1-indexed order within a series. Requires the `dapp:develop` scope. */
   async reorderSeriesAction(seriesId: string, actionId: string, newOrder: number): Promise<Result<DappSeriesActionResult, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
     assertUuid(actionId, "actionId");
     return this.request("PUT", API_PATHS.DAPP_SERIES_ACTION_ORDER(seriesId, actionId), { newOrder });
   }
 
-  /** Update a action's cross-action input mappings (JSON array). Requires the `dapp:develop` scope. */
+  /** Update an action's cross-action input mappings (JSON array). Requires the `dapp:develop` scope. */
   async updateSeriesMappings(seriesId: string, actionId: string, inputMappings: string | null): Promise<Result<DappSeriesActionResult, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
     assertUuid(actionId, "actionId");
