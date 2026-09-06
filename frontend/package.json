@@ -14,7 +14,7 @@
   "dependencies": {
     "@base-ui/react": "^1.4.1",
     "@xyflow/react": "^12.11.0",
-    "azoa-sdk": "0.2.2",
+    "azoa-sdk": "file:../sdk/azoa-wallet",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
