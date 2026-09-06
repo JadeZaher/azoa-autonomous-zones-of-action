@@ -57,7 +57,7 @@ public sealed class ActionCompensateStepHandler : IStepHandler<ActionCompensateP
             .ToList();
 
         _logger.LogInformation(
-            "ActionDefinition workflow: compensating run {RunId} — {Count} succeeded node(s) to settle " +
+            "Action workflow: compensating run {RunId} — {Count} succeeded node(s) to settle " +
             "(idempotency key '{Key}').", p.RunId, succeeded.Count, ctx.StepIdempotencyKey);
 
         // Settle the run: project Cancelled. A compensation step succeeding

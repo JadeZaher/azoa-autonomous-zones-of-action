@@ -22,7 +22,7 @@ import { isOk } from "../../src/core/result.js";
 import { ApiConfigBuilder } from "../builders/index.js";
 
 /**
- * Pinned mirror of C# `Models/ActionDefinition/ActionRunStatus.cs` — all 9 members, in enum
+ * Pinned mirror of C# `Models/Actions/ActionRunStatus.cs` — all 9 members, in enum
  * order. If the C# enum grows, this list AND the union must grow together; the
  * completeness test below fails otherwise.
  */

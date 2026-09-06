@@ -3,7 +3,7 @@ using AZOA.WebAPI.Models.Actions;
 namespace AZOA.WebAPI.Interfaces;
 
 /// <summary>
-/// Validates DAG structure and invariants for an ActionDefinition.
+/// Validates DAG structure and invariants for an action.
 /// </summary>
 public interface IActionDagValidator
 {

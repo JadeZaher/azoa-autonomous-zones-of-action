@@ -3,7 +3,7 @@ using AZOA.WebAPI.Sagas;
 namespace AZOA.WebAPI.Services.Actions.Workflow;
 
 /// <summary>
-/// The single registered <see cref="ISagaDefinition"/> for every durable ActionDefinition
+/// The single registered <see cref="ISagaDefinition"/> for every durable action
 /// run (durable-workflow-engine D1, Approach A — the self-advancing handler).
 ///
 /// <para><b>Type-uniform step resolution.</b> Unlike <see cref="SagaDefinition"/>

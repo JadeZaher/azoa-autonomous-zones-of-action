@@ -43,7 +43,7 @@ frontend/src/
       search/page.tsx       -- Unified search with facets
       star-odk/page.tsx     -- STAR dApp generator (create, generate, deploy)
       settings/page.tsx     -- Provider selection, network config, session info
-      workflow/page.tsx     -- ActionDefinition template authoring + durable run driver (start/step/signal/status, live run state)
+      workflow/page.tsx     -- Action template authoring + durable run driver (start/step/signal/status, live run state)
   components/
     ui/                     -- shadcn/ui components (button, card, dialog, table, etc.)
     layout/

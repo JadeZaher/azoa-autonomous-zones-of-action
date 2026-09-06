@@ -26,8 +26,8 @@ graph TD
     end
     IdentityLayer:::layerFill
 
-    subgraph WorkflowLayer["ActionDefinition & Saga Engine"]
-        ActionDAG["ActionDefinition DAG & Publisher"]
+    subgraph WorkflowLayer["Action & Saga Engine"]
+        ActionDAG["Action DAG & Publisher"]
         SagaRunner["Saga Engine (ActionNodeStepHandler)"]
         Executions["Step-wise Runs (ActionRun)"]
     end
@@ -106,7 +106,7 @@ sequenceDiagram
 
 ---
 
-### 2.2 ActionDefinition Dag Publishing and Semantic Validation
+### 2.2 Action Dag Publishing and Semantic Validation
 Before an action can transition from `Draft` to `Active` (which makes it startable by users), it must pass the `ActionDagExecutabilityValidator` publishing gate.
 
 ```mermaid
@@ -115,7 +115,7 @@ graph TD
     classDef successFill fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
     classDef failFill fill:#ffebee,stroke:#f44336,stroke-width:2px;
 
-    Draft["ActionDefinition (Draft)"] --> PublishRequest["Publish Request"]
+    Draft["Action (Draft)"] --> PublishRequest["Publish Request"]
     
     subgraph Validation["ActionDagExecutabilityValidator"]
         V1["1. Unique Node Names"]:::stepFill
@@ -125,7 +125,7 @@ graph TD
     end
     
     PublishRequest --> Validation
-    Validation -->|All Passed| Active["ActionDefinition (Active)"]:::successFill
+    Validation -->|All Passed| Active["Action (Active)"]:::successFill
     Validation -->|Any Failed| Reject["Reject Publish (400 Bad Request)"]:::failFill
 ```
 
@@ -246,7 +246,7 @@ graph TD
 AZOA organizes files strictly by role rather than domain:
 
 - `/Controllers`: HTTP endpoints (JWT/API-Key validated).
-- `/Managers`: Business orchestrators (ActionDefinition execution loops, dApp composition).
+- `/Managers`: Business orchestrators (action execution loops, dApp composition).
 - `/Services/<domain>`: Emitters, adapters, blockchain network clients, and background workers.
 - `/Core`: Primitives (enums, values, system-wide constants, exceptions, custom auth handlers).
 - `/Persistence`: Database models, generated schemas, and SurrealDB setups.

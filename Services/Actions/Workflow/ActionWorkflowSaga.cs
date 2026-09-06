@@ -4,7 +4,7 @@ namespace AZOA.WebAPI.Services.Actions.Workflow;
 
 /// <summary>
 /// The durable-workflow-engine constants + the typed payload every action
-/// workflow saga step carries. A durable ActionDefinition run maps onto a saga instance
+/// workflow saga step carries. A durable action run maps onto a saga instance
 /// (durable-workflow-engine D1): the saga <c>CorrelationKey</c> = the run id and
 /// each saga step's <c>StepName</c> = the action node id it executes. One generic
 /// <see cref="ActionNodeStepHandler"/> dispatches every node by reading the node
@@ -36,7 +36,7 @@ public static class ActionWorkflowSaga
 /// on the hot path. The handler constructs a FRESH payload per downstream node
 /// when it self-advances (it never forwards the current payload unchanged).
 /// </summary>
-/// <param name="RunId">The durable ActionDefinition run (= saga correlation key).</param>
+/// <param name="RunId">The durable action run (= saga correlation key).</param>
 /// <param name="ActionId">The run's immutable action definition (for edge walk +
 /// node-handler context).</param>
 /// <param name="UserId">The owning user (ownership scoping for value-moving
@@ -73,7 +73,7 @@ public sealed record ActionStepPayload(
 /// unambiguously DI-resolvable. Compensation is per-run (driven by the run's
 /// executed-node history), so it needs only the run + its definition.
 /// </summary>
-/// <param name="RunId">The durable ActionDefinition run to settle back.</param>
+/// <param name="RunId">The durable action run to settle back.</param>
 /// <param name="ActionId">The run's action definition.</param>
 /// <param name="UserId">The owning user (ownership scoping for reversals).</param>
 public sealed record ActionCompensatePayload(

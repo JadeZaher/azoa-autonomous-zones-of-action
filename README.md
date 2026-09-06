@@ -109,7 +109,7 @@ Pre-launch (Alpha Gate). The core platform features have been shipped and harden
 - **Tenant onboarding + Azoa-owned KYC control plane**: The authenticated tenant can idempotently ensure one user identity per external subject, begin or submit KYC from a profile flow, and read a secret-free readiness projection. Wallet creation is limited to explicit Development simulation until a reviewed production custody adapter exists. See [`docs/TENANT-CUSTODIAL-ONBOARDING.md`](docs/TENANT-CUSTODIAL-ONBOARDING.md).
 - **Node operator control plane**: A reserved, revisioned operator identity and mobile-first `/operator` console expose deployment readiness, KYC provider/tenant policy, and human review without exposing host secrets. See [`docs/NODE-HOST.md`](docs/NODE-HOST.md) §8.9.
 - **Durable Actions & Stepwise Execution**: Shipped. Features stepwise saga execution (`ActionNodeStepHandler`), run-scoped variable data bindings (`run.<node>.<field>`), control-cascade skips (failed check nodes stop downstream payout chains), and publish-time semantic/executability validation.
-- **Visual ActionDefinition Builder**: Shipped. Replaced the legacy JSON textarea builder with an interactive drag-and-drop React Flow builder interface in the Next.js frontend.
+- **Visual Action Builder**: Shipped. Replaced the legacy JSON textarea builder with an interactive drag-and-drop React Flow builder interface in the Next.js frontend.
 - **SurrealDB Persistence Cutover**: Shipped. SurrealDB is the sole persistent data engine backing the WebAPI, operating with RocksDB-backed G1 durability.
 - **API Key Scopes & Allowed Origins**: Dynamic CORS allowed origins per API key is implemented / in-flight to secure public and developer-scoped SDK requests.
 

@@ -42,7 +42,7 @@
    wormhole_emitter_address, wormhole_sequence)` UNIQUE on `bridge_tx`), (d)
    empirically verify **B3 UNIQUE-on-nullable** on running container; document
    in schema README; redesign adapter pattern if NULL collisions found.
-   ActionDefinition tables still gated on [[action-temporal-fork-model]]
+   Action tables still gated on [[action-temporal-fork-model]]
 4. ~~Parameterized SurrealQL query layer + lint gate (G3)~~ **Moved to
    [[surrealdb-client-package]] Phase 3 + Phase 5** (query builder lives in
    `Azoa.SurrealDb.Client`; analyzer SRDB0001 ships from
@@ -56,7 +56,7 @@
    Stream A, same day): User, Holon, STAR landed with hand-authored
    090/100/110 `.mermaid` + `.surql` and inline POCOs (mark "replace with
    generated POCO when source-gen catches up"). DI flipped in
-   `Program.cs:244-262` for all 7. **Remaining:** ActionDefinition portion still gated
+   `Program.cs:244-262` for all 7. **Remaining:** Action portion still gated
    on [[action-temporal-fork-model]]
 6. ~~Single-field conditional state transitions~~ **Dissolved by
    [[surrealdb-client-package]] Phase 3 task 14** — `.UpdateOnly(table, id)
@@ -191,7 +191,7 @@ A10. [ ] G7 chain-reconciliation as chaos-tested CI gate — insert N ops,
 16. [x] **Done (2026-05-22, CLOSEOUT Stream D).** `Data/` (containing
     `AZOADbContext.cs` + `SeedData.cs`), `Migrations/` (all 5 migration
     files), every `Providers/Stores/Ef*Store.cs` (User, Wallet, Holon,
-    BlockchainOperation, STAR, ActionDefinition, NFT, Bridge, ActionRunStore stub,
+    BlockchainOperation, STAR, Action, NFT, Bridge, ActionRunStore stub,
     ActionNodeExecutionStore stub), `Core/Idempotency/IdempotencyStore.cs`
     (EF impl), and `Services/Sagas/EfSagaStore.cs` deleted. The
     `Npgsql.EntityFrameworkCore.PostgreSQL` + `Microsoft.EntityFrameworkCore.Design`
@@ -203,7 +203,7 @@ A10. [ ] G7 chain-reconciliation as chaos-tested CI gate — insert N ops,
     (test rewiring: 6 EF-bound test files deleted; ReconciliationServiceTests
     + CrossChainBridgeServiceTests rewired onto in-memory FakeBridgeStore +
     FakeIdempotencyStore preserving every test name + assertion verbatim).
-    `IActionStore` (instantiated-ActionDefinition CRUD) sits on a new
+    `IActionStore` (instantiated-Action CRUD) sits on a new
     `InMemoryActionStore` transition adapter pending the
     [[action-temporal-fork-model]] runtime store landing.
 17. [x] **Done (2026-05-22, CLOSEOUT Stream D).** The `db.Database.Migrate()

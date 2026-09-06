@@ -12,7 +12,7 @@ moving ArdaNova project/task economics into AZOA or replacing AZOA's independent
 ownership, consent, governance, fee, and custody checks.
 
 Project definition and ordinary collaboration paths do not consume this gate.
-ActionDefinition value nodes inherit it through the same managers; a new value-bearing
+Action value nodes inherit it through the same managers; a new value-bearing
 manager must use this seam rather than call `IKycGateService` directly.
 
 ## Tenant profile provisioning
@@ -103,12 +103,12 @@ The `HIGH#7 G2` `expectedState: ActionNodeState.Pending` guard on the skip
 update-row call is unchanged — it prevents a concurrent `ForkAsync` cancellation
 from being silently overwritten.
 
-The **durable engine** (`Services/ActionDefinition/Workflow/`) has no equivalent skip seam —
-see `Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics`.
+The **durable engine** (`Services/Actions/Workflow/`) has no equivalent skip seam —
+see `Services/Actions/Workflow/AGENTS.md §skip-semantics`.
 
-## §publish-lifecycle — ActionDefinition definition status
+## §publish-lifecycle — Action definition status
 
-An ActionDefinition definition carries a `Status` field (`ActionStatus`, default `Draft`)
+An action definition carries a `Status` field (`ActionStatus`, default `Draft`)
 introduced by `action-dag-semantic-hardening` FR-2. The lifecycle:
 
 ```
@@ -134,7 +134,7 @@ Draft ──publish──▶ Active ──unpublish──▶ Draft
 Execute-time re-validation is kept as defence-in-depth (does not replace the
 publish gate; both run independently).
 
-**TOCTOU guard — optimistic concurrency (F6, RESOLVED).** The ActionDefinition definition
+**TOCTOU guard — optimistic concurrency (F6, RESOLVED).** The action definition
 carries a `Version` (`long`) optimistic-concurrency token (`action.version` column,
 default 0). Every lifecycle status transition is a compare-and-swap against it,
 mirroring the bridge's `TryTransitionBridgeStatusAsync` discipline (return the
@@ -373,7 +373,7 @@ Two callers:
   already authorized by `LoadStartableActionAsync`, so a NON-OWNER marketplace run is not
   rejected. **Bug fixed (action-invitations-approval):** the gate previously routed through
   the owner-scoped `CheckDependenciesAsync`, so ANY non-owner run of a public action failed
-  with "ActionDefinition is owned by a different user" (fail-closed) — it broke marketplace runs, not
+  with "Action is owned by a different user" (fail-closed) — it broke marketplace runs, not
   just invite-gated ones. Called on BOTH run-start paths (`ExecuteAsync` legacy +
   `StartWorkflowRunAsync` durable) AFTER DAG validation and BEFORE any run/exec rows are
   written, so an unsatisfied dependency rejects cleanly with no orphaned run.
@@ -456,7 +456,7 @@ disclosure. A non-owner could commit a run without ever seeing that it moves the
 assets.
 
 **Manifest.** `ActionEconomicManifestBuilder.Build` (see
-`Services/ActionDefinition/AGENTS.md §economic-manifest`) walks the DAG in `ExecutionOrder` and
+`Services/Actions/AGENTS.md §economic-manifest`) walks the DAG in `ExecutionOrder` and
 lists every value-moving node (a node whose registered handler declares
 `RequiresChainCapability`, OR whose type is in the explicit economic set) with a
 best-effort declared destination/amount. Surfaced two ways:

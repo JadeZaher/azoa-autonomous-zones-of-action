@@ -138,7 +138,7 @@ Grant-bounty path.**
 
 ---
 
-### Phase C — ActionDefinition value-engine expressiveness (F2–F7)
+### Phase C — Action value-engine expressiveness (F2–F7)
 
 Absorbs all of `action-value-engine-expressiveness` except F1 (shipped). Completes
 the "anyone can define their own economic value engine" goal.
@@ -237,7 +237,7 @@ decision). Remaining, small:
 3. Bridge exactly-once/replay verified; reconciliation coverage gaps closed (B3).
 4. Chain-action nodes reconcile-before-retry; no double-mint path (B4).
 5. Custody: zeroable `byte[]` decrypt + live rotation orchestration (B5).
-6. ActionDefinition F2–F7 all shipped and mirrored in SDK + builder (Phase C).
+6. Action F2–F7 all shipped and mirrored in SDK + builder (Phase C).
 7. Fractionalization flow + ecosystem tree runnable end-to-end (Phase D).
 8. Raw-SELECT sweep done; backfill primitive built; 3.x upgrade closed (Phase E).
 9. Saga operator surface exists (Phase F).

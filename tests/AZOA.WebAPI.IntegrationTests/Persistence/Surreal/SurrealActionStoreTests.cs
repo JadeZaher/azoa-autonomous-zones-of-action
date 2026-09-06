@@ -25,7 +25,7 @@ public class SurrealActionStoreTests : IntegrationTestBase
 {
     public SurrealActionStoreTests(AZOATestWebApplicationFactory factory) : base(factory) { }
 
-    // ── ActionDefinition CRUD round-trip ────────────────────────────────────────────────
+    // ── Action CRUD round-trip ────────────────────────────────────────────────
 
     [SkippableFact]
     public async Task UpsertAction_GetAction_RoundTripsHeadAndChildren()

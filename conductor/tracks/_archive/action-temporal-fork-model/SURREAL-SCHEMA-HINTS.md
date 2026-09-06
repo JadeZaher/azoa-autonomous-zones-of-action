@@ -1,4 +1,4 @@
-# SURREAL-SCHEMA-HINTS — ActionDefinition Tables & RELATE Edges
+# SURREAL-SCHEMA-HINTS — Action Tables & RELATE Edges
 
 **Status:** Hand-off from `action-temporal-fork-model` to `surrealdb-migration`.
 **Consumed by:** `surrealdb-migration` plan tasks **3** (action portion of
@@ -326,5 +326,5 @@ When `surrealdb-migration` task 9 lands, the following must be true:
 - [ ] Wave-1 gate section 5(a) re-runs cleanly **only after** the
       wave-1 base SHA file (`scripts/surrealdb/.wave-1-base-sha`) is
       advanced past this track's commits — the section 5(b) git-diff
-      window then excludes `Models/ActionDefinition/*` changes that this track
+      window then excludes `Models/Actions/*` changes that this track
       introduces.

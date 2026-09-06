@@ -109,7 +109,7 @@ These were found because a silent test-harness bug had been *masking* them.
    `[Column(Flexible=true)]` (golden `operation_log.surql` regenerated).
    **⚠ Verify** there aren't OTHER stores with the same SET-omits-null latent bug on
    `option<>` collection columns — this was found in Holon; the same pattern could
-   exist in Wallet/ActionDefinition/STAR stores. **This is the single most valuable thing you
+   exist in Wallet/Action/STAR stores. **This is the single most valuable thing you
    can do in this review.**
 
 ### 2c. The harness root-cause (test infra, but load-bearing)
@@ -174,7 +174,7 @@ critical/major). What was **already fixed** this session:
 1. **SET-omits-null across OTHER stores.** The Holon empty-collection data-loss bug
    (§2b.3) is a *pattern*. Grep every `Surreal*Store.cs` `ToPoco`/upsert for
    `option<>` collection columns (`array<...>`, `option<object>`) that are only
-   serialized when non-empty. If Wallet/ActionDefinition/STAR/NFT stores share it, emptying a
+   serialized when non-empty. If Wallet/Action/STAR/NFT stores share it, emptying a
    collection silently fails there too. **Highest expected value.**
 2. **The 37-failure integration tail.** Independently reproduce a sample; confirm
    contention (namespace/scheme collisions, shared-container races) vs a masked

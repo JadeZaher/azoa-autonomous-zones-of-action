@@ -171,7 +171,7 @@ public class ActionSemanticsIntegrationTests : IntegrationTestBase
         var body = await publish.Content.ReadAsStringAsync();
         body.Should().ContainEquivalentOf("fan-out", "error must identify the fan-out violation (AC-3a)");
 
-        // ActionDefinition must remain Draft.
+        // Action must remain Draft.
         var get = await Client.GetAsync($"api/action/{action.Id}");
         var refetched = (await ReadResultAsync<ActionDefinition>(get))!.Result!;
         refetched.Status.Should().Be(ActionStatus.Draft, "failed publish must not flip status to Active");

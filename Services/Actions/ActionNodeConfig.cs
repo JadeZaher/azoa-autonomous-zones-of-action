@@ -7,7 +7,7 @@ namespace AZOA.WebAPI.Services.Actions;
 /// <summary>
 /// Shared safe-deserialization helper for action node configs.
 /// All handlers MUST use TryDeserialize instead of Deserialize&lt;T&gt;(...)!
-/// See Services/ActionDefinition/AGENTS.md §node-config.
+/// See Services/Actions/AGENTS.md §node-config.
 /// </summary>
 public static class ActionNodeConfig
 {

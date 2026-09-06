@@ -10,7 +10,7 @@ namespace AZOA.WebAPI.Tests.Actions;
 /// <summary>
 /// Pins the publish-time executability gate: reachability (dominators), output-field
 /// presence (case-insensitive), and best-effort scalar type match.
-/// See Services/ActionDefinition/AGENTS.md §executability-validation.
+/// See Services/Actions/AGENTS.md §executability-validation.
 /// </summary>
 public class ActionDagExecutabilityValidatorTests
 {

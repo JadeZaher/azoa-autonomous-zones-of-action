@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Actions;
 
 /// <summary>
-/// Lifecycle status of an ActionDefinition.
+/// Lifecycle status of an action.
 /// </summary>
 public enum ActionStatus
 {
@@ -83,7 +83,7 @@ public enum ActionNodeType
     // Fractionalization rails (final-hardening D1). Both route through the real
     // Phase-B ICrossChainBridgeService (Algorand real, Solana fail-closed); actor
     // from run context; idempotency seeded {runId}:{nodeId}. No value/peg math in
-    // the node — peg stays tenant-side (Emit). See Services/ActionDefinition/AGENTS.md §fractionalization.
+    // the node — peg stays tenant-side (Emit). See Services/Actions/AGENTS.md §fractionalization.
     Bridge, // lock/bridge an asset cross-chain (InitiateBridgeAsync)
     Back    // reverse/release the bridged asset back (ReverseBridgeAsync)
 }

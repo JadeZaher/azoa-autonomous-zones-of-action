@@ -2,8 +2,8 @@
 
 ## Tasks
 
-1. [x] ~~Create `Models/ActionDefinition/DappSeries.cs`~~ — superseded: entity is source-gen'd into `AZOA.WebAPI.Generated.SurrealDb.DappSeries` from `Persistence/SurrealDb/Schemas/source/210_dapp_series.mermaid`. No hand-written model per the "POCOs from surreal package" directive.
-2. [x] ~~Create `Models/ActionDefinition/DappSeriesAction.cs`~~ — superseded: source-gen'd from `Persistence/SurrealDb/Schemas/source/220_dapp_series_action.mermaid`.
+1. [x] ~~Create `Models/Actions/DappSeries.cs`~~ — superseded: entity is source-gen'd into `AZOA.WebAPI.Generated.SurrealDb.DappSeries` from `Persistence/SurrealDb/Schemas/source/210_dapp_series.mermaid`. No hand-written model per the "POCOs from surreal package" directive.
+2. [x] ~~Create `Models/Actions/DappSeriesAction.cs`~~ — superseded: source-gen'd from `Persistence/SurrealDb/Schemas/source/220_dapp_series_action.mermaid`.
 3. [x] Create `DappManifest` — `Models/Requests/DappCompositionRequests.cs` (in-memory artifact, persisted as JSON string on `dapp_series.manifest`; not a separate aggregate).
 4. [x] ~~EF Core configurations~~ — DEFERRED to surrealdb-migration wave-2 per the in-flight surrealdb cutover. New entities are POCO-only behind the `I*Store` seam; no EF Core involvement.
 5. [x] ~~Add DbSets to `AZOADbContext`~~ — DEFERRED (same reason as task 4).

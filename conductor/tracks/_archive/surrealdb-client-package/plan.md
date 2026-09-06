@@ -93,7 +93,7 @@ subscriptions + saga adoption, week 3+).
 - Generator round-trip: every `.mermaid` source regenerates byte-identical `.surql` on `azoa-surreal generate`
 
 ## Forbidden surface (unchanged from wave-1)
-No worker touches `Models/ActionDefinition/**`, `Services/ActionDagValidator.cs`,
-`Managers/ActionManager.cs`, `Services/ActionDefinition/ActionInstantiator.cs`, or any
+No worker touches `Models/Actions/**`, `Services/ActionDagValidator.cs`,
+`Managers/ActionManager.cs`, `Services/Actions/ActionInstantiator.cs`, or any
 `action_run`/`action_node_execution`/`action_node`/`action_edge`/`action_template`/
 `action_dependency` schema. Reserved for [[action-temporal-fork-model]].

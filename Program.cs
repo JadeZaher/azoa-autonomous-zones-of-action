@@ -880,7 +880,7 @@ builder.Services.AddSingleton<IProviderHealthMonitor, ProviderHealthMonitor>();
 // ─── Per-aggregate stores ───
 // surrealdb-migration wave-2 close-out (Stream A): User/Holon/STAR flip to
 // SurrealDB now that their 090/100/110 .mermaid/.surql schemas + inline-POCO
-// adapters have landed. Only ActionDefinition remains on EF, gated on
+// adapters have landed. Only Action remains on EF, gated on
 // action-temporal-fork-model. Scoped lifetime in both cases.
 builder.Services.AddScoped<IUserStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealUserStore>();
@@ -930,7 +930,7 @@ builder.Services.AddScoped<INftStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftStore>();
 builder.Services.AddScoped<IBridgeStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealBridgeStore>();
-// surrealdb-migration CLOSEOUT Stream C2 (pre-D gap closure): ApiKey + ActionDefinition
+// surrealdb-migration CLOSEOUT Stream C2 (pre-D gap closure): ApiKey + Action
 // template catalog flipped to per-aggregate Surreal stores. ApiKey: backs
 // ApiKeyAuthenticationHandler + ApiKeyController. ActionTemplate: backs
 // ActionInstantiator (definition-side catalog reads only — the runtime
@@ -1477,15 +1477,15 @@ builder.Services.AddScoped<
 // McpToolRegistry's ctor enumerates them at first resolution.
 builder.Services.AddMcpSurface();
 
-// ─── ActionDefinition DAG system ───
+// ─── Action DAG system ───
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IActionDagValidator, AZOA.WebAPI.Services.ActionDagValidator>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IActionDagExecutabilityValidator, AZOA.WebAPI.Services.Actions.ActionDagExecutabilityValidator>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IActionInstantiator, AZOA.WebAPI.Services.Actions.ActionInstantiator>();
 
-// ActionDefinition node handlers — exactly one per ActionNodeType. Registered Scoped: each
+// Action node handlers — exactly one per ActionNodeType. Registered Scoped: each
 // handler wraps scoped managers, so Singleton would capture a disposed scope
 // (captive-dependency bug). Discovered by assembly scan over the single sealed
-// Services/ActionDefinition/Handlers namespace so adding a handler needs no DI edit; the
+// Services/Actions/Handlers namespace so adding a handler needs no DI edit; the
 // registry's ctor still fails fast on a duplicate/missing ActionNodeType.
 foreach (var handlerType in typeof(ActionNodeHandlerRegistry).Assembly
              .GetTypes()

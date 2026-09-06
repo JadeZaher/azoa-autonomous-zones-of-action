@@ -31,7 +31,7 @@ chain actions are the **same shape**; the distinction is a capability check,
 **NOT** a type hierarchy.
 
 - **Mechanism:** add `bool RequiresChainCapability => false;` to
-  `IActionNodeHandler` (`Interfaces/ActionDefinition/IActionNodeHandler.cs:18-32`),
+  `IActionNodeHandler` (`Interfaces/Actions/IActionNodeHandler.cs:18-32`),
   default-implemented to `false`. Tier-2 chain handlers override `=> true`.
 - **Gate location:** the existing dispatch seam in `ActionManager`
   (`Managers/ActionManager.cs:328-337`) — after `_registry.TryGet(...)`, before
@@ -39,7 +39,7 @@ chain actions are the **same shape**; the distinction is a capability check,
   has no wallet bound, set `result = ActionNodeResults.Fail("chain capability
   required: no wallet bound to run")` and skip the handler. **Fails closed.**
 - **Wallet-bound resolution:** the run's actor is `ActionRun.UserId`
-  (`Models/ActionDefinition/ActionRun.cs:31`). "Has a wallet bound" = the actor user has a
+  (`Models/Actions/ActionRun.cs:31`). "Has a wallet bound" = the actor user has a
   usable/default wallet (resolve via `WalletManager`;
   `KeyCustodyService.PlatformWalletId` `Managers/KeyCustodyService.cs:54` is the
   platform fallback). See D2 for whether to make the binding explicit.
@@ -216,7 +216,7 @@ T13 brand-leak test + zero-warning build + full sweep (ONCE, at end)
   (`IActionNodeHandler.cs:18-32`). Append `GateCheck, Emit, Swap, Grant,
   Transfer, Refund` to `ActionNodeType` (`ActionEnums.cs:69`, **append-only**;
   existing rows persist as `(int)`). Add config POCOs to
-  `Models/ActionDefinition/NodeConfigs.cs` (`GateCheckNodeConfig` with `Predicate` string +
+  `Models/Actions/NodeConfigs.cs` (`GateCheckNodeConfig` with `Predicate` string +
   read bindings; `EmitNodeConfig` opaque `JsonElement Payload`; `SwapNodeConfig`;
   `GrantNodeConfig`/`TransferNodeConfig`; `RefundNodeConfig`). One
   `AddSingleton<IActionNodeHandler, …>` per handler.
@@ -300,7 +300,7 @@ T13 brand-leak test + zero-warning build + full sweep (ONCE, at end)
   green.
 
 - **T13 — Brand-leak guard + final sweep (ONCE).**
-  Grep/test that `Services/ActionDefinition/Handlers/*` and new config POCOs contain no
+  Grep/test that `Services/Actions/Handlers/*` and new config POCOs contain no
   `ArdaNova|project-token|project|equity|vesting` strings. Then run the full
   `dotnet build` (zero warnings, `conductor/workflow.md:18`) + `dotnet test`
   sweep **once** at the end (run-once-at-end policy). **Acceptance:** zero

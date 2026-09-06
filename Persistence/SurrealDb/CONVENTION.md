@@ -113,7 +113,7 @@ public class DappSeriesUpdateModel
 |---|---|
 | "Where do I add a new persisted column?" | Add a `[Column(Order = N, Type = "...")]`-decorated property to the POCO in [Models/](Models/). Build → `.surql` regenerates. |
 | "Where do I add `Guid IdGuid { get; set; }`?" | A sibling partial-class file under [Models/](Models/), same namespace. |
-| "Where do I add a `ActionStartedNotification` DTO?" | `Models/Requests/ActionRequests.cs`. References `AZOA.WebAPI.Persistence.SurrealDb.Models.ActionDefinition` by type if it needs to. |
+| "Where do I add an `ActionStartedNotification` DTO?" | `Models/Requests/ActionRequests.cs`. References `AZOA.WebAPI.Persistence.SurrealDb.Models.ActionDefinition` by type if it needs to. |
 | "Where do I write `ComposeAsync(...)` validation logic?" | The manager (`Managers/DappCompositionManager.cs`). Never on the entity. |
 | "What about a *computed* `IsActive` from latest ActionRun?" | Manager-level method, not a partial. The entity doesn't get to query a different aggregate. |
 | "How do I regenerate the `.surql` files?" | `surrealforge generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll`. Or just run the byte-equivalence test — failures point at drift. |

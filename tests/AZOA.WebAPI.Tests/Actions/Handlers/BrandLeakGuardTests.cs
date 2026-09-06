@@ -118,7 +118,7 @@ public class BrandLeakGuardTests
 
     /// <summary>
     /// Walks up from the test assembly's base directory to the repository root —
-    /// the first ancestor that contains a <c>Services/ActionDefinition/Handlers</c> folder.
+    /// the first ancestor that contains a <c>Services/Actions/Handlers</c> folder.
     /// Throws a clear message if it cannot be found (never silently returns a
     /// bad path that would make the scan vacuously pass).
     /// </summary>
@@ -135,7 +135,7 @@ public class BrandLeakGuardTests
 
         throw new InvalidOperationException(
             "Could not locate the repository root (no ancestor of " +
-            $"'{AppContext.BaseDirectory}' contains a 'Services/ActionDefinition/Handlers' " +
+            $"'{AppContext.BaseDirectory}' contains a 'Services/Actions/Handlers' " +
             "directory). The brand-leak guard cannot run — fix path resolution " +
             "rather than letting the scan pass on an empty set.");
     }

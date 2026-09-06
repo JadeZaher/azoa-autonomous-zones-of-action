@@ -15,7 +15,7 @@ public enum OutputFieldType
 
 /// <summary>
 /// The statically-known shape of the JSON a handler writes to
-/// <see cref="ActionNodeExecution.Output"/>. See Services/ActionDefinition/AGENTS.md §output-schema.
+/// <see cref="ActionNodeExecution.Output"/>. See Services/Actions/AGENTS.md §output-schema.
 /// </summary>
 /// <remarks>
 /// One of three cases:
@@ -52,7 +52,7 @@ public sealed record NodeOutputShape(
 /// Authoritative per-<see cref="ActionNodeType"/> declaration of the top-level JSON
 /// shape each handler serializes to <see cref="ActionNodeExecution.Output"/>. Lets a
 /// validator prove <c>$from</c> bindings (presence + type) against real fields.
-/// See Services/ActionDefinition/AGENTS.md §output-schema for the sync contract.
+/// See Services/Actions/AGENTS.md §output-schema for the sync contract.
 /// </summary>
 /// <remarks>
 /// Field names are PascalCase because the repo serializes with

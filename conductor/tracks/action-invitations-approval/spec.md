@@ -56,10 +56,10 @@ New entity `ActionAccessRequest`:
 ## Backend
 
 ### Data model
-- `Models/ActionDefinition/ActionEnums.cs` — add `ActionRunAccess { Open, InviteOnly }` and
+- `Models/Actions/ActionEnums.cs` — add `ActionRunAccess { Open, InviteOnly }` and
   `ActionAccessRequestStatus { Pending, Approved, Rejected, Withdrawn }`.
-- `Models/ActionDefinition/ActionDefinition.cs` — add `RunAccess` (default `Open`) + `InvitedUserIds`.
-- `Models/ActionDefinition/ActionAccessRequest.cs` — new entity (above).
+- `Models/Actions/ActionDefinition.cs` — add `RunAccess` (default `Open`) + `InvitedUserIds`.
+- `Models/Actions/ActionAccessRequest.cs` — new entity (above).
 - SurrealDB: `Persistence/SurrealDb/Models/ActionDefinition.cs` — add `run_access` +
   `invited_user_ids` decorated fields; NEW `ActionAccessRequest` POCO +
   `action_access_request` table. Regenerate goldens
@@ -119,7 +119,7 @@ New entity `ActionAccessRequest`:
   Open / Invite-only; for InviteOnly non-invited actions show a **"Request to take"**
   button (or "Requested — pending" / "Approved — run" per current state); Open actions
   keep the direct Run/Fork action.
-- ActionDefinition detail / builder owner surface — a **run-access toggle** (Open ↔ InviteOnly),
+- Action detail / builder owner surface — a **run-access toggle** (Open ↔ InviteOnly),
   an **invite manager** (add/remove users directly), and an **approval queue** panel
   listing Pending requests with Approve/Reject (+ optional reason).
 - A **"My requests"** view for the requester to see pending/approved/rejected outbound

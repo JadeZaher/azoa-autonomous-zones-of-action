@@ -1,18 +1,18 @@
-# ActionDefinition Core — Specification
+# Action Core — Specification
 
 ## Goal
-Define the core domain models and abstractions for the **ActionDefinition DAG system** — a control-flow orchestration layer on top of the holonic graph and STAR dapp-generator. Each ActionDefinition is a DAG with entry/terminal nodes, optional dependencies on completed actions, and reusable node templates (meta-nodes). A series of Actions composes into a dApp contract.
+Define the core domain models and abstractions for the **Action DAG system** — a control-flow orchestration layer on top of the holonic graph and STAR dapp-generator. Each action is a DAG with entry/terminal nodes, optional dependencies on completed actions, and reusable node templates (meta-nodes). A series of Actions composes into a dApp contract.
 
 ## Architecture Overview
 
 ### Layering
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  dApp (ActionDefinition Series) → Contract Generation                   │  (dapp-composition track)
+│  dApp (Action Series) → Contract Generation                 │  (dapp-composition track)
 ├─────────────────────────────────────────────────────────────┤
-│  ActionDefinition API — REST, Manager, Execution                        │  (action-api track)
+│  Action API — REST, Manager, Execution                      │  (action-api track)
 ├─────────────────────────────────────────────────────────────┤
-│  ActionDefinition Core — Models, DAG, Templates                         │  ← THIS TRACK
+│  Action Core — Models, DAG, Templates                       │  ← THIS TRACK
 ├─────────────────────────────────────────────────────────────┤
 │  Existing AZOA Manager Layer                                │
 │  IHolonManager | INftManager | IWalletManager               │
@@ -24,9 +24,9 @@ Define the core domain models and abstractions for the **ActionDefinition DAG sy
 ```
 
 ### Design Principle
-The ActionDefinition DAG is a **control abstraction** — it encodes execution ordering (what runs before what). The underlying holonic graph (parent/children/peers/nested links) handles data flow and dynamic reconfiguration. The DAG does **not** replace the holon graph; it orchestrates it.
+The Action DAG is a **control abstraction** — it encodes execution ordering (what runs before what). The underlying holonic graph (parent/children/peers/nested links) handles data flow and dynamic reconfiguration. The DAG does **not** replace the holon graph; it orchestrates it.
 
-> **No `DataHint` edges** — the holonic graph already handles data flow. The ActionDefinition DAG is purely control flow.
+> **No `DataHint` edges** — the holonic graph already handles data flow. The Action DAG is purely control flow.
 
 ## Domain Models
 
@@ -37,7 +37,7 @@ A single executable DAG representing a workflow unit.
 |-------|------|-------------|
 | `Id` | `Guid` | Unique identifier |
 | `Name` | `string` | Human-readable action name |
-| `Description` | `string?` | ActionDefinition description |
+| `Description` | `string?` | Action description |
 | `UserId` | `Guid` | Owner user |
 | `Status` | `ActionStatus` | Draft / Active / Completed / Failed / Archived |
 | `Nodes` | `List<ActionNode>` | Nodes in this action's DAG |
@@ -211,7 +211,7 @@ An edge within an ActionTemplate.
 2. **Single Entry**: At least one entry node (`IsEntry = true`, no incoming control edges).
 3. **Single Terminal**: At least one terminal node (`IsTerminal = true`, no outgoing control edges).
 4. **No Orphan Nodes**: Every node must be reachable from an entry node.
-5. **Cross-ActionDefinition Dependencies**: Tracked separately via `ActionDependency`, not as DAG edges.
+5. **Cross-Action Dependencies**: Tracked separately via `ActionDependency`, not as DAG edges.
 6. **Node Template Compatibility**: When instantiating from an ActionNodeTemplate, the config must validate against the template's `ConfigSchema`.
 
 ## Interfaces

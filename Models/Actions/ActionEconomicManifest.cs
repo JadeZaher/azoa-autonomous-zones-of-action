@@ -2,12 +2,12 @@ namespace AZOA.WebAPI.Models.Actions;
 
 /// <summary>
 /// Pre-run disclosure of the value-moving nodes in an action a NON-owner is about to
-/// run against themselves (marketplace consent surface). See Services/ActionDefinition/AGENTS.md
+/// run against themselves (marketplace consent surface). See Services/Actions/AGENTS.md
 /// §economic-manifest.
 /// </summary>
 public class ActionEconomicManifest
 {
-    /// <summary>ActionDefinition whose graph this manifest describes.</summary>
+    /// <summary>Action whose graph this manifest describes.</summary>
     public Guid ActionId { get; set; }
 
     /// <summary>The published-version hash the manifest was computed against (binds disclosure to the exact graph revision).</summary>

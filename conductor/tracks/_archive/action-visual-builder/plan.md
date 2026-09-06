@@ -7,7 +7,7 @@ Shipped in one session 2026-06-20. Recorded here as the as-built task log.
       authoring, text-list "DAG view", read-only template tabs.
 - [x] Confirmed no graph lib installed; React 18 / Next 14 / Tailwind + shadcn.
 - [x] Read SDK action types (`sdk/azoa-wallet/src/api/client.ts`) + backend
-      `ActionNodeType` enum (`Models/ActionDefinition/ActionEnums.cs`) as the catalog SoT.
+      `ActionNodeType` enum (`Models/Actions/ActionEnums.cs`) as the catalog SoT.
 - [x] Confirmed `select`/`dialog`/`checkbox`/`scroll-area` shadcn primitives exist.
 
 ## Phase B — Dependency + catalog
@@ -35,7 +35,7 @@ Shipped in one session 2026-06-20. Recorded here as the as-built task log.
 - [x] `node-template-creator.tsx` — type-aware default-config seeding, 4 JSON
       fields validated before POST.
 - [x] Rewired `actions/page.tsx`: My Actions→DagFlow, Builder→ActionCanvas,
-      ActionDefinition Templates browse+create (canvas reused), Node Templates browse+create.
+      Action Templates browse+create (canvas reused), Node Templates browse+create.
       `useNodeTemplates()` hook feeds the palette; created actions bounce back to
       My Actions tab.
 

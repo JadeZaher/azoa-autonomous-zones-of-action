@@ -5,7 +5,7 @@ namespace AZOA.WebAPI.Interfaces;
 /// <summary>
 /// Publish-time gate that rejects a DAG whose <c>$from</c> binding inputs cannot
 /// be satisfied at runtime (unreachable source, absent output field, or a provable
-/// scalar type mismatch). See Services/ActionDefinition/AGENTS.md §executability-validation.
+/// scalar type mismatch). See Services/Actions/AGENTS.md §executability-validation.
 /// </summary>
 public interface IActionDagExecutabilityValidator
 {

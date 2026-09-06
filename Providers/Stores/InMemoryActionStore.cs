@@ -34,7 +34,7 @@ public sealed class InMemoryActionStore : IActionStore
     private readonly ConcurrentDictionary<Guid, ActionTemplate> _templates = new();
     private readonly ConcurrentDictionary<Guid, ActionNodeTemplate> _nodeTemplates = new();
 
-    // ── ActionDefinition CRUD ────────────────────────────────────────────────────────────
+    // ── Action CRUD ──────────────────────────────────────────────────────────────────────
 
     public Task<AZOAResult<ActionDefinition>> GetActionAsync(Guid id, CancellationToken ct = default)
     {
@@ -44,7 +44,7 @@ public sealed class InMemoryActionStore : IActionStore
         return Task.FromResult(new AZOAResult<ActionDefinition>
         {
             IsError = true,
-            Message = $"ActionDefinition {id} not found.",
+            Message = $"Action {id} not found.",
             Result = null,
         });
     }
@@ -95,7 +95,7 @@ public sealed class InMemoryActionStore : IActionStore
         return Task.FromResult(new AZOAResult<bool>
         {
             Result = removed,
-            Message = removed ? "Deleted." : $"ActionDefinition {id} not found.",
+            Message = removed ? "Deleted." : $"Action {id} not found.",
             IsError = !removed,
         });
     }

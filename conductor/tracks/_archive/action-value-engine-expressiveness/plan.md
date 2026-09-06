@@ -24,12 +24,12 @@ closed, and validates at definition/publish time (FR-1, AC-1a..1f).
 Tasks:
 
 - [x] Task: Extract the shared path parser (V12). New
-  `Services/ActionDefinition/Predicates/GatePath.cs` with `TryParse(string, out IReadOnlyList<string> segments, out string error)`
+  `Services/Actions/Predicates/GatePath.cs` with `TryParse(string, out IReadOnlyList<string> segments, out string error)`
   using the exact lexer segment rules of `GatePredicateEvaluator` (GUID-friendly
   post-dot segments); refactor `GatePredicateEvaluator.ParsePath`/`PathNode` to
   consume it. Tests first: `GatePathTests` pin `upstream.n.a.b`, `holon.<guid>.status`,
   rejects (`a..b`, empty, operator chars, non-Guid where segment rules break).
-- [x] Task: Binding walker + resolver. New `Services/ActionDefinition/ActionConfigBindingResolver.cs`:
+- [x] Task: Binding walker + resolver. New `Services/Actions/ActionConfigBindingResolver.cs`:
   (a) `FindAndValidateBindings(configJson)` — walks JSON, yields `$from` property-value
   nodes with their paths; malformed binding objects (extra keys, non-string
   value, array-element position) are errors; (b)
@@ -41,12 +41,12 @@ Tasks:
 - [x] Task: Wire the legacy engine. In `Managers/ActionManager.cs` `ExecuteAsync`
   node loop (before handler dispatch) and the single-node run path: resolve
   bindings; on error, record the execution `Failed` with the resolver error.
-- [x] Task: Wire the durable engine. In `Services/ActionDefinition/Workflow/ActionNodeStepHandler.cs`
+- [x] Task: Wire the durable engine. In `Services/Actions/Workflow/ActionNodeStepHandler.cs`
   before handler dispatch: same resolve-or-record-Failed seam.
-- [x] Task: Definition-time validation. Extend `Services/ActionDefinition/ActionNodeConfigRegistry.Validate`:
+- [x] Task: Definition-time validation. Extend `Services/Actions/ActionNodeConfigRegistry.Validate`:
   binding pre-pass + shadow round-trip (V1) + publish-only upstream name check.
   Tests: `ActionNodeConfigRegistryBindingTests` (AC-1d i–v, AC-1e).
-- [x] Task: Docs — `Services/ActionDefinition/AGENTS.md` §output-binding added.
+- [x] Task: Docs — `Services/Actions/AGENTS.md` §output-binding added.
 - [x] Task: Commit Phase A.
 
 ## Phase B: F2 — OnFailure edge type (both engines + validator + POCO) [~]
@@ -57,7 +57,7 @@ AC-2a..2f); closes the durable-skip-propagation divergence.
 Tasks:
 
 - [x] Task: Domain enum + POCO. Add `OnFailure` to `ActionEdgeType`
-  (`Models/ActionDefinition/ActionEnums.cs:108`) and to
+  (`Models/Actions/ActionEnums.cs:108`) and to
   `Persistence/SurrealDb/Models/ActionEdge.cs` `ActionEdgeTypeKind` +
   `[Inside("Control", "Conditional", "OnFailure")]` (V4). Regen goldens via
   the pipeline (`AZOA_REGENERATE_GOLDENS` escape hatch, predecessor B-2
@@ -76,7 +76,7 @@ Tasks:
   edges; Control-only fan-out counting explicitly asserted unchanged; new
   check — >1 outgoing OnFailure edges = error when `fanOutAsError`/publish
   profile, warning on legacy. Tests in the existing validator suite (AC-2d).
-- [ ] Task: Durable engine (V5). `Services/ActionDefinition/Workflow/ActionWorkflowEdges.cs`:
+- [ ] Task: Durable engine (V5). `Services/Actions/Workflow/ActionWorkflowEdges.cs`:
   add `ResolveOnFailureSuccessor(action, nodeId)` (0/1/many; many is
   unreachable post-publish but guarded). `ActionNodeStepHandler.cs`: at the
   fresh-failure seam (~266) and the replay seam (~502), when the execution is
@@ -88,7 +88,7 @@ Tasks:
   + `ActionEdgeAddModelValidator`: accept OnFailure; reject OnFailure +
   non-empty Condition (AC-2f). Confirm enum JSON binding accepts the new
   member end-to-end (controller model binding test if a suite exists).
-- [ ] Task: Docs — update `Services/ActionDefinition/Workflow/AGENTS.md` §skip-semantics:
+- [ ] Task: Docs — update `Services/Actions/Workflow/AGENTS.md` §skip-semantics:
   divergence RESOLVED via OnFailure advance; add `Managers/AGENTS.md`
   §onfailure-semantics (V2 rule + V3 handled-failure rationale).
 - [ ] Task: Commit Phase B.
@@ -161,7 +161,7 @@ Tasks:
   + interface, mirroring `SurrealConsentWebhookOutboxStore` (Enqueue /
   DequeueDue / MarkDelivered / MarkRetry / DeadLetter — single-winner
   `WHERE status = $_pending` transitions). Tests mirror the consent store's.
-- [ ] Task: Emit seam (V7/V8). New `Services/ActionDefinition/ActionEmitWebhookEmitter.cs`
+- [ ] Task: Emit seam (V7/V8). New `Services/Actions/ActionEmitWebhookEmitter.cs`
   (interface + impl, DI-registered in `Program.cs`): builds the event from
   (run, node, execution output), no-ops on null `run.ActingTenantId`,
   best-effort enqueue (log-warn on failure, never throw). Call it where the
@@ -254,14 +254,14 @@ Tasks:
   success arm Succeeded + failure arm Skipped; gate-fail run asserts the
   inverse AND run status `Succeeded` (handled failure, AC-2c) — exactly one
   arm per run (AC-2a at HTTP layer).
-- [ ] Task: e2e — $from-bound Transfer amount. ActionDefinition with an upstream node
+- [ ] Task: e2e — $from-bound Transfer amount. Action with an upstream node
   emitting an amount + a Transfer whose config amount is
   `{"$from":"upstream.<node>.<field>"}`, executed against the simulated
   provider (`ArdanovaSimulatedFactory`, wallet seeded per predecessor H-4);
   assert the RESOLVED amount reached the handler (execution row / error
   message carries it) and the node reaches a terminal state — honest-outcome
   posture per H-4, never faked.
-- [ ] Task: e2e — dependency-gated run. ActionDefinition B Required-depends on action A:
+- [ ] Task: e2e — dependency-gated run. Action B Required-depends on action A:
   B's execute refused with A named; run A to Succeeded (same user); B then
   executes. Second user still refused (AC-4b at HTTP layer).
 - [ ] Task: Integrated sweep (run ONCE, in order):

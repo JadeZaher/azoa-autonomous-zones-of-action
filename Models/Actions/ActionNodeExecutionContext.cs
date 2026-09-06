@@ -53,7 +53,7 @@ public sealed class ActionNodeExecutionContext
     /// <summary>Definition node id being executed.</summary>
     public Guid NodeId { get; }
 
-    /// <summary>ActionDefinition definition. Handlers MUST treat as read-only.</summary>
+    /// <summary>Action definition. Handlers MUST treat as read-only.</summary>
     public ActionDefinition ActionDefinition { get; }
 
     /// <summary>The definition node matching <see cref="NodeId"/>.</summary>
@@ -63,7 +63,7 @@ public sealed class ActionNodeExecutionContext
     /// The acting user — the runner. May differ from <see cref="ActionDefinition"/>.UserId
     /// for marketplace runs (a non-owner running another user's PUBLIC action).
     /// ALL identity side-effects (whose wallet/key/holon/asset a node touches) run
-    /// under this user, NOT the action owner. See Services/ActionDefinition/AGENTS.md
+    /// under this user, NOT the action owner. See Services/Actions/AGENTS.md
     /// §acting-user (C1 authorization-inversion fix).
     /// </summary>
     public Guid ActingUserId { get; }
@@ -80,7 +80,7 @@ public sealed class ActionNodeExecutionContext
     /// output by name, not just direct-edge predecessors). Same raw material the
     /// binding resolver builds <c>run.</c> scope from, so gate predicates and $from
     /// bindings resolve the identical root. Empty for entry nodes. See
-    /// Services/ActionDefinition/AGENTS.md §gate-predicate.
+    /// Services/Actions/AGENTS.md §gate-predicate.
     /// </summary>
     public IReadOnlyDictionary<Guid, ActionNodeExecution> AllRunExecutions { get; }
 

@@ -30,10 +30,10 @@ behavior are updated, not preserved.
 | # | Gap | Evidence |
 |---|---|---|
 | 1 | **P0 — skip does not propagate.** Control edge skips target only when source `Failed`; a `Skipped` source lets the target run. Conditional edge with empty `Condition` text is completely inert (neither branch applies). | [Managers/ActionManager.cs](../../../Managers/ActionManager.cs):296–322 (`ExecuteAsync` skip loop): `Control && sourceState == Failed` only; `Conditional && !IsNullOrEmpty(Condition)` guard. Trace: GateCheck →(Control) Transfer1 →(Control) Transfer2 — gate fails → Transfer1 Skipped → **Transfer2 runs**. |
-| 2 | **Validation is not an invariant.** `_dagValidator.Validate` runs only at `POST /{id}/validate`, `ExecuteAsync` (line 244), `StartWorkflowRunAsync` (line 1257+), `GetTopologicalOrderAsync`. `CreateAsync` (line 97) persists with FluentValidation only — a cyclic action saves fine. `AddNodeAsync`/`UpdateNodeAsync`/`RemoveEdgeAsync` do no graph validation; `AddEdgeAsync` cycle-checks only. `ExecutionOrder` goes stale after mutations. **Note:** the ActionDefinition *definition* currently has NO status field — `status` was intentionally removed from the `action` POCO by action-temporal-fork-model (see `Persistence/SurrealDb/Models/ActionDefinition.cs` SurrealNote); `ActionStatus` (Draft/Active/Completed/Failed/Archived) exists in `Models/ActionDefinition/ActionEnums.cs` but is unpersisted for definitions. |
-| 3 | **Engine-profile fan-out divergence.** Durable engine hard-rejects >1 outgoing Control edge at runtime ([Services/ActionDefinition/Workflow/ActionWorkflowEdges.cs](../../../Services/ActionDefinition/Workflow/ActionWorkflowEdges.cs):34–42 `ResolveSingleSuccessor` → `SuccessorKind.FanOut`); legacy engine runs fan-out fine in topo order; validator accepts both. Same stored action: valid + runnable on one engine, guaranteed mid-run failure on the other. |
-| 4 | **Config is schema-unchecked + unsafely deserialized.** Node `Config` is a raw JSON string (≤64KB) validated only as "is a string". 29/30 handlers in `Services/ActionDefinition/Handlers/` call `JsonSerializer.Deserialize<T>(...)!` — malformed config throws mid-run; missing fields silently default (a Transfer with defaulted target/amount is silent-wrong). Only `GateCheckNodeHandler` catches. |
-| 5 | **`ExtractBoundHolonIds` naming hole.** [Managers/DappCompositionManager.cs](../../../Managers/DappCompositionManager.cs):503–527 scans Config JSON for *string* properties named `*holon*` (case-insensitive) holding a Guid. `GateCheckNodeConfig.Holons` ([Models/ActionDefinition/NodeConfigs.cs](../../../Models/ActionDefinition/NodeConfigs.cs):100) is a `List<Guid>` — array values are never collected, so gate-check holon refs are invisible to composition validation. |
+| 2 | **Validation is not an invariant.** `_dagValidator.Validate` runs only at `POST /{id}/validate`, `ExecuteAsync` (line 244), `StartWorkflowRunAsync` (line 1257+), `GetTopologicalOrderAsync`. `CreateAsync` (line 97) persists with FluentValidation only — a cyclic action saves fine. `AddNodeAsync`/`UpdateNodeAsync`/`RemoveEdgeAsync` do no graph validation; `AddEdgeAsync` cycle-checks only. `ExecutionOrder` goes stale after mutations. **Note:** the action *definition* currently has NO status field — `status` was intentionally removed from the `action` POCO by action-temporal-fork-model (see `Persistence/SurrealDb/Models/ActionDefinition.cs` SurrealNote); `ActionStatus` (Draft/Active/Completed/Failed/Archived) exists in `Models/Actions/ActionEnums.cs` but is unpersisted for definitions. |
+| 3 | **Engine-profile fan-out divergence.** Durable engine hard-rejects >1 outgoing Control edge at runtime ([Services/Actions/Workflow/ActionWorkflowEdges.cs](../../../Services/Actions/Workflow/ActionWorkflowEdges.cs):34–42 `ResolveSingleSuccessor` → `SuccessorKind.FanOut`); legacy engine runs fan-out fine in topo order; validator accepts both. Same stored action: valid + runnable on one engine, guaranteed mid-run failure on the other. |
+| 4 | **Config is schema-unchecked + unsafely deserialized.** Node `Config` is a raw JSON string (≤64KB) validated only as "is a string". 29/30 handlers in `Services/Actions/Handlers/` call `JsonSerializer.Deserialize<T>(...)!` — malformed config throws mid-run; missing fields silently default (a Transfer with defaulted target/amount is silent-wrong). Only `GateCheckNodeHandler` catches. |
+| 5 | **`ExtractBoundHolonIds` naming hole.** [Managers/DappCompositionManager.cs](../../../Managers/DappCompositionManager.cs):503–527 scans Config JSON for *string* properties named `*holon*` (case-insensitive) holding a Guid. `GateCheckNodeConfig.Holons` ([Models/Actions/NodeConfigs.cs](../../../Models/Actions/NodeConfigs.cs):100) is a `List<Guid>` — array values are never collected, so gate-check holon refs are invisible to composition validation. |
 | 6 | **Holon parent-cycle guard is move-only.** `HolonManager.MoveSubtreeAsync` ([Managers/HolonManager.cs](../../../Managers/HolonManager.cs):393–398) checks descendant-cycle; `CreateAsync` (line ~38), `UpdateAsync` (line ~61), and `InteractAsync` (lines ~104–105, `NewParentHolonId`) write `ParentHolonId` with no check — A-parent-B then B-parent-A persists a cycle. Traversals won't hang (visited sets) but `GetAncestorsAsync` silently returns truncated ancestry. |
 
 ## Functional Requirements
@@ -52,10 +52,10 @@ behavior are updated, not preserved.
   `Validators/ActionEdgeCreateModelValidator.cs` AND on the `AddEdgeAsync` /
   `ActionEdgeAddModel` surface (no validator exists for the add model today; add
   the rule wherever that surface validates).
-- (d) **Durable-path check:** `Services/ActionDefinition/Workflow/ActionNodeStepHandler.cs` +
+- (d) **Durable-path check:** `Services/Actions/Workflow/ActionNodeStepHandler.cs` +
   `ActionWorkflowEdges.cs` follow single-Control-successor chains and handle
   failure via saga retry/compensation, not skip. If no equivalent skip seam
-  exists, **document the divergence** in `Services/ActionDefinition/Workflow/` AGENTS.md
+  exists, **document the divergence** in `Services/Actions/Workflow/` AGENTS.md
   (and this track's notes) and align only where cheap.
 
 **Acceptance criteria:**
@@ -75,8 +75,8 @@ behavior are updated, not preserved.
 
 **Locked fix:** make `ActionStatus.Draft → Active` a real publish transition.
 
-- Reintroduce a definition-lifecycle `Status` on the ActionDefinition definition
-  (domain `Models/ActionDefinition/ActionDefinition.cs` + POCO `Persistence/SurrealDb/Models/ActionDefinition.cs`),
+- Reintroduce a definition-lifecycle `Status` on the action definition
+  (domain `Models/Actions/ActionDefinition.cs` + POCO `Persistence/SurrealDb/Models/ActionDefinition.cs`),
   default `Draft`. POCO enum/`[Inside]` constraint MUST mirror the full domain
   `ActionStatus` enum ([action-run-status-inside-constraint-gap] lesson); **regen
   goldens, never hand-edit `.surql`**.
@@ -130,13 +130,13 @@ behavior are updated, not preserved.
 
 **Locked fix — typed-DTO round-trip IS the validation; no JSON-Schema engine:**
 
-- (a) A shared helper (e.g. `Services/ActionDefinition/ActionNodeConfig.TryDeserialize<T>`
+- (a) A shared helper (e.g. `Services/Actions/ActionNodeConfig.TryDeserialize<T>`
   or equivalent result-returning API) used by ALL handlers in
-  `Services/ActionDefinition/Handlers/` — malformed/missing config returns
+  `Services/Actions/Handlers/` — malformed/missing config returns
   `ActionNodeResults.Fail` with a clear message (node type + parse error), never
   an unhandled exception. Replaces every `JsonSerializer.Deserialize<T>(...)!`.
 - (b) Definition-time validation: a registry mapping `ActionNodeType` → config
-  DTO type (DTOs live in `Models/ActionDefinition/NodeConfigs.cs`). At node create/update
+  DTO type (DTOs live in `Models/Actions/NodeConfigs.cs`). At node create/update
   AND at the publish gate, strict deserialization
   (`System.Text.Json` with `UnmappedMemberHandling.Disallow` where feasible)
   rejects malformed/unknown-member config.
@@ -192,7 +192,7 @@ a clear error message.
   Coverage per workflow.md (>70% manager/service logic on touched code).
 - **NFR-3 (docs convention):** terse one-line doc-comments; rationale goes in
   directory-level AGENTS.md sections (skip semantics in `Managers/` or
-  `Services/ActionDefinition/` AGENTS.md; publish lifecycle likewise).
+  `Services/Actions/` AGENTS.md; publish lifecycle likewise).
 - **NFR-4 (schema discipline):** any `Persistence/SurrealDb/Models/` change
   regenerates goldens via the pipeline; `.surql` never hand-edited.
 - **NFR-5 (commits):** `[action-dag-semantic-hardening] <imperative>`.

@@ -85,7 +85,7 @@ envelope, so provider or policy rotation requires re-verification. See
 
 30 endpoints total. Per ADR §2.2, `activate`/`complete`/`fail`/`execution-state` are exposed on `ActionRun`, not `ActionDefinition`.
 
-**ActionDefinition CRUD:**
+**Action CRUD:**
 - `POST /api/action` — Create action
 - `GET /api/action/{id}` — Get action by ID
 - `GET /api/action/user/{userId}` — List actions by user
@@ -162,7 +162,7 @@ envelope, so provider or policy rotation requires re-verification. See
 
 | Manager | Public Methods | Role |
 |---|---|---|
-| **ActionManager** | 16 | ActionDefinition DAG orchestration, execution, templates |
+| **ActionManager** | 16 | Action DAG orchestration, execution, templates |
 | **HolonManager** | 15 | Holon CRUD, asset queries, portfolio aggregation |
 | **DappCompositionManager** | 14 | DApp series + composition queries |
 | **WalletManager** | 11 | Wallet CRUD, balance federation, portfolio, faucet |
@@ -187,7 +187,7 @@ The SDK provides a typed `AzoaApiClient` wrapping all 15 controllers. All amount
 
 **Bridge:** `getBridgeRoutes`, `initiateBridge`, `getBridgeStatus`, `completeBridge`, `getBridgeHistory`, `fetchVAA`, `redeemBridge`, `reverseBridge`
 
-**ActionDefinition:** `createAction`, `getAction`, `listActionsByUser`, `updateAction`, `deleteAction`, `executeAction`, `executeActionNode`, `createActionTemplate`, `getActionTemplate`, `listActionTemplates`, `instantiateActionTemplate`
+**Action:** `createAction`, `getAction`, `listActionsByUser`, `updateAction`, `deleteAction`, `executeAction`, `executeActionNode`, `createActionTemplate`, `getActionTemplate`, `listActionTemplates`, `instantiateActionTemplate`
 
 **STARODK:** `getSTARODK`, `listSTARODK`, `createSTARODK`, `deleteSTARODK`, `generateSTARDapp`, `deploySTARODK`
 

@@ -27,7 +27,7 @@ public class ActionNodeExecution
     /// <summary>Owning run.</summary>
     public Guid RunId { get; set; }
 
-    /// <summary>ActionDefinition definition node this execution corresponds to.</summary>
+    /// <summary>Action definition node this execution corresponds to.</summary>
     public Guid NodeId { get; set; }
 
     /// <summary>Current per-node lifecycle position. See <see cref="ActionNodeState"/>.</summary>

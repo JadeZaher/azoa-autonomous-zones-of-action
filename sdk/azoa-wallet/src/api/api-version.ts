@@ -132,7 +132,7 @@ export const API_PATHS = {
   // Marketplace browse: public + Active actions any authenticated user may fork/start.
   ACTION_PUBLIC: "/api/action/public",
 
-  // ActionDefinition definition lifecycle (action-dag-semantic-hardening FR-2 / FR-8).
+  // Action definition lifecycle (action-dag-semantic-hardening FR-2 / FR-8).
   ACTION_PUBLISH: (actionId: string) => `/api/action/${actionId}/publish`,
   ACTION_UNPUBLISH: (actionId: string) => `/api/action/${actionId}/unpublish`,
 

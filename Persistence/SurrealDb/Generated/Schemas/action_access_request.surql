@@ -1,6 +1,6 @@
 -- ============================================================
 -- Table: action_access_request
--- Aggregate: ActionAccessRequest (Models/ActionDefinition/ActionAccessRequest.cs)
+-- Aggregate: ActionAccessRequest (Models/Actions/ActionAccessRequest.cs)
 -- Guardrail: G6 SCHEMAFULL; one row per (action, requester) access request. Owner approval mints an invite (appends to action.invited_user_ids).
 -- Note: Request/approve flow for InviteOnly actions (action-invitations-approval track). State machine + idempotency invariant live in Persistence/SurrealDb/Models/AGENTS.md §action-access-request: at most ONE non-terminal (Pending) request per (action_id, requester_user_id); Pending->{Approved|Rejected|Withdrawn} are terminal + immutable; a re-request after a terminal state opens a fresh Pending. Transitions are enforced in the manager, not the DB.
 -- ============================================================
@@ -16,7 +16,7 @@ DEFINE TABLE IF NOT EXISTS action_access_request SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS id ON TABLE action_access_request TYPE string
     ASSERT $value != NONE AND $value != "";
 
--- ActionDefinition this request targets
+-- Action this request targets
 DEFINE FIELD IF NOT EXISTS action_id ON TABLE action_access_request TYPE record<action>;
 
 -- User requesting access

@@ -29,7 +29,7 @@ interface ActionCanvasProps {
   submitLabel?: string
 }
 
-function ActionCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = 'Create ActionDefinition' }: ActionCanvasProps) {
+function ActionCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = 'Create Action' }: ActionCanvasProps) {
   const selection = useActionSelection()
   const graph = useActionGraphState({
     setSelectedNodeId: selection.setSelectedNodeId,

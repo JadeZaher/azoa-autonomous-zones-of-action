@@ -625,9 +625,9 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         // ── action_template ────────────────────────────────────────────────────
         foreach (var (id, name) in new[]
         {
-            (ActionTplId1, "G5 ActionDefinition Alpha"),
-            (ActionTplId2, "G5 ActionDefinition Beta"),
-            (ActionTplId3, "G5 ActionDefinition Gamma"),
+            (ActionTplId1, "G5 Action Alpha"),
+            (ActionTplId2, "G5 Action Beta"),
+            (ActionTplId3, "G5 Action Gamma"),
         })
         {
             await ExecuteSurrealSqlAsync(

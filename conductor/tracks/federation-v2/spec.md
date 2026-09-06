@@ -228,7 +228,7 @@ Product-level federation *modes* (per-holon, action-on-complete, template federa
 reduce to function #1 with different triggers:
 
 - **User-driven per-holon:** operator/user marks a holon federatable, publishes a reference.
-- **ActionDefinition-driven on complete:** an action completion emits a signed, idempotent federation
+- **Action-driven on complete:** an action completion emits a signed, idempotent federation
   receipt referencing run/holon outputs — never copying the local DB.
 - **Template federation:** share action/holon/node/economic templates as Commons entries;
   imported templates stay provenance-tagged and locally reviewed before activation.

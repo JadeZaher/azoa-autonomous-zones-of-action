@@ -684,7 +684,7 @@ public class ActionCreateModelValidatorTests
 
     private static ActionCreateModel Valid() => new()
     {
-        Name = "My ActionDefinition",
+        Name = "My Action",
         Description = "An action",
         Nodes = new List<ActionNodeCreateModel>
         {

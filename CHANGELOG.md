@@ -15,7 +15,7 @@ provisioning), documented in `docs/NODE-HOST.md`.
 - Self-sovereign user identity (self-owned users, external-wallet
   challenge-signature auth) with a revocable, live-checked tenant-consent model
   (`KeyCustodyService` + `TenantConsentGate`).
-- Durable ActionDefinition workflow engine: DAG-defined multi-step workflows (gates,
+- Durable Action workflow engine: DAG-defined multi-step workflows (gates,
   transfers, swaps, grants, external calls) that survive restarts, reconcile
   against chain truth before retrying a chain-action node, and never
   double-spend. Runs execute through the HTTP API with the saga hosted service

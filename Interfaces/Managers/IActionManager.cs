@@ -6,7 +6,7 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 
 public interface IActionManager
 {
-    // ActionDefinition CRUD
+    // Action CRUD
     Task<AZOAResult<ActionDefinition>> CreateAsync(ActionCreateModel model, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<ActionDefinition>> GetAsync(Guid id, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<IEnumerable<ActionDefinition>>> GetByUserAsync(Guid userId, AZOARequest? request = null);
@@ -15,7 +15,7 @@ public interface IActionManager
     Task<AZOAResult<ActionDefinition>> UpdateAsync(Guid id, ActionUpdateModel model, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid userId, AZOARequest? request = null);
 
-    // ActionDefinition definition lifecycle (FR-2, action-dag-semantic-hardening).
+    // Action definition lifecycle (FR-2, action-dag-semantic-hardening).
     // See Managers/AGENTS.md §publish-lifecycle.
     Task<AZOAResult<ActionDefinition>> PublishAsync(Guid actionId, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<ActionDefinition>> UnpublishAsync(Guid actionId, Guid userId, AZOARequest? request = null);
@@ -25,7 +25,7 @@ public interface IActionManager
 
     // Execution — produces an ActionRun (one execution attempt). Per the
     // action-temporal-fork-model track, runtime state lives on ActionRun +
-    // ActionNodeExecution, never on the ActionDefinition definition.
+    // ActionNodeExecution, never on the action definition.
     // tenant-consent-delegation AC4/AC4b: an optional actingTenantId threads the
     // tenant that drove this run (via a tenant-driven child credential) onto the
     // ActionRun so the Tier-2 economic node handlers can stamp it on the produced
@@ -65,7 +65,7 @@ public interface IActionManager
     Task<AZOAResult<ActionNodeTemplate>> CreateNodeTemplateAsync(ActionNodeTemplateCreateModel model, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<IEnumerable<ActionNodeTemplate>>> ListNodeTemplatesAsync(AZOARequest? request = null);
 
-    // ── ActionDefinition Nodes sub-resource (post-hoc CRUD on a persisted ActionDefinition) ──
+    // ── Action Nodes sub-resource (post-hoc CRUD on a persisted action) ──
     // Mutating the node set re-shapes the DAG; AddNodeAsync defers re-validation
     // to the next ExecuteAsync (or explicit ValidateDAGAsync call). DeleteNodeAsync
     // rejects when the node has any edges referencing it — callers must clear
@@ -75,7 +75,7 @@ public interface IActionManager
     Task<AZOAResult<ActionNode>> UpdateNodeAsync(Guid actionId, Guid nodeId, ActionNodeUpdateModel model, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<bool>> DeleteNodeAsync(Guid actionId, Guid nodeId, Guid userId, AZOARequest? request = null);
 
-    // ── ActionDefinition Edges sub-resource ──
+    // ── Action Edges sub-resource ──
     // AddEdgeAsync runs the DAG validator after mutation and rejects if a
     // cycle would be introduced. GetTopologicalOrderAsync returns node Ids
     // ordered by ActionNode.ExecutionOrder (validator-assigned).
@@ -83,7 +83,7 @@ public interface IActionManager
     Task<AZOAResult<bool>> RemoveEdgeAsync(Guid actionId, Guid edgeId, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<IEnumerable<Guid>>> GetTopologicalOrderAsync(Guid actionId, Guid userId, AZOARequest? request = null);
 
-    // ── ActionDefinition Dependencies sub-resource ──
+    // ── Action Dependencies sub-resource ──
     // A dependency is satisfied when the referenced action has at least one
     // ActionRun in Succeeded status. CheckDependenciesAsync surfaces the
     // unsatisfied dependency ids without blocking execution.
@@ -94,7 +94,7 @@ public interface IActionManager
     // ── ActionRun read surface ──
     // Per ADR §2.2, all runtime state lives on ActionRun + ActionNodeExecution.
     // These methods expose the existing runtime to API consumers without
-    // re-implementing it on the ActionDefinition definition.
+    // re-implementing it on the action definition.
     Task<AZOAResult<ActionRun>> GetRunAsync(Guid runId, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<IEnumerable<ActionRun>>> ListRunsByActionAsync(Guid actionId, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<ActionExecutionState>> GetExecutionStateAsync(Guid runId, Guid userId, AZOARequest? request = null);

@@ -17,7 +17,7 @@ using ActionEntity = AZOA.WebAPI.Models.Actions.ActionDefinition;
 namespace AZOA.WebAPI.Tests.Actions;
 
 /// <summary>
-/// ActionDefinition temporal/fork-model — runtime lifecycle + lineage tests.
+/// Action temporal/fork-model — runtime lifecycle + lineage tests.
 ///
 /// Covers (per <c>conductor/tracks/action-temporal-fork-model/plan.md</c>):
 /// <list type="bullet">
@@ -130,7 +130,7 @@ public class ActionForkLineageTests
         first.Result!.Status.Should().Be(ActionRunStatus.Succeeded);
         first.Result.ParentRunId.Should().BeNull("first run is a root");
 
-        // Second execution of the same ActionDefinition produces a brand-new run,
+        // Second execution of the same action produces a brand-new run,
         // also a root (ParentRunId == null) — this is the "re-run vs fork"
         // distinction from ADR §2.3.
         var second = await manager.ExecuteAsync(action.Id, action.UserId);

@@ -90,7 +90,7 @@ public sealed class GateCheckNodeHandler : IActionNodeHandler
     /// <c>run.&lt;nodeName&gt;</c> roots built by the SHARED resolver helpers
     /// (<c>ActionConfigBindingResolver.BuildUpstreamScope</c>/<c>BuildRunScope</c>),
     /// merged with gate-local <c>reads.&lt;name&gt;</c> and
-    /// <c>holon.&lt;id&gt;</c> keys. See Services/ActionDefinition/AGENTS.md §gate-predicate.
+    /// <c>holon.&lt;id&gt;</c> keys. See Services/Actions/AGENTS.md §gate-predicate.
     /// </summary>
     private async Task<Dictionary<string, JsonElement>> BuildScopeAsync(
         ActionNodeExecutionContext context, GateCheckNodeConfig cfg, CancellationToken ct)

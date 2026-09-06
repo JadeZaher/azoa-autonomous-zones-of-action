@@ -13,7 +13,7 @@ namespace AZOA.WebAPI.Services.Actions.Handlers;
 /// Phase-B <see cref="ICrossChainBridgeService.InitiateBridgeAsync"/>: on an Algorand
 /// route providers must advertise the complete lock/mint/burn/release lifecycle or
 /// the operation fails closed. The node MOVES value only and derives no economic meaning; peg/valuation
-/// stays tenant-side (Emit). See Services/ActionDefinition/AGENTS.md §fractionalization.
+/// stays tenant-side (Emit). See Services/Actions/AGENTS.md §fractionalization.
 /// </summary>
 public sealed class BridgeNodeHandler : IActionNodeHandler
 {

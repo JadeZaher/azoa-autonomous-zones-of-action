@@ -148,7 +148,7 @@ if (isOk(catalog)) {
 await azoa.api.executeAction(someActionId);
 ```
 
-In the node's web UI, the **Actions → Start an ActionDefinition** tab renders this catalog as a
+In the node's web UI, the **Actions → Start an Action** tab renders this catalog as a
 browsable grid of cards (no id-pasting required).
 
 ## Where to go next

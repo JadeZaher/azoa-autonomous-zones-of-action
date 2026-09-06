@@ -5,9 +5,9 @@
  * the shape of an existing public symbol.
  *
  * Wire contract confirmed against the shipped controllers/models:
- * - `Models/ActionDefinition/ActionRunStatus.cs`  → {@link WorkflowRunStatus}
- * - `Models/ActionDefinition/ActionRun.cs`        → {@link WorkflowRunResult}
- * - `Models/ActionDefinition/ActionExecutionState.cs` + `ActionNodeExecution.cs`
+ * - `Models/Actions/ActionRunStatus.cs`  → {@link WorkflowRunStatus}
+ * - `Models/Actions/ActionRun.cs`        → {@link WorkflowRunResult}
+ * - `Models/Actions/ActionExecutionState.cs` + `ActionNodeExecution.cs`
  *                                      → {@link WorkflowExecutionState} / {@link WorkflowNodeExecution}
  * - `Models/Requests/ActionRequests.cs` (`ActionAdvanceRequest` / `ActionSignalRequest`)
  *                                      → {@link AdvanceParams} / {@link SignalParams}
@@ -77,12 +77,12 @@ export function isTerminal(status: WorkflowRunStatus): boolean {
 
 /**
  * One execution attempt of an action definition — the `GET /api/action/runs/{runId}`
- * read shape. Mirrors `Models/ActionDefinition/ActionRun.cs`.
+ * read shape. Mirrors `Models/Actions/ActionRun.cs`.
  */
 export interface WorkflowRunResult {
   /** Run identity, unique across all runs of all actions. */
   id: string;
-  /** ActionDefinition definition this run executes. */
+  /** Action definition this run executes. */
   actionId: string;
   /** User that initiated this run. */
   userId: string;
@@ -104,7 +104,7 @@ export interface WorkflowRunResult {
 
 /**
  * Per-(run, node) execution record — an element of {@link WorkflowExecutionState}.
- * Mirrors `Models/ActionDefinition/ActionNodeExecution.cs`. Note: per-node `state` reuses the
+ * Mirrors `Models/Actions/ActionNodeExecution.cs`. Note: per-node `state` reuses the
  * existing `ActionNodeState` union from `api/client.ts` (`Pending`/`Running`/…),
  * NOT {@link WorkflowRunStatus} (a run-only concept).
  */
@@ -113,7 +113,7 @@ export interface WorkflowNodeExecution {
   id: string;
   /** Owning run. */
   runId: string;
-  /** ActionDefinition definition node this execution corresponds to. */
+  /** Action definition node this execution corresponds to. */
   nodeId: string;
   /** Current per-node lifecycle position. */
   state: "Pending" | "Running" | "Succeeded" | "Failed" | "Skipped";
@@ -129,7 +129,7 @@ export interface WorkflowNodeExecution {
 
 /**
  * Richer per-node run projection — the `GET /api/action/runs/{runId}/execution-state`
- * read shape. Mirrors `Models/ActionDefinition/ActionExecutionState.cs`.
+ * read shape. Mirrors `Models/Actions/ActionExecutionState.cs`.
  */
 export interface WorkflowExecutionState {
   runId: string;
@@ -209,7 +209,7 @@ export interface ChildCredentialResult {
 /**
  * Outcome of a reconciliation re-probe over a run parked in
  * `AwaitingReconciliation` — the `POST /api/action/runs/{runId}/reconcile` response.
- * Mirrors `Models/ActionDefinition/ActionReconciliationResult.cs`. NEVER re-broadcasts; a
+ * Mirrors `Models/Actions/ActionReconciliationResult.cs`. NEVER re-broadcasts; a
  * Confirmed tx reconciles to success (no re-mint), a FailedOnChain node is released
  * to retry/compensation, and an indeterminate node stays parked.
  */

@@ -11,7 +11,7 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("action_access_request",
-        Aggregate = "ActionAccessRequest (Models/ActionDefinition/ActionAccessRequest.cs)",
+        Aggregate = "ActionAccessRequest (Models/Actions/ActionAccessRequest.cs)",
         Guardrail = "G6 SCHEMAFULL; one row per (action, requester) access request. Owner approval mints an invite (appends to action.invited_user_ids).")]
     [SurrealNote("Request/approve flow for InviteOnly actions (action-invitations-approval track). State machine + idempotency invariant live in Persistence/SurrealDb/Models/AGENTS.md §action-access-request: at most ONE non-terminal (Pending) request per (action_id, requester_user_id); Pending->{Approved|Rejected|Withdrawn} are terminal + immutable; a re-request after a terminal state opens a fresh Pending. Transitions are enforced in the manager, not the DB.")]
     [Slice("action")]
@@ -22,7 +22,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "action_access_request";
         public string SchemaName => SchemaNameConst;
 
-        /// <summary>Mirrors the domain ActionAccessRequestStatus enum. [Inside] values must stay in sync with ActionAccessRequestStatus in Models/ActionDefinition/ActionEnums.cs.</summary>
+        /// <summary>Mirrors the domain ActionAccessRequestStatus enum. [Inside] values must stay in sync with ActionAccessRequestStatus in Models/Actions/ActionEnums.cs.</summary>
         public enum ActionAccessRequestStatusKind
         {
             Pending,
@@ -36,7 +36,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [FieldGroup("ActionDefinition this request targets")]
+        [FieldGroup("Action this request targets")]
         [References(typeof(ActionDefinition))]
         public string ActionId { get; set; } = string.Empty;
 

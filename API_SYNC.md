@@ -76,7 +76,7 @@ allocation receipt endpoint for allocation status.
 | | /api/starodk/{id} | DELETE | `deleteSTARODK` | client.ts | OK |
 | | /api/starodk/{id}/generate-dapp | POST | `generateSTARDapp` | client.ts | OK |
 | | /api/starodk/{id}/deploy | POST | `deploySTARODK` | client.ts | OK |
-| **ActionDefinition** | /api/action | POST | `createAction` | client.ts | OK |
+| **Action** | /api/action | POST | `createAction` | client.ts | OK |
 | | /api/action/{id} | GET | `getAction` | client.ts | OK |
 | | /api/action/user/{userId} | GET | `listActionsByUser` | client.ts | OK |
 | | /api/action/{id} | PUT | `updateAction` | client.ts | OK |
@@ -143,7 +143,7 @@ allocation receipt endpoint for allocation status.
 
 7. **`DELETE /api/action/node-templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
 
-8. **ActionDefinition sub-resource endpoints (nodes, edges, dependencies, runs) — 16 new controller routes** — Shipped in `action-api` phase-F. No SDK methods exist yet. See the SDK gap rows in the ActionDefinition section above.
+8. **Action sub-resource endpoints (nodes, edges, dependencies, runs) — 16 new controller routes** — Shipped in `action-api` phase-F. No SDK methods exist yet. See the SDK gap rows in the Action section above.
 
 ## How to Keep This Current
 

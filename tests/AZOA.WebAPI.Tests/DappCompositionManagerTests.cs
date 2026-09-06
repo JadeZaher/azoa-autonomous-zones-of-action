@@ -305,7 +305,7 @@ public class DappCompositionManagerTests
         var action = new ActionDef
         {
             Id = actionId,
-            Name = $"ActionDefinition {actionId:N}",
+            Name = $"Action {actionId:N}",
             UserId = _userId,
             Nodes = nodes?.ToList() ?? new List<ActionNodeDef>(),
             Dependencies = (dependsOn ?? Array.Empty<Guid>())

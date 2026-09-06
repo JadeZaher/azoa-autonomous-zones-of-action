@@ -85,7 +85,7 @@ public sealed class SurrealActionTemplateStoreTests : IAsyncLifetime
         await SeedTemplateAsync(
             templateId,
             authorId,
-            name: "Simple ActionDefinition",
+            name: "Simple Action",
             description: "A simple action template",
             parameters: "{\"required\":[\"holonId\"]}",
             tags: new[] { "tutorial", "starter" },
@@ -103,7 +103,7 @@ public sealed class SurrealActionTemplateStoreTests : IAsyncLifetime
 
         template.Should().NotBeNull();
         template!.Id.Should().Be(templateId);
-        template.Name.Should().Be("Simple ActionDefinition");
+        template.Name.Should().Be("Simple Action");
         template.Description.Should().Be("A simple action template");
         template.AuthorUserId.Should().Be(authorId);
         template.Parameters.Should().Be("{\"required\":[\"holonId\"]}");

@@ -11,7 +11,7 @@ namespace AZOA.WebAPI.Services.Actions;
 /// <summary>
 /// Type-agnostic pre-pass that resolves <c>{"$from": "path"}</c> bindings in a
 /// node config JSON before strict deserialization runs.
-/// See Services/ActionDefinition/AGENTS.md §output-binding.
+/// See Services/Actions/AGENTS.md §output-binding.
 /// </summary>
 public sealed class ActionConfigBindingResolver
 {
@@ -135,7 +135,7 @@ public sealed class ActionConfigBindingResolver
     /// Builds upstream scope: "upstream.&lt;nodeName&gt;" → parsed JSON element
     /// for each incoming-edge source that has non-empty Output. Shared with
     /// <c>GateCheckNodeHandler</c> so a $from binding and a gate predicate build
-    /// the SAME scope (single source of truth). See Services/ActionDefinition/AGENTS.md
+    /// the SAME scope (single source of truth). See Services/Actions/AGENTS.md
     /// §gate-predicate.
     /// </summary>
     internal static Dictionary<string, JsonElement> BuildUpstreamScope(
@@ -176,7 +176,7 @@ public sealed class ActionConfigBindingResolver
     /// node in the run whose execution has non-empty parseable Output (not just
     /// direct-edge sources). Mirrors <see cref="BuildUpstreamScope"/> over all
     /// executions. Shared with <c>GateCheckNodeHandler</c> (single source of truth).
-    /// See Services/ActionDefinition/AGENTS.md §output-binding, §gate-predicate.
+    /// See Services/Actions/AGENTS.md §output-binding, §gate-predicate.
     /// </summary>
     internal static Dictionary<string, JsonElement> BuildRunScope(
         ActionModel action,
@@ -406,7 +406,7 @@ public sealed class ActionConfigBindingResolver
     /// <summary>
     /// Flattens a holon's live state into a JSON element. Mirrors
     /// <c>GateCheckNodeHandler.HolonStateJson</c> exactly — same typed fields +
-    /// Metadata overlay. See Services/ActionDefinition/AGENTS.md §output-binding.
+    /// Metadata overlay. See Services/Actions/AGENTS.md §output-binding.
     /// </summary>
     private static JsonElement HolonStateJson(IHolon holon)
     {

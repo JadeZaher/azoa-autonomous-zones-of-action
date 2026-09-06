@@ -11,7 +11,7 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("action_run",
-        Aggregate = "ActionRun (Models/ActionDefinition/ActionRun.cs)",
+        Aggregate = "ActionRun (Models/Actions/ActionRun.cs)",
         Guardrail = "G6 SCHEMAFULL; runtime canonical lineage carrier. One row per execution attempt of an action.")]
     [SurrealNote("Replaces the in-place mutation of ActionDefinition.Status that prevented re-runs from preserving prior attempt state -- see action-temporal-fork-model ADR §1. Re-running a Succeeded action creates a NEW root run (parent_run_id = null); forking a Running run creates a CHILD run with parent_run_id set.")]
     [SurrealNote("Lineage forms a TREE via parent_run_id, not a DAG. The forked_from RELATE edge (defined separately in surrealdb-migration §6.1) mirrors parent_run_id for native graph-traversal queries. Both must be kept in sync at write time.")]
@@ -38,7 +38,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             Cancelled,
             // Non-terminal park states (durable-workflow-engine): the run suspends
             // here awaiting an external advance/signal/timer/reconciliation and
-            // resumes — they are NOT terminal. Mirror Models/ActionDefinition/ActionRunStatus.cs.
+            // resumes — they are NOT terminal. Mirror Models/Actions/ActionRunStatus.cs.
             // (These were previously absent from the POCO + the DB ASSERT, so a
             // durable park write would have been rejected by SCHEMAFULL.)
             Suspended,
@@ -52,7 +52,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [FieldGroup("ActionDefinition definition this run executes")]
+        [FieldGroup("Action definition this run executes")]
         [References(typeof(ActionDefinition))]
         public string ActionId { get; set; } = string.Empty;
 

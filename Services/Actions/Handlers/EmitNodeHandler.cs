@@ -24,7 +24,7 @@ namespace AZOA.WebAPI.Services.Actions.Handlers;
 /// unchanged. The emitter is an OPTIONAL constructor dependency (nullable, default
 /// <see langword="null"/>) so the handler stays constructable with no dependencies and
 /// the pure-passthrough path is preserved when no tenant/emitter is present. See
-/// <c>Services/ActionDefinition/AGENTS.md</c> §action-webhook-emit.</para>
+/// <c>Services/Actions/AGENTS.md</c> §action-webhook-emit.</para>
 /// </remarks>
 public sealed class EmitNodeHandler : IActionNodeHandler
 {

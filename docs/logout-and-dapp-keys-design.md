@@ -45,7 +45,7 @@ because two of them sit directly in the API-key blast radius.
   itself a `tenant:provision` key today.
 - Scope enforcement points today: `TenantScope` + `Operator` policies
   (`Program.cs:234-254`), one inline `HasScope` in `AllocationController.cs:55`,
-  the signing seam in `KeyCustodyService`. **Holon / ActionDefinition / DappSeries writes are
+  the signing seam in `KeyCustodyService`. **Holon / Action / DappSeries writes are
   bare `[Authorize]` + manager-layer ownership — no scope gate.**
 
 ### dApp concept
@@ -84,7 +84,7 @@ Chosen scope (per product decision): **the simplest model that is still safe.**
 ### D3 — Make capability scopes real (enforce + validate at issuance)
 Introducing capability scopes is only meaningful if they are **enforced** and
 **can't be self-granted beyond what you own**:
-- **Enforce**: add scope checks on the Holon/ActionDefinition/DappSeries **write** paths so
+- **Enforce**: add scope checks on the Holon/Action/DappSeries **write** paths so
   a key that carries capability scopes is *restricted* to them. Preserve the
   "empty CSV = full access" legacy rule so existing keys and JWTs are unaffected —
   capability scopes only *narrow* a key when explicitly present.
@@ -123,7 +123,7 @@ Consequences:
 | 3 | LOW | `POST /search` passes no user id (`SearchController.cs:21`) | Marketplace search over public objects is fine; ensure it returns the **public projection** (no PII) and doesn't leak private fields. |
 | 4 | LOW | KYC admin uses inline `IsAdmin()` w/ no scheme floor (`KycController.cs:144`) | Route behind `[Authorize(Policy="Operator")]` (or a new `Admin` policy). |
 
-### ActionDefinition-start-as-template flow (BUILD NOW — full mechanic)
+### Action-start-as-template flow (BUILD NOW — full mechanic)
 **Traced state**: `Execute` is owner-only by construction — `LoadOwnedActionAsync`
 rejects non-owners (`ActionManager.cs:376`), and `ActionRun.UserId` is stamped from
 the **action owner**, not the runner (`:420`; durable path `:1617`). `ActionRun` has
@@ -172,7 +172,7 @@ Changes:
 9. `AzoaScopes`: add one coarse **`DappDevelop="dapp:develop"`** scope covering
    holon + action + dappseries edit (owner's decision — one checkbox for devs). Add
    it to an `IssuableCapabilityScopes` set the issuance validator checks against.
-10. Enforce: on Holon/ActionDefinition/DappSeries write actions, if the principal is an API
+10. Enforce: on Holon/Action/DappSeries write actions, if the principal is an API
     key with a non-empty CSV, require the matching capability scope (empty CSV =
     full access preserved). Prefer a small policy/helper over scattered inline
     checks.

@@ -7,7 +7,7 @@ namespace AZOA.WebAPI.Interfaces.Stores;
 /// (<see cref="ActionTemplate"/> + <see cref="ActionNodeTemplate"/>).
 ///
 /// Scope: read-only catalog lookups used by
-/// <c>Services/ActionDefinition/ActionInstantiator.cs</c>. Write paths (template authoring,
+/// <c>Services/Actions/ActionInstantiator.cs</c>. Write paths (template authoring,
 /// versioning, marketplace publish) are out of scope here — the wave-2 close-out
 /// only needs the read seam so the EF deletion (Stream D) can proceed.
 ///

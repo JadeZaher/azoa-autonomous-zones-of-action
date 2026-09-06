@@ -203,9 +203,9 @@ decision.
       | AllocationManager Mint | platform | `BuildSigningContext(platformOp)` + acting-tenant |
       | AllocationManager Transfer | user | `BuildSigningContext` + acting-tenant |
       | FungibleTokenManager Create (ASA) | platform | `CreateASAAsync(…, SigningContext)` overload |
-      | ActionDefinition Grant (mint) | platform | `ActionRun.ActingTenantId`→`NftManager.MintAsync` |
-      | ActionDefinition Transfer / Refund | user | `ActionRun.ActingTenantId`→`NftManager.TransferAsync` |
-      | ActionDefinition FungibleTokenCreate | platform | `ActionRun.ActingTenantId`→`FungibleTokenManager` |
+      | Action Grant (mint) | platform | `ActionRun.ActingTenantId`→`NftManager.MintAsync` |
+      | Action Transfer / Refund | user | `ActionRun.ActingTenantId`→`NftManager.TransferAsync` |
+      | Action FungibleTokenCreate | platform | `ActionRun.ActingTenantId`→`FungibleTokenManager` |
       | Bridge | per-op | `BlockchainOperation.ActingTenantId`→`BuildSigningContext` |
       | Swap | **UNSIGNED** (client-side) | no server sign path to gate (documented) |
       Tests: `KeyCustodyConsentSeamTests` (both seam methods, tenant-driven deny + user/

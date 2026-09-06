@@ -40,7 +40,7 @@ public class ActionManager : IActionManager
 
     // D1/D9 pre-execution value-rail capability gate. Constructed here (not injected) so
     // the DI signature stays positional-compatible; the pluggable half — the per-rail
-    // destination directories — IS injected. See Services/ActionDefinition/AGENTS.md §rail-capability.
+    // destination directories — IS injected. See Services/Actions/AGENTS.md §rail-capability.
     private readonly ValueRailCapabilityGate _railGate;
 
     // Config-bound marketplace guards (see Managers/AGENTS.md §action-run-quota
@@ -103,9 +103,9 @@ public class ActionManager : IActionManager
     {
         var actionResult = await _actionStore.GetActionAsync(actionId);
         if (actionResult.IsError || actionResult.Result == null)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = actionResult.Message ?? "ActionDefinition not found." };
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = actionResult.Message ?? "Action not found." };
         if (actionResult.Result.UserId != userId)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = "ActionDefinition is owned by a different user." };
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action is owned by a different user." };
         return actionResult;
     }
 
@@ -122,7 +122,7 @@ public class ActionManager : IActionManager
     {
         var actionResult = await _actionStore.GetActionAsync(actionId);
         if (actionResult.IsError || actionResult.Result == null)
-            return (new AZOAResult<ActionDefinition> { IsError = true, Message = actionResult.Message ?? "ActionDefinition not found." }, false);
+            return (new AZOAResult<ActionDefinition> { IsError = true, Message = actionResult.Message ?? "Action not found." }, false);
 
         var action = actionResult.Result;
         if (action.UserId == userId)
@@ -130,9 +130,9 @@ public class ActionManager : IActionManager
 
         // Non-owner path: only published (public + Active) actions are startable.
         if (!action.IsPublic)
-            return (new AZOAResult<ActionDefinition> { IsError = true, Message = "ActionDefinition not found." }, false);
+            return (new AZOAResult<ActionDefinition> { IsError = true, Message = "Action not found." }, false);
         if (action.Status != ActionStatus.Active)
-            return (new AZOAResult<ActionDefinition> { IsError = true, Message = "ActionDefinition is not published for execution." }, false);
+            return (new AZOAResult<ActionDefinition> { IsError = true, Message = "Action is not published for execution." }, false);
 
         // Run-authorization gate (action-invitations-approval): an InviteOnly action is
         // viewable by any non-owner (GetAsync unchanged) but startable/forkable only by
@@ -223,9 +223,9 @@ public class ActionManager : IActionManager
     {
         var runResult = await _runStore.GetByIdAsync(runId);
         if (runResult.IsError || runResult.Result == null)
-            return new AZOAResult<ActionRun> { IsError = true, Message = runResult.Message ?? "ActionDefinition run not found." };
+            return new AZOAResult<ActionRun> { IsError = true, Message = runResult.Message ?? "Action run not found." };
         if (runResult.Result.UserId != userId)
-            return new AZOAResult<ActionRun> { IsError = true, Message = "ActionDefinition run is owned by a different user." };
+            return new AZOAResult<ActionRun> { IsError = true, Message = "Action run is owned by a different user." };
         return runResult;
     }
 
@@ -295,11 +295,11 @@ public class ActionManager : IActionManager
         // owner-only and surface the same "different user" rejection.
         var actionResult = await _actionStore.GetActionAsync(id);
         if (actionResult.IsError || actionResult.Result == null)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = actionResult.Message ?? "ActionDefinition not found." };
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = actionResult.Message ?? "Action not found." };
         var action = actionResult.Result;
         if (action.UserId == userId || action.IsPublic)
             return actionResult;
-        return new AZOAResult<ActionDefinition> { IsError = true, Message = "ActionDefinition is owned by a different user." };
+        return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action is owned by a different user." };
     }
 
     /// <summary>
@@ -361,7 +361,7 @@ public class ActionManager : IActionManager
         var action = owned.Result;
 
         if (action.Status == ActionStatus.Active)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = "ActionDefinition is already Active." };
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action is already Active." };
 
         // Full validation stack: structural DAG + fan-out-as-error + config check.
         var dagResult = _dagValidator.Validate(action, fanOutAsError: true);
@@ -380,7 +380,7 @@ public class ActionManager : IActionManager
         // Executability gate: reject if any $from binding input won't be satisfiable
         // at runtime (unreachable source, absent output field, provable scalar type
         // mismatch). Runs LAST so structural DAG / transition / config errors surface
-        // first. See Services/ActionDefinition/AGENTS.md §executability-validation.
+        // first. See Services/Actions/AGENTS.md §executability-validation.
         var execResult = _executabilityValidator.Validate(action);
         if (!execResult.IsValid)
             return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — binding not executable: {string.Join("; ", execResult.Errors)}" };
@@ -416,7 +416,7 @@ public class ActionManager : IActionManager
         if (upsert.IsError)
             return new AZOAResult<ActionDefinition> { IsError = true, Message = upsert.Message };
 
-        return new AZOAResult<ActionDefinition> { Result = upsert.Result, Message = "ActionDefinition published." };
+        return new AZOAResult<ActionDefinition> { Result = upsert.Result, Message = "Action published." };
     }
 
     public async Task<AZOAResult<ActionDefinition>> UnpublishAsync(Guid actionId, Guid userId, AZOARequest? request = null)
@@ -427,7 +427,7 @@ public class ActionManager : IActionManager
         var action = owned.Result;
 
         if (action.Status != ActionStatus.Active)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = "ActionDefinition is not Active; cannot unpublish." };
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action is not Active; cannot unpublish." };
 
         // Refuse while any in-flight run exists (AC-2d).
         var runsResult = await _runStore.GetByActionIdAsync(actionId);
@@ -462,7 +462,7 @@ public class ActionManager : IActionManager
         // reference-sharing-safe for the in-memory store's in-place CAS).
         action.Status  = ActionStatus.Draft;
         action.Version = expectedVersion + 1;
-        return new AZOAResult<ActionDefinition> { Result = action, Message = "ActionDefinition unpublished." };
+        return new AZOAResult<ActionDefinition> { Result = action, Message = "Action unpublished." };
     }
 
     /// <summary>
@@ -564,7 +564,7 @@ public class ActionManager : IActionManager
         // (The non-owner path already enforced Active in LoadStartableActionAsync; this
         // keeps the owner path's original gate + error message intact.)
         if (startable.Result.Status != ActionStatus.Active)
-            return new AZOAResult<ActionRun> { IsError = true, Message = "ActionDefinition must be published (Active) before it can be executed. Call POST /{id}/publish first." };
+            return new AZOAResult<ActionRun> { IsError = true, Message = "Action must be published (Active) before it can be executed. Call POST /{id}/publish first." };
 
         // Validate DAG first (also assigns ExecutionOrder onto definition nodes).
         var validationResult = await ValidateDAGAsync(actionId, request);
@@ -603,7 +603,7 @@ public class ActionManager : IActionManager
             return new AZOAResult<ActionRun>
             {
                 IsError = true,
-                Message = "ActionDefinition run conflict: the action was unpublished or modified concurrently. Reload and retry."
+                Message = "Action run conflict: the action was unpublished or modified concurrently. Reload and retry."
             };
 
         // Create the ActionRun upfront — Pending → Running on first node claim.
@@ -754,7 +754,7 @@ public class ActionManager : IActionManager
             }
 
             // FR-1 ($from binding) — resolve before handler dispatch.
-            // See Services/ActionDefinition/AGENTS.md §output-binding.
+            // See Services/Actions/AGENTS.md §output-binding.
             // C1/H1: identity side-effects and holon-scoped $from binding resolve
             // against the RUNNER (run.UserId), never the action owner. On the owner
             // path run.UserId == action.UserId, so behaviour is unchanged.
@@ -847,7 +847,7 @@ public class ActionManager : IActionManager
         run.EndedAt = DateTime.UtcNow;
         var updated = await _runStore.UpdateAsync(run);
 
-        return new AZOAResult<ActionRun> { Result = updated.Result, Message = $"ActionDefinition run {run.Status}." };
+        return new AZOAResult<ActionRun> { Result = updated.Result, Message = $"Action run {run.Status}." };
     }
 
     public async Task<AZOAResult<ActionNodeExecution>> ExecuteNodeAsync(Guid actionId, Guid nodeId, Guid userId, AZOARequest? request = null, Guid? actingTenantId = null)
@@ -1317,7 +1317,7 @@ public class ActionManager : IActionManager
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // ACTION NODES SUB-RESOURCE (post-hoc edits on a persisted ActionDefinition)
+    // ACTION NODES SUB-RESOURCE (post-hoc edits on a persisted action)
     // ═══════════════════════════════════════════════════════════════════
 
     public async Task<AZOAResult<IEnumerable<ActionNode>>> ListNodesAsync(Guid actionId, Guid userId, AZOARequest? request = null)
@@ -1481,7 +1481,7 @@ public class ActionManager : IActionManager
 
         // Cycle guard: run the DAG validator after staging the new edge and
         // reject only on cycle-class errors. We deliberately ignore the
-        // entry/terminal/orphan checks because an ActionDefinition is editable in-flight
+        // entry/terminal/orphan checks because an action is editable in-flight
         // — terminal/entry flags and full reachability are only required
         // immediately before ExecuteAsync (which runs the full ValidateDAGAsync).
         // Allowing orphan-class errors here would prevent any incremental
@@ -1690,7 +1690,7 @@ public class ActionManager : IActionManager
             return new AZOAResult<ActionRun>
             {
                 IsError = true,
-                Message = $"ActionDefinition {action.Id} cannot start: {depCheck.Message} " +
+                Message = $"Action {action.Id} cannot start: {depCheck.Message} " +
                           $"Unsatisfied dependency ids: [{string.Join(", ", depCheck.UnsatisfiedDependencyIds)}]. " +
                           "Each depended-on action must have at least one Succeeded run first."
             };
@@ -1847,7 +1847,7 @@ public class ActionManager : IActionManager
 
         // FR-2: require Active status before starting a durable workflow run.
         if (startable.Result.Status != ActionStatus.Active)
-            return new AZOAResult<ActionRun> { IsError = true, Message = "ActionDefinition must be published (Active) before a workflow run can be started. Call POST /{id}/publish first." };
+            return new AZOAResult<ActionRun> { IsError = true, Message = "Action must be published (Active) before a workflow run can be started. Call POST /{id}/publish first." };
 
         var validationResult = await ValidateDAGAsync(actionId, request);
         if (validationResult.IsError)
@@ -1889,7 +1889,7 @@ public class ActionManager : IActionManager
 
         var entry = ResolveEntryNode(action);
         if (entry is null)
-            return new AZOAResult<ActionRun> { IsError = true, Message = "ActionDefinition has no entry node to start the workflow run." };
+            return new AZOAResult<ActionRun> { IsError = true, Message = "Action has no entry node to start the workflow run." };
 
         // F6 TOCTOU guard: confirm the definition is STILL Active at the version we
         // read before committing a durable run -- same discipline as ExecuteAsync.
@@ -1900,7 +1900,7 @@ public class ActionManager : IActionManager
             return new AZOAResult<ActionRun>
             {
                 IsError = true,
-                Message = "ActionDefinition run conflict: the action was unpublished or modified concurrently. Reload and retry."
+                Message = "Action run conflict: the action was unpublished or modified concurrently. Reload and retry."
             };
 
         // Create the run + one Pending ActionNodeExecution per node — identical to
@@ -2172,14 +2172,14 @@ public class ActionManager : IActionManager
     {
         var actionResult = await _actionStore.GetActionAsync(actionId);
         if (actionResult.IsError || actionResult.Result == null)
-            return new AZOAResult<ActionAccessRequest> { IsError = true, Message = actionResult.Message ?? "ActionDefinition not found." };
+            return new AZOAResult<ActionAccessRequest> { IsError = true, Message = actionResult.Message ?? "Action not found." };
 
         var action = actionResult.Result;
 
         // View gate mirrors GetAsync (owner || IsPublic): a non-viewer cannot even learn the action exists.
         var isOwner = action.UserId == requesterUserId;
         if (!isOwner && !action.IsPublic)
-            return new AZOAResult<ActionAccessRequest> { IsError = true, Message = "ActionDefinition not found." };
+            return new AZOAResult<ActionAccessRequest> { IsError = true, Message = "Action not found." };
 
         if (isOwner)
             return new AZOAResult<ActionAccessRequest> { IsError = true, Message = "You own this action — no access request needed." };

@@ -201,7 +201,7 @@ public sealed class DurableWorkflowEngineTests
         }
     }
 
-    // ── ActionDefinition-definition builder ───────────────────────────────────────────────
+    // ── Action-definition builder ───────────────────────────────────────────────
 
     /// <summary>Build a linear action A→B→C… from node specs and persist it into the
     /// harness's action store. Each spec carries the node's <c>_workflow</c> marker

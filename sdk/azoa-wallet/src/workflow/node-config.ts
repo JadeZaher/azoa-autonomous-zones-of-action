@@ -1,10 +1,10 @@
 /**
  * Typed `nodeConfig` builders — pure helpers that serialize the **generic
  * mechanism** params of the `economic-primitive-nodes` node types into the
- * `Config` JSON string a `ActionNode` / template node carries on the wire.
+ * `Config` JSON string an `ActionNode` / template node carries on the wire.
  *
  * Each builder mirrors the corresponding C# config POCO in
- * `Models/ActionDefinition/NodeConfigs.cs` exactly. They type ONLY generic mechanism params —
+ * `Models/Actions/NodeConfigs.cs` exactly. They type ONLY generic mechanism params —
  * amounts stay STRINGS, and there is NO rate, NO token meaning, NO ArdaNova
  * economic concept anywhere here (NFR-4). For any node kind the SDK has not typed
  * (forward-compat), {@link nodeConfig.raw} accepts a pre-built object/string as an

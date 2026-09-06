@@ -2,7 +2,7 @@
 
 ## Overview
 
-Replace the raw JSON-textarea ActionDefinition authoring UI on the frontend ActionDefinition DAG page
+Replace the raw JSON-textarea Action authoring UI on the frontend Action DAG page
 with a **visual drag-and-drop workflow builder** built on React Flow
 (`@xyflow/react` v12). The page exercises the already-shipped action engine
 (`action-api`, `durable-workflow-engine`, `economic-primitive-nodes`) but its
@@ -19,7 +19,7 @@ is the as-built record. See [RETRO.md](RETRO.md).
    canvas, wire edges handle-to-handle, edit per-node config in an inspector.
 2. **Real DAG visualization** — the "My Actions" detail view renders an actual
    graph (auto-laid-out, run-state-aware) instead of a text list.
-3. **Template creation** — ActionDefinition Templates and Node Templates gain first-class
+3. **Template creation** — Action Templates and Node Templates gain first-class
    create flows (previously read-only browse only).
 4. **Palette driven by Node Templates** — node templates fetched from the API
    appear in the palette alongside built-ins, so authoring a node template
@@ -51,7 +51,7 @@ frontend/src/components/action-builder/
   node-template-creator.tsx  -- form -> POST /api/action/node-templates
 frontend/src/app/(dashboard)/actions/page.tsx
                              -- rewired: My Actions (DagFlow) / Builder (ActionCanvas)
-                                / ActionDefinition Templates (browse + create) /
+                                / Action Templates (browse + create) /
                                 Node Templates (browse + create)
 ```
 
@@ -62,12 +62,12 @@ frontend/src/app/(dashboard)/actions/page.tsx
       JSON config / delete), auto-layout + clear, minimap.
 - [x] AC2 — My Actions DAG view renders a real React Flow graph with run-state
       coloring; replaced the old text-list `DagVisualizer`.
-- [x] AC3 — ActionDefinition Templates tab gains a Create flow using the same canvas →
+- [x] AC3 — Action Templates tab gains a Create flow using the same canvas →
       `POST /api/action/templates` (name/description/version/tags/public).
 - [x] AC4 — Node Templates tab gains a Create flow → `POST /api/action/node-templates`
       (type-aware default-config seeding, JSON-validated schemas).
 - [x] AC5 — Palette is template-driven; node templates carry a `tpl` badge.
-- [x] AC6 — `node-catalog.ts` mirrors `Models/ActionDefinition/ActionEnums.cs::ActionNodeType`
+- [x] AC6 — `node-catalog.ts` mirrors `Models/Actions/ActionEnums.cs::ActionNodeType`
       1:1 (including economic Tier-2 `requiresChain` flag).
 - [x] AC7 — Serialized graph matches existing API contract exactly; zero backend
       changes.

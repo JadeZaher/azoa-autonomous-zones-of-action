@@ -1,8 +1,8 @@
 -- ============================================================
 -- Table: action_template
--- Aggregate: ActionTemplate (Models/ActionDefinition/ActionTemplate.cs)
+-- Aggregate: ActionTemplate (Models/Actions/ActionTemplate.cs)
 -- Guardrail: G6 SCHEMAFULL; read-only catalog data populated by template authors
--- Note: Definition-side action catalog. An ActionTemplate is a reusable DAG blueprint instantiated by ActionInstantiator (Services/ActionDefinition/ActionInstantiator.cs) into a runtime ActionDefinition with concrete parameters. The runtime action_run + action_node_execution tables live in [[action-temporal-fork-model]] (see SURREAL-SCHEMA-HINTS.md); this table is the parameterised definition the instantiator reads.
+-- Note: Definition-side action catalog. An ActionTemplate is a reusable DAG blueprint instantiated by ActionInstantiator (Services/Actions/ActionInstantiator.cs) into a runtime action with concrete parameters. The runtime action_run + action_node_execution tables live in [[action-temporal-fork-model]] (see SURREAL-SCHEMA-HINTS.md); this table is the parameterised definition the instantiator reads.
 -- Note: Nodes + edges embed as FLEXIBLE array<object> fields on the parent template row. They are NEVER queried independently of the template -- the instantiator reads the whole template in one record-id SELECT, walks the embedded slots, then resolves each NodeTemplateId via action_node_template (table 140). Embedding keeps the read O(1) per template; separating into child tables would force a join that has no other consumer.
 -- Note: parameters is a JSON-Schema-encoded string declaring required parameters for instantiation (e.g. {"required":["holonId"]}). version + tags + is_public are surfaced by the future template-marketplace UI.
 -- ============================================================

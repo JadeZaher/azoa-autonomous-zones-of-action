@@ -11,7 +11,7 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("action_node_execution",
-        Aggregate = "ActionNodeExecution (Models/ActionDefinition/ActionNodeExecution.cs)",
+        Aggregate = "ActionNodeExecution (Models/Actions/ActionNodeExecution.cs)",
         Guardrail = "G6 SCHEMAFULL; G2 exactly-once claim primitive (api-safety-hardening). One row per (run, node).")]
     [SurrealNote("Per-(run, node) execution row. Replaces the in-place mutation of ActionNode.State/Output/Error which prevented re-runs from preserving prior attempt's outputs.")]
     [SurrealNote("On a fork, the same execution row can be referenced by both parent and child run via the `executes` RELATE edge for nodes whose execution_order < forkPoint (copy-by-reference, no duplication). Scalar run_id is the originating run; cross-run reference happens through the RELATE edge defined separately in surrealdb-migration §6.2.")]
@@ -46,7 +46,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [References(typeof(ActionRun))]
         public string RunId { get; set; } = string.Empty;
 
-        [FieldGroup("ActionDefinition definition node this execution corresponds to")]
+        [FieldGroup("Action definition node this execution corresponds to")]
         [References(typeof(ActionNode))]
         public string NodeId { get; set; } = string.Empty;
 

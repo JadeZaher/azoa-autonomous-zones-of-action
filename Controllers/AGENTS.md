@@ -121,7 +121,7 @@ The scope predicate lives in the MANAGER (`HolonManager.CanRead`,
 `STARManager.CanRead`, `NftManager.CanRead`); controllers thread the authenticated
 `GetUserIdFromClaims()` into the read methods as `Guid? callerUserId`
 (added as a new parameter mirroring `SearchManager.SearchAsync(callerUserId)`).
-ActionDefinition node handlers pass `context.ActingUserId` (the RUNNER — consistent with the
+Action node handlers pass `context.ActingUserId` (the RUNNER — consistent with the
 ActingUserId invariant); the GateCheck / `$from` binding resolver paths pass the
 acting user AND keep their existing owner-STRICT post-check (a predicate/binding
 may name only the runner's OWN holons, never a public one owned by someone else).

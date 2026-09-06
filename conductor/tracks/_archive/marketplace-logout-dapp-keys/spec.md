@@ -89,7 +89,7 @@ L2 (public action reveals node configs) documented as accepted residual risk.
 ## Verification
 
 - `dotnet build`: 0 errors, 17 warnings (pre-existing baseline).
-- ActionDefinition unit tests post-fix: 481 passed, 0 failed.
+- Action unit tests post-fix: 481 passed, 0 failed.
 - SDK: tsup + tsc clean, 163 vitest green.
 - Integration sweep: 250 passed; all failures were environment flakiness (dropped
   SurrealDB sockets `ResponseEnded`, wallet-seed 400s, perf-timing budgets,

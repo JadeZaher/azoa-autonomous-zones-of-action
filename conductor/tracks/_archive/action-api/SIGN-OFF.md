@@ -1,4 +1,4 @@
-# ActionDefinition API -- SIGN-OFF
+# Action API -- SIGN-OFF
 *Date:* 2026-06-11
 *Track status:* COMPLETE (with reconciliation)
 *Reviewer:* opus orchestrator + executor-high (autopilot Phase F close-out)
@@ -20,7 +20,7 @@ onto the runtime aggregate. See `## Reconciliation` below.
 | 1. All endpoints return `AZOAResult<T>` or `AZOAResponse` | PASS | `Controllers/ActionController.cs` -- all 30 actions return `ActionResult<AZOAResult<T>>`; `Delete` returns `ActionResult<AZOAResponse>` (line 60); new endpoints lines 180-296 follow the same shape | None |
 | 2. `[Authorize]` + `GetUserIdFromClaims()` via `ClaimTypes.NameIdentifier` / `"sub"` | PASS | `Controllers/ActionController.cs:12` controller-level `[Authorize]`; `GetUserIdFromClaims` at lines 304-309 unchanged from pre-existing surface | None |
 | 3. User-scoped access control | PARTIAL-BY-DESIGN | User id is required on `Create`-class paths (Create, CreateTemplate, CreateNodeTemplate, InstantiateTemplate). The 14 new sub-resource endpoints operate on already-owned actions and follow the existing repo convention of NOT re-checking user id on GET/Update/Delete sub-resource paths | Matches the existing 16-endpoint behavior. Cross-tenant access protection lives in the store layer (per-aggregate `IActionStore` seam). |
-| 4. DAG validation on edge add, action activate | RECONCILED | `Managers/ActionManager.cs:865-919` (`AddEdgeAsync` runs `_dagValidator.Validate` after mutation; cycle-detected errors reject) -- see F1 below. "ActionDefinition activate" is N/A under the fork-model; DAG validation runs unconditionally inside `ExecuteAsync` at line 169 (pre-existing) | None |
+| 4. DAG validation on edge add, action activate | RECONCILED | `Managers/ActionManager.cs:865-919` (`AddEdgeAsync` runs `_dagValidator.Validate` after mutation; cycle-detected errors reject) -- see F1 below. "Action activate" is N/A under the fork-model; DAG validation runs unconditionally inside `ExecuteAsync` at line 169 (pre-existing) | None |
 | 5. Dependency check on action activate | RECONCILED | `Managers/ActionManager.cs:1025-1056` (`CheckDependenciesAsync`) materializes the satisfied/unsatisfied verdict; `Controllers/ActionController.cs:255-259` exposes it as `GET /api/action/{actionId}/dependency-status`. Caller invokes this before `Execute`; the manager does not gate `ExecuteAsync` on dependencies because that would entangle definition validity with runtime concerns (see ADR §2.2 boundary) | Caller-driven gate, not manager-enforced. Documented in spec retrospectively via this sign-off. |
 | 6. Node dispatch table maps every `ActionNodeType` to correct manager method | PASS (pre-existing) | 34/34 `IActionNodeHandler` implementations registered via `IActionNodeHandlerRegistry` (shipped under `architecture-decoupling`); `ActionManager.cs:300-302, 387-397` route through `_registry.TryGet(node.NodeType, out var handler)` | None |
 | 7. Config JSON validated against expected request model per node type | PASS (pre-existing) | Per-handler `HandleAsync(ActionNodeExecutionContext)` validates `node.Config` against its bound request model. Unsupported types fail closed at `ActionManager.cs:294, 385` (`ActionNodeResults.Fail($"Unsupported node type: ...")`) | None |
@@ -54,7 +54,7 @@ errors fire on any partial graph mid-wiring). The full check still runs
 at `ExecuteAsync` (line 169) before any node is dispatched, so the
 invariant the spec cares about -- "no execution on an invalid DAG" --
 holds end-to-end. Tested at
-`tests/AZOA.WebAPI.Tests/ActionDefinition/ActionManagerSubResourceTests.cs` --
+`tests/AZOA.WebAPI.Tests/Actions/ActionManagerSubResourceTests.cs` --
 `AddEdgeAsync_CreatesCycle_RejectsWithCycleMessage` and
 `AddEdgeAsync_PartialGraph_DoesNotRejectOnOrphan`.
 
@@ -64,7 +64,7 @@ The fork-model's runtime aggregate (`ActionRun`) decouples definition
 edits from execution attempts. An `ActionDefinition` definition with unsatisfied
 dependencies is still a valid graph -- callers explicitly decide
 whether to gate on `CheckDependenciesAsync` before invoking `ExecuteAsync`.
-`DependencyCheckResult` (`Models/ActionDefinition/DependencyCheckResult.cs`) returns
+`DependencyCheckResult` (`Models/Actions/DependencyCheckResult.cs`) returns
 `{ AllSatisfied: bool, UnsatisfiedDependencyIds: IEnumerable<Guid> }`
 where `UnsatisfiedDependencyIds` carries the `ActionDependency.Id`
 (the row id), not the target action id -- callers can correlate
@@ -116,7 +116,7 @@ The four spec endpoints intentionally not implemented:
 | `POST /api/actions/{id}/activate` | "Draft → Active" transition is meaningless under the fork-model | `POST /api/action/{id}/execute` (pre-existing) creates an `ActionRun(Pending → Running)` |
 | `POST /api/actions/{id}/complete` | ActionDefinition entity has no runtime status | `POST /api/action/runs/{runId}/complete` (new) flips `ActionRun.Status` |
 | `POST /api/actions/{id}/fail` | Same | `POST /api/action/runs/{runId}/mark-failed` (pre-existing) flips `ActionRun.Status` to `Failed` with audit reason |
-| `GET  /api/actions/{id}/execution-state` | "Current state" of an ActionDefinition is N/A; an ActionDefinition can have N concurrent / historical Runs | `GET /api/action/runs/{runId}/execution-state` (new) surfaces `ActionExecutionState` for a specific run |
+| `GET  /api/actions/{id}/execution-state` | "Current state" of an action is N/A; an action can have N concurrent / historical Runs | `GET /api/action/runs/{runId}/execution-state` (new) surfaces `ActionExecutionState` for a specific run |
 
 Net realized surface: 30 endpoints on `ActionController` (spec asked for
 34; the 4 above are intentionally absent because the underlying
@@ -182,7 +182,7 @@ F4 -- Phase E unblocked but not landed -- action stores still consume hand-writt
 ### P3 (informational)
 
 F5 -- `DependencyCheckResult.UnsatisfiedDependencyIds` carries `ActionDependency.Id` (row id), not target action id
-- File: `Models/ActionDefinition/DependencyCheckResult.cs`
+- File: `Models/Actions/DependencyCheckResult.cs`
 - Rationale: callers correlate unsatisfied deps with `RemoveDependencyAsync`
   by row id. Target action id is recoverable via `_actionStore.GetActionAsync`
   on the dep row if needed.
@@ -210,7 +210,7 @@ F6 -- Sub-resource deletes return `AZOAResult<bool>` while top-level `Delete` re
   together when Phase E lands).
 - **Phase G (dapp-composition close-out) -- unblocked by this track.**
   See `conductor/tracks/dapp-composition/spec.md` for the integration
-  tests + Swagger smoke that were waiting on a stable ActionDefinition REST surface.
+  tests + Swagger smoke that were waiting on a stable Action REST surface.
 
 ## Sign-off
 

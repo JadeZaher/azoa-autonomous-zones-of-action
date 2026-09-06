@@ -119,7 +119,7 @@ public class ActionPublishLifecycleTests
         result.IsError.Should().BeTrue("cyclic DAG must be rejected");
         result.Message.Should().ContainEquivalentOf("Cycle");
 
-        // ActionDefinition must remain Draft after a failed publish.
+        // Action must remain Draft after a failed publish.
         var reloaded = (await actionStore.GetActionAsync(action.Id)).Result;
         reloaded!.Status.Should().Be(ActionStatus.Draft);
     }

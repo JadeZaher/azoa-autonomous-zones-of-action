@@ -38,7 +38,7 @@ public class ActionInstantiatorDuplicateKeyTests
             .ReturnsAsync(new ActionTemplateEntity
             {
                 Id = templateId,
-                Name = "Dup Param ActionDefinition",
+                Name = "Dup Param Action",
                 AuthorUserId = Guid.NewGuid(),
                 Nodes = new List<ActionTemplateNodeEntity>(),
                 Edges = new List<ActionTemplateEdgeEntity>(),

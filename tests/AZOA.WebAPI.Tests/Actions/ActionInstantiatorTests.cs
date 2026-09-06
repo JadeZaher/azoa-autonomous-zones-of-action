@@ -61,7 +61,7 @@ public class ActionInstantiatorTests
         var template = new ActionTemplateEntity
         {
             Id = templateId,
-            Name = "Simple ActionDefinition",
+            Name = "Simple Action",
             Description = "A simple action template",
             AuthorUserId = Guid.NewGuid(),
             Nodes = new List<ActionTemplateNodeEntity>
@@ -110,7 +110,7 @@ public class ActionInstantiatorTests
         // Status moved to ActionRun (see action-temporal-fork-model ADR §2.2);
         // instantiation produces the definition only.
         Assert.NotNull(action);
-        Assert.Equal("Simple ActionDefinition", action.Name);
+        Assert.Equal("Simple Action", action.Name);
         Assert.Equal(userId, action.UserId);
         Assert.Equal(templateId, action.TemplateId);
         Assert.Equal(2, action.Nodes.Count);
@@ -127,7 +127,7 @@ public class ActionInstantiatorTests
         var template = new ActionTemplateEntity
         {
             Id = templateId,
-            Name = "Param ActionDefinition",
+            Name = "Param Action",
             AuthorUserId = Guid.NewGuid(),
             Parameters = "{\"required\":[\"holonId\"]}",
             Nodes = new List<ActionTemplateNodeEntity>(),

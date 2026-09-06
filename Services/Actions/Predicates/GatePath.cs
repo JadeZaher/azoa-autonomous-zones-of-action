@@ -3,7 +3,7 @@ namespace AZOA.WebAPI.Services.Actions.Predicates;
 /// <summary>
 /// Single authority for the closed gate-path grammar used by both
 /// <see cref="GatePredicateEvaluator"/> and <see cref="ActionConfigBindingResolver"/>.
-/// See Services/ActionDefinition/AGENTS.md §output-binding for the grammar specification.
+/// See Services/Actions/AGENTS.md §output-binding for the grammar specification.
 /// </summary>
 /// <remarks>
 /// Grammar (closed — no arithmetic, no function calls):

@@ -11,7 +11,7 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("action_edge",
-        Aggregate = "ActionEdge (Models/ActionDefinition/ActionEdge.cs)",
+        Aggregate = "ActionEdge (Models/Actions/ActionEdge.cs)",
         Guardrail = "G6 SCHEMAFULL; definition-side directed control-flow edge between two action_node rows in the same action.")]
     [SurrealNote("Scalar edge table is the conservative shape; the surrealdb-migration track may promote this to a native `RELATE source_node -> control_flow -> target_node` edge for cheaper traversal. Both shapes preserve intra-iteration DAG semantics; the scalar form keeps ActionDagValidator queries unchanged.")]
     [SurrealNote("condition is populated only when edge_type = Conditional; the ConditionNodeHandler evaluates the expression against the upstream node's serialized output to gate edge activation.")]

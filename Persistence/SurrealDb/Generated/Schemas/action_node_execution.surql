@@ -1,6 +1,6 @@
 -- ============================================================
 -- Table: action_node_execution
--- Aggregate: ActionNodeExecution (Models/ActionDefinition/ActionNodeExecution.cs)
+-- Aggregate: ActionNodeExecution (Models/Actions/ActionNodeExecution.cs)
 -- Guardrail: G6 SCHEMAFULL; G2 exactly-once claim primitive (api-safety-hardening). One row per (run, node).
 -- Note: Per-(run, node) execution row. Replaces the in-place mutation of ActionNode.State/Output/Error which prevented re-runs from preserving prior attempt's outputs.
 -- Note: On a fork, the same execution row can be referenced by both parent and child run via the `executes` RELATE edge for nodes whose execution_order < forkPoint (copy-by-reference, no duplication). Scalar run_id is the originating run; cross-run reference happens through the RELATE edge defined separately in surrealdb-migration §6.2.
@@ -22,7 +22,7 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE action_node_execution TYPE string
 -- Owning run (originating run; cross-run references via `executes` RELATE edge)
 DEFINE FIELD IF NOT EXISTS run_id ON TABLE action_node_execution TYPE record<action_run>;
 
--- ActionDefinition definition node this execution corresponds to
+-- Action definition node this execution corresponds to
 DEFINE FIELD IF NOT EXISTS node_id ON TABLE action_node_execution TYPE record<action_node>;
 
 -- ActionNodeState enum name

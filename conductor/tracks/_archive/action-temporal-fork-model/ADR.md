@@ -1,4 +1,4 @@
-# ADR — ActionDefinition Temporal / Forkable DAG Model
+# ADR — Action Temporal / Forkable DAG Model
 
 **Status:** Accepted (track `action-temporal-fork-model`, wave parallel to `surrealdb-client-package`).
 **Date:** 2026-05-21
@@ -10,7 +10,7 @@
 
 ## 1. Context
 
-`Models/ActionDefinition/ActionDefinition.cs` conflates **definition** (the workflow shape — nodes,
+`Models/Actions/ActionDefinition.cs` conflates **definition** (the workflow shape — nodes,
 edges, dependencies, template ancestry) with **runtime** (which attempt is
 in flight, what each node returned, when it ended). The same row is mutated
 in place: `ActionDefinition.Status`, `ActionNode.State`, `ActionNode.Output`, and
@@ -40,7 +40,7 @@ Split the model into **definition** and **runtime**:
 | Per-node state | None (definition is shape-only) | `ActionNodeExecution` keyed by `(RunId, NodeId)` |
 | Lineage | None | `ActionRun.ParentRunId?` (tree, not DAG) |
 
-### 2.1 New models (in `Models/ActionDefinition/`)
+### 2.1 New models (in `Models/Actions/`)
 
 - **`ActionRun`** — one execution attempt. Fields: `Id`, `ActionId`,
   `UserId`, `Status` (`ActionRunStatus`), `StartedAt`, `EndedAt?`,
@@ -132,7 +132,7 @@ ledger" external analysis and explicitly deferred:
 
 | Non-goal | Why deferred |
 | --- | --- |
-| **MetaNode / HolonDAG rebuild** | `ActionTemplate` (`Models/ActionDefinition/ActionTemplate.cs`) + `Services/ActionDefinition/ActionInstantiator.cs` already serve the templated-DAG role. Renaming is API+SDK churn for zero behavior change. |
+| **MetaNode / HolonDAG rebuild** | `ActionTemplate` (`Models/Actions/ActionTemplate.cs`) + `Services/Actions/ActionInstantiator.cs` already serve the templated-DAG role. Renaming is API+SDK churn for zero behavior change. |
 | **Time-sliced ledger** | Out of band for this seam. A run's `StartedAt`/`EndedAt` + per-node `StartedAt`/`EndedAt` already give point-in-time reconstruction. A separate ledger is an ops/observability track if it ever materializes. |
 | **Inter-iteration feedback cycles** | Lineage is a **tree**. Cycles across runs would only matter for a feedback-loop orchestrator — no current use case requires it. If a future need arises, a separate track adds a different edge type with its own validator. |
 | **Snapshot pruning / state explosion** | A run is cheap (one row + N node-execution rows). Volume mitigation is a post-launch ops concern, not a model-layer concern. |

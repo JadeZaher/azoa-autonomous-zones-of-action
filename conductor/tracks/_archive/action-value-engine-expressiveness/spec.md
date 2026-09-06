@@ -17,8 +17,8 @@ simple game actions bridging actions across games."* Seven locked features:
 
 | # | Feature | Keystone file(s) |
 |---|---|---|
-| F1 | Output-binding (`{"$from": path}`) in node configs | `Services/ActionDefinition/ActionNodeConfig.cs`, `ActionNodeConfigRegistry.cs`, both engines |
-| F2 | First-class failure arm: `ActionEdgeType.OnFailure` | `Managers/ActionManager.cs` skip loop, `Services/ActionDefinition/Workflow/*`, `ActionDagValidator` |
+| F1 | Output-binding (`{"$from": path}`) in node configs | `Services/Actions/ActionNodeConfig.cs`, `ActionNodeConfigRegistry.cs`, both engines |
+| F2 | First-class failure arm: `ActionEdgeType.OnFailure` | `Managers/ActionManager.cs` skip loop, `Services/Actions/Workflow/*`, `ActionDagValidator` |
 | F3 | `action.emit` webhook events (generalized consent outbox) | `Services/Webhooks/`, `Services/Consent/ConsentWebhookEmitter.cs` |
 | F4 | `ActionDependency` enforcement at run start | `Managers/ActionManager.cs:1241` `CheckDependenciesAsync` |
 | F5 | Opt-in Holon AssetType/metadata registry | new `HolonTypeRegistry` table + Manager/Controller, `Managers/HolonManager.cs` |
@@ -42,13 +42,13 @@ questions remain.**
 | V5 | F2 durable seam | `ActionNodeStepHandler` records the execution `Failed` then returns `StepResult.Fail` at BOTH the fresh-failure seam (~line 266) and the idempotent-replay seam (~line 502); the saga retry of an already-Failed-recorded execution is a no-op replay, so consulting OnFailure at these two seams IS the "retries exhausted" point for deterministic failures (transient pre-record failures still burn saga retries first). If the failed node has exactly one OnFailure successor, advance to it via the same mechanism as the normal single-successor hop (~line 292) instead of `StepResult.Fail`. >1 OnFailure successors = publish-time error for the durable profile (mirrors the Control fan-out treatment). Chain-reconciliation park states (`AwaitingReconciliation`) are unchanged — OnFailure consult happens only on a terminal `Failed` record. |
 | V6 | F3 outbox exists? | **YES — F3 is a generalization, not a descope.** Verified: `Services/Consent/ConsentWebhookEmitter.cs` (transactional-outbox enqueue), `Services/Webhooks/ConsentWebhookDeliveryWorker.cs` (hosted drainer with `WebhookHmacSigner` replay-resistant HMAC, `WebhookSsrfGuard` re-validated per POST, per-tenant secret), `Providers/Stores/Surreal/SurrealConsentWebhookOutboxStore.cs` (single-winner conditional transitions), `IWebhookRegistrationStore.GetByTenantAsync(tenantId)`. |
 | V7 | F3 registration model | Consent webhooks resolve the endpoint **per TenantId** (`GetByTenantAsync(evt.TenantId)`). `ActionRun` carries `ActingTenantId` (`ActionManager.cs:351/550/1427`). **Lock: `action.emit` delivers to the `WebhookRegistration` of `run.ActingTenantId`; a run with null `ActingTenantId` enqueues nothing (no addressable endpoint — silent no-op, logged debug).** The same registered endpoint receives both event families, distinguished by wire event type. |
-| V8 | F3 enqueue transactionality | ActionDefinition execution writes are NOT in a transaction with the outbox (unlike the consent grant Upsert). **Lock: best-effort enqueue immediately after the Emit execution is recorded Succeeded; enqueue failure is logged and NEVER fails the node or run (observe-only, mirrors AC8 posture of the consent bridge).** |
+| V8 | F3 enqueue transactionality | Action execution writes are NOT in a transaction with the outbox (unlike the consent grant Upsert). **Lock: best-effort enqueue immediately after the Emit execution is recorded Succeeded; enqueue failure is logged and NEVER fails the node or run (observe-only, mirrors AC8 posture of the consent bridge).** |
 | V9 | F5 registry scope | **Global registered `asset_type` (unique table-wide) with owner attribution; readable by all authenticated users; mutation IDOR-scoped to the registering owner** (user-locked preference; matches the "published vocabulary for cross-game predicates" goal — a per-user scope would defeat cross-game reads). |
 | V10 | F6 conditional update | `SurrealActionStore.UpsertActionAsync` has NO conditional form. Precedents exist: `SurrealActionRunStore.UpdateAsync(run, expectedStatus)` (`WHERE status = $_expected RETURN AFTER`, line ~188), `SurrealBridgeStore` (~line 511), saga store single-winner. **Lock: add a targeted `TryTransitionStatusAsync(actionId, from, to)` to `IActionStore`/`SurrealActionStore` — a single-field conditional `UPDATE action SET status = $_to WHERE status = $_from RETURN AFTER`; empty result = lost race.** Smaller and safer than a conditional whole-aggregate Upsert (which fans out to nodes/edges). |
 | V11 | F6 ordering | **Lock: (i) `UnpublishAsync`: conditional flip Active→Draft FIRST (single-winner), THEN the in-flight-run check; if in-flight runs exist, revert to Active and refuse. (ii) run start (`ExecuteAsync` + `StartWorkflowRunAsync`): create the run row, THEN re-read action status; if no longer Active, mark the run Cancelled (reason names the unpublish race) and return an error.** Every interleaving now fails in the safe direction: either unpublish sees the run row and refuses, or the run sees Draft and aborts. Worst case is a spurious refusal/abort — acceptable pre-launch; never a run against a Draft action. |
-| V12 | F1 path grammar authority | The `upstream.<node>.<jsonPath>` / `holon.<guid>.<field>` grammar lives inside `GatePredicateEvaluator` (private lexer, GUID-friendly post-dot segments, closed grammar). **Lock: extract a small shared path parser (e.g. `Services/ActionDefinition/Predicates/GatePath.TryParse`) used by both the evaluator's `PathNode` construction and the new binding resolver, so ONE grammar authority exists.** Binding roots in v1: `upstream.` and `holon.` only (`reads.` is GateCheck-config-local and has no meaning outside a gate). |
-| V13 | F4 current state | `CheckDependenciesAsync` (`ActionManager.cs:1241-1268`) checks *any* Succeeded run of the depended-on action — it ignores the user, `DependencyType`, and `DependsOnNodeId`, and nothing calls it on the execute paths. `ActionDependencyType = { Required, Optional }` confirmed (`Models/ActionDefinition/ActionEnums.cs:117`). Run terminal state is `ActionRunStatus.Succeeded` (not "Completed") — ACs use `Succeeded`. |
-| V14 | F7 SDK surface | Node-config builders live at `sdk/azoa-wallet/src/workflow/node-config.ts` (pure builders mirroring `Models/ActionDefinition/NodeConfigs.cs`); no SDK string-literal `'Control'` edge-type union was found — the edge type surface is located and extended (or introduced) in Phase G. `publishAction`/`unpublishAction` already exist (`api/client.ts`, predecessor Phase G4). |
+| V12 | F1 path grammar authority | The `upstream.<node>.<jsonPath>` / `holon.<guid>.<field>` grammar lives inside `GatePredicateEvaluator` (private lexer, GUID-friendly post-dot segments, closed grammar). **Lock: extract a small shared path parser (e.g. `Services/Actions/Predicates/GatePath.TryParse`) used by both the evaluator's `PathNode` construction and the new binding resolver, so ONE grammar authority exists.** Binding roots in v1: `upstream.` and `holon.` only (`reads.` is GateCheck-config-local and has no meaning outside a gate). |
+| V13 | F4 current state | `CheckDependenciesAsync` (`ActionManager.cs:1241-1268`) checks *any* Succeeded run of the depended-on action — it ignores the user, `DependencyType`, and `DependsOnNodeId`, and nothing calls it on the execute paths. `ActionDependencyType = { Required, Optional }` confirmed (`Models/Actions/ActionEnums.cs:117`). Run terminal state is `ActionRunStatus.Succeeded` (not "Completed") — ACs use `Succeeded`. |
+| V14 | F7 SDK surface | Node-config builders live at `sdk/azoa-wallet/src/workflow/node-config.ts` (pure builders mirroring `Models/Actions/NodeConfigs.cs`); no SDK string-literal `'Control'` edge-type union was found — the edge type surface is located and extended (or introduced) in Phase G. `publishAction`/`unpublishAction` already exist (`api/client.ts`, predecessor Phase G4). |
 
 ## Functional Requirements
 
@@ -69,7 +69,7 @@ binding syntax INSIDE config JSON.
   parser extracted per V12. **No expressions, no arithmetic, path lookup ONLY**
   (the closed-grammar no-arbitrary-code guarantee is preserved).
 - **Runtime resolution (both engines), BEFORE `TryDeserialize`:** a
-  type-agnostic pre-pass (new `Services/ActionDefinition/ActionConfigBindingResolver`)
+  type-agnostic pre-pass (new `Services/Actions/ActionConfigBindingResolver`)
   walks the config JSON, resolves every `$from` node against the same scope
   GateCheck builds (`GateCheckNodeHandler.BuildScopeAsync` shape): upstream
   executions of the node's incoming edges keyed `upstream.<nodeName>` + holon
@@ -118,7 +118,7 @@ binding syntax INSIDE config JSON.
 
 ### FR-2 (F2): First-class failure arm — `ActionEdgeType.OnFailure`
 
-- New enum member `ActionEdgeType.OnFailure` (`Models/ActionDefinition/ActionEnums.cs:108`).
+- New enum member `ActionEdgeType.OnFailure` (`Models/Actions/ActionEnums.cs:108`).
 - **Legacy engine semantics** (skip loop, `Managers/ActionManager.cs:395-419`):
   the V2 rule — a node runs iff (no Control/Conditional source Failed/Skipped)
   AND (≥1 OnFailure source Failed, when any OnFailure edges exist). An
@@ -137,7 +137,7 @@ binding syntax INSIDE config JSON.
   continues down the failure arm) instead of `StepResult.Fail`; consult at both
   the fresh-failure and replay seams. This CLOSES the documented
   durable-skip-propagation divergence — update
-  `Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics` accordingly.
+  `Services/Actions/Workflow/AGENTS.md §skip-semantics` accordingly.
 - **Edge input validation:** `Validators/ActionEdgeCreateModelValidator.cs` +
   `ActionEdgeAddModelValidator` accept `OnFailure`; `Condition` must be empty
   for OnFailure edges (condition is Conditional-only).
@@ -331,9 +331,9 @@ Generalize the consent-webhook bridge (V6 — it exists; NOT descoped).
   the predecessor (`ActionLifecycleIntegrationTests` / `ActionSemanticsIntegrationTests`
   / `ActionArdanovaFlowIntegrationTests`) are the pattern to extend.
 - **NFR-3 (docs convention):** terse one-line doc-comments; rationale in
-  directory-level AGENTS.md (`Services/ActionDefinition/AGENTS.md §output-binding`,
+  directory-level AGENTS.md (`Services/Actions/AGENTS.md §output-binding`,
   `Managers/AGENTS.md §onfailure-semantics` + §publish-lifecycle update,
-  `Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics` update).
+  `Services/Actions/Workflow/AGENTS.md §skip-semantics` update).
 - **NFR-4 (schema discipline):** every `Persistence/SurrealDb/Models/` change
   regenerates goldens via the pipeline; `.surql` never hand-edited; POCO
   `*Kind` enums mirror domain enums in full.

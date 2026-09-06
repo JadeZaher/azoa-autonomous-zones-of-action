@@ -5,7 +5,7 @@ Decision record + track. **Tier 1 — the consumer surface** of the
 `workflow-engine` initiative (Track 4 of 4: value-path-wiring →
 durable-workflow-engine → economic-primitive-nodes → **workflow-sdk**).
 Direction sourced from `conductor/REVIEW-economic-substrate-2026-06-16.md`
-**Part C** (ActionDefinition as the economic-workflow substrate). Nothing in this track is
+**Part C** (Action as the economic-workflow substrate). Nothing in this track is
 implemented yet.
 
 ## Goal
@@ -59,7 +59,7 @@ browser / React Native / Lynx (`azoa-wallet-sdk_20260509/spec.md:5`, FR-8
   - `instantiateActionTemplate(templateId, parameters?)` →
     `POST /api/action/templates/{id}/instantiate` (`:1058-1061`) — the
     `{{param}}` substitution entrypoint.
-  - ActionDefinition DAG CRUD + the all-at-once `executeAction` /
+  - Action DAG CRUD + the all-at-once `executeAction` /
     `executeActionNode` already exist (`:992-1037`), and the action DTOs
     (`ActionResult`, `ActionNodeResult`, `ActionTemplateResult`, …) are typed at
     `sdk/azoa-wallet/src/api/client.ts:382-533`.

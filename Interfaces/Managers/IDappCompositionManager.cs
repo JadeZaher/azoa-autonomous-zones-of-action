@@ -26,7 +26,7 @@ public interface IDappCompositionManager
 
     Task<AZOAResult<bool>> DeleteAsync(Guid seriesId, Guid userId, CancellationToken ct = default);
 
-    // ── ActionDefinition Management within Series ───────────────────────────────────────
+    // ── Action Management within Series ─────────────────────────────────────────────────
 
     Task<AZOAResult<DappSeriesAction>> AddActionAsync(Guid seriesId, Guid userId, DappSeriesAddActionModel model, CancellationToken ct = default);
 

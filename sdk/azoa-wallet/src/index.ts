@@ -84,9 +84,9 @@ export type {
   PortfolioAsset,
   PortfolioAssetKind,
   NftHolding,
-  // ActionDefinition + Holon AssetType registry (final-hardening Phase C)
+  // Action + Holon AssetType registry (final-hardening Phase C)
   ActionResult,
-  // ActionDefinition invitations + request/approval (action-invitations-approval)
+  // Action invitations + request/approval (action-invitations-approval)
   ActionRunAccess,
   ActionAccessRequestStatus,
   ActionAccessRequest,

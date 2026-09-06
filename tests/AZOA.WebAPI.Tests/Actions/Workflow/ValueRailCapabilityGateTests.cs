@@ -118,7 +118,7 @@ public sealed class ValueRailCapabilityGateTests
         }
     }
 
-    // ── ActionDefinition-definition builder (single linear chain of one node type) ──────────
+    // ── Action-definition builder (single linear chain of one node type) ──────────
 
     private static ActionEntity BuildLinearAction(Harness h, ActionNodeType nodeType, params string[] names)
     {

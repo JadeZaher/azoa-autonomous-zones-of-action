@@ -5,10 +5,10 @@ Compose a **series of Actions** into a **dApp contract** — a deployable applic
 
 ## Architecture
 
-### ActionDefinition Series → dApp Pipeline
+### Action Series → dApp Pipeline
 ```
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│ ActionDefinition DAG 1  │───▶│ ActionDefinition DAG 2  │───▶│ ActionDefinition DAG N  │
+│ Action DAG 1 │───▶│ Action DAG 2 │───▶│ Action DAG N │
 │ (Entry/init) │    │ (depends on 1)│   │ (Terminal)   │
 └──────────────┘    └──────────────┘    └──────────────┘
          │                   │                   │
@@ -100,7 +100,7 @@ Task<AZOAResult<IEnumerable<DappSeries>>> ListAsync(Guid userId, DappSeriesStatu
 Task<AZOAResult<DappSeries>> UpdateAsync(Guid seriesId, Guid userId, DappSeriesUpdateModel model);
 Task<AZOAResult<bool>> DeleteAsync(Guid seriesId, Guid userId);
 
-// ActionDefinition Management within Series
+// Action Management within Series
 Task<AZOAResult<DappSeriesAction>> AddActionAsync(Guid seriesId, Guid userId, Guid actionId, int order, string? inputMappings = null);
 Task<AZOAResult<DappSeriesAction>> RemoveActionAsync(Guid seriesId, Guid userId, Guid actionId);
 Task<AZOAResult<DappSeriesAction>> ReorderActionAsync(Guid seriesId, Guid userId, Guid actionId, int newOrder);
@@ -137,7 +137,7 @@ Task<AZOAResult<ISTARODK>> DeployAsync(Guid seriesId, Guid userId, string? targe
 | `PUT` | `/api/dapp-series/{id}` | Update metadata |
 | `DELETE` | `/api/dapp-series/{id}` | Delete (Draft only) |
 
-### Series ActionDefinition Management
+### Series Action Management
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -161,7 +161,7 @@ Task<AZOAResult<ISTARODK>> DeployAsync(Guid seriesId, Guid userId, string? targe
 1. **All Actions Completed**: Every action in the series must have `Status = Completed`.
 2. **Chain Completeness**: No isolated actions — each action (after the first) must have at least one dependency on a prior action in the series.
 3. **Input Mapping Consistency**: Entry nodes in action N (N > 1) should have mapped inputs from terminal nodes in prior actions.
-4. **No Circular Dependencies**: ActionDefinition A cannot depend on ActionDefinition B if ActionDefinition B appears later in the series order.
+4. **No Circular Dependencies**: Action A cannot depend on Action B if Action B appears later in the series order.
 5. **Holon Bindings Resolved**: All holon IDs referenced in action node configs must exist.
 
 ## STAR Integration Flow

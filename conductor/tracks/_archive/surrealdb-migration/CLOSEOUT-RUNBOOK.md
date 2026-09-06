@@ -71,7 +71,7 @@ seam only, services still on DbContext), 8b, A7 (test-skip pattern).
 |---|---|---|
 | Wave-2 finish | task 5 completion + task 8 full | User/Holon/STAR adapters; refactor `ReconciliationService` + `CrossChainBridgeService` onto `IBridgeStore` |
 | Ops guardrails | 12, 13, 15, A1 | durability self-check (B1), backup/restore drill, OTEL on `ISurrealExecutor`, perf budgets |
-| ActionDefinition graph (gated) | 9, 10, 11 | action DAG via `RELATE`, holon polyhierarchy edges, single `ExecutionOrder` — blocked on `action-temporal-fork-model` |
+| Action graph (gated) | 9, 10, 11 | action DAG via `RELATE`, holon polyhierarchy edges, single `ExecutionOrder` — blocked on `action-temporal-fork-model` |
 | Wave-3 EF removal | 16, 17, 18 | delete `AZOADbContext`/`Migrations/`/`Ef*Store.cs`/Npgsql packages |
 | Cutover gates | 19–23, 25–27 | G1 crash, G2 idempotency, G7 reconciliation drill, G5 restore drill, G3 injection suite, harness port, sign-off |
 
@@ -135,7 +135,7 @@ window. They touch disjoint file sets; you can launch all three within
 ### Stream A — finish [`plan.md`](plan.md) task 5 (User / Holon / STAR adapters)
 
 **Scope.** Author the three missing `.mermaid`/`.surql` schemas, build
-their adapters mirroring the wave-2 pattern, and flip DI. ActionDefinition portion
+their adapters mirroring the wave-2 pattern, and flip DI. Action portion
 stays gated on `action-temporal-fork-model` — skip it.
 
 **Prompt:**
@@ -144,7 +144,7 @@ stays gated on `action-temporal-fork-model` — skip it.
 /ultrapilot
 
 Goal: close wave-2 task 5 (conductor/tracks/surrealdb-migration/plan.md)
-for the User, Holon, STAR aggregates. ActionDefinition stays gated on
+for the User, Holon, STAR aggregates. Action stays gated on
 action-temporal-fork-model — SKIP it.
 
 Pattern to mirror exactly: the just-landed wave-2 stores at
@@ -189,7 +189,7 @@ All tests use [SkippableFact] + Skip.IfNot(await SkipIfSurrealDbUnavailableAsync
 
 Sequential coordinator pass (you, sonnet):
   - Flip the 3 Program.cs:247-254 EF lines for User/Holon/STAR to the
-    new Surreal counterparts (keep ActionDefinition on EF — gated on
+    new Surreal counterparts (keep Action on EF — gated on
     action-temporal-fork-model).
   - dotnet build AZOA.WebAPI.csproj — assert 0 errors, ≤17 warnings.
 
@@ -346,7 +346,7 @@ wave-3") to remove that note.
 
 > **Sequencing (amended 2026-05-22).** Stream C2 first, then Stream D.
 > Stream C2 was inserted after a failed Stream D dry-run: the pre-flight
-> grep surfaced three production code sites (`Services/ActionDefinition/ActionInstantiator.cs`,
+> grep surfaced three production code sites (`Services/Actions/ActionInstantiator.cs`,
 > `Core/ApiKeyAuthenticationHandler.cs`, `Controllers/ApiKeyController.cs`)
 > that still inject `AZOADbContext` and were never in Stream C's scope.
 > Stream D's W1 deletion list would have broken the build at those call
@@ -363,7 +363,7 @@ the Surreal-backed adapter mirroring the wave-2 pattern.
 
 **Why now (not deferred).** Stream D can't proceed until every
 production injection site is gone, and `action-temporal-fork-model` is
-weeks out. ActionDefinition TEMPLATE lookups are read-only catalog data
+weeks out. Action TEMPLATE lookups are read-only catalog data
 (`ActionTemplate` / `ActionNodeTemplate` definitions) — definition-side,
 not the runtime `action_run` / `action_node_execution` split that
 `action-temporal-fork-model` owns — so there's no track collision.
@@ -430,8 +430,8 @@ Decomposition (sonnet, 2 isolated workers):
       - Providers/Stores/Surreal/SurrealActionTemplateStore.cs
       - tests/AZOA.WebAPI.IntegrationTests/Persistence/Surreal/SurrealActionTemplateStoreTests.cs
     OWNED FILES (flip — drop AZOADbContext):
-      - Services/ActionDefinition/ActionInstantiator.cs
-      - tests/AZOA.WebAPI.Tests/ActionDefinition/ActionInstantiatorTests.cs (replace
+      - Services/Actions/ActionInstantiator.cs
+      - tests/AZOA.WebAPI.Tests/Actions/ActionInstantiatorTests.cs (replace
         DbContext fixture with IActionTemplateStore mock)
 
     Schema (table action_template, SCHEMAFULL): id, name, description
@@ -462,7 +462,7 @@ Decomposition (sonnet, 2 isolated workers):
     constructs an in-memory AZOADbContext (SqliteTestContext). Replace
     with a `Mock<IActionTemplateStore>` that returns pre-built templates
     on the matching ids. Existing assertions stay identical — they
-    operate on the produced ActionDefinition, not the data source.
+    operate on the produced action, not the data source.
 
 Sequential coordinator pass (sonnet, ONE invocation):
   - Wire DI in Program.cs (2 new lines, scoped lifetime):
@@ -471,7 +471,7 @@ Sequential coordinator pass (sonnet, ONE invocation):
       builder.Services.AddScoped<IActionTemplateStore,
           AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionTemplateStore>();
   - dotnet build AZOA.WebAPI.csproj   → 0 errors
-  - dotnet test AZOA.WebAPI.Tests --filter "FullyQualifiedName~ApiKey|FullyQualifiedName~ActionDefinition"
+  - dotnet test AZOA.WebAPI.Tests --filter "FullyQualifiedName~ApiKey|FullyQualifiedName~Actions"
       → all green
   - Re-run the Stream D pre-flight gate. Production-code gate must be
     empty (XML-doc comment stragglers in
@@ -487,10 +487,10 @@ Closing pass (opus, ONE invocation):
   Focus: UNIQUE-on-key_hash correctness (no NULL collision risk — B3),
   IApiKeyStore.TouchLastUsedAsync must not throw (fire-and-forget
   contract), ActionInstantiator behaviour parity (same exception messages,
-  same ActionDefinition output shape), no leaked Microsoft.EntityFrameworkCore using
+  same action output shape), no leaked Microsoft.EntityFrameworkCore using
   directives in the new files. One executor-high fix pass if findings.
 
-Done = ApiKey + ActionDefinition callers all AZOADbContext-free, Stream D
+Done = ApiKey + Action callers all AZOADbContext-free, Stream D
 pre-flight gate clears, build + test green.
 ```
 

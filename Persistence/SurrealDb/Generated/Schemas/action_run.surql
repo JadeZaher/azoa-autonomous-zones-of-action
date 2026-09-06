@@ -1,6 +1,6 @@
 -- ============================================================
 -- Table: action_run
--- Aggregate: ActionRun (Models/ActionDefinition/ActionRun.cs)
+-- Aggregate: ActionRun (Models/Actions/ActionRun.cs)
 -- Guardrail: G6 SCHEMAFULL; runtime canonical lineage carrier. One row per execution attempt of an action.
 -- Note: Replaces the in-place mutation of ActionDefinition.Status that prevented re-runs from preserving prior attempt state -- see action-temporal-fork-model ADR §1. Re-running a Succeeded action creates a NEW root run (parent_run_id = null); forking a Running run creates a CHILD run with parent_run_id set.
 -- Note: Lineage forms a TREE via parent_run_id, not a DAG. The forked_from RELATE edge (defined separately in surrealdb-migration §6.1) mirrors parent_run_id for native graph-traversal queries. Both must be kept in sync at write time.
@@ -18,7 +18,7 @@ DEFINE TABLE IF NOT EXISTS action_run SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS id ON TABLE action_run TYPE string
     ASSERT $value != NONE AND $value != "";
 
--- ActionDefinition definition this run executes
+-- Action definition this run executes
 DEFINE FIELD IF NOT EXISTS action_id ON TABLE action_run TYPE record<action>;
 
 -- User that initiated this run (denormalized for query convenience)

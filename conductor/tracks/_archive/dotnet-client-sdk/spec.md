@@ -182,7 +182,7 @@ method → the proposed C# method on the corresponding facade. Grouped by facade
 | `generateSTARDapp` (`client.ts:847`) | `Starodk.GenerateDappAsync(id, params)` |
 | `deploySTARODK` (`client.ts:852`) | `Starodk.DeployAsync(id)` |
 
-#### ActionDefinition CRUD + execution → `azoa.Actions`
+#### Action CRUD + execution → `azoa.Actions`
 | TS method | C# method |
 |---|---|
 | `createAction` (`client.ts:992`) | `Actions.CreateAsync(params)` |

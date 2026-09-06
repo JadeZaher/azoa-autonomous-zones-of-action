@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Actions;
 
 /// <summary>
-/// Result of evaluating an ActionDefinition's cross-action <see cref="ActionDependency"/>
+/// Result of evaluating an action's cross-action <see cref="ActionDependency"/>
 /// list. A dependency is considered satisfied when the referenced action has
 /// at least one <see cref="ActionRun"/> in <see cref="ActionRunStatus.Succeeded"/>.
 /// </summary>

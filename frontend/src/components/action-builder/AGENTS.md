@@ -1,6 +1,6 @@
 # components/action-builder — design notes
 
-The ActionDefinition DAG authoring surface: a React Flow canvas with a node palette on the
+The Action DAG authoring surface: a React Flow canvas with a node palette on the
 left and an inspector on the right, plus the read-only run views that reuse the
 same node card. `action-canvas.tsx` is a composition root only — every piece of
 state lives in `hooks/`, every piece of markup in `panels/`, and every rule that

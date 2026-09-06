@@ -35,7 +35,7 @@ Each node is still an `ActionNodeType` + an `IActionNodeHandler` + one DI line,
 following the existing handler shape exactly:
 `JsonSerializer.Deserialize<TConfig>(context.Node.Config)` → call one AZOA
 manager / primitive → serialize the result → `Ok`/`Fail`
-(`Services/ActionDefinition/Handlers/NftMintNodeHandler.cs:19-26`).
+(`Services/Actions/Handlers/NftMintNodeHandler.cs:19-26`).
 
 ### The "chain optional" key point (make this explicit)
 
@@ -96,14 +96,14 @@ gaps (GateCheck, Emit).
 ### Handler SPI and registry (the seam every node plugs into)
 - `IActionNodeHandler` — `ActionNodeType NodeType { get; }` +
   `Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext, ct)`
-  (`Interfaces/ActionDefinition/IActionNodeHandler.cs:18-32`). **This is the SPI the
+  (`Interfaces/Actions/IActionNodeHandler.cs:18-32`). **This is the SPI the
   capability flag extends** (see D1 + "The SPI change" below).
 - `ActionNodeHandlerRegistry` builds the `ActionNodeType → IActionNodeHandler`
   map from DI and **throws on a duplicate type**
-  (`Services/ActionDefinition/ActionNodeHandlerRegistry.cs:16-30`) — the exactly-one-per-type
+  (`Services/Actions/ActionNodeHandlerRegistry.cs:16-30`) — the exactly-one-per-type
   invariant the house rules require.
 - `ActionNodeType` enum (~32 members) — adding a kind = enum member + handler +
-  DI line (`Models/ActionDefinition/ActionEnums.cs:19-70`).
+  DI line (`Models/Actions/ActionEnums.cs:19-70`).
 - Result helpers: `ActionNodeResults.Ok(json)` / `.Fail(msg)`; shared
   `ActionNodeJson.Options` for every (de)serialize.
 
@@ -116,8 +116,8 @@ gaps (GateCheck, Emit).
   wallet bound. No new dispatch loop; one guard at the existing seam.
 
 ### The actor / wallet binding on a run
-- The actor is `ActionDefinition.UserId` (`Models/ActionDefinition/ActionDefinition.cs:19`) carried onto the
-  run as `ActionRun.UserId` (`Models/ActionDefinition/ActionRun.cs:31`). Handlers already
+- The actor is `ActionDefinition.UserId` (`Models/Actions/ActionDefinition.cs:19`) carried onto the
+  run as `ActionRun.UserId` (`Models/Actions/ActionRun.cs:31`). Handlers already
   take the actor from `context.ActionDefinition.UserId`, never the body
   (`NftMintNodeHandler.cs:22`).
 - There is **no explicit wallet-id field on the run today** — "has a wallet
@@ -141,7 +141,7 @@ gaps (GateCheck, Emit).
   `ComposeAsync:265` (subtree rollup view), `CloneAsync:321` (deep subtree
   copy), `MoveSubtreeAsync:393` (cycle-guarded reparent of a subtree).
 
-Each already has a node handler (`Services/ActionDefinition/Handlers/Holon*NodeHandler.cs`)
+Each already has a node handler (`Services/Actions/Handlers/Holon*NodeHandler.cs`)
 and an `ActionNodeType` member (`ActionEnums.cs:21-35`:
 `HolonCreate/Update/Delete/Get/Query/Interact/GetChildren/GetPeers/GetAncestors/
 GetDescendants/Propagate/Compose/Clone/MoveSubtree`). **These are the Tier-1
@@ -152,10 +152,10 @@ only Holon records + metadata + the graph; none calls a chain. The track
 ### Data-flow between nodes (what a gate reads, what a transform feeds)
 - `ActionNodeExecutionContext.UpstreamExecutions` — already-completed predecessor
   executions keyed by source node id
-  (`Models/ActionDefinition/ActionNodeExecutionContext.cs:56-60`).
+  (`Models/Actions/ActionNodeExecutionContext.cs:56-60`).
 - `ComposeOutputsNodeHandler` already gathers upstream outputs by reading
   `context.UpstreamExecutions[...].Output`
-  (`Services/ActionDefinition/Handlers/ComposeOutputsNodeHandler.cs:27-41`) — the exact
+  (`Services/Actions/Handlers/ComposeOutputsNodeHandler.cs:27-41`) — the exact
   read a GateCheck predicate composes with, with no `IActionNodeExecutionStore`
   dependency.
 - `WalletGetPortfolioNodeHandler` reads balances
@@ -166,12 +166,12 @@ only Holon records + metadata + the graph; none calls a chain. The track
 
 ### The gate gap (what GateCheck fixes) — the load-bearing Tier-1 add
 - `ActionEdge.Condition` is a `string?` that is **stored and round-tripped but
-  never parsed/evaluated** (`Models/ActionDefinition/ActionEdge.cs:16`). It is used only as
+  never parsed/evaluated** (`Models/Actions/ActionEdge.cs:16`). It is used only as
   a *presence flag* for failed-predecessor skipping
   (`Managers/ActionManager.cs:266`).
 - `ConditionNodeHandler` is a **no-op pass-through** — it returns
   `context.Node.Config` verbatim and evaluates nothing
-  (`Services/ActionDefinition/Handlers/ConditionNodeHandler.cs:15-21`). The comment
+  (`Services/Actions/Handlers/ConditionNodeHandler.cs:15-21`). The comment
   claiming "edge conditions handle branching" is the dead path: edges never
   evaluate.
 - The engine **already** skips a node whose predecessor `Failed` on a Control
@@ -374,7 +374,7 @@ is **not** on this track's critical path. **Defer and note** (D9).
       (Mint/Grant, Transfer, Swap, Refund) reports
       `RequiresChainCapability == true`.
 - [ ] New `ActionNodeType` members added (final list in `plan.md` / summary),
-      each with exactly one handler in `Services/ActionDefinition/Handlers/` and one DI
+      each with exactly one handler in `Services/Actions/Handlers/` and one DI
       registration; `ActionNodeHandlerRegistry` startup still throws on any
       duplicate (`ActionNodeHandlerRegistry.cs:21-27` invariant holds).
 - [ ] **GateCheckNode** evaluates a tenant-supplied predicate over upstream JSON
@@ -410,7 +410,7 @@ is **not** on this track's critical path. **Defer and note** (D9).
       branches.
 - [ ] **No brand leak**: a test / grep asserts no `ArdaNova`, `project-token`,
       `equity`, `vesting`, `project`, or any tenant-economic string appears in
-      `Services/ActionDefinition/Handlers/*` or the new config POCOs.
+      `Services/Actions/Handlers/*` or the new config POCOs.
 - [ ] New `ActionNodeType` values **persist** (round-trip through the action store)
       and the registry one-per-type invariant holds at startup.
 - [ ] `dotnet build` passes with **zero warnings** (nullable enabled) per
@@ -441,7 +441,7 @@ is **not** on this track's critical path. **Defer and note** (D9).
 
 ## Tier
 
-**Tier 1** — the generic node library that makes ActionDefinition the holonic-workflow
+**Tier 1** — the generic node library that makes Action the holonic-workflow
 *substrate*. The Tier-1 transformation nodes are chain-free and run today; the
 Tier-2 chain-action subset depends on Track 1 for real value flow. The split is
 enforced by one capability flag, not a type hierarchy.

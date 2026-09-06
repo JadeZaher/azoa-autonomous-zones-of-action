@@ -33,9 +33,9 @@ namespace AZOA.WebAPI.Tests.Managers;
 /// <item>AllocationManager Mint  → platform op  (BuildSigningContext platformOp) → <see cref="WithPlatformSigningKeyAsync"/></item>
 /// <item>AllocationManager Transfer → user op   (BuildSigningContext) → <see cref="WithSigningKeyAsync"/></item>
 /// <item>FungibleTokenManager Create (ASA) → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
-/// <item>ActionDefinition Grant (mint) → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
-/// <item>ActionDefinition Transfer / Refund → user op → <see cref="WithSigningKeyAsync"/></item>
-/// <item>ActionDefinition FungibleTokenCreate → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
+/// <item>Action Grant (mint) → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
+/// <item>Action Transfer / Refund → user op → <see cref="WithSigningKeyAsync"/></item>
+/// <item>Action FungibleTokenCreate → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
 /// <item>Bridge → BlockchainOperation → BuildSigningContext → one of the two</item>
 /// <item>Swap → UNSIGNED (client-side); no server sign path to gate</item>
 /// </list>

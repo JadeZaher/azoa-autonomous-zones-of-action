@@ -29,7 +29,7 @@ namespace AZOA.WebAPI.Services.Actions;
 ///
 /// <para><b>Best-effort (never throws).</b> A failed enqueue is logged, NOT thrown — the
 /// <c>Emit</c> node already produced its authoritative output; a webhook plumbing failure
-/// must not fail the node. See <c>Services/ActionDefinition/AGENTS.md</c> §action-webhook-emit.</para>
+/// must not fail the node. See <c>Services/Actions/AGENTS.md</c> §action-webhook-emit.</para>
 /// </summary>
 public sealed class ActionWebhookEmitter : IActionWebhookEmitter
 {
@@ -77,14 +77,14 @@ public sealed class ActionWebhookEmitter : IActionWebhookEmitter
             if (result.IsError)
             {
                 _logger.LogWarning(
-                    "ActionDefinition webhook enqueue failed for run {RunId} node {NodeId} tenant {TenantId} ({EventType}): {Error}. " +
-                    "ActionDefinition-run state is unaffected; the Emit node output remains the authoritative settlement surface.",
+                    "Action webhook enqueue failed for run {RunId} node {NodeId} tenant {TenantId} ({EventType}): {Error}. " +
+                    "Action-run state is unaffected; the Emit node output remains the authoritative settlement surface.",
                     runId, nodeId, tenantId, evt.EventType, result.Message);
             }
             else
             {
                 _logger.LogInformation(
-                    "ActionDefinition webhook enqueued: {EventType} run {RunId} node {NodeId} tenant {TenantId} idempotency {IdempotencyId}.",
+                    "Action webhook enqueued: {EventType} run {RunId} node {NodeId} tenant {TenantId} idempotency {IdempotencyId}.",
                     evt.EventType, runId, nodeId, tenantId, evt.IdempotencyId);
             }
         }
@@ -92,7 +92,7 @@ public sealed class ActionWebhookEmitter : IActionWebhookEmitter
         {
             // Best-effort: a plumbing exception must never bubble out of the Emit node.
             _logger.LogWarning(ex,
-                "ActionDefinition webhook enqueue threw for run {RunId} node {NodeId} tenant {TenantId} — swallowed; the Emit node still succeeds.",
+                "Action webhook enqueue threw for run {RunId} node {NodeId} tenant {TenantId} — swallowed; the Emit node still succeeds.",
                 runId, nodeId, tenantId);
         }
     }

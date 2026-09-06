@@ -51,7 +51,7 @@ export type {
   UserNFTMintParams,
   HolonNFTBindingResult,
   WalletNFTBindingResult,
-  // ActionDefinition types
+  // Action types
   ActionStatus,
   ActionNodeState,
   ActionEdgeType,
@@ -68,7 +68,7 @@ export type {
   ActionNodeTemplateCreateParams,
   ActionNodeCreateParams,
   ActionEdgeCreateParams,
-  // ActionDefinition invitations + request/approval types (action-invitations-approval)
+  // Action invitations + request/approval types (action-invitations-approval)
   ActionRunAccess,
   ActionAccessRequestStatus,
   ActionAccessRequest,

@@ -8,7 +8,7 @@ namespace AZOA.WebAPI.Services.Actions;
 /// Maps every <see cref="ActionNodeType"/> to its config DTO type.
 /// Node types that take no config are registered explicitly as config-free
 /// (null entry) — nothing escapes by accident.
-/// See Services/ActionDefinition/AGENTS.md §node-config.
+/// See Services/Actions/AGENTS.md §node-config.
 /// </summary>
 public static class ActionNodeConfigRegistry
 {

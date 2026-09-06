@@ -15,7 +15,7 @@ namespace AZOA.WebAPI.Services.Actions.Handlers;
 /// on-chain effect that the bridge idempotency-gates (no double-burn); a Solana leg
 /// is fail-closed at the provider level and surfaces here as a node failure. The
 /// node MOVES value only; peg/valuation stays tenant-side (Emit). See
-/// Services/ActionDefinition/AGENTS.md §fractionalization.
+/// Services/Actions/AGENTS.md §fractionalization.
 /// </summary>
 public sealed class BackNodeHandler : IActionNodeHandler
 {

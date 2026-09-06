@@ -1,7 +1,7 @@
 /**
- * Catalog of built-in ActionDefinition node types and helpers for the visual builder.
+ * Catalog of built-in action node types and helpers for the visual builder.
  *
- * The list mirrors the backend `ActionNodeType` enum (Models/ActionDefinition/ActionEnums.cs).
+ * The list mirrors the backend `ActionNodeType` enum (Models/Actions/ActionEnums.cs).
  * The palette in the builder is driven by Node Templates fetched from the API
  * (which carry a `configSchema` / `defaultConfig`), falling back to this static
  * catalog when no matching template exists.
@@ -84,11 +84,11 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   // ─── Control ───
   { type: 'Condition', category: 'Control', label: 'Condition', description: 'Legacy branch (prefer GateCheck)', defaultConfig: J({ expression: '' }) },
   { type: 'ComposeOutputs', category: 'Control', label: 'Compose Outputs', description: 'Merge outputs of upstream nodes', defaultConfig: J({ sources: [] }) },
-  // GateCheck contract is { predicate, reads } (Models/ActionDefinition/NodeConfigs.cs GateCheckNodeConfig),
+  // GateCheck contract is { predicate, reads } (Models/Actions/NodeConfigs.cs GateCheckNodeConfig),
   // mirroring every preset (presets.ts §5.2). NOT { expression } — that was the legacy Condition shape.
   { type: 'GateCheck', category: 'Control', label: 'Gate Check', description: 'Tier-1 gate predicate (supersedes Condition)', defaultConfig: J({ predicate: '', reads: {} }) },
   // eventType (final-hardening F3) is the free-form action.emit webhook event name;
-  // it is a top-level sibling of payload on the wire (Models/ActionDefinition/NodeConfigs.cs
+  // it is a top-level sibling of payload on the wire (Models/Actions/NodeConfigs.cs
   // EmitNodeConfig.EventType), NOT nested inside payload. Defaults server-side to
   // "action.emit" when omitted.
   { type: 'Emit', category: 'Control', label: 'Emit', description: 'Emit a settlement event to the tenant', defaultConfig: J({ eventType: '', payload: {} }) },

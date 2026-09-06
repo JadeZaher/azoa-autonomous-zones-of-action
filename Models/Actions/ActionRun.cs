@@ -24,7 +24,7 @@ public class ActionRun
     /// <summary>Run identity. Unique across all runs of all actions.</summary>
     public Guid Id { get; set; }
 
-    /// <summary>ActionDefinition definition this run executes.</summary>
+    /// <summary>Action definition this run executes.</summary>
     public Guid ActionId { get; set; }
 
     /// <summary>User that initiated this run (denormalized for query convenience).</summary>

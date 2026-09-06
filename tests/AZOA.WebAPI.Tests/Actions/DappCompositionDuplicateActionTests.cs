@@ -73,7 +73,7 @@ public class DappCompositionDuplicateActionTests
 
     private void SetupActionDef(Guid actionId)
     {
-        var action = new ActionDef { Id = actionId, Name = $"ActionDefinition {actionId:N}", UserId = _userId };
+        var action = new ActionDef { Id = actionId, Name = $"Action {actionId:N}", UserId = _userId };
         _actionStore.Setup(s => s.GetActionAsync(actionId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<ActionDef> { Result = action });
     }

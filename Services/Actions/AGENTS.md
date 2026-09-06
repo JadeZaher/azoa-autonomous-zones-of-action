@@ -1,10 +1,10 @@
 ---
 type: agent-notes
-scope: Services/ActionDefinition
+scope: Services/Actions
 created: 2026-07-02
 ---
 
-# Services/ActionDefinition — Agent Notes
+# Services/Actions — Agent Notes
 
 ## §acting-user: whose identity a node runs under (C1/H1)
 
@@ -29,7 +29,7 @@ there are currently none in handler dispatch. Holon *output projection* of a
 holon's own `holon.UserId` field (GateCheck/resolver `HolonStateJson`) is not
 an identity decision and is left as-is.
 
-Regression coverage: `ActionDefinition/ActionActingUserAuthorizationTests.cs`.
+Regression coverage: `tests/AZOA.WebAPI.Tests/Actions/ActionActingUserAuthorizationTests.cs`.
 
 ## §node-config: Safe config deserialization
 
@@ -45,7 +45,7 @@ handles downstream nodes, and the engine continues.
 
 ### Adding a new handler
 
-1. Declare a typed config DTO in `Models/ActionDefinition/NodeConfigs.cs` (required if the
+1. Declare a typed config DTO in `Models/Actions/NodeConfigs.cs` (required if the
    node takes any structured config; null = config-free).
 2. Register the new `ActionNodeType` value in `ActionNodeConfigRegistry._map`
    (entry is mandatory — missing entries throw `NotSupportedException` at
@@ -66,11 +66,11 @@ handles downstream nodes, and the engine continues.
   Do not add them now. (The `outputSchema` half of AC-4c is now un-deferred — see
   §output-schema below.)
 - Handler unit tests exercising malformed config → Failed are in
-  `tests/AZOA.WebAPI.Tests/ActionDefinition/ActionNodeConfigSafeDeserializeTests.cs`.
+  `tests/AZOA.WebAPI.Tests/Actions/ActionNodeConfigSafeDeserializeTests.cs`.
 
 ## §output-schema: authoritative per-node-type OUTPUT catalog
 
-`ActionNodeOutputSchema` (`Services/ActionDefinition/ActionNodeOutputSchema.cs`) declares, for
+`ActionNodeOutputSchema` (`Services/Actions/ActionNodeOutputSchema.cs`) declares, for
 EVERY `ActionNodeType`, the top-level shape of the JSON its handler serializes to
 `ActionNodeExecution.Output`. It is the counterpart a `$from`-binding validator uses
 to prove predecessor references (presence + type) — the `outputSchema` half of the
@@ -295,7 +295,7 @@ node. See `frontend/src/components/action-builder/presets.ts`
 
 ## §skip-semantics
 
-See `Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics` for the durable-path
+See `Services/Actions/Workflow/AGENTS.md §skip-semantics` for the durable-path
 divergence (no skip seam in `ActionNodeStepHandler`; saga compensation instead).
 Follow-up track: `durable-skip-propagation`.
 
@@ -322,7 +322,7 @@ handler ALSO enqueues a best-effort webhook outbox event via `ActionWebhookEmitt
 ## §economic-manifest — value-moving-node disclosure for marketplace runs
 
 `ActionEconomicManifestBuilder.Build(action, registry, versionHash)` produces the
-`ActionEconomicManifest` (`Models/ActionDefinition/ActionEconomicManifest.cs`) that the run-start
+`ActionEconomicManifest` (`Models/Actions/ActionEconomicManifest.cs`) that the run-start
 consent gate and the `PreviewRunAsync` surface both consume. See
 `Managers/AGENTS.md §economic-consent` for how the manager wires it.
 

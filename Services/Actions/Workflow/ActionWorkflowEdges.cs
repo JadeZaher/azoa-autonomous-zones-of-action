@@ -26,7 +26,7 @@ public static class ActionWorkflowEdges
     /// <summary>
     /// Outgoing OnFailure-edge target node ids for <paramref name="nodeId"/>.
     /// Used by the durable engine to advance on the failure arm when a node
-    /// terminally fails (V5, Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics).
+    /// terminally fails (V5, Services/Actions/Workflow/AGENTS.md §skip-semantics).
     /// </summary>
     public static IReadOnlyList<Guid> OnFailureNodeIds(Models.Actions.ActionDefinition action, Guid nodeId) =>
         action.Edges

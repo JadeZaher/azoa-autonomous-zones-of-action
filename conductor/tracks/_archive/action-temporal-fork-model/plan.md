@@ -1,4 +1,4 @@
-# ActionDefinition Temporal / Forkable DAG Model — Plan
+# Action Temporal / Forkable DAG Model — Plan
 
 ## Tasks
 
@@ -7,8 +7,8 @@
 2. [ ] Write `SURREAL-SCHEMA-HINTS.md` — exact tables + `RELATE` edges that `surrealdb-migration` task 9 will materialize (`action`, `action_node`, `action_edge`, `action_run`, `action_node_execution`, `forked_from`, `executes`). One file, no code
 
 ### Domain models
-3. [ ] Add `Models/ActionDefinition/ActionRun.cs` (`Id`, `ActionId`, `UserId`, `Status` enum, `StartedAt`, `EndedAt?`, `ParentRunId?`, `ForkedAtNodeId?`, `ForkReason?`, `FailReason?`)
-4. [ ] Add `Models/ActionDefinition/ActionNodeExecution.cs` (`Id`, `RunId`, `NodeId`, `State`, `Output?`, `Error?`, `StartedAt`, `EndedAt?`)
+3. [ ] Add `Models/Actions/ActionRun.cs` (`Id`, `ActionId`, `UserId`, `Status` enum, `StartedAt`, `EndedAt?`, `ParentRunId?`, `ForkedAtNodeId?`, `ForkReason?`, `FailReason?`)
+4. [ ] Add `Models/Actions/ActionNodeExecution.cs` (`Id`, `RunId`, `NodeId`, `State`, `Output?`, `Error?`, `StartedAt`, `EndedAt?`)
 5. [ ] Extend `ActionStatus`/`ActionNodeState` only if a new value is required (`Forked`, `Cancelled`); reuse otherwise. Add `ActionRunStatus` enum to keep run vs definition status distinct
 6. [ ] Remove `ActionDefinition.Status`, `ActionDefinition.CompletedDate`, `ActionNode.State`, `ActionNode.Output`, `ActionNode.Error` — definitions are immutable in-flight state. Keep `ActionDefinition.CreatedDate` (definition birthdate)
 

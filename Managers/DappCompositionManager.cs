@@ -99,7 +99,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         return await _seriesStore.DeleteSeriesAsync(seriesId, ct);
     }
 
-    // ── ActionDefinition Management within Series ───────────────────────────────────────
+    // ── Action Management within Series ─────────────────────────────────────────────────
 
     public async Task<AZOAResult<DappSeriesAction>> AddActionAsync(
         Guid seriesId, Guid userId, DappSeriesAddActionModel model, CancellationToken ct = default)
@@ -119,7 +119,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         // Verify the referenced action exists and is owned by the same user.
         var actionLoad = await _actionStore.GetActionAsync(model.ActionId, ct);
         if (actionLoad.IsError || actionLoad.Result is null)
-            return Fail<DappSeriesAction>($"ActionDefinition {model.ActionId} not found.");
+            return Fail<DappSeriesAction>($"Action {model.ActionId} not found.");
         if (actionLoad.Result.UserId != userId)
             return Fail<DappSeriesAction>("Forbidden: action is owned by a different user.");
 
@@ -127,7 +127,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         var existing = await _seriesStore.GetActionsBySeriesAsync(seriesId, ct);
         if (existing.IsError || existing.Result is null) return Fail<DappSeriesAction>(existing.Message);
         if (existing.Result.Any(e => e.ActionIdGuid == model.ActionId))
-            return Fail<DappSeriesAction>($"ActionDefinition {model.ActionId} is already in series {seriesId}.");
+            return Fail<DappSeriesAction>($"Action {model.ActionId} is already in series {seriesId}.");
 
         var entry = DappSeriesAction.NewEntry(seriesId, model.ActionId, model.Order, model.InputMappings);
         return await _seriesStore.UpsertSeriesActionAsync(entry, ct);
@@ -156,7 +156,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         if (entries.IsError || entries.Result is null) return Fail<DappSeriesAction>(entries.Message);
 
         var target = entries.Result.FirstOrDefault(e => e.ActionIdGuid == actionId);
-        if (target is null) return Fail<DappSeriesAction>($"ActionDefinition {actionId} not in series.");
+        if (target is null) return Fail<DappSeriesAction>($"Action {actionId} not in series.");
 
         target.Order = newOrder;
         return await _seriesStore.UpsertSeriesActionAsync(target, ct);
@@ -173,7 +173,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         if (entries.IsError || entries.Result is null) return Fail<DappSeriesAction>(entries.Message);
 
         var target = entries.Result.FirstOrDefault(e => e.ActionIdGuid == actionId);
-        if (target is null) return Fail<DappSeriesAction>($"ActionDefinition {actionId} not in series.");
+        if (target is null) return Fail<DappSeriesAction>($"Action {actionId} not in series.");
 
         if (inputMappings is not null)
         {
@@ -222,7 +222,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         {
             var duplicateReport = new CompositionValidationResult { InputMappingConsistency = false, NoCircularDependencies = false };
             foreach (var dupId in duplicateActionIds)
-                duplicateReport.Diagnostics.Add($"ActionDefinition {dupId} appears more than once in the series; remove the duplicate entry.");
+                duplicateReport.Diagnostics.Add($"Action {dupId} appears more than once in the series; remove the duplicate entry.");
             return new AZOAResult<CompositionValidationResult> { Result = duplicateReport, Message = "One or more validation rules failed." };
         }
 
@@ -237,7 +237,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
             var qLoad = await _actionStore.GetActionAsync(actionGuid, ct);
             if (qLoad.IsError || qLoad.Result is null)
             {
-                report.Diagnostics.Add($"ActionDefinition {actionGuid} not found.");
+                report.Diagnostics.Add($"Action {actionGuid} not found.");
                 continue;
             }
             // Indexer assignment is last-writer-wins, consistent with OrderByActionId
@@ -377,20 +377,20 @@ public sealed class DappCompositionManager : IDappCompositionManager
             if (runs.IsError || runs.Result is null)
             {
                 report.AllActionsCompleted = false;
-                report.Diagnostics.Add($"ActionDefinition {actionId}: failed to load runs ({runs.Message}).");
+                report.Diagnostics.Add($"Action {actionId}: failed to load runs ({runs.Message}).");
                 continue;
             }
             var latest = runs.Result.OrderByDescending(r => r.StartedAt).FirstOrDefault();
             if (latest is null)
             {
                 report.AllActionsCompleted = false;
-                report.Diagnostics.Add($"ActionDefinition {actionId}: no ActionRun rows -- action has never been executed.");
+                report.Diagnostics.Add($"Action {actionId}: no ActionRun rows -- action has never been executed.");
                 continue;
             }
             if (latest.Status != ActionRunStatus.Succeeded)
             {
                 report.AllActionsCompleted = false;
-                report.Diagnostics.Add($"ActionDefinition {actionId}: latest ActionRun status is {latest.Status}, expected Succeeded.");
+                report.Diagnostics.Add($"Action {actionId}: latest ActionRun status is {latest.Status}, expected Succeeded.");
             }
         }
     }
@@ -414,7 +414,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
                 {
                     report.ChainCompleteness = false;
                     report.Diagnostics.Add(
-                        $"ActionDefinition {actionGuid} (order {entries[i].Order}): no ActionDependency on any prior action in the series.");
+                        $"Action {actionGuid} (order {entries[i].Order}): no ActionDependency on any prior action in the series.");
                 }
             }
             priorActionIds.Add(actionGuid);
@@ -498,7 +498,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
                 {
                     report.NoCircularDependencies = false;
                     report.Diagnostics.Add(
-                        $"ActionDefinition {actionGuid} (order {thisOrder}) depends on action {dep.DependsOnActionId} which appears later (order {depOrder}).");
+                        $"Action {actionGuid} (order {thisOrder}) depends on action {dep.DependsOnActionId} which appears later (order {depOrder}).");
                 }
             }
         }

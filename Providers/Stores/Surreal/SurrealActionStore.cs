@@ -11,7 +11,7 @@ using AZOA.WebAPI.Core.Surreal;
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
-/// SurrealDB-backed <see cref="IActionStore"/>. Materialises the ActionDefinition aggregate
+/// SurrealDB-backed <see cref="IActionStore"/>. Materialises the action aggregate
 /// across the three definition-side tables introduced by surrealdb-migration
 /// task 9: <c>action</c> (head row), <c>action_node</c> (one row per step),
 /// <c>action_edge</c> (one row per directed control-flow link). Per-(run, node)
@@ -70,7 +70,7 @@ public sealed class SurrealActionStore : IActionStore
         _executor = executor ?? throw new ArgumentNullException(nameof(executor));
     }
 
-    // ── ActionDefinition CRUD ────────────────────────────────────────────────────────────
+    // ── Action CRUD ──────────────────────────────────────────────────────────────────────
 
     public async Task<AZOAResult<ActionDefinition>> GetActionAsync(Guid id, CancellationToken ct = default)
     {
@@ -82,7 +82,7 @@ public sealed class SurrealActionStore : IActionStore
 
             var rows = await _executor.QueryAsync<ActionPoco>(headQ, ct);
             if (rows.Count == 0)
-                return Missing<ActionDefinition>($"ActionDefinition {id} not found.");
+                return Missing<ActionDefinition>($"Action {id} not found.");
 
             var action = ToDomain(rows[0]);
             await HydrateChildrenAsync(action, ct);
@@ -118,7 +118,7 @@ public sealed class SurrealActionStore : IActionStore
         {
             // Marketplace discovery: only owner-opted-in public actions. Status is
             // filtered to Active by the caller (ActionManager) since status lives on
-            // ActionRun, not the ActionDefinition row.
+            // ActionRun, not the action row.
             var q = SurrealQuery<ActionPoco>.From()
                 .Where(x => x.IsPublic == true);
 
@@ -262,7 +262,7 @@ public sealed class SurrealActionStore : IActionStore
             if (existing.Count == 0)
                 return new AZOAResult<bool>
                 {
-                    Result = false, IsError = true, Message = $"ActionDefinition {id} not found.",
+                    Result = false, IsError = true, Message = $"Action {id} not found.",
                 };
 
             // Delete head + child rows. SurrealQuery.Of rejects a multi-statement
@@ -299,7 +299,7 @@ public sealed class SurrealActionStore : IActionStore
             return new AZOAResult<bool>
             {
                 Result  = deleted,
-                Message = deleted ? "Deleted." : $"ActionDefinition {id} not found.",
+                Message = deleted ? "Deleted." : $"Action {id} not found.",
                 IsError = !deleted,
             };
         }

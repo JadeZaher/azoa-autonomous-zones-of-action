@@ -524,9 +524,9 @@ export interface WalletNFTBindingResult {
   isActive: boolean;
 }
 
-// ─── ActionDefinition types matching .NET DTOs ───
+// ─── Action types matching .NET DTOs ───
 
-/** ActionDefinition status lifecycle */
+/** Action status lifecycle */
 export type ActionStatus = "Draft" | "Active" | "Completed" | "Failed" | "Archived";
 
 /** Node execution state */
@@ -615,9 +615,9 @@ export interface ActionResult {
 }
 
 /**
- * Lifecycle status of a single {@link ActionRunResult} (one execution attempt of a
- * ActionDefinition). Single source of truth: this is the {@link WorkflowRunStatus} union from
- * `workflow/types.ts` (both mirror C# `Models/ActionDefinition/ActionRunStatus.cs` 1:1) — the
+ * Lifecycle status of a single {@link ActionRunResult} (one execution attempt of an
+ * action). Single source of truth: this is the {@link WorkflowRunStatus} union from
+ * `workflow/types.ts` (both mirror C# `Models/Actions/ActionRunStatus.cs` 1:1) — the
  * alias keeps the two public surfaces from drifting apart.
  */
 export type ActionRunStatus = WorkflowRunStatus;
@@ -651,11 +651,11 @@ export interface ActionRunResult {
   originUserId?: string;
 }
 
-// ─── ActionDefinition invitations + request/approval (action-invitations-approval) ───
+// ─── Action invitations + request/approval (action-invitations-approval) ───
 
 /**
  * Run-authorization mode for an action, orthogonal to `isPublic` discoverability
- * (mirrors C# `Models/ActionDefinition/ActionRunAccess`). `Open` = anyone who can view may
+ * (mirrors C# `Models/Actions/ActionRunAccess`). `Open` = anyone who can view may
  * run/fork (today's default); `InviteOnly` = only owner + invited users may
  * run/fork, though the action stays viewable.
  */
@@ -663,7 +663,7 @@ export type ActionRunAccess = "Open" | "InviteOnly";
 
 /**
  * Lifecycle status of a {@link ActionAccessRequest} (mirrors C#
- * `Models/ActionDefinition/ActionAccessRequestStatus`). Terminal states
+ * `Models/Actions/ActionAccessRequestStatus`). Terminal states
  * (`Approved | Rejected | Withdrawn`) are immutable; a re-request after a
  * terminal state opens a fresh `Pending`.
  */
@@ -1684,7 +1684,7 @@ export class AzoaApiClient {
     return this.request("POST", "/api/usernft/verify-wallet-access", params);
   }
 
-  // ─── ActionDefinition DAG Operations ───
+  // ─── Action DAG Operations ───
 
   /** Create a new action with a DAG of nodes and edges. */
   async createAction(params: ActionCreateParams): Promise<Result<ActionResult, SdkError>> {
@@ -1759,7 +1759,7 @@ export class AzoaApiClient {
   /**
    * Execute all ready nodes in the action DAG. Returns the produced
    * {@link ActionRunResult} (one execution attempt) — NOT the action
-   * definition. Fails (400, message containing "ActionDefinition run conflict") if the
+   * definition. Fails (400, message containing "Action run conflict") if the
    * action was unpublished or modified concurrently (final-hardening F6) —
    * see {@link isActionConflict}. A non-owner may call this on a
    * `isPublic` action (action-marketplace-provenance); the resulting run is
@@ -1778,7 +1778,7 @@ export class AzoaApiClient {
     return this.request("POST", `/api/action/${actionId}/nodes/${nodeId}/execute`);
   }
 
-  // ─── ActionDefinition Invitations + Request/Approval (action-invitations-approval) ───
+  // ─── Action Invitations + Request/Approval (action-invitations-approval) ───
 
   /**
    * Owner-only: set the run-authorization mode (`Open` ↔ `InviteOnly`) and
@@ -1848,7 +1848,7 @@ export class AzoaApiClient {
     return this.request("GET", `${API_PATHS.ACTION_ACCESS_REQUESTS_MINE}${query}`);
   }
 
-  // ─── ActionDefinition Templates ───
+  // ─── Action Templates ───
 
   /** Create a reusable action template. */
   async createActionTemplate(params: ActionTemplateCreateParams): Promise<Result<ActionTemplateResult, SdkError>> {
@@ -1872,7 +1872,7 @@ export class AzoaApiClient {
     return this.request("POST", `/api/action/templates/${templateId}/instantiate`, parameters);
   }
 
-  // ─── ActionDefinition Node Templates ───
+  // ─── Action Node Templates ───
 
   /** Create a reusable node template. */
   async createActionNodeTemplate(params: ActionNodeTemplateCreateParams): Promise<Result<ActionNodeTemplateResult, SdkError>> {

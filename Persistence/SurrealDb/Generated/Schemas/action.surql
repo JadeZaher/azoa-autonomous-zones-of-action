@@ -1,6 +1,6 @@
 -- ============================================================
 -- Table: action
--- Aggregate: ActionDefinition (Models/ActionDefinition/ActionDefinition.cs)
+-- Aggregate: ActionDefinition (Models/Actions/ActionDefinition.cs)
 -- Guardrail: G6 SCHEMAFULL; definition-side workflow shape. Runtime state lives on action_run + action_node_execution per action-temporal-fork-model ADR §1.
 -- Note: Shape-only definition: name, owner, template ancestry, dapp-series binding, free-form metadata. completed_date was removed when action-temporal-fork-model split runtime from definition. status was also removed then but is reintroduced by action-dag-semantic-hardening FR-2 for the DEFINITION lifecycle (Draft/Active) -- distinct from the runtime ActionRun.Status. See Managers/AGENTS.md §publish-lifecycle.
 -- Note: nodes/edges/dependencies live in their own tables (action_node, action_edge, action_dependency) keyed by action_id -- they are queried independently of the parent and mutated through Add/Remove endpoints. Embedding them would force the controller-side node/edge CRUD endpoints to read-modify-write the entire action row.

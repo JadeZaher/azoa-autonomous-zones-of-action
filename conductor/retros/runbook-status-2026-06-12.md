@@ -278,26 +278,26 @@ original goal of showing relationship arrows across the full domain model.
                              │ (2) generator on new layout
                              ▼
         ┌─────────────────────────────────────────────┐
-        │   Phase E — ActionDefinition aggregate cutover           │
-        │   Partial-class extensions for ActionDefinition,         │
-        │   ActionNode, ActionEdge, ActionDependency,      │
-        │   ActionRun, ActionNodeExecution                │
-        │   Delete hand-written Models/ActionDefinition/*.cs       │
+        │   Phase E — ActionDefinition aggregate cutover│
+        │   Partial-class extensions for ActionDefinition,│
+        │   ActionNode, ActionEdge, ActionDependency,   │
+        │   ActionRun, ActionNodeExecution              │
+        │   Delete hand-written Models/Actions/*.cs     │
         │   Rewire wave-2 stores + 34 handlers +        │
-        │   755-line ActionManager + tests               │
+        │   755-line ActionManager + tests              │
         │   ~7-9h                                       │
         └────────────────────┬───────────────────────┘
                              │ (3) cutover complete
                              ▼
         ┌─────────────────────────────────────────────┐
-        │   Phase F — action-api endpoint gaps           │
+        │   Phase F — action-api endpoint gaps          │
         │   ✓ Shipped 2026-06-11 (autopilot)            │
         │   14 endpoints + 14 manager methods landed    │
         │   on the post-fork-model runtime (NOT the     │
         │   post-cutover surface — see "Why this order" │
-        │   note below). 4 obsolete ActionDefinition-status        │
-        │   endpoints reframed onto ActionRun per ADR     │
-        │   §2.2; see tracks/action-api/SIGN-OFF.md       │
+        │   note below). 4 obsolete Action-status       │
+        │   endpoints reframed onto ActionRun per ADR   │
+        │   §2.2; see tracks/action-api/SIGN-OFF.md     │
         └────────────────────┬───────────────────────┘
                              │ (4) endpoints close
                              ▼
@@ -325,7 +325,7 @@ original goal of showing relationship arrows across the full domain model.
    store/manager/controller file). Phase E remains real work but is no
    longer a precondition for downstream tracks.
 4. dapp-composition integration tests after the ActionDefinition cutover so the real
-   Surreal-backed ActionDefinition pipeline can drive an end-to-end compose →
+   Surreal-backed action pipeline can drive an end-to-end compose →
    generate → deploy test.
 
 ---

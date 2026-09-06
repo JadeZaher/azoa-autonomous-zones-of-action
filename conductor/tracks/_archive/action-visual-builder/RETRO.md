@@ -4,7 +4,7 @@
 
 ## What we set out to do
 
-The ActionDefinition DAG page rendered the engine's full capability through two JSON
+The Action DAG page rendered the engine's full capability through two JSON
 `<textarea>`s and a numbered text list. The engine (action-api +
 durable-workflow-engine + economic-primitive-nodes) deserved an authoring
 surface that matched it. Goal: a real drag-and-drop workflow builder + first-class
@@ -16,7 +16,7 @@ template creation, with **zero backend changes**.
 - An `action-builder/` component package: node catalog, custom node, dependency-free
   layered auto-layout, read-only DAG render, interactive builder canvas, node-template
   creator.
-- The page rewired to 4 working tabs (My Actions / Builder / ActionDefinition Templates /
+- The page rewired to 4 working tabs (My Actions / Builder / Action Templates /
   Node Templates), with browse **and create** on both template tabs.
 - A template-driven palette: authoring a Node Template enriches the builder.
 

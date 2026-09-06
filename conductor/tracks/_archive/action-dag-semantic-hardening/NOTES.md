@@ -27,7 +27,7 @@ requirement to `ExecuteAsync`; the tests already set `Status = Active`.
 `ActionNodeStepHandler` (durable engine) has NO skip seam. It advances via
 `ResolveSingleSuccessor` (Control edges only) and handles failure via saga
 retry/compensation. Aligning the two paths is a named follow-up track
-(`durable-skip-propagation`). Documented in `Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics`.
+(`durable-skip-propagation`). Documented in `Services/Actions/Workflow/AGENTS.md §skip-semantics`.
 
 **A-4 — `ActionEdgeAddModel.Condition` enforcement location**
 Per spec FR-1c, enforcement on the `ActionEdgeAddModel` surface is done via a new
@@ -40,7 +40,7 @@ so no second guard is needed in the manager.
 ### Phase B
 
 **B-1 — `ActionDefinition.Status` reintroduced on definition**
-The domain `Models/ActionDefinition/ActionDefinition.cs` gains `Status` (`ActionStatus`, default `Draft`).
+The domain `Models/Actions/ActionDefinition.cs` gains `Status` (`ActionStatus`, default `Draft`).
 The POCO `Persistence/SurrealDb/Models/ActionDefinition.cs` gains the corresponding
 `[Inside(...)]` column. The `SurrealNote` on the POCO is updated to document this
 as a deliberate reintroduction for the *definition* lifecycle (the action-temporal-fork-model
@@ -64,7 +64,7 @@ the legacy `ValidateDAGAsync` path treats fan-out entries in `Warnings` only.
 ### Phase C
 
 **C-1 — `TryDeserialize` helper location**
-Added as `Services/ActionDefinition/ActionNodeConfig.cs` (static class). The helper returns
+Added as `Services/Actions/ActionNodeConfig.cs` (static class). The helper returns
 `bool` + `out T` + `out string error` pattern matching the existing codebase style.
 
 **C-2 — Registry exhaustiveness**
@@ -236,12 +236,12 @@ date bumped to 2026-07-02; note added explaining page-vs-SDK distinction.
   `no-frontend-typecheck` project convention; action-visual-builder precedent.
 - Manual flow (designed path, not run — no browser available in this context):
   1. Load My Actions → see Draft/Active badges on each action row.
-  2. Open Draft action → Actions tab → "Publish" button visible, "Execute ActionDefinition"
+  2. Open Draft action → Actions tab → "Publish" button visible, "Execute Action"
      disabled (grayed, tooltip "Publish the action before executing").
   3. Click Publish → if validation fails, errors render as a bullet list below
      the action buttons (not a toast blob).
   4. On success, action row flips to Active badge; Publish button replaced by Unpublish.
-  5. Click Execute ActionDefinition (now enabled) → works as before.
+  5. Click Execute Action (now enabled) → works as before.
   6. Open Builder → draw a Conditional edge → click it → Edge inspector shows
      EdgeType toggle and Condition input; leaving Condition empty shows red "required"
      label and blocks submit button.

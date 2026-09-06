@@ -11,9 +11,9 @@ a contained change rather than a rewrite.
 Today there are **two overlapping storage abstractions**: the god interface
 `IAZOAStorageProvider` (41 methods, 11 entities — `IAZOAStorageProvider.cs` +
 `IAZOAStorageProviderNFTExtensions.cs`) and a redundant `IActionRepository`
-(`Interfaces/IActionRepository.cs` + `Services/ActionDefinition/ActionRepository.cs`), both
+(`Interfaces/IActionRepository.cs` + `Services/Actions/ActionRepository.cs`), both
 wrapping `AZOADbContext`. Collapse both into **one coherent set of
-per-aggregate, graph-aware interfaces** (User/Wallet/Holon/ActionDefinition/NFT/Bridge).
+per-aggregate, graph-aware interfaces** (User/Wallet/Holon/Action/NFT/Bridge).
 This single seam is what isolates the later SurrealDB SDK behind one file.
 **Not** a generic `IRepository<T>` — that is an anti-pattern over a graph DB.
 

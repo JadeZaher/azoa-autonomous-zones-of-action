@@ -4,7 +4,7 @@
 **`[x]` SHIPPED 2026-06-17.** Tier 0.5/1 — the CENTERPIECE enabler of the
 `workflow-engine` initiative (Track 2 of 4: value-path-wiring → **durable-workflow-engine**
 → economic-primitive-nodes → workflow-sdk). Direction sourced from
-`conductor/REVIEW-economic-substrate-2026-06-16.md` **Part C** (ActionDefinition execution-model
+`conductor/REVIEW-economic-substrate-2026-06-16.md` **Part C** (Action execution-model
 gap analysis).
 
 ### As-built closeout (for the dependent tracks)
@@ -17,7 +17,7 @@ gap analysis).
   computes the next node from the DAG's outgoing Control edges and enqueues it
   via `ISagaStore.EnqueueNextStepAsync`. Started via `ISagaStore.EnqueueAsync`
   directly (NOT `SagaCoordinator`, whose `is SagaDefinition` cast rejects this
-  definition). Files: `Services/ActionDefinition/Workflow/*`.
+  definition). Files: `Services/Actions/Workflow/*`.
 - **Suspend/signal/timer = the one saga-layer extension this track delivered.**
   `StepStatus.Parked` + `SagaStepRecord.GateId`/`gate_id`;
   `StepResult.Parked(gateId, resumeAt?)`; `ISagaStore.ParkStepAsync` /
@@ -48,7 +48,7 @@ gap analysis).
   fire-timers clause); (2) a signal un-park/payload-stamp race silently
   re-parked the run — fixed by folding the payload write into `TrySignalAsync`'s
   single atomic conditional UPDATE.
-- **Proof:** `tests/.../ActionDefinition/Workflow/DurableWorkflowEngineTests.cs` (5 cases
+- **Proof:** `tests/.../Actions/Workflow/DurableWorkflowEngineTests.cs` (5 cases
   incl. suspend→**dispose processor+scope**→fresh processor over the same
   rows→signal→resume→Succeeded, and failure→compensate→Cancelled), over a new
   `InMemorySagaStore` test double. 722/722 unit tests green; 0 new warnings.
@@ -61,7 +61,7 @@ gap analysis).
   not a wedge).
 
 ## Goal
-Make the ActionDefinition DAG a **durable, step-addressable, consumer-driven workflow
+Make the Action DAG a **durable, step-addressable, consumer-driven workflow
 engine** so an external consumer (ArdaNova) can push an actor (player / user /
 tenant) through a multi-phase process it *designed once* (a `ActionTemplate`) and
 runs many actors through. A run must be able to **PAUSE between nodes**, survive
@@ -128,12 +128,12 @@ M2 (multi-step allocation compensation) wants."*
 ## The headline architectural decision — build ON the saga layer (see plan.md D1)
 
 **Recommendation: build the durable/suspendable engine ON TOP OF the existing
-saga layer, NOT a new orchestration runtime.** A durable ActionDefinition run maps onto a
+saga layer, NOT a new orchestration runtime.** A durable action run maps onto a
 saga instance with near-zero new orchestration vocabulary:
 
 | Workflow concept | Saga concept (already built) |
 |---|---|
-| A durable ActionDefinition run | A saga instance (one `CorrelationKey`) |
+| A durable action run | A saga instance (one `CorrelationKey`) |
 | A `ActionNode` | A forward `ISagaStep` |
 | Node advancement | Step dispatch (`SagaProcessor.OnStepSucceededAsync`) |
 | A gate / wait node | A step that **PARKS** until a signal / timer |

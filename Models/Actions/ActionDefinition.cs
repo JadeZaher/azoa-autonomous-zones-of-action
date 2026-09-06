@@ -2,13 +2,13 @@ namespace AZOA.WebAPI.Models.Actions;
 
 /// <summary>
 /// A single executable DAG representing a workflow unit.
-/// Each ActionDefinition is a directed acyclic graph with entry/terminal nodes,
+/// Each action is a directed acyclic graph with entry/terminal nodes,
 /// optional dependencies on completed actions, and reusable node templates.
 /// </summary>
 /// <remarks>
 /// Runtime state (status, completion timestamp, per-node outputs) lives on
 /// <see cref="ActionRun"/> and <see cref="ActionNodeExecution"/> after the
-/// <c>action-temporal-fork-model</c> track. The ActionDefinition definition itself is
+/// <c>action-temporal-fork-model</c> track. The action definition itself is
 /// shape-only and immutable in-flight.
 /// </remarks>
 public class ActionDefinition

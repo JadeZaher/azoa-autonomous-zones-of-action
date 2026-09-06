@@ -1,4 +1,4 @@
-// ─── AZOA — MCP ActionDefinition Reachability: Acceptance Criterion Test ──────────
+// ─── AZOA — MCP Action Reachability: Acceptance Criterion Test ──────────
 //
 // LOAD-BEARING TEST (read before modifying this file)
 // ─────────────────────────────────────────────────────

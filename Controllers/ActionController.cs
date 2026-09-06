@@ -21,7 +21,7 @@ public class ActionController : ControllerBase
         _actionManager = actionManager;
     }
 
-    // ─── ActionDefinition CRUD ───
+    // ─── Action CRUD ───
 
     [HttpPost]
     [Authorize(Policy = "DappDevelop")]
@@ -93,7 +93,7 @@ public class ActionController : ControllerBase
 
         var result = await _actionManager.DeleteAsync(id, userId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
-        return Ok(new AZOAResponse { Message = "ActionDefinition deleted." });
+        return Ok(new AZOAResponse { Message = "Action deleted." });
     }
 
     // ─── DAG validation ───
@@ -384,7 +384,7 @@ public class ActionController : ControllerBase
         return Ok(result);
     }
 
-    // ─── ActionDefinition Nodes sub-resource ───
+    // ─── Action Nodes sub-resource ───
 
     [HttpGet("{actionId:guid}/nodes")]
     public async Task<ActionResult<AZOAResult<IEnumerable<ActionNode>>>> ListNodes(Guid actionId, [FromQuery] AZOARequest? request)
@@ -434,7 +434,7 @@ public class ActionController : ControllerBase
         return Ok(new AZOAResponse { Message = "Node deleted." });
     }
 
-    // ─── ActionDefinition Edges sub-resource ───
+    // ─── Action Edges sub-resource ───
 
     [HttpPost("{actionId:guid}/edges")]
     public async Task<ActionResult<AZOAResult<ActionEdge>>> AddEdge(Guid actionId, [FromBody] ActionEdgeAddModel model, [FromQuery] AZOARequest? request)
@@ -472,7 +472,7 @@ public class ActionController : ControllerBase
         return Ok(result);
     }
 
-    // ─── ActionDefinition Dependencies sub-resource ───
+    // ─── Action Dependencies sub-resource ───
 
     [HttpPost("{actionId:guid}/dependencies")]
     public async Task<ActionResult<AZOAResult<ActionDependency>>> AddDependency(Guid actionId, [FromBody] ActionDependencyCreateModel model, [FromQuery] AZOARequest? request)

@@ -90,4 +90,4 @@ behaviour change; it was left out of the seam change to keep the diff reviewable
 §settlement-profile and §rail-amount.
 
 `IActionNodeHandler.ResolveSettlementRailId` declares which rail a node settles on, read from
-the node's DECLARED config. See `Services/ActionDefinition/AGENTS.md` §rail-capability.
+the node's DECLARED config. See `Services/Actions/AGENTS.md` §rail-capability.

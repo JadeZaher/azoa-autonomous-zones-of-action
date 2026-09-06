@@ -20,7 +20,7 @@ namespace AZOA.WebAPI.Services.Actions.Handlers;
 /// fails closed — a Refund can no longer be used as an out-of-order, no-prior-debit
 /// drain. The reversal recipient is forced to the debit's original sender (the run
 /// actor who ran the Transfer), so cfg.Request.TargetUserId cannot redirect it.
-/// See Services/ActionDefinition/AGENTS.md §refund-linkage.
+/// See Services/Actions/AGENTS.md §refund-linkage.
 /// </para>
 /// <para>
 /// Soulbound assets fail closed: a true clawback of a non-transferable asset

@@ -36,7 +36,7 @@ public interface IActionNodeHandler
     /// chain. Null means "whatever the platform default rail is", which is the right
     /// answer for a node whose config names no rail.
     /// <para>Read at the capability gate, which asks whether the actor can receive value
-    /// THERE rather than anywhere. See <c>Services/ActionDefinition/AGENTS.md</c> §rail-capability.</para>
+    /// THERE rather than anywhere. See <c>Services/Actions/AGENTS.md</c> §rail-capability.</para>
     /// </summary>
     string? ResolveSettlementRailId(ActionNode node) => null;
 

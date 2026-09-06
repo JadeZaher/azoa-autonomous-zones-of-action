@@ -10,7 +10,7 @@ namespace AZOA.WebAPI.Services.Actions;
 /// <summary>
 /// Builds a <see cref="ActionEconomicManifest"/> from an action's DAG: the value-moving
 /// nodes a non-owner marketplace runner is about to auto-fire against themselves.
-/// See Services/ActionDefinition/AGENTS.md §economic-manifest.
+/// See Services/Actions/AGENTS.md §economic-manifest.
 /// </summary>
 public static class ActionEconomicManifestBuilder
 {

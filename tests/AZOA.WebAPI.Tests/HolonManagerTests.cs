@@ -49,7 +49,7 @@ public class HolonManagerTests
     {
         var guard = new NodeGovernanceGuard(Options.Create(new NodeGovernanceOptions
         {
-            AllowedAssetTypes = new[] { "ActionDefinition" }
+            AllowedAssetTypes = new[] { "Action" }
         }));
         var manager = new HolonManager(_store.Object, nodeGovernance: guard);
 

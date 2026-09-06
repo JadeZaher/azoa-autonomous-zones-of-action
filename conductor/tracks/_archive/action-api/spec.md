@@ -1,7 +1,7 @@
-# ActionDefinition API — Specification
+# Action API — Specification
 
 ## Goal
-Expose the ActionDefinition DAG system via REST API. Provides CRUD for actions, templates, and node templates, plus action execution orchestration. Builds on action-core domain models and dispatches node execution to existing AZOA managers.
+Expose the Action DAG system via REST API. Provides CRUD for actions, templates, and node templates, plus action execution orchestration. Builds on action-core domain models and dispatches node execution to existing AZOA managers.
 
 ## Architecture
 ```
@@ -18,7 +18,7 @@ Controllers → ActionManager → IActionRepository → AZOADbContext
 
 ## Endpoints
 
-### ActionDefinition CRUD
+### Action CRUD
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -29,7 +29,7 @@ Controllers → ActionManager → IActionRepository → AZOADbContext
 | `DELETE` | `/api/actions/{id}` | Delete action (Draft only) |
 | `POST` | `/api/actions/from-template` | Instantiate from ActionTemplate |
 
-### ActionDefinition Nodes
+### Action Nodes
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -38,7 +38,7 @@ Controllers → ActionManager → IActionRepository → AZOADbContext
 | `PUT` | `/api/actions/{actionId}/nodes/{nodeId}` | Update node config (Draft only) |
 | `DELETE` | `/api/actions/{actionId}/nodes/{nodeId}` | Remove node (Draft only) |
 
-### ActionDefinition Edges
+### Action Edges
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -46,7 +46,7 @@ Controllers → ActionManager → IActionRepository → AZOADbContext
 | `DELETE` | `/api/actions/{actionId}/edges/{edgeId}` | Remove edge |
 | `GET` | `/api/actions/{actionId}/topological-order` | Get topological sort |
 
-### ActionDefinition Dependencies
+### Action Dependencies
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -54,7 +54,7 @@ Controllers → ActionManager → IActionRepository → AZOADbContext
 | `DELETE` | `/api/actions/{actionId}/dependencies/{depId}` | Remove dependency |
 | `GET` | `/api/actions/{actionId}/dependency-status` | Check if all dependencies satisfied |
 
-### ActionDefinition Execution
+### Action Execution
 
 | Method | Route | Description |
 |--------|-------|-------------|

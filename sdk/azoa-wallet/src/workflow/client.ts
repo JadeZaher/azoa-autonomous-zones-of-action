@@ -144,7 +144,7 @@ export class WorkflowClient {
    * Start a durable, suspendable run on an existing action
    * (`POST /api/action/{actionId}/start-workflow`). Returns the created
    * `ActionRun` (whose `id` is the runId the handle binds to). `assertUuid`-guarded.
-   * Fails (400, message containing "ActionDefinition run conflict") if the action was
+   * Fails (400, message containing "Action run conflict") if the action was
    * unpublished/modified concurrently, racing this call's version-confirm
    * (final-hardening F6) — see `isActionConflict` in `api/client.js`.
    */

@@ -20,7 +20,7 @@ public class ActionDagValidator : IActionDagValidator
 
         if (action.Nodes.Count == 0)
         {
-            result.Errors.Add("ActionDefinition has no nodes.");
+            result.Errors.Add("Action has no nodes.");
             result.IsValid = false;
             return result;
         }

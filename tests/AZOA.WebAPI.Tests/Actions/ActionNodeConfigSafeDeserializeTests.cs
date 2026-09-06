@@ -17,7 +17,7 @@ namespace AZOA.WebAPI.Tests.Actions;
 /// Pins FR-4 / AC-4a/4b: safe config deserialization (malformed config →
 /// Failed node, not thrown exception) and definition-time enforcement
 /// (AddNodeAsync / PublishAsync reject bad config).
-/// See Services/ActionDefinition/AGENTS.md §node-config.
+/// See Services/Actions/AGENTS.md §node-config.
 /// </summary>
 public class ActionNodeConfigSafeDeserializeTests
 {

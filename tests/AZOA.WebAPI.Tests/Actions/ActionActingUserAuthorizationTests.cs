@@ -21,7 +21,7 @@ namespace AZOA.WebAPI.Tests.Actions;
 /// runs another user's PUBLIC action must execute every side-effecting node under
 /// the RUNNER's identity (<c>context.ActingUserId</c>), NOT the action owner's
 /// (<c>context.ActionDefinition.UserId</c>). The pre-fix bug ran nodes under the owner —
-/// cross-user asset theft. See Services/ActionDefinition/AGENTS.md §acting-user.
+/// cross-user asset theft. See Services/Actions/AGENTS.md §acting-user.
 ///
 /// These tests exercise the handlers directly with a context whose acting user
 /// (runner) is DELIBERATELY different from the action owner, and assert the acting

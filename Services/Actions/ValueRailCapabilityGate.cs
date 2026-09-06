@@ -13,7 +13,7 @@ namespace AZOA.WebAPI.Services.Actions;
 /// <remarks>
 /// This is the seam a fiat rail plugs into. A fiat payout destination is a bank account
 /// or a card — not a wallet — and lives in its own store; when that store exists it
-/// implements this and the gate needs no change. See <c>Services/ActionDefinition/AGENTS.md</c>
+/// implements this and the gate needs no change. See <c>Services/Actions/AGENTS.md</c>
 /// §rail-capability.
 /// </remarks>
 public interface IRailDestinationDirectory

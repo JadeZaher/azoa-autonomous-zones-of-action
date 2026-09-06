@@ -12,7 +12,7 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("action_node_template",
-        Aggregate = "ActionNodeTemplate (Models/ActionDefinition/ActionNodeTemplate.cs)",
+        Aggregate = "ActionNodeTemplate (Models/Actions/ActionNodeTemplate.cs)",
         Guardrail = "G6 SCHEMAFULL; read-only catalog of reusable node definitions")]
     [SurrealNote("Reusable node definition shared across ActionTemplates. An ActionTemplate's embedded node slot (template_node) references an ActionNodeTemplate by id and supplies ParamOverrides; ActionInstantiator merges DefaultConfig + ParamOverrides + caller parameters into the runtime ActionDefinition's ActionNode.Config.")]
     [SurrealNote("node_type is the ActionNodeType enum serialised as its C# name (e.g. \"HolonCreate\", \"WalletGet\"). Asserted INSIDE the full enum value set so a schema-drift typo is rejected at INSERT time rather than at the dispatch layer.")]
@@ -25,7 +25,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string SchemaName => SchemaNameConst;
 
         /// <summary>
-        /// ActionNodeType enum -- keep in lockstep with Models/ActionDefinition/ActionEnums.cs:ActionNodeType.
+        /// ActionNodeType enum -- keep in lockstep with Models/Actions/ActionEnums.cs:ActionNodeType.
         /// </summary>
         public enum NodeTypeKind
         {

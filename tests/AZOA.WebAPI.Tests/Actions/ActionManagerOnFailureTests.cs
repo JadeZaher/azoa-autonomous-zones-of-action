@@ -39,7 +39,7 @@ public class ActionManagerOnFailureTests
         return (manager, execStore);
     }
 
-    // ── ActionDefinition factory: Entry →(Control) success | Entry →(OnFailure) failArm ─
+    // ── Action factory: Entry →(Control) success | Entry →(OnFailure) failArm ─
 
     private static (InMemoryActionStore Store, ActionEntity ActionDefinition,
                     Guid EntryId, Guid SuccessId, Guid FailArmId)

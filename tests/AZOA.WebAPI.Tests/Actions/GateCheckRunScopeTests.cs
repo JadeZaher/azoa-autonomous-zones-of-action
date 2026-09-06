@@ -18,7 +18,7 @@ namespace AZOA.WebAPI.Tests.Actions;
 /// Regression guard for the asymmetry where <c>run.</c> worked in $from bindings but
 /// failed closed with "unknown path" in gate predicates. Scope is built from
 /// <c>context.AllRunExecutions</c>, mirroring <c>ActionConfigBindingResolver.BuildRunScope</c>.
-/// See Services/ActionDefinition/AGENTS.md §gate-predicate.
+/// See Services/Actions/AGENTS.md §gate-predicate.
 /// </summary>
 public class GateCheckRunScopeTests
 {

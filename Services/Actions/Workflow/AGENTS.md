@@ -1,4 +1,4 @@
-# Services/ActionDefinition/Workflow — design notes
+# Services/Actions/Workflow — design notes
 
 ## §skip-semantics — durable path divergence from legacy executor
 

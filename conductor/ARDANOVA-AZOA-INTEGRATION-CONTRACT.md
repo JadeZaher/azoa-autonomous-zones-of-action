@@ -69,7 +69,7 @@ reference consumer**, used only as a concrete example.
 | Deduping a redelivered trigger so an asset moves exactly once | **AZOA node** |
 | KYC **gate** (fail-closed) on the value-bearing move | **AZOA node** |
 | Reconcile-before-retry so a bounty/grant never double-mints | **AZOA node** |
-| ActionDefinition engine that orchestrates the project→fund→work lifecycle | **AZOA node** |
+| Action engine that orchestrates the project→fund→work lifecycle | **AZOA node** |
 | Starting / driving an action **run** (as the acting identity) | **User** (self) or **consumer under a consent grant** |
 
 ---
@@ -161,7 +161,7 @@ publish-only/self-run consumer skips this section entirely.)
 
 ---
 
-## 5. The project lifecycle as an ActionDefinition DAG
+## 5. The project lifecycle as an Action DAG
 
 The consumer authors an action **definition** for the project lifecycle; a user
 (the project creator, a contributor, a supporter) runs its **own** run against it.
@@ -170,7 +170,7 @@ durable engine advances the run, parking at gates for signals.
 
 ### 5.1 Domain → node-type mapping (ArdaNova example)
 
-| Concept | State machine | ActionDefinition DAG representation | Who runs it |
+| Concept | State machine | Action DAG representation | Who runs it |
 |---|---|---|---|
 | **Create project** | `Project: DRAFT→PUBLISHED` | `HolonCreate` (Project holon) → `Emit`(`project.created`) | the creator user |
 | **Seek support / fund** | `SEEKING_SUPPORT→FUNDED` | `GateCheck`(funding goal met — bool injected via `reads`) → `FungibleTokenCreate` (ProjectShare ASA) and/or `Grant` | supporter user(s); consumer signals the gate |
@@ -185,7 +185,7 @@ have a wallet bound (`ChainCapabilityGate`, fail-closed). Because the run is
 self-scoped, the wallet and keys are the user's own — the consumer never needs
 custody to let the user transact.
 
-### 5.2 Node config shapes (authoritative; `Models/ActionDefinition/NodeConfigs.cs`)
+### 5.2 Node config shapes (authoritative; `Models/Actions/NodeConfigs.cs`)
 
 - `GateCheckNodeConfig` → `{ "predicate": "<bool expr>", "reads": { "<name>": <json> } }`
 - `EmitNodeConfig` → `{ "payload": <opaque consumer json> }`

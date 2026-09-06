@@ -33,7 +33,7 @@ Goal: a failed gate stops the entire chain behind it; no inert Conditional edges
 Tasks:
 
 - [x] Task A1: Write pinning tests for cascade-skip (TDD red first).
-      New test class `tests/AZOA.WebAPI.Tests/ActionDefinition/ActionManagerSkipPropagationTests.cs`:
+      New test class `tests/AZOA.WebAPI.Tests/Actions/ActionManagerSkipPropagationTests.cs`:
       (1) GateCheck→Transfer1→Transfer2 all-Control chain, gate fails ⇒ BOTH Skipped (AC-1a);
       (2) Conditional edge with EMPTY condition, source Failed ⇒ target Skipped (AC-1b);
       (3) Conditional edge source Skipped ⇒ target Skipped; (4) happy-path all-Succeeded.
@@ -45,7 +45,7 @@ Tasks:
       non-empty Condition. New `Validators/ActionEdgeAddModelValidator.cs` for post-hoc
       surface. Validation test cases added to `ValidationTests.cs`.
 - [x] Task A4: Durable path confirmed: no skip seam (ResolveSingleSuccessor/saga compensation).
-      Divergence documented in `Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics`.
+      Divergence documented in `Services/Actions/Workflow/AGENTS.md §skip-semantics`.
 - [x] Verification A: AC-1a/1b/1c/1d all covered. No other call sites read the old
       Conditional guard (the only site was ActionManager.cs:308, now updated). [checkpoint]
 
@@ -58,7 +58,7 @@ Tasks:
 
 - [x] Task B1: Reintroduce definition lifecycle status. Add `Status`
       (`ActionStatus`, default `Draft`) to the domain ActionDefinition
-      (`Models/ActionDefinition/ActionDefinition.cs`) and the POCO
+      (`Models/Actions/ActionDefinition.cs`) and the POCO
       (`Persistence/SurrealDb/Models/ActionDefinition.cs`) — the POCO's SurrealNote records
       status was removed by action-temporal-fork-model; this is a deliberate
       reintroduction for the DEFINITION lifecycle (update the note). `[Inside]`
@@ -94,7 +94,7 @@ Tasks:
       `POST /api/action/{id}/unpublish` on `Controllers/ActionController.cs`
       (matches existing verb-subroute shape, cf. `/{id}/validate` :88,
       `/{id}/execute` :98). Map conflict-style manager errors appropriately.
-      Note in AGENTS.md (Managers/ or Services/ActionDefinition/) §publish-lifecycle.
+      Note in AGENTS.md (Managers/ or Services/Actions/) §publish-lifecycle.
 - [x] Task B6: Sweep existing tests/fixtures that create-and-execute actions —
       builders must publish (or construct `Active`) before execute, or the whole
       suite fails in Phase E. Update `TestDataBuilders` accordingly.
@@ -109,29 +109,29 @@ at definition time; no `Deserialize<T>(...)!` remains in handlers.
 
 Tasks:
 
-- [x] Task C1: Shared helper — `Services/ActionDefinition/ActionNodeConfig.cs` with
+- [x] Task C1: Shared helper — `Services/Actions/ActionNodeConfig.cs` with
       `TryDeserialize<T>(string? json, out T config, out string error)` (or a
       small result type): strict `System.Text.Json` options
       (`UnmappedMemberHandling.Disallow` where feasible), null/empty and
       `JsonException` handled, error message carries node-type + parse detail.
       Unit tests: malformed JSON, unknown member, empty string, happy path.
 - [x] Task C2: Registry `ActionNodeType → config DTO type` (DTOs in
-      `Models/ActionDefinition/NodeConfigs.cs`); config-free node types registered
+      `Models/Actions/NodeConfigs.cs`); config-free node types registered
       explicitly. Unit test: every `ActionNodeType` enum value has a registry
       entry (exhaustiveness pin — new node types can't dodge it).
 - [x] Task C3: Handler sweep — replaced `JsonSerializer.Deserialize<T>(...)!` in
-      ALL 39 `Services/ActionDefinition/Handlers/*.cs` sites (including GateCheck and
+      ALL 39 `Services/Actions/Handlers/*.cs` sites (including GateCheck and
       Emit convergence) with TryDeserialize; failure returns
       `ActionNodeResults.Fail`, never throws. Tests added (AC-4a).
 - [x] Task C4: Definition-time enforcement (AC-4b): `AddNodeAsync`/
       `UpdateNodeAsync` validate config via registry strict round-trip; wired
       B3 publish-gate hook (`ValidateNodeConfigs`) to re-check all nodes. Unit
       tests: bad config rejected at add; action with bad-config node fails publish.
-- [x] Task C5: Documented in `Services/ActionDefinition/AGENTS.md` §node-config (helper is
+- [x] Task C5: Documented in `Services/Actions/AGENTS.md` §node-config (helper is
       mandatory for new handlers; template configSchema/inputSchema/outputSchema
       explicitly remain unenforced — AC-4c).
 - [x] Verification C: grep confirms zero remaining `Deserialize<...>(...)` in
-      `Services/ActionDefinition/Handlers/`; registry exhaustiveness test present
+      `Services/Actions/Handlers/`; registry exhaustiveness test present
       [checkpoint marker]
 
 ## Phase D: Scoped guards (Items 5+6)
@@ -166,8 +166,8 @@ Tasks:
       regenerated. Six test-error categories fixed; see NOTES.md §Phase E.
       [a6ce980]
 - [x] Task E3: Docs closeout — AGENTS.md sections present: §skip-semantics
-      (Managers/ + Services/ActionDefinition/Workflow/), §publish-lifecycle (Managers/),
-      §node-config (Services/ActionDefinition/), §holon-parent-cycle (Managers/). Out-of-
+      (Managers/ + Services/Actions/Workflow/), §publish-lifecycle (Managers/),
+      §node-config (Services/Actions/), §holon-parent-cycle (Managers/). Out-of-
       scope follow-ups documented in NOTES.md. Frontend dagWarnings mirror
       noted as named follow-up `action-frontend-dag-warnings` (no frontend code
       changed). [a6ce980]

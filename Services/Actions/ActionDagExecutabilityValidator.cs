@@ -13,13 +13,13 @@ namespace AZOA.WebAPI.Services.Actions;
 /// Publish-time executability validator: proves that each <c>$from</c> binding
 /// input WILL be satisfiable at runtime — the source node is a guaranteed ancestor,
 /// the referenced output field is declared, and (best-effort) a bound scalar leaf
-/// matches the consuming config field's type. See Services/ActionDefinition/AGENTS.md
+/// matches the consuming config field's type. See Services/Actions/AGENTS.md
 /// §executability-validation.
 /// </summary>
 public sealed class ActionDagExecutabilityValidator : IActionDagExecutabilityValidator
 {
     /// <summary>Publish-time DAG size caps — bound the O(N²·E) dominator pass against
-    /// a hostile mega-graph. See Services/ActionDefinition/AGENTS.md §executability-validation.</summary>
+    /// a hostile mega-graph. See Services/Actions/AGENTS.md §executability-validation.</summary>
     private const int MaxNodes = 1000;
     private const int MaxEdges = 4000;
 
@@ -33,7 +33,7 @@ public sealed class ActionDagExecutabilityValidator : IActionDagExecutabilityVal
         // publish their own action).
         if (action.Nodes.Count > MaxNodes || action.Edges.Count > MaxEdges)
         {
-            result.Errors.Add($"ActionDefinition too large to validate: {action.Nodes.Count} nodes / " +
+            result.Errors.Add($"Action too large to validate: {action.Nodes.Count} nodes / " +
                             $"{action.Edges.Count} edges exceeds the limit ({MaxNodes} nodes, {MaxEdges} edges).");
             result.IsValid = false;
             return result;
@@ -209,7 +209,7 @@ public sealed class ActionDagExecutabilityValidator : IActionDagExecutabilityVal
         // unconditional-flow edge type. Conditional/OnFailure edges fire only when a
         // predicate passes / a source Failed, so a node reachable only via such an arm
         // is NOT guaranteed to have executed and must not count as a dominator.
-        // See Services/ActionDefinition/AGENTS.md §executability-validation.
+        // See Services/Actions/AGENTS.md §executability-validation.
         var preds = action.Nodes.ToDictionary(
             n => n.Id,
             n => action.Edges.Where(e => e.TargetNodeId == n.Id

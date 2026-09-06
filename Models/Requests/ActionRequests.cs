@@ -21,7 +21,7 @@ public class ActionUpdateModel
     /// <summary>
     /// Retained for API back-compat. After the action-temporal-fork-model
     /// track, runtime status lives on <see cref="ActionRun.Status"/>; setting
-    /// this field has no effect on the immutable ActionDefinition definition. Validator
+    /// this field has no effect on the immutable action definition. Validator
     /// still enforces enum validity for clients still sending it.
     /// </summary>
     public ActionStatus? Status { get; set; }
@@ -100,7 +100,7 @@ public class ActionEdgeCreateModel
     public ActionEdgeType EdgeType { get; set; } = ActionEdgeType.Control;
 }
 
-// ─── Sub-resource mutation DTOs (post-hoc edits on a persisted ActionDefinition) ────────
+// ─── Sub-resource mutation DTOs (post-hoc edits on a persisted action) ──────────────────
 // These differ from the inner-Create models above by using concrete Guid
 // references instead of array indices. The inner-Create models are kept
 // untouched so ActionManager.CreateAsync continues to compile.
@@ -124,7 +124,7 @@ public class ActionNodeUpdateModel
 /// Request body for <c>POST /api/action/{actionId}/edges</c>. Unlike the inner
 /// <see cref="ActionEdgeCreateModel"/> which uses array indices into the
 /// ActionCreateModel.Nodes payload, this variant carries concrete Guid
-/// references because the parent ActionDefinition is already persisted.
+/// references because the parent action is already persisted.
 /// </summary>
 public class ActionEdgeAddModel
 {

@@ -63,7 +63,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
         ActionConfigBindingResolver bindingResolver,
         ILogger<ActionNodeStepHandler> logger,
         // Optional so existing positional test fixtures compile; DI supplies every
-        // registered rail destination directory. See Services/ActionDefinition/AGENTS.md
+        // registered rail destination directory. See Services/Actions/AGENTS.md
         // §rail-capability.
         IEnumerable<IRailDestinationDirectory>? railDestinationDirectories = null)
     {
@@ -87,7 +87,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
         var actionResult = await _actionStore.GetActionAsync(p.ActionId, ct);
         if (actionResult.IsError || actionResult.Result is null)
             return StepResult.Fail(
-                $"ActionDefinition {p.ActionId} not loadable for run {p.RunId}: {actionResult.Message}");
+                $"Action {p.ActionId} not loadable for run {p.RunId}: {actionResult.Message}");
         var action = actionResult.Result;
 
         var node = action.Nodes.FirstOrDefault(n => n.Id == p.NodeId);
@@ -182,7 +182,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
         else
         {
             // FR-1 ($from binding) — resolve before handler dispatch (durable path).
-            // See Services/ActionDefinition/AGENTS.md §output-binding. H1: holon-scoped binding
+            // See Services/Actions/AGENTS.md §output-binding. H1: holon-scoped binding
             // reads resolve against the RUNNER (actingUserId), not the action owner.
             var actingTenantId = run.ActingTenantId;
 
@@ -311,7 +311,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
             // V5: when the failed node has an OnFailure successor, advance to it
             // instead of surfacing the saga failure. This keeps the run Running
             // and lets the failure arm complete without triggering compensation.
-            // See Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics.
+            // See Services/Actions/Workflow/AGENTS.md §skip-semantics.
             var onFailureHop = ActionWorkflowEdges.ResolveOnFailureSuccessor(action, node.Id);
             if (onFailureHop.Kind == SuccessorKind.Single)
                 return await AdvanceOnFailureAsync(p, onFailureHop.NodeId!.Value, ct);
@@ -327,7 +327,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
     /// Enqueues the OnFailure successor and keeps the run Running. The failure
     /// arm takes over normal forward progression; from the saga's perspective the
     /// step succeeds (no compensation triggered). V5 — both fresh and replay seams
-    /// call this. See Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics.
+    /// call this. See Services/Actions/Workflow/AGENTS.md §skip-semantics.
     /// </summary>
     private async Task<StepResult> AdvanceOnFailureAsync(
         ActionStepPayload p, Guid onFailureNodeId, CancellationToken ct)
@@ -428,7 +428,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
         if (!result.Retriable)
         {
             _logger.LogWarning(
-                "ActionDefinition workflow: chain-action node {NodeId} (run {RunId}) failed with an " +
+                "Action workflow: chain-action node {NodeId} (run {RunId}) failed with an " +
                 "INVALID-config result — terminal fail, no chain probe (nothing was broadcast).",
                 p.NodeId, p.RunId);
             execution.State = ActionNodeState.Failed;
@@ -469,7 +469,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
                 // success: record Succeeded with the original output + tx hash, then
                 // self-advance exactly as the success path would.
                 _logger.LogInformation(
-                    "ActionDefinition workflow: chain-action node {NodeId} (run {RunId}) reported failure but " +
+                    "Action workflow: chain-action node {NodeId} (run {RunId}) reported failure but " +
                     "tx {TxHash} is CONFIRMED on-chain — reconciled to SUCCESS (no retry).",
                     p.NodeId, p.RunId, result.TxHash);
                 execution.State = ActionNodeState.Succeeded;
@@ -493,7 +493,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
                 // method-doc park-choice justification: this neither re-runs the
                 // broadcasting handler nor consumes a retry attempt).
                 _logger.LogWarning(
-                    "ActionDefinition workflow: chain-action node {NodeId} (run {RunId}) failed with an " +
+                    "Action workflow: chain-action node {NodeId} (run {RunId}) failed with an " +
                     "INDETERMINATE on-chain verdict ({Verdict}, tx '{TxHash}') — PARKING in " +
                     "AwaitingReconciliation (no retry, no re-broadcast).",
                     p.NodeId, p.RunId, verdict, result.TxHash ?? "<none>");
@@ -541,7 +541,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
-                "ActionDefinition workflow: reconciliation provider resolution failed for chain '{Chain}' — " +
+                "Action workflow: reconciliation provider resolution failed for chain '{Chain}' — " +
                 "leaving verdict Unknown (will park).", chainType ?? "<default>");
             return null;
         }
@@ -580,7 +580,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
 
         // Succeeded/Skipped ⇒ re-drive forward advancement idempotently.
         _logger.LogInformation(
-            "ActionDefinition workflow: node {NodeId} (run {RunId}) already {State} — " +
+            "Action workflow: node {NodeId} (run {RunId}) already {State} — " +
             "idempotent replay, re-driving advancement.", p.NodeId, p.RunId, state);
         return await AdvanceAsync(action, node, p, advance, existing.Result?.Output, ct);
     }
@@ -605,7 +605,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
         if (await _sagaStore.StepExistsAsync(correlationKey, nextName, ct))
         {
             _logger.LogInformation(
-                "ActionDefinition workflow: successor node {NodeId} (run {RunId}) already enqueued — " +
+                "Action workflow: successor node {NodeId} (run {RunId}) already enqueued — " +
                 "skipping duplicate (idempotent replay).", nextNodeId, current.RunId);
             return;
         }
@@ -621,7 +621,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
     /// Loads, in one store round-trip, both the direct-upstream execution map
     /// (incoming-edge sources, for the <c>upstream.</c> root) and the full
     /// run-execution map keyed by node id (for the run-scoped <c>run.</c> root).
-    /// See Services/ActionDefinition/AGENTS.md §output-binding.
+    /// See Services/Actions/AGENTS.md §output-binding.
     /// </summary>
     private async Task<(IReadOnlyDictionary<Guid, ActionNodeExecution> Upstream,
                         IReadOnlyDictionary<Guid, ActionNodeExecution> AllByNode)>

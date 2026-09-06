@@ -361,7 +361,7 @@ function ActionList() {
   )
 }
 
-// ─── ActionDefinition Builder (visual) ───
+// ─── Action Builder (visual) ───
 
 function ActionBuilder({ onCreated }: { onCreated: () => void }) {
   const { templates, reload } = useNodeTemplates()
@@ -375,7 +375,7 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
   const handleSubmit = useCallback(
     async (graph: BuiltGraph) => {
       if (!name.trim()) {
-        setError('ActionDefinition name is required')
+        setError('Action name is required')
         return
       }
       setSubmitting(true)
@@ -407,7 +407,7 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
   return (
     <div className="flex flex-col gap-4 rounded-lg border bg-card p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Visual ActionDefinition Builder</h3>
+        <h3 className="text-sm font-semibold">Visual Action Builder</h3>
         <Button size="sm" variant="ghost" onClick={reload}>
           Refresh palette
         </Button>
@@ -415,8 +415,8 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
 
       <div className="flex flex-col gap-4 sm:flex-row">
         <div className="flex flex-1 flex-col gap-1.5">
-          <Label>ActionDefinition Name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="My ActionDefinition" />
+          <Label>Action Name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="My Action" />
         </div>
         <div className="flex flex-1 flex-col gap-1.5">
           <Label>Description</Label>
@@ -429,7 +429,7 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
         Publish to marketplace (other users can start this action once it's Active)
       </label>
 
-      <ActionCanvas nodeTemplates={templates} onSubmit={handleSubmit} submitting={submitting} submitLabel="Create ActionDefinition" />
+      <ActionCanvas nodeTemplates={templates} onSubmit={handleSubmit} submitting={submitting} submitLabel="Create Action" />
 
       {error ? <ErrorBanner message={error} /> : null}
       {result !== null && result !== undefined && <ResultDisplay result={result} />}
@@ -437,7 +437,7 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
   )
 }
 
-// ─── ActionDefinition Templates ───
+// ─── Action Templates ───
 
 function ActionTemplates() {
   const { templates: nodeTemplates } = useNodeTemplates()
@@ -521,7 +521,7 @@ function ActionTemplates() {
   )
 }
 
-/** ActionDefinition Template creator — same visual canvas, posts to /api/action/templates. */
+/** Action Template creator — same visual canvas, posts to /api/action/templates. */
 function ActionTemplateCreator({ nodeTemplates, onCreated }: { nodeTemplates: NodeTemplateMeta[]; onCreated: () => void }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -664,7 +664,7 @@ function NodeTemplates() {
   )
 }
 
-// ─── Start a Public ActionDefinition (non-owner) ───
+// ─── Start a Public Action (non-owner) ───
 
 /**
  * Marketplace browse + start. Fetches the public action catalog on mount
@@ -738,7 +738,7 @@ function StartPublicAction() {
   return (
     <div className="flex flex-col gap-4 rounded-lg border bg-card p-4">
       <div>
-        <h3 className="text-sm font-semibold">Public ActionDefinition Marketplace</h3>
+        <h3 className="text-sm font-semibold">Public Action Marketplace</h3>
         <p className="text-sm text-muted-foreground">
           Browse actions published to the marketplace and start one under your own user.
         </p>
@@ -792,7 +792,7 @@ function StartPublicAction() {
 
       {/* Manual id-paste fallback */}
       <div className="flex flex-col gap-1.5 sm:max-w-md">
-        <Label htmlFor="public-action-id">Or paste an ActionDefinition ID</Label>
+        <Label htmlFor="public-action-id">Or paste an Action ID</Label>
         <div className="flex gap-2">
           <Input
             id="public-action-id"
@@ -865,9 +865,9 @@ export default function ActionsPage() {
   const tabs = [
     { id: 'actions', label: 'My Actions' },
     { id: 'create', label: 'Builder' },
-    { id: 'start-public', label: 'Start an ActionDefinition' },
+    { id: 'start-public', label: 'Start an Action' },
     { id: 'my-requests', label: 'My Requests' },
-    { id: 'templates', label: 'ActionDefinition Templates' },
+    { id: 'templates', label: 'Action Templates' },
     { id: 'node-templates', label: 'Node Templates' },
   ] as const
 
@@ -875,7 +875,7 @@ export default function ActionsPage() {
     <div className="flex flex-col gap-6">
       {/* Top bar — header stack */}
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold tracking-tight">ActionDefinition DAG System</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Action DAG System</h2>
         <p className="text-sm text-muted-foreground">
           Build, validate, and execute directed acyclic graph workflows that orchestrate holons, NFTs, wallets, and blockchain operations.
         </p>

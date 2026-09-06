@@ -96,8 +96,8 @@ SurrealDB) and the SDK vitest suite. Do not report these as green.
 **Pure-DB DAG ops:** 43 node handlers; only **7** set `RequiresChainCapability`
 (Back, Bridge, FungibleTokenCreate, Grant, Refund, Swap, Transfer). The other
 **37 run chain-free** against SurrealDB. The Tier-1/Tier-2 seam is
-`IQuestNodeHandler.RequiresChainCapability`, enforced at both dispatch points via
-`Services/Quest/ChainCapabilityGate.cs` (now rail-aware, per D9).
+`IActionNodeHandler.RequiresChainCapability`, enforced at both dispatch points via
+`Services/Actions/ChainCapabilityGate.cs` (now rail-aware, per D9).
 
 ### Cross-cutting blockers to real value
 
@@ -170,14 +170,25 @@ vitest + jsdom harness (65 tests). tsc + build + eslint + vitest are **required*
 gates there, not forbidden ones.
 
 ⚠ **Open finding, not closed** (re-verified 2026-09-04):
-`CanvasToolbar` (`frontend/src/components/quest-builder/panels/canvas-toolbar.tsx`)
-is **ungated by `readOnly`** — Clear / Presets / Auto-layout still destroy a
-displayed graph in read-only mode. `readOnly` appears nowhere in the builder tree.
-Pre-existing, but `AGENTS.md` documented the gate as complete, which is worse than
-silence.
+`CanvasToolbar` — ✅ **CLOSED 2026-09-06 as a NON-ISSUE. The finding was wrong,
+not unfixed.** It claimed the toolbar is "ungated by `readOnly`" so Clear /
+Presets / Auto-layout "destroy a displayed graph in read-only mode". Verified
+against source: **there is no read-only mode for the builder to be ungated in.**
+`frontend/src/components/action-builder/AGENTS.md:356-365` records that
+`readOnly` was **deliberately removed** because neither `ActionCanvas` call site
+ever passed `true` — both (`actions/page.tsx:432` and `:596`) are create-new
+flows. The read-only render is a **separate component**, `dag-flow.tsx`, which
+has **no toolbar at all**. The removal also promoted `onAddNode` and the
+edge-inspector callbacks from optional to **required**, so a caller that forgets
+to wire one gets a compile error rather than a silently dead control — stronger
+than the gate this finding asked for.
+*Lesson:* the earlier note asserted "`AGENTS.md` documented the gate as complete,
+which is worse than silence." It did not — it documented the **removal**, and
+accurately. **The runbook was the stale document.** Re-read the primary source
+before recording another file as wrong.
 
 ✅ **Closed since:** the `dag-warnings.ts` OnFailure fan-out gap — the client now
-mirrors `Services/QuestDagValidator.cs` (`dag-warnings.ts:103-110`).
+mirrors `Services/ActionDagValidator.cs` (`dag-warnings.ts:103-110`).
 
 ---
 
@@ -449,7 +460,7 @@ updates as part of the same change, not as follow-up drift.
 **D29 — Deployment reconciliation, split by urgency.** The live Railway
 deployment diverges on three axes: new tables (`hosted_session`, `kyc_identity`,
 `kyc_screening_monitor`, `kyc_screening_poll_state`, `kyc_screening_result`,
-`avatar_external_login`, `oauth_exchange_code`), the forward migration widening
+`user_external_login`, `oauth_exchange_code`), the forward migration widening
 `operation_log.amount`, and hazardous Ethereum wallet rows. The owner chose full
 reconciliation. **Split it, because the halves have different clocks:**
 - **Urgent, first, independent:** delete and regenerate every Ethereum wallet row.
@@ -812,16 +823,16 @@ review of every new Tier-2 node.
   NONE-collision semantics the rename depends on.
 
 **Action (Quest) / DAG**
-- `Services/Quest/Handlers/` — 43 handlers; 7 chain-gated.
-- `Services/Quest/ChainCapabilityGate.cs` — rail-aware Tier-1/Tier-2 enforcement.
-- `Services/QuestDagValidator.cs` — server rules the client must mirror.
+- `Services/Actions/Handlers/` — 44 handlers; 7 chain-gated.
+- `Services/Actions/ChainCapabilityGate.cs` — rail-aware Tier-1/Tier-2 enforcement.
+- `Services/ActionDagValidator.cs` — server rules the client must mirror.
 
 **Fiat**
 - `fiat-sidecar/src/routes/checkout.ts`, `webhook.ts` — fiat **in** only.
 - `sdk/azoa-wallet/src/orchestration/stripe.ts` — discards reversal events (D10).
 
 **Frontend builder**
-- `frontend/src/components/quest-builder/` — `quest-canvas.tsx` now **144 lines**,
+- `frontend/src/components/action-builder/` — `action-canvas.tsx` now **144 lines**,
   plus `panels/`, `hooks/`, `run/`, `__tests__/`.
 - `panels/canvas-toolbar.tsx` — ⚠ the open `readOnly` gap.
 - `dag-warnings.ts` — mirrors the server validator; keep it in sync.
@@ -1048,7 +1059,7 @@ together. `CompatibilityBaselines/` is what a deployment is materialized from,
 
 - **All 7 Phase 1/1B tables are absent from the live database**, confirming D29:
   `hosted_session`, `kyc_identity`, `kyc_screening_monitor`,
-  `kyc_screening_poll_state`, `kyc_screening_result`, `avatar_external_login`,
+  `kyc_screening_poll_state`, `kyc_screening_result`, `user_external_login`,
   `oauth_exchange_code`. *(Earlier KYC tables **are** present:
   `kyc_authority_guard`, `kyc_control_audit`, `kyc_document`,
   `kyc_provider_profile`, `kyc_submission`, `tenant_kyc_provider_selection`.)*
@@ -1121,7 +1132,7 @@ two concepts. Grep the target noun in prose **before** the rename, not after.
 
 - **Run the integration + SDK vitest suites** — status genuinely unknown since
   2026-08-21 (assumption 8). Cheapest available risk reduction.
-- **`CanvasToolbar` `readOnly` gating** (§2 open finding).
+- ~~`CanvasToolbar` `readOnly` gating~~ — **closed as a non-issue**, see §2.
 - **Operator funding / treasury** — Algorand fee-payer balances, Stripe payout
   balance sufficiency, and reconciling `NodeTreasuryManager` holdings against
   outstanding obligations appear nowhere. Resolve in 12a.

@@ -13,7 +13,7 @@
 ## Tasks
 
 ### Persistence seam
-1. [x] Design per-aggregate interfaces: `IUserStore`, `IWalletStore`, `IHolonStore`, `IBlockchainOperationStore`, `ISTARStore`, `IActionStore`, `INftStore`, `IBridgeStore` (+ `BridgeStatusMutation`) — graph-aware, intention-revealing, NOT a generic `IRepository<T>` (`Interfaces/Stores/*`, `Interfaces/ActionDefinition/*`)
+1. [x] Design per-aggregate interfaces: `IUserStore`, `IWalletStore`, `IHolonStore`, `IBlockchainOperationStore`, `ISTARStore`, `IActionStore`, `INftStore`, `IBridgeStore` (+ `BridgeStatusMutation`) — graph-aware, intention-revealing, NOT a generic `IRepository<T>` (`Interfaces/Stores/*`, `Interfaces/Actions/*`)
 2. [x] Implement EF-backed adapters (`Providers/Stores/Ef*Store.cs`, 8) — verbatim body-lifts from the deleted `EfStorageProvider` (incl. `EfActionStore.UpsertActionAsync` graph child-collection sync); interim, swapped in `surrealdb-migration`
 3. [x] Migrate all managers off `IAZOAStorageProvider` / `ProviderContext.CurrentProvider` onto the new interfaces (8 managers, 62 `Activate()` prologues removed)
 4. [x] Migrate `ActionManager` off the (dead) `IActionRepository`/`ProviderContext` onto `IActionStore`
@@ -22,10 +22,10 @@
 
 ### ActionManager decomposition
 7. [x] `IActionNodeHandler` (`ActionNodeType NodeType` + `Task<AZOAResult<ActionNode>> HandleAsync(ActionDefinition, ActionNode, ct)`) + `IActionNodeHandlerRegistry`
-8. [x] One handler per node type — 34 in `Services/ActionDefinition/Handlers/` wrapping the original manager calls verbatim (shared `ActionNodeResults`/`ActionNodeJson`, DTOs in `Models/ActionDefinition/NodeConfigs.cs`)
+8. [x] One handler per node type — 34 in `Services/Actions/Handlers/` wrapping the original manager calls verbatim (shared `ActionNodeResults`/`ActionNodeJson`, DTOs in `Models/Actions/NodeConfigs.cs`)
 9. [x] Handlers registered scoped via self-documenting assembly scan; `ActionNodeHandlerRegistry` (fail-fast on duplicate type) replaces the ~315-line 34-case switch with a registry lookup (open/closed)
 10. [x] `ActionManager` ctor reduced 9 → 3 (`IActionStore, IActionDagValidator, IActionNodeHandlerRegistry`)
-11. [x] Handler unit tests — dispatch per group, registry miss ⇒ Fail, duplicate ⇒ throw, ExecutionOrder set after validate (`tests/.../ActionDefinition/Handlers/*`, 21 tests)
+11. [x] Handler unit tests — dispatch per group, registry miss ⇒ Fail, duplicate ⇒ throw, ExecutionOrder set after validate (`tests/.../Actions/Handlers/*`, 21 tests)
 
 ### Bug + hygiene
 12. [x] Single authoritative `ExecutionOrder` — `ActionDagValidator` (Kahn topo-sort, mutates nodes in place) is sole writer; the duplicate `ActionManager` block deleted; regression-guarded by a test

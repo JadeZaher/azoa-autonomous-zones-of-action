@@ -31,7 +31,7 @@ public class ActionDagValidatorTests
         var action = new ActionEntity
         {
             Id = Guid.NewGuid(),
-            Name = "Linear ActionDefinition",
+            Name = "Linear Action",
             Nodes = new List<ActionNodeEntity>
             {
                 new() { Id = aId, Name = "A", IsEntry = true, IsTerminal = false },
@@ -63,7 +63,7 @@ public class ActionDagValidatorTests
         var action = new ActionEntity
         {
             Id = Guid.NewGuid(),
-            Name = "Cyclic ActionDefinition",
+            Name = "Cyclic Action",
             Nodes = new List<ActionNodeEntity>
             {
                 new() { Id = aId, Name = "A", IsEntry = true, IsTerminal = false },

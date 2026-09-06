@@ -91,7 +91,7 @@ public sealed class ActionWebhookDeliveryWorker : BackgroundService
         if (!_options.Enabled)
         {
             _logger.LogInformation(
-                "ActionDefinition webhook delivery worker is DISABLED (Webhooks:Enabled=false). " +
+                "Action webhook delivery worker is DISABLED (Webhooks:Enabled=false). " +
                 "The scoped outbox/registration stores can still be exercised directly.");
             return;
         }
@@ -100,7 +100,7 @@ public sealed class ActionWebhookDeliveryWorker : BackgroundService
         var startupDelay = TimeSpan.FromSeconds(Math.Max(0, _options.StartupDelaySeconds));
 
         _logger.LogInformation(
-            "ActionDefinition webhook delivery worker starting. StartupDelay={StartupDelay}s " +
+            "Action webhook delivery worker starting. StartupDelay={StartupDelay}s " +
             "Poll={Poll}s BatchSize={BatchSize} MaxAttempts={MaxAttempts}.",
             startupDelay.TotalSeconds, interval.TotalSeconds, _options.BatchSize, _options.MaxAttempts);
 
@@ -130,11 +130,11 @@ public sealed class ActionWebhookDeliveryWorker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex,
-                "ActionDefinition webhook delivery worker terminated unexpectedly — it will NOT restart " +
+                "Action webhook delivery worker terminated unexpectedly — it will NOT restart " +
                 "until the app is recycled. Investigate.");
         }
 
-        _logger.LogInformation("ActionDefinition webhook delivery worker stopped.");
+        _logger.LogInformation("Action webhook delivery worker stopped.");
     }
 
     /// <summary>One tick: fresh scope, resolve the scoped stores, scan due events, deliver
@@ -151,7 +151,7 @@ public sealed class ActionWebhookDeliveryWorker : BackgroundService
             if (dueResult.IsError || dueResult.Result is null)
             {
                 if (dueResult.IsError)
-                    _logger.LogWarning("ActionDefinition webhook due-scan failed: {Error}", dueResult.Message);
+                    _logger.LogWarning("Action webhook due-scan failed: {Error}", dueResult.Message);
                 return;
             }
 
@@ -167,7 +167,7 @@ public sealed class ActionWebhookDeliveryWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "ActionDefinition webhook delivery tick failed — swallowed; will retry next interval.");
+            _logger.LogError(ex, "Action webhook delivery tick failed — swallowed; will retry next interval.");
         }
     }
 
@@ -236,10 +236,10 @@ public sealed class ActionWebhookDeliveryWorker : BackgroundService
             {
                 var marked = await outbox.MarkDeliveredAsync(evt.Id, ct);
                 if (marked.IsError)
-                    _logger.LogWarning("ActionDefinition webhook {EventId} delivered (HTTP {Status}) but mark-delivered failed: {Error}",
+                    _logger.LogWarning("Action webhook {EventId} delivered (HTTP {Status}) but mark-delivered failed: {Error}",
                         evt.Id, (int)response.StatusCode, marked.Message);
                 else
-                    _logger.LogInformation("ActionDefinition webhook {EventId} delivered to tenant {TenantId} (HTTP {Status}).",
+                    _logger.LogInformation("Action webhook {EventId} delivered to tenant {TenantId} (HTTP {Status}).",
                         evt.Id, evt.TenantId, (int)response.StatusCode);
                 return;
             }
@@ -271,10 +271,10 @@ public sealed class ActionWebhookDeliveryWorker : BackgroundService
         var nextAttemptAt = DateTime.UtcNow + backoff;
         var result = await outbox.RescheduleAsync(evt.Id, nextAttempt, nextAttemptAt, error, ct);
         if (result.IsError)
-            _logger.LogWarning("ActionDefinition webhook {EventId} reschedule failed: {Error}", evt.Id, result.Message);
+            _logger.LogWarning("Action webhook {EventId} reschedule failed: {Error}", evt.Id, result.Message);
         else
             _logger.LogInformation(
-                "ActionDefinition webhook {EventId} delivery failed (attempt {Attempt}/{Max}); retry in {Backoff}s. Reason: {Reason}",
+                "Action webhook {EventId} delivery failed (attempt {Attempt}/{Max}); retry in {Backoff}s. Reason: {Reason}",
                 evt.Id, nextAttempt, _options.MaxAttempts, backoff.TotalSeconds, error);
     }
 
@@ -283,10 +283,10 @@ public sealed class ActionWebhookDeliveryWorker : BackgroundService
     {
         var result = await outbox.DeadLetterAsync(evt.Id, reason, ct);
         if (result.IsError)
-            _logger.LogWarning("ActionDefinition webhook {EventId} dead-letter failed: {Error}", evt.Id, result.Message);
+            _logger.LogWarning("Action webhook {EventId} dead-letter failed: {Error}", evt.Id, result.Message);
         else
             _logger.LogWarning(
-                "ActionDefinition webhook {EventId} (tenant {TenantId}) DEAD-LETTERED — best-effort, action-run state unaffected. Reason: {Reason}",
+                "Action webhook {EventId} (tenant {TenantId}) DEAD-LETTERED — best-effort, action-run state unaffected. Reason: {Reason}",
                 evt.Id, evt.TenantId, reason);
     }
 

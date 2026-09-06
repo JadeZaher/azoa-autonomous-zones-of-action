@@ -59,7 +59,7 @@ Map action DAG and holon polyhierarchy to native SurrealDB `RELATE` edges +
 the iterative DAG validation guarantees (acyclicity, reachability,
 single-`ExecutionOrder`).
 
-**ActionDefinition tables consume the hand-off doc** `tracks/action-temporal-fork-model/
+**Action tables consume the hand-off doc** `tracks/action-temporal-fork-model/
 SURREAL-SCHEMA-HINTS.md` — that track owns the runtime/definition split
 (`ActionDefinition`/`ActionNode` = immutable definition; `ActionRun` +
 `ActionNodeExecution` = per-attempt state; `forked_from` lineage edge).
@@ -123,4 +123,4 @@ engines under value paths). **Wave-2 adapter work (tasks 5, 6, 7, 8, 8a, 8b)
 requires [[surrealdb-client-package]] sub-wave 1.5a complete** (HTTP client +
 query builder + Mermaid schema tool + analyzer relocated; SDK-pin removed).
 LIVE-query saga adoption requires [[surrealdb-client-package]] sub-wave 1.5b.
-ActionDefinition-table schema gated on `action-temporal-fork-model`. Blocks `mcp-surface`.
+Action-table schema gated on `action-temporal-fork-model`. Blocks `mcp-surface`.

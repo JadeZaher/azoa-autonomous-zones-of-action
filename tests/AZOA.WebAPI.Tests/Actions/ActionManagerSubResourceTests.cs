@@ -84,7 +84,7 @@ public class ActionManagerSubResourceTests
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // ActionDefinition Nodes sub-resource
+    // Action Nodes sub-resource
     // ═══════════════════════════════════════════════════════════════════
 
     [Fact]
@@ -187,7 +187,7 @@ public class ActionManagerSubResourceTests
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // ActionDefinition Edges sub-resource
+    // Action Edges sub-resource
     // ═══════════════════════════════════════════════════════════════════
 
     [Fact]
@@ -272,7 +272,7 @@ public class ActionManagerSubResourceTests
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // ActionDefinition Dependencies sub-resource
+    // Action Dependencies sub-resource
     // ═══════════════════════════════════════════════════════════════════
 
     [Fact]

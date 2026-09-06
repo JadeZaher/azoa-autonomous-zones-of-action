@@ -1,4 +1,4 @@
-# ActionDefinition Temporal / Forkable DAG Model — Specification
+# Action Temporal / Forkable DAG Model — Specification
 
 ## Goal
 Tier 1 (architectural design + minimal in-memory cutover): split the action
@@ -14,13 +14,13 @@ lineage + reuse of the existing intra-iteration DAG validator**, not the
 full "MetaNode / HolonDAG / time-sliced ledger" architecture that the
 external analysis sketches. Most of that surface (templates, parameterized
 instantiation, versioning) already exists today in [[action-template-existing]]
-(`Models/ActionDefinition/ActionTemplate.cs`, `Services/ActionDefinition/ActionInstantiator.cs`).
+(`Models/Actions/ActionTemplate.cs`, `Services/Actions/ActionInstantiator.cs`).
 
 ## Current state (file:line evidence)
-- `Models/ActionDefinition/ActionDefinition.cs` conflates *definition* and *runtime*: it carries
+- `Models/Actions/ActionDefinition.cs` conflates *definition* and *runtime*: it carries
   both `Status` (lifecycle) and a `Nodes` collection whose `ActionNode.State`,
   `Output`, `Error` are mutated **in place** during execution
-  (`Models/ActionDefinition/ActionNode.cs:19-28`).
+  (`Models/Actions/ActionNode.cs:19-28`).
 - An action can therefore only be executed **once**: re-running mutates the
   same row. Forking is impossible — there is no lineage pointer, and the
   prior attempt's per-node outputs would be overwritten.

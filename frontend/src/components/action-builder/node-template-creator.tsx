@@ -19,7 +19,7 @@ import { azoa, isOk } from '@/lib/azoa'
 import { NODE_CATALOG, NODE_CATALOG_BY_TYPE, CATEGORY_ORDER } from './node-catalog'
 
 /**
- * Form to author a reusable ActionDefinition Node Template (POST /api/action/node-templates).
+ * Form to author a reusable Action Node Template (POST /api/action/node-templates).
  * Node templates seed the builder palette with a named, schema-carrying node.
  */
 export function NodeTemplateCreator({ onCreated }: { onCreated?: () => void }) {

@@ -1,13 +1,13 @@
-# ActionDefinition API — Plan
+# Action API — Plan
 
 ## Tasks
 
-1. [ ] Create `Models/ActionDefinition/DTOs/ActionCreateModel.cs` and `ActionUpdateModel.cs`
-2. [ ] Create `Models/ActionDefinition/DTOs/ActionNodeCreateModel.cs` and `ActionNodeUpdateModel.cs`
-3. [ ] Create `Models/ActionDefinition/DTOs/ActionEdgeCreateModel.cs`
-4. [ ] Create `Models/ActionDefinition/DTOs/ActionDependencyCreateModel.cs`
-5. [ ] Create `Models/ActionDefinition/DTOs/ActionExecutionModels.cs` — ExecutionResult, DependencyCheckResult, ActionExecutionState
-6. [ ] Create `Models/ActionDefinition/DTOs/ActionTemplateModels.cs` — template CRUD and instantiation DTOs
+1. [ ] Create `Models/Actions/DTOs/ActionCreateModel.cs` and `ActionUpdateModel.cs`
+2. [ ] Create `Models/Actions/DTOs/ActionNodeCreateModel.cs` and `ActionNodeUpdateModel.cs`
+3. [ ] Create `Models/Actions/DTOs/ActionEdgeCreateModel.cs`
+4. [ ] Create `Models/Actions/DTOs/ActionDependencyCreateModel.cs`
+5. [ ] Create `Models/Actions/DTOs/ActionExecutionModels.cs` — ExecutionResult, DependencyCheckResult, ActionExecutionState
+6. [ ] Create `Models/Actions/DTOs/ActionTemplateModels.cs` — template CRUD and instantiation DTOs
 7. [ ] Create `Interfaces/Managers/IActionManager.cs` — returns `AZOAResult<T>` matching existing manager pattern
 8. [ ] Create `Managers/ActionManager.cs` — action CRUD with user scoping, node/edge/dependency management
 9. [ ] Implement `ActivateAsync` — DAG validation + dependency check → Draft → Active

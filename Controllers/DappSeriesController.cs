@@ -73,7 +73,7 @@ public class DappSeriesController : ControllerBase
         return Ok(new AZOAResponse { Message = "DappSeries deleted." });
     }
 
-    // ── Series ActionDefinition Management ──────────────────────────────────────────────
+    // ── Series Action Management ────────────────────────────────────────────────────────
 
     [HttpGet("{seriesId:guid}/actions")]
     public async Task<ActionResult<AZOAResult<IEnumerable<DappSeriesAction>>>> ListActions(
@@ -106,7 +106,7 @@ public class DappSeriesController : ControllerBase
         if (userId is null) return Unauthorized(new AZOAResponse { IsError = true, Message = "Invalid token." });
         var result = await _manager.RemoveActionAsync(seriesId, userId.Value, actionId, ct);
         if (result.IsError || !result.Result) return BadRequest(new AZOAResponse { IsError = true, Message = result.Message });
-        return Ok(new AZOAResponse { Message = "ActionDefinition removed from series." });
+        return Ok(new AZOAResponse { Message = "Action removed from series." });
     }
 
     [HttpPut("{seriesId:guid}/actions/{actionId:guid}/order")]

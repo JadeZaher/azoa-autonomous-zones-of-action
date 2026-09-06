@@ -11,8 +11,8 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("action_dependency",
-        Aggregate = "ActionDependency (Models/ActionDefinition/ActionDependency.cs)",
-        Guardrail = "G6 SCHEMAFULL; cross-action dependency edge. ActionDefinition activation refuses to enter Active until all Required dependencies are satisfied.")]
+        Aggregate = "ActionDependency (Models/Actions/ActionDependency.cs)",
+        Guardrail = "G6 SCHEMAFULL; cross-action dependency edge. Action activation refuses to enter Active until all Required dependencies are satisfied.")]
     [SurrealNote("Optional vs Required is a hint to the dependency-check endpoint -- Required dependencies block activation; Optional ones are reported in DependencyCheckResult for caller visibility but do not block.")]
     [SurrealNote("depends_on_node_id is set when the dependency is on a specific node's output (e.g. 'must have HolonCreate's holonId') rather than the entire action's completion. Null = depend on the whole action reaching Succeeded.")]
     [Slice("action")]

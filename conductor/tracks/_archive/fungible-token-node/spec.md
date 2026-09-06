@@ -38,7 +38,7 @@ builder's palette surfaces it automatically (the catalog mirrors the enum).
 
 ## Design
 
-### New node config (`Models/ActionDefinition/NodeConfigs.cs`)
+### New node config (`Models/Actions/NodeConfigs.cs`)
 ```csharp
 /// <summary>FungibleTokenCreate config: launch a fungible token (ASA) backed/linked
 /// to a holon. Supply + decimals are tenant-supplied and authoritative; AZOA
@@ -69,14 +69,14 @@ Task<AZOAResult<FungibleTokenResult>> CreateAsync(
   as manager/reserve/freeze/clawback (mechanism only; roles tenant-configurable
   follow-up).
 
-### New handler (`Services/ActionDefinition/Handlers/FungibleTokenCreateNodeHandler.cs`)
+### New handler (`Services/Actions/Handlers/FungibleTokenCreateNodeHandler.cs`)
 - `NodeType => ActionNodeType.FungibleTokenCreate`, `RequiresChainCapability => true`.
 - Actor user ALWAYS from run context (never the config body) — Grant precedent.
 - On success, opt-in Holon↔asset link (copy assetId/chainId onto the holon).
 - Auto-registered by the Program.cs assembly scan (no DI edit needed).
 
 ### Enum + gate
-- Add `FungibleTokenCreate` to `Models/ActionDefinition/ActionEnums.cs::ActionNodeType`.
+- Add `FungibleTokenCreate` to `Models/Actions/ActionEnums.cs::ActionNodeType`.
 - `ChainCapabilityGate` already refuses Tier-2 nodes pre-execution at both dispatch
   seams when no wallet is bound — the new node inherits this by `RequiresChainCapability`.
 

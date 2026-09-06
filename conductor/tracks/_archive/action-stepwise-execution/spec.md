@@ -7,10 +7,10 @@ horizon: post-launch
 depends_on: [durable-workflow-engine, economic-primitive-nodes, action-visual-builder]
 ---
 
-# ActionDefinition Step-Wise Execution, Run-Scoped Data & Executability Validation — As-Built Retro
+# Action Step-Wise Execution, Run-Scoped Data & Executability Validation — As-Built Retro
 
 > **Shipped 2026-07-06.** Archived on completion. This is the as-built record, not a
-> forward plan. Authoritative code notes live in `Services/ActionDefinition/AGENTS.md`
+> forward plan. Authoritative code notes live in `Services/Actions/AGENTS.md`
 > (§output-binding, §output-schema, §executability-validation).
 
 ## Goal
@@ -59,7 +59,7 @@ So the work was **gap-fill**, not a rebuild.
 - New `'runs'` tab + `RunPanel` (`run-panel.tsx`): Start Run (`startWorkflow`) → poll
   `getExecutionState` (per-node state) → reuse `DagFlow`/`ActionNode` live overlay →
   advance (node-picker dropdown, defaults to last-Succeeded) / signal controls → per-node
-  output inspector. The old fire-and-forget one-shot "Execute ActionDefinition" button was REMOVED —
+  output inspector. The old fire-and-forget one-shot "Execute Action" button was REMOVED —
   the durable run panel is the sole execution path.
 
 ## Hardening pass (code review, same day)
@@ -85,7 +85,7 @@ confirmed); frontend per-click idempotency key (value-safety comes from server-d
 
 ## Verification
 - `dotnet build`: clean (baseline warnings only).
-- ActionDefinition unit tests: **477 pass, 0 fail** (incl. 13 executability tests, 4 of them
+- Action unit tests: **477 pass, 0 fail** (incl. 13 executability tests, 4 of them
   hardening regressions — 2 caught the dominator entry-set bug before merge).
 - SDK `tsc` + `vitest`: clean (163 tests). Frontend NOT typechecked (project rule).
 

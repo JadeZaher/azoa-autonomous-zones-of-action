@@ -81,7 +81,7 @@ F2 -- G5 seed bypasses store layer
 
 F3 -- G3 controller-path coverage is representative, not exhaustive
 - File: tests/AZOA.WebAPI.IntegrationTests/Gates/G3_InjectionSuiteTest.cs:115-183
-- Issue: Test 1 probes only Wallet/Holon/ApiKey/Bridge -- not User, NFT, BlockchainOperation, STAR, ActionDefinition controllers.
+- Issue: Test 1 probes only Wallet/Holon/ApiKey/Bridge -- not User, NFT, BlockchainOperation, STAR, Action controllers.
 - Mitigation: SRDB0001 analyzer is the actual G3 enforcement (project-referenced into every csproj that calls SurrealQuery.Of, DiagnosticSeverity.Error). Test 2 + Test 3 are the load-bearing G3 proofs.
 
 F4 -- G2 Test 1 disables rate limiting

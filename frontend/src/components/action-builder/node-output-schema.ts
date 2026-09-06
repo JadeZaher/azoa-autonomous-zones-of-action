@@ -2,7 +2,7 @@
  * Client-side mirror of the backend output-field taxonomy for `$from` binding
  * PRESENCE checks (ancestry is checked separately in action-canvas.tsx).
  *
- * Authority: Services/ActionDefinition/ActionNodeOutputSchema.cs (ActionNodeOutputSchema /
+ * Authority: Services/Actions/ActionNodeOutputSchema.cs (ActionNodeOutputSchema /
  * NodeOutputShape). This mirror is best-effort and non-authoritative — the
  * server re-validates. Only field NAMES are mirrored (case-insensitive
  * match); scalar type-matching (backend rule C) is intentionally SKIPPED

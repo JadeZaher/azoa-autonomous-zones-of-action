@@ -1,8 +1,8 @@
-# Review — orchestration gaps + Holon/ActionDefinition as ArdaNova's economic substrate
+# Review — orchestration gaps + Holon/Action as ArdaNova's economic substrate
 
 > Read-only architectural review (2026-06-16) following the ardanova-provider-port
 > ship. Three lanes: (A) orchestration-gap audit of the 7 shipped commits, (B) Holon
-> as economic-object substrate, (C) ActionDefinition as economic-workflow substrate. The locked
+> as economic-object substrate, (C) Action as economic-workflow substrate. The locked
 > constraint holds throughout: **the economic/token domain stays in ArdaNova; AZOA
 > exposes mechanism-only primitives.** This doc is the recommendation; nothing here is
 > implemented yet.
@@ -156,12 +156,12 @@ Hazards: `PropagateAsync`/`CloneAsync` write reserved metadata keys (`propagated
 
 ---
 
-## Part C — ActionDefinition as the economic-workflow substrate
+## Part C — Action as the economic-workflow substrate
 
 **Verdict: the DAG/composition/handler-SPI layer is an excellent fit; the execution model
 and handler library are not — yet.** Two new handler types + one real engine change.
 
-How it works today: an ActionDefinition is a generic DAG of typed nodes; each node has an opaque JSON
+How it works today: an action is a generic DAG of typed nodes; each node has an opaque JSON
 `Config`. Definition/runtime split (`ActionDefinition`/`ActionNode` vs `ActionRun`/`ActionNodeExecution`).
 One handler per `ActionNodeType` (`IActionNodeHandler` + registry, exactly-one invariant). Every
 handler is the same shape: deserialize `Config` → call one AZOA manager → serialize result.
@@ -208,7 +208,7 @@ isn't enforced if you rely on it.
 AZOA provides three composable mechanism layers; ArdaNova supplies all economics:
 - **Holon** = the economic *objects* (typed by `asset_type`, semantics in `metadata`, linked
   in a graph, linked to real ASAs once the Holon↔asset primitive lands).
-- **ActionDefinition** = the economic *workflows* (tenant-composed DAGs of generic `GateCheck` +
+- **Action** = the economic *workflows* (tenant-composed DAGs of generic `GateCheck` +
   `Allocate`/emit nodes, parameterized via templates, gated on predicates — once the gate
   handler + suspendable engine land).
 - **Allocation/signing/custody** = the value *movement* (once C1+C2 wire it to the real
@@ -216,7 +216,7 @@ AZOA provides three composable mechanism layers; ArdaNova supplies all economics
 
 The single highest-leverage build that unlocks the most: a **durable/suspendable execution
 engine** — it is simultaneously the fix for Part-A M2 (allocation compensation), the enabler
-for ActionDefinition vesting/gating (Part C #3), and the home for multi-step economic flows. The
+for action vesting/gating (Part C #3), and the home for multi-step economic flows. The
 `durable-saga-orchestration` pending track should absorb it. Second: the **Holon↔ASA typed
 link** (Part B #1) — small, unblocks "economic object = real on-chain asset." Third: close
 the **value-path wiring** (C1/C2/H3) so allocations actually settle and are KYC-gated at the

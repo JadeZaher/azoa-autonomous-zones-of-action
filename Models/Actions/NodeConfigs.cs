@@ -10,7 +10,7 @@ namespace AZOA.WebAPI.Models.Actions;
 // ═══════════════════════════════════════════════════════════════════
 // Per-node-type config DTOs for action node dispatch deserialization.
 // Moved verbatim from the former ActionManager.cs:~845-908 (made public so
-// the scoped handlers in Services/ActionDefinition/Handlers/* can deserialize them).
+// the scoped handlers in Services/Actions/Handlers/* can deserialize them).
 // ═══════════════════════════════════════════════════════════════════
 
 public class IdConfig

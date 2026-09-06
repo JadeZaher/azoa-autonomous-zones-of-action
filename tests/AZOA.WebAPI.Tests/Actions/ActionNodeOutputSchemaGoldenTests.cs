@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Tests.Actions;
 /// and pins that every declared field exists with a compatible JSON kind, that closed
 /// shapes carry no undeclared top-level field, and that every enum value is mapped.
 /// Compile-time DTO refs (<see cref="BridgeTransactionResult"/>, <see cref="AZOAResult{T}"/>)
-/// mean a rename breaks this test. See Services/ActionDefinition/AGENTS.md §output-schema.
+/// mean a rename breaks this test. See Services/Actions/AGENTS.md §output-schema.
 /// </summary>
 public class ActionNodeOutputSchemaGoldenTests
 {

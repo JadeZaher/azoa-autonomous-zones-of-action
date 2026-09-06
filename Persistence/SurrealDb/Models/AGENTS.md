@@ -7,7 +7,7 @@ hand-edit; regenerate via the byte-equivalence test with
 `AZOA_REGENERATE_GOLDENS=1` (see `AttributePocoByteEquivalenceTests`).
 
 Each `*Kind` enum inside a POCO MIRRORS its domain enum
-(`Models/ActionDefinition/ActionEnums.cs`); the `[Inside(...)]` allow-list on the
+(`Models/Actions/ActionEnums.cs`); the `[Inside(...)]` allow-list on the
 string-enum field MUST enumerate exactly those names, or a SCHEMAFULL ASSERT
 rejects a legitimate write.
 

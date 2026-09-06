@@ -13,7 +13,7 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("action",
-        Aggregate = "ActionDefinition (Models/ActionDefinition/ActionDefinition.cs)",
+        Aggregate = "ActionDefinition (Models/Actions/ActionDefinition.cs)",
         Guardrail = "G6 SCHEMAFULL; definition-side workflow shape. Runtime state lives on action_run + action_node_execution per action-temporal-fork-model ADR §1.")]
     [SurrealNote("Shape-only definition: name, owner, template ancestry, dapp-series binding, free-form metadata. completed_date was removed when action-temporal-fork-model split runtime from definition. status was also removed then but is reintroduced by action-dag-semantic-hardening FR-2 for the DEFINITION lifecycle (Draft/Active) -- distinct from the runtime ActionRun.Status. See Managers/AGENTS.md §publish-lifecycle.")]
     [SurrealNote("nodes/edges/dependencies live in their own tables (action_node, action_edge, action_dependency) keyed by action_id -- they are queried independently of the parent and mutated through Add/Remove endpoints. Embedding them would force the controller-side node/edge CRUD endpoints to read-modify-write the entire action row.")]
@@ -92,7 +92,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public DateTimeOffset CreatedDate { get; set; }
 
         /// <summary>Mirrors the full domain ActionStatus enum (action-dag-semantic-hardening FR-2).
-        /// [Inside] values must stay in sync with ActionStatus in Models/ActionDefinition/ActionEnums.cs.</summary>
+        /// [Inside] values must stay in sync with ActionStatus in Models/Actions/ActionEnums.cs.</summary>
         public enum ActionStatusKind
         {
             Draft,
@@ -102,7 +102,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             Archived
         }
 
-        /// <summary>Mirrors the domain ActionRunAccess enum. [Inside] values must stay in sync with ActionRunAccess in Models/ActionDefinition/ActionEnums.cs.</summary>
+        /// <summary>Mirrors the domain ActionRunAccess enum. [Inside] values must stay in sync with ActionRunAccess in Models/Actions/ActionEnums.cs.</summary>
         public enum ActionRunAccessKind
         {
             Open,

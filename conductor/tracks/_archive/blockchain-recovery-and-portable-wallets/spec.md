@@ -41,7 +41,7 @@ Decisions locked with the user (2026-06-21):
   ([Services/Reconciliation/ReconciliationService.cs](../../../Services/Reconciliation/ReconciliationService.cs)) —
   reuses `ChainVerdict`/`ClassifyTx` by promoting them out of the service.
 - **Builds on** [[durable-workflow-engine]] — the retry/compensation seam lives in
-  [ActionNodeStepHandler.cs](../../../Services/ActionDefinition/Workflow/ActionNodeStepHandler.cs).
+  [ActionNodeStepHandler.cs](../../../Services/Actions/Workflow/ActionNodeStepHandler.cs).
 - **Builds on** [[action-temporal-fork-model]] — `ForkAsync` IS the operator
   "redo-from-step" primitive; this track surfaces it, it does not reinvent it.
 - **Unblocks** the ArdaNova custodial-orchestrator integration (Grant-bounty flow
@@ -172,7 +172,7 @@ it is NOT terminal (`IsTerminal()` unchanged). Surfaced to operators alongside
 operator action is **redo-from-step = `ForkAsync(runId, failedNodeId, reason)`** once
 truth is known, or the reconciliation sweep auto-resolves it.
 
-#### 1.6 ActionDefinition-node reconciliation sweep
+#### 1.6 Action-node reconciliation sweep
 
 Extend `IReconciliationService` (or a sibling `IActionReconciliationService`) with
 `ReconcileActionNodesAsync` mirroring `ReconcileOperationsAsync`: scan
