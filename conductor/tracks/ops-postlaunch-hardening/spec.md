@@ -31,12 +31,12 @@ Sources: `docs/RESIDUAL-RISK-RUNBOOK.md`, `docs/GO-TO-PROD.md`,
 5. **Low-balance alerting hook** — operator signal before hot wallets run dry.
 6. **Admin console gaps** — saga-operator/dead-letter view and key-rotation view
    (both API-reachable today, no UI).
-7. **God-object splits** — `Managers/QuestManager.cs` (~98 KB) and
+7. **God-object splits** — `Managers/ActionManager.cs` (~98 KB) and
    `Services/CrossChainBridgeService.cs` (~59 KB) split along existing seams.
 8. **Key-rotation pending-key volume** — operator doc + compose/railway wiring so
    the pending-key marker survives ephemeral containers (`NODE-HOST §8.2`).
-9. **D1-L2 forward-compat note** — if quests become shareable/public, value-node
-   actor derivation must switch `quest.AvatarId` → `run.AvatarId`.
+9. **D1-L2 forward-compat note** — if actions become shareable/public, value-node
+   actor derivation must switch `action.UserId` → `run.UserId`.
 
 ## Acceptance
 

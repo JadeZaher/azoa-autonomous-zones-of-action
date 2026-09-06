@@ -356,12 +356,12 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore
         FlowKind = session.FlowKind,
         ProviderKey = session.ProviderKey,
         AdmissionKey = session.AdmissionKey,
-        SubjectAvatarId = string.IsNullOrWhiteSpace(session.SubjectAvatarId)
+        SubjectUserId = string.IsNullOrWhiteSpace(session.SubjectUserId)
             ? null
-            : SurrealLink.ToLink("avatar", session.SubjectAvatarId),
+            : SurrealLink.ToLink("user", session.SubjectUserId),
         TenantId = string.IsNullOrWhiteSpace(session.TenantId)
             ? null
-            : SurrealLink.ToLink("avatar", session.TenantId),
+            : SurrealLink.ToLink("user", session.TenantId),
         ProviderSessionId = session.ProviderSessionId,
         ProviderCorrelationId = session.ProviderCorrelationId,
         RedirectUrl = session.RedirectUrl,
@@ -384,9 +384,9 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore
         FlowKind = session.FlowKind,
         ProviderKey = session.ProviderKey,
         AdmissionKey = session.AdmissionKey,
-        SubjectAvatarId = string.IsNullOrWhiteSpace(session.SubjectAvatarId)
+        SubjectUserId = string.IsNullOrWhiteSpace(session.SubjectUserId)
             ? null
-            : SurrealLink.FromLink(session.SubjectAvatarId),
+            : SurrealLink.FromLink(session.SubjectUserId),
         TenantId = string.IsNullOrWhiteSpace(session.TenantId)
             ? null
             : SurrealLink.FromLink(session.TenantId),

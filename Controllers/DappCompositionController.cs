@@ -10,7 +10,7 @@ namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
 /// Composition + STAR generation/deployment endpoints for the
-/// <c>dapp-composition</c> aggregate. Series CRUD + quest management live on
+/// <c>dapp-composition</c> aggregate. Series CRUD + action management live on
 /// <see cref="DappSeriesController"/>; this controller is the pipeline:
 /// validate -> compose -> generate -> deploy.
 /// </summary>
@@ -27,9 +27,9 @@ public class DappCompositionController : ControllerBase
     [Authorize(Policy = "DappManage")]
     public async Task<ActionResult<AZOAResult<DappManifest>>> Compose(Guid id, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<DappManifest>("Invalid token."));
-        var result = await _manager.ComposeAsync(id, avatarId.Value, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<DappManifest>("Invalid token."));
+        var result = await _manager.ComposeAsync(id, userId.Value, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -37,9 +37,9 @@ public class DappCompositionController : ControllerBase
     [HttpGet("validate")]
     public async Task<ActionResult<AZOAResult<CompositionValidationResult>>> Validate(Guid id, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<CompositionValidationResult>("Invalid token."));
-        var result = await _manager.ValidateAsync(id, avatarId.Value, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<CompositionValidationResult>("Invalid token."));
+        var result = await _manager.ValidateAsync(id, userId.Value, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -47,9 +47,9 @@ public class DappCompositionController : ControllerBase
     [HttpGet("manifest")]
     public async Task<ActionResult<AZOAResult<DappManifest>>> GetManifest(Guid id, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<DappManifest>("Invalid token."));
-        var seriesLoad = await _manager.GetAsync(id, avatarId.Value, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<DappManifest>("Invalid token."));
+        var seriesLoad = await _manager.GetAsync(id, userId.Value, ct);
         if (seriesLoad.IsError || seriesLoad.Result is null) return NotFound(Fail<DappManifest>(seriesLoad.Message));
         if (string.IsNullOrEmpty(seriesLoad.Result.Manifest))
             return NotFound(Fail<DappManifest>("Series has no composed manifest yet; call /compose first."));
@@ -68,9 +68,9 @@ public class DappCompositionController : ControllerBase
     [Authorize(Policy = "DappManage")]
     public async Task<ActionResult<AZOAResult<ISTARODK>>> Generate(Guid id, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<ISTARODK>("Invalid token."));
-        var result = await _manager.GenerateAsync(id, avatarId.Value, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<ISTARODK>("Invalid token."));
+        var result = await _manager.GenerateAsync(id, userId.Value, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -80,9 +80,9 @@ public class DappCompositionController : ControllerBase
     public async Task<ActionResult<AZOAResult<ISTARODK>>> Deploy(
         Guid id, [FromQuery] string? targetOverride, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<ISTARODK>("Invalid token."));
-        var result = await _manager.DeployAsync(id, avatarId.Value, targetOverride, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<ISTARODK>("Invalid token."));
+        var result = await _manager.DeployAsync(id, userId.Value, targetOverride, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -90,14 +90,14 @@ public class DappCompositionController : ControllerBase
     [HttpGet("status")]
     public async Task<ActionResult<AZOAResult<DappSeries.StatusKind>>> GetStatus(Guid id, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<DappSeries.StatusKind>("Invalid token."));
-        var seriesLoad = await _manager.GetAsync(id, avatarId.Value, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<DappSeries.StatusKind>("Invalid token."));
+        var seriesLoad = await _manager.GetAsync(id, userId.Value, ct);
         if (seriesLoad.IsError || seriesLoad.Result is null) return NotFound(Fail<DappSeries.StatusKind>(seriesLoad.Message));
         return Ok(new AZOAResult<DappSeries.StatusKind> { Result = seriesLoad.Result.Status, Message = "Success" });
     }
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;

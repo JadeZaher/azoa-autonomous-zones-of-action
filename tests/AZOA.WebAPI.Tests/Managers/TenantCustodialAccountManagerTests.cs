@@ -39,14 +39,14 @@ public sealed class TenantCustodialAccountManagerTests
     }
 
     [Fact]
-    public async Task Ensure_RetryReturnsOneStableSecretFreeAvatarAndWallet()
+    public async Task Ensure_RetryReturnsOneStableSecretFreeUserAndWallet()
     {
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = "Algorand",
             Address = "ALGOADDRESS",
             WalletType = WalletType.Platform,
@@ -56,15 +56,15 @@ public sealed class TenantCustodialAccountManagerTests
                 tenantId,
                 It.Is<ProvisionChildModel>(request => request.ExternalUserId == "user-42"),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<ChildAvatarResponse>.Success(new ChildAvatarResponse
+            .ReturnsAsync(AZOAResult<ChildUserResponse>.Success(new ChildUserResponse
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 ExternalUserId = "user-42"
             }));
         _wallets.Setup(manager => manager.BootstrapWalletAsync(
-                It.IsAny<WalletGenerateRequest>(), avatarId, It.IsAny<AZOARequest?>()))
+                It.IsAny<WalletGenerateRequest>(), userId, It.IsAny<AZOARequest?>()))
             .ReturnsAsync(AZOAResult<IWallet>.Success(wallet));
-        _kyc.Setup(manager => manager.GetStatusAsync(avatarId, tenantId, It.IsAny<CancellationToken>()))
+        _kyc.Setup(manager => manager.GetStatusAsync(userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmissionModel>.Failure(
                 KycAuthorizationError.NotFound + "No submission."));
         var manager = CreateManager();
@@ -73,7 +73,7 @@ public sealed class TenantCustodialAccountManagerTests
         var retry = await manager.EnsureAsync(tenantId, "user-42", "stable-idempotency-key-0001");
 
         first.IsError.Should().BeFalse();
-        retry.Result!.AvatarId.Should().Be(first.Result!.AvatarId);
+        retry.Result!.UserId.Should().Be(first.Result!.UserId);
         retry.Result.WalletId.Should().Be(first.Result.WalletId);
         var json = JsonSerializer.Serialize(first.Result);
         json.Should().NotContain("ciphertext-never-on-wire");
@@ -87,7 +87,7 @@ public sealed class TenantCustodialAccountManagerTests
         var tenantId = Guid.NewGuid();
         _tenants.Setup(manager => manager.ResolveChildAsync(
                 tenantId, "other-tenant-user", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<ChildAvatarResponse>.Failure(
+            .ReturnsAsync(AZOAResult<ChildUserResponse>.Failure(
                 TenantAuthorizationError.NotFound + "No child."));
         var manager = CreateManager();
 
@@ -104,23 +104,23 @@ public sealed class TenantCustodialAccountManagerTests
     public async Task SubmitKyc_ReturnsNoDocumentOrProviderDetail()
     {
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         _tenants.Setup(manager => manager.ResolveChildAsync(
                 tenantId, "user-42", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<ChildAvatarResponse>.Success(new ChildAvatarResponse
+            .ReturnsAsync(AZOAResult<ChildUserResponse>.Success(new ChildUserResponse
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 ExternalUserId = "user-42"
             }));
-        _kyc.Setup(manager => manager.GetStatusAsync(avatarId, tenantId, It.IsAny<CancellationToken>()))
+        _kyc.Setup(manager => manager.GetStatusAsync(userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmissionModel>.Failure(
                 KycAuthorizationError.NotFound + "No submission."));
         _kyc.Setup(manager => manager.SubmitAsync(
-                It.IsAny<SubmitKycModel>(), avatarId, tenantId, It.IsAny<CancellationToken>()))
+                It.IsAny<SubmitKycModel>(), userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmissionModel>.Success(new KycSubmissionModel
             {
                 Id = Guid.NewGuid(),
-                AvatarId = avatarId,
+                UserId = userId,
                 Status = KycStatus.PENDING,
                 ProviderSessionId = "provider-secret-detail",
                 ProviderResult = "provider-payload",
@@ -158,17 +158,17 @@ public sealed class TenantCustodialAccountManagerTests
     public async Task Ensure_MissingKmsProvisionsIdentityButSkipsWallet()
     {
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         _tenants.Setup(manager => manager.ProvisionChildAsync(
                 tenantId,
                 It.Is<ProvisionChildModel>(request => request.ExternalUserId == "user-42"),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<ChildAvatarResponse>.Success(new ChildAvatarResponse
+            .ReturnsAsync(AZOAResult<ChildUserResponse>.Success(new ChildUserResponse
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 ExternalUserId = "user-42"
             }));
-        _kyc.Setup(manager => manager.GetStatusAsync(avatarId, tenantId, It.IsAny<CancellationToken>()))
+        _kyc.Setup(manager => manager.GetStatusAsync(userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmissionModel>.Failure(
                 KycAuthorizationError.NotFound + "No submission."));
         var manager = CreateManager(walletEncryptionKey: string.Empty);
@@ -225,11 +225,11 @@ public sealed class TenantCustodialAccountManagerTests
     public async Task Ensure_CompletedIdentityOnlyReplayConvergesMissingWalletStage()
     {
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = "Algorand",
             Address = "ALGOADDRESS",
             WalletType = WalletType.Platform,
@@ -245,7 +245,7 @@ public sealed class TenantCustodialAccountManagerTests
                 {
                     TenantId = tenantId.ToString("D"),
                     ExternalSubject = "user-42",
-                    AvatarId = avatarId.ToString("D"),
+                    UserId = userId.ToString("D"),
                     IdentityReady = true,
                     WalletReady = false
                 })
@@ -254,15 +254,15 @@ public sealed class TenantCustodialAccountManagerTests
                 tenantId,
                 It.Is<ProvisionChildModel>(request => request.ExternalUserId == "user-42"),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<ChildAvatarResponse>.Success(new ChildAvatarResponse
+            .ReturnsAsync(AZOAResult<ChildUserResponse>.Success(new ChildUserResponse
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 ExternalUserId = "user-42"
             }));
         _wallets.Setup(manager => manager.BootstrapWalletAsync(
-                It.IsAny<WalletGenerateRequest>(), avatarId, It.IsAny<AZOARequest?>()))
+                It.IsAny<WalletGenerateRequest>(), userId, It.IsAny<AZOARequest?>()))
             .ReturnsAsync(AZOAResult<IWallet>.Success(wallet));
-        _kyc.Setup(manager => manager.GetStatusAsync(avatarId, tenantId, It.IsAny<CancellationToken>()))
+        _kyc.Setup(manager => manager.GetStatusAsync(userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmissionModel>.Failure(
                 KycAuthorizationError.NotFound + "No submission."));
         var manager = CreateManager();
@@ -274,22 +274,22 @@ public sealed class TenantCustodialAccountManagerTests
         result.Result!.IdentityReady.Should().BeTrue();
         result.Result.WalletReady.Should().BeTrue();
         _wallets.Verify(manager => manager.BootstrapWalletAsync(
-            It.IsAny<WalletGenerateRequest>(), avatarId, It.IsAny<AZOARequest?>()), Times.Once);
+            It.IsAny<WalletGenerateRequest>(), userId, It.IsAny<AZOARequest?>()), Times.Once);
     }
 
     [Fact]
     public async Task BeginKyc_StableKeyDelegatesEnsureActiveAndReturnsNoProviderId()
     {
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         string? operationType = null;
         string? payload = null;
         var claims = 0;
         _tenants.Setup(manager => manager.ResolveChildAsync(
                 tenantId, "user-42", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<ChildAvatarResponse>.Success(new ChildAvatarResponse
+            .ReturnsAsync(AZOAResult<ChildUserResponse>.Success(new ChildUserResponse
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 ExternalUserId = "user-42"
             }));
         _idempotency.Setup(store => store.TryClaimAsync(
@@ -317,7 +317,7 @@ public sealed class TenantCustodialAccountManagerTests
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Callback((string key, string resultPayload, CancellationToken token) => payload = resultPayload)
             .Returns(Task.CompletedTask);
-        _kyc.Setup(manager => manager.BeginAsync(avatarId, tenantId, It.IsAny<CancellationToken>()))
+        _kyc.Setup(manager => manager.BeginAsync(userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSessionStartModel>.Success(new KycSessionStartModel
             {
                 ProviderKey = "manual",
@@ -339,14 +339,14 @@ public sealed class TenantCustodialAccountManagerTests
         operationType.Should().StartWith("tenant_custodial_kyc_session_");
         operationType.Should().NotContain(":");
         JsonSerializer.Serialize(first.Result).Should().NotContain("provider-internal-id");
-        _kyc.Verify(manager => manager.BeginAsync(avatarId, tenantId, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _kyc.Verify(manager => manager.BeginAsync(userId, tenantId, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
     public async Task Ensure_CancelledConcurrentObserverCannotExecuteOrFailOwnersClaim()
     {
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var ledger = new Mock<IIdempotencyStore>();
         var record = new IdempotencyRecord();
         var recordSync = new object();
@@ -416,25 +416,25 @@ public sealed class TenantCustodialAccountManagerTests
                 Interlocked.Increment(ref provisionCount);
                 effectEntered.TrySetResult(true);
                 await releaseOwner.Task.WaitAsync(operationToken);
-                return AZOAResult<ChildAvatarResponse>.Success(new ChildAvatarResponse
+                return AZOAResult<ChildUserResponse>.Success(new ChildUserResponse
                 {
-                    AvatarId = avatarId,
+                    UserId = userId,
                     ExternalUserId = request.ExternalUserId
                 });
             });
         _wallets.Setup(manager => manager.BootstrapWalletAsync(
-                It.IsAny<WalletGenerateRequest>(), avatarId, It.IsAny<AZOARequest?>()))
+                It.IsAny<WalletGenerateRequest>(), userId, It.IsAny<AZOARequest?>()))
             .ReturnsAsync(AZOAResult<IWallet>.Success(new Wallet
             {
                 Id = Guid.NewGuid(),
-                AvatarId = avatarId,
+                UserId = userId,
                 ChainType = "Algorand",
                 Address = "ALGOADDRESS",
                 WalletType = WalletType.Platform,
                 EncryptedPrivateKey = "ciphertext"
             }));
         _kyc.Setup(manager => manager.GetStatusAsync(
-                avatarId, tenantId, It.IsAny<CancellationToken>()))
+                userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmissionModel>.Failure(
                 KycAuthorizationError.NotFound + "No submission."));
         var manager = CreateManager(idempotencyStore: ledger.Object);
@@ -466,7 +466,7 @@ public sealed class TenantCustodialAccountManagerTests
     public async Task BeginKyc_ConcurrentObserverReplaysOwnerWithoutStartingOrSettlingAgain()
     {
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var ledger = new Mock<IIdempotencyStore>();
         var record = new IdempotencyRecord();
         var recordSync = new object();
@@ -518,13 +518,13 @@ public sealed class TenantCustodialAccountManagerTests
             .Returns(Task.CompletedTask);
         _tenants.Setup(manager => manager.ResolveChildAsync(
                 tenantId, "user-42", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<ChildAvatarResponse>.Success(new ChildAvatarResponse
+            .ReturnsAsync(AZOAResult<ChildUserResponse>.Success(new ChildUserResponse
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 ExternalUserId = "user-42"
             }));
         _kyc.Setup(manager => manager.BeginAsync(
-                avatarId, tenantId, It.IsAny<CancellationToken>()))
+                userId, tenantId, It.IsAny<CancellationToken>()))
             .Returns(async (Guid _, Guid _, CancellationToken operationToken) =>
             {
                 Interlocked.Increment(ref beginCount);
@@ -564,7 +564,7 @@ public sealed class TenantCustodialAccountManagerTests
     public async Task Ensure_RequestCancellationPropagatesOnlyAfterOwnedClaimIsSettled()
     {
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var cancellation = new CancellationTokenSource();
         var provisionCount = 0;
         IdempotencyRecord? record = null;
@@ -600,25 +600,25 @@ public sealed class TenantCustodialAccountManagerTests
                 operationToken.CanBeCanceled.Should().BeFalse(
                     because: "the claim owner must finish and settle independently of request cancellation");
 
-                return AZOAResult<ChildAvatarResponse>.Success(new ChildAvatarResponse
+                return AZOAResult<ChildUserResponse>.Success(new ChildUserResponse
                 {
-                    AvatarId = avatarId,
+                    UserId = userId,
                     ExternalUserId = request.ExternalUserId
                 });
             });
         _wallets.Setup(manager => manager.BootstrapWalletAsync(
-                It.IsAny<WalletGenerateRequest>(), avatarId, It.IsAny<AZOARequest?>()))
+                It.IsAny<WalletGenerateRequest>(), userId, It.IsAny<AZOARequest?>()))
             .ReturnsAsync(AZOAResult<IWallet>.Success(new Wallet
             {
                 Id = Guid.NewGuid(),
-                AvatarId = avatarId,
+                UserId = userId,
                 ChainType = "Algorand",
                 Address = "ALGOADDRESS",
                 WalletType = WalletType.Platform,
                 EncryptedPrivateKey = "ciphertext"
             }));
         _kyc.Setup(manager => manager.GetStatusAsync(
-                avatarId, tenantId, It.IsAny<CancellationToken>()))
+                userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmissionModel>.Failure(
                 KycAuthorizationError.NotFound + "No submission."));
 
@@ -643,16 +643,16 @@ public sealed class TenantCustodialAccountManagerTests
     public async Task BeginKyc_RequestCancellationPropagatesOnlyAfterOwnedClaimIsSettled()
     {
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var cancellation = new CancellationTokenSource();
         var beginCount = 0;
         IdempotencyRecord? record = null;
         var manager = CreateManager();
         _tenants.Setup(manager => manager.ResolveChildAsync(
                 tenantId, "user-42", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<ChildAvatarResponse>.Success(new ChildAvatarResponse
+            .ReturnsAsync(AZOAResult<ChildUserResponse>.Success(new ChildUserResponse
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 ExternalUserId = "user-42"
             }));
         _idempotency.Setup(store => store.TryClaimAsync(
@@ -677,7 +677,7 @@ public sealed class TenantCustodialAccountManagerTests
             })
             .Returns(Task.CompletedTask);
         _kyc.Setup(kyc => kyc.BeginAsync(
-                avatarId, tenantId, It.IsAny<CancellationToken>()))
+                userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid _, Guid _, CancellationToken operationToken) =>
             {
                 beginCount++;

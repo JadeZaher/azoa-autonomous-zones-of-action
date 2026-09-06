@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
-/// Body for <c>POST api/avatar/auth/challenge</c> (user-sovereign-identity AC1).
+/// Body for <c>POST api/user/auth/challenge</c> (user-sovereign-identity AC1).
 /// Requests a one-time nonce bound to <c>(Address, ChainType)</c> to sign.
 /// </summary>
 public class WalletChallengeRequest

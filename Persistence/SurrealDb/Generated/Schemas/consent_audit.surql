@@ -15,8 +15,8 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE consent_audit TYPE string;
 DEFINE FIELD IF NOT EXISTS action ON TABLE consent_audit TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS grant_id ON TABLE consent_audit TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE consent_audit TYPE record<avatar>;
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE consent_audit TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE consent_audit TYPE record<user>;
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE consent_audit TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS scope ON TABLE consent_audit TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS detail ON TABLE consent_audit TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS occurred_at ON TABLE consent_audit TYPE datetime

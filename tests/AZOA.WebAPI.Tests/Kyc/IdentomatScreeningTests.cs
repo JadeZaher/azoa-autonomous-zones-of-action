@@ -374,15 +374,15 @@ public sealed class IdentomatScreeningTests
     {
         // The vendor dedups the query SHAPE across the whole company key, so tenant B
         // registering the same person gets `already-exists` even though B has no row.
-        // Handing back A's row would hand over A's subject avatar and A's tenant id —
+        // Handing back A's row would hand over A's subject user and A's tenant id —
         // the third instance of this repo leaking cross-tenant through a shared key.
         var tenantA = Guid.NewGuid();
         var tenantB = Guid.NewGuid();
-        var avatarA = Guid.NewGuid();
+        var userA = Guid.NewGuid();
         var store = new InMemoryKycScreeningStore();
         var seeded = store.SeedMonitor(
             "John Doe", "1980-11-07T13:07:59.790Z", "monitor-abc",
-            tenantId: tenantA, subjectAvatarId: avatarA);
+            tenantId: tenantA, subjectUserId: userA);
         var transport = new FakeTransport();
         transport.OnMonitorRegister(new IdentomatMonitorRegisterResponse
         {
@@ -396,8 +396,8 @@ public sealed class IdentomatScreeningTests
         registered.IsError.Should().BeFalse(registered.Message);
         registered.Result!.Id.Should().NotBe(seeded.Id, "tenant B must get its OWN row");
         registered.Result.TenantScope.Should().Be(tenantB.ToString("N"));
-        registered.Result.SubjectAvatarId.Should().NotBe(avatarA.ToString("N"),
-            "tenant A's subject avatar must never be projected into tenant B's answer");
+        registered.Result.SubjectUserId.Should().NotBe(userA.ToString("N"),
+            "tenant A's subject user must never be projected into tenant B's answer");
         registered.Result.TenantId.Should().Be(tenantB.ToString("N"));
         registered.Result.ProviderMonitorId.Should().Be("monitor-abc",
             "one upstream monitor legitimately backs one local row per tenant");
@@ -448,8 +448,8 @@ public sealed class IdentomatScreeningTests
         var tenantA = Guid.NewGuid();
         var tenantB = Guid.NewGuid();
         var store = new InMemoryKycScreeningStore();
-        store.SeedMonitor("John Doe", string.Empty, "m1", tenantId: tenantA, subjectAvatarId: Guid.NewGuid());
-        store.SeedMonitor("John Doe", string.Empty, "m1", tenantId: tenantB, subjectAvatarId: Guid.NewGuid());
+        store.SeedMonitor("John Doe", string.Empty, "m1", tenantId: tenantA, subjectUserId: Guid.NewGuid());
+        store.SeedMonitor("John Doe", string.Empty, "m1", tenantId: tenantB, subjectUserId: Guid.NewGuid());
         var transport = new FakeTransport();
         transport.OnMonitorList(Page(total: 1, ("m1", "2026-08-20T00:00:00Z")));
         transport.OnSearch(new IdentomatScreeningSearchResponse

@@ -11,11 +11,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("ecosystem",
         Aggregate = "Ecosystem (star-odk-ecosystem-tree / final-hardening-cutover D2 -- new entity)",
-        Guardrail = "G6 SCHEMAFULL; greenfield entity. An Ecosystem is the ROOT of a tree of EcosystemNodes; each node references a DappSeries or a STARODK. Owned by a STARODK + avatar.")]
+        Guardrail = "G6 SCHEMAFULL; greenfield entity. An Ecosystem is the ROOT of a tree of EcosystemNodes; each node references a DappSeries or a STARODK. Owned by a STARODK + user.")]
     [SurrealNote("An Ecosystem is a tree whose nodes (ecosystem_node table) each attach a DappSeries (or another STARODK) as a composable dApp. The tree is walked by ISTARManager.GetEcosystemAsync/codegen to produce the composed multi-dApp GeneratedCode on the owning STARODK. Cycle safety is enforced app-side (mirrors the holon parent-cycle guard) -- SurrealDB does not enforce acyclicity.")]
-    [SurrealNote("star_odk_id is the owning STARODK; avatar_id is the authoritative owner (IDOR-scoped, never trusts caller-supplied owner ids). A STARODK owns at most one ecosystem in practice but the schema does not enforce that.")]
+    [SurrealNote("star_odk_id is the owning STARODK; user_id is the authoritative owner (IDOR-scoped, never trusts caller-supplied owner ids). A STARODK owns at most one ecosystem in practice but the schema does not enforce that.")]
     [Slice("dapp_composition")]
-    [Index("ecosystem_by_avatar", Fields = new[] { "avatar_id" })]
+    [Index("ecosystem_by_user", Fields = new[] { "user_id" })]
     [Index("ecosystem_by_star_odk", Fields = new[] { "star_odk_id" })]
     public partial class Ecosystem : ISurrealRecord
     {
@@ -38,9 +38,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [References(typeof(StarOdk))]
         public string StarOdkId { get; set; } = string.Empty;
 
-        [FieldGroup("Owner avatar (Guid('N') hex) -- authoritative, IDOR-scoped")]
-        [References(typeof(Avatar))]
-        public string AvatarId { get; set; } = string.Empty;
+        [FieldGroup("Owner user (Guid('N') hex) -- authoritative, IDOR-scoped")]
+        [References(typeof(User))]
+        public string UserId { get; set; } = string.Empty;
 
         [FieldGroup("Deployment target chain (e.g. algorand-mainnet) -- nullable until set")]
         public string? TargetChain { get; set; }

@@ -6,13 +6,13 @@ an inline attach form (interactive add is the D2 bonus).
 
 ## §reuse
 
-- **Reuses, does not edit, the quest-builder canvas.** `ecosystem-tree-flow.tsx`
-  imports `layoutGraph` from `../quest-builder/layout` (a pure, dependency-free
-  longest-path layered layout). We intentionally do NOT import the quest node
+- **Reuses, does not edit, the action-builder canvas.** `ecosystem-tree-flow.tsx`
+  imports `layoutGraph` from `../action-builder/layout` (a pure, dependency-free
+  longest-path layered layout). We intentionally do NOT import the action node
   types or catalog — an ecosystem node is keyed by `refKind` (DappSeries / StarOdk)
-  not by quest node category, so `ecosystem-node.tsx` is a sibling of
-  `quest-builder/quest-node.tsx` with the same card shape but a kind-color scheme.
-- The quest-builder files under `components/quest-builder/` are owned by the D1
+  not by action node category, so `ecosystem-node.tsx` is a sibling of
+  `action-builder/action-node.tsx` with the same card shape but a kind-color scheme.
+- The action-builder files under `components/action-builder/` are owned by the D1
   worker; this component only *imports* the layout helper from them.
 
 ## §data-shape
@@ -29,7 +29,7 @@ The tree section is surfaced in the STARODK detail panel
 (`app/(dashboard)/star-odk/page.tsx` → `EcosystemSection`): it fetches the tree,
 renders `EcosystemTreeFlow`, and POSTs to
 `/api/starodk/{id}/ecosystem/dapp-series` to attach a DappSeries by id. Ownership
-is enforced server-side against the authenticated avatar — the form sends no owner
+is enforced server-side against the authenticated user — the form sends no owner
 id.
 
 ## §value-caveat

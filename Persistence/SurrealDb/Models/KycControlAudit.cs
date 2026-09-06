@@ -21,7 +21,7 @@ public partial class KycControlAudit : ISurrealRecord
     [Required(NotEmpty = true)]
     public string Action { get; set; } = string.Empty;
 
-    [References(typeof(Avatar), Optional = true)]
+    [References(typeof(User), Optional = true)]
     public string? TenantId { get; set; }
 
     [Required(NotEmpty = true)]
@@ -44,8 +44,8 @@ public partial class KycControlAudit : ISurrealRecord
     public long? PreviousTrustRevision { get; set; }
     public long? TrustRevision { get; set; }
 
-    [References(typeof(Avatar))]
-    public string ActorAvatarId { get; set; } = string.Empty;
+    [References(typeof(User))]
+    public string ActorUserId { get; set; } = string.Empty;
 
     [Default("time::now()"), ReadOnly]
     public DateTimeOffset OccurredAt { get; set; }

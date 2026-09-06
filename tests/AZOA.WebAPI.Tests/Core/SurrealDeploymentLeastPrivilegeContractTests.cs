@@ -8,13 +8,29 @@ namespace AZOA.WebAPI.Tests.Core;
 
 public sealed class SurrealDeploymentLeastPrivilegeContractTests
 {
+    // Baseline generation 2 — re-based 2026-09-05 by the D28 terminology sweep
+    // (avatar->user, quest->action). These files are normally immutable: they
+    // describe what a deployment materializes from, and this test exists to stop
+    // anyone editing one by accident. Re-basing was legitimate here only because
+    // D31 wipes and re-seeds the live database (it held 6 avatar + 2 api_key rows
+    // and nothing else), so no deployed data depends on generation 1. Had any
+    // real data existed, the rename would have had to ship as a forward migration
+    // and these checksums would have stayed frozen.
+    //
+    // Generation 1 checksums, retained so the re-base is auditable:
+    //   admin_bootstrap_state 89531eaf99831478f07018f63fbd5d8e20d10296283d258f350ad6f8dc7c6483
+    //   bridge_tx             eb42fc6b723d7fc91ba95e8bddef58d9c994b07ad89a96d20a291ef55f584084
+    //   holon                 befd3f9dd6e9a15a8f6dcc278153d028c1da1629b836bf2f15621424bfd7605e
+    //   kyc_submission        aad029ce96cc6009b147b5022d275abb42ae4d0a7011261f6e63a6dc633e7ac2
+    //   operation_log         f67cb9da11f239416dabb42ab9839f9615bb782aa586688d6ce95c8da7b8994c
+    //   swap_state            40f8f1ba577fbb6511da0432c3a0f2616e8b28e35e0477d7bc69a0808ea2ef99
     [Theory]
-    [InlineData("admin_bootstrap_state.surql", "89531eaf99831478f07018f63fbd5d8e20d10296283d258f350ad6f8dc7c6483")]
-    [InlineData("bridge_tx.surql", "eb42fc6b723d7fc91ba95e8bddef58d9c994b07ad89a96d20a291ef55f584084")]
-    [InlineData("holon.surql", "befd3f9dd6e9a15a8f6dcc278153d028c1da1629b836bf2f15621424bfd7605e")]
-    [InlineData("kyc_submission.surql", "aad029ce96cc6009b147b5022d275abb42ae4d0a7011261f6e63a6dc633e7ac2")]
-    [InlineData("operation_log.surql", "f67cb9da11f239416dabb42ab9839f9615bb782aa586688d6ce95c8da7b8994c")]
-    [InlineData("swap_state.surql", "40f8f1ba577fbb6511da0432c3a0f2616e8b28e35e0477d7bc69a0808ea2ef99")]
+    [InlineData("admin_bootstrap_state.surql", "cb3db762b7990670805a50b6179a16cd22492ca12df17701cef4d88b75b473eb")]
+    [InlineData("bridge_tx.surql", "8c9da0afb2d9039ee5e48575cb58c54391605a79878d9196cf9cd16414011e19")]
+    [InlineData("holon.surql", "2f8e9478702c665a2d24201eefee7dc5d29769d8efe820ebe90478f4e5281291")]
+    [InlineData("kyc_submission.surql", "722575b0a3dca2b1f55ea417497867ad059afbba4d268ddfed54d2a7f22bff0d")]
+    [InlineData("operation_log.surql", "fff794131ab3b093b7c6c93ce9edfa3b994433992678024f332a2af59c39744f")]
+    [InlineData("swap_state.surql", "06fa0b1ec7ce82bdf60f05e1763c487a3bd4aa626b2d5f492c61204570c7735c")]
     public void CompatibilityBaseline_RetainsTheShippedChecksum(string fileName, string expectedChecksum)
     {
         var path = Path.Combine(
@@ -42,7 +58,7 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
             "20260718_136000__add_pending_confirmation_states.surql"));
 
         holon.Should().Contain("transfer_reservation_key")
-            .And.Contain("transfer_target_avatar_id")
+            .And.Contain("transfer_target_user_id")
             .And.Contain("transfer_reserved_at")
             .And.Contain("last_transfer_settlement_key")
             .And.Contain("holon_transfer_reservation")

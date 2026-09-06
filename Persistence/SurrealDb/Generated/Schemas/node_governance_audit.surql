@@ -15,7 +15,7 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE node_governance_audit TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS action ON TABLE node_governance_audit TYPE string
     ASSERT $value != NONE AND $value != "";
-DEFINE FIELD IF NOT EXISTS actor_avatar_id ON TABLE node_governance_audit TYPE record<avatar>;
+DEFINE FIELD IF NOT EXISTS actor_user_id ON TABLE node_governance_audit TYPE record<user>;
 DEFINE FIELD IF NOT EXISTS previous_version ON TABLE node_governance_audit TYPE int;
 DEFINE FIELD IF NOT EXISTS new_version ON TABLE node_governance_audit TYPE int;
 DEFINE FIELD IF NOT EXISTS previous_allowed_chains ON TABLE node_governance_audit TYPE option<array<string>>;
@@ -34,4 +34,4 @@ DEFINE INDEX IF NOT EXISTS node_governance_audit_occurred
 
 DEFINE INDEX IF NOT EXISTS node_governance_audit_actor
     ON TABLE node_governance_audit
-    FIELDS actor_avatar_id;
+    FIELDS actor_user_id;

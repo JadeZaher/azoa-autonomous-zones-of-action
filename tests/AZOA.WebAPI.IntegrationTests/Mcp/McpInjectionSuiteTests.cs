@@ -6,8 +6,8 @@
 // only — never via C# string interpolation or concatenation into the query string.
 // This suite extends the G3 evidence to MCP tool inputs:
 //
-// TEST 1 — MCP_AvatarScopedQuery_HostileTableAndFilterInputs_NeverMutatesData
-//   Drives all six hostile payloads through avatar_scoped_query as BOTH the table
+// TEST 1 — MCP_UserScopedQuery_HostileTableAndFilterInputs_NeverMutatesData
+//   Drives all six hostile payloads through user_scoped_query as BOTH the table
 //   value and a filter value. Asserts:
 //     - table payloads → { "error":"table_not_allowed" } or HTTP 4xx — never 500.
 //     - filter payloads → { "error":"filter_not_allowed" } or HTTP 4xx — never 500.
@@ -40,7 +40,7 @@ namespace AZOA.WebAPI.IntegrationTests.Mcp;
 
 /// <summary>
 /// Runtime evidence that MCP tool inputs cannot inject SurrealQL through
-/// avatar_scoped_query or vector_search. Mirrors the G3 hostile-payload corpus.
+/// user_scoped_query or vector_search. Mirrors the G3 hostile-payload corpus.
 /// </summary>
 [Trait("Category", "Mcp")]
 public sealed class McpInjectionSuiteTests : IntegrationTestBase
@@ -72,7 +72,7 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
     public McpInjectionSuiteTests(AZOATestWebApplicationFactory factory) : base(factory) { }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // TEST 1 — avatar_scoped_query hostile table + filter inputs
+    // TEST 1 — user_scoped_query hostile table + filter inputs
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -89,22 +89,22 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
     /// is safe by design because the value is bound as a SurrealQL param.
     /// </summary>
     [SkippableFact]
-    public async Task MCP_AvatarScopedQuery_HostileTableAndFilterInputs_NeverMutatesData()
+    public async Task MCP_UserScopedQuery_HostileTableAndFilterInputs_NeverMutatesData()
     {
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
-        var avatarId    = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        var avatarIdStr = avatarId.ToString("N").ToLowerInvariant();
+        var userId    = Guid.Parse(TestAuthHandler.DefaultUserId);
+        var userIdStr = userId.ToString("N").ToLowerInvariant();
         var executor    = CreateExecutor();
-        var tool        = new AvatarScopedQueryTool();
+        var tool        = new UserScopedQueryTool();
 
         // Seed a control wallet so the row count baseline is ≥ 1
         var walletStore = new SurrealWalletStore(executor);
         var seedWallet  = new Wallet
         {
             Id         = Guid.NewGuid(),
-            AvatarId   = avatarId,
+            UserId   = userId,
             ChainType  = "Algorand",
             Address    = $"inj_ctrl_{Guid.NewGuid():N}",
             Label      = "InjectionControl",
@@ -116,7 +116,7 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
         var countBefore = await QueryWalletCountAsync();
         countBefore.Should().BeGreaterThanOrEqualTo(1, "seed wallet must be present");
 
-        var ctx = BuildContext(avatarId, executor);
+        var ctx = BuildContext(userId, executor);
 
         foreach (var payload in HostilePayloads)
         {
@@ -137,7 +137,7 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
             // ── Assert: wallet count unchanged ────────────────────────────
             var countAfter = await QueryWalletCountAsync();
             countAfter.Should().BeGreaterThanOrEqualTo(countBefore,
-                $"wallet row count must not decrease after avatar_scoped_query probe with payload: {payload}");
+                $"wallet row count must not decrease after user_scoped_query probe with payload: {payload}");
         }
 
         // Final check: seed wallet still present
@@ -168,7 +168,7 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
-        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
+        var userId = Guid.Parse(TestAuthHandler.DefaultUserId);
         var executor = CreateExecutor();
 
         // Seed one wallet so count baseline is meaningful
@@ -176,7 +176,7 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
         var seedWallet  = new Wallet
         {
             Id         = Guid.NewGuid(),
-            AvatarId   = avatarId,
+            UserId   = userId,
             ChainType  = "Solana",
             Address    = $"vec_inj_ctrl_{Guid.NewGuid():N}",
             Label      = "VecInjControl",
@@ -187,7 +187,7 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
         var countBefore = await QueryWalletCountAsync();
 
         var tool = new VectorSearchTool();
-        var ctx  = BuildContext(avatarId, executor);
+        var ctx  = BuildContext(userId, executor);
 
         foreach (var payload in HostilePayloads)
         {
@@ -253,13 +253,13 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
         return new DefaultSurrealExecutor(connection);
     }
 
-    private static ToolCallContext BuildContext(Guid avatarId, ISurrealExecutor executor)
+    private static ToolCallContext BuildContext(Guid userId, ISurrealExecutor executor)
     {
         var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
         services.AddSingleton<IEmbeddingProvider, DeterministicDummyEmbeddingProvider>();
         services.AddLogging();
         var sp = services.BuildServiceProvider();
-        return new ToolCallContext(avatarId, executor, sp);
+        return new ToolCallContext(userId, executor, sp);
     }
 
     private static JsonElement BuildArgs(object payload)
@@ -270,7 +270,7 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
     }
 
     /// <summary>
-    /// Builds avatar_scoped_query args where the filter KEY is the hostile payload.
+    /// Builds user_scoped_query args where the filter KEY is the hostile payload.
     /// Shape: { "table": "<table>", "filters": { "<payload>": "<value>" } }
     /// </summary>
     private static JsonElement BuildArgsWithHostileFilterKey(
@@ -296,7 +296,7 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
     {
         // The tool MUST return an error (table not in allowlist)
         result.TryGetProperty("error", out var errProp).Should().BeTrue(
-            $"avatar_scoped_query must return an error for hostile table value: {payload}");
+            $"user_scoped_query must return an error for hostile table value: {payload}");
 
         var errorCode = errProp.GetString() ?? string.Empty;
         new[] { "table_not_allowed", "table is required.", "internal" }.Should().Contain(
@@ -311,7 +311,7 @@ public sealed class McpInjectionSuiteTests : IntegrationTestBase
     private static void AssertFilterNotAllowedOrSafeError(JsonElement result, string payload)
     {
         result.TryGetProperty("error", out var errProp).Should().BeTrue(
-            $"avatar_scoped_query must return an error for hostile filter key: {payload}");
+            $"user_scoped_query must return an error for hostile filter key: {payload}");
 
         var errorCode = errProp.GetString() ?? string.Empty;
         new[] { "filter_not_allowed", "internal" }.Should().Contain(

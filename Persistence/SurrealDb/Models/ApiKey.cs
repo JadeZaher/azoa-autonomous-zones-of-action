@@ -18,7 +18,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("Soft-delete via revoked_at + is_active. Handlers MUST check both is_active AND revoked_at IS NONE AND (expires_at IS NONE OR expires_at > now) before granting authentication. last_used_at is updated fire-and-forget from the handler -- TouchLastUsedAsync must never throw.")]
     [Slice("identity")]
     [Index("api_key_unique_hash", Fields = new[] { "key_hash" }, Unique = true)]
-    [Index("api_key_by_avatar", Fields = new[] { "avatar_id" })]
+    [Index("api_key_by_user", Fields = new[] { "user_id" })]
     public partial class ApiKey : ISurrealRecord
     {
         public const string SchemaNameConst = "api_key";
@@ -29,9 +29,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [FieldGroup("Owner avatar (Guid('N') hex); indexed for ListByAvatar")]
-        [References(typeof(Avatar))]
-        public string AvatarId { get; set; } = string.Empty;
+        [FieldGroup("Owner user (Guid('N') hex); indexed for ListByUser")]
+        [References(typeof(User))]
+        public string UserId { get; set; } = string.Empty;
 
         [FieldGroup("Caller-supplied label (free string)")]
         public string Name { get; set; } = string.Empty;

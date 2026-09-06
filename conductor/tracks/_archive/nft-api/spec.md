@@ -4,7 +4,7 @@
 Provide a semantic NFT layer on top of the existing Holon infrastructure, enabling mint, transfer, burn, and metadata operations without duplicating the Holon data model.
 
 ## Motivation
-The AZOA reference ecosystem treats NFTs as first-class assets. Our `IHolon` already carries `AssetType`, `TokenId`, `ChainId`, `Metadata`, and `AvatarId` — the raw data shape of an NFT. However, consumers need NFT-specific semantics (ERC-721/ERC-1155 style metadata, ownership transfers, provenance) rather than generic Holon CRUD.
+The AZOA reference ecosystem treats NFTs as first-class assets. Our `IHolon` already carries `AssetType`, `TokenId`, `ChainId`, `Metadata`, and `UserId` — the raw data shape of an NFT. However, consumers need NFT-specific semantics (ERC-721/ERC-1155 style metadata, ownership transfers, provenance) rather than generic Holon CRUD.
 
 ## Design Principle: **Composition over Duplication**
 `INFT` is a **view interface** over `IHolon`. The `NftManager` internally delegates to `IHolonManager` and `IBlockchainOperationManager`, ensuring:
@@ -53,13 +53,13 @@ public interface INftManager
     Task<AZOAResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, AZOARequest? request = null);
 
     // Creates a Holon with AssetType = "NFT", triggers blockchain mint operation
-    Task<AZOAResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid avatarId, AZOARequest? providerRequest = null);
+    Task<AZOAResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid userId, AZOARequest? providerRequest = null);
 
-    // Updates Holon AvatarId (ownership), triggers blockchain transfer operation
-    Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid avatarId, AZOARequest? providerRequest = null);
+    // Updates Holon UserId (ownership), triggers blockchain transfer operation
+    Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid userId, AZOARequest? providerRequest = null);
 
     // Sets Holon IsActive = false, triggers blockchain burn operation
-    Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid avatarId, AZOARequest? providerRequest = null);
+    Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid userId, AZOARequest? providerRequest = null);
 
     // Returns standardized metadata object (ERC-721 compatible JSON shape)
     Task<AZOAResult<NftMetadata>> GetMetadataAsync(Guid id, AZOARequest? request = null);
@@ -96,7 +96,7 @@ public class NftMintRequest
 ```csharp
 public class NftTransferRequest
 {
-    public Guid TargetAvatarId { get; set; }      // New owner
+    public Guid TargetUserId { get; set; }      // New owner
     public Guid WalletId { get; set; }            // Sender's wallet for on-chain tx
     public string? Memo { get; set; }
 }
@@ -114,7 +114,7 @@ public class NftBurnRequest
 ```csharp
 public class NftQueryRequest
 {
-    public Guid? OwnerAvatarId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public string? ChainId { get; set; }
     public string? TokenId { get; set; }
     public string? Name { get; set; }
@@ -148,7 +148,7 @@ public class NftResult
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
-    public Guid? OwnerAvatarId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public string ChainId { get; set; } = string.Empty;
     public string? TokenId { get; set; }
     public string AssetType { get; set; } = "NFT";
@@ -161,14 +161,14 @@ public class NftResult
 
 ## Business Rules
 1. **AssetType enforcement**: All NFT operations filter/create Holons where `AssetType == "NFT"`. Query endpoints must ignore non-NFT Holons.
-2. **Ownership verification**: Transfer and Burn require the authenticated avatar to match the Holon's current `AvatarId`.
+2. **Ownership verification**: Transfer and Burn require the authenticated user to match the Holon's current `UserId`.
 3. **Metadata standard**: `GetMetadataAsync` maps Holon `Metadata` dictionary to `NftMetadata` with well-known keys (`image`, `external_url`, `animation_url`, `attributes`). Unknown keys remain accessible via raw metadata.
 4. **Mint workflow**:
-   - Create Holon with `AssetType = "NFT"`, `AvatarId = avatarId`, populate `Metadata` from request
+   - Create Holon with `AssetType = "NFT"`, `UserId = userId`, populate `Metadata` from request
    - Build `BlockchainOperation` via `BlockchainOperationBuilder` for `MintAsync`
    - Return operation result (not the Holon) so caller can poll status
 5. **Transfer workflow**:
-   - Verify ownership → Update Holon `AvatarId` to `TargetAvatarId` → Set `ModifiedDate`
+   - Verify ownership → Update Holon `UserId` to `TargetUserId` → Set `ModifiedDate`
    - Build `BlockchainOperation` for `TransferAsync`
    - Return operation result
 6. **Burn workflow**:

@@ -43,7 +43,7 @@ public class TenantConsentGateTests
             {
                 Result = new ConsentGrant
                 {
-                    Id = Guid.NewGuid(), GrantorAvatarId = grantor, TenantId = tenant,
+                    Id = Guid.NewGuid(), GrantorUserId = grantor, TenantId = tenant,
                     Scopes = new List<string> { scope }, GrantedAt = DateTime.UtcNow.AddMinutes(-1),
                 }
             });
@@ -75,7 +75,7 @@ public class TenantConsentGateTests
         // AC10: a denied tenant-driven sign writes an audit row.
         _audit.Verify(a => a.AppendAsync(
             It.Is<ConsentAuditEntry>(e => e.Action == ConsentAuditAction.TenantSignDenied
-                && e.TenantId == tenant && e.AvatarId == grantor),
+                && e.TenantId == tenant && e.UserId == grantor),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -125,7 +125,7 @@ public class TenantConsentGateTests
     public async Task TenantDriven_MissingGrantorOrScope_Denied()
     {
         // A tenant-driven context with an empty scope cannot be consent-checked → deny.
-        var ctx = SigningContext.Platform.ActingAs(Guid.NewGuid(), scope: "", grantorAvatarId: Guid.NewGuid());
+        var ctx = SigningContext.Platform.ActingAs(Guid.NewGuid(), scope: "", grantorUserId: Guid.NewGuid());
 
         var r = await _gate.EnsureAllowedAsync(ctx);
 

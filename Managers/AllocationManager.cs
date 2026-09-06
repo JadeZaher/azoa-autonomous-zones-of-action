@@ -35,7 +35,7 @@ public sealed class AllocationManager : IAllocationManager
     private readonly IIdempotencyStore _idempotencyStore;
     private readonly INodeGovernanceGuard _nodeGovernance;
     private readonly INodeFeeScheduleManager _nodeFees;
-    private readonly IAvatarStore? _avatars;
+    private readonly IUserStore? _users;
 
     public AllocationManager(
         IValueAccessService valueAccess,
@@ -47,7 +47,7 @@ public sealed class AllocationManager : IAllocationManager
         IIdempotencyStore idempotencyStore,
         INodeFeeScheduleManager nodeFees,
         INodeGovernanceGuard? nodeGovernance = null,
-        IAvatarStore? avatars = null)
+        IUserStore? users = null)
     {
         _valueAccess = valueAccess ?? throw new ArgumentNullException(nameof(valueAccess));
         _walletManager = walletManager ?? throw new ArgumentNullException(nameof(walletManager));
@@ -58,14 +58,14 @@ public sealed class AllocationManager : IAllocationManager
         _idempotencyStore = idempotencyStore ?? throw new ArgumentNullException(nameof(idempotencyStore));
         _nodeGovernance = nodeGovernance ?? NodeGovernanceGuard.Unrestricted;
         _nodeFees = nodeFees ?? throw new ArgumentNullException(nameof(nodeFees));
-        _avatars = avatars;
+        _users = users;
     }
 
     /// <inheritdoc />
     public async Task<AZOAResult<AllocationResult>> AllocateAsync(
-        Guid avatarId,
+        Guid userId,
         AllocationRequest request,
-        Guid callerAvatarId,
+        Guid callerUserId,
         string? clientIdempotencyKey,
         string apiKeyId,
         Guid? actingTenantId = null)
@@ -78,12 +78,12 @@ public sealed class AllocationManager : IAllocationManager
             return AZOAResult<AllocationResult>.Failure("Caller API key context is invalid.");
         if (actingTenantId is { } tenantId)
         {
-            if (tenantId != callerAvatarId || _avatars is null)
+            if (tenantId != callerUserId || _users is null)
                 return AZOAResult<AllocationResult>.Failure("Tenant allocation authority is unavailable.");
-            var target = await _avatars.GetByIdAsync(avatarId);
+            var target = await _users.GetByIdAsync(userId);
             if (target.IsError || target.Result is null || target.Result.OwnerTenantId != tenantId)
                 return AZOAResult<AllocationResult>.Failure(
-                    TenantAuthorizationError.NotFound + "Custodial avatar not found.");
+                    TenantAuthorizationError.NotFound + "Custodial user not found.");
         }
 
         var governance = await _nodeGovernance.EnsureAllowedAsync(
@@ -95,7 +95,7 @@ public sealed class AllocationManager : IAllocationManager
 
         // ── Step 1: idempotency key ───────────────────────────────────────────
         var allocationIdempotency = AllocationIdempotency.Create(
-            callerApiKeyId, avatarId, request, clientIdempotencyKey);
+            callerApiKeyId, userId, request, clientIdempotencyKey);
         var ledgerKey = allocationIdempotency.LedgerKey;
 
         // ── Step 2: idempotency claim ─────────────────────────────────────────
@@ -111,8 +111,8 @@ public sealed class AllocationManager : IAllocationManager
             // ── Step 3: KYC gate (fail-closed) ────────────────────────────────
             // Per D3, the value-bearing allocation is gated. Provisioning may
             // precede approval, but we gate before generating the wallet too so
-            // a rejected avatar produces NO side effect at all under a won claim.
-            var gate = await _valueAccess.RequireValueAccessAsync(avatarId, actingTenantId);
+            // a rejected user produces NO side effect at all under a won claim.
+            var gate = await _valueAccess.RequireValueAccessAsync(userId, actingTenantId);
             if (gate.IsError)
             {
                 await _idempotencyStore.FailAsync(ledgerKey, gate.Message, CancellationToken.None);
@@ -140,7 +140,7 @@ public sealed class AllocationManager : IAllocationManager
             var feeQuote = feeQuoteResult.Result;
 
             // ── Step 5: provision-if-absent ───────────────────────────────────
-            var (wallet, provisioned, walletError) = await EnsureWalletAsync(avatarId, request.ChainType);
+            var (wallet, provisioned, walletError) = await EnsureWalletAsync(userId, request.ChainType);
             if (wallet is null)
             {
                 await _idempotencyStore.FailAsync(ledgerKey, walletError, CancellationToken.None);
@@ -156,11 +156,11 @@ public sealed class AllocationManager : IAllocationManager
             var opResult = request.Kind switch
             {
                 AllocationKind.Mint => await MintAsync(
-                    avatarId, wallet, provisioned, request, feeQuote, ledgerKey,
-                    allocationIdempotency.Correlation, callerAvatarId, callerApiKeyId, actingTenantId),
+                    userId, wallet, provisioned, request, feeQuote, ledgerKey,
+                    allocationIdempotency.Correlation, callerUserId, callerApiKeyId, actingTenantId),
                 AllocationKind.Transfer => await TransferAsync(
-                    avatarId, callerAvatarId, wallet, provisioned, request, feeQuote,
-                    ledgerKey, allocationIdempotency.Correlation, callerAvatarId, callerApiKeyId, actingTenantId),
+                    userId, callerUserId, wallet, provisioned, request, feeQuote,
+                    ledgerKey, allocationIdempotency.Correlation, callerUserId, callerApiKeyId, actingTenantId),
                 _ => Operation.Invalid($"Unsupported allocation kind: {request.Kind}.")
             };
 
@@ -179,7 +179,7 @@ public sealed class AllocationManager : IAllocationManager
             // op did not record a TxHash, leave the allocation record InProgress so a
             // redelivered request replays "in progress" — NOT a false success.
             var result = BuildAllocationResult(
-                avatarId, wallet, provisioned, op.Id, feeQuote);
+                userId, wallet, provisioned, op.Id, feeQuote);
 
             var txHash = op.Parameters.GetValueOrDefault("TxHash", string.Empty);
             if (string.IsNullOrWhiteSpace(txHash))
@@ -209,13 +209,13 @@ public sealed class AllocationManager : IAllocationManager
     // ── Provision-if-absent ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Returns the avatar's existing wallet for the chain, or generates one.
+    /// Returns the user's existing wallet for the chain, or generates one.
     /// Never duplicates (uniqueness is also guarded inside GenerateWalletAsync).
     /// </summary>
     private async Task<(IWallet? Wallet, bool Provisioned, string Error)> EnsureWalletAsync(
-        Guid avatarId, string chainType)
+        Guid userId, string chainType)
     {
-        var existing = await _walletStore.GetByAvatarAsync(avatarId);
+        var existing = await _walletStore.GetByUserAsync(userId);
         if (existing.IsError)
             return (null, false, existing.Message);
 
@@ -228,7 +228,7 @@ public sealed class AllocationManager : IAllocationManager
         }
 
         var gen = await _walletManager.GenerateWalletAsync(
-            new WalletGenerateRequest { ChainType = chainType }, avatarId);
+            new WalletGenerateRequest { ChainType = chainType }, userId);
         if (gen.IsError || gen.Result is null)
             return (null, false, gen.IsError ? gen.Message : "Wallet provisioning failed.");
 
@@ -238,11 +238,11 @@ public sealed class AllocationManager : IAllocationManager
     // ── Allocation execution (consumes existing surface verbatim) ──────────────
 
     private async Task<AZOAResult<IBlockchainOperation>> MintAsync(
-        Guid avatarId, IWallet wallet, bool walletProvisioned, AllocationRequest request,
+        Guid userId, IWallet wallet, bool walletProvisioned, AllocationRequest request,
         AllocationFeeQuote feeQuote,
         string ledgerKey,
         string correlation,
-        Guid callerAvatarId,
+        Guid callerUserId,
         Guid callerApiKeyId,
         Guid? actingTenantId = null)
     {
@@ -256,7 +256,7 @@ public sealed class AllocationManager : IAllocationManager
             TokenId = request.AssetId,
             Metadata = MergeAmount(request, feeQuote)
         };
-        var holonResult = await _holonStore.UpsertAsync(NftHolonFactory.Create(mint, avatarId));
+        var holonResult = await _holonStore.UpsertAsync(NftHolonFactory.Create(mint, userId));
         if (holonResult.IsError || holonResult.Result is null)
             return Operation.Invalid(holonResult.Message);
 
@@ -264,7 +264,7 @@ public sealed class AllocationManager : IAllocationManager
         // path (C2) so the provider is called and a TxHash is recorded.
         var op = new BlockchainOperation
         {
-            AvatarId = avatarId,
+            UserId = userId,
             WalletId = wallet.Id,
             OperationType = "Mint",
             Status = OperationStatus.Pending,
@@ -281,57 +281,57 @@ public sealed class AllocationManager : IAllocationManager
             ActingTenantId = actingTenantId,
             SigningScope = actingTenantId.HasValue ? AzoaScopes.NftMint : null,
             IdempotencyKey = correlation,
-            InitiatorAvatarId = callerAvatarId,
+            InitiatorUserId = callerUserId,
             InitiatorApiKeyId = callerApiKeyId,
             Parameters = BuildOpParameters(wallet, request, feeQuote, ledgerKey, holonResult.Result.Id.ToString())
         };
         op.Parameters[IdempotencyParameterNames.ResultPayload] = SerializeForReplay(BuildAllocationResult(
-            avatarId, wallet, walletProvisioned, op.Id, feeQuote));
+            userId, wallet, walletProvisioned, op.Id, feeQuote));
 
         return await _blockchainOps.ExecuteAsync(op);
     }
 
     private async Task<AZOAResult<IBlockchainOperation>> TransferAsync(
-        Guid targetAvatarId,
-        Guid sourceAvatarId,
+        Guid targetUserId,
+        Guid sourceUserId,
         IWallet targetWallet,
         bool walletProvisioned,
         AllocationRequest request,
         AllocationFeeQuote feeQuote,
         string ledgerKey,
         string correlation,
-        Guid callerAvatarId,
+        Guid callerUserId,
         Guid callerApiKeyId,
         Guid? actingTenantId = null)
     {
         if (request.AssetRecordId is null || request.AssetRecordId == Guid.Empty)
             return Operation.Invalid("Transfer allocation requires AssetRecordId.");
-        if (sourceAvatarId == targetAvatarId)
-            return Operation.Invalid("Transfer allocation source and target avatars must differ.");
+        if (sourceUserId == targetUserId)
+            return Operation.Invalid("Transfer allocation source and target users must differ.");
 
-        var (sourceWallet, sourceWalletError) = await FindWalletAsync(sourceAvatarId, request.ChainType);
+        var (sourceWallet, sourceWalletError) = await FindWalletAsync(sourceUserId, request.ChainType);
         if (sourceWallet is null)
             return Operation.Invalid(sourceWalletError);
 
         // Step A: record the ownership move via NftManager (Holon upsert + IDOR
-        // guard). The transfer target is the authorised avatar, never a body id.
+        // guard). The transfer target is the authorised user, never a body id.
         var transfer = new NftTransferRequest
         {
-            TargetAvatarId = targetAvatarId,
+            TargetUserId = targetUserId,
             WalletId = targetWallet.Id,
             Memo = request.Memo
         };
         var holonResult = await _nftManager.TransferAsync(
-            request.AssetRecordId.Value, transfer, sourceAvatarId);
+            request.AssetRecordId.Value, transfer, sourceUserId);
         if (holonResult.IsError || holonResult.Result is null)
             return Operation.Invalid(holonResult.Message);
         var holonId = holonResult.Result.Parameters?.GetValueOrDefault("holonId");
 
         // Step B: build a typed transfer op and broadcast it (C2). The recipient is
-        // the target avatar's custodial wallet address; the asset is request.AssetId.
+        // the target user's custodial wallet address; the asset is request.AssetId.
         var op = new BlockchainOperation
         {
-            AvatarId = sourceAvatarId,
+            UserId = sourceUserId,
             WalletId = sourceWallet.Id,
             OperationType = "Transfer",
             Status = OperationStatus.Pending,
@@ -341,7 +341,7 @@ public sealed class AllocationManager : IAllocationManager
             ActingTenantId = actingTenantId,
             SigningScope = actingTenantId.HasValue ? AzoaScopes.TransferSign : null,
             IdempotencyKey = correlation,
-            InitiatorAvatarId = callerAvatarId,
+            InitiatorUserId = callerUserId,
             InitiatorApiKeyId = callerApiKeyId,
             Parameters = BuildOpParameters(
                 sourceWallet, request, feeQuote, ledgerKey,
@@ -350,21 +350,21 @@ public sealed class AllocationManager : IAllocationManager
         if (!string.IsNullOrWhiteSpace(request.AssetId))
             op.Parameters["SourceTokenId"] = request.AssetId!;
         op.Parameters[IdempotencyParameterNames.ResultPayload] = SerializeForReplay(BuildAllocationResult(
-            targetAvatarId, targetWallet, walletProvisioned, op.Id, feeQuote));
+            targetUserId, targetWallet, walletProvisioned, op.Id, feeQuote));
 
         return await _blockchainOps.ExecuteAsync(op);
     }
 
-    private async Task<(IWallet? Wallet, string Error)> FindWalletAsync(Guid avatarId, string chainType)
+    private async Task<(IWallet? Wallet, string Error)> FindWalletAsync(Guid userId, string chainType)
     {
-        var wallets = await _walletStore.GetByAvatarAsync(avatarId);
+        var wallets = await _walletStore.GetByUserAsync(userId);
         if (wallets.IsError)
             return (null, wallets.Message);
 
         var wallet = wallets.Result?.FirstOrDefault(w =>
             string.Equals(w.ChainType, chainType, StringComparison.OrdinalIgnoreCase));
         return wallet is null
-            ? (null, $"Source avatar has no {chainType} wallet for this transfer.")
+            ? (null, $"Source user has no {chainType} wallet for this transfer.")
             : (wallet, string.Empty);
     }
 
@@ -516,14 +516,14 @@ public sealed class AllocationManager : IAllocationManager
         => amount.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static AllocationResult BuildAllocationResult(
-        Guid avatarId,
+        Guid userId,
         IWallet wallet,
         bool walletProvisioned,
         Guid operationId,
         AllocationFeeQuote feeQuote)
         => new()
         {
-            AvatarId = avatarId,
+            UserId = userId,
             WalletId = wallet.Id,
             WalletAddress = wallet.Address,
             WalletProvisioned = walletProvisioned,

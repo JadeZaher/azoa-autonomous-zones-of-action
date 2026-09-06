@@ -5,7 +5,7 @@ namespace AZOA.WebAPI.Services.Admin;
 /// <summary>Canonical identity and credential-validation rules for the node operator.</summary>
 public static partial class NodeOperatorIdentity
 {
-    public static readonly Guid AvatarId = Guid.Parse("a20a0000-0000-4000-8000-000000000001");
+    public static readonly Guid UserId = Guid.Parse("a20a0000-0000-4000-8000-000000000001");
     public const string ReservedEmail = "node-operator@azoa.invalid";
 
     public static string NormalizeUsername(string? value)

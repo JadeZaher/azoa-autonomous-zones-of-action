@@ -68,14 +68,14 @@ reconciliation sweep and the consumed-VAA ledger.
    (`Initiated`, `Locked`, `AwaitingVAA`, `VAAReady`, `Redeeming`, `Reversing`)
    has a recovery decision, and recovery consults **chain truth**
    (`GetTransactionStatus`/confirmation) where a tx hash exists — mirrors the
-   quest-side `ChainActionRecovery` "verify, then act" discipline. Note which
+   action-side `ChainActionRecovery` "verify, then act" discipline. Note which
    states only get stuck-flagging vs. actual driving-to-terminal.
 4. Confirm the `consumed_vaa_ledger` UNIQUE index exists in the **generated**
    `.surql` goldens (regen via schema scanner if touched — never hand-edit,
-   per [[quest-run-status-inside-constraint-gap]]).
+   per [[action-run-status-inside-constraint-gap]]).
 5. Check idempotency-key scoping: `BridgeController` accepts a client
    `Idempotency-Key` header verbatim — confirm claims are scoped so one
-   avatar's key cannot collide with / replay another avatar's operation.
+   user's key cannot collide with / replay another user's operation.
    If unscoped, that becomes a Phase B fix.
 6. **Write findings into the table below before Phase A.**
 
@@ -87,8 +87,8 @@ reconciliation sweep and the consumed-VAA ledger.
 | 2 | claim→consume→redeem crash replay | GAP — `TryClaimAsync` Won=false/InProgress → hard error, NO resume path (CrossChainBridgeService.cs:171-187). Crash windows: claim→transition (poisoned key), consume→on-chain (replay hits "VAA already consumed" → FailRedeem with NO mint), on-chain→Completed (stuck Redeeming, no tx hash to probe). Consumed-VAA row = reliable point-of-no-return marker (inserted before on-chain call) | Yes | B |
 | 3 | reconciliation state coverage | PARTIAL — sweep is read-only (never double-submits ✓); BUT: `Locked` self-transitions `Locked→Locked` no-op forever (SelectBridgeProbe, ReconciliationService.cs:288-289); `TryResolveProvider` hardcodes `ChainNetwork.Devnet` (:718 — network not persisted on BridgeTx); trusted lock-ok/mint-fail lands `Failed` w/ LockTxHash = invisible to sweep (locked funds, no surface); orphaned InProgress idempotency keys never settled; `Reversing`/`AwaitingVAA` stuck-flag-only is BY DESIGN (keep) | Yes | B |
 | 4 | ledger UNIQUE in goldens | OK — `consumed_vaa_digest` + `consumed_vaa_emitter_address_sequence` both UNIQUE in golden .surql (:41-49), all fields `ASSERT != NONE`, emitter canonicalized `^[0-9a-f]{64}$`, POCO `[Index]` attrs match exactly | No | — |
-| 5 | idempotency-key avatar scoping | GAP — client `Idempotency-Key` used VERBATIM (BridgeController.cs:200-209 → service :164-166, :434-437, :692-694); avatars A+B with same key collide on one claim row. Derived fallback keys ARE avatar-scoped (embed avatarId / tx.Id) | Yes | B |
-| 6 | AC5 kill switch | ABSENT — no flag/options/gate anywhere. Coverage needed: exactly `InitiateBridgeAsync`/`RedeemWithVAAAsync`/`ReverseBridgeAsync`; `BridgeController` is the SOLE production consumer of `ICrossChainBridgeService` (no quest/MCP/saga/reconciliation callers; reconciliation goes store-direct) | Yes | A |
+| 5 | idempotency-key user scoping | GAP — client `Idempotency-Key` used VERBATIM (BridgeController.cs:200-209 → service :164-166, :434-437, :692-694); users A+B with same key collide on one claim row. Derived fallback keys ARE user-scoped (embed userId / tx.Id) | Yes | B |
+| 6 | AC5 kill switch | ABSENT — no flag/options/gate anywhere. Coverage needed: exactly `InitiateBridgeAsync`/`RedeemWithVAAAsync`/`ReverseBridgeAsync`; `BridgeController` is the SOLE production consumer of `ICrossChainBridgeService` (no action/MCP/saga/reconciliation callers; reconciliation goes store-direct) | Yes | A |
 | 7 | idempotency claim mechanism | OK — DB UNIQUE on `key` + CREATE INSERT-wins, deterministic SHA-256 record-id, per-statement IsOk check (SurrealIdempotencyLedger.cs:80-160) | No | — |
 
 ## Phase A — AC5: `BridgeRealValueEnabled` kill switch
@@ -98,7 +98,7 @@ reconciliation sweep and the consumed-VAA ledger.
 1. New `BridgeOptions` (section `Blockchain:Bridge`) with
    `RealValueEnabled = false` default; bind via `IOptions` in `Program.cs`
    (config-driven per [[config-driven-calls]]).
-2. Gate inside `CrossChainBridgeService` (NOT only the controller — quest
+2. Gate inside `CrossChainBridgeService` (NOT only the controller — action
    nodes / future saga callers must hit the same wall): initiate (trusted +
    wormhole), redeem, and reverse refuse with an explicit, typed error when
    the resolved provider is non-simulated and the flag is false.
@@ -132,7 +132,7 @@ run-once policy):
    using chain truth where a tx hash exists; park (flag) only genuinely
    ambiguous cases. Reuse `ChainActionRecovery.Decide` semantics.
 4. **Idempotency-key scoping** — if Phase 0 #5 found client keys unscoped,
-   namespace claims by authenticated avatar (`{avatarId}:{clientKey}`).
+   namespace claims by authenticated user (`{userId}:{clientKey}`).
 5. **Trusted-mode lock→mint failure** — keep "manual intervention" as the
    terminal message BUT ensure the row lands in a reconcilable state the
    sweep picks up and re-verifies against chain truth (no silent Failed with
@@ -157,7 +157,7 @@ mocked adapter/providers unless noted:
 5. Digest consistency: service-side digest == `WormholeAdapter.ComputeVaaDigest`
    for identical VAA bytes; differing base64 encodings of the same bytes
    produce the same digest (decode-then-hash canonicalization).
-6. Cross-avatar key isolation (post Phase B #4): same client key, two avatars
+6. Cross-user key isolation (post Phase B #4): same client key, two users
    → two independent claims.
 7. Reconciliation: seed one stuck row per non-terminal state with mocked
    confirmations (Confirmed / FailedOnChain / Pending) → sweep drives to the
@@ -175,7 +175,7 @@ mocked adapter/providers unless noted:
 3. **Security review in a separate lane** (security-reviewer / fresh-context
    pass — no self-approval): scope = malicious/oversized VAA bytes, digest
    malleability, idempotency-key abuse (header injection, cross-user replay),
-   status-transition races, kill-switch bypass routes (quest nodes, MCP,
+   status-transition races, kill-switch bypass routes (action nodes, MCP,
    reconciliation sweep itself), and the financial rate-limit policy actually
    covering all bridge endpoints. Findings triaged: fix-now vs. tracked.
 4. Verify Swagger still lists bridge endpoints (quality gate #3).
@@ -194,7 +194,7 @@ mocked adapter/providers unless noted:
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | SurrealDB single-statement atomicity assumption wrong for multi-field UPDATE | low | integration test the race directly (Phase C #1/#2 against real DB) |
-| Kill switch misses a call path (quest Bridge node lands later) | med | gate at the SERVICE seam + security-review bypass hunt (Phase D #3) |
+| Kill switch misses a call path (action Bridge node lands later) | med | gate at the SERVICE seam + security-review bypass hunt (Phase D #3) |
 | Reconciliation sweep double-submits while redeem in flight | med | sweep uses the same conditional-transition + consumed-ledger claims as the foreground path (Phase B #3, test C #7) |
 | Idempotency scoping change breaks existing tests' key expectations | low | Phase 0 #5 documents current shape first; adjust builders once |
 | Spec/code drift (more has shipped than the spec knows) | confirmed | Phase 0 re-baseline gate before any code |

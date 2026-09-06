@@ -52,19 +52,19 @@ public sealed class SurrealStarStore : ISTARStore
         }
     }
 
-    public async Task<AZOAResult<ISTARODK>> GetByNameAndAvatarAsync(string name, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<ISTARODK>> GetByNameAndUserAsync(string name, Guid userId, CancellationToken ct = default)
     {
         try
         {
             // Owner-scoped name lookup. Closes the POST IDOR: only records owned
-            // by the calling avatar can be overwritten by name collision.
+            // by the calling user can be overwritten by name collision.
             // Name comparison is case-insensitive (string::lowercase on both sides)
             // to preserve the prior CreateOrUpdateAsync semantic.
             var q = SurrealQuery
-                .Of("SELECT * FROM type::table($_t) WHERE string::lowercase(name) = string::lowercase($_name) AND avatar_id = $_avatar LIMIT 1")
+                .Of("SELECT * FROM type::table($_t) WHERE string::lowercase(name) = string::lowercase($_name) AND user_id = $_user LIMIT 1")
                 .WithParam("_t",      StarRecord.StarTable)
                 .WithParam("_name",   name)
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(avatarId)));
+                .WithParam("_user", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(userId)));
 
             var row = await _executor.QuerySingleAsync<StarRecord>(q, ct);
             return new AZOAResult<ISTARODK>
@@ -76,7 +76,7 @@ public sealed class SurrealStarStore : ISTARStore
         }
         catch (Exception ex)
         {
-            return new AZOAResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.GetByNameAndAvatarAsync failed: {ex.Message}");
+            return new AZOAResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.GetByNameAndUserAsync failed: {ex.Message}");
         }
     }
 
@@ -162,7 +162,7 @@ public sealed class SurrealStarStore : ISTARStore
             Description      = odk.Description,
             PublicKey        = odk.PublicKey,
             PrivateKeyHash   = odk.PrivateKeyHash,
-            AvatarId         = odk.AvatarId.HasValue ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(odk.AvatarId.Value)) : null,
+            UserId         = odk.UserId.HasValue ? SurrealLink.ToLink("user", SurrealId.ToSurrealId(odk.UserId.Value)) : null,
             BoundHolonIds    = boundHolonIdsJson,
             TargetChain      = odk.TargetChain,
             GeneratedCode    = odk.GeneratedCode,
@@ -201,7 +201,7 @@ public sealed class SurrealStarStore : ISTARStore
             Description      = p.Description,
             PublicKey        = p.PublicKey,
             PrivateKeyHash   = p.PrivateKeyHash,
-            AvatarId         = p.AvatarId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!) : null,
+            UserId         = p.UserId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(p.UserId)!) : null,
             BoundHolonIds    = boundHolonIds,
             TargetChain      = p.TargetChain,
             GeneratedCode    = p.GeneratedCode,
@@ -241,10 +241,10 @@ public sealed class SurrealStarStore : ISTARStore
         [JsonPropertyName("private_key_hash")]
         public string? PrivateKeyHash { get; set; }
 
-        [Column(Type = "option<record<avatar>>")]
-        [JsonPropertyName("avatar_id")]
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))]
-        public string? AvatarId { get; set; }
+        [Column(Type = "option<record<user>>")]
+        [JsonPropertyName("user_id")]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))]
+        public string? UserId { get; set; }
 
         [Column(Type = "option<array<string>>")]
         [JsonPropertyName("bound_holon_ids")]

@@ -9,7 +9,7 @@ public enum OAuthExchangeCodePurpose
     SESSION,
 
     /// <summary>
-    /// Proves an already-authenticated avatar explicitly asked to attach a provider.
+    /// Proves an already-authenticated user explicitly asked to attach a provider.
     /// Minted only from a JWT-authenticated request, then presented on the top-level
     /// OAuth redirect, which carries no Authorization header of its own.
     /// </summary>

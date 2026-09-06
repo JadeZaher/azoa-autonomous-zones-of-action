@@ -59,7 +59,7 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
         Guid tenantId,
         CancellationToken ct = default)
     {
-        if (tenantId == Guid.Empty || tenantId == NodeOperatorIdentity.AvatarId)
+        if (tenantId == Guid.Empty || tenantId == NodeOperatorIdentity.UserId)
             return PolicyFailure<KycProviderResolution>(KycProviderReadinessCodes.SelectionRequired);
         var selection = await _store.GetSelectionAsync(tenantId, ct);
         if (selection.IsError)
@@ -478,16 +478,16 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
             };
         }
 
-        public async Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid avatarId, CancellationToken ct = default)
+        public async Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid userId, CancellationToken ct = default)
         {
-            var result = await inner.BeginSessionAsync(avatarId, ct);
+            var result = await inner.BeginSessionAsync(userId, ct);
             if (result.IsError || result.Result is null)
                 return result;
             result.Result.ProviderKey = providerKey;
             return result;
         }
-        public Task<AZOAResult<string>> CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
-            => inner.CreateSessionAsync(avatarId, documents, ct);
+        public Task<AZOAResult<string>> CreateSessionAsync(Guid userId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
+            => inner.CreateSessionAsync(userId, documents, ct);
         public Task<AZOAResult<KycStatus>> GetSessionStatusAsync(string providerSessionId, CancellationToken ct = default)
             => inner.GetSessionStatusAsync(providerSessionId, ct);
         public Task<AZOAResult<KycStatus>> HandleWebhookAsync(string payload, CancellationToken ct = default)

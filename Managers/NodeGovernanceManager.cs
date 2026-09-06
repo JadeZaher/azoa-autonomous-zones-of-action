@@ -42,13 +42,13 @@ public sealed class NodeGovernanceManager : INodeGovernanceManager
     /// <inheritdoc/>
     public async Task<AZOAResult<NodeGovernanceParametersResponse>> UpdateParametersAsync(
         NodeGovernanceParametersUpdateRequest request,
-        Guid actorAvatarId,
+        Guid actorUserId,
         CancellationToken ct = default)
     {
         if (request is null)
             return AZOAResult<NodeGovernanceParametersResponse>.Failure("Node governance parameters are required.");
-        if (actorAvatarId == Guid.Empty)
-            return AZOAResult<NodeGovernanceParametersResponse>.Failure("Actor avatar id is required.");
+        if (actorUserId == Guid.Empty)
+            return AZOAResult<NodeGovernanceParametersResponse>.Failure("Actor user id is required.");
 
         var errors = new List<string>();
         if (request.ExpectedVersion < 0)
@@ -72,7 +72,7 @@ public sealed class NodeGovernanceManager : INodeGovernanceManager
         }
 
         var nextVersion = (previous?.Version ?? 0) + 1;
-        var actorLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(actorAvatarId)) ?? string.Empty;
+        var actorLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(actorUserId)) ?? string.Empty;
 
         var parameters = new NodeGovernanceParameters
         {
@@ -80,7 +80,7 @@ public sealed class NodeGovernanceManager : INodeGovernanceManager
             AllowedChains = allowedChains,
             AllowedAssetTypes = allowedAssetTypes,
             Version = nextVersion,
-            UpdatedByAvatarId = actorLink,
+            UpdatedByUserId = actorLink,
             CreatedAt = previous?.CreatedAt ?? now,
             UpdatedAt = now,
         };
@@ -89,7 +89,7 @@ public sealed class NodeGovernanceManager : INodeGovernanceManager
         {
             Id = SurrealId.ToSurrealId(Guid.NewGuid()),
             Action = "ParametersUpdated",
-            ActorAvatarId = actorLink,
+            ActorUserId = actorLink,
             PreviousVersion = previous?.Version ?? 0,
             NewVersion = nextVersion,
             PreviousAllowedChains = previous?.AllowedChains,
@@ -180,7 +180,7 @@ public sealed class NodeGovernanceManager : INodeGovernanceManager
         AllowedChains = row.AllowedChains,
         AllowedAssetTypes = row.AllowedAssetTypes,
         Version = row.Version,
-        UpdatedByAvatarId = SurrealRecordGuid.ParseOptional(row.UpdatedByAvatarId),
+        UpdatedByUserId = SurrealRecordGuid.ParseOptional(row.UpdatedByUserId),
         CreatedAt = row.CreatedAt,
         UpdatedAt = row.UpdatedAt,
     };
@@ -189,7 +189,7 @@ public sealed class NodeGovernanceManager : INodeGovernanceManager
     {
         Id = SurrealRecordGuid.Parse(row.Id),
         Action = row.Action,
-        ActorAvatarId = SurrealRecordGuid.ParseOptional(row.ActorAvatarId) ?? Guid.Empty,
+        ActorUserId = SurrealRecordGuid.ParseOptional(row.ActorUserId) ?? Guid.Empty,
         PreviousVersion = row.PreviousVersion,
         NewVersion = row.NewVersion,
         PreviousAllowedChains = row.PreviousAllowedChains,

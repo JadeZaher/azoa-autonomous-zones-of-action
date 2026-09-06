@@ -69,8 +69,8 @@ public sealed class HostedSessionRequest
 {
     public string FlowKind { get; init; } = HostedSessionFlowKinds.Kyc;
 
-    /// <summary>Subject avatar; also the provider-side client user correlation.</summary>
-    public Guid SubjectAvatarId { get; init; }
+    /// <summary>Subject user; also the provider-side client user correlation.</summary>
+    public Guid SubjectUserId { get; init; }
 
     /// <summary>Owning tenant, when the flow was driven by a tenant rather than the node.</summary>
     public Guid? TenantId { get; init; }

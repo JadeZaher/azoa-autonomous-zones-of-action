@@ -75,7 +75,7 @@ load-bearing ones, grouped:
 | Blocker | Files | Claim to verify |
 |---|---|---|
 | H1 simulated-mode prod guard | `Providers/Blockchain/BlockchainProviderFactory.cs`, `Program.cs:~127` | Production + `Mode=Simulated` throws at boot; Dev/IntegrationTest allowed; defaults to `Live` when unset so it can't over-fire. Test: `tests/AZOA.WebAPI.Tests/Core/BlockchainProviderFactorySelectionTests.cs` |
-| H2 admin-token mint | `Managers/AvatarManager.cs` (GenerateJwt/StampOperatorAdminIfSeeded), `Services/Admin/SeedAdminHostedService.cs`, `Services/Admin/AdminBootstrapOptions.cs`, `docs/NODE-HOST.md §8.9` | Config-only fail-closed seed; stamps `operator:admin` only when `AdminBootstrap:SeedEmail`+`SeedSecret` both set + email matches; partial config throws at boot in Prod AND at mint (defense-in-depth). `SeedSecret` is an **arming toggle**, not a presented challenge — verify no path grants admin without it configured. Tests: `AdminBootstrapTests.cs` |
+| H2 admin-token mint | `Managers/UserManager.cs` (GenerateJwt/StampOperatorAdminIfSeeded), `Services/Admin/SeedAdminHostedService.cs`, `Services/Admin/AdminBootstrapOptions.cs`, `docs/NODE-HOST.md §8.9` | Config-only fail-closed seed; stamps `operator:admin` only when `AdminBootstrap:SeedEmail`+`SeedSecret` both set + email matches; partial config throws at boot in Prod AND at mint (defense-in-depth). `SeedSecret` is an **arming toggle**, not a presented challenge — verify no path grants admin without it configured. Tests: `AdminBootstrapTests.cs` |
 | H3 frontend API-URL | `frontend/Dockerfile`, `frontend/next.config.js`, `frontend/src/lib/runtime-config.ts`, `frontend/src/app/layout.tsx`, `frontend/src/lib/azoa.ts`, `api.ts` | API URL resolved at RUNTIME (plain `API_URL` env read server-side, injected as `window.__RUNTIME_CONFIG__`), not baked at `next build`. `transpilePackages: ['@azoa/sdk']` (was `@azoa/wallet-sdk`). |
 | H4 backup/restore | `scripts/surrealdb/{backup,restore,ContainerRuntime}.ps1`, `tests/.../Gates/G5_RestoreDrillTest.cs` | Real `surreal export`/`import` via docker\|podman exec (`Find-ContainerRuntime`); G5 is a genuine 13-table SHA-256 round-trip; `RunPwsh` falls back `pwsh`→`powershell.exe`. |
 | H5 version/CHANGELOG | `AZOA.WebAPI.csproj` (Version 0.1.0-alpha), `sdk/azoa-wallet/package.json`+`LICENSE`, root `CHANGELOG.md` | — |
@@ -85,19 +85,19 @@ load-bearing ones, grouped:
 
 ### 2b. The 3 GENUINE product bugs (H7 — the highest-value part to re-verify)
 These were found because a silent test-harness bug had been *masking* them.
-1. **All 5 MCP tools broken in production.** `Mcp/Tools/{HolonTraverse,QuestReachability,NftOwnershipGraph,AvatarScopedQuery,VectorSearch}Tool.cs`
-   compared `record<>` link columns (`id`, `avatar_id`, `parent_holon_id`,
-   `quest_id`, node ids) against **bare-hex** strings ⇒ every query returned 0 rows
+1. **All 5 MCP tools broken in production.** `Mcp/Tools/{HolonTraverse,ActionReachability,NftOwnershipGraph,UserScopedQuery,VectorSearch}Tool.cs`
+   compared `record<>` link columns (`id`, `user_id`, `parent_holon_id`,
+   `action_id`, node ids) against **bare-hex** strings ⇒ every query returned 0 rows
    against real store data. Fix: bind `SurrealLink.ToLink("<table>", SurrealId.ToSurrealId(guid))`.
    Also `HolonTraverseTool.peer_holon_ids` POCO `string?` → `JsonElement?` (stored
    `array<string>`). Rationale in `Mcp/AGENTS.md §record-id-binding`.
    **⚠ Verify**: that this is a real query-layer fix and not a test-only mask; that
    ALL 5 tools now bind consistently (one — VectorSearchTool — was found bypassing
    the shared `SurrealId.ToSurrealId` helper and was aligned late; confirm).
-2. **AvatarNFT mint could never settle.** `nft_ownership.token_id` is required
+2. **UserNFT mint could never settle.** `nft_ownership.token_id` is required
    non-empty but no DTO/service path supplied it (broken since 2026-06-08). Fix:
-   `Services/Avatar/AvatarNFTService.cs` auto-assigns `token_id` (chain-mint
-   semantics) when the caller supplies none; `Models/Requests/AvatarNFTMintModel.cs`
+   `Services/User/UserNFTService.cs` auto-assigns `token_id` (chain-mint
+   semantics) when the caller supplies none; `Models/Requests/UserNFTMintModel.cs`
    gained optional `TokenId`. **⚠ Verify** the auto-gen is appropriate (is a random
    `Guid` token id semantically right, or should mint require a caller-supplied /
    provider-derived id? This is a product-semantics call worth your scrutiny).
@@ -109,7 +109,7 @@ These were found because a silent test-harness bug had been *masking* them.
    `[Column(Flexible=true)]` (golden `operation_log.surql` regenerated).
    **⚠ Verify** there aren't OTHER stores with the same SET-omits-null latent bug on
    `option<>` collection columns — this was found in Holon; the same pattern could
-   exist in Wallet/Quest/STAR stores. **This is the single most valuable thing you
+   exist in Wallet/ActionDefinition/STAR stores. **This is the single most valuable thing you
    can do in this review.**
 
 ### 2c. The harness root-cause (test infra, but load-bearing)
@@ -134,7 +134,7 @@ legitimate result payload.
 | `dotnet build` 0 err, no new warnings | **Verified** this session (full build after each change). |
 | Unit suite 1235 pass / 0 fail / 1 skip | **Verified** (ran clean). |
 | SDK 163 vitest pass | **Verified**. |
-| Each previously-red integration class green (AvatarNFT 10/10, MCP 8/8, G5 1/1, Holon/STARODK 41/41) | **Verified in isolation** (ran each class/scoped group). |
+| Each previously-red integration class green (UserNFT 10/10, MCP 8/8, G5 1/1, Holon/STARODK 41/41) | **Verified in isolation** (ran each class/scoped group). |
 | Full integration suite still shows 37 failures | **Verified count**; the *attribution* ("pre-existing shared-SurrealDB-container parallel contention, not regressions") is **partially assumed** — supported by: the exact same classes pass when run scoped, and it matches the documented `integration-test-namespace-isolation` history in project memory. **NOT** independently re-audited failure-by-failure. **⚠ This is the biggest soft spot. If you do one deep thing, pick apart a handful of those 37 and confirm they are genuinely contention, not a real regression hiding in the crowd.** |
 | The 3 product bugs are real & fixed | **Verified** (reproduced against live SurrealDB 3.1.4, fix confirmed green). |
 | MCP tools were broken in prod (not just tests) | **Verified** by the fixing worker against the real `DefaultSurrealExecutor` (bare-hex → 0 rows, link form → 1 row). Re-confirm the production call path actually uses the fixed binding. |
@@ -147,14 +147,14 @@ Reports live in `.omc/reviews/lane{1..5}-*.md`. Severity ceiling was **HIGH** (n
 critical/major). What was **already fixed** this session:
 - `ToSurqlLiteral` InvariantCulture for numerics + `DateTimeOffset`/`Guid` arms
   (IntegrationTestBase.cs).
-- `VectorSearchTool` avatar binding aligned to the shared `SurrealId.ToSurrealId`
+- `VectorSearchTool` user binding aligned to the shared `SurrealId.ToSurrealId`
   helper (lane-2 HIGH H1).
 - 4 line-number self-references stripped.
 
 **Deliberately deferred (candidates for your review to confirm or escalate):**
 - **Doc-comment relocation**: verbose `<summary>`/inline blocks in
   `SeedAdminHostedService`, `AdminBootstrapOptions`, `BlockchainProviderFactory`,
-  `AvatarManager`, and the 5 MCP tools duplicate rationale that per-convention
+  `UserManager`, and the 5 MCP tools duplicate rationale that per-convention
   belongs in a directory `AGENTS.md` (`Services/Admin/AGENTS.md` and
   `Providers/Stores/Surreal/AGENTS.md` don't exist yet). Low-risk but a real
   convention drift.
@@ -174,12 +174,12 @@ critical/major). What was **already fixed** this session:
 1. **SET-omits-null across OTHER stores.** The Holon empty-collection data-loss bug
    (§2b.3) is a *pattern*. Grep every `Surreal*Store.cs` `ToPoco`/upsert for
    `option<>` collection columns (`array<...>`, `option<object>`) that are only
-   serialized when non-empty. If Wallet/Quest/STAR/NFT stores share it, emptying a
+   serialized when non-empty. If Wallet/ActionDefinition/STAR/NFT stores share it, emptying a
    collection silently fails there too. **Highest expected value.**
 2. **The 37-failure integration tail.** Independently reproduce a sample; confirm
    contention (namespace/scheme collisions, shared-container races) vs a masked
    real regression. The attribution is the least-verified claim in the whole phase.
-3. **AvatarNFT `token_id` auto-gen semantics.** Is minting a random Guid token id
+3. **UserNFT `token_id` auto-gen semantics.** Is minting a random Guid token id
    the right product behavior, or a papering-over of a missing real mint pipeline?
 4. **MCP tool binding, production path.** Confirm the tools are actually reachable
    and the fixed binding is on the live query path (not only exercised by tests).

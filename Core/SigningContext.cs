@@ -12,7 +12,7 @@ namespace AZOA.WebAPI.Core;
 /// <see cref="AZOA.WebAPI.Interfaces.Managers.IKeyCustodyService"/>:
 /// <list type="bullet">
 /// <item><b>User-wallet op</b> (<see cref="IsPlatform"/> = <c>false</c>): resolves
-/// via <c>WithSigningKeyAsync(<see cref="WalletId"/>, <see cref="AvatarId"/>, …)</c>,
+/// via <c>WithSigningKeyAsync(<see cref="WalletId"/>, <see cref="UserId"/>, …)</c>,
 /// inheriting the custody IDOR guard (the caller must own the wallet).</item>
 /// <item><b>Platform / ASA-admin op</b> (<see cref="IsPlatform"/> = <c>true</c>):
 /// create / destroy-burn / clawback / opt-in of the platform account — resolves
@@ -28,7 +28,7 @@ namespace AZOA.WebAPI.Core;
 /// returns a CLEAR ERROR (never a platform-key mis-sign) for any user context it
 /// cannot resolve.</para>
 /// </summary>
-/// <param name="AvatarId">The authenticated owner of the moving wallet (custody
+/// <param name="UserId">The authenticated owner of the moving wallet (custody
 /// IDOR authority). <see cref="System.Guid.Empty"/> on a platform op.</param>
 /// <param name="WalletId">The platform-managed wallet whose key signs a user op.
 /// <see cref="System.Guid.Empty"/> on a platform op.</param>
@@ -38,13 +38,13 @@ namespace AZOA.WebAPI.Core;
 /// DROVE this signing action via a child credential (the <c>act_as_tenant</c> JWT
 /// claim), or <see cref="System.Guid.Empty"/> when the action is user-driven or a
 /// pure platform-internal op. When non-empty, the custody seam does a LIVE consent
-/// grant check (grantor=<see cref="GrantorAvatarId"/>, tenant=this,
+/// grant check (grantor=<see cref="GrantorUserId"/>, tenant=this,
 /// scope ⊇ <see cref="Scope"/>) BEFORE key decrypt and FAILS CLOSED — even on a
 /// platform-key op, because Grant/FungibleTokenCreate are platform-signed yet
 /// tenant-driven on a user's behalf.</param>
-/// <param name="GrantorAvatarId">tenant-consent-delegation AC4: the USER on whose
+/// <param name="GrantorUserId">tenant-consent-delegation AC4: the USER on whose
 /// behalf a tenant-driven action is taken — the grantor the consent grant is looked
-/// up against. For a per-user op this equals <see cref="AvatarId"/>; empty when
+/// up against. For a per-user op this equals <see cref="UserId"/>; empty when
 /// there is no acting tenant.</param>
 /// <param name="Scope">tenant-consent-delegation AC4: the signing scope the op
 /// requires (e.g. <c>swap:sign</c>, <c>nft:mint</c>). The live grant must cover it.
@@ -58,11 +58,11 @@ namespace AZOA.WebAPI.Core;
 /// another chain's key. Irrelevant to a per-user op — those keys come from the
 /// wallet record, which is already chain-correct.</param>
 public readonly record struct SigningContext(
-    Guid AvatarId,
+    Guid UserId,
     Guid WalletId,
     bool IsPlatform,
     Guid ActingTenantId = default,
-    Guid GrantorAvatarId = default,
+    Guid GrantorUserId = default,
     string? Scope = null,
     string? ChainType = null)
 {
@@ -84,16 +84,16 @@ public readonly record struct SigningContext(
     /// A per-user custodial signing context. Both ids must be non-empty; the
     /// provider routes this through the custody IDOR-guarded resolver.
     /// </summary>
-    public static SigningContext ForUser(Guid avatarId, Guid walletId) =>
-        new(avatarId, walletId, IsPlatform: false);
+    public static SigningContext ForUser(Guid userId, Guid walletId) =>
+        new(userId, walletId, IsPlatform: false);
 
     /// <summary>
     /// True when this is a per-user context that actually carries a resolvable
-    /// wallet + avatar. A user context missing either id is unresolvable and the
+    /// wallet + user. A user context missing either id is unresolvable and the
     /// provider must fail closed rather than fall back to the platform key.
     /// </summary>
     public bool IsResolvableUserContext =>
-        !IsPlatform && WalletId != Guid.Empty && AvatarId != Guid.Empty;
+        !IsPlatform && WalletId != Guid.Empty && UserId != Guid.Empty;
 
     /// <summary>
     /// tenant-consent-delegation C1/AC4: true when a tenant drove this action via a
@@ -105,16 +105,16 @@ public readonly record struct SigningContext(
     /// <summary>
     /// tenant-consent-delegation AC4: stamp the acting-tenant + grantor + scope onto
     /// a signing context so the custody seam does the live grant check.
-    /// <paramref name="grantorAvatarId"/> defaults to <see cref="AvatarId"/> (the
+    /// <paramref name="grantorUserId"/> defaults to <see cref="UserId"/> (the
     /// wallet owner) — the user on whose behalf the tenant acts.
     /// </summary>
-    public SigningContext ActingAs(Guid actingTenantId, string scope, Guid grantorAvatarId = default) =>
+    public SigningContext ActingAs(Guid actingTenantId, string scope, Guid grantorUserId = default) =>
         this with
         {
             ActingTenantId = actingTenantId,
-            GrantorAvatarId = grantorAvatarId != Guid.Empty
-                ? grantorAvatarId
-                : (AvatarId != Guid.Empty ? AvatarId : GrantorAvatarId),
+            GrantorUserId = grantorUserId != Guid.Empty
+                ? grantorUserId
+                : (UserId != Guid.Empty ? UserId : GrantorUserId),
             Scope = scope,
         };
 }

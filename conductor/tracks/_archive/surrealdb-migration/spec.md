@@ -47,23 +47,23 @@ hot/cold split** — premature optimization, consciously deferred.
 - **G6 — Value tables `SCHEMAFULL`.** Wallets, bridge tx, swap state, NFT
   ownership, operation log: enforced schema + asserts. Authored in `.mermaid`
   source (via [[surrealdb-client-package]] `Azoa.SurrealDb.Schema`),
-  generated to `.surql`. Schemaless only for holon/quest flexible attributes
+  generated to `.surql`. Schemaless only for holon/action flexible attributes
   and MCP context.
 - **G7 — Chain reconciliation mandatory.** Re-derive op/bridge truth from
   chain confirmations, never trust the local lifecycle flag (delivered in
   `api-safety-hardening`; must remain green post-migration).
 
 ## Graph remodel (the payoff)
-Map quest DAG and holon polyhierarchy to native SurrealDB `RELATE` edges +
+Map action DAG and holon polyhierarchy to native SurrealDB `RELATE` edges +
 `->`/`<-` traversal, replacing in-app graph code where it simplifies. Preserve
 the iterative DAG validation guarantees (acyclicity, reachability,
 single-`ExecutionOrder`).
 
-**Quest tables consume the hand-off doc** `tracks/quest-temporal-fork-model/
+**ActionDefinition tables consume the hand-off doc** `tracks/action-temporal-fork-model/
 SURREAL-SCHEMA-HINTS.md` — that track owns the runtime/definition split
-(`Quest`/`QuestNode` = immutable definition; `QuestRun` +
-`QuestNodeExecution` = per-attempt state; `forked_from` lineage edge).
-Schema work for quest tables (task 3 quest portion, tasks 9–10) is gated
+(`ActionDefinition`/`ActionNode` = immutable definition; `ActionRun` +
+`ActionNodeExecution` = per-attempt state; `forked_from` lineage edge).
+Schema work for action tables (task 3 action portion, tasks 9–10) is gated
 on that hand-off being merged; foundation + value-table schemas
 (wallet/bridge/swap/NFT/operation-log) and saga tables proceed in parallel.
 
@@ -123,4 +123,4 @@ engines under value paths). **Wave-2 adapter work (tasks 5, 6, 7, 8, 8a, 8b)
 requires [[surrealdb-client-package]] sub-wave 1.5a complete** (HTTP client +
 query builder + Mermaid schema tool + analyzer relocated; SDK-pin removed).
 LIVE-query saga adoption requires [[surrealdb-client-package]] sub-wave 1.5b.
-Quest-table schema gated on `quest-temporal-fork-model`. Blocks `mcp-surface`.
+ActionDefinition-table schema gated on `action-temporal-fork-model`. Blocks `mcp-surface`.

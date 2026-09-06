@@ -9,7 +9,7 @@ the same value as a string so browser and SDK consumers cannot lose precision.
 
 ## Tenant-driven profile KYC
 
-`GET /api/kyc/status/summary` reads the authenticated avatar from the credential
+`GET /api/kyc/status/summary` reads the authenticated user from the credential
 subject. Every API key and every tenant-driven child credential must carry the
 literal `kyc:read` scope; issuance of a child credential remains tenant- and
 live-consent-scoped. The response is a minimal latest-submission projection.
@@ -28,14 +28,14 @@ Concurrent requests that observe an owned operation still in progress return
 HTTP 409 with a retryable discriminator; they are not malformed 400 requests.
 
 The first tenant key is issued through `POST /api/apikey/tenant`. The action is
-`Operator` policy only (therefore JWT-only), loads an existing target avatar,
+`Operator` policy only (therefore JWT-only), loads an existing target user,
 and ignores arbitrary scope input by having none: it always stamps exactly
 `tenant:provision,wallet:manage,kyc:read,kyc:submit`. It returns the raw key once
 under `Cache-Control: no-store`; no value-signing or operator scope can enter.
 
 Delegated child JWTs are temporarily disabled at validation and issuance. They
 remain default-deny until every future accepting endpoint has an explicit scope
-policy. Consent, avatar ownership mutations, API-key management, and wallet
+policy. Consent, user ownership mutations, API-key management, and wallet
 ownership mutations require a first-party login JWT. Service-to-service wallet
 setup uses the tenant custodial-account routes instead.
 
@@ -47,7 +47,7 @@ contain identifiers but never signing material, and returns `no-store` headers.
 
 Money-moving REST endpoints carry a per-endpoint, server-side signing-scope check
 so a low-privilege scoped API key (e.g. `dapp:develop`, meant only for
-quest/holon authoring) cannot move the owner's assets. The tenant-driven consent
+action/holon authoring) cannot move the owner's assets. The tenant-driven consent
 gate only fires on principals carrying `act_as_tenant`, which plain `X-Api-Key`
 principals never have — hence this second, per-endpoint enforcement.
 
@@ -96,21 +96,21 @@ correct `AZOAResult<T>` envelope type for that action's return type.
 ## §cross-tenant-read-scope
 
 In the multi-tenant "many dApp-devs on one SurrealDB namespace" deployment, two
-mutually-distrusting authenticated avatars share one namespace and isolation is
+mutually-distrusting authenticated users share one namespace and isolation is
 APP-LAYER only. Holon / STARODK / NFT reads were previously unscoped — any tenant
 could enumerate or fetch-by-id ANY other tenant's rows. They are now **owner-or-
 public** scoped.
 
 ### The policy
 
-A row is readable iff `row.AvatarId == callerAvatarId || row.IsPublic`
+A row is readable iff `row.UserId == callerUserId || row.IsPublic`
 (`IsPublic` defaults to false — a domain visibility opt-in on `IHolon`/`ISTARODK`;
 an NFT is a Holon with `AssetType=="NFT"`, so it uses the underlying holon's
-`IsPublic`). A **null** `callerAvatarId` fails closed (public-only) — mirrors
+`IsPublic`). A **null** `callerUserId` fails closed (public-only) — mirrors
 `SearchManager`.
 
 - **List/query** paths filter in-memory over the store result:
-  `.Where(h => callerAvatarId.HasValue && h.AvatarId == callerAvatarId.Value || h.IsPublic)`.
+  `.Where(h => callerUserId.HasValue && h.UserId == callerUserId.Value || h.IsPublic)`.
 - **Single-get** of a non-owned, non-public row returns a "not found"-style
   `AZOAResult` (`IsError=true`, "… not found.") — existence is NOT confirmed, so a
   private row cannot be probed by id.
@@ -119,11 +119,11 @@ an NFT is a Holon with `AssetType=="NFT"`, so it uses the underlying holon's
 
 The scope predicate lives in the MANAGER (`HolonManager.CanRead`,
 `STARManager.CanRead`, `NftManager.CanRead`); controllers thread the authenticated
-`GetAvatarIdFromClaims()` into the read methods as `Guid? callerAvatarId`
-(added as a new parameter mirroring `SearchManager.SearchAsync(callerAvatarId)`).
-Quest node handlers pass `context.ActingAvatarId` (the RUNNER — consistent with the
-ActingAvatarId invariant); the GateCheck / `$from` binding resolver paths pass the
-acting avatar AND keep their existing owner-STRICT post-check (a predicate/binding
+`GetUserIdFromClaims()` into the read methods as `Guid? callerUserId`
+(added as a new parameter mirroring `SearchManager.SearchAsync(callerUserId)`).
+ActionDefinition node handlers pass `context.ActingUserId` (the RUNNER — consistent with the
+ActingUserId invariant); the GateCheck / `$from` binding resolver paths pass the
+acting user AND keep their existing owner-STRICT post-check (a predicate/binding
 may name only the runner's OWN holons, never a public one owned by someone else).
 
 ### What is NOT touched
@@ -133,7 +133,7 @@ may name only the runner's OWN holons, never a public one owned by someone else)
 - Internal cycle-detection (`HolonManager.EnsureNotDescendantAsync`) uses an
   UNFILTERED subtree walk (`CollectDescendantsAsync`) — a cycle can run through a
   private cross-tenant descendant, so the guard must see the full tree.
-- Holon `Clone` cross-avatar template mechanic — already own-or-public gated.
+- Holon `Clone` cross-user template mechanic — already own-or-public gated.
 
 ## §dapp-composition-rbac
 
@@ -141,21 +141,21 @@ may name only the runner's OWN holons, never a public one owned by someone else)
 surface into two buckets:
 
 - **Read paths** (`GET /api/dapp-series`, `GET /api/dapp-series/{id}`,
-  `GET /api/dapp-series/{id}/quests`, `GET /api/dapp-series/{id}/validate`,
+  `GET /api/dapp-series/{id}/actions`, `GET /api/dapp-series/{id}/validate`,
   `GET /api/dapp-series/{id}/manifest`, `GET /api/dapp-series/{id}/status`) are
-  ordinary authenticated-avatar reads. They rely on manager ownership checks and
+  ordinary authenticated-user reads. They rely on manager ownership checks and
   must remain reachable without the `DappDevelop` policy.
-- **Write paths** (`POST/PUT/DELETE` series + quest mutations, plus
-  `/compose`, `/generate`, `/deploy`) are DApp-authoring actions. Series/quest
+- **Write paths** (`POST/PUT/DELETE` series + action mutations, plus
+  `/compose`, `/generate`, `/deploy`) are DApp-authoring actions. Series/action
   mutations keep `Authorize(Policy = "DappDevelop")`; lifecycle actions
   (`/compose`, `/generate`, `/deploy`) use `Authorize(Policy = "DappManage")`.
-  API-key policies require both the key scope and the owning avatar's current
+  API-key policies require both the key scope and the owning user's current
   DApp role, so a stale key cannot keep DApp authority after a role downgrade.
 
-## avatar-dapp-rbac — role-assignment endpoint (`AvatarController`)
+## user-dapp-rbac — role-assignment endpoint (`UserController`)
 
-- `PUT api/avatar/{id}/dapp-role` sets an avatar's `DappRole`. Target id is the
-  ROUTE id, never the body (IDOR rule). Body is `AvatarRoleAssignmentModel { Role }`.
+- `PUT api/user/{id}/dapp-role` sets an user's `DappRole`. Target id is the
+  ROUTE id, never the body (IDOR rule). Body is `UserRoleAssignmentModel { Role }`.
 - Method-level `[Authorize]` only (both JWT and API-key principals may authenticate);
   authority is decided in the manager from two controller-computed flags:
   - `ActingIsOperator()` mirrors the `Operator` policy EXACTLY (JWT-only floor +
@@ -207,7 +207,7 @@ controller remains `NodeGovern`-protected.
 `GET /api/allocation/receipt` and `POST /api/allocation/receipt/reconcile`
 require an API-key principal carrying `nft:mint`, a nonblank
 `Idempotency-Key`, and the `financial` rate limit. The controller derives API
-key and avatar context only from claims; it never accepts an actor, API-key id,
+key and user context only from claims; it never accepts an actor, API-key id,
 or operation id in a body/query value. Missing ledger bindings plus foreign or
 mismatched operations map to the same 404 response; a caller-owned failed or
 in-progress ledger without an operation remains readable. Dependency failures

@@ -13,7 +13,7 @@ namespace AZOA.WebAPI.Services.Kyc;
 
 /// <summary>
 /// Validates the latest KYC ledger entry against the active operator trust profile,
-/// AND the latest AML screening verdict for the same (avatar, tenant) pair.
+/// AND the latest AML screening verdict for the same (user, tenant) pair.
 ///
 /// <para>Identity verification and sanctions screening are two independent
 /// questions. Passing identity says the person is who they claim; it says nothing
@@ -62,23 +62,23 @@ public sealed class KycGateService : IKycGateService
         _environment = environment;
     }
 
-    public Task<AZOAResult<bool>> RequireVerifiedAsync(Guid avatarId)
-        => RequireVerifiedCoreAsync(avatarId, null, CancellationToken.None);
+    public Task<AZOAResult<bool>> RequireVerifiedAsync(Guid userId)
+        => RequireVerifiedCoreAsync(userId, null, CancellationToken.None);
 
     public Task<AZOAResult<bool>> RequireVerifiedAsync(
-        Guid avatarId,
+        Guid userId,
         Guid tenantId,
         CancellationToken ct = default)
-        => RequireVerifiedCoreAsync(avatarId, tenantId, ct);
+        => RequireVerifiedCoreAsync(userId, tenantId, ct);
 
     private async Task<AZOAResult<bool>> RequireVerifiedCoreAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct)
     {
         var latest = tenantId.HasValue || _registry is not null
-            ? await _store.GetLatestSubmissionAsync(avatarId, tenantId, ct)
-            : await _store.GetLatestSubmissionByAvatarAsync(avatarId, ct);
+            ? await _store.GetLatestSubmissionAsync(userId, tenantId, ct)
+            : await _store.GetLatestSubmissionByUserAsync(userId, ct);
         if (latest.IsError)
             return new AZOAResult<bool> { IsError = true, Result = false, Message = latest.Message, Exception = latest.Exception };
 
@@ -102,7 +102,7 @@ public sealed class KycGateService : IKycGateService
                 out _))
         {
             // Identity holds. The AML answer is a separate question and is required.
-            if (await IsAmlClearAsync(avatarId, tenantId, ct))
+            if (await IsAmlClearAsync(userId, tenantId, ct))
                 return new AZOAResult<bool> { Result = true, Message = "Success" };
         }
 
@@ -117,15 +117,15 @@ public sealed class KycGateService : IKycGateService
 
     /// <summary>
     /// Fail-closed AML read. Only <see cref="KycScreeningDecision.NO_HIT"/> on a
-    /// non-truncated, un-erased result for this exact (avatar, tenant) pair opens the
+    /// non-truncated, un-erased result for this exact (user, tenant) pair opens the
     /// gate. A MISSING result denies, a store error denies, MANUAL_REVIEW denies, and
     /// a truncated hit list denies — an unread sanctions list is not a clean one, and
     /// the whole point of screening is that an approved identity who is sanctioned
     /// must not reach value.
     /// </summary>
-    private async Task<bool> IsAmlClearAsync(Guid avatarId, Guid? tenantId, CancellationToken ct)
+    private async Task<bool> IsAmlClearAsync(Guid userId, Guid? tenantId, CancellationToken ct)
     {
-        var screening = await _screeningStore.GetLatestResultAsync(avatarId, tenantId, ct);
+        var screening = await _screeningStore.GetLatestResultAsync(userId, tenantId, ct);
         if (screening.IsError || screening.Result is null)
             return false;
 
@@ -133,23 +133,23 @@ public sealed class KycGateService : IKycGateService
         return result.Decision == KycScreeningDecision.NO_HIT && !result.ResultsTruncated;
     }
 
-    public Task<AZOAResult<KycStatus>> GetKycStatusAsync(Guid avatarId)
-        => GetKycStatusCoreAsync(avatarId, null, CancellationToken.None);
+    public Task<AZOAResult<KycStatus>> GetKycStatusAsync(Guid userId)
+        => GetKycStatusCoreAsync(userId, null, CancellationToken.None);
 
     public Task<AZOAResult<KycStatus>> GetKycStatusAsync(
-        Guid avatarId,
+        Guid userId,
         Guid tenantId,
         CancellationToken ct = default)
-        => GetKycStatusCoreAsync(avatarId, tenantId, ct);
+        => GetKycStatusCoreAsync(userId, tenantId, ct);
 
     private async Task<AZOAResult<KycStatus>> GetKycStatusCoreAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct)
     {
         var latest = tenantId.HasValue || _registry is not null
-            ? await _store.GetLatestSubmissionAsync(avatarId, tenantId, ct)
-            : await _store.GetLatestSubmissionByAvatarAsync(avatarId, ct);
+            ? await _store.GetLatestSubmissionAsync(userId, tenantId, ct)
+            : await _store.GetLatestSubmissionByUserAsync(userId, ct);
         if (latest.IsError)
             return new AZOAResult<KycStatus> { IsError = true, Message = latest.Message, Exception = latest.Exception };
 
@@ -157,7 +157,7 @@ public sealed class KycGateService : IKycGateService
             return new AZOAResult<KycStatus>
             {
                 IsError = true,
-                Message = $"{KycAuthorizationError.NotFound}No KYC submission found for this avatar."
+                Message = $"{KycAuthorizationError.NotFound}No KYC submission found for this user."
             };
 
         var now = DateTimeOffset.UtcNow;

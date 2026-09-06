@@ -9,7 +9,7 @@ namespace AZOA.WebAPI.Tests.Fakes;
 
 /// <summary>
 /// Test doubles for <see cref="IBlockchainProviderFactory"/>, used by the durable
-/// quest-engine harnesses since <see cref="AZOA.WebAPI.Services.Quest.Workflow.QuestNodeStepHandler"/>
+/// action-engine harnesses since <see cref="AZOA.WebAPI.Services.Actions.Workflow.ActionNodeStepHandler"/>
 /// gained a factory dependency for reconcile-before-retry
 /// (blockchain-recovery-and-portable-wallets §1.4).
 /// </summary>

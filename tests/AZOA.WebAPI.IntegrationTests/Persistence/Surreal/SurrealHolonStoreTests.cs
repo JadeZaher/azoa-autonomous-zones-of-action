@@ -23,7 +23,7 @@ namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 ///   4. Delete removes the row
 ///   5. Delete of non-existent id returns IsError=true
 ///   6. QueryAsync with null query returns all holons
-///   7. QueryAsync by AvatarId filters correctly
+///   7. QueryAsync by UserId filters correctly
 ///   8. QueryAsync by ProviderName filters correctly
 ///   9. QueryAsync by ParentHolonId filters correctly
 ///  10. QueryAsync with multiple filters are AND-combined
@@ -89,7 +89,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
             Name          = "Test Holon",
             Description   = "A holon for round-trip testing",
             ParentHolonId = Guid.NewGuid(),
-            AvatarId      = Guid.NewGuid(),
+            UserId      = Guid.NewGuid(),
             ProviderName  = "SurrealProvider",
             ChainId       = "algorand",
             AssetType     = "NFT",
@@ -122,7 +122,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
         got.Name.Should().Be("Test Holon");
         got.Description.Should().Be("A holon for round-trip testing");
         got.ParentHolonId.Should().Be(holon.ParentHolonId);
-        got.AvatarId.Should().Be(holon.AvatarId);
+        got.UserId.Should().Be(holon.UserId);
         got.ProviderName.Should().Be("SurrealProvider");
         got.ChainId.Should().Be("algorand");
         got.AssetType.Should().Be("NFT");
@@ -155,12 +155,12 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var id       = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
         var original = new Holon
         {
             Id           = id,
-            AvatarId     = avatarId,
+            UserId     = userId,
             Name         = "Original Name",
             Description  = "Original description",
             ProviderName = "Provider1",
@@ -172,7 +172,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
         var updated = new Holon
         {
             Id           = id,
-            AvatarId     = avatarId,
+            UserId     = userId,
             Name         = "Updated Name",
             Description  = "Updated description",
             ProviderName = "Provider1",
@@ -269,42 +269,42 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
         result.Result!.Count().Should().BeGreaterThanOrEqualTo(3);
     }
 
-    /// <summary>Test 7: QueryAsync by AvatarId returns only matching holons.</summary>
+    /// <summary>Test 7: QueryAsync by UserId returns only matching holons.</summary>
     [SkippableFact]
-    public async Task QueryAsync_ByAvatarId_FiltersCorrectly()
+    public async Task QueryAsync_ByUserId_FiltersCorrectly()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var targetAvatar = Guid.NewGuid();
-        var otherAvatar  = Guid.NewGuid();
+        var targetUser = Guid.NewGuid();
+        var otherUser  = Guid.NewGuid();
 
         var h1 = new Holon
         {
             Id = Guid.NewGuid(), Name = "Holon1", Description = string.Empty,
-            AvatarId = targetAvatar, ProviderName = "P", IsActive = true, CreatedDate = DateTime.UtcNow
+            UserId = targetUser, ProviderName = "P", IsActive = true, CreatedDate = DateTime.UtcNow
         };
         var h2 = new Holon
         {
             Id = Guid.NewGuid(), Name = "Holon2", Description = string.Empty,
-            AvatarId = targetAvatar, ProviderName = "P", IsActive = true, CreatedDate = DateTime.UtcNow
+            UserId = targetUser, ProviderName = "P", IsActive = true, CreatedDate = DateTime.UtcNow
         };
         var h3 = new Holon
         {
             Id = Guid.NewGuid(), Name = "Holon3", Description = string.Empty,
-            AvatarId = otherAvatar, ProviderName = "P", IsActive = true, CreatedDate = DateTime.UtcNow
+            UserId = otherUser, ProviderName = "P", IsActive = true, CreatedDate = DateTime.UtcNow
         };
 
         await _store.UpsertAsync(h1);
         await _store.UpsertAsync(h2);
         await _store.UpsertAsync(h3);
 
-        var result = await _store.QueryAsync(new HolonQueryRequest { AvatarId = targetAvatar });
+        var result = await _store.QueryAsync(new HolonQueryRequest { UserId = targetUser });
 
         result.IsError.Should().BeFalse();
         result.Message.Should().Be("Success");
         var list = result.Result!.ToList();
         list.Should().HaveCount(2);
-        list.All(h => h.AvatarId == targetAvatar).Should().BeTrue();
+        list.All(h => h.UserId == targetUser).Should().BeTrue();
     }
 
     /// <summary>Test 8: QueryAsync by ProviderName returns only matching holons.</summary>
@@ -385,32 +385,32 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var avatarId     = Guid.NewGuid();
+        var userId     = Guid.NewGuid();
         var providerName = $"ProvAnd_{Guid.NewGuid():N}";
 
-        // Matches both AvatarId AND ProviderName AND IsActive=true.
+        // Matches both UserId AND ProviderName AND IsActive=true.
         var match1 = new Holon
         {
             Id = Guid.NewGuid(), Name = "Match1", Description = string.Empty,
-            AvatarId = avatarId, ProviderName = providerName, IsActive = true, CreatedDate = DateTime.UtcNow
+            UserId = userId, ProviderName = providerName, IsActive = true, CreatedDate = DateTime.UtcNow
         };
-        // Matches AvatarId but not ProviderName.
+        // Matches UserId but not ProviderName.
         var noMatch1 = new Holon
         {
             Id = Guid.NewGuid(), Name = "NoMatch1", Description = string.Empty,
-            AvatarId = avatarId, ProviderName = "DifferentProvider", IsActive = true, CreatedDate = DateTime.UtcNow
+            UserId = userId, ProviderName = "DifferentProvider", IsActive = true, CreatedDate = DateTime.UtcNow
         };
-        // Matches ProviderName but not AvatarId.
+        // Matches ProviderName but not UserId.
         var noMatch2 = new Holon
         {
             Id = Guid.NewGuid(), Name = "NoMatch2", Description = string.Empty,
-            AvatarId = Guid.NewGuid(), ProviderName = providerName, IsActive = true, CreatedDate = DateTime.UtcNow
+            UserId = Guid.NewGuid(), ProviderName = providerName, IsActive = true, CreatedDate = DateTime.UtcNow
         };
-        // Matches AvatarId and ProviderName but IsActive=false.
+        // Matches UserId and ProviderName but IsActive=false.
         var noMatch3 = new Holon
         {
             Id = Guid.NewGuid(), Name = "NoMatch3", Description = string.Empty,
-            AvatarId = avatarId, ProviderName = providerName, IsActive = false, CreatedDate = DateTime.UtcNow
+            UserId = userId, ProviderName = providerName, IsActive = false, CreatedDate = DateTime.UtcNow
         };
 
         await _store.UpsertAsync(match1);
@@ -420,7 +420,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
 
         var result = await _store.QueryAsync(new HolonQueryRequest
         {
-            AvatarId     = avatarId,
+            UserId     = userId,
             ProviderName = providerName,
             IsActive     = true
         });
@@ -444,7 +444,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
         var holon = new Holon
         {
             Id = Guid.NewGuid(),
-            AvatarId = source,
+            UserId = source,
             Name = "Reserved NFT",
             ProviderName = "SurrealProvider",
             AssetType = "NFT",
@@ -497,7 +497,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
 
         finalized.Result.Should().BeTrue();
         replay.Result.Should().BeTrue();
-        (await _store.GetByIdAsync(holon.Id)).Result!.AvatarId.Should().Be(winningTarget);
+        (await _store.GetByIdAsync(holon.Id)).Result!.UserId.Should().Be(winningTarget);
 
         var historicalKeyReuse = await _store.TryReserveNftTransferAsync(
             holon.Id, winningTarget, Guid.NewGuid(), winningKey);
@@ -514,7 +514,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
         var holon = new Holon
         {
             Id = Guid.NewGuid(),
-            AvatarId = source,
+            UserId = source,
             Name = "Released NFT",
             ProviderName = "SurrealProvider",
             AssetType = "NFT",
@@ -533,7 +533,7 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
 
         released.Result.Should().BeTrue();
         replay.Result.Should().BeTrue();
-        (await _store.GetByIdAsync(holon.Id)).Result!.AvatarId.Should().Be(source);
+        (await _store.GetByIdAsync(holon.Id)).Result!.UserId.Should().Be(source);
     }
 
     private static async Task<bool> ProbeSurrealAsync()

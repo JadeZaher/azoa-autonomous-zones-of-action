@@ -427,18 +427,18 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         return await ExecuteAsync(operation, request);
     }
 
-    public async Task<AZOAResult<IBlockchainOperation>> GetAsync(Guid id, Guid? avatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IBlockchainOperation>> GetAsync(Guid id, Guid? userId = null, AZOARequest? request = null)
     {
         var result = await _blockchainOperationStore.GetByIdAsync(id, default);
         if (result.IsError || result.Result == null) return result;
-        if (avatarId.HasValue && result.Result.AvatarId != avatarId.Value)
-            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Operation is owned by a different avatar." };
+        if (userId.HasValue && result.Result.UserId != userId.Value)
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Operation is owned by a different user." };
         return result;
     }
 
-    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByUserAsync(Guid userId, AZOARequest? request = null)
     {
-        return await _blockchainOperationStore.GetByAvatarAsync(avatarId, default);
+        return await _blockchainOperationStore.GetByUserAsync(userId, default);
     }
 
     private async Task ExecuteMintAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
@@ -505,7 +505,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         // value-path-wiring C1: a transfer FROM a user's custodial wallet must sign
         // with the USER's key — build a per-user SigningContext from the op row so
         // the custody IDOR guard runs on the real value path. A platform-owned move
-        // (no owning wallet/avatar on the row) signs with the platform key.
+        // (no owning wallet/user on the row) signs with the platform key.
         var signingContext = BuildSigningContext(operation, chainProvider.ChainType);
         var result = await chainProvider.TransferAsync(
             sourceTokenId, walletAddress, transfer.RecipientAddress ?? string.Empty, amount, signingContext);
@@ -514,7 +514,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
 
     /// <summary>
     /// value-path-wiring C1/D1: build the signer-resolution context from the op
-    /// row. When the op carries an owning avatar + wallet, the move is a per-user
+    /// row. When the op carries an owning user + wallet, the move is a per-user
     /// custodial op and must sign with that user's key (custody IDOR-guarded);
     /// otherwise it is a platform-authority move signed by the platform key.
     /// <para>
@@ -523,8 +523,8 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// op via a child credential), stamp the acting tenant + signing scope + grantor
     /// onto the context so the custody seam runs the LIVE consent check before any
     /// decrypt — on BOTH the platform and the user signing path. The grantor is the
-    /// op's owning avatar (the on-whose-behalf user); for a platform op with no
-    /// owning avatar a tenant-driven sign with no resolvable grantor is denied at the
+    /// op's owning user (the on-whose-behalf user); for a platform op with no
+    /// owning user a tenant-driven sign with no resolvable grantor is denied at the
     /// gate (fail-closed).
     /// </para>
     /// </summary>
@@ -542,10 +542,10 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     {
         SigningContext baseCtx;
         if (!platformOp
-            && operation.AvatarId is { } avatarId && avatarId != Guid.Empty
+            && operation.UserId is { } userId && userId != Guid.Empty
             && operation.WalletId is { } walletId && walletId != Guid.Empty)
         {
-            baseCtx = SigningContext.ForUser(avatarId, walletId);
+            baseCtx = SigningContext.ForUser(userId, walletId);
         }
         else
         {
@@ -568,9 +568,9 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 $"'{operation.OperationType}'; refusing to build a tenant-driven signing context.");
 
         // Tenant-driven: thread the acting tenant + scope + grantor to the seam.
-        // The grantor is the op's owning avatar (the user on whose behalf the tenant
+        // The grantor is the op's owning user (the user on whose behalf the tenant
         // acts) — present on both user-key and platform-signed-on-behalf ops.
-        var grantor = operation.AvatarId is { } a && a != Guid.Empty ? a : Guid.Empty;
+        var grantor = operation.UserId is { } a && a != Guid.Empty ? a : Guid.Empty;
         return baseCtx.ActingAs(tenantId, operation.SigningScope ?? string.Empty, grantor);
     }
 

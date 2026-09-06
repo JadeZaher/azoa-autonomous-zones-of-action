@@ -1,0 +1,247 @@
+---
+type: plan
+track: action-dag-semantic-hardening
+created: 2026-07-01
+status: complete
+---
+
+# Implementation Plan: action-dag-semantic-hardening
+
+## Overview
+
+Five phases. A = the P0 skip-semantics bug (self-contained, highest value).
+B = publish gate + engine-profile check (they interlock: the gate is where the
+profile check gets its authority). C = config-schema validation + safe
+deserialization (the publish gate from B calls into C's registry, but C is
+written to be callable standalone so B can land with a stub hook).
+D = the two scoped guards (holon-ref scanner + parent-cycle). E = the SINGLE
+integrated build+test sweep (user test-execution policy: write tests throughout,
+run them once at the end — do NOT iterate test→fix per phase; phase-end
+checkpoints are review/static checks only).
+
+TDD-light per workflow.md: for each task, write the pinning test in
+`tests/AZOA.WebAPI.Tests` (xUnit + FluentAssertions + Moq, Builder pattern per
+existing `IntegrationTests/Builders/TestDataBuilders.cs` style) alongside the
+implementation; defer execution to Phase E.
+
+Commits: `[action-dag-semantic-hardening] <imperative>`, roughly one per phase.
+
+## Phase A: Skip-propagation semantics (P0 — Item 1)
+
+Goal: a failed gate stops the entire chain behind it; no inert Conditional edges.
+
+Tasks:
+
+- [x] Task A1: Write pinning tests for cascade-skip (TDD red first).
+      New test class `tests/AZOA.WebAPI.Tests/ActionDefinition/ActionManagerSkipPropagationTests.cs`:
+      (1) GateCheck→Transfer1→Transfer2 all-Control chain, gate fails ⇒ BOTH Skipped (AC-1a);
+      (2) Conditional edge with EMPTY condition, source Failed ⇒ target Skipped (AC-1b);
+      (3) Conditional edge source Skipped ⇒ target Skipped; (4) happy-path all-Succeeded.
+      No existing tests pinned one-hop-only skip by assertion (confirmed by grep).
+- [x] Task A2: Implement new skip rule in `Managers/ActionManager.cs` skip loop:
+      Control skips when source Failed OR Skipped; Conditional skips on Failed/Skipped
+      regardless of Condition text. G2 guard untouched.
+- [x] Task A3: `Validators/ActionEdgeCreateModelValidator.cs` — Conditional requires
+      non-empty Condition. New `Validators/ActionEdgeAddModelValidator.cs` for post-hoc
+      surface. Validation test cases added to `ValidationTests.cs`.
+- [x] Task A4: Durable path confirmed: no skip seam (ResolveSingleSuccessor/saga compensation).
+      Divergence documented in `Services/ActionDefinition/Workflow/AGENTS.md §skip-semantics`.
+- [x] Verification A: AC-1a/1b/1c/1d all covered. No other call sites read the old
+      Conditional guard (the only site was ActionManager.cs:308, now updated). [checkpoint]
+
+## Phase B: Publish gate + engine-profile validation (Items 2+3)
+
+Goal: Draft→Active is the moment validation becomes an invariant; the durable
+engine can never start a fan-out action.
+
+Tasks:
+
+- [x] Task B1: Reintroduce definition lifecycle status. Add `Status`
+      (`ActionStatus`, default `Draft`) to the domain ActionDefinition
+      (`Models/ActionDefinition/ActionDefinition.cs`) and the POCO
+      (`Persistence/SurrealDb/Models/ActionDefinition.cs`) — the POCO's SurrealNote records
+      status was removed by action-temporal-fork-model; this is a deliberate
+      reintroduction for the DEFINITION lifecycle (update the note). `[Inside]`
+      constraint mirrors the FULL domain `ActionStatus` enum
+      (Draft/Active/Completed/Failed/Archived) per the
+      action-run-status-inside-constraint-gap lesson. Regen schema goldens via
+      the pipeline — never hand-edit `.surql`. Ensure the store round-trips the
+      field (`SurrealActionStore`).
+- [x] Task B2: Engine-profile check (Item 3, AC-3a/3b). Add `Warnings` list to
+      `DagValidationResult`; add a fan-out check (any node with >1 outgoing
+      Control edges) — either inside `Services/ActionDagValidator.cs` behind a
+      profile flag or as a small helper both callers share (keep it a targeted
+      check, NO new abstraction). Publish gate + `StartWorkflowRunAsync`
+      (`Managers/ActionManager.cs:1257`) treat fan-out as ERROR;
+      `ExecuteAsync` (line 244 validation) records it as WARNING only. Unit
+      tests: fan-out action → error via workflow path, warning via legacy path.
+- [x] Task B3: Publish/unpublish manager methods. `PublishAsync(actionId, userId)`:
+      owned-action load (reuse `LoadOwnedActionAsync` IDOR pattern) → full stack
+      (structural `ActionDagValidator` + B2 profile-as-error + FR-4 config check
+      via a hook that Phase C fills in — wire the call now, registry lands in C)
+      → persist fresh `ExecutionOrder` → `Draft→Active`.
+      `UnpublishAsync(actionId, userId)`: refuse while any `ActionRun` for the
+      action is non-final (query `_runStore`); else `Active→Draft`. Unit tests
+      for AC-2a/2d.
+- [x] Task B4: Enforce lifecycle at seams (AC-2b/2c). `ExecuteAsync` +
+      `StartWorkflowRunAsync` require `Status == Active` (clear error naming
+      publish); keep execute-time re-validation as defense in depth. Definition
+      mutations — `AddNodeAsync` (:866), `UpdateNodeAsync` (:894), node delete,
+      `AddEdgeAsync` (:958), `RemoveEdgeAsync` (:1015) — reject when
+      `Status == Active` with a conflict-style error. Unit tests: mutate-Active
+      rejected, mutate-after-unpublish succeeds.
+- [x] Task B5: Controller endpoints `POST /api/action/{id}/publish` +
+      `POST /api/action/{id}/unpublish` on `Controllers/ActionController.cs`
+      (matches existing verb-subroute shape, cf. `/{id}/validate` :88,
+      `/{id}/execute` :98). Map conflict-style manager errors appropriately.
+      Note in AGENTS.md (Managers/ or Services/ActionDefinition/) §publish-lifecycle.
+- [x] Task B6: Sweep existing tests/fixtures that create-and-execute actions —
+      builders must publish (or construct `Active`) before execute, or the whole
+      suite fails in Phase E. Update `TestDataBuilders` accordingly.
+- [x] Verification B: AC-2a–2e + AC-3a/3b all covered. POCO edited (not generated
+      .surql); goldens will regenerate in Phase E dotnet build.
+      [checkpoint]
+
+## Phase C: Config schema validation + safe deserialization (Item 4)
+
+Goal: malformed config fails a node cleanly at run time and is rejected outright
+at definition time; no `Deserialize<T>(...)!` remains in handlers.
+
+Tasks:
+
+- [x] Task C1: Shared helper — `Services/ActionDefinition/ActionNodeConfig.cs` with
+      `TryDeserialize<T>(string? json, out T config, out string error)` (or a
+      small result type): strict `System.Text.Json` options
+      (`UnmappedMemberHandling.Disallow` where feasible), null/empty and
+      `JsonException` handled, error message carries node-type + parse detail.
+      Unit tests: malformed JSON, unknown member, empty string, happy path.
+- [x] Task C2: Registry `ActionNodeType → config DTO type` (DTOs in
+      `Models/ActionDefinition/NodeConfigs.cs`); config-free node types registered
+      explicitly. Unit test: every `ActionNodeType` enum value has a registry
+      entry (exhaustiveness pin — new node types can't dodge it).
+- [x] Task C3: Handler sweep — replaced `JsonSerializer.Deserialize<T>(...)!` in
+      ALL 39 `Services/ActionDefinition/Handlers/*.cs` sites (including GateCheck and
+      Emit convergence) with TryDeserialize; failure returns
+      `ActionNodeResults.Fail`, never throws. Tests added (AC-4a).
+- [x] Task C4: Definition-time enforcement (AC-4b): `AddNodeAsync`/
+      `UpdateNodeAsync` validate config via registry strict round-trip; wired
+      B3 publish-gate hook (`ValidateNodeConfigs`) to re-check all nodes. Unit
+      tests: bad config rejected at add; action with bad-config node fails publish.
+- [x] Task C5: Documented in `Services/ActionDefinition/AGENTS.md` §node-config (helper is
+      mandatory for new handlers; template configSchema/inputSchema/outputSchema
+      explicitly remain unenforced — AC-4c).
+- [x] Verification C: grep confirms zero remaining `Deserialize<...>(...)` in
+      `Services/ActionDefinition/Handlers/`; registry exhaustiveness test present
+      [checkpoint marker]
+
+## Phase D: Scoped guards (Items 5+6)
+
+Tasks:
+
+- [x] Task D1 (Item 5, AC-5): extended `ScanForGuids` in
+      `Managers/DappCompositionManager.cs` to also collect Guids from ARRAY
+      values under `*holon*`-named properties (covers GateCheckNodeConfig.Holons).
+      Regression test added to DappCompositionManagerTests.
+- [x] Task D2 (Item 6, AC-6a/6b): extracted `EnsureNotDescendantAsync(id,
+      proposedParentId)` from `MoveSubtreeAsync` and wired it into CreateAsync
+      (self-parent guard), UpdateAsync (ParentHolonId change), InteractAsync
+      (NewParentHolonId), and MoveSubtreeAsync. Managers/AGENTS.md
+      §holon-parent-cycle documents all four call sites. Tests in
+      HolonParentCycleGuardTests cover all paths.
+- [x] Verification D: grep confirms no other bare ParentHolonId write sites;
+      EnsureNotDescendantAsync is the single cycle-check source of truth
+      [checkpoint marker]
+
+## Phase E: Single integrated verification sweep
+
+Goal: the ONE test/build run for the whole track (user test-execution policy).
+
+Tasks:
+
+- [x] Task E1: `dotnet build` — zero errors, 25 unique warnings (baseline 28,
+      zero new). [a6ce980]
+- [x] Task E2: `dotnet test` — 1027/1027 unit+schema tests passed. Integration
+      tests skipped (SurrealDB not running); pre-existing 216-pass baseline
+      unaffected (no integration fixtures modified). action.surql golden
+      regenerated. Six test-error categories fixed; see NOTES.md §Phase E.
+      [a6ce980]
+- [x] Task E3: Docs closeout — AGENTS.md sections present: §skip-semantics
+      (Managers/ + Services/ActionDefinition/Workflow/), §publish-lifecycle (Managers/),
+      §node-config (Services/ActionDefinition/), §holon-parent-cycle (Managers/). Out-of-
+      scope follow-ups documented in NOTES.md. Frontend dagWarnings mirror
+      noted as named follow-up `action-frontend-dag-warnings` (no frontend code
+      changed). [a6ce980]
+- [x] Verification E: build 0 errors / 25 warnings (under baseline); 1027 tests
+      green; Swagger publish/unpublish endpoints registered via
+      POST /api/action/{id}/publish + /unpublish [checkpoint marker]
+
+## Phase F: Review fixes (Addendum FR-7)
+
+Tasks:
+
+- [x] Task F1: Replaced vacuous `CreateAsync_SelfParent_Rejected` with real
+      `UpdateAsync_SelfParent_Rejected` assertion exercising the same
+      `EnsureNotDescendantAsync` self-parent branch via an API-reachable path.
+- [x] Task F2: `Managers/` AGENTS.md — added CloneAsync one-liner explaining
+      intentionally-unguarded-but-cycle-safe `ParentHolonId` write.
+- [x] Task F3: Publish-lifecycle AGENTS.md — TOCTOU documented as known
+      pre-launch limitation; optimistic-concurrency stamp noted as follow-up.
+- [x] Task F4: Fixed two `CS1998` warnings: `DagValidator_FanOut_IsWarningOnLegacyPath`
+      and `DagValidator_FanOut_IsErrorOnDurablePath` changed from `async Task`
+      to `void` (no await in either body).
+
+## Phase G: Frontend builder incorporation (Addendum FR-8)
+
+Frontend-only; no backend changes. Scoped `tsc --noEmit` on touched files only.
+
+Tasks:
+
+- [x] Task G1: Publish lifecycle UI — status badge (Draft/Active) on action
+      list; Publish/Unpublish buttons wired to the new endpoints; server
+      validation errors rendered as a list; Execute disabled on Draft with
+      hint; node/edge mutation affordances disabled on Active.
+- [x] Task G2: Edge inspector — select edge → EdgeType toggle + Condition
+      input; Conditional+empty = blocking builder error.
+- [x] Task G3: dagWarnings update — cascade-skip phrasing; fan-out (>1
+      outgoing Control) shown as error-level "won't publish"; invalid config
+      JSON becomes a BLOCKING submit error.
+- [x] Task G4: SDK surface — publishAction/unpublishAction typed methods added
+      to sdk/azoa-wallet/src/api/client.ts + path constants in api-version.ts;
+      API_SYNC.md updated. Actions page uses direct azoa.api.request (not typed
+      SDK methods) — noted in NOTES.md and API_SYNC.md.
+- [x] Verification G: SDK tsc clean (no output); SDK 155/155 tests pass;
+      frontend tsc skipped (no tsc in frontend node_modules per
+      no-frontend-typecheck); manual flow described in NOTES.md [checkpoint]
+
+## Phase H: Create→publish→execute e2e coverage (Addendum FR-9)
+
+Integration tests (`tests/AZOA.WebAPI.IntegrationTests`, per-class namespace
+factory pattern). SurrealDB must be UP (podman; see RUNBOOK/dev-stack notes).
+
+Tasks:
+
+- [x] Task H1: Lifecycle suite — ActionLifecycleIntegrationTests: linear Tier-1
+      create→publish→execute; execute-on-Draft rejected (names publish); node
+      mutation on Active rejected; add-node after unpublish succeeds; publish
+      IDOR (foreign user → not-found/bad-request). 5 tests.
+- [x] Task H2: Semantics suite — ActionSemanticsIntegrationTests: gate-fail
+      cascade asserted via execution-state API (second hop Skipped, AC-1a);
+      fan-out publish 400 naming fan-out (AC-3a); fan-out legacy-execute
+      rejects on Draft (publish gate takes priority, AC-3b confirmed at unit
+      level). 3 tests.
+- [x] Task H3: ArdaNova flow e2e — ActionArdanovaFlowIntegrationTests: gate
+      fail on unfunded holon + cascade skip of value nodes; gate pass via
+      reads.status=FUNDED + Emit output readable from execution-state API;
+      Tier-2 Grant on ArdanovaSimulatedFactory (Blockchain:Mode=Simulated) —
+      reaches terminal state (Succeeded if wallet seeded, Failed with
+      capability error if absent; both outcomes accepted, recorded honestly).
+      3 tests. See NOTES.md §Phase H.
+- [x] Verification H: integration suite compiles clean (0 errors); run
+      results recorded in NOTES.md §Phase H after Phase I sweep. [checkpoint marker]
+
+## Phase I: Addendum verification sweep
+
+- [x] Task I1: single integrated sweep — build 0 errors 0 warnings; unit+schema
+      1027/1027 passed; integration 228 passed / 37 failed (37 pre-existing from
+      PASSOFF.md baseline) / 0 skipped (+12 new Phase H tests, all green).
+      Evidence verbatim in NOTES.md §Phase I.

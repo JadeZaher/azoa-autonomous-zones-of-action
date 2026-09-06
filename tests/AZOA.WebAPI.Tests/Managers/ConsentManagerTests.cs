@@ -40,7 +40,7 @@ public class ConsentManagerTests
         var r = await _mgr.GrantAsync(user, tenant, new[] { AzoaScopes.SwapSign }, GrantOrigin.UserExplicit, null, null);
 
         r.IsError.Should().BeFalse();
-        r.Result!.GrantorAvatarId.Should().Be(user);
+        r.Result!.GrantorUserId.Should().Be(user);
         // AC10 audit + AC7 webhook on grant.
         _audit.Verify(a => a.AppendAsync(It.Is<ConsentAuditEntry>(e => e.Action == ConsentAuditAction.Granted), It.IsAny<CancellationToken>()), Times.Once);
         _webhook.Verify(w => w.EmitAsync(ConsentWebhookEventType.Granted, It.IsAny<ConsentGrant>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -51,7 +51,7 @@ public class ConsentManagerTests
     {
         var user = Guid.NewGuid(); var tenant = Guid.NewGuid();
         // A Participation grant MUST NOT carry a value-signing scope.
-        var r = await _mgr.GrantAsync(user, tenant, new[] { AzoaScopes.QuestExecute, AzoaScopes.SwapSign },
+        var r = await _mgr.GrantAsync(user, tenant, new[] { AzoaScopes.ActionExecute, AzoaScopes.SwapSign },
             GrantOrigin.Participation, "participation-1", null);
 
         r.IsError.Should().BeTrue();
@@ -63,7 +63,7 @@ public class ConsentManagerTests
     public async Task Grant_Participation_NonValueScopes_Succeeds()
     {
         var user = Guid.NewGuid(); var tenant = Guid.NewGuid();
-        var r = await _mgr.GrantParticipationAsync(user, tenant, "participation-1", new[] { AzoaScopes.QuestExecute });
+        var r = await _mgr.GrantParticipationAsync(user, tenant, "participation-1", new[] { AzoaScopes.ActionExecute });
 
         r.IsError.Should().BeFalse();
         r.Result!.Origin.Should().Be(GrantOrigin.Participation);
@@ -79,7 +79,7 @@ public class ConsentManagerTests
         _grants.Setup(g => g.GetByIdAsync(grantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<ConsentGrant>
             {
-                Result = new ConsentGrant { Id = grantId, GrantorAvatarId = owner, TenantId = Guid.NewGuid() }
+                Result = new ConsentGrant { Id = grantId, GrantorUserId = owner, TenantId = Guid.NewGuid() }
             });
 
         var r = await _mgr.RevokeAsync(attacker, grantId, default);
@@ -97,7 +97,7 @@ public class ConsentManagerTests
         _grants.Setup(g => g.GetByIdAsync(grantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<ConsentGrant>
             {
-                Result = new ConsentGrant { Id = grantId, GrantorAvatarId = owner, TenantId = Guid.NewGuid(),
+                Result = new ConsentGrant { Id = grantId, GrantorUserId = owner, TenantId = Guid.NewGuid(),
                     Scopes = new List<string> { AzoaScopes.SwapSign } }
             });
 
@@ -114,8 +114,8 @@ public class ConsentManagerTests
     public async Task RevokeByParticipation_ExactMatch_WithinTenantGrantsOnly_L3()
     {
         var tenant = Guid.NewGuid();
-        var g1 = new ConsentGrant { Id = Guid.NewGuid(), GrantorAvatarId = Guid.NewGuid(), TenantId = tenant,
-            Origin = GrantOrigin.Participation, ParticipationRef = "p-1", Scopes = new List<string> { AzoaScopes.QuestExecute } };
+        var g1 = new ConsentGrant { Id = Guid.NewGuid(), GrantorUserId = Guid.NewGuid(), TenantId = tenant,
+            Origin = GrantOrigin.Participation, ParticipationRef = "p-1", Scopes = new List<string> { AzoaScopes.ActionExecute } };
         _grants.Setup(g => g.ListByTenantAndParticipationRefAsync(tenant, "p-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IEnumerable<ConsentGrant>> { Result = new[] { g1 } });
 

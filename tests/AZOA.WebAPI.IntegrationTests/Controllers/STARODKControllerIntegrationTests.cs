@@ -130,7 +130,7 @@ public class STARODKControllerIntegrationTests : IntegrationTestBase
     public async Task Deploy_ShouldSetDeploymentConfig()
     {
         // GeneratedCode is not a create-model field (STARODKCreateModel carries only
-        // Name/Description/PublicKey/AvatarId) — the seed builder's WithGeneratedCode
+        // Name/Description/PublicKey/UserId) — the seed builder's WithGeneratedCode
         // is dropped on POST. GeneratedCode is set ONLY by the generate endpoint, so
         // deploy must be preceded by a real generate (the production flow).
         var odk = await SeedSTARODKAsync();
@@ -207,27 +207,27 @@ public class STARODKControllerIntegrationTests : IntegrationTestBase
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // IDOR closure (security: cross-avatar overwrite prevention)
+    // IDOR closure (security: cross-user overwrite prevention)
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task Update_DifferentAvatar_Returns403()
+    public async Task Update_DifferentUser_Returns403()
     {
-        // Avatar A creates a record via the default authenticated client.
-        var avatarA_record = await SeedSTARODKAsync(o => o.WithName("A's secret"));
+        // User A creates a record via the default authenticated client.
+        var userA_record = await SeedSTARODKAsync(o => o.WithName("A's secret"));
 
-        // Avatar B authenticates and attempts to PUT to A's id.
-        var avatarB = Guid.Parse("b2222222-2222-2222-2222-222222222222");
-        using var clientB = Factory.CreateAuthenticatedClientForAvatar(avatarB);
+        // User B authenticates and attempts to PUT to A's id.
+        var userB = Guid.Parse("b2222222-2222-2222-2222-222222222222");
+        using var clientB = Factory.CreateAuthenticatedClientForUser(userB);
         var hijack = new STARODKBuilder().WithName("Owned by B now").WithDescription("hijack").BuildCreateModel();
 
-        var response = await clientB.PutAsJsonAsync($"api/starodk/{avatarA_record.Id}", hijack);
+        var response = await clientB.PutAsJsonAsync($"api/starodk/{userA_record.Id}", hijack);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
-            "PUT IDOR must be closed -- a different avatar cannot overwrite A's record by route id");
+            "PUT IDOR must be closed -- a different user cannot overwrite A's record by route id");
 
         // And the underlying record is untouched.
-        var verify = await Client.GetAsync($"api/starodk/{avatarA_record.Id}");
+        var verify = await Client.GetAsync($"api/starodk/{userA_record.Id}");
         verify.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<STARODK>(verify);
         result!.Result!.Name.Should().Be("A's secret");
@@ -237,7 +237,7 @@ public class STARODKControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Update_OwnRecord_Returns200()
     {
-        // Same authenticated avatar can update its own record by route id.
+        // Same authenticated user can update its own record by route id.
         var odk = await SeedSTARODKAsync(o => o.WithName("Mine").WithDescription("v1"));
         var update = new STARODKBuilder().WithName("Mine").WithDescription("v2").BuildCreateModel();
 
@@ -250,16 +250,16 @@ public class STARODKControllerIntegrationTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task CreateOrUpdate_DifferentAvatar_SameName_DoesNotOverwrite()
+    public async Task CreateOrUpdate_DifferentUser_SameName_DoesNotOverwrite()
     {
-        // POST IDOR closure: Avatar A and Avatar B both POST "Foo" -> two distinct records.
+        // POST IDOR closure: User A and User B both POST "Foo" -> two distinct records.
         var modelA = new STARODKBuilder().WithName("Foo").WithDescription("A's Foo").BuildCreateModel();
         var responseA = await Client.PostAsJsonAsync("api/starodk", modelA);
         responseA.StatusCode.Should().Be(HttpStatusCode.OK);
         var resultA = await ReadResultAsync<STARODK>(responseA);
 
-        var avatarB = Guid.Parse("b3333333-3333-3333-3333-333333333333");
-        using var clientB = Factory.CreateAuthenticatedClientForAvatar(avatarB);
+        var userB = Guid.Parse("b3333333-3333-3333-3333-333333333333");
+        using var clientB = Factory.CreateAuthenticatedClientForUser(userB);
         var modelB = new STARODKBuilder().WithName("Foo").WithDescription("B's Foo").BuildCreateModel();
         var responseB = await clientB.PostAsJsonAsync("api/starodk", modelB);
         responseB.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -270,7 +270,7 @@ public class STARODKControllerIntegrationTests : IntegrationTestBase
         resultA.Result.Description.Should().Be("A's Foo");
         resultB.Result.Description.Should().Be("B's Foo");
 
-        // Each avatar's scoped list shows its own record with original data preserved.
+        // Each user's scoped list shows its own record with original data preserved.
         var listResponse = await Client.GetAsync("api/starodk");
         var list = await ReadResultAsync<IEnumerable<STARODK>>(listResponse);
         list!.Result.Should().Contain(s => s.Id == resultA.Result.Id && s.Description == "A's Foo");

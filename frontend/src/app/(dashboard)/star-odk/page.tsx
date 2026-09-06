@@ -37,7 +37,7 @@ interface OdkItem {
   targetChain?: string
   isActive?: boolean
   publicKey?: string
-  avatarId?: string
+  userId?: string
   [key: string]: unknown
 }
 
@@ -98,7 +98,7 @@ function CreateOdkDialog({ onCreated }: { onCreated: () => void }) {
     name: '',
     description: '',
     publicKey: '',
-    avatarId: '',
+    userId: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -114,12 +114,12 @@ function CreateOdkDialog({ onCreated }: { onCreated: () => void }) {
       const body: Record<string, string> = { name: form.name }
       if (form.description) body.description = form.description
       if (form.publicKey) body.publicKey = form.publicKey
-      if (form.avatarId) body.avatarId = form.avatarId
+      if (form.userId) body.userId = form.userId
 
       const result = await azoa.api.request('POST', '/api/starodk', body)
       if (isOk(result)) {
         setOpen(false)
-        setForm({ name: '', description: '', publicKey: '', avatarId: '' })
+        setForm({ name: '', description: '', publicKey: '', userId: '' })
         onCreated()
       } else {
         setError((result as { error: { message: string } }).error.message)
@@ -165,11 +165,11 @@ function CreateOdkDialog({ onCreated }: { onCreated: () => void }) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Avatar ID (optional)</Label>
+            <Label>User ID (optional)</Label>
             <Input
-              placeholder="Avatar ID"
-              value={form.avatarId}
-              onChange={(e) => set('avatarId', e.target.value)}
+              placeholder="User ID"
+              value={form.userId}
+              onChange={(e) => set('userId', e.target.value)}
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}

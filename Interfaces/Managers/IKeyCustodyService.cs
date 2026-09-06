@@ -26,11 +26,11 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 public interface IKeyCustodyService
 {
     /// <summary>
-    /// Resolve the per-Avatar signing key for <paramref name="walletId"/>, hand its
+    /// Resolve the per-User signing key for <paramref name="walletId"/>, hand its
     /// decrypted bytes to <paramref name="sign"/>, and zero them before returning.
     /// <para>
     /// Flow (mirrors <c>WalletManager.ExportWalletAsync</c>): load wallet → IDOR
-    /// guard (<c>wallet.AvatarId == avatarId</c>, else error <b>before any
+    /// guard (<c>wallet.UserId == userId</c>, else error <b>before any
     /// decrypt</b>) → type guard (<see cref="WalletType.Platform"/> only) →
     /// non-empty ciphertext → decrypt JIT into a <see cref="byte"/> array →
     /// <c>try { sign(key) } finally { ZeroMemory(key) }</c>.
@@ -38,14 +38,14 @@ public interface IKeyCustodyService
     /// </summary>
     /// <typeparam name="T">The signer's result type (e.g. signed-envelope bytes).</typeparam>
     /// <param name="walletId">The wallet whose key signs.</param>
-    /// <param name="avatarId">The authenticated caller's avatar; the ownership authority.</param>
+    /// <param name="userId">The authenticated caller's user; the ownership authority.</param>
     /// <param name="sign">
     /// The signing callback. Receives the decrypted private-key bytes for the
     /// duration of the call only; the array is zeroed once the callback returns
     /// or throws. The callback MUST NOT retain the bytes.
     /// </param>
     /// <returns>The signer's result wrapped in <see cref="AZOAResult{T}"/>; NEVER the key.</returns>
-    Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign);
+    Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid userId, Func<byte[], Task<T>> sign);
 
     /// <summary>
     /// tenant-consent-delegation C1/AC4: the consent-aware per-user resolve. Same
@@ -54,8 +54,8 @@ public interface IKeyCustodyService
     /// it ALSO consults the live consent gate from <paramref name="ctx"/> BEFORE any
     /// decrypt. When <paramref name="ctx"/> is tenant-driven
     /// (<see cref="SigningContext.IsTenantDriven"/>), a missing/revoked/expired/
-    /// out-of-scope grant FAILS CLOSED — even though <c>wallet.AvatarId ==
-    /// ctx.AvatarId</c> passes the legacy ownership check. A user-driven context
+    /// out-of-scope grant FAILS CLOSED — even though <c>wallet.UserId ==
+    /// ctx.UserId</c> passes the legacy ownership check. A user-driven context
     /// behaves identically to the two-arg overload.
     /// </summary>
     Task<AZOAResult<T>> WithSigningKeyAsync<T>(SigningContext ctx, Func<byte[], Task<T>> sign);
@@ -64,7 +64,7 @@ public interface IKeyCustodyService
     /// Resolve the <b>platform</b> signing key (a config-sourced pseudo-wallet, not
     /// a per-user record) and run the same decrypt→sign→zero contract.
     /// <para>
-    /// The platform pseudo-wallet has no <c>AvatarId</c> to compare, so the
+    /// The platform pseudo-wallet has no <c>UserId</c> to compare, so the
     /// ownership guard is replaced by a <b>caller-asserted authority flag</b>:
     /// <paramref name="isPlatformContext"/> must be <c>true</c>. Only
     /// platform-authority managers (never a controller) may call this with
@@ -115,11 +115,11 @@ public interface IKeyCustodyService
 
     /// <summary>
     /// Ownership/eligibility predicate — <b>no decrypt</b>. Lets callers pre-flight
-    /// whether <paramref name="walletId"/> is signable by <paramref name="avatarId"/>
+    /// whether <paramref name="walletId"/> is signable by <paramref name="userId"/>
     /// (exists, owned, <see cref="WalletType.Platform"/>, has ciphertext) without
     /// touching key material.
     /// </summary>
-    Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid avatarId);
+    Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid userId);
 
     /// <summary>
     /// <b>Design + stub.</b> Re-wrap a wallet's encrypted private key (and seed

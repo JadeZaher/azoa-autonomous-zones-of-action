@@ -26,12 +26,12 @@ public sealed class RealValueKycGateTests
     [Fact]
     public async Task CurrentFiniteApproval_Succeeds()
     {
-        var avatarId = Guid.NewGuid();
-        SetupLatest(avatarId, KycStatus.APPROVED, DateTimeOffset.UtcNow.AddDays(1));
-        _screening.SeedResult(avatarId, null, KycScreeningDecision.NO_HIT);
+        var userId = Guid.NewGuid();
+        SetupLatest(userId, KycStatus.APPROVED, DateTimeOffset.UtcNow.AddDays(1));
+        _screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT);
 
         var result = await Gate()
-            .RequireCurrentApprovalAsync(avatarId);
+            .RequireCurrentApprovalAsync(userId);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().BeTrue();
@@ -44,16 +44,16 @@ public sealed class RealValueKycGateTests
     [InlineData(KycStatus.PENDING, 1)]
     public async Task NonCurrentApproval_FailsClosed(KycStatus status, int? expiryOffsetDays)
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         SetupLatest(
-            avatarId,
+            userId,
             status,
             expiryOffsetDays.HasValue
                 ? DateTimeOffset.UtcNow.AddDays(expiryOffsetDays.Value)
                 : null);
 
         var result = await Gate()
-            .RequireCurrentApprovalAsync(avatarId);
+            .RequireCurrentApprovalAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Result.Should().BeFalse();
@@ -63,10 +63,10 @@ public sealed class RealValueKycGateTests
     [Fact]
     public async Task AuthorityReadFailure_FailsClosedWithoutLeakingStoreMessage()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var exception = new InvalidOperationException("internal storage detail");
-        _store.Setup(item => item.GetLatestSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(item => item.GetLatestSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<KycSubmission>
             {
                 IsError = true,
@@ -75,7 +75,7 @@ public sealed class RealValueKycGateTests
             });
 
         var result = await Gate()
-            .RequireCurrentApprovalAsync(avatarId);
+            .RequireCurrentApprovalAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().NotContain("store failure");
@@ -85,17 +85,17 @@ public sealed class RealValueKycGateTests
     [Fact]
     public async Task RetiredPolicyApproval_FailsClosed()
     {
-        var avatarId = Guid.NewGuid();
-        SetupLatest(avatarId, KycStatus.APPROVED, DateTimeOffset.UtcNow.AddDays(1));
-        _store.Setup(item => item.GetLatestSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        var userId = Guid.NewGuid();
+        SetupLatest(userId, KycStatus.APPROVED, DateTimeOffset.UtcNow.AddDays(1));
+        _store.Setup(item => item.GetLatestSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(Submission(
-                avatarId,
+                userId,
                 KycStatus.APPROVED,
                 DateTimeOffset.UtcNow.AddDays(1),
                 new KycApprovalProfile(KycProvider.VERIFF, "veriff", "retired-v1", "substantial"))));
 
-        var result = await Gate().RequireCurrentApprovalAsync(avatarId);
+        var result = await Gate().RequireCurrentApprovalAsync(userId);
 
         result.IsError.Should().BeTrue();
     }
@@ -103,17 +103,17 @@ public sealed class RealValueKycGateTests
     [Fact]
     public async Task ManualApprovalInProduction_FailsClosedDespiteAllowList()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var provider = ReadyProvider(KycProvider.MANUAL, "manual");
         var profile = new KycApprovalProfile(
             KycProvider.MANUAL,
             "manual",
             "manual-v1",
             "development-manual");
-        _store.Setup(item => item.GetLatestSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(item => item.GetLatestSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(Submission(
-                avatarId,
+                userId,
                 KycStatus.APPROVED,
                 DateTimeOffset.UtcNow.AddDays(1),
                 profile)));
@@ -126,7 +126,7 @@ public sealed class RealValueKycGateTests
             Options.Create(settings),
             HostEnvironment(Environments.Production));
 
-        var result = await gate.RequireCurrentApprovalAsync(avatarId);
+        var result = await gate.RequireCurrentApprovalAsync(userId);
 
         result.IsError.Should().BeTrue();
     }
@@ -134,17 +134,17 @@ public sealed class RealValueKycGateTests
     [Fact]
     public async Task ManualApprovalInDevelopment_StillCannotAuthorizeRealValue()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var provider = ReadyProvider(KycProvider.MANUAL, "manual");
         var profile = new KycApprovalProfile(
             KycProvider.MANUAL,
             "manual",
             "manual-v1",
             "development-manual");
-        _store.Setup(item => item.GetLatestSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(item => item.GetLatestSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(Submission(
-                avatarId,
+                userId,
                 KycStatus.APPROVED,
                 DateTimeOffset.UtcNow.AddDays(1),
                 profile)));
@@ -157,18 +157,18 @@ public sealed class RealValueKycGateTests
             Options.Create(settings),
             HostEnvironment(Environments.Development));
 
-        var result = await gate.RequireCurrentApprovalAsync(avatarId);
+        var result = await gate.RequireCurrentApprovalAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Result.Should().BeFalse();
     }
 
-    private void SetupLatest(Guid avatarId, KycStatus status, DateTimeOffset? expiresAt)
+    private void SetupLatest(Guid userId, KycStatus status, DateTimeOffset? expiresAt)
     {
-        _store.Setup(item => item.GetLatestSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(item => item.GetLatestSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(Submission(
-                avatarId,
+                userId,
                 status,
                 expiresAt,
                 CurrentProfile())));
@@ -182,13 +182,13 @@ public sealed class RealValueKycGateTests
         HostEnvironment(Environments.Production));
 
     private static KycSubmission Submission(
-        Guid avatarId,
+        Guid userId,
         KycStatus status,
         DateTimeOffset? expiresAt,
         KycApprovalProfile profile) => new()
     {
         Id = Guid.NewGuid().ToString("N"),
-        AvatarId = avatarId.ToString("N"),
+        UserId = userId.ToString("N"),
         Provider = profile.Provider,
         ProviderKey = profile.ProviderKey,
         ProviderResult = KycApprovalTrust.CreateEnvelope(profile),

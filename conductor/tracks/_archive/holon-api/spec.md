@@ -8,14 +8,14 @@ Expose a unified Holon API that allows users to create, read, update, delete, an
 | Method | Route | Description |
 |--------|-------|-------------|
 | GET | `/api/holon/{id}` | Get holon by id |
-| GET | `/api/holon` | Query holons (filter by provider, chain, asset type, owner/avatar) |
+| GET | `/api/holon` | Query holons (filter by provider, chain, asset type, owner/user) |
 | POST | `/api/holon` | Create / update a holon |
 | DELETE | `/api/holon/{id}` | Delete a holon |
 | POST | `/api/holon/{id}/interact` | Orchestrate an interaction between this holon and others |
 
 ## Authentication
 - All endpoints require JWT Bearer auth
-- Holons are scoped to the authenticated avatar (owner-based access control)
+- Holons are scoped to the authenticated user (owner-based access control)
 
 ## Models
 - `Holon` — core holon model with metadata, provider refs, chain refs, asset type
@@ -24,7 +24,7 @@ Expose a unified Holon API that allows users to create, read, update, delete, an
 - `HolonInteractionRequest` — payload for orchestrating multi-holon operations
 
 ## Provider Overrides
-- Same pattern as Avatar API: optional `AZOARequest` switches provider via `ProviderContext`
+- Same pattern as User API: optional `AZOARequest` switches provider via `ProviderContext`
 - Providers must implement `IHolonStorageProvider` (extends `IAZOAStorageProvider`)
 
 ## NFT-as-Storage
@@ -39,7 +39,7 @@ Expose a unified Holon API that allows users to create, read, update, delete, an
 
 ## Acceptance Criteria
 - [ ] All 5 endpoints return `AZOAResult<T>` or `AZOAResponse`
-- [ ] Only authenticated users can access; holons scoped to avatar
+- [ ] Only authenticated users can access; holons scoped to user
 - [ ] Provider switching works via `AZOARequest` in body
 - [ ] NFT-as-storage provider can map token data to holon model
 - [ ] Cross-provider query aggregates results from all active providers

@@ -17,10 +17,10 @@ public interface IConsentGrantStore
     /// grantor/tenant scope themselves before exposing it.</summary>
     Task<AZOAResult<ConsentGrant>> GetByIdAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>User-scoped list (AC1, <c>GET /api/avatar/consent</c>): only grants
+    /// <summary>User-scoped list (AC1, <c>GET /api/user/consent</c>): only grants
     /// THIS user made. A cross-user probe yields an empty list, never another user's
     /// grants.</summary>
-    Task<AZOAResult<IEnumerable<ConsentGrant>>> ListByGrantorAsync(Guid grantorAvatarId, CancellationToken ct = default);
+    Task<AZOAResult<IEnumerable<ConsentGrant>>> ListByGrantorAsync(Guid grantorUserId, CancellationToken ct = default);
 
     /// <summary>Tenant-scoped list (AC1/L2, <c>GET /api/tenant/consent</c>): only
     /// grants made TO this tenant. A tenant can never receive another tenant's or a
@@ -36,7 +36,7 @@ public interface IConsentGrantStore
     /// context, never a request body.
     /// </summary>
     Task<AZOAResult<ConsentGrant>> FindCoveringGrantAsync(
-        Guid grantorAvatarId, Guid tenantId, string scope, DateTime now, CancellationToken ct = default);
+        Guid grantorUserId, Guid tenantId, string scope, DateTime now, CancellationToken ct = default);
 
     /// <summary>
     /// L3 offboard: the grants for <c>(tenant, participationRef)</c> EXACT-match,
@@ -49,10 +49,10 @@ public interface IConsentGrantStore
     /// <summary>
     /// user-sovereign-identity AC3b (security-review fix): revoke EVERY live grant this
     /// user made, stamping <c>RevokedAt = now</c> on each. Called when a user CLAIMS
-    /// their avatar — the residual tenant authority over a now-self-sovereign user must
+    /// their user — the residual tenant authority over a now-self-sovereign user must
     /// die the instant custody is severed, so a stale child JWT (whose nbf may predate
     /// the claim watermark) finds no covering live grant at the signing seam. Scoped to
     /// the grantor's OWN grants only. Returns the count revoked.
     /// </summary>
-    Task<AZOAResult<int>> RevokeAllByGrantorAsync(Guid grantorAvatarId, DateTime now, CancellationToken ct = default);
+    Task<AZOAResult<int>> RevokeAllByGrantorAsync(Guid grantorUserId, DateTime now, CancellationToken ct = default);
 }

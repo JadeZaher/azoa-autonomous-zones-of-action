@@ -64,27 +64,27 @@ public sealed class RealValueKycGate : IRealValueKycGate
 
     /// <inheritdoc/>
     public async Task<AZOAResult<bool>> RequireCurrentApprovalAsync(
-        Guid avatarId,
+        Guid userId,
         CancellationToken ct = default)
-        => await RequireCurrentApprovalCoreAsync(avatarId, null, ct);
+        => await RequireCurrentApprovalCoreAsync(userId, null, ct);
 
     public async Task<AZOAResult<bool>> RequireCurrentApprovalAsync(
-        Guid avatarId,
+        Guid userId,
         Guid tenantId,
         CancellationToken ct = default)
-        => await RequireCurrentApprovalCoreAsync(avatarId, tenantId, ct);
+        => await RequireCurrentApprovalCoreAsync(userId, tenantId, ct);
 
     private async Task<AZOAResult<bool>> RequireCurrentApprovalCoreAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct)
     {
-        if (avatarId == Guid.Empty)
+        if (userId == Guid.Empty)
             return Denied();
 
         var latest = tenantId.HasValue || _registry is not null
-            ? await _store.GetLatestSubmissionAsync(avatarId, tenantId, ct)
-            : await _store.GetLatestSubmissionByAvatarAsync(avatarId, ct);
+            ? await _store.GetLatestSubmissionAsync(userId, tenantId, ct)
+            : await _store.GetLatestSubmissionByUserAsync(userId, ct);
         if (latest.IsError)
             return Denied(latest.Exception);
 
@@ -111,7 +111,7 @@ public sealed class RealValueKycGate : IRealValueKycGate
                 out _))
         {
             // Identity holds. AML is the separate question, and it is required.
-            if (await IsAmlClearAsync(avatarId, tenantId, ct))
+            if (await IsAmlClearAsync(userId, tenantId, ct))
                 return AZOAResult<bool>.Success(true);
         }
 
@@ -120,12 +120,12 @@ public sealed class RealValueKycGate : IRealValueKycGate
 
     /// <summary>
     /// Fail-closed AML read, identical in policy to <c>KycGateService</c>: only
-    /// NO_HIT on a non-truncated result for this exact (avatar, tenant) pair passes.
+    /// NO_HIT on a non-truncated result for this exact (user, tenant) pair passes.
     /// A missing result denies, a store error denies, MANUAL_REVIEW denies.
     /// </summary>
-    private async Task<bool> IsAmlClearAsync(Guid avatarId, Guid? tenantId, CancellationToken ct)
+    private async Task<bool> IsAmlClearAsync(Guid userId, Guid? tenantId, CancellationToken ct)
     {
-        var screening = await _screeningStore.GetLatestResultAsync(avatarId, tenantId, ct);
+        var screening = await _screeningStore.GetLatestResultAsync(userId, tenantId, ct);
         if (screening.IsError || screening.Result is null)
             return false;
 

@@ -29,7 +29,7 @@ namespace AZOA.WebAPI.Controllers;
 ///
 /// <para><b>IDOR rule</b> (mirrors <c>WalletAuthController</c>): every owned identity id
 /// comes from the authenticated principal or a single-use token, never a request body.
-/// The link flow needs an avatar id across a top-level redirect that carries no
+/// The link flow needs an user id across a top-level redirect that carries no
 /// Authorization header, so it threads one through a single-use LINK code minted from
 /// an authenticated request — never a query parameter.</para>
 /// </remarks>
@@ -42,14 +42,14 @@ public sealed class ExternalAuthController : ControllerBase
 
     private readonly IExternalLoginService _externalLogins;
     private readonly IOAuthExchangeCodeService _exchangeCodes;
-    private readonly IAvatarLoginTokenIssuer _tokenIssuer;
+    private readonly IUserLoginTokenIssuer _tokenIssuer;
     private readonly ExternalAuthOptions _options;
     private readonly ILogger<ExternalAuthController> _logger;
 
     public ExternalAuthController(
         IExternalLoginService externalLogins,
         IOAuthExchangeCodeService exchangeCodes,
-        IAvatarLoginTokenIssuer tokenIssuer,
+        IUserLoginTokenIssuer tokenIssuer,
         IOptions<ExternalAuthOptions> options,
         ILogger<ExternalAuthController> logger)
     {
@@ -109,7 +109,7 @@ public sealed class ExternalAuthController : ControllerBase
 
     /// <summary>
     /// Lands here after the handler has validated <c>state</c>, verified PKCE, and
-    /// exchanged the code. Resolves the avatar and hands the SPA a single-use code.
+    /// exchanged the code. Resolves the user and hands the SPA a single-use code.
     /// </summary>
     [HttpGet("{provider}/callback")]
     [AllowAnonymous]
@@ -170,31 +170,31 @@ public sealed class ExternalAuthController : ControllerBase
                 redeemed.Message, AzoaErrorCodes.InvalidRequest));
         }
 
-        if (!Guid.TryParse(redeemed.Result.AvatarId, out var avatarId))
+        if (!Guid.TryParse(redeemed.Result.UserId, out var userId))
             return Unauthorized(AZOAResult<ExternalAuthTokenResponse>.FailureWithCode(
                 "This sign-in link is invalid or has expired. Start again.",
                 AzoaErrorCodes.InvalidRequest));
 
-        // Re-read the avatar at redemption time rather than trusting anything cached in
+        // Re-read the user at redemption time rather than trusting anything cached in
         // the code row: a deactivation between callback and exchange must take effect.
-        var avatar = await _externalLogins.ResolveBoundAvatarAsync(avatarId, HttpContext.RequestAborted);
-        if (avatar.IsError || avatar.Result is null)
+        var user = await _externalLogins.ResolveBoundUserAsync(userId, HttpContext.RequestAborted);
+        if (user.IsError || user.Result is null)
         {
             return Unauthorized(AZOAResult<ExternalAuthTokenResponse>.FailureWithCode(
                 "This account is not available.", AzoaErrorCodes.Forbidden));
         }
 
         // The SAME issuer the password path uses — identical claims, lifetime, and
-        // signing parameters. See AvatarLoginTokenIssuer.
-        var token = _tokenIssuer.IssueLoginToken(avatar.Result);
+        // signing parameters. See UserLoginTokenIssuer.
+        var token = _tokenIssuer.IssueLoginToken(user.Result);
 
         return Ok(AZOAResult<ExternalAuthTokenResponse>.Success(
             new ExternalAuthTokenResponse
             {
                 Token = token,
-                AvatarId = avatar.Result.Id,
-                Username = avatar.Result.Username,
-                Email = avatar.Result.Email,
+                UserId = user.Result.Id,
+                Username = user.Result.Username,
+                Email = user.Result.Email,
                 Provider = ExternalAuthProviderNames.ToRouteSegment(redeemed.Result.Provider),
                 ReturnTo = SafeReturnTo(redeemed.Result.ReturnTo),
             },
@@ -202,12 +202,12 @@ public sealed class ExternalAuthController : ControllerBase
     }
 
     /// <summary>
-    /// Mints the single-use ticket that authorises attaching a provider to THIS avatar.
+    /// Mints the single-use ticket that authorises attaching a provider to THIS user.
     /// </summary>
     /// <remarks>
     /// Rule 1's "explicit user action from an already-authenticated session" lives here:
     /// the ticket can only be obtained with a valid login JWT, and the subsequent
-    /// redirect carries the ticket rather than an avatar id, so a caller can never name
+    /// redirect carries the ticket rather than an user id, so a caller can never name
     /// an account other than their own.
     /// </remarks>
     [HttpPost("{provider}/link/start")]
@@ -220,8 +220,8 @@ public sealed class ExternalAuthController : ControllerBase
         if (!TryResolveEnabledProvider(provider, out var resolved, out var failure))
             return failure;
 
-        var avatarId = GetAvatarId();
-        if (avatarId == Guid.Empty)
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
             return Unauthorized(AZOAResult<ExternalAuthLinkTicketResponse>.FailureWithCode(
                 "Sign in first.", AzoaErrorCodes.Forbidden));
 
@@ -231,7 +231,7 @@ public sealed class ExternalAuthController : ControllerBase
 
         var ticket = await _exchangeCodes.MintAsync(
             OAuthExchangeCodePurpose.LINK,
-            avatarId,
+            userId,
             resolved,
             tenantId,
             KycPersonKeyDeriver.ScopeValue(tenantId),
@@ -251,17 +251,17 @@ public sealed class ExternalAuthController : ControllerBase
             "Ticket minted."));
     }
 
-    /// <summary>Providers currently attached to the authenticated avatar.</summary>
+    /// <summary>Providers currently attached to the authenticated user.</summary>
     [HttpGet("links")]
     [Authorize]
     public async Task<ActionResult<AZOAResult<IReadOnlyList<ExternalAuthLinkResponse>>>> Links()
     {
-        var avatarId = GetAvatarId();
-        if (avatarId == Guid.Empty)
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
             return Unauthorized(AZOAResult<IReadOnlyList<ExternalAuthLinkResponse>>.FailureWithCode(
                 "Sign in first.", AzoaErrorCodes.Forbidden));
 
-        var links = await _externalLogins.ListLinksAsync(avatarId, HttpContext.RequestAborted);
+        var links = await _externalLogins.ListLinksAsync(userId, HttpContext.RequestAborted);
         if (links.IsError)
             return StatusCode(503, AZOAResult<IReadOnlyList<ExternalAuthLinkResponse>>.FailureWithCode(
                 links.Message, AzoaErrorCodes.DependencyUnavailable));
@@ -280,7 +280,7 @@ public sealed class ExternalAuthController : ControllerBase
         return Ok(AZOAResult<IReadOnlyList<ExternalAuthLinkResponse>>.Success(projected, "Success"));
     }
 
-    /// <summary>Detaches a provider from the authenticated avatar.</summary>
+    /// <summary>Detaches a provider from the authenticated user.</summary>
     [HttpDelete("links/{provider}")]
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<bool>>> Unlink(
@@ -291,15 +291,15 @@ public sealed class ExternalAuthController : ControllerBase
             return BadRequest(AZOAResult<bool>.FailureWithCode(
                 "Unsupported provider.", AzoaErrorCodes.InvalidRequest));
 
-        var avatarId = GetAvatarId();
-        if (avatarId == Guid.Empty)
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
             return Unauthorized(AZOAResult<bool>.FailureWithCode("Sign in first.", AzoaErrorCodes.Forbidden));
 
         if (!TryNormalizeTenant(tenant, out var tenantId))
             return BadRequest(AZOAResult<bool>.FailureWithCode(
                 "The tenant parameter is not a valid identifier.", AzoaErrorCodes.InvalidRequest));
 
-        var result = await _externalLogins.UnlinkAsync(resolved, avatarId, tenantId, HttpContext.RequestAborted);
+        var result = await _externalLogins.UnlinkAsync(resolved, userId, tenantId, HttpContext.RequestAborted);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
@@ -315,13 +315,13 @@ public sealed class ExternalAuthController : ControllerBase
         Guid? tenantId,
         string? returnTo)
     {
-        var avatar = await _externalLogins.ResolveOrCreateAsync(identity, tenantId, HttpContext.RequestAborted);
-        if (avatar.IsError || avatar.Result is null)
+        var user = await _externalLogins.ResolveOrCreateAsync(identity, tenantId, HttpContext.RequestAborted);
+        if (user.IsError || user.Result is null)
             return RedirectToFrontend(error: "sign_in_failed", returnTo: returnTo);
 
         var code = await _exchangeCodes.MintAsync(
             OAuthExchangeCodePurpose.SESSION,
-            avatar.Result.Id,
+            user.Result.Id,
             provider,
             tenantId,
             KycPersonKeyDeriver.ScopeValue(tenantId),
@@ -343,7 +343,7 @@ public sealed class ExternalAuthController : ControllerBase
             linkTicket, OAuthExchangeCodePurpose.LINK, HttpContext.RequestAborted);
 
         if (redeemed.IsError || redeemed.Result is null
-            || !Guid.TryParse(redeemed.Result.AvatarId, out var avatarId))
+            || !Guid.TryParse(redeemed.Result.UserId, out var userId))
         {
             return RedirectToFrontend(error: "link_failed", returnTo: returnTo);
         }
@@ -357,8 +357,8 @@ public sealed class ExternalAuthController : ControllerBase
 
         Guid? tenantId = Guid.TryParse(redeemed.Result.TenantId, out var parsed) ? parsed : null;
 
-        var linked = await _externalLogins.LinkToAvatarAsync(
-            identity, avatarId, tenantId, HttpContext.RequestAborted);
+        var linked = await _externalLogins.LinkToUserAsync(
+            identity, userId, tenantId, HttpContext.RequestAborted);
 
         return linked.IsError
             ? RedirectToFrontend(error: "link_conflict", returnTo: returnTo)
@@ -440,9 +440,9 @@ public sealed class ExternalAuthController : ControllerBase
         return true;
     }
 
-    private Guid GetAvatarId()
+    private Guid GetUserId()
     {
-        var claim = User.FindFirst("AvatarId")?.Value
+        var claim = User.FindFirst("UserId")?.Value
             ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
         return Guid.TryParse(claim, out var id) ? id : Guid.Empty;

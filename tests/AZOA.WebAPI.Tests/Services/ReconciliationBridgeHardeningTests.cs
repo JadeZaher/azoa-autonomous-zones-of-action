@@ -765,7 +765,7 @@ public class ReconciliationBridgeHardeningTests
             var row = new BridgeTransactionResult
             {
                 Id = $"br_{Guid.NewGuid():N}",
-                AvatarId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
                 SourceChain = "Algorand",
                 TargetChain = "Algorand",
                 SourceTokenId = "token1",

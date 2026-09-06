@@ -32,10 +32,10 @@ Wire the application with a modern `Program.cs` (minimal-hosting style) or clean
 
 ## Exclusions
 - No Karma service registration
-- No legacy `AvatarManager` singleton unless it fits the new pattern
+- No legacy `UserManager` singleton unless it fits the new pattern
 
 ## Acceptance Criteria
 - [ ] `dotnet run` launches without errors
-- [ ] Swagger UI shows Avatar and STAR controllers only
+- [ ] Swagger UI shows User and STAR controllers only
 - [ ] JWT-protected endpoints reject anonymous requests
 - [ ] ProviderContext resolves correctly per request

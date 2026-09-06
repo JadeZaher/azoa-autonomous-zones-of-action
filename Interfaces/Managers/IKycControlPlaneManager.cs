@@ -10,7 +10,7 @@ public interface IKycControlPlaneManager
     Task<AZOAResult<KycProviderProfileResponse>> UpdateProfileAsync(
         string providerKey,
         UpdateKycProviderProfileRequest request,
-        Guid operatorAvatarId,
+        Guid operatorUserId,
         CancellationToken ct = default);
     Task<AZOAResult<IReadOnlyList<TenantKycProviderChoiceResponse>>> ListTenantChoicesAsync(
         Guid tenantId,
@@ -22,7 +22,7 @@ public interface IKycControlPlaneManager
     Task<AZOAResult<TenantKycSelectionResponse>> SelectTenantProviderAsync(
         Guid tenantId,
         SelectTenantKycProviderRequest request,
-        Guid actorAvatarId,
+        Guid actorUserId,
         bool requireTenantAuthority,
         CancellationToken ct = default);
     Task<AZOAResult<CursorPage<OperatorTenantKycSummaryResponse>>> ListTenantsAsync(
@@ -38,7 +38,7 @@ public interface IKycControlPlaneManager
     Task<AZOAResult<OperatorKycSubmissionQueueItem>> DecideAsync(
         Guid submissionId,
         OperatorKycDecisionRequest request,
-        Guid operatorAvatarId,
+        Guid operatorUserId,
         CancellationToken ct = default);
     Task<AZOAResult<NodeOperatorOverviewResponse>> GetOverviewAsync(CancellationToken ct = default);
     Task<AZOAResult<CursorPage<KycControlAuditResponse>>> ListAuditAsync(

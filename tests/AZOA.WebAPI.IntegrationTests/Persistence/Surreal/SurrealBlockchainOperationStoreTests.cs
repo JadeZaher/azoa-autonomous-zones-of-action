@@ -90,7 +90,7 @@ public sealed class SurrealBlockchainOperationStoreTests : IAsyncLifetime
 
         var op = new BlockchainOperationBuilder()
             .WithId(Guid.NewGuid())
-            .ForAvatar(Guid.NewGuid())
+            .ForUser(Guid.NewGuid())
             .OfType("Mint")
             .WithStatus(OperationStatus.Pending)
             .Build();
@@ -106,7 +106,7 @@ public sealed class SurrealBlockchainOperationStoreTests : IAsyncLifetime
         getResult.Message.Should().Be("Success");
         getResult.Result.Should().NotBeNull();
         getResult.Result!.Id.Should().Be(op.Id);
-        getResult.Result.AvatarId.Should().Be(op.AvatarId);
+        getResult.Result.UserId.Should().Be(op.UserId);
         getResult.Result.OperationType.Should().Be("Mint");
         getResult.Result.Status.Should().Be(OperationStatus.Pending);
     }
@@ -118,7 +118,7 @@ public sealed class SurrealBlockchainOperationStoreTests : IAsyncLifetime
 
         var op = new BlockchainOperationBuilder()
             .WithId(Guid.NewGuid())
-            .ForAvatar(Guid.NewGuid())
+            .ForUser(Guid.NewGuid())
             .OfType("Transfer")
             .WithStatus(OperationStatus.PendingConfirmation)
             .Build();
@@ -150,31 +150,31 @@ public sealed class SurrealBlockchainOperationStoreTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Test 3: GetByAvatar returns only operations belonging to that avatar.
+    /// Test 3: GetByUser returns only operations belonging to that user.
     /// </summary>
     [SkippableFact]
-    public async Task GetByAvatar_FiltersCorrectly()
+    public async Task GetByUser_FiltersCorrectly()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var targetAvatar = Guid.NewGuid();
-        var otherAvatar  = Guid.NewGuid();
+        var targetUser = Guid.NewGuid();
+        var otherUser  = Guid.NewGuid();
 
-        var op1 = new BlockchainOperationBuilder().WithId(Guid.NewGuid()).ForAvatar(targetAvatar).Build();
-        var op2 = new BlockchainOperationBuilder().WithId(Guid.NewGuid()).ForAvatar(targetAvatar).Build();
-        var op3 = new BlockchainOperationBuilder().WithId(Guid.NewGuid()).ForAvatar(otherAvatar).Build();
+        var op1 = new BlockchainOperationBuilder().WithId(Guid.NewGuid()).ForUser(targetUser).Build();
+        var op2 = new BlockchainOperationBuilder().WithId(Guid.NewGuid()).ForUser(targetUser).Build();
+        var op3 = new BlockchainOperationBuilder().WithId(Guid.NewGuid()).ForUser(otherUser).Build();
 
         await _store.UpsertAsync(op1);
         await _store.UpsertAsync(op2);
         await _store.UpsertAsync(op3);
 
-        var result = await _store.GetByAvatarAsync(targetAvatar);
+        var result = await _store.GetByUserAsync(targetUser);
 
         result.IsError.Should().BeFalse();
         result.Message.Should().Be("Success");
         var list = result.Result!.ToList();
         list.Should().HaveCount(2);
-        list.All(o => o.AvatarId == targetAvatar).Should().BeTrue();
+        list.All(o => o.UserId == targetUser).Should().BeTrue();
     }
 
     /// <summary>

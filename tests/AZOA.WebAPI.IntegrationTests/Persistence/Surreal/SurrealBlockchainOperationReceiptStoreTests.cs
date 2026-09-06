@@ -58,15 +58,15 @@ public sealed class SurrealBlockchainOperationReceiptStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var correlation = new string('b', 64);
-        var initiatorAvatarId = Guid.NewGuid();
+        var initiatorUserId = Guid.NewGuid();
         var initiatorApiKeyId = Guid.NewGuid();
         var operation = new BlockchainOperation
         {
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             OperationType = "Mint",
             Status = OperationStatus.Pending,
             IdempotencyKey = correlation,
-            InitiatorAvatarId = initiatorAvatarId,
+            InitiatorUserId = initiatorUserId,
             InitiatorApiKeyId = initiatorApiKeyId,
         };
 
@@ -78,7 +78,7 @@ public sealed class SurrealBlockchainOperationReceiptStoreTests : IAsyncLifetime
         loaded.Result.Should().NotBeNull();
         loaded.Result!.Id.Should().Be(operation.Id);
         loaded.Result.IdempotencyKey.Should().Be(correlation);
-        loaded.Result.InitiatorAvatarId.Should().Be(initiatorAvatarId);
+        loaded.Result.InitiatorUserId.Should().Be(initiatorUserId);
         loaded.Result.InitiatorApiKeyId.Should().Be(initiatorApiKeyId);
     }
 
@@ -90,11 +90,11 @@ public sealed class SurrealBlockchainOperationReceiptStoreTests : IAsyncLifetime
         var correlation = new string('c', 64);
         var operation = new BlockchainOperation
         {
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             OperationType = "Mint",
             Status = OperationStatus.Pending,
             IdempotencyKey = correlation,
-            InitiatorAvatarId = Guid.NewGuid(),
+            InitiatorUserId = Guid.NewGuid(),
         };
 
         var created = await _store.UpsertAsync(operation);
@@ -118,7 +118,7 @@ public sealed class SurrealBlockchainOperationReceiptStoreTests : IAsyncLifetime
 
         var operation = new BlockchainOperation
         {
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             OperationType = "Mint",
             Status = OperationStatus.Pending,
             IdempotencyKey = "payment-intent-secret",

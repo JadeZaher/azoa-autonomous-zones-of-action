@@ -36,7 +36,7 @@ public sealed class AllocationReceiptResponse
     public bool RequiresReconciliation { get; init; }
 
     /// <summary>Target account facts included only when a safe allocation result exists.</summary>
-    public Guid? AvatarId { get; init; }
+    public Guid? UserId { get; init; }
     public Guid? WalletId { get; init; }
     public string? WalletAddress { get; init; }
     public bool? WalletProvisioned { get; init; }

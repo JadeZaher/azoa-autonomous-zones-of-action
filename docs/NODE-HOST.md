@@ -15,10 +15,10 @@ engine** — this guide supersedes the Postgres/EF sections in `GO-TO-PROD.md` a
 An AZOA node is two cooperating processes:
 
 - **The WebAPI** — the .NET 10 ASP.NET Core host (`AZOA.WebAPI.dll`). It serves the
-  AZOA protocol (identity, quests, holons, swaps, STAR, bridge) over HTTP with
+  AZOA protocol (identity, actions, holons, swaps, STAR, bridge) over HTTP with
   dual auth (JWT + `X-Api-Key`).
 - **A SurrealDB instance it owns** — the sole data engine. The node reads and
-  writes durable state (quests, idempotency claims, VAA replay ledger, bridge
+  writes durable state (actions, idempotency claims, VAA replay ledger, bridge
   rows) here. **Balances are read from the chain, never stored** — the source of
   truth for value is the chain confirmation / settlement callback, not a row in
   SurrealDB.
@@ -206,13 +206,13 @@ but an operator MUST know which is which before flipping anything on:
 including Algorand, is rejected rather than silently no-op'd. Wormhole requests
 remain hard-blocked even if the global switch is accidentally enabled.
 
-**Forward-compat residual (record before you make quests shareable).** Value-node
-actor derivation currently reads the **quest definition** owner (`quest.AvatarId`).
-That is correct only while a run's actor equals the quest owner. **If quests ever
-become shareable/public** (a run driven by someone other than the quest author),
-the value-node actor MUST switch from `quest.AvatarId` to the **run** owner
-(`run.AvatarId`) so value acts as the run's driver, not the template's author.
-This is a launch-safe residual today (quests are not shareable) — flag it for the
+**Forward-compat residual (record before you make actions shareable).** Value-node
+actor derivation currently reads the **action definition** owner (`action.UserId`).
+That is correct only while a run's actor equals the action owner. **If actions ever
+become shareable/public** (a run driven by someone other than the action author),
+the value-node actor MUST switch from `action.UserId` to the **run** owner
+(`run.UserId`) so value acts as the run's driver, not the template's author.
+This is a launch-safe residual today (actions are not shareable) — flag it for the
 change that makes them so.
 
 ---
@@ -429,16 +429,16 @@ External options are explicit but unavailable until reviewed integrations land:
 Both external choices report unavailable even when their config is complete.
 They are extension contracts, not working integrations. Do not enable one until
 it has durable idempotent attempts, persisted hosted sessions, raw-body webhook
-signature verification, event replay protection, attempt/avatar mapping, and
+signature verification, event replay protection, attempt/user mapping, and
 CAS terminal status. Full contract: `TENANT-CUSTODIAL-ONBOARDING.md`.
 
-**Note:** the **mint path is KYC-gated** — an unverified avatar is rejected at
+**Note:** the **mint path is KYC-gated** — an unverified user is rejected at
 the single mint choke point with no asset created, whether it arrives via the
 allocation door or a raw mint call. Whether wallet-generation should also be
 gated pre-KYC (a zero-balance wallet before verification) is a deployment policy
 decision you make; by default wallet provisioning is allowed pre-KYC.
 
-**Verify:** an unverified, expired, indefinite, or stale-policy avatar is denied
+**Verify:** an unverified, expired, indefinite, or stale-policy user is denied
 at mint (403); `manual` reports available only in Development; production
 manual, `veriff`, `hosted`, and unknown values report unavailable and do not
 create a submission.
@@ -448,21 +448,21 @@ create a submission.
 The provisioning surface (`api/tenant`) and the step-by-step onboarding runbook
 already exist. As the operator you actually execute them for your first tenant:
 
-- Register the first tenant avatar.
+- Register the first tenant user.
 - Mint its **tenant-scoped API key** with `tenant:provision`, `wallet:manage`,
   `kyc:read`, and `kyc:submit` by calling JWT-Operator-only
-  `POST /api/apikey/tenant` with the existing tenant avatar id, a name, and a
+  `POST /api/apikey/tenant` with the existing tenant user id, a name, and a
   1–365 day expiry. The raw key is returned once with no-store headers; store it
   as a tenant-side secret. The endpoint accepts no arbitrary scopes or origins.
 - Call the create-only `PUT /api/tenant/custodial-accounts/{externalSubject}`
   with a stable `Idempotency-Key`, then persist only the returned public ids and
-  readiness fields. A claimed avatar is resolved, never overwritten.
+  readiness fields. A claimed user is resolved, never overwritten.
 
 Follow the generic onboarding steps: register tenant → mint tenant-scoped key →
 provision children → issue child credential → resolve by external id.
 
 **Verify:** the tenant's key authenticates, and an external user id resolves to
-the expected avatar.
+the expected user.
 
 ### 8.7 Provision Guardian sets and run the Railway deploy
 
@@ -504,11 +504,11 @@ deliberately introduced brand string.
 
 ### 8.9 Seed and operate the reserved node authority
 
-Node authority no longer promotes an ordinary avatar. The API owns one reserved
+Node authority no longer promotes an ordinary user. The API owns one reserved
 identity (`a20a0000-0000-4000-8000-000000000001`,
 `node-operator@azoa.invalid`) and binds it durably on first launch. Its token is
 dedicated to node operations, API-key-forbidden, and never enters ordinary
-avatar or tenant login.
+user or tenant login.
 
 Set this complete triplet on the API before the first Production boot:
 
@@ -562,7 +562,7 @@ compatibility check only. Do not configure them for a new node. Production
 still refuses a half-configured legacy pair so an old deployment error cannot
 remain silent.
 
-**Verify:** the reserved credentials reach `/operator`; an ordinary avatar JWT
+**Verify:** the reserved credentials reach `/operator`; an ordinary user JWT
 and an `X-Api-Key` do not. Rotation succeeds only with a higher revision, global
 revocation signs out all browsers, and ordinary sign-out leaves other browsers
 active.

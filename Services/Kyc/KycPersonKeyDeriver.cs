@@ -8,7 +8,7 @@ using AZOA.WebAPI.Settings;
 namespace AZOA.WebAPI.Services.Kyc;
 
 /// <summary>
-/// Derives the pseudonymous person key that binds a real human to their avatars
+/// Derives the pseudonymous person key that binds a real human to their users
 /// without retaining the raw document identifiers. See
 /// <c>Persistence/SurrealDb/Models/AGENTS.md</c> §kyc-identity-binding for the
 /// rationale; this type is the only place the derivation recipe exists.

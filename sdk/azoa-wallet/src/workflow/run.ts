@@ -1,13 +1,13 @@
 /**
- * The fluent `quest()` run driver — the headline of the workflow SDK.
+ * The fluent `action()` run driver — the headline of the workflow SDK.
  *
- * `quest(questId)` / `quest.fromTemplate(templateId)` / `quest.run(runId)` open a
+ * `action(actionId)` / `action.fromTemplate(templateId)` / `action.run(runId)` open a
  * {@link WorkflowRunHandle} (D3 — explicit variants, no id-shape sniffing). The
  * handle is a **thenable** (D7): each chained method (`.start` / `.step` /
  * `.signal`) enqueues an async op and returns `this`, so
  *
  * ```ts
- * const r = await quest(questId).start({ params }).step(nodeB).step(nodeC);
+ * const r = await action(actionId).start({ params }).step(nodeB).step(nodeC);
  * ```
  *
  * issues `start-workflow → advance{fromNodeId:nodeB} → advance{fromNodeId:nodeC}`
@@ -15,7 +15,7 @@
  * FIRST `err` short-circuits the rest of the chain (no throw — Result discipline);
  * the terminal `then` resolves to that error.
  *
- * `.forActor(childAvatarId)` makes a tenant principal act FOR a child avatar: on
+ * `.forActor(childUserId)` makes a tenant principal act FOR a child user: on
  * the first advancement call the handle lazily acquires a child credential
  * (tenant `X-Api-Key` is the principal for that call), caches the child JWT for
  * the handle's lifetime, re-acquires it on expiry (deduped like the API client's
@@ -40,7 +40,7 @@ import {
 
 /** How the handle was opened — disambiguates `.start()` behavior (D3). */
 type HandleSource =
-  | { kind: "quest"; questId: string }
+  | { kind: "action"; actionId: string }
   | { kind: "template"; templateId: string }
   | { kind: "run"; runId: string };
 
@@ -48,21 +48,21 @@ type HandleSource =
 export type SuspendCallback = (run: WorkflowRunResult) => void;
 
 /**
- * A bound, chainable, awaitable durable-run handle. Construct via the {@link quest}
+ * A bound, chainable, awaitable durable-run handle. Construct via the {@link action}
  * factory; do not instantiate directly.
  */
 export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, SdkError>> {
   private readonly workflow: WorkflowClient;
 
-  /** The concrete run id once `.start()` (or `quest.run`) has bound it. */
+  /** The concrete run id once `.start()` (or `action.run`) has bound it. */
   private _runId?: string;
   /** The most recent run projection returned by any advancement / status call. */
   private _lastRun?: WorkflowRunResult;
   /** Sticky terminal error: once set, every queued op short-circuits to it. */
   private _error?: SdkError;
 
-  /** The child avatar this handle acts FOR (lazy credential), if `.forActor` set. */
-  private _actorAvatarId?: string;
+  /** The child user this handle acts FOR (lazy credential), if `.forActor` set. */
+  private _actorUserId?: string;
   /** Cached child JWT + its expiry, per the handle's lifetime. */
   private _childToken?: { token: string; expiresAt: number };
   /** Deduped in-flight credential acquisition (mirrors `_refreshInFlight`). */
@@ -87,13 +87,13 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
   // ─── Configuration ───
 
   /**
-   * Act FOR a child avatar: a tenant principal (authed by `X-Api-Key`) lazily
+   * Act FOR a child user: a tenant principal (authed by `X-Api-Key`) lazily
    * acquires the child's short-lived credential and uses it as the Bearer token
-   * for this run's advancement calls. Takes a plain avatar id — NO brand leak.
+   * for this run's advancement calls. Takes a plain user id — NO brand leak.
    */
-  forActor(childAvatarId: string): this {
-    assertUuid(childAvatarId, "childAvatarId");
-    this._actorAvatarId = childAvatarId;
+  forActor(childUserId: string): this {
+    assertUuid(childUserId, "childUserId");
+    this._actorUserId = childUserId;
     return this;
   }
 
@@ -107,36 +107,36 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
 
   /**
    * Start a durable run. From a template: instantiate with `{{params}}` first,
-   * then `start-workflow` on the resulting quest. From a quest: `start-workflow`
+   * then `start-workflow` on the resulting action. From a action: `start-workflow`
    * directly. From a run: a no-op bind (already started). Binds the handle to the
    * returned `runId`. Chainable.
    *
    * `params.actor`, when present, is treated like `.forActor(actor)` (a plain
-   * avatar id) so `start({ actor })` and `.forActor(id)` are interchangeable.
+   * user id) so `start({ actor })` and `.forActor(id)` are interchangeable.
    */
   start(params?: StartRunParams): this {
     return this._enqueue(async () => {
       if (params?.actor) {
         assertUuid(params.actor, "actor");
-        this._actorAvatarId = params.actor;
+        this._actorUserId = params.actor;
       }
 
-      let questId: string;
+      let actionId: string;
       if (this.source.kind === "template") {
         const inst = await this.workflow.instantiate(
           this.source.templateId,
           params?.params
         );
         if (!isOk(inst)) return err(inst.error);
-        questId = inst.value.id;
-      } else if (this.source.kind === "quest") {
-        questId = this.source.questId;
+        actionId = inst.value.id;
+      } else if (this.source.kind === "action") {
+        actionId = this.source.actionId;
       } else {
         // Already a concrete run — nothing to start; just read current state.
         return this.workflow.getRunStatus(this.source.runId);
       }
 
-      const started = await this.workflow.startWorkflow(questId);
+      const started = await this.workflow.startWorkflow(actionId);
       if (!isOk(started)) return err(started.error);
       this._runId = started.value.id;
       return ok(started.value);
@@ -184,7 +184,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
   // ─── Reads + accessors ───
 
   /**
-   * Explicitly poll the run's current state (`GET /api/quest/runs/{runId}`),
+   * Explicitly poll the run's current state (`GET /api/action/runs/{runId}`),
    * mapped to a typed run projection. Awaits any queued ops first so it reflects
    * the post-chain state. Returns `Result<WorkflowRunResult, SdkError>`.
    */
@@ -196,7 +196,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
       return err(
         new SdkError(
           SdkErrorCode.INVALID_INPUT,
-          "status(): run is not started yet — call .start() (or open with quest.run(runId)) first"
+          "status(): run is not started yet — call .start() (or open with action.run(runId)) first"
         )
       );
     }
@@ -208,7 +208,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
     return res;
   }
 
-  /** The concrete run id, once bound by `.start()` / `quest.run(runId)`. */
+  /** The concrete run id, once bound by `.start()` / `action.run(runId)`. */
   get runId(): string | undefined {
     return this._runId;
   }
@@ -228,7 +228,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
   /**
    * Resolve the queued chain to the final `Result<WorkflowRunResult, SdkError>`.
    * Never rejects: a failed op resolves to its `err` (Result discipline). This is
-   * what makes `await quest(a).start(...).step(b)` work.
+   * what makes `await action(a).start(...).step(b)` work.
    */
   then<TResult1 = Result<WorkflowRunResult, SdkError>, TResult2 = never>(
     onfulfilled?:
@@ -239,7 +239,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
     const settled = this._queue.then<Result<WorkflowRunResult, SdkError>>(() => {
       if (this._error) return err(this._error);
       if (this._lastRun) return ok(this._lastRun);
-      // No advancement op ran (e.g. bare `await quest.run(id)`); surface the
+      // No advancement op ran (e.g. bare `await action.run(id)`); surface the
       // input error rather than a phantom success.
       return err(
         new SdkError(
@@ -290,7 +290,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
     if (!this._runId) {
       throw new SdkError(
         SdkErrorCode.INVALID_INPUT,
-        "advancement called before the run was started — call .start() (or open with quest.run(runId)) first"
+        "advancement called before the run was started — call .start() (or open with action.run(runId)) first"
       );
     }
     return this._runId;
@@ -310,7 +310,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
    * with a deduped in-flight promise (mirrors the API client's `_refreshInFlight`).
    */
   private async _resolveAuthToken(): Promise<Result<string | undefined, SdkError>> {
-    if (!this._actorAvatarId) return ok(undefined);
+    if (!this._actorUserId) return ok(undefined);
 
     const now = Date.now();
     // Re-acquire ~30s before the cached token's stated expiry to avoid using a
@@ -321,9 +321,9 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
     }
 
     if (!this._credentialInFlight) {
-      const avatarId = this._actorAvatarId;
+      const userId = this._actorUserId;
       this._credentialInFlight = (async () => {
-        const res = await this.workflow.issueChildCredential(avatarId);
+        const res = await this.workflow.issueChildCredential(userId);
         if (!isOk(res)) return err(res.error);
         const expiresAt = Date.parse(res.value.expiresAt);
         this._childToken = {
@@ -340,28 +340,28 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
 }
 
 /**
- * The fluent run-driver factory. `quest(questId)` opens a handle bound to an
- * existing quest; use the explicit variants to open from a template or a prior
+ * The fluent run-driver factory. `action(actionId)` opens a handle bound to an
+ * existing action; use the explicit variants to open from a template or a prior
  * run (D3 — no id-shape sniffing).
  *
- * The factory is created per-`AzoaApiClient` by {@link createQuestFactory}; the
- * facade exposes the bound instance as `azoa.workflow.quest`.
+ * The factory is created per-`AzoaApiClient` by {@link createActionFactory}; the
+ * facade exposes the bound instance as `azoa.workflow.action`.
  */
-export interface QuestFactory {
-  /** Open a handle bound to an existing quest id (`assertUuid`-guarded). */
-  (questId: string): WorkflowRunHandle;
+export interface ActionFactory {
+  /** Open a handle bound to an existing action id (`assertUuid`-guarded). */
+  (actionId: string): WorkflowRunHandle;
   /** Open a handle that will instantiate + start from a template (`assertUuid`-guarded). */
   fromTemplate(templateId: string): WorkflowRunHandle;
   /** Open a handle bound to a prior run id, to drive it further (`assertUuid`-guarded). */
   run(runId: string): WorkflowRunHandle;
 }
 
-/** Build a {@link QuestFactory} bound to one API client. */
-export function createQuestFactory(api: AzoaApiClient): QuestFactory {
-  const factory = ((questId: string): WorkflowRunHandle => {
-    assertUuid(questId, "questId");
-    return new WorkflowRunHandle(api, { kind: "quest", questId });
-  }) as QuestFactory;
+/** Build a {@link ActionFactory} bound to one API client. */
+export function createActionFactory(api: AzoaApiClient): ActionFactory {
+  const factory = ((actionId: string): WorkflowRunHandle => {
+    assertUuid(actionId, "actionId");
+    return new WorkflowRunHandle(api, { kind: "action", actionId });
+  }) as ActionFactory;
 
   factory.fromTemplate = (templateId: string): WorkflowRunHandle => {
     assertUuid(templateId, "templateId");

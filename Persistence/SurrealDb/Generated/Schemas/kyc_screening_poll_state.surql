@@ -1,6 +1,6 @@
 -- ============================================================
 -- Table: kyc_screening_poll_state
--- Aggregate: KycIdentity (node-operator-only person<->avatar binding)
+-- Aggregate: KycIdentity (node-operator-only person<->user binding)
 -- Guardrail: G6 SCHEMAFULL
 -- Note: Singleton local policy row keyed 'local', mirroring NodeGovernanceParameters. Holds the ONE date high-water mark for the batched monitoring poll: the whole point of the batched design is a single paginated list call per cycle rather than one call per monitored identity, which would collide with the shared per-IP rate ceiling.
 -- ============================================================

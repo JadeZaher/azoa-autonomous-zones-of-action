@@ -12,13 +12,13 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("nft_ownership",
-        Aggregate = "AvatarNFT (Models/AvatarNFT.cs)",
+        Aggregate = "UserNFT (Models/UserNFT.cs)",
         Guardrail = "G6 SCHEMAFULL")]
     [SurrealNote("is_current distinguishes live ownership from historical transfer rows. Adapter enforces the (chain, contract, token_id, is_current=true) singleton invariant.")]
     [SurrealNote("B3 review: nft_chain_contract_token_current is intentionally NOT UNIQUE because is_current=false rows accumulate as transfer history; uniqueness of the (chain, contract, token_id, is_current=true) tuple is enforced by the adapter setting is_current=false on the prior row before inserting the new one (SurrealDB does not support partial UNIQUE INDEXes).")]
     [Slice("wallet_nft")]
     [Index("nft_chain_contract_token_current", Fields = new[] { "chain_type", "contract_address", "token_id", "is_current" })]
-    [Index("nft_avatar_id", Fields = new[] { "avatar_id" })]
+    [Index("nft_user_id", Fields = new[] { "user_id" })]
     [Index("nft_chain_contract", Fields = new[] { "chain_type", "contract_address" })]
     public partial class NftOwnership : ISurrealRecord
     {
@@ -29,8 +29,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [References(typeof(Avatar))]
-        public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(User))]
+        public string UserId { get; set; } = string.Empty;
 
         [Required(NotEmpty = true)]
         public string ChainType { get; set; } = string.Empty;

@@ -807,7 +807,7 @@ public class ReconciliationServiceTests
             var row = new BridgeTransactionResult
             {
                 Id = $"br_{Guid.NewGuid():N}",
-                AvatarId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
                 SourceChain = "Solana",
                 TargetChain = "Algorand",
                 SourceTokenId = "token1",
@@ -828,7 +828,7 @@ public class ReconciliationServiceTests
             var op = new BlockchainOperation
             {
                 Id = Guid.NewGuid(),
-                AvatarId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
                 WalletId = Guid.NewGuid(),
                 OperationType = "Mint",
                 Status = OperationStatus.Pending,

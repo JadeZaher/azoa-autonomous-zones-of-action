@@ -19,12 +19,12 @@ allocation receipt endpoint for allocation status.
 
 | Controller | Endpoint | HTTP | SDK Method | SDK File | Status |
 |---|---|---|---|---|---|
-| **Avatar** | /api/avatar/register | POST | `register` | client.ts | OK |
-| | /api/avatar/login | POST | `login` | client.ts | OK |
-| | /api/avatar/{id} | GET | `getAvatar` | client.ts | OK |
-| | /api/avatar | GET | `getAllAvatars` | client.ts | OK |
-| | /api/avatar/{id} | PUT | `updateAvatar` | client.ts | OK |
-| | /api/avatar/{id} | DELETE | `deleteAvatar` | client.ts | OK |
+| **User** | /api/user/register | POST | `register` | client.ts | OK |
+| | /api/user/login | POST | `login` | client.ts | OK |
+| | /api/user/{id} | GET | `getUser` | client.ts | OK |
+| | /api/user | GET | `getAllUsers` | client.ts | OK |
+| | /api/user/{id} | PUT | `updateUser` | client.ts | OK |
+| | /api/user/{id} | DELETE | `deleteUser` | client.ts | OK |
 | **Wallet** | /api/wallet/{id} | GET | `getWallet` | client.ts | OK |
 | | /api/wallet | GET | `listWallets` | client.ts | OK |
 | | /api/wallet | POST | `createWallet` | client.ts | OK |
@@ -49,10 +49,10 @@ allocation receipt endpoint for allocation status.
 | | /api/nft/{id}/burn | POST | `burnNft` | client.ts | OK (safe operation projection) |
 | | /api/nft/fungible-mint | POST | `fungibleMint` | client.ts | OK (safe response) |
 | | /api/nft/{id}/metadata | GET | `getNftMetadata` | client.ts | OK |
-| **AvatarNFT** | /api/avatarnft | POST | `mintAvatarNFT` | client.ts | OK |
-| | /api/avatarnft/{id} | GET | `getAvatarNFT` | client.ts | OK |
-| | /api/avatarnft/{id}/transfer | POST | `transferAvatarNFT` | client.ts | OK |
-| | /api/avatarnft/{id}/burn | POST | `burnAvatarNFT` | client.ts | OK |
+| **UserNFT** | /api/usernft | POST | `mintUserNFT` | client.ts | OK |
+| | /api/usernft/{id} | GET | `getUserNFT` | client.ts | OK |
+| | /api/usernft/{id}/transfer | POST | `transferUserNFT` | client.ts | OK |
+| | /api/usernft/{id}/burn | POST | `burnUserNFT` | client.ts | OK |
 | **Bridge** | /api/bridge/routes | GET | `getBridgeRoutes` | client.ts | OK |
 | | /api/bridge/initiate | POST | `initiateBridge` | client.ts | OK (safe response) |
 | | /api/bridge/{id} | GET | `getBridgeStatus` | client.ts | OK (safe response) |
@@ -66,7 +66,7 @@ allocation receipt endpoint for allocation status.
 | | /api/tenant/custodial-accounts/{externalSubject}/kyc/session | POST | `beginTenantKyc` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject}/kyc/submissions | POST | `submitTenantKyc` | client.ts | OK |
 | **BlockchainOperation** | /api/blockchainoperation/{id} | GET | `getBlockchainOperation` | client.ts | OK (safe projection) |
-| | /api/blockchainoperation/avatar/{avatarId} | GET | `getBlockchainOperationsByAvatar` | client.ts | OK (safe projection) |
+| | /api/blockchainoperation/user/{userId} | GET | `getBlockchainOperationsByUser` | client.ts | OK (safe projection) |
 | **Allocation receipt** | /api/allocation/receipt | GET | — | — | SDK gap (API-key caller surface; .NET SDK track) |
 | | /api/allocation/receipt/reconcile | POST | — | — | SDK gap (API-key caller surface; .NET SDK track) |
 | **STARODK** | /api/starodk/{id} | GET | `getSTARODK` | client.ts | OK |
@@ -76,38 +76,38 @@ allocation receipt endpoint for allocation status.
 | | /api/starodk/{id} | DELETE | `deleteSTARODK` | client.ts | OK |
 | | /api/starodk/{id}/generate-dapp | POST | `generateSTARDapp` | client.ts | OK |
 | | /api/starodk/{id}/deploy | POST | `deploySTARODK` | client.ts | OK |
-| **Quest** | /api/quest | POST | `createQuest` | client.ts | OK |
-| | /api/quest/{id} | GET | `getQuest` | client.ts | OK |
-| | /api/quest/avatar/{avatarId} | GET | `listQuestsByAvatar` | client.ts | OK |
-| | /api/quest/{id} | PUT | `updateQuest` | client.ts | OK |
-| | /api/quest/{id} | DELETE | `deleteQuest` | client.ts | OK |
-| | /api/quest/{id}/validate | POST | `validateQuestDag` | client.ts | OK |
-| | /api/quest/{id}/publish | POST | `publishQuest` | client.ts | OK |
-| | /api/quest/{id}/unpublish | POST | `unpublishQuest` | client.ts | OK |
-| | /api/quest/{id}/execute | POST | `executeQuest` | client.ts | OK |
-| | /api/quest/{id}/nodes/{nodeId}/execute | POST | `executeQuestNode` | client.ts | OK |
-| | /api/quest/templates | POST | `createQuestTemplate` | client.ts | OK |
-| | /api/quest/templates/{id} | GET | `getQuestTemplate` | client.ts | OK |
-| | /api/quest/templates | GET | `listQuestTemplates` | client.ts | OK |
-| | /api/quest/templates/{id}/instantiate | POST | `instantiateQuestTemplate` | client.ts | OK |
-| | /api/quest/node-templates | POST | `createQuestNodeTemplate` | client.ts | OK |
-| | /api/quest/node-templates | GET | `listQuestNodeTemplates` | client.ts | OK |
-| | /api/quest/{questId}/nodes | GET | — | — | **SDK gap** |
-| | /api/quest/{questId}/nodes | POST | — | — | **SDK gap** |
-| | /api/quest/{questId}/nodes/{nodeId} | PUT | — | — | **SDK gap** |
-| | /api/quest/{questId}/nodes/{nodeId} | DELETE | — | — | **SDK gap** |
-| | /api/quest/{questId}/edges | POST | — | — | **SDK gap** |
-| | /api/quest/{questId}/edges/{edgeId} | DELETE | — | — | **SDK gap** |
-| | /api/quest/{questId}/topological-order | GET | — | — | **SDK gap** |
-| | /api/quest/{questId}/dependencies | POST | — | — | **SDK gap** |
-| | /api/quest/{questId}/dependencies/{depId} | DELETE | — | — | **SDK gap** |
-| | /api/quest/{questId}/dependency-status | GET | — | — | **SDK gap** |
-| | /api/quest/runs/{runId} | GET | — | — | **SDK gap** |
-| | /api/quest/{questId}/runs | GET | — | — | **SDK gap** |
-| | /api/quest/runs/{runId}/execution-state | GET | — | — | **SDK gap** |
-| | /api/quest/runs/{runId}/complete | POST | — | — | **SDK gap** |
-| | /api/quest/runs/{runId}/fork | POST | — | — | **SDK gap** |
-| | /api/quest/runs/{runId}/mark-failed | POST | — | — | **SDK gap** |
+| **ActionDefinition** | /api/action | POST | `createAction` | client.ts | OK |
+| | /api/action/{id} | GET | `getAction` | client.ts | OK |
+| | /api/action/user/{userId} | GET | `listActionsByUser` | client.ts | OK |
+| | /api/action/{id} | PUT | `updateAction` | client.ts | OK |
+| | /api/action/{id} | DELETE | `deleteAction` | client.ts | OK |
+| | /api/action/{id}/validate | POST | `validateActionDag` | client.ts | OK |
+| | /api/action/{id}/publish | POST | `publishAction` | client.ts | OK |
+| | /api/action/{id}/unpublish | POST | `unpublishAction` | client.ts | OK |
+| | /api/action/{id}/execute | POST | `executeAction` | client.ts | OK |
+| | /api/action/{id}/nodes/{nodeId}/execute | POST | `executeActionNode` | client.ts | OK |
+| | /api/action/templates | POST | `createActionTemplate` | client.ts | OK |
+| | /api/action/templates/{id} | GET | `getActionTemplate` | client.ts | OK |
+| | /api/action/templates | GET | `listActionTemplates` | client.ts | OK |
+| | /api/action/templates/{id}/instantiate | POST | `instantiateActionTemplate` | client.ts | OK |
+| | /api/action/node-templates | POST | `createActionNodeTemplate` | client.ts | OK |
+| | /api/action/node-templates | GET | `listActionNodeTemplates` | client.ts | OK |
+| | /api/action/{actionId}/nodes | GET | — | — | **SDK gap** |
+| | /api/action/{actionId}/nodes | POST | — | — | **SDK gap** |
+| | /api/action/{actionId}/nodes/{nodeId} | PUT | — | — | **SDK gap** |
+| | /api/action/{actionId}/nodes/{nodeId} | DELETE | — | — | **SDK gap** |
+| | /api/action/{actionId}/edges | POST | — | — | **SDK gap** |
+| | /api/action/{actionId}/edges/{edgeId} | DELETE | — | — | **SDK gap** |
+| | /api/action/{actionId}/topological-order | GET | — | — | **SDK gap** |
+| | /api/action/{actionId}/dependencies | POST | — | — | **SDK gap** |
+| | /api/action/{actionId}/dependencies/{depId} | DELETE | — | — | **SDK gap** |
+| | /api/action/{actionId}/dependency-status | GET | — | — | **SDK gap** |
+| | /api/action/runs/{runId} | GET | — | — | **SDK gap** |
+| | /api/action/{actionId}/runs | GET | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/execution-state | GET | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/complete | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/fork | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/mark-failed | POST | — | — | **SDK gap** |
 | **Search** | /api/search | POST | `search` | client.ts | OK |
 | | /api/search/facets | GET | `getSearchFacets` | client.ts | OK |
 | **ApiKey** | /api/apikey | POST | `createApiKey` | client.ts | OK |
@@ -137,13 +137,13 @@ allocation receipt endpoint for allocation status.
 
 ### Open Drift
 
-5. **`GET /api/blockchainoperation` (list all)** — Only `getByAvatar` and `getById` exist; no list-all method.
+5. **`GET /api/blockchainoperation` (list all)** — Only `getByUser` and `getById` exist; no list-all method.
 
-6. **`DELETE /api/quest/templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
+6. **`DELETE /api/action/templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
 
-7. **`DELETE /api/quest/node-templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
+7. **`DELETE /api/action/node-templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
 
-8. **Quest sub-resource endpoints (nodes, edges, dependencies, runs) — 16 new controller routes** — Shipped in `quest-api` phase-F. No SDK methods exist yet. See the SDK gap rows in the Quest section above.
+8. **ActionDefinition sub-resource endpoints (nodes, edges, dependencies, runs) — 16 new controller routes** — Shipped in `action-api` phase-F. No SDK methods exist yet. See the SDK gap rows in the ActionDefinition section above.
 
 ## How to Keep This Current
 
@@ -162,7 +162,7 @@ allocation receipt endpoint for allocation status.
 
 **Last reconciled:** 2026-07-18 (tenant custody/KYC SDK contract and bridge route corrections)
 
-**Note:** The quests page (`frontend/src/app/(dashboard)/quests/page.tsx`) uses `azoa.api.request(...)` directly rather than the typed SDK quest methods. The publish/unpublish calls on the page are therefore direct HTTP calls, not `publishQuest`/`unpublishQuest`. The typed SDK methods exist for external SDK consumers. This gap is tracked as part of the existing quest sub-resource SDK gap (row 8 in "Open Drift" above).
+**Note:** The actions page (`frontend/src/app/(dashboard)/actions/page.tsx`) uses `azoa.api.request(...)` directly rather than the typed SDK action methods. The publish/unpublish calls on the page are therefore direct HTTP calls, not `publishAction`/`unpublishAction`. The typed SDK methods exist for external SDK consumers. This gap is tracked as part of the existing action sub-resource SDK gap (row 8 in "Open Drift" above).
 
 ## Next integration track
 

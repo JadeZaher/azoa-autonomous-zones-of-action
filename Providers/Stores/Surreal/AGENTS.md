@@ -62,16 +62,16 @@ full feature rationale; this note covers only the persistence choices.
   (`AZOA_REGENERATE_GOLDENS=1` or the CLI). `surrealforge up` picks the new file up
   lexically with no manifest registration.
 
-## quest_webhook_event outbox (final-hardening F3)
+## action_webhook_event outbox (final-hardening F3)
 
-`SurrealQuestWebhookOutboxStore` is a column-for-column mirror of
+`SurrealActionWebhookOutboxStore` is a column-for-column mirror of
 `SurrealConsentWebhookOutboxStore`: CREATE a row, then a polling worker scans due rows
 (`status='Pending' AND next_attempt_at<=now`, oldest first) and transitions them with
 conditional single-winner `UPDATE ... WHERE status='Pending'` (`AffectedCount()==1` is
 the arbiter). Status literals are bound params so the schema `ASSERT INSIDE [...]`
-compares the same tokens. FK columns are record-links: `tenant_id→avatar`,
-`run_id→quest_run`, `node_id→quest_node`, `quest_id→quest`. It is the GENERIC quest.emit
-mirror of the consent outbox; see `Services/Webhooks/AGENTS.md §quest-webhook`.
+compares the same tokens. FK columns are record-links: `tenant_id→user`,
+`run_id→action_run`, `node_id→action_node`, `action_id→action`. It is the GENERIC action.emit
+mirror of the consent outbox; see `Services/Webhooks/AGENTS.md §action-webhook`.
 
 ## §surrealql-3x-wire-surface — SurrealDB 3.1.4 audit (final-hardening E3)
 
@@ -92,7 +92,7 @@ Invariants to preserve when adding stores:
   keep binding the set as a param so schema `ASSERT INSIDE [...]` compares the same tokens.
 - **Multi-statement atomicity is one HTTP request.** 3.x scopes a transaction to a single
   `/rpc` request, so compose `BEGIN; …; COMMIT;` via `SurrealQuery.Combine(...)` (see
-  `SurrealQuestRunStore` fork path) — never as separate stateless requests. RELATE cannot
+  `SurrealActionRunStore` fork path) — never as separate stateless requests. RELATE cannot
   parse an inline `type::record(...)` on either side of the `->edge->` arrow, so bind both
   endpoints to `LET` vars first, then `RELATE $_child->forked_from->$_parent`.
 - **SELECT hits only DEFINED tables.** 3.x errors on `SELECT ... FROM undefined_table`
@@ -245,7 +245,7 @@ null `option<>` fields. A mapping that only serializes a collection when
 non-empty (`X = list.Count > 0 ? ... : null`) therefore makes "empty the
 collection" a silent no-op: the null is dropped from the SET clause and the
 stale stored value survives. Found in Holon (Phase H), then confirmed by audit
-in Star (`bound_holon_ids`), Nft AvatarNFT (`attributes`), and
+in Star (`bound_holon_ids`), Nft UserNFT (`attributes`), and
 BlockchainOperation (`parameters`) — all fixed 2026-07-06.
 
 Rules for any SET-upserted store mapping:

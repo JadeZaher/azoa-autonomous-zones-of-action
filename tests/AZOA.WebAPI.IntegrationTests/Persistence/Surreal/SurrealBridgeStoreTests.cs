@@ -58,7 +58,7 @@ public class SurrealBridgeStoreTests : IntegrationTestBase
 
         loaded.Should().NotBeNull();
         loaded!.Id.Should().Be(bridge.Id);
-        loaded.AvatarId.Should().Be(bridge.AvatarId);
+        loaded.UserId.Should().Be(bridge.UserId);
         loaded.SourceChain.Should().Be(bridge.SourceChain);
         loaded.TargetChain.Should().Be(bridge.TargetChain);
         loaded.SourceTokenId.Should().Be(bridge.SourceTokenId);
@@ -81,27 +81,27 @@ public class SurrealBridgeStoreTests : IntegrationTestBase
         loaded.Should().BeNull();
     }
 
-    // ── GetBridgeHistory filters by avatar + orders by CreatedAt ──────────────
+    // ── GetBridgeHistory filters by user + orders by CreatedAt ──────────────
 
     [SkippableFact]
-    public async Task GetBridgeHistory_FiltersByAvatarAndOrdersAscending()
+    public async Task GetBridgeHistory_FiltersByUserAndOrdersAscending()
     {
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(), "SurrealDB test container not reachable at http://localhost:8442 — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
         var store = await CreateStoreAsync();
 
-        var avatarA = Guid.NewGuid();
-        var avatarB = Guid.NewGuid();
+        var userA = Guid.NewGuid();
+        var userB = Guid.NewGuid();
         var baseTime = DateTime.UtcNow.AddMinutes(-10);
 
-        await store.AddBridgeAsync(NewBridge("br_h_a2", avatarA, createdAt: baseTime.AddMinutes(2)));
-        await store.AddBridgeAsync(NewBridge("br_h_a1", avatarA, createdAt: baseTime.AddMinutes(1)));
-        await store.AddBridgeAsync(NewBridge("br_h_b1", avatarB, createdAt: baseTime.AddMinutes(3)));
+        await store.AddBridgeAsync(NewBridge("br_h_a2", userA, createdAt: baseTime.AddMinutes(2)));
+        await store.AddBridgeAsync(NewBridge("br_h_a1", userA, createdAt: baseTime.AddMinutes(1)));
+        await store.AddBridgeAsync(NewBridge("br_h_b1", userB, createdAt: baseTime.AddMinutes(3)));
 
-        var historyA = await store.GetBridgeHistoryAsync(avatarA);
+        var historyA = await store.GetBridgeHistoryAsync(userA);
 
         historyA.Should().HaveCount(2);
         historyA.Select(b => b.Id).Should().ContainInOrder("br_h_a1", "br_h_a2");
-        historyA.Should().OnlyContain(b => b.AvatarId == avatarA);
+        historyA.Should().OnlyContain(b => b.UserId == userA);
     }
 
     // ── GetNonTerminalBridgeIds: status + stale + batch + order ───────────────
@@ -389,14 +389,14 @@ public class SurrealBridgeStoreTests : IntegrationTestBase
 
     private static BridgeTransactionResult NewBridge(
         string id,
-        Guid? avatarId = null,
+        Guid? userId = null,
         DateTime? createdAt = null,
         BridgeStatus status = BridgeStatus.Initiated)
     {
         return new BridgeTransactionResult
         {
             Id            = id,
-            AvatarId      = avatarId ?? Guid.NewGuid(),
+            UserId      = userId ?? Guid.NewGuid(),
             SourceChain   = "Algorand",
             TargetChain   = "Solana",
             SourceTokenId = "ASA:123",

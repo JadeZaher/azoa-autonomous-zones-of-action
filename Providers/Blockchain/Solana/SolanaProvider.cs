@@ -1053,7 +1053,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
     private AZOAResult<T> UserContextNotResolvable<T>(string opLabel) =>
         Error<T>(
             $"Cannot {opLabel}: a per-user custodial signature was requested but the signing context has no "
-            + "resolvable wallet/avatar (or no custody service is wired). Refusing to fall back to the platform key.");
+            + "resolvable wallet/user (or no custody service is wired). Refusing to fall back to the platform key.");
 
     /// <summary>Flattens the custody resolver's outer result and the signer's inner result.</summary>
     private AZOAResult<byte[]> Flatten(AZOAResult<AZOAResult<byte[]>> outer, string opLabel)

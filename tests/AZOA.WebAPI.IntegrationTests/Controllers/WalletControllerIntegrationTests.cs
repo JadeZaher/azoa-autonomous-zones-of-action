@@ -14,7 +14,7 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     public WalletControllerIntegrationTests(AZOATestWebApplicationFactory factory) : base(factory) { }
 
     [Fact]
-    public async Task Create_ShouldReturnWalletWithAvatarId()
+    public async Task Create_ShouldReturnWalletWithUserId()
     {
         // Address must satisfy WalletCreateModelValidator (^[a-zA-Z0-9]+$): the
         // prior "sol_addr_1" had underscores and was rejected with a 400.
@@ -32,11 +32,11 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Create_DuplicateAddress_ReturnsBadRequest()
     {
-        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
+        var userId = Guid.Parse(TestAuthHandler.DefaultUserId);
         // Address must be alphanumeric (WalletCreateModelValidator); both the
         // seed and the duplicate attempt use the same value to trigger the
         // duplicate-address 400. "dup_addr" had an underscore and failed at seed.
-        await SeedWalletAsync(w => w.ForAvatar(avatarId).OnChain("Solana").WithAddress("dupaddr"));
+        await SeedWalletAsync(w => w.ForUser(userId).OnChain("Solana").WithAddress("dupaddr"));
 
         var model = new WalletCreateModel { ChainType = "Solana", Address = "dupaddr" };
         var response = await Client.PostAsJsonAsync("api/wallet", model);
@@ -47,7 +47,7 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Get_ExistingWallet_ShouldReturnWallet()
     {
-        var wallet = await SeedWalletAsync(w => w.ForAvatar(Guid.Parse(TestAuthHandler.DefaultAvatarId)));
+        var wallet = await SeedWalletAsync(w => w.ForUser(Guid.Parse(TestAuthHandler.DefaultUserId)));
 
         var response = await Client.GetAsync($"api/wallet/{wallet.Id}");
 
@@ -59,9 +59,9 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Query_WithFilters_ShouldReturnFiltered()
     {
-        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        await SeedWalletAsync(w => w.ForAvatar(avatarId).OnChain("Solana").AsDefault());
-        await SeedWalletAsync(w => w.ForAvatar(avatarId).OnChain("Algorand"));
+        var userId = Guid.Parse(TestAuthHandler.DefaultUserId);
+        await SeedWalletAsync(w => w.ForUser(userId).OnChain("Solana").AsDefault());
+        await SeedWalletAsync(w => w.ForUser(userId).OnChain("Algorand"));
 
         var response = await Client.GetAsync("api/wallet?ChainType=Solana&IsDefault=true");
 
@@ -73,7 +73,7 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Update_ShouldModifyLabel()
     {
-        var wallet = await SeedWalletAsync(w => w.ForAvatar(Guid.Parse(TestAuthHandler.DefaultAvatarId)).WithLabel("Old"));
+        var wallet = await SeedWalletAsync(w => w.ForUser(Guid.Parse(TestAuthHandler.DefaultUserId)).WithLabel("Old"));
         var update = new WalletUpdateModel { Label = "NewLabel" };
 
         var response = await Client.PutAsJsonAsync($"api/wallet/{wallet.Id}", update);
@@ -86,9 +86,9 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task SetDefault_ShouldSwapDefaultFlag()
     {
-        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        var prev    = await SeedWalletAsync(w => w.ForAvatar(avatarId).OnChain("Solana").AsDefault());
-        var current = await SeedWalletAsync(w => w.ForAvatar(avatarId).OnChain("Solana"));
+        var userId = Guid.Parse(TestAuthHandler.DefaultUserId);
+        var prev    = await SeedWalletAsync(w => w.ForUser(userId).OnChain("Solana").AsDefault());
+        var current = await SeedWalletAsync(w => w.ForUser(userId).OnChain("Solana"));
 
         var response = await Client.PostAsJsonAsync($"api/wallet/{current.Id}/set-default", new { });
 
@@ -110,7 +110,7 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Delete_ShouldRemoveWallet()
     {
-        var wallet = await SeedWalletAsync(w => w.ForAvatar(Guid.Parse(TestAuthHandler.DefaultAvatarId)));
+        var wallet = await SeedWalletAsync(w => w.ForUser(Guid.Parse(TestAuthHandler.DefaultUserId)));
 
         var response = await Client.DeleteAsync($"api/wallet/{wallet.Id}");
 
@@ -120,9 +120,9 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task GetPortfolio_ShouldReturnStubWithNfts()
     {
-        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        var wallet = await SeedWalletAsync(w => w.ForAvatar(avatarId).OnChain("Solana"));
-        await SeedHolonAsync(h => h.ForAvatar(avatarId).AsAsset("NFT").WithName("MyNFT"));
+        var userId = Guid.Parse(TestAuthHandler.DefaultUserId);
+        var wallet = await SeedWalletAsync(w => w.ForUser(userId).OnChain("Solana"));
+        await SeedHolonAsync(h => h.ForUser(userId).AsAsset("NFT").WithName("MyNFT"));
 
         var response = await Client.GetAsync($"api/wallet/{wallet.Id}/portfolio");
 

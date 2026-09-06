@@ -5,8 +5,8 @@
 // Coverage:
 //   Test 1 — exact text match: the holon whose name was used as the query string
 //            gets a cosine score of 1.0; all others score < 1.0.
-//   Test 2 — cross-avatar scoping: holons seeded for avatar B are NEVER returned
-//            when calling as avatar A, even with similar names.
+//   Test 2 — cross-user scoping: holons seeded for user B are NEVER returned
+//            when calling as user A, even with similar names.
 //   Test 3 — no embeddings seeded: holons without the embedding field produce
 //            0 matches with no server error.
 //
@@ -56,8 +56,8 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
-        var avatarId    = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        var avatarIdStr = avatarId.ToString("N").ToLowerInvariant();
+        var userId    = Guid.Parse(TestAuthHandler.DefaultUserId);
+        var userIdStr = userId.ToString("N").ToLowerInvariant();
         var embedder    = new DeterministicDummyEmbeddingProvider();
 
         // Unique names so cross-test namespace pollution is impossible
@@ -70,10 +70,10 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
             $"VecTest1-Other4-{Guid.NewGuid():N}"
         };
 
-        await SeedHolonsWithEmbeddingsAsync(names, avatarIdStr, embedder);
+        await SeedHolonsWithEmbeddingsAsync(names, userIdStr, embedder);
 
         // Query with the exact text of names[0] — must be #1 match
-        var result = await CallVectorSearchAsync(avatarId, names[0], k: 5);
+        var result = await CallVectorSearchAsync(userId, names[0], k: 5);
 
         if (IsInternalError(result))
         {
@@ -102,24 +102,24 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // TEST 2 — cross-avatar scoping does not leak
+    // TEST 2 — cross-user scoping does not leak
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Seed 3 holons for avatar A and 3 holons for avatar B with
-    /// intentionally similar name prefixes. Query as avatar A.
-    /// Assert that NONE of avatar B's holon IDs appear in the results.
+    /// Seed 3 holons for user A and 3 holons for user B with
+    /// intentionally similar name prefixes. Query as user A.
+    /// Assert that NONE of user B's holon IDs appear in the results.
     /// </summary>
     [SkippableFact]
-    public async Task VectorSearch_CrossAvatarScoping_DoesNotLeak()
+    public async Task VectorSearch_CrossUserScoping_DoesNotLeak()
     {
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
-        var avatarA    = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        var avatarAStr = avatarA.ToString("N").ToLowerInvariant();
-        var avatarB    = Guid.NewGuid();
-        var avatarBStr = avatarB.ToString("N").ToLowerInvariant();
+        var userA    = Guid.Parse(TestAuthHandler.DefaultUserId);
+        var userAStr = userA.ToString("N").ToLowerInvariant();
+        var userB    = Guid.NewGuid();
+        var userBStr = userB.ToString("N").ToLowerInvariant();
         var embedder   = new DeterministicDummyEmbeddingProvider();
 
         // 3 holons for A and 3 for B — names share the same prefix to maximise
@@ -127,17 +127,17 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
         var prefix     = $"VecTest2-Shared-{Guid.NewGuid():N}";
         var namesA     = new[] { $"{prefix}-A0", $"{prefix}-A1", $"{prefix}-A2" };
         var namesB     = new[] { $"{prefix}-B0", $"{prefix}-B1", $"{prefix}-B2" };
-        await SeedHolonsWithEmbeddingsAsync(namesA, avatarAStr, embedder);
-        var holonIdsB = await SeedHolonsWithEmbeddingsAndReturnIdsAsync(namesB, avatarBStr, embedder);
+        await SeedHolonsWithEmbeddingsAsync(namesA, userAStr, embedder);
+        var holonIdsB = await SeedHolonsWithEmbeddingsAndReturnIdsAsync(namesB, userBStr, embedder);
 
         // Query as A using a name that appears in BOTH name sets (closest to B0 too)
-        var result = await CallVectorSearchAsync(avatarA, namesA[0], k: 10);
+        var result = await CallVectorSearchAsync(userA, namesA[0], k: 10);
 
         if (IsInternalError(result))
         {
             Skip.If(true,
                 "vector_search returned an internal error — HNSW index not available; " +
-                "cross-avatar scoping assertion skipped.");
+                "cross-user scoping assertion skipped.");
         }
 
         result.TryGetProperty("matches", out var matchesProp).Should().BeTrue();
@@ -149,7 +149,7 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
         foreach (var bid in holonIdsB)
         {
             returnedIds.Should().NotContain(bid.ToString(),
-                $"holon {bid} belongs to avatar B — it must NOT appear in avatar A's results");
+                $"holon {bid} belongs to user B — it must NOT appear in user A's results");
         }
     }
 
@@ -170,28 +170,28 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
-        var avatarId    = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        var avatarIdStr = avatarId.ToString("N").ToLowerInvariant();
+        var userId    = Guid.Parse(TestAuthHandler.DefaultUserId);
+        var userIdStr = userId.ToString("N").ToLowerInvariant();
 
         // Seed holons WITHOUT embedding field
         for (int i = 0; i < 3; i++)
         {
             var hid = Guid.NewGuid().ToString("N").ToLowerInvariant();
-            // id BARE hex (CREATE prefixes → holon:hex); avatar_id a record<avatar>
+            // id BARE hex (CREATE prefixes → holon:hex); user_id a record<user>
             // link via type::record. No embedding field → WHERE embedding IS NOT NONE
             // filters these out. See tests AGENTS.md §g5-seed-shapes.
             await ExecuteSurrealSqlAsync(
-                "CREATE holon CONTENT { id: $hid, name: $name, avatar_id: type::record('avatar', $aid), " +
+                "CREATE holon CONTENT { id: $hid, name: $name, user_id: type::record('user', $aid), " +
                 "description: '', provider_name: 'test', is_active: true, created_date: time::now() }",
                 new
                 {
                     hid,
                     name = $"VecTest3-NoEmbed-{i}-{hid}",
-                    aid  = avatarIdStr
+                    aid  = userIdStr
                 });
         }
 
-        var result = await CallVectorSearchAsync(avatarId, "anything", k: 10);
+        var result = await CallVectorSearchAsync(userId, "anything", k: 10);
 
         // If vector::similarity::cosine or HNSW is unavailable, the DB may throw.
         // The tool wraps that in an "internal" error — still acceptable for this test
@@ -218,31 +218,31 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private async Task SeedHolonsWithEmbeddingsAsync(
-        string[] names, string avatarIdStr, IEmbeddingProvider embedder)
+        string[] names, string userIdStr, IEmbeddingProvider embedder)
     {
         foreach (var name in names)
         {
             var hid       = Guid.NewGuid().ToString("N").ToLowerInvariant();
             var embedding = await embedder.EmbedAsync(name, CancellationToken.None);
 
-            // id BARE hex (CREATE prefixes → holon:hex); avatar_id a record<avatar>
+            // id BARE hex (CREATE prefixes → holon:hex); user_id a record<user>
             // link via type::record. See tests AGENTS.md §g5-seed-shapes.
             await ExecuteSurrealSqlAsync(
-                "CREATE holon CONTENT { id: $hid, name: $name, avatar_id: type::record('avatar', $aid), " +
+                "CREATE holon CONTENT { id: $hid, name: $name, user_id: type::record('user', $aid), " +
                 "description: '', provider_name: 'test', is_active: true, " +
                 "created_date: time::now(), embedding: $emb }",
                 new
                 {
                     hid,
                     name,
-                    aid  = avatarIdStr,
+                    aid  = userIdStr,
                     emb  = embedding
                 });
         }
     }
 
     private async Task<Guid[]> SeedHolonsWithEmbeddingsAndReturnIdsAsync(
-        string[] names, string avatarIdStr, IEmbeddingProvider embedder)
+        string[] names, string userIdStr, IEmbeddingProvider embedder)
     {
         var ids = new Guid[names.Length];
         for (int i = 0; i < names.Length; i++)
@@ -252,17 +252,17 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
             var hidStr    = id.ToString("N").ToLowerInvariant();
             var embedding = await embedder.EmbedAsync(names[i], CancellationToken.None);
 
-            // id BARE hex (CREATE prefixes → holon:hex); avatar_id a record<avatar>
+            // id BARE hex (CREATE prefixes → holon:hex); user_id a record<user>
             // link via type::record. See tests AGENTS.md §g5-seed-shapes.
             await ExecuteSurrealSqlAsync(
-                "CREATE holon CONTENT { id: $hid, name: $name, avatar_id: type::record('avatar', $aid), " +
+                "CREATE holon CONTENT { id: $hid, name: $name, user_id: type::record('user', $aid), " +
                 "description: '', provider_name: 'test', is_active: true, " +
                 "created_date: time::now(), embedding: $emb }",
                 new
                 {
                     hid  = hidStr,
                     name = names[i],
-                    aid  = avatarIdStr,
+                    aid  = userIdStr,
                     emb  = embedding
                 });
         }
@@ -270,12 +270,12 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
     }
 
     private async Task<JsonElement> CallVectorSearchAsync(
-        Guid avatarId, string queryText, int k = 10)
+        Guid userId, string queryText, int k = 10)
     {
         var executor = CreateExecutor();
         var tool     = new VectorSearchTool();
         var args     = BuildArgs(new { query_text = queryText, table = "holon", k });
-        var ctx      = BuildContext(avatarId, executor);
+        var ctx      = BuildContext(userId, executor);
         return await tool.ExecuteAsync(ctx, args, CancellationToken.None);
     }
 
@@ -293,13 +293,13 @@ public sealed class McpVectorSearchTest : IntegrationTestBase
         return new DefaultSurrealExecutor(connection);
     }
 
-    private static ToolCallContext BuildContext(Guid avatarId, ISurrealExecutor executor)
+    private static ToolCallContext BuildContext(Guid userId, ISurrealExecutor executor)
     {
         var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
         services.AddSingleton<IEmbeddingProvider, DeterministicDummyEmbeddingProvider>();
         services.AddLogging();
         var sp = services.BuildServiceProvider();
-        return new ToolCallContext(avatarId, executor, sp);
+        return new ToolCallContext(userId, executor, sp);
     }
 
     private static JsonElement BuildArgs(object payload)

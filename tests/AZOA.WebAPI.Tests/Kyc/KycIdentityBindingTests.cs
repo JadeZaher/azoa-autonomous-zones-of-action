@@ -152,10 +152,10 @@ public sealed class KycIdentityBindingTests
     {
         var store = new CapturingIdentityStore();
         var service = NewService(store);
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
         var bound = await service.BindAsync(
-            avatarId,
+            userId,
             Guid.NewGuid(),
             KycProvider.IDENTOMAT,
             "identomat",
@@ -175,7 +175,7 @@ public sealed class KycIdentityBindingTests
         written.LastName.Should().Be("Lovelace");
         written.Birthday.Should().Be("1815-12-10");
         written.Citizenship.Should().Be("GB");
-        written.AvatarIds.Should().ContainSingle().Which.Should().Be(avatarId.ToString("N"));
+        written.UserIds.Should().ContainSingle().Which.Should().Be(userId.ToString("N"));
 
         // The raw document identifiers must not survive anywhere on the row.
         var serialized = System.Text.Json.JsonSerializer.Serialize(written);
@@ -230,7 +230,7 @@ public sealed class KycIdentityBindingTests
     // ── Eligibility denials are indistinguishable ───────────────────────────
 
     [Fact]
-    public async Task Eligibility_DenialForAnotherAvatar_LooksExactlyLikeOrdinaryIneligibility()
+    public async Task Eligibility_DenialForAnotherUser_LooksExactlyLikeOrdinaryIneligibility()
     {
         var store = new CapturingIdentityStore();
         var service = NewService(store);
@@ -243,7 +243,7 @@ public sealed class KycIdentityBindingTests
             TenantScope = deriver.ScopeFor(tenantId),
             PersonKey = personKey,
             GlobalPersonKey = "global",
-            AvatarIds = [Guid.NewGuid().ToString("N")],
+            UserIds = [Guid.NewGuid().ToString("N")],
         });
 
         var alreadyClaimed = await service.EvaluateEligibilityAsync(
@@ -254,12 +254,12 @@ public sealed class KycIdentityBindingTests
         alreadyClaimed.Result!.IsEligible.Should().BeFalse();
         neverVerified.Result!.IsEligible.Should().BeFalse();
         alreadyClaimed.Result.Message.Should().Be(neverVerified.Result.Message,
-            "'already claimed by another avatar' leaks that the person exists under "
-            + "a different avatar or tenant; it must read exactly like 'not verified'");
+            "'already claimed by another user' leaks that the person exists under "
+            + "a different user or tenant; it must read exactly like 'not verified'");
 
         // The operator-side cause still distinguishes them.
         alreadyClaimed.Result.Cause
-            .Should().Be(KycIneligibilityCause.PersonAlreadyBoundToAnotherAvatar);
+            .Should().Be(KycIneligibilityCause.PersonAlreadyBoundToAnotherUser);
         neverVerified.Result.Cause.Should().Be(KycIneligibilityCause.NoVerifiedIdentity);
     }
 
@@ -267,21 +267,21 @@ public sealed class KycIdentityBindingTests
     public void EligibilityDecision_NeverSerializesTheOperatorCause()
     {
         var decision = KycEligibilityDecision.Ineligible(
-            KycIneligibilityCause.PersonAlreadyBoundToAnotherAvatar);
+            KycIneligibilityCause.PersonAlreadyBoundToAnotherUser);
 
         var json = System.Text.Json.JsonSerializer.Serialize(decision);
 
         json.Should().NotContain("Cause");
-        json.Should().NotContain(nameof(KycIneligibilityCause.PersonAlreadyBoundToAnotherAvatar));
+        json.Should().NotContain(nameof(KycIneligibilityCause.PersonAlreadyBoundToAnotherUser));
     }
 
     [Fact]
-    public async Task Eligibility_ForTheBoundAvatar_IsEligible()
+    public async Task Eligibility_ForTheBoundUser_IsEligible()
     {
         var store = new CapturingIdentityStore();
         var service = NewService(store);
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var deriver = NewDeriver();
         var scope = deriver.ScopeFor(tenantId);
         var personKey = deriver.DerivePersonKey(scope, DocumentNumber, IssuingState)!;
@@ -291,10 +291,10 @@ public sealed class KycIdentityBindingTests
             TenantScope = scope,
             PersonKey = personKey,
             GlobalPersonKey = "global",
-            AvatarIds = [avatarId.ToString("N")],
+            UserIds = [userId.ToString("N")],
         });
 
-        var decision = await service.EvaluateEligibilityAsync(avatarId, tenantId, personKey);
+        var decision = await service.EvaluateEligibilityAsync(userId, tenantId, personKey);
 
         decision.Result!.IsEligible.Should().BeTrue();
     }
@@ -312,7 +312,7 @@ public sealed class KycIdentityBindingTests
             TenantScope = "tenant-a",
             PersonKey = "person-key-1",
             GlobalPersonKey = "global-key-1",
-            AvatarIds = ["avatar-1"],
+            UserIds = ["user-1"],
             FirstName = "Ada",
             LastName = "Lovelace",
             Birthday = "1815-12-10",
@@ -335,7 +335,7 @@ public sealed class KycIdentityBindingTests
             "the salted key must survive so uniqueness and the KYC audit trail hold "
             + "after an Art. 17 erasure");
         row.GlobalPersonKey.Should().Be("global-key-1");
-        row.AvatarIds.Should().ContainSingle().Which.Should().Be("avatar-1");
+        row.UserIds.Should().ContainSingle().Which.Should().Be("user-1");
         row.ErasedAt.Should().NotBeNull();
         row.ErasureReason.Should().Be("subject-request");
     }
@@ -395,19 +395,19 @@ public sealed class KycIdentityBindingTests
         second.Result!.PersonKey.Should().Be("k1");
     }
 
-    // ── D3/D23: a second avatar cannot claim a person already bound ─────────
+    // ── D3/D23: a second user cannot claim a person already bound ─────────
 
     [Fact]
-    public async Task Bind_RefusesASecondAvatarForAPersonAlreadyBoundInTheSameScope()
+    public async Task Bind_RefusesASecondUserForAPersonAlreadyBoundInTheSameScope()
     {
         // Sybil resistance lives HERE, at the write. An unconditional append adds the
         // caller to every existing binding, after which "already bound to another
-        // avatar" is unobservable by construction and the check is a tautology.
+        // user" is unobservable by construction and the check is a tautology.
         var store = new CapturingIdentityStore();
         var service = NewService(store);
         var tenantId = Guid.NewGuid();
-        var firstAvatar = Guid.NewGuid();
-        var secondAvatar = Guid.NewGuid();
+        var firstUser = Guid.NewGuid();
+        var secondUser = Guid.NewGuid();
         var attributes = new HostedSessionSubjectAttributes
         {
             DocumentNumber = DocumentNumber,
@@ -415,13 +415,13 @@ public sealed class KycIdentityBindingTests
         };
 
         var first = await service.BindAsync(
-            firstAvatar, tenantId, KycProvider.IDENTOMAT, "identomat", attributes);
+            firstUser, tenantId, KycProvider.IDENTOMAT, "identomat", attributes);
         var second = await service.BindAsync(
-            secondAvatar, tenantId, KycProvider.IDENTOMAT, "identomat", attributes);
+            secondUser, tenantId, KycProvider.IDENTOMAT, "identomat", attributes);
 
         first.IsError.Should().BeFalse(first.Message);
         second.IsError.Should().BeTrue(
-            "one human must not hold two verified avatars inside one tenant");
+            "one human must not hold two verified users inside one tenant");
         second.Message.Should().Be(KycIdentityBindingService.IneligibleMessage,
             "the refusal reads exactly like every other refusal; naming the cause "
             + "would tell the tenant its subject already exists");
@@ -430,29 +430,29 @@ public sealed class KycIdentityBindingTests
         var scope = deriver.ScopeFor(tenantId);
         var personKey = deriver.DerivePersonKey(scope, DocumentNumber, IssuingState)!;
         store.Peek(KycPersonKeyDeriver.RecordId(scope, personKey))!
-            .AvatarIds.Should().ContainSingle().Which.Should().Be(firstAvatar.ToString("N"));
+            .UserIds.Should().ContainSingle().Which.Should().Be(firstUser.ToString("N"));
     }
 
     [Fact]
-    public async Task Bind_ForTheSameAvatarTwice_IsIdempotent()
+    public async Task Bind_ForTheSameUserTwice_IsIdempotent()
     {
         var store = new CapturingIdentityStore();
         var service = NewService(store);
         var tenantId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var attributes = new HostedSessionSubjectAttributes
         {
             DocumentNumber = DocumentNumber,
             IssuingState = IssuingState,
         };
 
-        await service.BindAsync(avatarId, tenantId, KycProvider.IDENTOMAT, "identomat", attributes);
+        await service.BindAsync(userId, tenantId, KycProvider.IDENTOMAT, "identomat", attributes);
         var replayed = await service.BindAsync(
-            avatarId, tenantId, KycProvider.IDENTOMAT, "identomat", attributes);
+            userId, tenantId, KycProvider.IDENTOMAT, "identomat", attributes);
 
         replayed.IsError.Should().BeFalse(
-            "a redelivered callback re-binds the SAME avatar and must not be refused");
-        replayed.Result!.AvatarIds.Should().ContainSingle();
+            "a redelivered callback re-binds the SAME user and must not be refused");
+        replayed.Result!.UserIds.Should().ContainSingle();
     }
 
     [Fact]
@@ -483,7 +483,7 @@ public sealed class KycIdentityBindingTests
     [Fact]
     public async Task Erasure_AlsoTombstonesTheNameAndBirthdayHeldOnTheScreeningTrail()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var tenantId = Guid.NewGuid();
         var store = new CapturingIdentityStore();
         var screening = new InMemoryKycScreeningStore();
@@ -494,13 +494,13 @@ public sealed class KycIdentityBindingTests
             TenantId = tenantId.ToString("N"),
             PersonKey = "person-key-1",
             GlobalPersonKey = "global-key-1",
-            AvatarIds = [avatarId.ToString("N")],
+            UserIds = [userId.ToString("N")],
             FirstName = "Ada",
         });
-        screening.SeedResult(avatarId, tenantId, KycScreeningDecision.NO_HIT);
+        screening.SeedResult(userId, tenantId, KycScreeningDecision.NO_HIT);
         screening.SeedMonitor(
             "Ada Lovelace", "1815-12-10", "monitor-1",
-            tenantId: tenantId, subjectAvatarId: avatarId);
+            tenantId: tenantId, subjectUserId: userId);
         var service = new KycIdentityErasureService(
             store, screening, NullLogger<KycIdentityErasureService>.Instance);
 
@@ -594,7 +594,7 @@ public sealed class KycIdentityBindingTests
 
         public KycIdentity? Peek(string id) => _rows.GetValueOrDefault(id);
 
-        public Task<AZOAResult<KycIdentity>> BindAvatarAsync(
+        public Task<AZOAResult<KycIdentity>> BindUserAsync(
             KycIdentity candidate,
             CancellationToken ct = default)
         {
@@ -606,11 +606,11 @@ public sealed class KycIdentityBindingTests
                 // the binding is empty or already contains it. An unconditional append
                 // here would make the Sybil refusal untestable, which is exactly how it
                 // went unnoticed in production code.
-                var held = existing.AvatarIds ?? [];
-                var incoming = candidate.AvatarIds ?? [];
-                if (held.Count == 0 || incoming.All(avatar => held.Contains(avatar, StringComparer.Ordinal)))
+                var held = existing.UserIds ?? [];
+                var incoming = candidate.UserIds ?? [];
+                if (held.Count == 0 || incoming.All(user => held.Contains(user, StringComparer.Ordinal)))
                 {
-                    existing.AvatarIds = held
+                    existing.UserIds = held
                         .Concat(incoming)
                         .Distinct(StringComparer.Ordinal)
                         .ToList();

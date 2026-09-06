@@ -16,9 +16,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("A user-granted, revocable authorization for a tenant to drive actions within Scopes. The signing seam does a LIVE validity check against this row before every tenant-driven key decrypt (AC4/AC5). revoked_at = NONE AND (expires_at = NONE OR now < expires_at) is the live predicate.")]
     [SurrealNote("Scopes stored as a CSV string (mirrors api_key.scopes). origin = UserExplicit|Participation. participation_ref is the opaque ArdaNova id; offboard revokes by (tenant_id, participation_ref) exact-match within the tenant's own grants only (L3).")]
     [Slice("identity")]
-    [Index("consent_grant_by_grantor", Fields = new[] { "grantor_avatar_id" })]
+    [Index("consent_grant_by_grantor", Fields = new[] { "grantor_user_id" })]
     [Index("consent_grant_by_tenant", Fields = new[] { "tenant_id" })]
-    [Index("consent_grant_seam_lookup", Fields = new[] { "grantor_avatar_id", "tenant_id" })]
+    [Index("consent_grant_seam_lookup", Fields = new[] { "grantor_user_id", "tenant_id" })]
     [Index("consent_grant_tenant_partref", Fields = new[] { "tenant_id", "participation_ref" })]
     public partial class ConsentGrant : ISurrealRecord
     {
@@ -28,12 +28,12 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Id]
         public string Id { get; set; } = string.Empty;
 
-        [JsonPropertyName("grantor_avatar_id")]
-        [References(typeof(Avatar))]
-        public string GrantorAvatarId { get; set; } = string.Empty;
+        [JsonPropertyName("grantor_user_id")]
+        [References(typeof(User))]
+        public string GrantorUserId { get; set; } = string.Empty;
 
         [JsonPropertyName("tenant_id")]
-        [References(typeof(Avatar))]
+        [References(typeof(User))]
         public string TenantId { get; set; } = string.Empty;
 
         [JsonPropertyName("scopes")]

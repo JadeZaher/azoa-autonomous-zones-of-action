@@ -27,12 +27,12 @@ public partial class DappSeries
         set => Id = value.ToString("N");
     }
 
-    /// <summary>Caller-friendly Guid view of <c>avatar_id</c>.</summary>
+    /// <summary>Caller-friendly Guid view of <c>user_id</c>.</summary>
     [NotMapped]
-    public Guid AvatarIdGuid
+    public Guid UserIdGuid
     {
-        get => Guid.ParseExact(AvatarId, "N");
-        set => AvatarId = value.ToString("N");
+        get => Guid.ParseExact(UserId, "N");
+        set => UserId = value.ToString("N");
     }
 
     /// <summary>
@@ -59,20 +59,20 @@ public partial class DappSeries
         set => SharedConfig = ((IReadOnlyDictionary<string, string>)value).ToJsonElement();
     }
 
-    /// <summary>Domain predicate: does this series belong to the given avatar?</summary>
-    public bool OwnedBy(Guid avatarId) => AvatarId == avatarId.ToString("N");
+    /// <summary>Domain predicate: does this series belong to the given user?</summary>
+    public bool OwnedBy(Guid userId) => UserId == userId.ToString("N");
 
     /// <summary>
     /// Factory for a new draft series. Encapsulates the Guid-to-hex-string
     /// conversion and the empty-SharedConfig initialization that managers
     /// would otherwise reimplement.
     /// </summary>
-    public static DappSeries NewDraft(Guid avatarId, string name, string? description = null) => new()
+    public static DappSeries NewDraft(Guid userId, string name, string? description = null) => new()
     {
         Id = Guid.NewGuid().ToString("N"),
         Name = name,
         Description = description,
-        AvatarId = avatarId.ToString("N"),
+        UserId = userId.ToString("N"),
         Status = StatusKind.Draft,
         SharedConfig = JsonDocument.Parse("{}").RootElement,
         CreatedDate = DateTimeOffset.UtcNow,

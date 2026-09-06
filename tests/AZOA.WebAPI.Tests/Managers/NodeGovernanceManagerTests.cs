@@ -57,7 +57,7 @@ public sealed class NodeGovernanceManagerTests
         result.Result.AllowedAssetTypes.Should().BeEmpty("an explicit empty list means deny-all");
 
         store.SavedParameters.Should().NotBeNull();
-        store.SavedParameters!.UpdatedByAvatarId.Should().Contain(actor.ToString("N"));
+        store.SavedParameters!.UpdatedByUserId.Should().Contain(actor.ToString("N"));
         store.Audits.Should().ContainSingle();
         store.Audits[0].PreviousVersion.Should().Be(3);
         store.Audits[0].NewVersion.Should().Be(4);

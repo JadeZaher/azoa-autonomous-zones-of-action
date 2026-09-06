@@ -132,8 +132,8 @@ public sealed class SurrealWalletAuthClaimTokenStore : IWalletAuthClaimTokenStor
     {
         Id             = SurrealId.ToSurrealId(t.Id),
         Token          = t.Token,
-        TargetAvatarId = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(t.TargetAvatarId)) ?? string.Empty,
-        TenantId       = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(t.TenantId)) ?? string.Empty,
+        TargetUserId = SurrealLink.ToLink("user", SurrealId.ToSurrealId(t.TargetUserId)) ?? string.Empty,
+        TenantId       = SurrealLink.ToLink("user", SurrealId.ToSurrealId(t.TenantId)) ?? string.Empty,
         ExpiresAt      = new DateTimeOffset(DateTime.SpecifyKind(t.ExpiresAt, DateTimeKind.Utc)),
         ConsumedAt     = t.ConsumedAt.HasValue
                          ? new DateTimeOffset(DateTime.SpecifyKind(t.ConsumedAt.Value, DateTimeKind.Utc))
@@ -145,7 +145,7 @@ public sealed class SurrealWalletAuthClaimTokenStore : IWalletAuthClaimTokenStor
     {
         Id             = SurrealId.FromSurrealId(p.Id),
         Token          = p.Token,
-        TargetAvatarId = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TargetAvatarId)!),
+        TargetUserId = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TargetUserId)!),
         TenantId       = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
         ExpiresAt      = p.ExpiresAt.UtcDateTime,
         ConsumedAt     = p.ConsumedAt?.UtcDateTime,
@@ -160,8 +160,8 @@ public sealed class SurrealWalletAuthClaimTokenStore : IWalletAuthClaimTokenStor
 
         [JsonPropertyName("id")]               public string Id             { get; set; } = string.Empty;
         [JsonPropertyName("token")]            public string Token          { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("target_avatar_id")] public string TargetAvatarId { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]        public string TenantId       { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("target_user_id")] public string TargetUserId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("tenant_id")]        public string TenantId       { get; set; } = string.Empty;
         [JsonPropertyName("expires_at")]       public DateTimeOffset ExpiresAt   { get; set; }
         [JsonPropertyName("consumed_at")]      public DateTimeOffset? ConsumedAt { get; set; }
         [JsonPropertyName("created_at")]       public DateTimeOffset CreatedAt   { get; set; }

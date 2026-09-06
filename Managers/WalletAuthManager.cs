@@ -6,10 +6,10 @@
 // comment blocks in this track):
 //   - IWalletAuthChallengeStore   → SurrealWalletAuthChallengeStore (Scoped)
 //   - IWalletAuthClaimTokenStore  → SurrealWalletAuthClaimTokenStore (Scoped)
-//   - IAvatarStore                → SurrealAvatarStore (Scoped, already wired)
+//   - IUserStore                → SurrealUserStore (Scoped, already wired)
 //   - IWalletSignatureVerifier    → Ed25519SignatureVerifier (Singleton)
 //   - IConfiguration              → ambient
-// Scoped lifetime matches AvatarManager/TenantManager. Register near them.
+// Scoped lifetime matches UserManager/TenantManager. Register near them.
 
 using System.Security.Cryptography;
 using System.Text;
@@ -42,18 +42,18 @@ namespace AZOA.WebAPI.Managers;
 /// cross-app replay.</para>
 ///
 /// <para><b>Create-or-login ONLY (AC2/AC2b).</b> A never-seen wallet mints a NEW
-/// self-owned avatar (<c>OwnerTenantId == null</c>); a wallet-bound address logs into
-/// THAT avatar. It NEVER matches on email/username/externalUserId, so an
+/// self-owned user (<c>OwnerTenantId == null</c>); a wallet-bound address logs into
+/// THAT user. It NEVER matches on email/username/externalUserId, so an
 /// unauthenticated verify can never take over an account created another way. Linking a
 /// wallet to an existing account is the separate, authenticated
 /// <see cref="LinkWalletAsync"/>.</para>
 ///
 /// <para><b>JWT primitive.</b> Delegates to
-/// <see cref="AZOA.WebAPI.Services.Auth.AvatarLoginTokenIssuer"/> — the same shared
-/// mint <see cref="AZOA.WebAPI.Managers.AvatarManager"/> uses — so the verify result
+/// <see cref="AZOA.WebAPI.Services.Auth.UserLoginTokenIssuer"/> — the same shared
+/// mint <see cref="AZOA.WebAPI.Managers.UserManager"/> uses — so the verify result
 /// carries the identical claim set (including <c>dapp_role</c>/<c>scope</c>) and is
 /// indistinguishable from a password login downstream. This used to be a hand-copied
-/// mirror of <c>AvatarManager.GenerateJwt</c> that drifted; see
+/// mirror of <c>UserManager.GenerateJwt</c> that drifted; see
 /// <see cref="GenerateLoginJwt"/>.</para>
 /// </summary>
 public sealed class WalletAuthManager : IWalletAuthManager
@@ -75,7 +75,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
     private readonly IWalletAuthChallengeStore _challenges;
     private readonly IWalletAuthClaimTokenStore _claimTokens;
-    private readonly IAvatarStore _avatarStore;
+    private readonly IUserStore _userStore;
     private readonly IWalletSignatureVerifier _signatureVerifier;
     private readonly IConsentGrantStore _consentGrants;
     private readonly IConfiguration _config;
@@ -83,14 +83,14 @@ public sealed class WalletAuthManager : IWalletAuthManager
     public WalletAuthManager(
         IWalletAuthChallengeStore challenges,
         IWalletAuthClaimTokenStore claimTokens,
-        IAvatarStore avatarStore,
+        IUserStore userStore,
         IWalletSignatureVerifier signatureVerifier,
         IConsentGrantStore consentGrants,
         IConfiguration config)
     {
         _challenges = challenges ?? throw new ArgumentNullException(nameof(challenges));
         _claimTokens = claimTokens ?? throw new ArgumentNullException(nameof(claimTokens));
-        _avatarStore = avatarStore ?? throw new ArgumentNullException(nameof(avatarStore));
+        _userStore = userStore ?? throw new ArgumentNullException(nameof(userStore));
         _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
         _consentGrants = consentGrants ?? throw new ArgumentNullException(nameof(consentGrants));
         _config = config ?? throw new ArgumentNullException(nameof(config));
@@ -180,9 +180,9 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var addr = proof.Result.Address;
         var chain = proof.Result.ChainType;
 
-        // AC2/AC2b: create-or-login ONLY. Resolve the avatar bound to EXACTLY this
+        // AC2/AC2b: create-or-login ONLY. Resolve the user bound to EXACTLY this
         // wallet — never by email/username/externalUserId.
-        var bound = await _avatarStore.GetByAuthWalletAsync(addr, chain, ct);
+        var bound = await _userStore.GetByAuthWalletAsync(addr, chain, ct);
         if (bound.IsError)
         {
             result.IsError = true;
@@ -191,49 +191,49 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        IAvatar avatar;
+        IUser user;
         if (bound.Result is not null)
         {
-            if (bound.Result.Id == NodeOperatorIdentity.AvatarId)
+            if (bound.Result.Id == NodeOperatorIdentity.UserId)
             {
                 result.IsError = true;
                 result.Message = "Wallet authentication is not available for this identity.";
                 return result;
             }
-            avatar = bound.Result;
+            user = bound.Result;
         }
         else
         {
-            // First-ever verify for this wallet → mint a brand-new self-owned avatar.
-            var createdAvatar = await CreateSelfOwnedWalletAvatarAsync(addr, chain, ct);
-            if (createdAvatar.IsError || createdAvatar.Result is null)
+            // First-ever verify for this wallet → mint a brand-new self-owned user.
+            var createdUser = await CreateSelfOwnedWalletUserAsync(addr, chain, ct);
+            if (createdUser.IsError || createdUser.Result is null)
             {
                 result.IsError = true;
-                result.Message = createdAvatar.IsError ? createdAvatar.Message : "Failed to create avatar.";
-                result.Exception = createdAvatar.Exception;
+                result.Message = createdUser.IsError ? createdUser.Message : "Failed to create user.";
+                result.Exception = createdUser.Exception;
                 return result;
             }
-            avatar = createdAvatar.Result;
+            user = createdUser.Result;
         }
 
         result.Result = new WalletAuthTokenResponse
         {
-            Token = GenerateLoginJwt(avatar),
-            AvatarId = avatar.Id,
+            Token = GenerateLoginJwt(user),
+            UserId = user.Id,
         };
-        result.Message = bound.Result is not null ? "Login successful." : "Avatar created and logged in.";
+        result.Message = bound.Result is not null ? "Login successful." : "User created and logged in.";
         return result;
     }
 
     // ── AC2b: authenticated wallet link ───────────────────────────────────────
 
     public async Task<AZOAResult<bool>> LinkWalletAsync(
-        Guid authedAvatarId, string address, string chainType, string signature, string? message,
+        Guid authedUserId, string address, string chainType, string signature, string? message,
         CancellationToken ct = default)
     {
         var result = new AZOAResult<bool>();
 
-        if (authedAvatarId == NodeOperatorIdentity.AvatarId)
+        if (authedUserId == NodeOperatorIdentity.UserId)
         {
             result.IsError = true;
             result.Message = "Wallet authentication is not available for this identity.";
@@ -252,9 +252,9 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var addr = proof.Result.Address;
         var chain = proof.Result.ChainType;
 
-        // Reject if this wallet is already bound to a DIFFERENT avatar (no silent
+        // Reject if this wallet is already bound to a DIFFERENT user (no silent
         // takeover / no duplicate binding).
-        var existingBinding = await _avatarStore.GetByAuthWalletAsync(addr, chain, ct);
+        var existingBinding = await _userStore.GetByAuthWalletAsync(addr, chain, ct);
         if (existingBinding.IsError)
         {
             result.IsError = true;
@@ -262,28 +262,28 @@ public sealed class WalletAuthManager : IWalletAuthManager
             result.Exception = existingBinding.Exception;
             return result;
         }
-        if (existingBinding.Result is not null && existingBinding.Result.Id != authedAvatarId)
+        if (existingBinding.Result is not null && existingBinding.Result.Id != authedUserId)
         {
             result.IsError = true;
             result.Message = "This wallet is already linked to another account.";
             return result;
         }
 
-        // Load the authenticated avatar (id is from the JWT, never the body).
-        var loaded = await _avatarStore.GetByIdAsync(authedAvatarId, ct);
+        // Load the authenticated user (id is from the JWT, never the body).
+        var loaded = await _userStore.GetByIdAsync(authedUserId, ct);
         if (loaded.IsError || loaded.Result is null)
         {
             result.IsError = true;
-            result.Message = "Authenticated avatar not found.";
+            result.Message = "Authenticated user not found.";
             result.Exception = loaded.Exception;
             return result;
         }
 
-        var avatar = loaded.Result;
-        avatar.AuthWalletAddress = addr;
-        avatar.AuthWalletChainType = chain;
+        var user = loaded.Result;
+        user.AuthWalletAddress = addr;
+        user.AuthWalletChainType = chain;
 
-        var saved = await _avatarStore.UpsertAsync(avatar, ct);
+        var saved = await _userStore.UpsertAsync(user, ct);
         if (saved.IsError || saved.Result is null)
         {
             result.IsError = true;
@@ -300,19 +300,19 @@ public sealed class WalletAuthManager : IWalletAuthManager
     // ── AC4: tenant-minted claim invite ───────────────────────────────────────
 
     public async Task<AZOAResult<ClaimInviteResponse>> CreateClaimInviteAsync(
-        Guid tenantId, Guid childAvatarId, CancellationToken ct = default)
+        Guid tenantId, Guid childUserId, CancellationToken ct = default)
     {
         var result = new AZOAResult<ClaimInviteResponse>();
 
         // Assert ownership. A cross-tenant or unowned target is reported as NotFound
         // (404), never Forbidden — the isolation crux (AC5, mirrors TenantManager).
-        var loaded = await _avatarStore.GetByIdAsync(childAvatarId, ct);
+        var loaded = await _userStore.GetByIdAsync(childUserId, ct);
         if (loaded.IsError || loaded.Result is null
             || loaded.Result.OwnerTenantId is null
             || loaded.Result.OwnerTenantId.Value != tenantId)
         {
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No such child avatar for this tenant.";
+            result.Message = TenantAuthorizationError.NotFound + "No such child user for this tenant.";
             return result;
         }
 
@@ -322,7 +322,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
         {
             Id = Guid.NewGuid(),
             Token = Crypto.GenerateNonce(),
-            TargetAvatarId = childAvatarId,
+            TargetUserId = childUserId,
             TenantId = tenantId,
             ExpiresAt = expiresAt,
             ConsumedAt = null,
@@ -341,17 +341,17 @@ public sealed class WalletAuthManager : IWalletAuthManager
         result.Result = new ClaimInviteResponse
         {
             ClaimToken = token.Token,
-            TargetAvatarId = childAvatarId,
+            TargetUserId = childUserId,
             ExpiresAt = expiresAt,
         };
         result.Message = "Claim invite issued.";
         return result;
     }
 
-    // ── AC3/AC3b/AC4: claim a tenant-provisioned avatar ───────────────────────
+    // ── AC3/AC3b/AC4: claim a tenant-provisioned user ───────────────────────
 
     public async Task<AZOAResult<WalletAuthTokenResponse>> ClaimAsync(
-        Guid? authedAvatarId,
+        Guid? authedUserId,
         string? claimToken,
         string? newPassword,
         string? address,
@@ -363,11 +363,11 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var result = new AZOAResult<WalletAuthTokenResponse>();
         var now = DateTime.UtcNow;
 
-        // ── 1. Resolve the target avatar id from a SERVER-TRUSTED principal only ──
+        // ── 1. Resolve the target user id from a SERVER-TRUSTED principal only ──
         // (a single-use claim token OR the authenticated child-JWT subject). NEVER a
         // body field — the IDOR sever (AC5). A claim-token path also atomically
         // redeems the token so it can be used exactly once (AC4).
-        Guid targetAvatarId;
+        Guid targetUserId;
         if (!string.IsNullOrWhiteSpace(claimToken))
         {
             var tokenRow = await _claimTokens.GetByTokenAsync(claimToken!.Trim(), ct);
@@ -389,11 +389,11 @@ public sealed class WalletAuthManager : IWalletAuthManager
                 return result;
             }
 
-            targetAvatarId = tokenRow.Result.TargetAvatarId;
+            targetUserId = tokenRow.Result.TargetUserId;
         }
-        else if (authedAvatarId.HasValue)
+        else if (authedUserId.HasValue)
         {
-            targetAvatarId = authedAvatarId.Value;
+            targetUserId = authedUserId.Value;
         }
         else
         {
@@ -402,24 +402,24 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        if (targetAvatarId == NodeOperatorIdentity.AvatarId)
+        if (targetUserId == NodeOperatorIdentity.UserId)
         {
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No such avatar to claim.";
+            result.Message = TenantAuthorizationError.NotFound + "No such user to claim.";
             return result;
         }
 
         // ── 2. Load the target. A miss is NotFound (indistinguishable from
         // cross-tenant, the isolation crux). ──
-        var loaded = await _avatarStore.GetByIdAsync(targetAvatarId, ct);
+        var loaded = await _userStore.GetByIdAsync(targetUserId, ct);
         if (loaded.IsError || loaded.Result is null)
         {
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No such avatar to claim.";
+            result.Message = TenantAuthorizationError.NotFound + "No such user to claim.";
             result.Exception = loaded.Exception;
             return result;
         }
-        var avatar = loaded.Result;
+        var user = loaded.Result;
 
         // ── 3. Set the USER-SIDE credential (M1). Exactly one of {password,
         // wallet-challenge} — strictly user-controlled, never derivable from a tenant
@@ -438,7 +438,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
         if (hasPassword)
         {
-            avatar.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
         }
         else
         {
@@ -457,7 +457,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
             var addr = proof.Result.Address;
             var chain = proof.Result.ChainType;
 
-            var existingBinding = await _avatarStore.GetByAuthWalletAsync(addr, chain, ct);
+            var existingBinding = await _userStore.GetByAuthWalletAsync(addr, chain, ct);
             if (existingBinding.IsError)
             {
                 result.IsError = true;
@@ -465,27 +465,27 @@ public sealed class WalletAuthManager : IWalletAuthManager
                 result.Exception = existingBinding.Exception;
                 return result;
             }
-            if (existingBinding.Result is not null && existingBinding.Result.Id != avatar.Id)
+            if (existingBinding.Result is not null && existingBinding.Result.Id != user.Id)
             {
                 result.IsError = true;
                 result.Message = "This wallet is already linked to another account.";
                 return result;
             }
 
-            avatar.AuthWalletAddress = addr;
-            avatar.AuthWalletChainType = chain;
+            user.AuthWalletAddress = addr;
+            user.AuthWalletChainType = chain;
         }
 
         // ── 4. Sever tenant custody + cut the residual child-JWT window (AC3/AC3b). ──
-        avatar.OwnerTenantId = null;          // IDOR-safe sever (AC3)
-        avatar.AuthNotBefore = now;           // H2/AC3b: reject any pre-claim tenant token
-        avatar.IsActive = true;
+        user.OwnerTenantId = null;          // IDOR-safe sever (AC3)
+        user.AuthNotBefore = now;           // H2/AC3b: reject any pre-claim tenant token
+        user.IsActive = true;
 
-        var saved = await _avatarStore.UpsertAsync(avatar, ct);
+        var saved = await _userStore.UpsertAsync(user, ct);
         if (saved.IsError || saved.Result is null)
         {
             result.IsError = true;
-            result.Message = saved.IsError ? saved.Message : "Failed to claim avatar.";
+            result.Message = saved.IsError ? saved.Message : "Failed to claim user.";
             result.Exception = saved.Exception;
             return result;
         }
@@ -502,11 +502,11 @@ public sealed class WalletAuthManager : IWalletAuthManager
         result.Result = new WalletAuthTokenResponse
         {
             Token = GenerateLoginJwt(saved.Result),
-            AvatarId = saved.Result.Id,
+            UserId = saved.Result.Id,
         };
         result.Message = revoked.IsError
-            ? "Avatar claimed (warning: outstanding consent grants could not be auto-revoked; they remain subject to the post-claim watermark cut)."
-            : "Avatar claimed.";
+            ? "User claimed (warning: outstanding consent grants could not be auto-revoked; they remain subject to the post-claim watermark cut)."
+            : "User claimed.";
         return result;
     }
 
@@ -629,15 +629,15 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return result;
     }
 
-    // ── Avatar creation ───────────────────────────────────────────────────────
+    // ── User creation ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Mints a brand-new self-owned avatar bound to the wallet (AC2). Synthesizes a
+    /// Mints a brand-new self-owned user bound to the wallet (AC2). Synthesizes a
     /// unique username/email from the chain+address (NEVER matched on login) and a
     /// random non-usable password hash — there is no password login path for a
-    /// wallet-only avatar. <c>OwnerTenantId == null</c> by construction.
+    /// wallet-only user. <c>OwnerTenantId == null</c> by construction.
     /// </summary>
-    private async Task<AZOAResult<IAvatar>> CreateSelfOwnedWalletAvatarAsync(
+    private async Task<AZOAResult<IUser>> CreateSelfOwnedWalletUserAsync(
         string address, string chainType, CancellationToken ct)
     {
         // A short, unique-ish suffix keeps the synthesized handle readable while the
@@ -646,12 +646,12 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var unique = Guid.NewGuid().ToString("N")[..8];
         var handle = $"wallet-{chainType}-{prefix}-{unique}".ToLowerInvariant();
 
-        var avatar = new Avatar
+        var user = new User
         {
             Id = Guid.NewGuid(),
             Username = handle,
             Email = $"{handle}@wallet.azoa.local",
-            // No password login for a wallet-only avatar; random hash keeps the column
+            // No password login for a wallet-only user; random hash keeps the column
             // non-empty without granting a usable password.
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N")),
             IsActive = true,
@@ -662,7 +662,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
             AuthWalletChainType = chainType,
         };
 
-        return await _avatarStore.UpsertAsync(avatar, ct);
+        return await _userStore.UpsertAsync(user, ct);
     }
 
     // ── Domain message + crypto helpers ───────────────────────────────────────
@@ -696,18 +696,18 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
     /// <summary>Mints the wallet path's login token via the one shared issuer.</summary>
     /// <remarks>
-    /// This used to be a hand-copied mirror of <c>AvatarManager.GenerateJwt</c> that
+    /// This used to be a hand-copied mirror of <c>UserManager.GenerateJwt</c> that
     /// had silently drifted: it never stamped the dApp-role/scope claims, so a
-    /// wallet-authenticated avatar's token carried no <c>dapp_role</c> and no
-    /// <c>scope</c> claims while a password login for the SAME avatar got both — a
+    /// wallet-authenticated user's token carried no <c>dapp_role</c> and no
+    /// <c>scope</c> claims while a password login for the SAME user got both — a
     /// deny-by-default under-privilege (every claim-gated policy here reads absence as
     /// "no authority", never as "allow"), not a fail-open. Delegating to
-    /// <see cref="AZOA.WebAPI.Services.Auth.AvatarLoginTokenIssuer"/> (the same
-    /// primitive <see cref="AZOA.WebAPI.Managers.AvatarManager"/> now uses) makes claim
+    /// <see cref="AZOA.WebAPI.Services.Auth.UserLoginTokenIssuer"/> (the same
+    /// primitive <see cref="AZOA.WebAPI.Managers.UserManager"/> now uses) makes claim
     /// parity structural instead of hoped-for: there is exactly one JWT-minting
     /// implementation for every interactive login path, so this class of drift can no
     /// longer recur.
     /// </remarks>
-    private string GenerateLoginJwt(IAvatar avatar)
-        => AZOA.WebAPI.Services.Auth.AvatarLoginTokenIssuer.BuildLoginToken(_config, avatar);
+    private string GenerateLoginJwt(IUser user)
+        => AZOA.WebAPI.Services.Auth.UserLoginTokenIssuer.BuildLoginToken(_config, user);
 }

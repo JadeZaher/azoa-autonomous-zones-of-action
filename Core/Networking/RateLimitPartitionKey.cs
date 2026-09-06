@@ -16,7 +16,7 @@ public static class RateLimitPartitionKey
             var apiKeyId = user.FindFirst("ApiKeyId")?.Value;
             var subject = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
                 ?? user.FindFirst("sub")?.Value
-                ?? user.FindFirst("AvatarId")?.Value;
+                ?? user.FindFirst("UserId")?.Value;
             if (string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrWhiteSpace(apiKeyId))
             {
@@ -33,7 +33,7 @@ public static class RateLimitPartitionKey
             }
 
             if (!string.IsNullOrWhiteSpace(subject))
-                return $"avatar:{subject}";
+                return $"user:{subject}";
         }
 
         var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -46,7 +46,7 @@ public static class RateLimitPartitionKey
 
         var tenant = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? context.User.FindFirst("sub")?.Value
-            ?? context.User.FindFirst("AvatarId")?.Value;
+            ?? context.User.FindFirst("UserId")?.Value;
         var externalSubject = context.Request.RouteValues["externalSubject"]?.ToString();
         if (context.User.Identity?.IsAuthenticated != true
             || string.IsNullOrWhiteSpace(tenant)

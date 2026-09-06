@@ -119,16 +119,16 @@ export class <DexName>Adapter implements DexAdapter {
 
 ## Complete API Surface
 
-### Avatar (Identity & Auth)
+### User (Identity & Auth)
 
 | Endpoint | Method | Auth | Purpose |
 |----------|--------|------|---------|
-| `api/avatar/register` | POST | No | Create account (returns IAvatar) |
-| `api/avatar/login` | POST | No | Authenticate (returns JWT) |
-| `api/avatar/{id}` | GET | Yes | Get avatar profile |
-| `api/avatar` | GET | Yes | List all avatars |
-| `api/avatar/{id}` | PUT | Yes | Update profile |
-| `api/avatar/{id}` | DELETE | Yes | Delete account |
+| `api/user/register` | POST | No | Create account (returns IUser) |
+| `api/user/login` | POST | No | Authenticate (returns JWT) |
+| `api/user/{id}` | GET | Yes | Get user profile |
+| `api/user` | GET | Yes | List all users |
+| `api/user/{id}` | PUT | Yes | Update profile |
+| `api/user/{id}` | DELETE | Yes | Delete account |
 
 ### Holon (Universal Data Node)
 
@@ -173,29 +173,29 @@ export class <DexName>Adapter implements DexAdapter {
 | `api/nft/{id}/burn` | POST | Yes | Burn NFT |
 | `api/nft/{id}/metadata` | GET | No | Get NFT metadata (public) |
 
-### AvatarNFT (On-Chain Identity Bindings)
+### UserNFT (On-Chain Identity Bindings)
 
 | Endpoint | Method | Auth | Purpose |
 |----------|--------|------|---------|
-| `api/avatarnft/mint` | POST | Yes | Mint avatar NFT |
-| `api/avatarnft/{id}` | GET | Yes | Get avatar NFT |
-| `api/avatarnft/by-token/{chain}/{contract}/{tokenId}` | GET | Yes | Lookup by on-chain token |
-| `api/avatarnft/avatar/{avatarId}` | GET | Yes | Get all NFTs for avatar |
-| `api/avatarnft/{id}/transfer` | POST | Yes | Transfer |
-| `api/avatarnft/{id}` | DELETE | Yes | Burn |
-| `api/avatarnft/{nftId}/holons/{holonId}/bind` | POST | Yes | Bind holon to NFT |
-| `api/avatarnft/{nftId}/holons` | GET | Yes | List holon bindings |
-| `api/avatarnft/holons/{bindingId}` | PUT | Yes | Update binding |
-| `api/avatarnft/holons/{bindingId}` | DELETE | Yes | Remove binding |
-| `api/avatarnft/{nftId}/wallets/{walletId}/bind` | POST | Yes | Bind wallet to NFT |
-| `api/avatarnft/{nftId}/wallets` | GET | Yes | List wallet bindings |
-| `api/avatarnft/wallets/{bindingId}` | PUT | Yes | Update binding |
-| `api/avatarnft/wallets/{bindingId}` | DELETE | Yes | Remove binding |
-| `api/avatarnft/{nftId}/composite` | GET | Yes | Full composite view |
-| `api/avatarnft/avatar/{avatarId}/composite` | GET | Yes | All composites for avatar |
-| `api/avatarnft/verify-ownership` | POST | Yes | Verify on-chain ownership |
-| `api/avatarnft/verify-holon-access` | POST | Yes | Check holon access via NFT |
-| `api/avatarnft/verify-wallet-access` | POST | Yes | Check wallet access via NFT |
+| `api/usernft/mint` | POST | Yes | Mint user NFT |
+| `api/usernft/{id}` | GET | Yes | Get user NFT |
+| `api/usernft/by-token/{chain}/{contract}/{tokenId}` | GET | Yes | Lookup by on-chain token |
+| `api/usernft/user/{userId}` | GET | Yes | Get all NFTs for user |
+| `api/usernft/{id}/transfer` | POST | Yes | Transfer |
+| `api/usernft/{id}` | DELETE | Yes | Burn |
+| `api/usernft/{nftId}/holons/{holonId}/bind` | POST | Yes | Bind holon to NFT |
+| `api/usernft/{nftId}/holons` | GET | Yes | List holon bindings |
+| `api/usernft/holons/{bindingId}` | PUT | Yes | Update binding |
+| `api/usernft/holons/{bindingId}` | DELETE | Yes | Remove binding |
+| `api/usernft/{nftId}/wallets/{walletId}/bind` | POST | Yes | Bind wallet to NFT |
+| `api/usernft/{nftId}/wallets` | GET | Yes | List wallet bindings |
+| `api/usernft/wallets/{bindingId}` | PUT | Yes | Update binding |
+| `api/usernft/wallets/{bindingId}` | DELETE | Yes | Remove binding |
+| `api/usernft/{nftId}/composite` | GET | Yes | Full composite view |
+| `api/usernft/user/{userId}/composite` | GET | Yes | All composites for user |
+| `api/usernft/verify-ownership` | POST | Yes | Verify on-chain ownership |
+| `api/usernft/verify-holon-access` | POST | Yes | Check holon access via NFT |
+| `api/usernft/verify-wallet-access` | POST | Yes | Check wallet access via NFT |
 
 ### Bridge (Cross-Chain)
 
@@ -208,7 +208,7 @@ export class <DexName>Adapter implements DexAdapter {
 | `api/bridge/{id}/redeem` | POST | Yes | Redeem on target chain |
 | `api/bridge/{id}/complete` | POST | Yes | Mark trusted bridge complete |
 | `api/bridge/{id}/reverse` | POST | Yes | Reverse a completed bridge |
-| `api/bridge/history` | GET | Yes | Bridge history for avatar |
+| `api/bridge/history` | GET | Yes | Bridge history for user |
 
 ### Search
 
@@ -222,7 +222,7 @@ export class <DexName>Adapter implements DexAdapter {
 | Endpoint | Method | Auth | Purpose |
 |----------|--------|------|---------|
 | `api/blockchainoperation/{id}` | GET | Yes | Get operation |
-| `api/blockchainoperation/avatar/{avatarId}` | GET | Yes | Operations by avatar |
+| `api/blockchainoperation/user/{userId}` | GET | Yes | Operations by user |
 
 ### STAR ODK (dApp Generator)
 

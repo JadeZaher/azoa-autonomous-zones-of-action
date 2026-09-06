@@ -29,8 +29,8 @@ DEFINE FIELD IF NOT EXISTS admission_key ON TABLE hosted_session TYPE string
     ASSERT $value != NONE AND $value != "";
 
 -- Subject + tenancy
-DEFINE FIELD IF NOT EXISTS subject_avatar_id ON TABLE hosted_session TYPE option<record<avatar>>;
-DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE hosted_session TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS subject_user_id ON TABLE hosted_session TYPE option<record<user>>;
+DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE hosted_session TYPE option<record<user>>;
 
 -- Server-side provider correlation (never leaves the node)
 DEFINE FIELD IF NOT EXISTS provider_session_id ON TABLE hosted_session TYPE option<string>;
@@ -70,4 +70,4 @@ DEFINE INDEX IF NOT EXISTS hosted_session_provider_session
 
 DEFINE INDEX IF NOT EXISTS hosted_session_subject
     ON TABLE hosted_session
-    FIELDS subject_avatar_id;
+    FIELDS subject_user_id;

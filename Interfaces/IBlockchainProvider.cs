@@ -69,7 +69,7 @@ public interface IBlockchainProvider : IValueRailProvider
     // ~18.45 ETH. Chains whose SDK takes 64 bits narrow at their own edge and REFUSE
     // rather than truncate; see RailAmount.TryToUInt64.
     // value-path-wiring C1/D1: the optional `signingContext` carries the
-    // avatar/wallet identity so the provider signs with the RIGHT key (per-user
+    // user/wallet identity so the provider signs with the RIGHT key (per-user
     // custody vs platform/ASA-admin). A null context = platform/ASA-admin op.
     Task<AZOAResult<string>> MintAsync(
         string tokenUri,

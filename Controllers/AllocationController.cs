@@ -35,17 +35,17 @@ public class AllocationController : ControllerBase
 
     /// <summary>
     /// Provision-if-absent + allocate an already-decided amount of an asset into
-    /// the target avatar's custodial wallet. Idempotent on the
+    /// the target user's custodial wallet. Idempotent on the
     /// <c>Idempotency-Key</c> header (partitioned by the caller's API key), so a
     /// redelivered fiat webhook never double-mints / double-transfers.
     ///
-    /// IDOR: the target is the <paramref name="avatarId"/> route value; no body
-    /// field can redirect the allocation to a different avatar.
+    /// IDOR: the target is the <paramref name="userId"/> route value; no body
+    /// field can redirect the allocation to a different user.
     /// </summary>
-    [HttpPost("{avatarId:guid}")]
+    [HttpPost("{userId:guid}")]
     [EnableRateLimiting("financial")]
     public async Task<ActionResult<AZOAResult<AllocationResult>>> Allocate(
-        Guid avatarId, [FromBody] AllocationRequest request)
+        Guid userId, [FromBody] AllocationRequest request)
     {
         if (!string.Equals(User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase))
         {
@@ -55,8 +55,8 @@ public class AllocationController : ControllerBase
                     AzoaErrorCodes.Forbidden));
         }
 
-        var callerAvatarId = GetAvatarIdFromClaims();
-        if (callerAvatarId is null)
+        var callerUserId = GetUserIdFromClaims();
+        if (callerUserId is null)
             return Unauthorized(new AZOAResult<AllocationResult> { IsError = true, Message = "Invalid token." });
 
         // The allocation is authorised by the API-key scope, not the body.
@@ -81,10 +81,10 @@ public class AllocationController : ControllerBase
 
         // AC4: a tenant-driven child credential carries an act_as_tenant claim; pass
         // it so the signing seam runs the live consent check before key decrypt.
-        var actingTenantId = callerAvatarId;
+        var actingTenantId = callerUserId;
 
         var result = await _allocationManager.AllocateAsync(
-            avatarId, request, callerAvatarId.Value, idempotencyKey, apiKeyId, actingTenantId);
+            userId, request, callerUserId.Value, idempotencyKey, apiKeyId, actingTenantId);
 
         if (!result.IsError) return Ok(result);
 
@@ -111,9 +111,9 @@ public class AllocationController : ControllerBase
         return null;
     }
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
-        var sub = User.FindFirst("AvatarId")?.Value
+        var sub = User.FindFirst("UserId")?.Value
                  ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;
         return Guid.TryParse(sub, out var id) ? id : null;

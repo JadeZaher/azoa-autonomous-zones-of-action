@@ -176,7 +176,7 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
         string flowKind,
         string providerKey,
         string providerSessionId,
-        Guid subjectAvatarId,
+        Guid subjectUserId,
         Guid? tenantId = null)
     {
         var session = new HostedSession
@@ -185,7 +185,7 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
             FlowKind = flowKind,
             ProviderKey = providerKey,
             AdmissionKey = $"seed:{providerSessionId}",
-            SubjectAvatarId = subjectAvatarId.ToString("N"),
+            SubjectUserId = subjectUserId.ToString("N"),
             TenantId = tenantId?.ToString("N"),
             ProviderSessionId = providerSessionId,
             RedirectUrl = "https://widget.identomat.com/?session_token=" + providerSessionId,
@@ -213,7 +213,7 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
         FlowKind = session.FlowKind,
         ProviderKey = session.ProviderKey,
         AdmissionKey = session.AdmissionKey,
-        SubjectAvatarId = session.SubjectAvatarId,
+        SubjectUserId = session.SubjectUserId,
         TenantId = session.TenantId,
         ProviderSessionId = session.ProviderSessionId,
         ProviderCorrelationId = session.ProviderCorrelationId,

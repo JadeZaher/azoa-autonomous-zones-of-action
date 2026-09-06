@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 ///
 /// <para>Every statement here names <c>kyc_identity</c> from a compile-time
 /// constant. No caller-supplied table name reaches this store, and the table is
-/// absent from every generic read surface, so the person-to-avatar link has no
+/// absent from every generic read surface, so the person-to-user link has no
 /// consumer-reachable query path at all.</para>
 ///
 /// <para>ID encoding mirrors <see cref="SurrealKycStore"/>: bare hex in memory,
@@ -38,7 +38,7 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
         _logger = logger ?? NullLogger<SurrealKycIdentityStore>.Instance;
     }
 
-    public async Task<AZOAResult<KycIdentity>> BindAvatarAsync(
+    public async Task<AZOAResult<KycIdentity>> BindUserAsync(
         KycIdentity candidate,
         CancellationToken ct = default)
     {
@@ -46,15 +46,15 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
         try
         {
             var body = ToStorage(candidate);
-            var newAvatar = candidate.AvatarIds?.FirstOrDefault();
+            var newUser = candidate.UserIds?.FirstOrDefault();
 
             // Create-or-append in one statement. An existing binding keeps its
-            // original keys, provenance, and creation time; only the avatar set and
+            // original keys, provenance, and creation time; only the user set and
             // the modified stamp move.
             //
             // The append is CONDITIONAL, not unconditional. An unconditional
             // array::concat adds the caller to every existing binding, which makes
-            // "this person is already bound to a different avatar" impossible to
+            // "this person is already bound to a different user" impossible to
             // observe afterwards and turns the D3/D23 Sybil check into a tautology.
             // The condition is expressed in the statement rather than in a preceding
             // read so two concurrent binds for one person key cannot both win.
@@ -66,11 +66,11 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
                         person_key = $_person_key,
                         global_person_key = $_global_person_key,
                         person_key_version = $_key_version,
-                        avatar_ids = IF (avatar_ids = NONE
-                                OR array::len(avatar_ids) = 0
-                                OR $_new_avatar INSIDE avatar_ids)
-                            THEN array::distinct(array::concat(avatar_ids OR [], $_new_avatars))
-                            ELSE avatar_ids END,
+                        user_ids = IF (user_ids = NONE
+                                OR array::len(user_ids) = 0
+                                OR $_new_user INSIDE user_ids)
+                            THEN array::distinct(array::concat(user_ids OR [], $_new_users))
+                            ELSE user_ids END,
                         first_name = $_first_name,
                         last_name = $_last_name,
                         birthday = $_birthday,
@@ -84,14 +84,14 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
                 .WithParam("_t", KycIdentity.SchemaNameConst)
                 .WithParam("_id", body.Id)
                 .WithParam("_scope", body.TenantScope)
-                .WithParam("_tenant", SurrealRecordParam.Of("avatar", candidate.TenantId))
+                .WithParam("_tenant", SurrealRecordParam.Of("user", candidate.TenantId))
                 .WithParam("_person_key", body.PersonKey)
                 .WithParam("_global_person_key", body.GlobalPersonKey)
                 .WithParam("_key_version", body.PersonKeyVersion)
-                .WithParam("_new_avatar", newAvatar)
-                .WithParam("_new_avatars", string.IsNullOrWhiteSpace(newAvatar)
+                .WithParam("_new_user", newUser)
+                .WithParam("_new_users", string.IsNullOrWhiteSpace(newUser)
                     ? Array.Empty<string>()
-                    : new[] { newAvatar! })
+                    : new[] { newUser! })
                 .WithParam("_first_name", body.FirstName)
                 .WithParam("_last_name", body.LastName)
                 .WithParam("_birthday", body.Birthday)
@@ -115,7 +115,7 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
         }
         catch (Exception exception)
         {
-            return StoreFailure<KycIdentity>(exception, nameof(BindAvatarAsync), candidate.Id);
+            return StoreFailure<KycIdentity>(exception, nameof(BindUserAsync), candidate.Id);
         }
     }
 
@@ -215,7 +215,7 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
     {
         try
         {
-            // Explicit SET clause: person_key, global_person_key, avatar_ids,
+            // Explicit SET clause: person_key, global_person_key, user_ids,
             // provenance, and created_date are deliberately NOT touched. Erasure
             // removes the readable personal attributes; it must not destroy the
             // pseudonymous key that uniqueness and the audit trail depend on.
@@ -291,11 +291,11 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
         TenantScope = identity.TenantScope,
         TenantId = string.IsNullOrWhiteSpace(identity.TenantId)
             ? null
-            : SurrealLink.ToLink("avatar", identity.TenantId),
+            : SurrealLink.ToLink("user", identity.TenantId),
         PersonKey = identity.PersonKey,
         GlobalPersonKey = identity.GlobalPersonKey,
         PersonKeyVersion = identity.PersonKeyVersion,
-        AvatarIds = identity.AvatarIds,
+        UserIds = identity.UserIds,
         FirstName = identity.FirstName,
         LastName = identity.LastName,
         Birthday = identity.Birthday,
@@ -319,7 +319,7 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
         PersonKey = identity.PersonKey,
         GlobalPersonKey = identity.GlobalPersonKey,
         PersonKeyVersion = identity.PersonKeyVersion,
-        AvatarIds = identity.AvatarIds,
+        UserIds = identity.UserIds,
         FirstName = identity.FirstName,
         LastName = identity.LastName,
         Birthday = identity.Birthday,

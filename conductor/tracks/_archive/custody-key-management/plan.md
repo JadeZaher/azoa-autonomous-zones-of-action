@@ -13,8 +13,8 @@ phase.
 
 | Topic | Decision required |
 |-------|-------------------|
-| Resolver shape | **DECIDED: higher-order `WithSigningKeyAsync<T>(walletId, avatarId, Func<byte[],Task<T>>)`** — the key never leaves the resolver's `finally`, so "zero after use" is structurally enforced. This matches the spec's decrypt→sign→zero contract; the signer (`signing-core-keystone`) passes a `sign` delegate and receives only its result. The disposable-lease alternative was rejected because it relies on the caller disposing. |
-| Platform pseudo-wallet identity | **DECIDED: reserved sentinel `walletId` (fixed `Guid` constant `KeyCustodyService.PlatformWalletId`) special-cased in `KeyCustodyService`.** Keeps the platform key out of the per-user wallet table; resolved from config (`AZOA:Algorand:PlatformMnemonic`), not from a persisted row. A persisted system-Avatar row was rejected as heavier and as putting a value-bearing platform key into the per-user store. |
+| Resolver shape | **DECIDED: higher-order `WithSigningKeyAsync<T>(walletId, userId, Func<byte[],Task<T>>)`** — the key never leaves the resolver's `finally`, so "zero after use" is structurally enforced. This matches the spec's decrypt→sign→zero contract; the signer (`signing-core-keystone`) passes a `sign` delegate and receives only its result. The disposable-lease alternative was rejected because it relies on the caller disposing. |
+| Platform pseudo-wallet identity | **DECIDED: reserved sentinel `walletId` (fixed `Guid` constant `KeyCustodyService.PlatformWalletId`) special-cased in `KeyCustodyService`.** Keeps the platform key out of the per-user wallet table; resolved from config (`AZOA:Algorand:PlatformMnemonic`), not from a persisted row. A persisted system-User row was rejected as heavier and as putting a value-bearing platform key into the per-user store. |
 | Platform-authority guard | **DECIDED: (c) restrict platform resolution to internal manager callers; never expose on a controller.** Modeled as a separate `WithPlatformSigningKeyAsync<T>(bool isPlatformContext, ...)` method that takes an explicit caller-asserted platform-authority flag. Only platform-authority managers may call it; a `false` (non-platform) assertion returns an error and performs no decrypt. There is deliberately no controller surface for platform-key resolution — smallest attack surface. |
 | Rotation delivery | **DECIDED: `RewrapAsync` method stub on `IKeyCustodyService`.** Spec requires *design + stub + unit test* only. The stub accepts an explicit old/new `WalletKeyService` pair so the unit test can prove a value encrypted under key A decrypts after re-wrap under key B. Dual-key window / batch re-wrap / rollback orchestration is documented as the follow-up (not shipped). |
 
@@ -34,14 +34,14 @@ phase.
 
 - [ ] Define `IKeyCustodyService` (new file under `Interfaces/` or
   `Interfaces/Services/`, matching repo convention):
-  - `Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)`
-  - `Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)`
+  - `Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid userId, Func<byte[], Task<T>> sign)`
+  - `Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid userId)`
   - (rotation stub added in Phase 4 — see decisions table)
 - [ ] Implement `KeyCustodyService` composing `IWalletStore` +
   `WalletKeyService`. Resolve flow (mirror `ExportWalletAsync`,
   `Managers/WalletManager.cs:305-347`):
   1. `_walletStore.GetByIdAsync(walletId)` → not-found ⇒ error.
-  2. **IDOR guard:** `wallet.AvatarId != avatarId` ⇒ error, **return before any
+  2. **IDOR guard:** `wallet.UserId != userId` ⇒ error, **return before any
      decrypt** (mirror `Managers/WalletManager.cs:313-314`).
   3. **Type guard:** `wallet.WalletType != WalletType.Platform` ⇒ error (mirror
      `Managers/WalletManager.cs:316-317`); `External` is never signable.
@@ -59,7 +59,7 @@ phase.
 ## Phase 2 — Platform-signer seam
 
 - [ ] Add the platform pseudo-wallet branch to `KeyCustodyService` per the
-  decisions table (sentinel `walletId` vs persisted system-Avatar row).
+  decisions table (sentinel `walletId` vs persisted system-User row).
 - [ ] Platform key source: resolve a platform mnemonic from config the same way
   the faucet does — `Blockchain:Faucet:Algorand:Mnemonic`
   (`Core/AlgorandFaucet.cs:45`) is the precedent; choose/record the platform
@@ -114,7 +114,7 @@ phase.
 - [ ] `dotnet test` — green. New unit tests:
   - resolver happy path returns the signer's result for an owned `Platform`
     wallet;
-  - **IDOR guard:** different `avatarId` ⇒ error and **DecryptPrivateKey is
+  - **IDOR guard:** different `userId` ⇒ error and **DecryptPrivateKey is
     never called** (assert via a spy/mock on `WalletKeyService` or
     `IKeyCustodyService` seam);
   - `External` wallet ⇒ error;

@@ -67,10 +67,10 @@
 
 ### Rate Limiting
 **Mechanism:** ASP.NET built-in rate limiter (no external NuGet), configured in `appsettings.json:RateLimiting`.
-- **Global policy:** 120 requests/60s per partition key (IP, API key, avatar ID — most specific wins).
+- **Global policy:** 120 requests/60s per partition key (IP, API key, user ID — most specific wins).
 - **Financial policy** (`[EnableRateLimiting("financial")]`): 10 requests/60s on swap-execute, wallet-topup, bridge-initiate/redeem/reverse.
 - Rejection: 429 Too Many Requests + `Retry-After` header.
-- Partitioning: `apikey:{sha256(X-Api-Key)}` (hashed so the secret never lands in state) → `avatar:{sub}` → `ip:{remoteIp}`.
+- Partitioning: `apikey:{sha256(X-Api-Key)}` (hashed so the secret never lands in state) → `user:{sub}` → `ip:{remoteIp}`.
 
 ### InMemoryStorageProvider Removed from Production
 **Status:** Deleted from DI registration (`Program.cs`). `EfStorageProvider` is now the sole `IAZOAStorageProvider`. InMemoryStorageProvider class still exists for integration tests to register explicitly; never used in production.
@@ -318,7 +318,7 @@ Then re-apply with `dotnet ef database update`.
 **Query non-terminal records (last 24 hours, showing age):**
 ```sql
 SELECT 
-  Id, AvatarId, SourceChain, TargetChain, Status,
+  Id, UserId, SourceChain, TargetChain, Status,
   now() - CreatedAt as age,
   LockTxHash, RedemptionTxHash, MintTxHash, ErrorMessage
 FROM BridgeTransactions
@@ -859,7 +859,7 @@ ON CONFLICT, IDbContextFactory) consciously deferred (each sits on the
 safety spine — not low-risk; non-launch-blocking).
 
 **Tier-1 `architecture-decoupling` COMPLETE.** Persistence god interface +
-`IQuestRepository` + `ProviderContext`/selection/decorator infra deleted behind
+`IActionRepository` + `ProviderContext`/selection/decorator infra deleted behind
 8 per-aggregate `I*Store` interfaces (EF adapters interim; SurrealDB swaps them
 behind this one seam). **Exactly-once safety surface is UNCHANGED:**
 `CrossChainBridgeService` and `ReconciliationService` were deliberately kept on
@@ -885,7 +885,7 @@ god-iface-refs + warnings≤17 + live `/health` 200) is GREEN.
    EF CRUD/query-filter coverage; not replaced (manager tests mock the stores).
    Mitigated: the `Ef*Store` bodies are *proven verbatim lifts* of the deleted
    provider (diff-verified) ⇒ no logic regression. Add SQLite-backed
-   `Ef*StoreTests` (esp. `EfQuestStore.UpsertQuestAsync` child-collection sync,
+   `Ef*StoreTests` (esp. `EfActionStore.UpsertActionAsync` child-collection sync,
    `EfHolonStore.QueryAsync` filters) in the SurrealDB/integration rebuild.
 2. **L1** — `ProviderHealthMonitorHealthCheck` is vestigial: the decorator that
    recorded scores was deleted, so it always reports Healthy("No provider data

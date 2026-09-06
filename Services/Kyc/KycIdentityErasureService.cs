@@ -10,7 +10,7 @@ namespace AZOA.WebAPI.Services.Kyc;
 /// Retention + erasure for the identity binding AND the AML screening trail (D25).
 /// Erasure tombstones the retained personal fields but PRESERVES the salted person
 /// keys, the screening verdicts, and the provider ids, so a GDPR Art. 17 request and
-/// KYC record-keeping can both be satisfied: uniqueness, audit, and the avatar links
+/// KYC record-keeping can both be satisfied: uniqueness, audit, and the user links
 /// survive an erasure that removes every readable personal attribute.
 ///
 /// <para>The screening tables are in scope deliberately. <c>kyc_screening_result</c>
@@ -134,8 +134,8 @@ public sealed class KycIdentityErasureService : IKycIdentityErasureService
         DateTimeOffset erasedAt,
         CancellationToken ct)
     {
-        var avatarIds = binding.AvatarIds ?? [];
-        if (avatarIds.Count == 0)
+        var userIds = binding.UserIds ?? [];
+        if (userIds.Count == 0)
             return;
 
         Guid? tenantId = Guid.TryParseExact(binding.TenantId ?? string.Empty, "N", out var parsed)
@@ -143,7 +143,7 @@ public sealed class KycIdentityErasureService : IKycIdentityErasureService
             : null;
 
         var screening = await _screeningStore.EraseSubjectAsync(
-            avatarIds,
+            userIds,
             tenantId,
             reason,
             erasedAt,

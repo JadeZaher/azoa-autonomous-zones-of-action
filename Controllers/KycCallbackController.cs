@@ -17,7 +17,7 @@ namespace AZOA.WebAPI.Controllers;
 /// <para>The callback authenticates with a shared secret carried IN THE BODY, which
 /// makes this endpoint both unauthenticated to ASP.NET and a brute-force target, so
 /// it gets its OWN rate-limit policy rather than sharing the global one: a
-/// per-avatar or per-key partition is meaningless here because there is no
+/// per-user or per-key partition is meaningless here because there is no
 /// principal.</para>
 ///
 /// <para>The response is a fixed, contentless acknowledgement. It never echoes the

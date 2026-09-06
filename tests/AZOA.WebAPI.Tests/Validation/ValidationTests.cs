@@ -3,21 +3,21 @@ using FluentValidation.TestHelper;
 using AZOA.WebAPI.Controllers;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models;
-using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Validators;
 using FV = AZOA.WebAPI.Validators;
 
 namespace AZOA.WebAPI.Tests.Validation;
 
-public class AvatarRegisterValidatorTests
+public class UserRegisterValidatorTests
 {
-    private readonly AvatarRegisterValidator _validator = new();
+    private readonly UserRegisterValidator _validator = new();
 
     [Fact]
     public void ValidModel_ShouldNotHaveErrors()
     {
-        var model = new AvatarRegisterModel { Username = "validuser", Email = "test@example.com", Password = "Password123" };
+        var model = new UserRegisterModel { Username = "validuser", Email = "test@example.com", Password = "Password123" };
         var result = _validator.TestValidate(model);
         result.ShouldNotHaveAnyValidationErrors();
     }
@@ -25,7 +25,7 @@ public class AvatarRegisterValidatorTests
     [Fact]
     public void EmptyUsername_ShouldHaveError()
     {
-        var model = new AvatarRegisterModel { Username = "", Email = "test@example.com", Password = "Password123" };
+        var model = new UserRegisterModel { Username = "", Email = "test@example.com", Password = "Password123" };
         var result = _validator.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.Username);
     }
@@ -33,7 +33,7 @@ public class AvatarRegisterValidatorTests
     [Fact]
     public void ShortUsername_ShouldHaveError()
     {
-        var model = new AvatarRegisterModel { Username = "ab", Email = "test@example.com", Password = "Password123" };
+        var model = new UserRegisterModel { Username = "ab", Email = "test@example.com", Password = "Password123" };
         var result = _validator.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.Username);
     }
@@ -41,7 +41,7 @@ public class AvatarRegisterValidatorTests
     [Fact]
     public void InvalidEmail_ShouldHaveError()
     {
-        var model = new AvatarRegisterModel { Username = "validuser", Email = "not-email", Password = "Password123" };
+        var model = new UserRegisterModel { Username = "validuser", Email = "not-email", Password = "Password123" };
         var result = _validator.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.Email);
     }
@@ -49,7 +49,7 @@ public class AvatarRegisterValidatorTests
     [Fact]
     public void WeakPassword_ShouldHaveErrors()
     {
-        var model = new AvatarRegisterModel { Username = "validuser", Email = "test@example.com", Password = "weak" };
+        var model = new UserRegisterModel { Username = "validuser", Email = "test@example.com", Password = "weak" };
         var result = _validator.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.Password);
     }
@@ -57,20 +57,20 @@ public class AvatarRegisterValidatorTests
     [Fact]
     public void UsernameWithSpecialChars_ShouldHaveError()
     {
-        var model = new AvatarRegisterModel { Username = "user@name!", Email = "test@example.com", Password = "Password123" };
+        var model = new UserRegisterModel { Username = "user@name!", Email = "test@example.com", Password = "Password123" };
         var result = _validator.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.Username);
     }
 }
 
-public class AvatarLoginValidatorTests
+public class UserLoginValidatorTests
 {
-    private readonly AvatarLoginValidator _validator = new();
+    private readonly UserLoginValidator _validator = new();
 
     [Fact]
     public void ValidModel_ShouldNotHaveErrors()
     {
-        var model = new AvatarLoginModel { Email = "test@example.com", Password = "pass" };
+        var model = new UserLoginModel { Email = "test@example.com", Password = "pass" };
         var result = _validator.TestValidate(model);
         result.ShouldNotHaveAnyValidationErrors();
     }
@@ -78,7 +78,7 @@ public class AvatarLoginValidatorTests
     [Fact]
     public void EmptyEmail_ShouldHaveError()
     {
-        var model = new AvatarLoginModel { Email = "", Password = "pass" };
+        var model = new UserLoginModel { Email = "", Password = "pass" };
         var result = _validator.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.Email);
     }
@@ -86,7 +86,7 @@ public class AvatarLoginValidatorTests
     [Fact]
     public void EmptyPassword_ShouldHaveError()
     {
-        var model = new AvatarLoginModel { Email = "test@example.com", Password = "" };
+        var model = new UserLoginModel { Email = "test@example.com", Password = "" };
         var result = _validator.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.Password);
     }
@@ -124,7 +124,7 @@ public class HolonCreateValidatorTests
 // ═══════════════════════════════════════════════════════════════════════════
 //  FINANCIAL / SAFETY-RELEVANT VALIDATORS  (AZOA.WebAPI.Validators)
 //  These guard money-moving and irreversible operations: swaps, transfers,
-//  faucet top-ups, NFT mint/transfer/burn, cross-chain bridge, quest graphs.
+//  faucet top-ups, NFT mint/transfer/burn, cross-chain bridge, action graphs.
 // ═══════════════════════════════════════════════════════════════════════════
 
 public class SwapQuoteRequestValidatorTests
@@ -485,7 +485,7 @@ public class NftTransferRequestValidatorTests
 
     private static NftTransferRequest Valid() => new()
     {
-        TargetAvatarId = Guid.NewGuid(),
+        TargetUserId = Guid.NewGuid(),
         WalletId = Guid.NewGuid()
     };
 
@@ -496,10 +496,10 @@ public class NftTransferRequestValidatorTests
     }
 
     [Fact]
-    public void EmptyTargetAvatarId_Fails()
+    public void EmptyTargetUserId_Fails()
     {
-        var m = Valid(); m.TargetAvatarId = Guid.Empty;
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.TargetAvatarId);
+        var m = Valid(); m.TargetUserId = Guid.Empty;
+        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.TargetUserId);
     }
 
     [Fact]
@@ -678,22 +678,22 @@ public class BridgeReverseRequestValidatorTests
     }
 }
 
-public class QuestCreateModelValidatorTests
+public class ActionCreateModelValidatorTests
 {
-    private readonly FV.QuestCreateModelValidator _validator = new();
+    private readonly FV.ActionCreateModelValidator _validator = new();
 
-    private static QuestCreateModel Valid() => new()
+    private static ActionCreateModel Valid() => new()
     {
-        Name = "My Quest",
-        Description = "A quest",
-        Nodes = new List<QuestNodeCreateModel>
+        Name = "My ActionDefinition",
+        Description = "A action",
+        Nodes = new List<ActionNodeCreateModel>
         {
-            new() { Name = "Start", NodeType = QuestNodeType.HolonCreate, IsEntry = true,  IsTerminal = false },
-            new() { Name = "End",   NodeType = QuestNodeType.HolonGet,    IsEntry = false, IsTerminal = true  }
+            new() { Name = "Start", NodeType = ActionNodeType.HolonCreate, IsEntry = true,  IsTerminal = false },
+            new() { Name = "End",   NodeType = ActionNodeType.HolonGet,    IsEntry = false, IsTerminal = true  }
         },
-        Edges = new List<QuestEdgeCreateModel>
+        Edges = new List<ActionEdgeCreateModel>
         {
-            new() { SourceNodeId = 0, TargetNodeId = 1, EdgeType = QuestEdgeType.Control }
+            new() { SourceNodeId = 0, TargetNodeId = 1, EdgeType = ActionEdgeType.Control }
         }
     };
 
@@ -731,34 +731,34 @@ public class QuestCreateModelValidatorTests
     {
         var m = Valid();
         m.Edges[0].TargetNodeId = m.Edges[0].SourceNodeId;
-        // Self-loop is rejected by the child QuestEdgeCreateModelValidator.
+        // Self-loop is rejected by the child ActionEdgeCreateModelValidator.
         _validator.TestValidate(m).IsValid.Should().BeFalse();
     }
 }
 
-public class QuestEdgeCreateModelValidatorTests
+public class ActionEdgeCreateModelValidatorTests
 {
-    private readonly FV.QuestEdgeCreateModelValidator _validator = new();
+    private readonly FV.ActionEdgeCreateModelValidator _validator = new();
 
     [Fact]
     public void Valid_Passes()
     {
-        _validator.TestValidate(new QuestEdgeCreateModel
+        _validator.TestValidate(new ActionEdgeCreateModel
         {
             SourceNodeId = 0,
             TargetNodeId = 1,
-            EdgeType = QuestEdgeType.Control
+            EdgeType = ActionEdgeType.Control
         }).IsValid.Should().BeTrue();
     }
 
     [Fact]
     public void SelfLoop_Fails()
     {
-        var result = _validator.Validate(new QuestEdgeCreateModel
+        var result = _validator.Validate(new ActionEdgeCreateModel
         {
             SourceNodeId = 2,
             TargetNodeId = 2,
-            EdgeType = QuestEdgeType.Control
+            EdgeType = ActionEdgeType.Control
         });
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e =>
@@ -768,22 +768,22 @@ public class QuestEdgeCreateModelValidatorTests
     [Fact]
     public void NegativeSourceNodeId_Fails()
     {
-        _validator.TestValidate(new QuestEdgeCreateModel
+        _validator.TestValidate(new ActionEdgeCreateModel
         {
             SourceNodeId = -1,
             TargetNodeId = 1,
-            EdgeType = QuestEdgeType.Control
+            EdgeType = ActionEdgeType.Control
         }).ShouldHaveValidationErrorFor(x => x.SourceNodeId);
     }
 
     [Fact]
     public void InvalidEdgeTypeEnum_Fails()
     {
-        _validator.TestValidate(new QuestEdgeCreateModel
+        _validator.TestValidate(new ActionEdgeCreateModel
         {
             SourceNodeId = 0,
             TargetNodeId = 1,
-            EdgeType = (QuestEdgeType)42
+            EdgeType = (ActionEdgeType)42
         }).ShouldHaveValidationErrorFor(x => x.EdgeType);
     }
 
@@ -791,11 +791,11 @@ public class QuestEdgeCreateModelValidatorTests
     [Fact]
     public void Conditional_EmptyCondition_Fails()
     {
-        var result = _validator.Validate(new QuestEdgeCreateModel
+        var result = _validator.Validate(new ActionEdgeCreateModel
         {
             SourceNodeId = 0,
             TargetNodeId = 1,
-            EdgeType = QuestEdgeType.Conditional,
+            EdgeType = ActionEdgeType.Conditional,
             Condition = ""
         });
         result.IsValid.Should().BeFalse();
@@ -805,11 +805,11 @@ public class QuestEdgeCreateModelValidatorTests
     [Fact]
     public void Conditional_NullCondition_Fails()
     {
-        var result = _validator.Validate(new QuestEdgeCreateModel
+        var result = _validator.Validate(new ActionEdgeCreateModel
         {
             SourceNodeId = 0,
             TargetNodeId = 1,
-            EdgeType = QuestEdgeType.Conditional,
+            EdgeType = ActionEdgeType.Conditional,
             Condition = null
         });
         result.IsValid.Should().BeFalse();
@@ -819,28 +819,28 @@ public class QuestEdgeCreateModelValidatorTests
     [Fact]
     public void Conditional_WithCondition_Passes()
     {
-        _validator.TestValidate(new QuestEdgeCreateModel
+        _validator.TestValidate(new ActionEdgeCreateModel
         {
             SourceNodeId = 0,
             TargetNodeId = 1,
-            EdgeType = QuestEdgeType.Conditional,
+            EdgeType = ActionEdgeType.Conditional,
             Condition = "x == 1"
         }).IsValid.Should().BeTrue();
     }
 }
 
-public class QuestEdgeAddModelValidatorTests
+public class ActionEdgeAddModelValidatorTests
 {
-    private readonly FV.QuestEdgeAddModelValidator _validator = new();
+    private readonly FV.ActionEdgeAddModelValidator _validator = new();
 
     [Fact]
     public void Control_Valid_Passes()
     {
-        _validator.TestValidate(new QuestEdgeAddModel
+        _validator.TestValidate(new ActionEdgeAddModel
         {
             SourceNodeId = Guid.NewGuid(),
             TargetNodeId = Guid.NewGuid(),
-            EdgeType = QuestEdgeType.Control
+            EdgeType = ActionEdgeType.Control
         }).IsValid.Should().BeTrue();
     }
 
@@ -848,11 +848,11 @@ public class QuestEdgeAddModelValidatorTests
     public void SelfLoop_Fails()
     {
         var id = Guid.NewGuid();
-        var result = _validator.Validate(new QuestEdgeAddModel
+        var result = _validator.Validate(new ActionEdgeAddModel
         {
             SourceNodeId = id,
             TargetNodeId = id,
-            EdgeType = QuestEdgeType.Control
+            EdgeType = ActionEdgeType.Control
         });
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.ErrorMessage.Contains("self-loops not allowed"));
@@ -862,11 +862,11 @@ public class QuestEdgeAddModelValidatorTests
     [Fact]
     public void Conditional_EmptyCondition_Fails()
     {
-        var result = _validator.Validate(new QuestEdgeAddModel
+        var result = _validator.Validate(new ActionEdgeAddModel
         {
             SourceNodeId = Guid.NewGuid(),
             TargetNodeId = Guid.NewGuid(),
-            EdgeType = QuestEdgeType.Conditional,
+            EdgeType = ActionEdgeType.Conditional,
             Condition = ""
         });
         result.IsValid.Should().BeFalse();
@@ -876,11 +876,11 @@ public class QuestEdgeAddModelValidatorTests
     [Fact]
     public void Conditional_WithCondition_Passes()
     {
-        _validator.TestValidate(new QuestEdgeAddModel
+        _validator.TestValidate(new ActionEdgeAddModel
         {
             SourceNodeId = Guid.NewGuid(),
             TargetNodeId = Guid.NewGuid(),
-            EdgeType = QuestEdgeType.Conditional,
+            EdgeType = ActionEdgeType.Conditional,
             Condition = "score > 10"
         }).IsValid.Should().BeTrue();
     }

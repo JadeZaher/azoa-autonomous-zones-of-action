@@ -17,7 +17,7 @@ DEFINE TABLE IF NOT EXISTS operation_log SCHEMAFULL;
 
 DEFINE FIELD IF NOT EXISTS id ON TABLE operation_log TYPE string
     ASSERT $value != NONE AND $value != "";
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE operation_log TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE operation_log TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS wallet_id ON TABLE operation_log TYPE option<record<wallet>>;
 DEFINE FIELD IF NOT EXISTS operation_type ON TABLE operation_log TYPE string
     ASSERT $value != NONE AND $value != "";
@@ -49,14 +49,14 @@ DEFINE FIELD IF NOT EXISTS idempotency_key ON TABLE operation_log TYPE option<st
     ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
 
 -- Allocation receipt initiator context
-DEFINE FIELD IF NOT EXISTS initiator_avatar_id ON TABLE operation_log TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS initiator_user_id ON TABLE operation_log TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS initiator_api_key_id ON TABLE operation_log TYPE option<record<api_key>>;
 
 -- Error detail (populated on failure)
 DEFINE FIELD IF NOT EXISTS error ON TABLE operation_log TYPE option<string>;
 
 -- tenant-consent-delegation AC4: acting tenant + required signing scope
-DEFINE FIELD IF NOT EXISTS acting_tenant_id ON TABLE operation_log TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS acting_tenant_id ON TABLE operation_log TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS signing_scope ON TABLE operation_log TYPE option<string>;
 
 -- Timestamps
@@ -86,9 +86,9 @@ DEFINE INDEX IF NOT EXISTS operation_log_idempotency_key
     FIELDS idempotency_key
     UNIQUE;
 
-DEFINE INDEX IF NOT EXISTS operation_log_avatar_created
+DEFINE INDEX IF NOT EXISTS operation_log_user_created
     ON TABLE operation_log
-    FIELDS avatar_id, created_date;
+    FIELDS user_id, created_date;
 
 DEFINE INDEX IF NOT EXISTS operation_log_status
     ON TABLE operation_log

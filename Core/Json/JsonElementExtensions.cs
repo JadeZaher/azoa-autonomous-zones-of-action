@@ -7,7 +7,7 @@ namespace AZOA.WebAPI.Core.Json;
 /// <see cref="Dictionary{TKey, TValue}"/> shapes and the
 /// <see cref="JsonElement"/> shape that the source-gen'd SurrealDB POCOs use
 /// for SurrealDB <c>object</c> fields (e.g. <c>dapp_series.shared_config</c>,
-/// <c>quest.metadata</c>).
+/// <c>action.metadata</c>).
 /// </summary>
 /// <remarks>
 /// The source generator emits <see cref="JsonElement"/> for SurrealDB

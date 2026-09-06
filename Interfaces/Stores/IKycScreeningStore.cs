@@ -22,16 +22,16 @@ public interface IKycScreeningStore
 
     /// <summary>
     /// The single row a value gate reads: the most recent screening for this exact
-    /// (avatar, tenant) pair. A null result means NOT SCREENED, which the gate must
+    /// (user, tenant) pair. A null result means NOT SCREENED, which the gate must
     /// treat as a denial, never as an absence of adverse findings.
     /// </summary>
     Task<AZOAResult<KycScreeningResult>> GetLatestResultAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct = default);
 
-    Task<AZOAResult<IReadOnlyList<KycScreeningResult>>> GetResultsForAvatarAsync(
-        Guid avatarId,
+    Task<AZOAResult<IReadOnlyList<KycScreeningResult>>> GetResultsForUserAsync(
+        Guid userId,
         Guid? tenantId,
         int limit,
         CancellationToken ct = default);
@@ -54,7 +54,7 @@ public interface IKycScreeningStore
     /// <summary>
     /// Node-internal reconciliation for the vendor's <c>already-exists</c> reply.
     /// Returns ONLY the opaque provider monitor id — never a row, so it is
-    /// structurally incapable of handing one tenant another tenant's subject avatar
+    /// structurally incapable of handing one tenant another tenant's subject user
     /// or tenant id. One vendor company key serves the whole node, so the vendor
     /// dedups a query shape globally and this is the only way a second tenant can
     /// learn the id of the upstream monitor it must share.
@@ -95,11 +95,11 @@ public interface IKycScreeningStore
 
     /// <summary>
     /// Tombstones the retained query shape (name + date of birth) on every screening
-    /// result and monitor belonging to these avatars inside one tenant scope, while
+    /// result and monitor belonging to these users inside one tenant scope, while
     /// preserving the verdict, the provider ids, and the audit timestamps (D25).
     /// </summary>
     Task<AZOAResult<int>> EraseSubjectAsync(
-        IReadOnlyList<string> avatarIds,
+        IReadOnlyList<string> userIds,
         Guid? tenantId,
         string reason,
         DateTimeOffset erasedAt,

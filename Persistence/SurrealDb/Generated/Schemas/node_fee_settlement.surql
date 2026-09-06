@@ -7,7 +7,7 @@
 
 -- ── Enums ─────────────────────────────────────────────────
 
-DEFINE PARAM IF NOT EXISTS $node_fee_settlement_operation VALUE ["Mint", "Transfer", "Swap", "QuestComplete", "FederationPublish"];
+DEFINE PARAM IF NOT EXISTS $node_fee_settlement_operation VALUE ["Mint", "Transfer", "Swap", "ActionComplete", "FederationPublish"];
 DEFINE PARAM IF NOT EXISTS $node_fee_settlement_network VALUE ["Devnet", "Testnet", "Mainnet"];
 -- NodeFeeSettlement.StateKind
 DEFINE PARAM IF NOT EXISTS $node_fee_settlement_state VALUE ["Prepared", "PrimarySubmitted", "FeeSubmitted", "AwaitingReconciliation", "Settled", "Cancelled"];

@@ -15,7 +15,7 @@ Rate-limit partitions use only authenticated server-issued identity claims.
 An ordinary authenticated API key partitions by `ApiKeyId`; a key carrying
 `tenant:provision` partitions by its authenticated tenant subject so key
 rotation cannot evade the tenant aggregate ceiling. An authenticated user falls
-back to its subject/avatar id; anonymous requests partition by the trusted
+back to its subject/user id; anonymous requests partition by the trusted
 remote IP. Never partition directly from `X-Api-Key`: anonymous endpoints would
 let callers rotate invalid header values to evade the IP quota.
 

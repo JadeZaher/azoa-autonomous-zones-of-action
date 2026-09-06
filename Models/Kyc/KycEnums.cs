@@ -16,10 +16,10 @@ public enum KycStatus
     /// <summary>Picked up by a reviewer / provider but not yet decided.</summary>
     IN_REVIEW,
 
-    /// <summary>Identity verified — the gate opens for this avatar.</summary>
+    /// <summary>Identity verified — the gate opens for this user.</summary>
     APPROVED,
 
-    /// <summary>Rejected — the avatar must re-submit to be verified.</summary>
+    /// <summary>Rejected — the user must re-submit to be verified.</summary>
     REJECTED,
 
     /// <summary>Lapsed past its expiry window.</summary>

@@ -22,11 +22,11 @@ with the economic-primitive-nodes philosophy — [[economic-primitive-nodes-ship
 
 | Step | Existing rail | New work |
 |------|---------------|----------|
-| Project-as-asset | `HolonCreate` node, `Holon` model | quest-template convention |
+| Project-as-asset | `HolonCreate` node, `Holon` model | action-template convention |
 | Notarize / deed | `Grant`/`NftMint` + D10 Holon↔asset link (`GrantNodeHandler`) | none |
 | Membership tokens | — | **[[fungible-token-node]]** (`FungibleTokenCreate`) |
 | Platform-token backing | `AllocationManager.AllocateAsync` (KYC + idempotent, arbitrary `Amount`) | a `PlatformTokenGrant`/`Back` node wrapping allocation |
-| Platform→project bridge | `ICrossChainBridgeService.InitiateBridgeAsync`/`RedeemWithVAAAsync` | a `Bridge` quest node + **bridge hardening dep** |
+| Platform→project bridge | `ICrossChainBridgeService.InitiateBridgeAsync`/`RedeemWithVAAAsync` | a `Bridge` action node + **bridge hardening dep** |
 | Pegged project token | `FungibleTokenCreate` (the project token) | peg state is **tenant-side** (`Emit` payload to ArdaNova) |
 
 ## Hard dependencies
@@ -41,14 +41,14 @@ with the economic-primitive-nodes philosophy — [[economic-primitive-nodes-ship
 
 ## Deliverables
 
-1. **New quest nodes** (Tier-2): `Bridge` (wraps `ICrossChainBridgeService`),
+1. **New action nodes** (Tier-2): `Bridge` (wraps `ICrossChainBridgeService`),
    and a `Back`/`PlatformTokenGrant` node wrapping `AllocationManager.AllocateAsync`.
    (`MembershipMint` and `ProjectTokenCreate` are just `FungibleTokenCreate` uses —
    no new node, possibly node-template presets.)
 2. **Node-template presets** seeded in the builder palette: "Project Asset",
    "Membership Token", "Investor Backing", "Bridge to Project Token" — each a
    pre-configured `FungibleTokenCreate`/`Back`/`Bridge` node template.
-3. **A canonical quest template**: `HolonCreate → Grant(deed,link) →
+3. **A canonical action template**: `HolonCreate → Grant(deed,link) →
    FungibleTokenCreate(membership) → Back(platform) → Bridge(platform→project) →
    FungibleTokenCreate(project,pegged) → Emit(peg config to ArdaNova)`.
    Parameterized (`Parameters` JSON Schema) so ArdaNova instantiates it per project.
@@ -61,7 +61,7 @@ with the economic-primitive-nodes philosophy — [[economic-primitive-nodes-ship
 
 - [ ] AC1 — `Bridge` + `Back` Tier-2 nodes (enum + config + handler + gate).
 - [ ] AC2 — The 4 node-template presets seed the builder palette.
-- [ ] AC3 — The canonical fractionalization quest template instantiates + validates
+- [ ] AC3 — The canonical fractionalization action template instantiates + validates
       (DAG-valid, parameters schema enforced).
 - [ ] AC4 — Bridge node refuses to move real value unless bridge-safety-hardening
       is shipped (feature flag / env gate). Testnet path works end-to-end.

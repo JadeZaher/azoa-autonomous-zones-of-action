@@ -18,12 +18,12 @@ public class BlockchainOperationBuilderTests
     }
 
     [Fact]
-    public void ForAvatar_ShouldSetAvatarId()
+    public void ForUser_ShouldSetUserId()
     {
-        var avatarId = Guid.NewGuid();
-        var op = new BlockchainOperationBuilder().ForAvatar(avatarId).Build();
+        var userId = Guid.NewGuid();
+        var op = new BlockchainOperationBuilder().ForUser(userId).Build();
 
-        op.AvatarId.Should().Be(avatarId);
+        op.UserId.Should().Be(userId);
     }
 
     [Fact]
@@ -111,17 +111,17 @@ public class BlockchainOperationBuilderTests
     [Fact]
     public void Chained_Build_ShouldAccumulateAllValues()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
         var op = (BlockchainOperation)new BlockchainOperationBuilder()
-            .ForAvatar(avatarId)
+            .ForUser(userId)
             .UsingWallet(walletId)
             .WithStatus(OperationStatus.Pending)
             .WithParameter("ChainType", "Algorand")
             .Mint("ipfs://token", 1, "NFT")
             .Build();
 
-        op.AvatarId.Should().Be(avatarId);
+        op.UserId.Should().Be(userId);
         op.WalletId.Should().Be(walletId);
         op.Status.Should().Be(OperationStatus.Pending);
         op.Parameters["ChainType"].Should().Be("Algorand");

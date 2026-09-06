@@ -10,7 +10,7 @@ import { GITHUB, LandingHead, LandingNav, LandingFooter } from '@/components/lan
 const PILLARS = [
   { title: 'Freedom', body: 'Every zone runs its own node, its own rules, its own economy. No central operator to appease, no platform that can change the deal underneath you.' },
   { title: 'Privacy', body: 'What happens inside a zone stays inside it. Only what a zone chooses to share crosses the boundary — under consent that its members control.' },
-  { title: 'Agency', body: 'Your avatar and your value travel with you. Leave a zone, join another, or belong to ten at once — your identity is yours, not theirs.' },
+  { title: 'Agency', body: 'Your user and your value travel with you. Leave a zone, join another, or belong to ten at once — your identity is yours, not theirs.' },
 ]
 
 const ARDANOVA = [

@@ -6,8 +6,6 @@ graph LR
     %% Nodes in this slice
     admin_bootstrap_state["admin_bootstrap_state: Node"]:::nodeClass
     api_key["api_key: Node"]:::nodeClass
-    avatar["avatar: Node"]:::nodeClass
-    avatar_external_login["avatar_external_login: Node"]:::nodeClass
     consent_audit["consent_audit: Node"]:::nodeClass
     consent_grant["consent_grant: Node"]:::nodeClass
     holon["holon: Node"]:::nodeClass
@@ -30,49 +28,51 @@ graph LR
     oauth_exchange_code["oauth_exchange_code: Node"]:::nodeClass
     star_odk["star_odk: Node"]:::nodeClass
     tenant_kyc_provider_selection["tenant_kyc_provider_selection: Node"]:::nodeClass
+    user["user: Node"]:::nodeClass
+    user_external_login["user_external_login: Node"]:::nodeClass
     wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
     wallet_auth_claim_token["wallet_auth_claim_token: Node"]:::nodeClass
 
     %% Edges (outbound from this slice)
-    admin_bootstrap_state -- "avatar_id [N:1]" --> avatar
-    api_key -- "avatar_id [N:1]" --> avatar
-    avatar -- "owner_tenant_id [N:0..1]" --> avatar
-    avatar_external_login -- "tenant_id [N:0..1]" --> avatar
-    avatar_external_login -- "avatar_id [N:1]" --> avatar
-    consent_audit -- "avatar_id [N:0..1]" --> avatar
-    consent_audit -- "tenant_id [N:1]" --> avatar
-    consent_grant -- "grantor_avatar_id [N:1]" --> avatar
-    consent_grant -- "tenant_id [N:1]" --> avatar
-    holon -- "avatar_id [N:0..1]" --> avatar
-    holon -- "origin_avatar_id [N:0..1]" --> avatar
-    holon -- "transfer_target_avatar_id [N:0..1]" --> avatar
+    admin_bootstrap_state -- "user_id [N:1]" --> user
+    api_key -- "user_id [N:1]" --> user
+    consent_audit -- "user_id [N:0..1]" --> user
+    consent_audit -- "tenant_id [N:1]" --> user
+    consent_grant -- "grantor_user_id [N:1]" --> user
+    consent_grant -- "tenant_id [N:1]" --> user
     holon -- "parent_holon_id [N:0..1]" --> holon
     holon -- "source_holon_id [N:0..1]" --> holon
-    hosted_session -- "subject_avatar_id [N:0..1]" --> avatar
-    hosted_session -- "tenant_id [N:0..1]" --> avatar
-    kyc_control_audit -- "tenant_id [N:0..1]" --> avatar
-    kyc_control_audit -- "actor_avatar_id [N:1]" --> avatar
+    holon -- "origin_user_id [N:0..1]" --> user
+    holon -- "transfer_target_user_id [N:0..1]" --> user
+    holon -- "user_id [N:0..1]" --> user
+    hosted_session -- "subject_user_id [N:0..1]" --> user
+    hosted_session -- "tenant_id [N:0..1]" --> user
+    kyc_control_audit -- "tenant_id [N:0..1]" --> user
+    kyc_control_audit -- "actor_user_id [N:1]" --> user
     kyc_document -- "submission_id [N:0..1]" --> kyc_submission
-    kyc_identity -- "tenant_id [N:0..1]" --> avatar
-    kyc_provider_profile -- "updated_by_avatar_id [N:1]" --> avatar
-    kyc_screening_monitor -- "subject_avatar_id [N:0..1]" --> avatar
-    kyc_screening_monitor -- "tenant_id [N:0..1]" --> avatar
-    kyc_screening_result -- "subject_avatar_id [N:0..1]" --> avatar
-    kyc_screening_result -- "tenant_id [N:0..1]" --> avatar
-    kyc_submission -- "avatar_id [N:0..1]" --> avatar
-    kyc_submission -- "tenant_id [N:0..1]" --> avatar
-    node_fee_audit -- "actor_avatar_id [N:1]" --> avatar
-    node_fee_schedule -- "updated_by_avatar_id [N:0..1]" --> avatar
-    node_governance_audit -- "actor_avatar_id [N:1]" --> avatar
-    node_governance_parameters -- "updated_by_avatar_id [N:0..1]" --> avatar
-    node_treasury_audit -- "actor_avatar_id [N:1]" --> avatar
-    node_treasury_destination -- "updated_by_avatar_id [N:0..1]" --> avatar
-    oauth_exchange_code -- "tenant_id [N:0..1]" --> avatar
-    oauth_exchange_code -- "avatar_id [N:1]" --> avatar
-    star_odk -- "avatar_id [N:0..1]" --> avatar
-    tenant_kyc_provider_selection -- "tenant_id [N:1]" --> avatar
-    tenant_kyc_provider_selection -- "updated_by_avatar_id [N:1]" --> avatar
-    wallet_auth_claim_token -- "target_avatar_id [N:1]" --> avatar
-    wallet_auth_claim_token -- "tenant_id [N:1]" --> avatar
+    kyc_identity -- "tenant_id [N:0..1]" --> user
+    kyc_provider_profile -- "updated_by_user_id [N:1]" --> user
+    kyc_screening_monitor -- "subject_user_id [N:0..1]" --> user
+    kyc_screening_monitor -- "tenant_id [N:0..1]" --> user
+    kyc_screening_result -- "subject_user_id [N:0..1]" --> user
+    kyc_screening_result -- "tenant_id [N:0..1]" --> user
+    kyc_submission -- "tenant_id [N:0..1]" --> user
+    kyc_submission -- "user_id [N:0..1]" --> user
+    node_fee_audit -- "actor_user_id [N:1]" --> user
+    node_fee_schedule -- "updated_by_user_id [N:0..1]" --> user
+    node_governance_audit -- "actor_user_id [N:1]" --> user
+    node_governance_parameters -- "updated_by_user_id [N:0..1]" --> user
+    node_treasury_audit -- "actor_user_id [N:1]" --> user
+    node_treasury_destination -- "updated_by_user_id [N:0..1]" --> user
+    oauth_exchange_code -- "tenant_id [N:0..1]" --> user
+    oauth_exchange_code -- "user_id [N:1]" --> user
+    star_odk -- "user_id [N:0..1]" --> user
+    tenant_kyc_provider_selection -- "tenant_id [N:1]" --> user
+    tenant_kyc_provider_selection -- "updated_by_user_id [N:1]" --> user
+    user -- "owner_tenant_id [N:0..1]" --> user
+    user_external_login -- "tenant_id [N:0..1]" --> user
+    user_external_login -- "user_id [N:1]" --> user
+    wallet_auth_claim_token -- "target_user_id [N:1]" --> user
+    wallet_auth_claim_token -- "tenant_id [N:1]" --> user
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;

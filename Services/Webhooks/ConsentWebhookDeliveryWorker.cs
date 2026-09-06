@@ -341,7 +341,7 @@ public sealed class ConsentWebhookDeliveryWorker : BackgroundService
 
     /// <summary>
     /// Serialize the webhook POST body: the event payload the spec mandates —
-    /// <c>eventType</c> (wire form), <c>grantId</c>, <c>avatarId</c>, <c>tenantId</c>,
+    /// <c>eventType</c> (wire form), <c>grantId</c>, <c>userId</c>, <c>tenantId</c>,
     /// <c>scopes</c> (array), <c>participationRef</c>, <c>occurredAt</c>. Stable shape;
     /// the HMAC is computed over EXACTLY this string.
     /// </summary>
@@ -351,7 +351,7 @@ public sealed class ConsentWebhookDeliveryWorker : BackgroundService
         {
             EventType        = evt.WireEventType,
             GrantId          = evt.GrantId.ToString(),
-            AvatarId         = evt.AvatarId.ToString(),
+            UserId         = evt.UserId.ToString(),
             TenantId         = evt.TenantId.ToString(),
             Scopes           = string.IsNullOrWhiteSpace(evt.Scopes)
                                ? Array.Empty<string>()
@@ -368,7 +368,7 @@ public sealed class ConsentWebhookDeliveryWorker : BackgroundService
     {
         [JsonPropertyName("eventType")]        public string EventType { get; set; } = string.Empty;
         [JsonPropertyName("grantId")]          public string GrantId { get; set; } = string.Empty;
-        [JsonPropertyName("avatarId")]         public string AvatarId { get; set; } = string.Empty;
+        [JsonPropertyName("userId")]         public string UserId { get; set; } = string.Empty;
         [JsonPropertyName("tenantId")]         public string TenantId { get; set; } = string.Empty;
         [JsonPropertyName("scopes")]           public string[] Scopes { get; set; } = Array.Empty<string>();
         [JsonPropertyName("participationRef")] public string? ParticipationRef { get; set; }

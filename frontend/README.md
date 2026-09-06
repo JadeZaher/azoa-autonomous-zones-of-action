@@ -21,7 +21,7 @@ A Next.js frontend for operating and testing an Azoa node across Algorand and So
 - **Blockchain Dashboard** - Real-time network status and provider health
 - **Wallet Manager** - Multi-wallet support with balance and token portfolio
 - **Transaction History** - Complete transaction tracking with status monitoring
-- **Avatar NFT Dashboard** - Digital identity with holon integration
+- **User NFT Dashboard** - Digital identity with holon integration
 - **Testing Interface** - Comprehensive testing suite for all provider functions
 - **Node Operator Console** - Dedicated, mobile-first readiness, provider-policy,
   tenant-assignment, and KYC decision surfaces at `/operator`
@@ -124,7 +124,7 @@ src/
 │   └── page.tsx        # Home page
 ├── components/          # React components
 │   ├── AuthWrapper.tsx
-│   ├── AvatarNFTDashboard.tsx
+│   ├── UserNFTDashboard.tsx
 │   ├── BlockchainDashboard.tsx
 │   ├── TestInterface.tsx
 │   └── TransactionHistory.tsx

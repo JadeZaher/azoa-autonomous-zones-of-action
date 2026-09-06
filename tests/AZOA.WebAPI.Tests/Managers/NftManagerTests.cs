@@ -48,15 +48,15 @@ public class NftManagerTests
             _nodeGovernance.Object);
     }
 
-    private static INft CreateNftMock(Guid id, string name, string assetType = "NFT", Guid? avatarId = null, string? chainId = null) =>
-        Moq.Mock.Of<INft>(n => n.Id == id && n.Name == name && n.AssetType == assetType && n.AvatarId == avatarId && n.ChainId == chainId && n.CreatedDate == DateTime.UtcNow);
+    private static INft CreateNftMock(Guid id, string name, string assetType = "NFT", Guid? userId = null, string? chainId = null) =>
+        Moq.Mock.Of<INft>(n => n.Id == id && n.Name == name && n.AssetType == assetType && n.UserId == userId && n.ChainId == chainId && n.CreatedDate == DateTime.UtcNow);
 
     [Fact]
     public async Task GetAsync_NftFound_ReturnsSuccess()
     {
         var owner = Guid.NewGuid();
         var id = Guid.NewGuid();
-        var nft = CreateNftMock(id, "NFT1", avatarId: owner);
+        var nft = CreateNftMock(id, "NFT1", userId: owner);
         _holonStore.Setup(p => p.GetByIdAsync(id, default))
             .ReturnsAsync(new AZOAResult<IHolon> { Result = nft });
 
@@ -93,17 +93,17 @@ public class NftManagerTests
     }
 
     [Fact]
-    public async Task QueryAsync_FiltersByOwnerAvatarId()
+    public async Task QueryAsync_FiltersByOwnerUserId()
     {
-        var avatarId = Guid.NewGuid();
-        var nft1 = CreateNftMock(Guid.NewGuid(), "A", "NFT", avatarId);
+        var userId = Guid.NewGuid();
+        var nft1 = CreateNftMock(Guid.NewGuid(), "A", "NFT", userId);
         var nft2 = CreateNftMock(Guid.NewGuid(), "B", "NFT", Guid.NewGuid());
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { nft1, nft2 } });
 
-        // Caller is avatarId: owner-or-public scope already drops nft2 (private, other
-        // owner); the OwnerAvatarId filter narrows within the readable set.
-        var result = await _manager.QueryAsync(new NftQueryRequest { OwnerAvatarId = avatarId }, avatarId);
+        // Caller is userId: owner-or-public scope already drops nft2 (private, other
+        // owner); the OwnerUserId filter narrows within the readable set.
+        var result = await _manager.QueryAsync(new NftQueryRequest { OwnerUserId = userId }, userId);
 
         result.Result.Should().ContainSingle();
     }
@@ -139,11 +139,11 @@ public class NftManagerTests
     // ── value-path-wiring H3: KYC gate at the single choke point ──────────────
 
     [Fact]
-    public async Task MintAsync_UnverifiedAvatar_RejectedWithNoHolonAndNoOperationSideEffect()
+    public async Task MintAsync_UnverifiedUser_RejectedWithNoHolonAndNoOperationSideEffect()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         // KYC gate closed: the latest submission is not APPROVED.
-        _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
+        _valueAccess.Setup(k => k.RequireValueAccessAsync(userId, null, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new AZOAResult<bool>
                 {
                     IsError = true,
@@ -152,9 +152,9 @@ public class NftManagerTests
                 });
 
         var request = new NftMintRequest { Name = "NFT", Description = "D", ChainId = "algorand", WalletId = Guid.NewGuid() };
-        var result = await _manager.MintAsync(request, avatarId);
+        var result = await _manager.MintAsync(request, userId);
 
-        result.IsError.Should().BeTrue("an unverified avatar must be rejected at the NftManager choke point");
+        result.IsError.Should().BeTrue("an unverified user must be rejected at the NftManager choke point");
         result.Message.Should().StartWith(KycAuthorizationError.Forbidden,
             "the KYC_FORBIDDEN: prefix must be preserved so the controller maps it to 403");
 
@@ -167,33 +167,33 @@ public class NftManagerTests
     [Fact]
     public async Task MintAsync_CreatesHolonWithNftAssetType()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var request = new NftMintRequest { Name = "MyNFT", Description = "Desc", ChainId = "solana", WalletId = Guid.NewGuid() };
         _holonStore.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), default))
             .ReturnsAsync(new AZOAResult<IHolon> { Result = new Holon { Id = Guid.NewGuid(), AssetType = "NFT" } });
         _blockchainOperationStore.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), default))
             .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation { OperationType = "Mint" } });
 
-        var result = await _manager.MintAsync(request, avatarId);
+        var result = await _manager.MintAsync(request, userId);
 
         result.IsError.Should().BeFalse();
-        _holonStore.Verify(p => p.UpsertAsync(It.Is<IHolon>(h => h.AssetType == "NFT" && h.AvatarId == avatarId), default), Times.Once);
+        _holonStore.Verify(p => p.UpsertAsync(It.Is<IHolon>(h => h.AssetType == "NFT" && h.UserId == userId), default), Times.Once);
     }
 
     [Fact]
     public async Task MintAndTransferAsync_TenantRequests_ForwardTenantToValueAccess()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var tenantId = Guid.NewGuid();
-        _valueAccess.Setup(access => access.RequireValueAccessAsync(avatarId, tenantId, It.IsAny<CancellationToken>()))
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<bool>.Failure("participant is not ready"));
 
-        await _manager.MintAsync(new NftMintRequest { ChainId = "Algorand" }, avatarId, actingTenantId: tenantId);
+        await _manager.MintAsync(new NftMintRequest { ChainId = "Algorand" }, userId, actingTenantId: tenantId);
         await _manager.TransferAsync(
-            Guid.NewGuid(), new NftTransferRequest(), avatarId, actingTenantId: tenantId);
+            Guid.NewGuid(), new NftTransferRequest(), userId, actingTenantId: tenantId);
 
         _valueAccess.Verify(
-            access => access.RequireValueAccessAsync(avatarId, tenantId, It.IsAny<CancellationToken>()), Times.Exactly(2));
+            access => access.RequireValueAccessAsync(userId, tenantId, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Theory]
@@ -268,10 +268,10 @@ public class NftManagerTests
     [Fact]
     public async Task TransferAsync_UpdatesOwnership()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var targetId = Guid.NewGuid();
         var nftId = Guid.NewGuid();
-        var nft = CreateNftMock(nftId, "NFT", "NFT", avatarId);
+        var nft = CreateNftMock(nftId, "NFT", "NFT", userId);
         _holonStore.Setup(p => p.GetByIdAsync(nftId, default))
             .ReturnsAsync(new AZOAResult<IHolon> { Result = nft });
         _holonStore.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), default))
@@ -279,28 +279,28 @@ public class NftManagerTests
         _blockchainOperationStore.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), default))
             .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
-        var result = await _manager.TransferAsync(nftId, new NftTransferRequest { TargetAvatarId = targetId, WalletId = Guid.NewGuid() }, avatarId);
+        var result = await _manager.TransferAsync(nftId, new NftTransferRequest { TargetUserId = targetId, WalletId = Guid.NewGuid() }, userId);
 
         result.IsError.Should().BeFalse();
-        nft.AvatarId.Should().Be(targetId);
+        nft.UserId.Should().Be(targetId);
     }
 
     [Fact]
     public async Task TransferAsync_UnreadyParticipant_RejectsBeforeHolonOrOperationMutation()
     {
-        var avatarId = Guid.NewGuid();
-        _valueAccess.Setup(access => access.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
+        var userId = Guid.NewGuid();
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(userId, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<bool>.Failure(
                 KycAuthorizationError.Forbidden + KycAuthorizationError.VerificationRequiredMessage));
 
         var result = await _manager.TransferAsync(
             Guid.NewGuid(),
-            new NftTransferRequest { TargetAvatarId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
-            avatarId);
+            new NftTransferRequest { TargetUserId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
+            userId);
 
         result.IsError.Should().BeTrue();
         _valueAccess.Verify(
-            access => access.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()), Times.Once);
+            access => access.RequireValueAccessAsync(userId, null, It.IsAny<CancellationToken>()), Times.Once);
         _holonStore.Verify(store => store.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _holonStore.Verify(store => store.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
         _blockchainOperationStore.Verify(
@@ -330,7 +330,7 @@ public class NftManagerTests
 
         var result = await _manager.TransferAsync(
             Guid.NewGuid(),
-            new NftTransferRequest { TargetAvatarId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
+            new NftTransferRequest { TargetUserId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
             Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
@@ -353,7 +353,7 @@ public class NftManagerTests
 
         var result = await _manager.TransferAsync(
             Guid.NewGuid(),
-            new NftTransferRequest { TargetAvatarId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
+            new NftTransferRequest { TargetUserId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
             Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
@@ -379,7 +379,7 @@ public class NftManagerTests
 
         var result = await _manager.TransferAsync(
             Guid.NewGuid(),
-            new NftTransferRequest { TargetAvatarId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
+            new NftTransferRequest { TargetUserId = Guid.NewGuid(), WalletId = Guid.NewGuid() },
             Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
@@ -393,12 +393,12 @@ public class NftManagerTests
     [Fact]
     public async Task TransferAsync_WrongOwner_ReturnsError()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var nft = CreateNftMock(Guid.NewGuid(), "NFT", "NFT", Guid.NewGuid());
         _holonStore.Setup(p => p.GetByIdAsync(nft.Id, default))
             .ReturnsAsync(new AZOAResult<IHolon> { Result = nft });
 
-        var result = await _manager.TransferAsync(nft.Id, new NftTransferRequest(), avatarId);
+        var result = await _manager.TransferAsync(nft.Id, new NftTransferRequest(), userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("do not own");
@@ -407,8 +407,8 @@ public class NftManagerTests
     [Fact]
     public async Task BurnAsync_DeactivatesHolon()
     {
-        var avatarId = Guid.NewGuid();
-        var nft = CreateNftMock(Guid.NewGuid(), "NFT", "NFT", avatarId);
+        var userId = Guid.NewGuid();
+        var nft = CreateNftMock(Guid.NewGuid(), "NFT", "NFT", userId);
         nft.IsActive = true;
         _holonStore.Setup(p => p.GetByIdAsync(nft.Id, default))
             .ReturnsAsync(new AZOAResult<IHolon> { Result = nft });
@@ -417,7 +417,7 @@ public class NftManagerTests
         _blockchainOperationStore.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), default))
             .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
-        var result = await _manager.BurnAsync(nft.Id, Guid.NewGuid(), avatarId);
+        var result = await _manager.BurnAsync(nft.Id, Guid.NewGuid(), userId);
 
         result.IsError.Should().BeFalse();
         nft.IsActive.Should().BeFalse();
@@ -426,16 +426,16 @@ public class NftManagerTests
     [Fact]
     public async Task BurnAsync_UnreadyParticipant_RejectsBeforeHolonOrOperationMutation()
     {
-        var avatarId = Guid.NewGuid();
-        _valueAccess.Setup(access => access.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
+        var userId = Guid.NewGuid();
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(userId, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<bool>.Failure(
                 KycAuthorizationError.Forbidden + KycAuthorizationError.VerificationRequiredMessage));
 
-        var result = await _manager.BurnAsync(Guid.NewGuid(), Guid.NewGuid(), avatarId);
+        var result = await _manager.BurnAsync(Guid.NewGuid(), Guid.NewGuid(), userId);
 
         result.IsError.Should().BeTrue();
         _valueAccess.Verify(
-            access => access.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()), Times.Once);
+            access => access.RequireValueAccessAsync(userId, null, It.IsAny<CancellationToken>()), Times.Once);
         _holonStore.Verify(store => store.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _holonStore.Verify(store => store.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
         _blockchainOperationStore.Verify(

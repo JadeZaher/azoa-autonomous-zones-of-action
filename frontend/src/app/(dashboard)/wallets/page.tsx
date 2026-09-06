@@ -30,8 +30,8 @@ function truncateAddress(addr: string, chars = 6): string {
   return addr.length <= chars * 2 + 3 ? addr : `${addr.slice(0, chars)}…${addr.slice(-chars)}`
 }
 
-function PortfolioCard({ avatarId }: { avatarId: string }) {
-  const { portfolio, loading, error, refresh } = usePortfolio(avatarId)
+function PortfolioCard({ userId }: { userId: string }) {
+  const { portfolio, loading, error, refresh } = usePortfolio(userId)
   return (
     <Card>
       <CardHeader className="pb-3"><CardTitle className="text-sm">Portfolio</CardTitle></CardHeader>
@@ -181,7 +181,7 @@ function RemoveWalletDialog({
 export default function WalletsPage() {
   const {
     wallets, walletsLoading: loading, walletsError: error,
-    refreshWallets: refresh, avatarId, setDefaultWallet, removeWallet,
+    refreshWallets: refresh, userId, setDefaultWallet, removeWallet,
   } = useAzoa()
 
   const { isTestLike } = useNetwork()
@@ -225,7 +225,7 @@ export default function WalletsPage() {
             Connect browser wallets (MetaMask, Phantom, Pera) or create platform-managed wallets
           </p>
         </div>
-        {avatarId && (
+        {userId && (
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setShowBrowserConnect(true)}>
               <ExternalLink className="h-4 w-4 mr-1.5" />
@@ -363,7 +363,7 @@ export default function WalletsPage() {
           </Card>
         </div>
         <div>
-          {avatarId ? <PortfolioCard avatarId={avatarId} /> : (
+          {userId ? <PortfolioCard userId={userId} /> : (
             <Card>
               <CardContent className="pt-6">
                 <p className="text-sm text-muted-foreground text-center">Sign in to view portfolio.</p>

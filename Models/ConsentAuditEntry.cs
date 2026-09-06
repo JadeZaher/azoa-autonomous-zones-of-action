@@ -37,7 +37,7 @@ public sealed class ConsentAuditEntry
     public Guid TenantId { get; set; }
 
     /// <summary>The user (grantor) whose authority the event concerns.</summary>
-    public Guid AvatarId { get; set; }
+    public Guid UserId { get; set; }
 
     /// <summary>The scope of the operation (for sign decisions) or a comma-joined
     /// scope list (for grant/revoke).</summary>

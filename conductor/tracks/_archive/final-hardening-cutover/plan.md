@@ -36,7 +36,7 @@ block only — coordinate the single insertion point), a new test under
 - Acceptance: H-AC1.
 
 ### Lane 2 — H2 Admin-token mint path (backend)  ·  size S–M
-Owns: `Managers/AvatarManager.cs` (`GenerateJwt` + a seed/bootstrap method),
+Owns: `Managers/UserManager.cs` (`GenerateJwt` + a seed/bootstrap method),
 `Core/AzoaScopes.cs` (read-only ref — `operator:admin` at :33), appsettings admin
 seed key, and whichever seam you pick (a `SeedAdminHostedService` OR a controller
 endpoint OR a CLI entry). Do NOT touch Program.cs's provider-guard block (Lane 1).

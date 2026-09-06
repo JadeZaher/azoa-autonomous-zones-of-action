@@ -42,7 +42,7 @@ const DOMAINS = [
     ),
   },
   {
-    title: 'Quests in games',
+    title: 'Actions in games',
     body: 'Player journeys with real stakes — earn, trade, unlock. The same engine that moves money moves play, without a separate stack.',
     icon: (
       <svg viewBox="0 0 48 48" width="48" height="48">
@@ -54,11 +54,11 @@ const DOMAINS = [
 ]
 
 const PRIMITIVES = [
-  { tag: 'IDENTITY', title: 'An avatar you actually own', body: 'Apps act for you only with consent you can see — and revoke — at any moment.' },
-  { tag: 'QUESTS', title: 'Durable graphs of action', body: 'They wait, resume, and reconcile against reality before acting. They never double-spend.' },
+  { tag: 'IDENTITY', title: 'An user you actually own', body: 'Apps act for you only with consent you can see — and revoke — at any moment.' },
+  { tag: 'ACTIONS', title: 'Durable graphs of action', body: 'They wait, resume, and reconcile against reality before acting. They never double-spend.' },
   { tag: 'HOLONS', title: 'Value as nested wholes', body: 'Tokens, credits, rights, things — anything that can be held, split, and moved.' },
   { tag: 'RAILS', title: 'Chains and fiat, one seam', body: "A step doesn't care where it settles. Blockchains and banks sit behind the same door." },
-  { tag: 'STAR', title: 'Whole apps, generated', body: 'New products are scaffolded on top of identity and quests. Nobody rebuilds the plumbing.' },
+  { tag: 'STAR', title: 'Whole apps, generated', body: 'New products are scaffolded on top of identity and actions. Nobody rebuilds the plumbing.' },
 ]
 
 const TRUST = [
@@ -82,7 +82,7 @@ export default function Home() {
           <h1 className="az-h1">One engine.<br />Every kind of&nbsp;economy.</h1>
           <div className="az-hero-row">
             <p className="az-hero-lede">
-              AZOA models financial workflows, circular economies, operational processes — even quests in games — as living graphs of action. Built from the same primitives. Interoperable by default.
+              AZOA models financial workflows, circular economies, operational processes — even actions in games — as living graphs of action. Built from the same primitives. Interoperable by default.
             </p>
             <div className="az-hero-cta">
               <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--md">VIEW ON GITHUB ↗</a>
@@ -92,7 +92,7 @@ export default function Home() {
         </div>
         <div className="az-hero-badge">
           <span className="az-dot" />
-          LIVE — AGENTS EXECUTING A QUEST GRAPH
+          LIVE — AGENTS EXECUTING A ACTION GRAPH
         </div>
       </header>
 
@@ -116,7 +116,7 @@ export default function Home() {
         </div>
         <div className="az-domains-note">
           <p>
-            Each of these is a graph of steps over the same primitives. Which means <span className="az-accent">a game quest can pay a supplier</span>. A circular credit can settle a payroll. Anything can talk to anything.
+            Each of these is a graph of steps over the same primitives. Which means <span className="az-accent">a game action can pay a supplier</span>. A circular credit can settle a payroll. Anything can talk to anything.
           </p>
         </div>
       </section>

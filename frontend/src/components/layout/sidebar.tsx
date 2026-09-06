@@ -40,7 +40,7 @@ const navGroups = [
   {
     label: 'Identity',
     items: [
-      { href: '/avatars', label: 'Avatars', icon: Users },
+      { href: '/users', label: 'Users', icon: Users },
       { href: '/holons', label: 'Holons', icon: Box },
       { href: '/kyc', label: 'KYC Provider', icon: BadgeCheck },
     ],
@@ -51,7 +51,7 @@ const navGroups = [
       { href: '/wallets', label: 'Wallets', icon: Wallet },
       { href: '/nfts', label: 'NFTs', icon: Image },
       { href: '/fungible-mint', label: 'Fungible Mint', icon: Coins },
-      { href: '/avatar-nfts', label: 'Avatar NFTs', icon: UserCircle },
+      { href: '/user-nfts', label: 'User NFTs', icon: UserCircle },
     ],
   },
   {
@@ -67,7 +67,7 @@ const navGroups = [
     items: [
       { href: '/search', label: 'Search', icon: Search },
       { href: '/holon-query', label: 'Holon Query', icon: Database },
-      { href: '/quests', label: 'Quests', icon: Star },
+      { href: '/actions', label: 'Actions', icon: Star },
       { href: '/star-odk', label: 'Star ODK', icon: Star },
       { href: '/api-keys', label: 'API Keys', icon: KeyRound },
     ],

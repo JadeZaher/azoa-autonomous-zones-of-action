@@ -34,13 +34,13 @@ public sealed class KycAmlValueGateTests
     [Fact]
     public async Task ValueGate_WithACurrentApprovalAndAClearScreening_Opens()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(avatarId, null, KycScreeningDecision.NO_HIT);
+        screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT);
 
-        var gate = NewGate(avatarId, screening);
+        var gate = NewGate(userId, screening);
 
-        (await gate.RequireVerifiedAsync(avatarId)).IsError.Should().BeFalse();
+        (await gate.RequireVerifiedAsync(userId)).IsError.Should().BeFalse();
     }
 
     [Theory]
@@ -52,12 +52,12 @@ public sealed class KycAmlValueGateTests
         // The exact scenario the screening surface exists for: a sanctioned person
         // passes identity verification. The submission is APPROVED and true; the value
         // gate must still refuse.
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(avatarId, null, decision);
+        screening.SeedResult(userId, null, decision);
 
-        var gate = NewGate(avatarId, screening);
-        var result = await gate.RequireVerifiedAsync(avatarId);
+        var gate = NewGate(userId, screening);
+        var result = await gate.RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Be(
@@ -71,10 +71,10 @@ public sealed class KycAmlValueGateTests
     {
         // Fail-closed on MISSING is the point. An approval with no AML answer is an
         // unanswered question, not a clean subject.
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
-        var result = await NewGate(avatarId, new InMemoryKycScreeningStore())
-            .RequireVerifiedAsync(avatarId);
+        var result = await NewGate(userId, new InMemoryKycScreeningStore())
+            .RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
     }
@@ -82,12 +82,12 @@ public sealed class KycAmlValueGateTests
     [Fact]
     public async Task ValueGate_WhenTheScreeningStoreFails_StaysShut()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(avatarId, null, KycScreeningDecision.NO_HIT);
+        screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT);
         screening.FailReads = true;
 
-        var result = await NewGate(avatarId, screening).RequireVerifiedAsync(avatarId);
+        var result = await NewGate(userId, screening).RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue("an unreadable AML answer is not a clear one");
     }
@@ -95,11 +95,11 @@ public sealed class KycAmlValueGateTests
     [Fact]
     public async Task ValueGate_WithATruncatedClearScreening_StaysShut()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(avatarId, null, KycScreeningDecision.NO_HIT, resultsTruncated: true);
+        screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT, resultsTruncated: true);
 
-        var result = await NewGate(avatarId, screening).RequireVerifiedAsync(avatarId);
+        var result = await NewGate(userId, screening).RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue("an unread sanctions list is not a clean one");
     }
@@ -109,14 +109,14 @@ public sealed class KycAmlValueGateTests
     {
         // Ongoing monitoring only matters if a later HIT actually shuts the gate that
         // the original NO_HIT opened.
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(avatarId, null, KycScreeningDecision.NO_HIT,
+        screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT,
             screenedAt: DateTimeOffset.UtcNow.AddDays(-10));
-        screening.SeedResult(avatarId, null, KycScreeningDecision.HIT,
+        screening.SeedResult(userId, null, KycScreeningDecision.HIT,
             screenedAt: DateTimeOffset.UtcNow.AddMinutes(-1));
 
-        var result = await NewGate(avatarId, screening).RequireVerifiedAsync(avatarId);
+        var result = await NewGate(userId, screening).RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
     }
@@ -124,14 +124,14 @@ public sealed class KycAmlValueGateTests
     [Fact]
     public async Task ValueGate_DoesNotAcceptAnotherTenantsClearScreening()
     {
-        // The screening read is scoped by (avatar, tenant). A tenant-blind read would
+        // The screening read is scoped by (user, tenant). A tenant-blind read would
         // let a clear result recorded under one tenant open a gate under another.
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var tenantA = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(avatarId, tenantA, KycScreeningDecision.NO_HIT);
+        screening.SeedResult(userId, tenantA, KycScreeningDecision.NO_HIT);
 
-        var result = await NewGate(avatarId, screening).RequireVerifiedAsync(avatarId);
+        var result = await NewGate(userId, screening).RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue(
             "a node-direct gate must not read a tenant-scoped screening row");
@@ -142,10 +142,10 @@ public sealed class KycAmlValueGateTests
     [Fact]
     public async Task RealValueGate_WithAnAdverseScreening_StaysShut()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(avatarId, null, KycScreeningDecision.HIT);
-        var store = StoreWithCurrentApproval(avatarId);
+        screening.SeedResult(userId, null, KycScreeningDecision.HIT);
+        var store = StoreWithCurrentApproval(userId);
 
         var gate = new RealValueKycGate(
             store,
@@ -154,21 +154,21 @@ public sealed class KycAmlValueGateTests
             Options.Create(TrustedSettings()),
             Environment(Environments.Production));
 
-        (await gate.RequireCurrentApprovalAsync(avatarId)).IsError.Should().BeTrue();
+        (await gate.RequireCurrentApprovalAsync(userId)).IsError.Should().BeTrue();
     }
 
     [Fact]
     public async Task RealValueGate_WithNoScreening_StaysShut()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var gate = new RealValueKycGate(
-            StoreWithCurrentApproval(avatarId),
+            StoreWithCurrentApproval(userId),
             new InMemoryKycScreeningStore(),
             ReadyProvider(),
             Options.Create(TrustedSettings()),
             Environment(Environments.Production));
 
-        (await gate.RequireCurrentApprovalAsync(avatarId)).IsError.Should().BeTrue();
+        (await gate.RequireCurrentApprovalAsync(userId)).IsError.Should().BeTrue();
     }
 
     // ── The approval the outcome handler writes actually survives ───────────
@@ -180,12 +180,12 @@ public sealed class KycAmlValueGateTests
         // every approval expire minutes after it is granted, because both value gates
         // require an explicit FUTURE expiry — invisible in a fast test, total denial in
         // production.
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var sessionId = Guid.NewGuid().ToString("N");
         var submission = new KycSubmission
         {
             Id = "submission-1",
-            AvatarId = avatarId.ToString("N"),
+            UserId = userId.ToString("N"),
             ProviderSessionId = sessionId,
             Status = KycStatus.PENDING,
             ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
@@ -200,7 +200,7 @@ public sealed class KycAmlValueGateTests
                 new AZOAResult<KycSubmission> { Result = item });
 
         var handler = NewOutcomeHandler(kycStore, KycScreeningDecision.NO_HIT, submissionExpiryDays: 30);
-        var resumed = await handler.ResumeAsync(Session(sessionId, avatarId), ApprovedOutcome());
+        var resumed = await handler.ResumeAsync(Session(sessionId, userId), ApprovedOutcome());
 
         resumed.IsError.Should().BeFalse(resumed.Message);
         submission.Status.Should().Be(KycStatus.APPROVED);
@@ -211,7 +211,7 @@ public sealed class KycAmlValueGateTests
     [Fact]
     public async Task HostedApproval_ScreensBeforeBindingAndRegistersMonitoring()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var sessionId = Guid.NewGuid().ToString("N");
         var kycStore = new Mock<IKycStore>();
         kycStore.Setup(item => item.GetActiveSubmissionAsync(
@@ -227,7 +227,7 @@ public sealed class KycAmlValueGateTests
             Options.Create(new KycSettings()),
             NullLogger<KycHostedSessionOutcomeHandler>.Instance);
 
-        var resumed = await handler.ResumeAsync(Session(sessionId, avatarId), ApprovedOutcome());
+        var resumed = await handler.ResumeAsync(Session(sessionId, userId), ApprovedOutcome());
 
         resumed.IsError.Should().BeFalse(resumed.Message);
         screening.ScreenCount.Should().Be(1, "the AML row is what the value gate reads");
@@ -243,7 +243,7 @@ public sealed class KycAmlValueGateTests
     [Fact]
     public async Task HostedApproval_WhenScreeningFails_WritesNoBindingAndNoApproval()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var kycStore = new Mock<IKycStore>();
         var screening = new RecordingScreeningService(KycScreeningDecision.NO_HIT) { FailScreen = true };
         var binding = new RecordingBindingService();
@@ -255,7 +255,7 @@ public sealed class KycAmlValueGateTests
             NullLogger<KycHostedSessionOutcomeHandler>.Instance);
 
         var resumed = await handler.ResumeAsync(
-            Session(Guid.NewGuid().ToString("N"), avatarId), ApprovedOutcome());
+            Session(Guid.NewGuid().ToString("N"), userId), ApprovedOutcome());
 
         resumed.IsError.Should().BeTrue();
         binding.BindCount.Should().Be(0);
@@ -266,14 +266,14 @@ public sealed class KycAmlValueGateTests
     [Fact]
     public async Task HostedOutcome_ForAnAttemptBelongingToAnotherSession_TerminalizesNothing()
     {
-        // Correlating by avatar alone lets a stale session's verdict terminalize
+        // Correlating by user alone lets a stale session's verdict terminalize
         // whichever attempt happens to be open, writing an approval the authority never
         // issued for it.
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var submission = new KycSubmission
         {
             Id = "submission-1",
-            AvatarId = avatarId.ToString("N"),
+            UserId = userId.ToString("N"),
             ProviderSessionId = Guid.NewGuid().ToString("N"),
             Status = KycStatus.PENDING,
         };
@@ -284,7 +284,7 @@ public sealed class KycAmlValueGateTests
 
         var handler = NewOutcomeHandler(kycStore, KycScreeningDecision.NO_HIT);
         var resumed = await handler.ResumeAsync(
-            Session(Guid.NewGuid().ToString("N"), avatarId), ApprovedOutcome());
+            Session(Guid.NewGuid().ToString("N"), userId), ApprovedOutcome());
 
         resumed.IsError.Should().BeFalse("the session itself still records the outcome");
         submission.Status.Should().Be(KycStatus.PENDING);
@@ -294,9 +294,9 @@ public sealed class KycAmlValueGateTests
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
-    private static KycGateService NewGate(Guid avatarId, InMemoryKycScreeningStore screening)
+    private static KycGateService NewGate(Guid userId, InMemoryKycScreeningStore screening)
         => new(
-            StoreWithCurrentApproval(avatarId),
+            StoreWithCurrentApproval(userId),
             screening,
             ReadyProvider(),
             Options.Create(TrustedSettings()),
@@ -313,13 +313,13 @@ public sealed class KycAmlValueGateTests
             Options.Create(new KycSettings { SubmissionExpiryDays = submissionExpiryDays }),
             NullLogger<KycHostedSessionOutcomeHandler>.Instance);
 
-    private static HostedSession Session(string sessionId, Guid avatarId) => new()
+    private static HostedSession Session(string sessionId, Guid userId) => new()
     {
         Id = sessionId,
         FlowKind = HostedSessionFlowKinds.Kyc,
         ProviderKey = "identomat",
         AdmissionKey = "admission",
-        SubjectAvatarId = avatarId.ToString("N"),
+        SubjectUserId = userId.ToString("N"),
         State = HostedSessionStates.AwaitingSubject,
     };
 
@@ -338,20 +338,20 @@ public sealed class KycAmlValueGateTests
         },
     };
 
-    private static IKycStore StoreWithCurrentApproval(Guid avatarId)
+    private static IKycStore StoreWithCurrentApproval(Guid userId)
     {
         var store = new Mock<IKycStore>();
         var submission = new KycSubmission
         {
             Id = Guid.NewGuid().ToString("N"),
-            AvatarId = avatarId.ToString("N"),
+            UserId = userId.ToString("N"),
             Provider = KycProvider.VERIFF,
             ProviderKey = ProviderKey,
             ProviderResult = KycApprovalTrust.CreateEnvelope(Profile()),
             Status = KycStatus.APPROVED,
             ExpiresAt = DateTimeOffset.UtcNow.AddDays(30),
         };
-        store.Setup(item => item.GetLatestSubmissionByAvatarAsync(
+        store.Setup(item => item.GetLatestSubmissionByUserAsync(
                 It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<KycSubmission> { Result = submission });
         store.Setup(item => item.GetLatestSubmissionAsync(
@@ -421,7 +421,7 @@ public sealed class KycAmlValueGateTests
         public int MonitorCount { get; private set; }
 
         public Task<AZOAResult<KycScreeningResult>> ScreenAsync(
-            Guid subjectAvatarId,
+            Guid subjectUserId,
             Guid? tenantId,
             string fullName,
             string? birthdayTimeFrom,
@@ -439,7 +439,7 @@ public sealed class KycAmlValueGateTests
         }
 
         public Task<AZOAResult<KycScreeningMonitor>> RegisterMonitorAsync(
-            Guid subjectAvatarId,
+            Guid subjectUserId,
             Guid? tenantId,
             string fullName,
             string? birthdayTimeFrom,
@@ -466,7 +466,7 @@ public sealed class KycAmlValueGateTests
         public int BindCount { get; private set; }
 
         public Task<AZOAResult<KycIdentity>> BindAsync(
-            Guid avatarId,
+            Guid userId,
             Guid? tenantId,
             KycProvider provider,
             string providerKey,
@@ -478,12 +478,12 @@ public sealed class KycAmlValueGateTests
             return Task.FromResult(AZOAResult<KycIdentity>.Success(new KycIdentity
             {
                 Id = "binding-1",
-                AvatarIds = [avatarId.ToString("N")],
+                UserIds = [userId.ToString("N")],
             }));
         }
 
         public Task<AZOAResult<KycEligibilityDecision>> EvaluateEligibilityAsync(
-            Guid avatarId, Guid? tenantId, string personKey, CancellationToken ct = default)
+            Guid userId, Guid? tenantId, string personKey, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<KycEligibilityDecision>.Success(
                 KycEligibilityDecision.Eligible()));
     }

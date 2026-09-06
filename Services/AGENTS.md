@@ -23,9 +23,9 @@ to any one must preserve the whole:
    point — `InitiateBridgeAsync`, `RedeemWithVAAAsync`, `ReverseBridgeAsync` —
    refuses to move value when the flag is off UNLESS both chains resolve to the
    Simulated provider (`IsSimulatedRoute`, fail-closed on unknown chains).
-2. **Avatar-scoped, request-bound idempotency keys.** A client-supplied
+2. **User-scoped, request-bound idempotency keys.** A client-supplied
    `Idempotency-Key` is trimmed, hashed, and namespaced by the authenticated
-   avatar. Its ledger `OperationType` includes an operation-specific request
+   user. Its ledger `OperationType` includes an operation-specific request
    fingerprint, so reusing one key for another bridge action or payload rejects
    before any chain effect. Absent a client key, a deterministic content key is
    derived (never random) so duplicates collapse.

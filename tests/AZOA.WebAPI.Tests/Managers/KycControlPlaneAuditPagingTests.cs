@@ -22,7 +22,7 @@ public sealed class KycControlPlaneAuditPagingTests
         var submission = new KycSubmission
         {
             Id = Guid.NewGuid().ToString("N"),
-            AvatarId = Guid.NewGuid().ToString("N"),
+            UserId = Guid.NewGuid().ToString("N"),
             TenantId = tenantId.ToString("N"),
             Provider = KycProvider.MANUAL,
             ProviderKey = "manual",
@@ -55,7 +55,7 @@ public sealed class KycControlPlaneAuditPagingTests
             registry.Object,
             Mock.Of<IKycManager>(),
             Mock.Of<IApiKeyStore>(),
-            Mock.Of<IAvatarStore>(),
+            Mock.Of<IUserStore>(),
             Mock.Of<IAdminBootstrapStateStore>(),
             Mock.Of<IHostEnvironment>(),
             new ConfigurationBuilder().Build());
@@ -143,7 +143,7 @@ public sealed class KycControlPlaneAuditPagingTests
             Action = "profile.metadata-change",
             ProviderKey = "manual",
             Version = version,
-            ActorAvatarId = actorId.ToString("N"),
+            ActorUserId = actorId.ToString("N"),
             OccurredAt = occurredAt,
         };
 
@@ -154,7 +154,7 @@ public sealed class KycControlPlaneAuditPagingTests
             Mock.Of<IKycProviderRegistry>(),
             Mock.Of<IKycManager>(),
             Mock.Of<IApiKeyStore>(),
-            Mock.Of<IAvatarStore>(),
+            Mock.Of<IUserStore>(),
             Mock.Of<IAdminBootstrapStateStore>(),
             Mock.Of<IHostEnvironment>(),
             new ConfigurationBuilder().Build());

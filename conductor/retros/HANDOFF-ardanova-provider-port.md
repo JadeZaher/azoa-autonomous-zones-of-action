@@ -12,7 +12,7 @@
 
 ## 1. What this initiative is
 
-Make **AZOA** the custodial blockchain provider — an "avatar wallet manager" — for
+Make **AZOA** the custodial blockchain provider — an "user wallet manager" — for
 **ArdaNova** (a gamified-ICO / worker-co-op platform) and future apps. AZOA assigns
 and manages each user's Algorand wallet, abstracting the chain away entirely (brand
 requirement: the user never sees a key, fee, or signing prompt).
@@ -112,8 +112,8 @@ in `conductor/tracks.md` ("In flight → Initiative: ardanova-provider-port").
 | 1 | signing-core-keystone | Real Ed25519 keygen (replace HMAC placeholder `WalletKeyService.cs:116-129`) + real Algorand signing behind generic `ITransactionSigner`; wire `AlgorandProvider` Transfer/Burn/Mint/CreateASA/OptIn + soulbound (replace hard-error stubs `AlgorandProvider.cs:148-164`). |
 | 2 | custody-key-management | Per-user decrypt-to-sign resolver (`IKeyCustodyService`) + IDOR guard + key rotation + platform-signer seam. `byte[]` key zeroing constraint. |
 | 3 | db-only-null-provider | Simulated provider via chain factory; deterministic `sim:` addresses/hashes + sim balance ledger; `AZOA:BlockchainMode` config flag. |
-| 4 | tenant-onboarding | Multi-tenant: tenant Avatar owns fleet of user Avatars (`OwnerTenantId` FK + `tenant:provision` scope on existing API-key infra); `ExternalUserId` mapping; cross-tenant isolation = security crux. |
-| 5 | kyc-module | Port ArdaNova provider-agnostic KYC (Manual + Veriff stub) as SurrealDB POCOs keyed to AvatarId; `KycManager`→`AZOAResult<T>`; reusable gate for wallet/mint. |
+| 4 | tenant-onboarding | Multi-tenant: tenant User owns fleet of user Users (`OwnerTenantId` FK + `tenant:provision` scope on existing API-key infra); `ExternalUserId` mapping; cross-tenant isolation = security crux. |
+| 5 | kyc-module | Port ArdaNova provider-agnostic KYC (Manual + Veriff stub) as SurrealDB POCOs keyed to UserId; `KycManager`→`AZOAResult<T>`; reusable gate for wallet/mint. |
 | 6 | fiat-stripe-bridge | Thin AZOA seam: idempotent, KYC-gated, tenant-callable wallet-provision + asset-allocation primitive ArdaNova calls post-Stripe-settle. Heavy Stripe stays in ArdaNova. |
 
 ---
@@ -139,8 +139,8 @@ stays gated (B6) until B1–B5 are all done.
 - SurrealDB is the SOLE storage engine; new entities = decorated POCOs in
   `Persistence/SurrealDb/Models/` (pattern: `Holon.cs`). Frontend typecheck: SKIP
   (pre-existing noise) — run SDK `tsc` + `dotnet build` only.
-- IDOR pattern: owned-resource lookups scoped by route id + authenticated AvatarId;
-  caller-supplied body AvatarId ignored (STARODK precedent).
+- IDOR pattern: owned-resource lookups scoped by route id + authenticated UserId;
+  caller-supplied body UserId ignored (STARODK precedent).
 
 ---
 

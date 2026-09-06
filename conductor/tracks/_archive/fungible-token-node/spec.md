@@ -5,29 +5,29 @@
 **Keystone for asset fractionalization.** Expose the already-implemented Algorand
 ASA creation (`IAlgorandASAModule.CreateASAAsync`, full `total`/`decimals`
 control — [Providers/Blockchain/Algorand/AlgorandProvider.cs](../../../Providers/Blockchain/Algorand/AlgorandProvider.cs):514)
-through a quest node + manager seam, so a quest (and therefore the visual builder,
+through a action node + manager seam, so a action (and therefore the visual builder,
 DappSeries, and STAR-ODK) can **launch a fungible token** — not just a supply-1 NFT.
 
 Today the provider can create a fungible ASA but **nothing above it can reach it**:
-no `QuestNodeType`, no manager, no controller. This track adds the thinnest
+no `ActionNodeType`, no manager, no controller. This track adds the thinnest
 correct seam: a `FungibleTokenManager` wrapping the provider call + a Tier-2
-`FungibleTokenCreate` quest node.
+`FungibleTokenCreate` action node.
 
 This is the single change that turns asset fractionalization from "impossible
-through the AZOA surface" into "composable in a quest." Once shipped, the visual
+through the AZOA surface" into "composable in a action." Once shipped, the visual
 builder's palette surfaces it automatically (the catalog mirrors the enum).
 
 ## Relationship to other tracks
 
 - **Enables** [[project-asset-fractionalization]] — the project token is a
   fungible token created by this node.
-- **Consumed by** [[star-odk-ecosystem-tree]] via quest composition.
+- **Consumed by** [[star-odk-ecosystem-tree]] via action composition.
 - **Independent of** the bridge — creating a token moves no value cross-chain, so
   this track has **no bridge dependency** and can ship before bridge hardening.
 
 ## Goals
 
-1. A `FungibleTokenCreate` `QuestNodeType` (Tier-2, `RequiresChainCapability=true`).
+1. A `FungibleTokenCreate` `ActionNodeType` (Tier-2, `RequiresChainCapability=true`).
 2. A `FungibleTokenManager` seam wrapping `IAlgorandASAModule.CreateASAAsync`,
    mirroring the KYC-gate + idempotency discipline of `AllocationManager`.
 3. The node handler links the created token back to a Holon (opt-in `HolonId`),
@@ -38,7 +38,7 @@ builder's palette surfaces it automatically (the catalog mirrors the enum).
 
 ## Design
 
-### New node config (`Models/Quest/NodeConfigs.cs`)
+### New node config (`Models/ActionDefinition/NodeConfigs.cs`)
 ```csharp
 /// <summary>FungibleTokenCreate config: launch a fungible token (ASA) backed/linked
 /// to a holon. Supply + decimals are tenant-supplied and authoritative; AZOA
@@ -58,25 +58,25 @@ public class FungibleTokenCreateNodeConfig
 ### New manager (`Managers/FungibleTokenManager.cs` + `Interfaces/Managers/IFungibleTokenManager.cs`)
 ```csharp
 Task<AZOAResult<FungibleTokenResult>> CreateAsync(
-    Guid avatarId, FungibleTokenCreateRequest request,
-    Guid callerAvatarId, string? clientIdempotencyKey, string apiKeyId);
+    Guid userId, FungibleTokenCreateRequest request,
+    Guid callerUserId, string? clientIdempotencyKey, string apiKeyId);
 ```
 - KYC gate (`RequireVerifiedAsync`) — fail-closed, same as AllocationManager.
 - Idempotency claim BEFORE the create (deterministic content key over
-  `(apiKeyId, avatar, name, unit, total, decimals, chain)`).
+  `(apiKeyId, user, name, unit, total, decimals, chain)`).
 - Provision-if-absent wallet (reuse `EnsureWalletAsync` logic or extract shared).
-- Route to `IAlgorandASAModule.CreateASAAsync` with the avatar's custodial address
+- Route to `IAlgorandASAModule.CreateASAAsync` with the user's custodial address
   as manager/reserve/freeze/clawback (mechanism only; roles tenant-configurable
   follow-up).
 
-### New handler (`Services/Quest/Handlers/FungibleTokenCreateNodeHandler.cs`)
-- `NodeType => QuestNodeType.FungibleTokenCreate`, `RequiresChainCapability => true`.
-- Actor avatar ALWAYS from run context (never the config body) — Grant precedent.
+### New handler (`Services/ActionDefinition/Handlers/FungibleTokenCreateNodeHandler.cs`)
+- `NodeType => ActionNodeType.FungibleTokenCreate`, `RequiresChainCapability => true`.
+- Actor user ALWAYS from run context (never the config body) — Grant precedent.
 - On success, opt-in Holon↔asset link (copy assetId/chainId onto the holon).
 - Auto-registered by the Program.cs assembly scan (no DI edit needed).
 
 ### Enum + gate
-- Add `FungibleTokenCreate` to `Models/Quest/QuestEnums.cs::QuestNodeType`.
+- Add `FungibleTokenCreate` to `Models/ActionDefinition/ActionEnums.cs::ActionNodeType`.
 - `ChainCapabilityGate` already refuses Tier-2 nodes pre-execution at both dispatch
   seams when no wallet is bound — the new node inherits this by `RequiresChainCapability`.
 
@@ -97,7 +97,7 @@ Task<AZOAResult<FungibleTokenResult>> CreateAsync(
 - `request.Total` is `ulong` (spec) but provider `CreateASAAsync` takes `int total`;
   reconciled with a pre-broadcast `Total > int.MaxValue` rejection (fails the
   idempotency key, no effect) + `checked((int))` cast — no silent truncation.
-- Handler idempotency seed: Tier-2 handlers carry no apiKey in quest context
+- Handler idempotency seed: Tier-2 handlers carry no apiKey in action context
   (SwapNodeHandler precedent), so `clientIdempotencyKey = "{runId}:{nodeId}"`,
   `apiKeyId = runId` as the sentinel partition.
 - Holon link reads `assetId` directly from the bare-string `CreateASAAsync` return

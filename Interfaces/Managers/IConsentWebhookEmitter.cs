@@ -24,7 +24,7 @@ public interface IConsentWebhookEmitter
 {
     /// <summary>
     /// Build a <see cref="ConsentWebhookEvent"/> from <paramref name="grant"/> (tenantId,
-    /// grantId, avatarId = grantor, scopes, participationRef, a fresh idempotency id) for
+    /// grantId, userId = grantor, scopes, participationRef, a fresh idempotency id) for
     /// the given <paramref name="type"/> and enqueue it on the outbox. Returns when the
     /// row is written (NOT when it is delivered).
     /// </summary>

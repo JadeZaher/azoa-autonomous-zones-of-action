@@ -27,19 +27,19 @@ namespace AZOA.WebAPI.Tests.Auth;
 public class OAuthDoesNotSatisfyKycTests
 {
     /// <summary>
-    /// The behavioural proof. An avatar created by federated sign-in has no
+    /// The behavioural proof. An user created by federated sign-in has no
     /// kyc_submission, because nothing on the OAuth path writes one. The real gate,
-    /// asked about that avatar, refuses.
+    /// asked about that user, refuses.
     /// </summary>
     [Fact]
-    public async Task An_oauth_only_avatar_does_not_pass_the_value_gate()
+    public async Task An_oauth_only_user_does_not_pass_the_value_gate()
     {
-        var oauthAvatarId = Guid.NewGuid();
+        var oauthUserId = Guid.NewGuid();
 
         var kycStore = new Mock<IKycStore>();
-        // The true state of an OAuth-only avatar: no identity verification on record.
+        // The true state of an OAuth-only user: no identity verification on record.
         kycStore
-            .Setup(store => store.GetLatestSubmissionByAvatarAsync(
+            .Setup(store => store.GetLatestSubmissionByUserAsync(
                 It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<KycSubmission> { Result = null });
         kycStore
@@ -56,11 +56,11 @@ public class OAuthDoesNotSatisfyKycTests
 
         var valueAccess = new ValueAccessService(gate);
 
-        var decision = await valueAccess.GetDecisionAsync(oauthAvatarId);
+        var decision = await valueAccess.GetDecisionAsync(oauthUserId);
         decision.State.Should().Be(ValueAccessState.VerificationRequired,
             "a federated login proves account control, never that a person was verified");
 
-        var required = await valueAccess.RequireValueAccessAsync(oauthAvatarId);
+        var required = await valueAccess.RequireValueAccessAsync(oauthUserId);
         required.IsError.Should().BeTrue();
         required.Result.Should().BeFalse();
     }
@@ -94,9 +94,9 @@ public class OAuthDoesNotSatisfyKycTests
                     .Select(field => field.FieldType))
                 .ToList();
 
-            referenced.Should().NotContain(typeof(IAvatarExternalLoginStore),
+            referenced.Should().NotContain(typeof(IUserExternalLoginStore),
                 $"{type.Name} must not be able to read federated logins");
-            referenced.Should().NotContain(typeof(AvatarExternalLogin),
+            referenced.Should().NotContain(typeof(UserExternalLogin),
                 $"{type.Name} must not treat a federated binding as identity evidence");
         }
 
@@ -115,41 +115,41 @@ public class OAuthDoesNotSatisfyKycTests
     }
 
     /// <summary>
-    /// An avatar minted by federated sign-in starts unverified. IsVerified is the KYC
+    /// An user minted by federated sign-in starts unverified. IsVerified is the KYC
     /// flag; a provider asserting a verified EMAIL must never set it.
     /// </summary>
     [Fact]
-    public async Task A_federated_sign_in_never_marks_the_avatar_verified()
+    public async Task A_federated_sign_in_never_marks_the_user_verified()
     {
-        var created = new List<AZOA.WebAPI.Interfaces.IAvatar>();
+        var created = new List<AZOA.WebAPI.Interfaces.IUser>();
 
-        var avatarStore = new Mock<IAvatarStore>();
-        avatarStore
+        var userStore = new Mock<IUserStore>();
+        userStore
             .Setup(store => store.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<AZOA.WebAPI.Interfaces.IAvatar>.Failure("Avatar not found."));
-        avatarStore
+            .ReturnsAsync(AZOAResult<AZOA.WebAPI.Interfaces.IUser>.Failure("User not found."));
+        userStore
             .Setup(store => store.CreateIfAbsentAsync(
-                It.IsAny<AZOA.WebAPI.Interfaces.IAvatar>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((AZOA.WebAPI.Interfaces.IAvatar avatar, CancellationToken _) =>
+                It.IsAny<AZOA.WebAPI.Interfaces.IUser>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AZOA.WebAPI.Interfaces.IUser user, CancellationToken _) =>
             {
-                created.Add(avatar);
-                return AZOAResult<AZOA.WebAPI.Interfaces.IAvatar>.Success(avatar);
+                created.Add(user);
+                return AZOAResult<AZOA.WebAPI.Interfaces.IUser>.Success(user);
             });
 
-        var loginStore = new Mock<IAvatarExternalLoginStore>();
+        var loginStore = new Mock<IUserExternalLoginStore>();
         loginStore
             .Setup(store => store.GetBySubjectAsync(
                 It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Models.Auth.ExternalAuthProvider>(),
                 It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<AvatarExternalLogin?>.Success(null));
+            .ReturnsAsync(AZOAResult<UserExternalLogin?>.Success(null));
         loginStore
             .Setup(store => store.CreateAsync(
-                It.IsAny<AvatarExternalLogin>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((AvatarExternalLogin binding, CancellationToken _) =>
-                AZOAResult<AvatarExternalLogin>.Success(binding));
+                It.IsAny<UserExternalLogin>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((UserExternalLogin binding, CancellationToken _) =>
+                AZOAResult<UserExternalLogin>.Success(binding));
 
         var service = new AZOA.WebAPI.Services.Auth.ExternalLoginService(
-            avatarStore.Object,
+            userStore.Object,
             loginStore.Object,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<
                 AZOA.WebAPI.Services.Auth.ExternalLoginService>.Instance);

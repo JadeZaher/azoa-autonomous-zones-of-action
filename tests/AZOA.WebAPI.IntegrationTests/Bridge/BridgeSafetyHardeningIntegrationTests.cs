@@ -219,7 +219,7 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
         var bridgeId = $"bsh_br_{Guid.NewGuid():N}";
         var vaaBytes = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"VAA-safety-hardening-concurrent-{bridgeId}"));
         var wormholeSequence = BitConverter.ToInt64(Guid.NewGuid().ToByteArray(), 0) & long.MaxValue;
-        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
+        var userId = Guid.Parse(TestAuthHandler.DefaultUserId);
 
         var executor    = await CreateExecutorAsync(testNs);
         var bridgeStore = new SurrealBridgeStore(executor);
@@ -227,7 +227,7 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
         await bridgeStore.AddBridgeAsync(new BridgeTransactionResult
         {
             Id                       = bridgeId,
-            AvatarId                 = avatarId,
+            UserId                 = userId,
             SourceChain              = "Solana",
             TargetChain              = "Algorand",
             SourceTokenId            = "token_bsh",
@@ -431,7 +431,7 @@ public sealed class BridgeSafetyHardeningIntegrationTests : IntegrationTestBase
         return new BridgeTransactionResult
         {
             Id             = id,
-            AvatarId       = Guid.NewGuid(),
+            UserId       = Guid.NewGuid(),
             SourceChain    = "Algorand",
             TargetChain    = "Solana",
             SourceTokenId  = "ASA:123",

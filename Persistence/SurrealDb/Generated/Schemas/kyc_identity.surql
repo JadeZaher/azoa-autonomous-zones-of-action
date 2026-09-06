@@ -1,8 +1,8 @@
 -- ============================================================
 -- Table: kyc_identity
--- Aggregate: KycIdentity (node-operator-only person<->avatar binding)
+-- Aggregate: KycIdentity (node-operator-only person<->user binding)
 -- Guardrail: G6 SCHEMAFULL
--- Note: NODE-OPERATOR-ONLY. Deliberately absent from SearchableEntityType, HolonQueryRequest, and the MCP avatar_scoped_query table allow-list; see Persistence/SurrealDb/Models/AGENTS.md #kyc-identity-binding.
+-- Note: NODE-OPERATOR-ONLY. Deliberately absent from SearchableEntityType, HolonQueryRequest, and the MCP user_scoped_query table allow-list; see Persistence/SurrealDb/Models/AGENTS.md #kyc-identity-binding.
 -- Note: Stores a salted HMAC of document_number + issuing_state, never the raw document identifiers, and never address, personal_number, or any media/biometric material.
 -- Note: Uniqueness is (tenant_scope, person_key). There is deliberately NO unique index on person_key alone: one human resolves to an unlinkable key per tenant (D23).
 -- ============================================================
@@ -21,7 +21,7 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE kyc_identity TYPE string
 -- Uniqueness scope: per-tenant by default, node-global only on explicit opt-in
 DEFINE FIELD IF NOT EXISTS tenant_scope ON TABLE kyc_identity TYPE string
     ASSERT $value != NONE AND $value != "";
-DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE kyc_identity TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE kyc_identity TYPE option<record<user>>;
 
 -- Pseudonymous person keys (never the raw document identifiers)
 DEFINE FIELD IF NOT EXISTS person_key ON TABLE kyc_identity TYPE string
@@ -31,8 +31,8 @@ DEFINE FIELD IF NOT EXISTS global_person_key ON TABLE kyc_identity TYPE string
 DEFINE FIELD IF NOT EXISTS person_key_version ON TABLE kyc_identity TYPE int
     DEFAULT 1;
 
--- Person -> avatars link (NEVER projected to a consumer)
-DEFINE FIELD IF NOT EXISTS avatar_ids ON TABLE kyc_identity TYPE option<array<string>>;
+-- Person -> users link (NEVER projected to a consumer)
+DEFINE FIELD IF NOT EXISTS user_ids ON TABLE kyc_identity TYPE option<array<string>>;
 
 -- Retained personal fields (the ONLY PII kept; tombstoned on erasure)
 DEFINE FIELD IF NOT EXISTS first_name ON TABLE kyc_identity TYPE option<string>;

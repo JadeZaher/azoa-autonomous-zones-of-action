@@ -6,8 +6,8 @@
 > corrections this doc gets wrong as written:
 > 1. **`Sagas:Enabled=true` is the deliberate default**, with a boot guard,
 >    not `Enabled=false` (gate 7 and the §2/§4 references below describe the
->    old, superseded premise — the durable-quest saga consumer now exists and
->    runs by default; see [[durable-quests-inert-sagas-disabled]]).
+>    old, superseded premise — the durable-action saga consumer now exists and
+>    runs by default; see [[durable-actions-inert-sagas-disabled]]).
 > 2. **The G1 durability gate is live and green on SurrealDB 3.1.4** —
 >    re-verified during `final-hardening-cutover`.
 > These corrections exist because two independent auditors were misled by this
@@ -40,7 +40,7 @@ Code gate **GREEN**: prod build 0 errors / 17 baseline warnings; unit suite gree
 **§4 cleanup items 1–4: LANDED** (commit `1b25f50`, "api-safety-hardening §4
 pre-launch cleanup"; unit suite 567/567 at that point). **Tier-1
 `architecture-decoupling` track: COMPLETE** — per-aggregate persistence seam (god
-`IAZOAStorageProvider` + `IQuestRepository` deleted), 34-handler `QuestManager`
+`IAZOAStorageProvider` + `IActionRepository` deleted), 34-handler `ActionManager`
 registry, `ExecutionOrder` dedup, bounded `IMemoryCache`, OpenTelemetry + live
 `/health`; independent review **APPROVE-WITH-SIMPLIFICATIONS** (0 CRITICAL/HIGH);
 unit suite **532/532** (count dropped from 567 only because ~35 tests that

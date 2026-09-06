@@ -168,7 +168,7 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
         Name = e.Name,
         Description = e.Description,
         StarOdkId = SurrealLink.ToLink("star_odk", e.StarOdkId) ?? string.Empty,
-        AvatarId = SurrealLink.ToLink("avatar", e.AvatarId) ?? string.Empty,
+        UserId = SurrealLink.ToLink("user", e.UserId) ?? string.Empty,
         TargetChain = e.TargetChain,
         CreatedDate = e.CreatedDate == default ? DateTimeOffset.UtcNow : e.CreatedDate,
         ModifiedDate = e.ModifiedDate,
@@ -180,7 +180,7 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
         Name = p.Name,
         Description = p.Description,
         StarOdkId = SurrealLink.FromLink(p.StarOdkId) ?? p.StarOdkId,
-        AvatarId = SurrealLink.FromLink(p.AvatarId) ?? p.AvatarId,
+        UserId = SurrealLink.FromLink(p.UserId) ?? p.UserId,
         TargetChain = p.TargetChain,
         CreatedDate = p.CreatedDate,
         ModifiedDate = p.ModifiedDate,
@@ -218,7 +218,7 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
         [JsonPropertyName("name")]          public string Name { get; set; } = string.Empty;
         [JsonPropertyName("description")]   public string? Description { get; set; }
         [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.StarOdk))] [JsonPropertyName("star_odk_id")]   public string StarOdkId { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]     public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("user_id")]     public string UserId { get; set; } = string.Empty;
         [JsonPropertyName("target_chain")]  public string? TargetChain { get; set; }
         [JsonPropertyName("created_date")]  public DateTimeOffset CreatedDate { get; set; }
         [JsonPropertyName("modified_date")] public DateTimeOffset? ModifiedDate { get; set; }

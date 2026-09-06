@@ -5,7 +5,7 @@ import { defineConfig } from 'vitest/config'
 
 /**
  * Component test runner for `frontend/`. Run with `npm test` (watch: `npm run test:watch`).
- * See `src/components/quest-builder/AGENTS.md` §testing for what the harness covers and why.
+ * See `src/components/action-builder/AGENTS.md` §testing for what the harness covers and why.
  */
 export default defineConfig({
   plugins: [react()],

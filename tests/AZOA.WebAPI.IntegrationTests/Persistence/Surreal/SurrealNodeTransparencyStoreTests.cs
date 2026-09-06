@@ -67,7 +67,7 @@ public sealed class SurrealNodeTransparencyStoreTests : IAsyncLifetime
             "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var occurredAt = DateTimeOffset.Parse("2026-07-11T12:00:00Z");
-        var actor = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(Guid.NewGuid()))!;
+        var actor = SurrealLink.ToLink("user", SurrealId.ToSurrealId(Guid.NewGuid()))!;
         var ids = new[]
         {
             new string('1', 32),
@@ -81,7 +81,7 @@ public sealed class SurrealNodeTransparencyStoreTests : IAsyncLifetime
             {
                 Id = NodeFeeSchedule.LocalId,
                 Version = version,
-                UpdatedByAvatarId = actor,
+                UpdatedByUserId = actor,
                 CreatedAt = occurredAt,
                 UpdatedAt = occurredAt,
             };
@@ -89,7 +89,7 @@ public sealed class SurrealNodeTransparencyStoreTests : IAsyncLifetime
             {
                 Id = ids[index],
                 Action = "ScheduleUpdated",
-                ActorAvatarId = actor,
+                ActorUserId = actor,
                 PreviousVersion = version - 1,
                 NewVersion = version,
                 ScheduleJson = $"{{\"version\":{version}}}",

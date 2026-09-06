@@ -325,7 +325,7 @@ public class EthereumProviderPipelineTests
     {
         using var stub = new EthereumRpcStub();
         var userKey = EthECKey.GenerateKey();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
 
         var custody = new Mock<IKeyCustodyService>();
@@ -343,7 +343,7 @@ public class EthereumProviderPipelineTests
         var provider = NewProvider(stub, custody.Object);
 
         var result = await provider.TransferAsync(
-            null!, userKey.GetPublicAddress(), Recipient, 5, SigningContext.ForUser(avatarId, walletId));
+            null!, userKey.GetPublicAddress(), Recipient, 5, SigningContext.ForUser(userId, walletId));
 
         result.IsError.Should().BeFalse(result.Message);
         EthereumAddress.AreSame(
@@ -351,7 +351,7 @@ public class EthereumProviderPipelineTests
             .Should().BeTrue("the user's own key is the sender and the fee payer");
 
         custody.Verify(c => c.WithSigningKeyAsync(
-            It.Is<SigningContext>(x => x.WalletId == walletId && x.AvatarId == avatarId),
+            It.Is<SigningContext>(x => x.WalletId == walletId && x.UserId == userId),
             It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()), Times.Once);
         custody.Verify(c => c.WithPlatformSigningKeyAsync(
             It.IsAny<bool>(), It.IsAny<SigningContext>(), It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()), Times.Never);

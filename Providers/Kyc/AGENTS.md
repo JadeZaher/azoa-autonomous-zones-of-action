@@ -94,7 +94,7 @@ scaffold. Even complete configuration does not advertise availability. A real
 adapter must first add a durable, idempotent verification-attempt record,
 persist the hosted session before returning a redirect, verify signed webhook
 headers over the raw body, deduplicate provider event ids, map events to the
-attempt/avatar, and CAS terminal status. Until that lifecycle exists the stub
+attempt/user, and CAS terminal status. Until that lifecycle exists the stub
 prevents the current begin/submit shapes from creating two provider sessions.
 
 Only `MANUAL` submissions may be decided by Azoa operator approve/reject.
@@ -105,7 +105,7 @@ Submission plus document rows are created in one Surreal transaction.
 Manual review uses `IKycStore.TryReviewAsync`, a conditional update whose WHERE
 clause requires provider `MANUAL`, active status, and unexpired timestamp. Two
 reviewers may read the same pending row, but only one transition returns a row;
-the loser receives a conflict. No `Avatar.IsVerified` projection is updated—the
+the loser receives a conflict. No `User.IsVerified` projection is updated—the
 submission ledger is the sole authority, so a partial second write cannot split
 identity state from the KYC gate.
 

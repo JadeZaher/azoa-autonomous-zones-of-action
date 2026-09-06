@@ -39,8 +39,8 @@ public class AllocationManagerTests
     private readonly Mock<INodeFeeScheduleManager> _nodeFees = new();
     private readonly InMemoryIdempotencyStore _idempotency = new();
 
-    private readonly Guid _avatarId = Guid.NewGuid();
-    private readonly Guid _callerAvatarId = Guid.NewGuid();
+    private readonly Guid _userId = Guid.NewGuid();
+    private readonly Guid _callerUserId = Guid.NewGuid();
 
     public AllocationManagerTests()
     {
@@ -96,12 +96,12 @@ public class AllocationManagerTests
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private void ApproveKyc(Guid avatarId)
-        => _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
+    private void ApproveKyc(Guid userId)
+        => _valueAccess.Setup(k => k.RequireValueAccessAsync(userId, null, It.IsAny<CancellationToken>()))
                .ReturnsAsync(new AZOAResult<bool> { Result = true, Message = "Success" });
 
-    private void DenyKyc(Guid avatarId)
-        => _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
+    private void DenyKyc(Guid userId)
+        => _valueAccess.Setup(k => k.RequireValueAccessAsync(userId, null, It.IsAny<CancellationToken>()))
                .ReturnsAsync(new AZOAResult<bool>
                {
                    IsError = true,
@@ -112,45 +112,45 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_TenantRequest_ForwardsTenantToValueAccess()
     {
-        var tenantId = _callerAvatarId;
-        var avatars = new Mock<IAvatarStore>();
-        avatars.Setup(store => store.GetByIdAsync(_avatarId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar>
+        var tenantId = _callerUserId;
+        var users = new Mock<IUserStore>();
+        users.Setup(store => store.GetByIdAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser>
             {
-                Result = new Avatar { Id = _avatarId, OwnerTenantId = tenantId },
+                Result = new User { Id = _userId, OwnerTenantId = tenantId },
             });
-        _valueAccess.Setup(access => access.RequireValueAccessAsync(_avatarId, tenantId, It.IsAny<CancellationToken>()))
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(_userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<bool>.Failure("participant is not ready"));
         var manager = new AllocationManager(
             _valueAccess.Object, _walletManager.Object, _walletStore.Object,
             _holonStore.Object, _nft.Object, _blockchainOps.Object, _idempotency,
-            _nodeFees.Object, avatars: avatars.Object);
+            _nodeFees.Object, users: users.Object);
 
-        await manager.AllocateAsync(_avatarId, MintRequest(), _callerAvatarId, "tenant-readiness", ApiKeyId, tenantId);
+        await manager.AllocateAsync(_userId, MintRequest(), _callerUserId, "tenant-readiness", ApiKeyId, tenantId);
 
         _valueAccess.Verify(
-            access => access.RequireValueAccessAsync(_avatarId, tenantId, It.IsAny<CancellationToken>()), Times.Once);
+            access => access.RequireValueAccessAsync(_userId, tenantId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    private static IWallet WalletFor(Guid avatarId, string chain) =>
+    private static IWallet WalletFor(Guid userId, string chain) =>
         Mock.Of<IWallet>(w =>
             w.Id == Guid.NewGuid() &&
-            w.AvatarId == avatarId &&
+            w.UserId == userId &&
             w.ChainType == chain &&
             w.Address == "ALGOTESTADDRESS" &&
             w.WalletType == WalletType.Platform);
 
-    private void HasNoWallet(Guid avatarId)
-        => _walletStore.Setup(s => s.GetByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
+    private void HasNoWallet(Guid userId)
+        => _walletStore.Setup(s => s.GetByUserAsync(userId, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = Array.Empty<IWallet>() });
 
-    private void HasWallet(Guid avatarId, IWallet wallet)
-        => _walletStore.Setup(s => s.GetByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
+    private void HasWallet(Guid userId, IWallet wallet)
+        => _walletStore.Setup(s => s.GetByUserAsync(userId, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { wallet } });
 
-    private void SetupGenerate(Guid avatarId, IWallet wallet)
+    private void SetupGenerate(Guid userId, IWallet wallet)
         => _walletManager.Setup(m => m.GenerateWalletAsync(
-                It.IsAny<WalletGenerateRequest>(), avatarId, It.IsAny<AZOARequest?>()))
+                It.IsAny<WalletGenerateRequest>(), userId, It.IsAny<AZOARequest?>()))
             .ReturnsAsync(new AZOAResult<IWallet> { Result = wallet });
 
     private void SetupMintSucceeds()
@@ -204,12 +204,12 @@ public class AllocationManagerTests
         var manager = BuildManager(guard);
 
         var result = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "blocked", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "blocked", ApiKeyId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Node governance disallows allocation:Mint on chain 'Algorand'");
         _valueAccess.Verify(k => k.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
-        _walletStore.Verify(s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _walletStore.Verify(s => s.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _holonStore.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
         _blockchainOps.Verify(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()), Times.Never);
         (await _idempotency.GetAsync(
@@ -222,13 +222,13 @@ public class AllocationManagerTests
         var manager = BuildManager();
 
         var result = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "ignored", "not-a-guid");
+            _userId, MintRequest(), _callerUserId, "ignored", "not-a-guid");
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Be("Caller API key context is invalid.");
         _valueAccess.Verify(k => k.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
         _walletStore.Verify(
-            s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+            s => s.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _holonStore.Verify(
             s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
         _blockchainOps.Verify(
@@ -240,16 +240,16 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_DuplicateKey_ReplaysOriginalAndMintsExactlyOnce()
     {
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
         SetupMintSucceeds();
         var manager = BuildManager();
 
         var first = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_stable_key", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_stable_key", ApiKeyId);
         var second = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_stable_key", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_stable_key", ApiKeyId);
 
         first.IsError.Should().BeFalse();
         first.Result!.Replayed.Should().BeFalse();
@@ -267,15 +267,15 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_AbsentClientKey_UsesDeterministicContentKey_StillDedupes()
     {
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
         SetupMintSucceeds();
         var manager = BuildManager();
 
         // No client Idempotency-Key on either call ⇒ deterministic content key.
-        var first = await manager.AllocateAsync(_avatarId, MintRequest(), _callerAvatarId, null, ApiKeyId);
-        var second = await manager.AllocateAsync(_avatarId, MintRequest(), _callerAvatarId, null, ApiKeyId);
+        var first = await manager.AllocateAsync(_userId, MintRequest(), _callerUserId, null, ApiKeyId);
+        var second = await manager.AllocateAsync(_userId, MintRequest(), _callerUserId, null, ApiKeyId);
 
         first.IsError.Should().BeFalse();
         second.Result!.Replayed.Should().BeTrue();
@@ -286,16 +286,16 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_DuplicateKey_DoesNotRequoteOrRebroadcastAndPreservesFeeVersion()
     {
-        ApproveKyc(_avatarId);
-        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        ApproveKyc(_userId);
+        HasWallet(_userId, WalletFor(_userId, ChainType));
         SetupMintSucceeds();
         SetupFeeQuote(NodeFeeOperation.Mint, 100, 7, 17);
         var manager = BuildManager();
 
         var first = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_fee_replay", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_fee_replay", ApiKeyId);
         var replay = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_fee_replay", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_fee_replay", ApiKeyId);
 
         first.IsError.Should().BeFalse(first.Message);
         first.Result!.NodeFeeScheduleVersion.Should().Be(17);
@@ -320,9 +320,9 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_BroadcastsThroughExecuteAsync_AndStampsOpaqueCorrelationAndInitiators()
     {
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
         SetupMintSucceeds();
 
         IBlockchainOperation? broadcastOp = null;
@@ -341,7 +341,7 @@ public class AllocationManagerTests
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
         var result = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_broadcast", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_broadcast", ApiKeyId);
 
         // C2: the allocation actually drove the real broadcast path and the key was
         // Completed only with the recorded TxHash.
@@ -352,14 +352,14 @@ public class AllocationManagerTests
         broadcastOp!.Parameters.Should().ContainKey("TxHash");
 
         var idempotency = AllocationIdempotency.Create(
-            ApiKeyGuid, _avatarId, MintRequest(), "pi_broadcast");
+            ApiKeyGuid, _userId, MintRequest(), "pi_broadcast");
 
         // The raw ledger key remains internal reconciliation state; the durable
         // operation fields are safe to project into a public receipt.
         broadcastOp.Parameters.Should().ContainKey("IdempotencyKey");
         broadcastOp.Parameters["IdempotencyKey"].Should().Be(InternalLedgerKeyFor("pi_broadcast"));
         broadcastOp.IdempotencyKey.Should().Be(idempotency.Correlation);
-        broadcastOp.InitiatorAvatarId.Should().Be(_callerAvatarId);
+        broadcastOp.InitiatorUserId.Should().Be(_callerUserId);
         broadcastOp.InitiatorApiKeyId.Should().Be(ApiKeyGuid);
         typeof(AllocationResult).GetProperty("IdempotencyKey").Should().BeNull();
         var serializedResult = System.Text.Json.JsonSerializer.Serialize(result.Result);
@@ -378,9 +378,9 @@ public class AllocationManagerTests
         // alloc idempotency key was Completed: the claim is stuck InProgress. A
         // duplicate must NOT re-broadcast; reconciliation settles the orphan from the
         // persisted op.Parameters["IdempotencyKey"].
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
         SetupMintSucceeds();
 
         var mintCalls = 0;
@@ -405,9 +405,9 @@ public class AllocationManagerTests
             _nft.Object, _blockchainOps.Object, crashStore, _nodeFees.Object);
 
         var first = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_crash", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_crash", ApiKeyId);
         var second = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_crash", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_crash", ApiKeyId);
 
         // The provider mint ran EXACTLY ONCE across the duplicate calls.
         mintCalls.Should().Be(1, "the crashed claim must not re-broadcast on the duplicate");
@@ -431,9 +431,9 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_UnexpectedEffectFailure_BubblesAndDuplicateDoesNotRetryEffect()
     {
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
         SetupMintSucceeds();
         _blockchainOps
             .Setup(b => b.ExecuteAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<AZOARequest?>()))
@@ -444,11 +444,11 @@ public class AllocationManagerTests
             _nft.Object, _blockchainOps.Object, _idempotency, _nodeFees.Object);
 
         Func<Task> first = async () => await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "ambiguous", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "ambiguous", ApiKeyId);
         await first.Should().ThrowAsync<InvalidOperationException>();
 
         var replay = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "ambiguous", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "ambiguous", ApiKeyId);
         replay.IsError.Should().BeTrue();
         replay.Message.Should().Be("An allocation is already being processed. Retry once the original request settles.");
         replay.Message.Should().NotContain("alloc:").And.NotContain("ambiguous").And.NotContain(ApiKeyId);
@@ -466,9 +466,9 @@ public class AllocationManagerTests
     {
         // 5_000_000_000 > int.MaxValue (~2.147e9): an int surface would truncate.
         const string bigAmount = "5000000000";
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
         SetupMintSucceeds();
 
         IBlockchainOperation? broadcastOp = null;
@@ -494,7 +494,7 @@ public class AllocationManagerTests
             Name = "Big Grant",
             AssetId = "BIG"
         };
-        var result = await manager.AllocateAsync(_avatarId, request, _callerAvatarId, "pi_big", ApiKeyId);
+        var result = await manager.AllocateAsync(_userId, request, _callerUserId, "pi_big", ApiKeyId);
 
         result.IsError.Should().BeFalse(result.Message);
         broadcastOp.Should().NotBeNull();
@@ -506,8 +506,8 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_MintFee_UsesNetTypedAmountAndStampsQuoteMetadata()
     {
-        ApproveKyc(_avatarId);
-        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        ApproveKyc(_userId);
+        HasWallet(_userId, WalletFor(_userId, ChainType));
         SetupMintSucceeds();
         SetupFeeQuote(NodeFeeOperation.Mint, 100, 7, 4);
         var manager = BuildManager();
@@ -524,7 +524,7 @@ public class AllocationManagerTests
             });
 
         var result = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_fee_mint", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_fee_mint", ApiKeyId);
 
         result.IsError.Should().BeFalse(result.Message);
         broadcastOp.Should().BeAssignableTo<IMintOperation>();
@@ -542,8 +542,8 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_MintUsesCanonicalChainTypeForTheNftGovernanceBoundary()
     {
-        ApproveKyc(_avatarId);
-        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        ApproveKyc(_userId);
+        HasWallet(_userId, WalletFor(_userId, ChainType));
         IHolon? mintedHolon = null;
         _holonStore.Setup(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IHolon holon, CancellationToken _) =>
@@ -557,7 +557,7 @@ public class AllocationManagerTests
         var manager = BuildManager();
 
         var result = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_mint_chain", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_mint_chain", ApiKeyId);
 
         result.IsError.Should().BeFalse(result.Message);
         mintedHolon!.ChainId.Should().Be(ChainType);
@@ -567,7 +567,7 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_TransferFeeWithoutTreasurySettlement_FailsBeforeSideEffects()
     {
-        ApproveKyc(_avatarId);
+        ApproveKyc(_userId);
         SetupFeeQuote(NodeFeeOperation.Transfer, 100, 11, 6);
         var manager = BuildManager();
         var request = new AllocationRequest
@@ -581,12 +581,12 @@ public class AllocationManagerTests
         };
 
         var result = await manager.AllocateAsync(
-            _avatarId, request, _callerAvatarId, "pi_fee_transfer", ApiKeyId);
+            _userId, request, _callerUserId, "pi_fee_transfer", ApiKeyId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("treasury settlement");
         _walletStore.Verify(
-            s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            s => s.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _nft.Verify(
             n => n.TransferAsync(It.IsAny<Guid>(), It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
@@ -599,7 +599,7 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_FeeQuoteFailure_FailsClaimBeforeWalletNftOrBroadcast()
     {
-        ApproveKyc(_avatarId);
+        ApproveKyc(_userId);
         _nodeFees
             .Setup(m => m.QuoteAsync(NodeFeeOperation.Mint, 100, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<NodeFeeQuoteResponse>
@@ -610,12 +610,12 @@ public class AllocationManagerTests
         var manager = BuildManager();
 
         var result = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_fee_unavailable", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_fee_unavailable", ApiKeyId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Node fee schedule unavailable");
         _walletStore.Verify(
-            s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            s => s.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _walletManager.Verify(
             m => m.GenerateWalletAsync(It.IsAny<WalletGenerateRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>()),
@@ -638,9 +638,9 @@ public class AllocationManagerTests
     [InlineData("99999999999999999999999999")] // overflows ulong
     public async Task AllocateAsync_InvalidAmount_RejectedBeforeBroadcast_KeyFailedNotLeaked(string badAmount)
     {
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
         SetupMintSucceeds();
         var manager = new AllocationManager(
             _valueAccess.Object, _walletManager.Object, _walletStore.Object,
@@ -655,7 +655,7 @@ public class AllocationManagerTests
             Name = "Bad",
             AssetId = "BAD"
         };
-        var result = await manager.AllocateAsync(_avatarId, request, _callerAvatarId, "pi_bad", ApiKeyId);
+        var result = await manager.AllocateAsync(_userId, request, _callerUserId, "pi_bad", ApiKeyId);
 
         result.IsError.Should().BeTrue($"'{badAmount}' is not a valid base-unit amount");
 
@@ -678,15 +678,15 @@ public class AllocationManagerTests
     [InlineData("unknown")]
     public async Task AllocateAsync_KycNotApproved_RejectsAndNeverMints(string kycState)
     {
-        DenyKyc(_avatarId);
-        HasNoWallet(_avatarId);
+        DenyKyc(_userId);
+        HasNoWallet(_userId);
         SetupMintSucceeds();
         var manager = BuildManager();
 
         var result = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, $"pi_{kycState}", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, $"pi_{kycState}", ApiKeyId);
 
-        result.IsError.Should().BeTrue($"a {kycState} KYC avatar must be rejected fail-closed");
+        result.IsError.Should().BeTrue($"a {kycState} KYC user must be rejected fail-closed");
         result.Message.Should().StartWith(KycAuthorizationError.Forbidden);
 
         // No value-bearing side effect: never minted, never provisioned.
@@ -701,31 +701,31 @@ public class AllocationManagerTests
     [Fact]
     public async Task AllocateAsync_NoWallet_GeneratesExactlyOnce()
     {
-        ApproveKyc(_avatarId);
-        HasNoWallet(_avatarId);
-        SetupGenerate(_avatarId, WalletFor(_avatarId, ChainType));
+        ApproveKyc(_userId);
+        HasNoWallet(_userId);
+        SetupGenerate(_userId, WalletFor(_userId, ChainType));
         SetupMintSucceeds();
         var manager = BuildManager();
 
         var result = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_key", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_key", ApiKeyId);
 
         result.IsError.Should().BeFalse();
         result.Result!.WalletProvisioned.Should().BeTrue();
         _walletManager.Verify(m => m.GenerateWalletAsync(
-            It.IsAny<WalletGenerateRequest>(), _avatarId, It.IsAny<AZOARequest?>()), Times.Once);
+            It.IsAny<WalletGenerateRequest>(), _userId, It.IsAny<AZOARequest?>()), Times.Once);
     }
 
     [Fact]
     public async Task AllocateAsync_ExistingWallet_ReusedNotDuplicated()
     {
-        ApproveKyc(_avatarId);
-        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        ApproveKyc(_userId);
+        HasWallet(_userId, WalletFor(_userId, ChainType));
         SetupMintSucceeds();
         var manager = BuildManager();
 
         var result = await manager.AllocateAsync(
-            _avatarId, MintRequest(), _callerAvatarId, "pi_key", ApiKeyId);
+            _userId, MintRequest(), _callerUserId, "pi_key", ApiKeyId);
 
         result.IsError.Should().BeFalse();
         result.Result!.WalletProvisioned.Should().BeFalse();
@@ -736,11 +736,11 @@ public class AllocationManagerTests
     // ── IDOR ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AllocateAsync_TransferAlwaysTargetsContractAvatar_NotBody()
+    public async Task AllocateAsync_TransferAlwaysTargetsContractUser_NotBody()
     {
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
 
         NftTransferRequest? captured = null;
         _nft.Setup(n => n.TransferAsync(
@@ -766,17 +766,17 @@ public class AllocationManagerTests
 
         result.IsError.Should().BeFalse();
         captured.Should().NotBeNull();
-        // The transfer target is the authorised contract avatar, never the attacker.
-        captured!.TargetAvatarId.Should().Be(_avatarId);
-        captured.TargetAvatarId.Should().NotBe(attacker);
+        // The transfer target is the authorised contract user, never the attacker.
+        captured!.TargetUserId.Should().Be(_userId);
+        captured.TargetUserId.Should().NotBe(attacker);
     }
 
     [Fact]
     public async Task AllocateAsync_TransferStampsOpaqueCorrelationAndCallerInitiators()
     {
-        ApproveKyc(_avatarId);
-        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
-        HasWallet(_callerAvatarId, WalletFor(_callerAvatarId, ChainType));
+        ApproveKyc(_userId);
+        HasWallet(_userId, WalletFor(_userId, ChainType));
+        HasWallet(_callerUserId, WalletFor(_callerUserId, ChainType));
         _nft.Setup(n => n.TransferAsync(
                 It.IsAny<Guid>(), It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(new AZOAResult<IBlockchainOperation>
@@ -804,14 +804,14 @@ public class AllocationManagerTests
         };
 
         var result = await manager.AllocateAsync(
-            _avatarId, request, _callerAvatarId, "pi_transfer_initiator", ApiKeyId);
+            _userId, request, _callerUserId, "pi_transfer_initiator", ApiKeyId);
 
         result.IsError.Should().BeFalse(result.Message);
         broadcastOp.Should().NotBeNull();
         broadcastOp!.IdempotencyKey.Should().Be(
             AllocationIdempotency.Create(
-                ApiKeyGuid, _avatarId, request, "pi_transfer_initiator").Correlation);
-        broadcastOp.InitiatorAvatarId.Should().Be(_callerAvatarId);
+                ApiKeyGuid, _userId, request, "pi_transfer_initiator").Correlation);
+        broadcastOp.InitiatorUserId.Should().Be(_callerUserId);
         broadcastOp.InitiatorApiKeyId.Should().Be(ApiKeyGuid);
         broadcastOp.Parameters["IdempotencyKey"].Should().Be(
             InternalLedgerKeyFor("pi_transfer_initiator"));
@@ -819,14 +819,14 @@ public class AllocationManagerTests
 
     /// <summary>
     /// AllocationRequest carries no owner id by design (IDOR-resistant). This
-    /// helper documents that even when a caller is the attacker avatar, the
-    /// allocation still targets the contract <c>avatarId</c> route value.
+    /// helper documents that even when a caller is the attacker user, the
+    /// allocation still targets the contract <c>userId</c> route value.
     /// </summary>
     private Task<AZOAResult<AllocationResult>> manager_AllocateAttackerBody(
         AllocationRequest request, Guid attackerCaller)
     {
         var manager = BuildManager();
-        return manager.AllocateAsync(_avatarId, request, attackerCaller, "pi_transfer", ApiKeyId);
+        return manager.AllocateAsync(_userId, request, attackerCaller, "pi_transfer", ApiKeyId);
     }
 
     // ── In-memory idempotency store (faithful claim-once + replay) ────────────

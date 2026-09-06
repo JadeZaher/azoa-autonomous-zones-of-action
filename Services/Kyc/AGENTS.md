@@ -42,7 +42,7 @@ path. Projects and non-value collaboration must not use this gate.
 **Both value gates require TWO independent facts.** `KycGateService` (consumer) and
 `Services/Bridge/RealValueKycGate` (bridge / real value) each read a current
 policy-bound approval AND the latest AML screening verdict for the same
-`(avatar, tenant)` pair. Identity verification says who a person is; it says nothing
+`(user, tenant)` pair. Identity verification says who a person is; it says nothing
 about whether that person is sanctioned. Only `NO_HIT` on a non-truncated result
 opens a gate — `HIT` denies, `MANUAL_REVIEW` denies, a TRUNCATED hit list denies, a
 store error denies, and a MISSING result denies. Fail-closed on missing is the load
@@ -61,7 +61,7 @@ override ledger and reviewer workflow are introduced.
 
 ## §identity-binding
 
-`KycIdentityBindingService` records which real person a verified avatar is, without
+`KycIdentityBindingService` records which real person a verified user is, without
 retaining the document that proved it. `KycPersonKeyDeriver` is the only place the
 recipe exists; see `Persistence/SurrealDb/Models/AGENTS.md` §kyc-identity-binding
 for the storage shape and the D23/D25 decisions.
@@ -70,11 +70,11 @@ Both derivations fail closed. A missing or short root secret, an absent document
 number, or an absent issuing state all return null and refuse the binding. A
 partially-keyed identity is worse than no identity: it would collide people.
 
-**The Sybil refusal lives at the WRITE.** `BindAvatarAsync` appends the caller to
-`avatar_ids` CONDITIONALLY — only when the binding is empty or already contains it —
+**The Sybil refusal lives at the WRITE.** `BindUserAsync` appends the caller to
+`user_ids` CONDITIONALLY — only when the binding is empty or already contains it —
 and `BindAsync` reads the result back to confirm. An unconditional
 `array::concat` adds the caller to every existing binding, after which
-"this person is already bound to a different avatar" is unobservable by construction
+"this person is already bound to a different user" is unobservable by construction
 and the D3/D23 check is a tautology. The condition is expressed inside the statement,
 not as a preceding read, so two concurrent binds for one person key cannot both win.
 The refusal is per uniqueness SCOPE: a second tenant verifying the same human is
@@ -87,7 +87,7 @@ than reading its existence as coverage.
 
 **Every consumer-visible denial is the same sentence.** `KycEligibilityDecision`
 carries a single `Message` for all refusals and keeps the discriminating
-`Cause` `[JsonIgnore]`d. "This person already claimed via another avatar" would tell
+`Cause` `[JsonIgnore]`d. "This person already claimed via another user" would tell
 a tenant that its subject exists elsewhere on the node, which is precisely the
 cross-tenant fact the per-tenant salting exists to hide. The operator-side cause
 survives for support and audit; it must never reach a response body.
@@ -132,7 +132,7 @@ a stored empty result set cannot be distinguished from "the threshold was too hi
 One company key serves the WHOLE NODE, so the vendor dedups a query shape across
 every tenant: tenant B registering a person tenant A already monitors gets
 `already-exists` while holding no row of its own. Handing back A's row would hand
-over A's `subject_avatar_id` and A's `tenant_id` — a cross-tenant leak through a
+over A's `subject_user_id` and A's `tenant_id` — a cross-tenant leak through a
 shared key, which this repo has now shipped three times. So:
 `kyc_screening_monitor` is unique on `(tenant_scope, query_full_name,
 query_birthday_time_from)` mirroring `kyc_identity`; `GetMonitorByQueryAsync`

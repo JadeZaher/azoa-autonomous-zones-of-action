@@ -17,8 +17,8 @@ public interface IBlockchainOperationStore
         string idempotencyKey,
         CancellationToken ct = default);
 
-    /// <summary>Loads all blockchain operations for an avatar.</summary>
-    Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(Guid avatarId, CancellationToken ct = default);
+    /// <summary>Loads all blockchain operations for an user.</summary>
+    Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByUserAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>Inserts or updates a blockchain operation.</summary>
     Task<AZOAResult<IBlockchainOperation>> UpsertAsync(IBlockchainOperation operation, CancellationToken ct = default);

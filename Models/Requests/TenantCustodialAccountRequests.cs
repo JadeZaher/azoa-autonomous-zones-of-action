@@ -13,7 +13,7 @@ public sealed class TenantKycDocumentReferenceRequest
     public long? FileSizeBytes { get; set; }
 }
 
-/// <summary>Tenant request to submit document references for its correlated avatar.</summary>
+/// <summary>Tenant request to submit document references for its correlated user.</summary>
 public sealed class TenantKycSubmissionRequest
 {
     [MaxLength(KycDocumentRequestLimits.MaxDocuments)]

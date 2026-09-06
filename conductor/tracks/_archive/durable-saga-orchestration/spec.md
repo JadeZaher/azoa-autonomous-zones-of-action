@@ -11,7 +11,7 @@ primitive** that any flow needing async retries, scheduled work, or
 compensating revocations can consume. The cross-chain bridge is **consumer #1**
 and the proving ground — but the module is NOT bridge-specific. It must "at
 least solve the bridge", and be reusable for other queue/async needs (faucet
-batching, future webhook/event delivery, NFT mint pipelines, quest step
+batching, future webhook/event delivery, NFT mint pipelines, action step
 dispatch, etc.) without redesign.
 
 ## Why (decision rationale)

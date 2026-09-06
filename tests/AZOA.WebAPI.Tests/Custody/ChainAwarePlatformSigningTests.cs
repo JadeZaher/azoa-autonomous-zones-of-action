@@ -258,7 +258,7 @@ public sealed class ChainAwarePlatformSigningTests
     }
 
     [Fact]
-    public async Task Per_user_resolve_owned_by_another_avatar_never_falls_back_to_the_platform_key()
+    public async Task Per_user_resolve_owned_by_another_user_never_falls_back_to_the_platform_key()
     {
         var keyService = NewKeyService();
         var wallet = OwnedPlatformWallet(keyService, Guid.NewGuid());
@@ -272,7 +272,7 @@ public sealed class ChainAwarePlatformSigningTests
         });
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("not owned by this avatar");
+        result.Message.Should().Contain("not owned by this user");
         handed.Should().BeNull();
     }
 
@@ -280,12 +280,12 @@ public sealed class ChainAwarePlatformSigningTests
     public async Task Per_user_resolve_on_a_chain_stamped_context_still_uses_the_wallet_key()
     {
         var keyService = NewKeyService();
-        var avatarId = Guid.NewGuid();
-        var wallet = OwnedPlatformWallet(keyService, avatarId);
+        var userId = Guid.NewGuid();
+        var wallet = OwnedPlatformWallet(keyService, userId);
         var service = NewService(FullPlatformConfig(), store: StoreReturning(wallet), keyService: keyService);
 
         byte[]? handed = null;
-        var ctx = SigningContext.ForUser(avatarId, wallet.Id).ForChain("Solana");
+        var ctx = SigningContext.ForUser(userId, wallet.Id).ForChain("Solana");
         var result = await service.WithSigningKeyAsync(ctx, key =>
         {
             handed = (byte[])key.Clone();
@@ -445,13 +445,13 @@ public sealed class ChainAwarePlatformSigningTests
         return mock;
     }
 
-    private static IWallet OwnedPlatformWallet(WalletKeyService keyService, Guid avatarId)
+    private static IWallet OwnedPlatformWallet(WalletKeyService keyService, Guid userId)
     {
         var (_, privateKeyHex, address, _) = keyService.GenerateKeypair("algorand");
         return new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = avatarId,
+            UserId = userId,
             WalletType = WalletType.Platform,
             ChainType = "Algorand",
             Address = address,

@@ -28,7 +28,7 @@ and payment truth remain in the consumer domain.
 Two current documents disagree about the selected ArdaNova identity path:
 
 - `conductor/ARDANOVA-AZOA-INTEGRATION-CONTRACT.md` locks self-register,
-  self-run avatars and explicitly excludes `tenant:provision` for ArdaNova.
+  self-run users and explicitly excludes `tenant:provision` for ArdaNova.
 - `docs/TENANT-CUSTODIAL-ONBOARDING.md` describes the new generic tenant
   custodial path and uses ArdaNova as its example consumer.
 

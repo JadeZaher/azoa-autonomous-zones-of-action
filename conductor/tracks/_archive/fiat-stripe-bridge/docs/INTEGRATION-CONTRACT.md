@@ -23,7 +23,7 @@ investment record. AZOA contributes an idempotent, KYC-gated, tenant-callable
 | Token-allocation math, balance credit, treasury split, funding-gate evaluation | **Tenant** |
 | The investment record (the tenant's source of truth) | **Tenant** |
 | Deciding *how much* of *which* asset to allocate | **Tenant** |
-| Provisioning a custodial wallet for an avatar (if absent) | **AZOA** |
+| Provisioning a custodial wallet for an user (if absent) | **AZOA** |
 | Moving the on-chain / custodial asset (mint or transfer) | **AZOA** |
 | Deduping a redelivered trigger so the asset moves exactly once | **AZOA** |
 | KYC gate (fail-closed) on the value-bearing move | **AZOA** |
@@ -37,7 +37,7 @@ AZOA receives an **already-decided amount**. It never computes economics.
 - The tenant authenticates to AZOA with an **`X-Api-Key`** header carrying the
   tenant's AZOA API key. AZOA validates it via the existing API-key
   infrastructure (SHA-256 hashed at rest) and admits the request as an
-  avatar-scoped principal — controllers cannot distinguish it from a JWT.
+  user-scoped principal — controllers cannot distinguish it from a JWT.
 - The API key MUST carry the `nft:mint` (or `wallet:manage`) **scope** — this is
   what authorises allocation. A key without it receives `403`.
 - The tenant's AZOA API key is a **deploy-time secret**, recorded as the
@@ -55,12 +55,12 @@ After the tenant's post-settlement handler has (1) verified the upstream
 webhook signature, (2) decided the allocation amount, and (3) written its own
 investment record, it makes **one** call into AZOA:
 
-### `POST /api/allocation/{avatarId}`
+### `POST /api/allocation/{userId}`
 
 | | |
 |---|---|
-| **Method / path** | `POST /api/allocation/{avatarId}` |
-| **`{avatarId}`** | The AZOA avatar that receives the asset. **This is the only place the target is named** — no body field can redirect it (IDOR-resistant). |
+| **Method / path** | `POST /api/allocation/{userId}` |
+| **`{userId}`** | The AZOA user that receives the asset. **This is the only place the target is named** — no body field can redirect it (IDOR-resistant). |
 | **`X-Api-Key`** | `<tenant AZOA API key>` |
 | **`Idempotency-Key`** | A **stable per-payment key** — e.g. the upstream PaymentIntent id. A redelivered trigger MUST reuse the same value. |
 | **`Content-Type`** | `application/json` |
@@ -68,9 +68,9 @@ investment record, it makes **one** call into AZOA:
 #### Request body
 
 The body is the asset descriptor + the already-decided amount. It deliberately
-carries **no owner / avatar id** — the target avatar comes from the route.
+carries **no owner / user id** — the target user comes from the route.
 
-Mint (create a new asset into the avatar's custodial wallet):
+Mint (create a new asset into the user's custodial wallet):
 
 ```json
 {
@@ -84,7 +84,7 @@ Mint (create a new asset into the avatar's custodial wallet):
 }
 ```
 
-Transfer (move an existing AZOA asset into the avatar's custodial wallet):
+Transfer (move an existing AZOA asset into the user's custodial wallet):
 
 ```json
 {
@@ -114,7 +114,7 @@ Transfer (move an existing AZOA asset into the avatar's custodial wallet):
   "isError": false,
   "message": "Allocation completed.",
   "result": {
-    "avatarId": "9c1e...",
+    "userId": "9c1e...",
     "walletId": "a4d2...",
     "walletAddress": "ALGO...ADDRESS",
     "walletProvisioned": true,
@@ -146,7 +146,7 @@ returns the **original** result and performs **no** second mint/transfer:
 | Status | When |
 |---|---|
 | `401 Unauthorized` | Missing / invalid API key, or missing `ApiKeyId` claim. |
-| `403 Forbidden` | API key lacks the `nft:mint` / `wallet:manage` scope, **or** the target avatar's KYC is not `APPROVED` (message prefixed `KYC_FORBIDDEN:`). Fail-closed — no asset moved. |
+| `403 Forbidden` | API key lacks the `nft:mint` / `wallet:manage` scope, **or** the target user's KYC is not `APPROVED` (message prefixed `KYC_FORBIDDEN:`). Fail-closed — no asset moved. |
 | `400 Bad Request` | Malformed request, missing `chainType`, transfer without `assetRecordId`, or a provisioning / allocation error. |
 | `429 Too Many Requests` | The `financial` rate-limit policy tripped (value-bearing endpoint). |
 
@@ -158,7 +158,7 @@ returns the **original** result and performs **no** second mint/transfer:
   key is `alloc:<apiKeyId>:<tail>`, so two tenants reusing the same
   human-friendly key (e.g. the same integer) never collide.
 - The **client `Idempotency-Key` wins**. When absent, AZOA derives a
-  **deterministic content key** over `(avatarId, kind, chainType, amount,
+  **deterministic content key** over `(userId, kind, chainType, amount,
   assetId, assetRecordId)`. A random per-request key is **never** generated —
   absence is still dedup-safe.
 - The first caller to claim the key performs the effect exactly once; concurrent
@@ -183,14 +183,14 @@ allocation.
                                  run token economics / treasury / gate
                                  write ProjectInvestment (tenant's truth)
                                        │
-                                       │  POST /api/allocation/{avatarId}
+                                       │  POST /api/allocation/{userId}
                                        │  X-Api-Key: <tenant key>
                                        │  Idempotency-Key: <PaymentIntent id>
                                        │  { kind, chainType, amount, ... }
                                        └──────────────────────────────────►  TryClaim(idempotencyKey)
                                                                               ├─ lost claim ─► replay original result ──┐
                                                                               │                                          │
-                                                                              ├─ won claim ─► RequireVerifiedAsync(avatar)
+                                                                              ├─ won claim ─► RequireVerifiedAsync(user)
                                                                               │                ├─ not APPROVED ─► 403, no effect ─┐
                                                                               │                └─ APPROVED                         │
                                                                               │                    provision wallet if absent     │

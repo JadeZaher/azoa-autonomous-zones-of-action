@@ -15,7 +15,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// polling worker scans due rows and transitions them with conditional single-winner
 /// UPDATEs (<c>AffectedCount()==1</c> is the arbiter, the same discipline as the saga
 /// step claim). Inline-POCO style of <see cref="SurrealConsentGrantStore"/>:
-/// Guid("N") lowercase-hex record ids, record-link columns for tenant/grant/avatar,
+/// Guid("N") lowercase-hex record ids, record-link columns for tenant/grant/user,
 /// scopes stored as a CSV string.
 ///
 /// <para><b>No dual-write (AC7).</b> <see cref="EnqueueAsync"/> is called by
@@ -191,10 +191,10 @@ public sealed class SurrealConsentWebhookOutboxStore : IConsentWebhookOutboxStor
     private static ConsentWebhookEventPoco FromDomain(ConsentWebhookEvent e) => new()
     {
         Id               = SurrealId.ToSurrealId(e.Id),
-        TenantId         = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(e.TenantId)) ?? string.Empty,
+        TenantId         = SurrealLink.ToLink("user", SurrealId.ToSurrealId(e.TenantId)) ?? string.Empty,
         EventType        = e.EventType.ToString(),
         GrantId          = SurrealLink.ToLink("consent_grant", SurrealId.ToSurrealId(e.GrantId)) ?? string.Empty,
-        AvatarId         = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(e.AvatarId)) ?? string.Empty,
+        UserId         = SurrealLink.ToLink("user", SurrealId.ToSurrealId(e.UserId)) ?? string.Empty,
         Scopes           = e.Scopes ?? string.Empty,
         ParticipationRef = e.ParticipationRef,
         OccurredAt       = new DateTimeOffset(DateTime.SpecifyKind(e.OccurredAt, DateTimeKind.Utc)),
@@ -212,7 +212,7 @@ public sealed class SurrealConsentWebhookOutboxStore : IConsentWebhookOutboxStor
         TenantId         = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
         EventType        = Enum.TryParse<ConsentWebhookEventType>(p.EventType, ignoreCase: true, out var t) ? t : ConsentWebhookEventType.Granted,
         GrantId          = SurrealId.FromSurrealId(SurrealLink.FromLink(p.GrantId)!),
-        AvatarId         = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+        UserId         = SurrealId.FromSurrealId(SurrealLink.FromLink(p.UserId)!),
         Scopes           = p.Scopes ?? string.Empty,
         ParticipationRef = p.ParticipationRef,
         OccurredAt       = p.OccurredAt.UtcDateTime,
@@ -243,10 +243,10 @@ public sealed class SurrealConsentWebhookOutboxStore : IConsentWebhookOutboxStor
         public string SchemaName => Table;
 
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]         public string TenantId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("tenant_id")]         public string TenantId { get; set; } = string.Empty;
         [JsonPropertyName("event_type")]        public string EventType { get; set; } = "Granted";
         [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.ConsentGrant))] [JsonPropertyName("grant_id")]          public string GrantId { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]         public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("user_id")]         public string UserId { get; set; } = string.Empty;
         [JsonPropertyName("scopes")]            public string Scopes { get; set; } = string.Empty;
         [JsonPropertyName("participation_ref")] public string? ParticipationRef { get; set; }
         [JsonPropertyName("occurred_at")]       public DateTimeOffset OccurredAt { get; set; }

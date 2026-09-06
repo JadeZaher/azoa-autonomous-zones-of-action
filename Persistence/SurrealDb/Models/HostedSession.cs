@@ -23,7 +23,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [Index("hosted_session_provider_session",
         Fields = new[] { "flow_kind", "provider_key", "provider_session_id" },
         Unique = true)]
-    [Index("hosted_session_subject", Fields = new[] { "subject_avatar_id" })]
+    [Index("hosted_session_subject", Fields = new[] { "subject_user_id" })]
     public partial class HostedSession : ISurrealRecord
     {
         public const string SchemaNameConst = "hosted_session";
@@ -51,10 +51,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string AdmissionKey { get; set; } = string.Empty;
 
         [FieldGroup("Subject + tenancy")]
-        [References(typeof(Avatar), Optional = true)]
-        public string? SubjectAvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? SubjectUserId { get; set; }
 
-        [References(typeof(Avatar), Optional = true)]
+        [References(typeof(User), Optional = true)]
         public string? TenantId { get; set; }
 
         /// <summary>Provider-side session id; server-side only, never tenant-projected.</summary>

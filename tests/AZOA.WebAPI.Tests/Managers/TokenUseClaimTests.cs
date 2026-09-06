@@ -42,7 +42,7 @@ public class TokenUseClaimTests
 
         var challenges = new Mock<IWalletAuthChallengeStore>();
         var claimTokens = new Mock<IWalletAuthClaimTokenStore>();
-        var avatars = new Mock<IAvatarStore>();
+        var users = new Mock<IUserStore>();
         var verifier = new Mock<IWalletSignatureVerifier>();
         var consentGrants = new Mock<IConsentGrantStore>();
 
@@ -62,14 +62,14 @@ public class TokenUseClaimTests
             .ReturnsAsync(new AZOAResult<bool> { Result = true });
         verifier.Setup(v => v.Verify(chain, addr, It.IsAny<byte[]>(), It.IsAny<byte[]>())).Returns(true);
 
-        // Unknown wallet → mint a self-owned avatar and return a LOGIN token.
-        avatars.Setup(a => a.GetByAuthWalletAsync(addr, chain, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
-        avatars.Setup(a => a.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IAvatar a, CancellationToken _) => new AZOAResult<IAvatar> { Result = a });
+        // Unknown wallet → mint a self-owned user and return a LOGIN token.
+        users.Setup(a => a.GetByAuthWalletAsync(addr, chain, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser> { Result = null });
+        users.Setup(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IUser a, CancellationToken _) => new AZOAResult<IUser> { Result = a });
 
         var mgr = new WalletAuthManager(
-            challenges.Object, claimTokens.Object, avatars.Object, verifier.Object,
+            challenges.Object, claimTokens.Object, users.Object, verifier.Object,
             consentGrants.Object, TestConfig());
 
         var r = await mgr.VerifyAsync(addr, chain, "c2ln", null);
@@ -87,14 +87,14 @@ public class TokenUseClaimTests
     [Fact]
     public async Task ChildToken_CarriesTokenUseChild_AndActAsTenant()
     {
-        var store = new Mock<IAvatarStore>();
+        var store = new Mock<IUserStore>();
         var grants = new Mock<IConsentGrantStore>();
 
         var tenantId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
         store.Setup(s => s.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = new Avatar { Id = userId, OwnerTenantId = null } });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = new User { Id = userId, OwnerTenantId = null } });
 
         // A LIVE consent grant from this user to this tenant (mirror TenantManagerTests).
         grants.Setup(g => g.ListByGrantorAsync(userId, It.IsAny<CancellationToken>()))
@@ -105,7 +105,7 @@ public class TokenUseClaimTests
                     new ConsentGrant
                     {
                         Id = Guid.NewGuid(),
-                        GrantorAvatarId = userId,
+                        GrantorUserId = userId,
                         TenantId = tenantId,
                         Scopes = new List<string> { AzoaScopes.WalletManage },
                         GrantedAt = DateTime.UtcNow.AddMinutes(-1),

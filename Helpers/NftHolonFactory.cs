@@ -7,7 +7,7 @@ namespace AZOA.WebAPI.Helpers;
 public static class NftHolonFactory
 {
     /// <summary>Creates an active NFT Holon from a validated mint request.</summary>
-    public static Holon Create(NftMintRequest request, Guid avatarId)
+    public static Holon Create(NftMintRequest request, Guid userId)
     {
         var metadata = new Dictionary<string, string>(request.Metadata);
         if (!string.IsNullOrEmpty(request.ImageUri)) metadata["image"] = request.ImageUri;
@@ -15,7 +15,7 @@ public static class NftHolonFactory
 
         return new Holon
         {
-            AvatarId = avatarId,
+            UserId = userId,
             Name = request.Name,
             Description = request.Description,
             AssetType = "NFT",

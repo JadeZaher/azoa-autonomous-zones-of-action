@@ -16,7 +16,7 @@ public sealed class NodeOperatorSecurityContractTests
             .And.Contain("JwtRegisteredClaimNames.Jti")
             .And.Contain("AzoaScopes.Operator")
             .And.Contain("AzoaScopes.NodeGovern")
-            .And.Contain("NodeOperatorIdentity.AvatarId")
+            .And.Contain("NodeOperatorIdentity.UserId")
             .And.Contain("NodeOperatorIdentity.ReservedEmail");
     }
 
@@ -26,7 +26,7 @@ public sealed class NodeOperatorSecurityContractTests
         var source = ReadRepositoryFile("Services", "Admin", "SeedAdminHostedService.cs");
 
         source.Should().Contain("CreateIfAbsentAsync")
-            .And.Contain("NodeOperatorIdentity.AvatarId")
+            .And.Contain("NodeOperatorIdentity.UserId")
             .And.Contain("NodeOperatorIdentity.ReservedEmail")
             .And.Contain("credential revision rollback was refused")
             .And.Contain("credentials differ without a revision increase")
@@ -90,7 +90,7 @@ public sealed class NodeOperatorSecurityContractTests
     public void OperatorTenantPage_UsesPersistedArrayScopeMembership()
     {
         var source = ReadRepositoryFile(
-            "Providers", "Stores", "Surreal", "SurrealAvatarStore.cs");
+            "Providers", "Stores", "Surreal", "SurrealUserStore.cs");
 
         source.Should().Contain("scopes CONTAINS $_scope")
             .And.NotContain("string::split(scopes, ',')");
@@ -127,7 +127,7 @@ public sealed class NodeOperatorSecurityContractTests
             .And.Contain("Math.Clamp(limit, 1, 101)");
         response.Should().Contain("class KycControlAuditResponse")
             .And.Contain("PreviousTrustRevision")
-            .And.Contain("ActorAvatarId");
+            .And.Contain("ActorUserId");
     }
 
     private static string ReadRepositoryFile(params string[] path)

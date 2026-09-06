@@ -34,12 +34,12 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? GrantId { get; set; }
 
         [JsonPropertyName("tenant_id")]
-        [References(typeof(Avatar))]
+        [References(typeof(User))]
         public string TenantId { get; set; } = string.Empty;
 
-        [JsonPropertyName("avatar_id")]
-        [References(typeof(Avatar), Optional = true)]
-        public string? AvatarId { get; set; }
+        [JsonPropertyName("user_id")]
+        [References(typeof(User), Optional = true)]
+        public string? UserId { get; set; }
 
         [JsonPropertyName("scope")]
         public string? Scope { get; set; }

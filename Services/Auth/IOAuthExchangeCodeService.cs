@@ -12,7 +12,7 @@ public interface IOAuthExchangeCodeService
     /// <summary>Mints a code and returns the PLAINTEXT; only its hash is persisted.</summary>
     Task<AZOAResult<string>> MintAsync(
         OAuthExchangeCodePurpose purpose,
-        Guid avatarId,
+        Guid userId,
         ExternalAuthProvider provider,
         Guid? tenantId,
         string tenantScope,

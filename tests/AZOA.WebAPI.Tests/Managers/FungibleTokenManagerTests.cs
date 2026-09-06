@@ -38,8 +38,8 @@ public class FungibleTokenManagerTests
     private readonly Mock<IAlgorandASAModule> _asa = new();
     private readonly InMemoryIdempotencyStore _idempotency = new();
 
-    private readonly Guid _avatarId = Guid.NewGuid();
-    private readonly Guid _callerAvatarId = Guid.NewGuid();
+    private readonly Guid _userId = Guid.NewGuid();
+    private readonly Guid _callerUserId = Guid.NewGuid();
 
     private FungibleTokenManager BuildManager(INodeGovernanceGuard? nodeGovernance = null)
     {
@@ -75,12 +75,12 @@ public class FungibleTokenManagerTests
 
     // ── KYC helpers ────────────────────────────────────────────────────────────
 
-    private void ApproveKyc(Guid avatarId)
-        => _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
+    private void ApproveKyc(Guid userId)
+        => _valueAccess.Setup(k => k.RequireValueAccessAsync(userId, null, It.IsAny<CancellationToken>()))
                .ReturnsAsync(new AZOAResult<bool> { Result = true, Message = "Success" });
 
-    private void DenyKyc(Guid avatarId)
-        => _valueAccess.Setup(k => k.RequireValueAccessAsync(avatarId, null, It.IsAny<CancellationToken>()))
+    private void DenyKyc(Guid userId)
+        => _valueAccess.Setup(k => k.RequireValueAccessAsync(userId, null, It.IsAny<CancellationToken>()))
                .ReturnsAsync(new AZOAResult<bool>
                {
                    IsError = true,
@@ -92,32 +92,32 @@ public class FungibleTokenManagerTests
     public async Task CreateAsync_TenantRequest_ForwardsTenantToValueAccess()
     {
         var tenantId = Guid.NewGuid();
-        _valueAccess.Setup(access => access.RequireValueAccessAsync(_avatarId, tenantId, It.IsAny<CancellationToken>()))
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(_userId, tenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<bool>.Failure("participant is not ready"));
         var manager = BuildManager();
 
-        await manager.CreateAsync(_avatarId, CreateRequest(), _callerAvatarId, "tenant-readiness", ApiKeyId, tenantId);
+        await manager.CreateAsync(_userId, CreateRequest(), _callerUserId, "tenant-readiness", ApiKeyId, tenantId);
 
         _valueAccess.Verify(
-            access => access.RequireValueAccessAsync(_avatarId, tenantId, It.IsAny<CancellationToken>()), Times.Once);
+            access => access.RequireValueAccessAsync(_userId, tenantId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ── Wallet helpers ─────────────────────────────────────────────────────────
 
-    private static IWallet WalletFor(Guid avatarId, string chain) =>
+    private static IWallet WalletFor(Guid userId, string chain) =>
         Mock.Of<IWallet>(w =>
             w.Id == Guid.NewGuid() &&
-            w.AvatarId == avatarId &&
+            w.UserId == userId &&
             w.ChainType == chain &&
             w.Address == "ALGOTESTADDRESS" &&
             w.WalletType == WalletType.Platform);
 
-    private void HasWallet(Guid avatarId, IWallet wallet)
-        => _walletStore.Setup(s => s.GetByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
+    private void HasWallet(Guid userId, IWallet wallet)
+        => _walletStore.Setup(s => s.GetByUserAsync(userId, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { wallet } });
 
-    private void HasNoWallet(Guid avatarId)
-        => _walletStore.Setup(s => s.GetByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
+    private void HasNoWallet(Guid userId)
+        => _walletStore.Setup(s => s.GetByUserAsync(userId, It.IsAny<CancellationToken>()))
                        .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = Array.Empty<IWallet>() });
 
     private static FungibleTokenCreateRequest CreateRequest() => new()
@@ -139,12 +139,12 @@ public class FungibleTokenManagerTests
         var manager = BuildManager(guard);
 
         var result = await manager.CreateAsync(
-            _avatarId, CreateRequest(), _callerAvatarId, "blocked", ApiKeyId);
+            _userId, CreateRequest(), _callerUserId, "blocked", ApiKeyId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Node governance disallows fungible-token:create on asset type 'FungibleToken'");
         _valueAccess.Verify(k => k.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
-        _walletStore.Verify(s => s.GetByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _walletStore.Verify(s => s.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _factory.Verify(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()), Times.Never);
         _asa.Verify(a => a.CreateASAAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
@@ -158,21 +158,21 @@ public class FungibleTokenManagerTests
     [Fact]
     public async Task CreateAsync_HappyPath_LaunchesAsaAndReturnsAssetId()
     {
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
         var manager = BuildManager();
 
         var result = await manager.CreateAsync(
-            _avatarId, CreateRequest(), _callerAvatarId, "client_key_1", ApiKeyId);
+            _userId, CreateRequest(), _callerUserId, "client_key_1", ApiKeyId);
 
         result.IsError.Should().BeFalse(result.Message);
         result.Result!.AssetId.Should().Be("12345");
-        result.Result.AvatarId.Should().Be(_avatarId);
+        result.Result.UserId.Should().Be(_userId);
         result.Result.WalletAddress.Should().Be("ALGOTESTADDRESS");
         result.Result.Replayed.Should().BeFalse();
 
-        // The avatar's custodial address is used for every ASA role (mechanism only).
+        // The user's custodial address is used for every ASA role (mechanism only).
         _asa.Verify(a => a.CreateASAAsync(
             "Project Token", "PRJ", 1_000_000, 6,
             "ALGOTESTADDRESS", "ALGOTESTADDRESS", "ALGOTESTADDRESS", "ALGOTESTADDRESS",
@@ -192,14 +192,14 @@ public class FungibleTokenManagerTests
     [Fact]
     public async Task CreateAsync_KycNotApproved_RejectsAndNeverCreatesToken()
     {
-        DenyKyc(_avatarId);
-        HasNoWallet(_avatarId);
+        DenyKyc(_userId);
+        HasNoWallet(_userId);
         var manager = BuildManager();
 
         var result = await manager.CreateAsync(
-            _avatarId, CreateRequest(), _callerAvatarId, "client_kyc", ApiKeyId);
+            _userId, CreateRequest(), _callerUserId, "client_kyc", ApiKeyId);
 
-        result.IsError.Should().BeTrue("a non-approved KYC avatar must be rejected fail-closed");
+        result.IsError.Should().BeTrue("a non-approved KYC user must be rejected fail-closed");
         result.Message.Should().StartWith(KycAuthorizationError.Forbidden);
 
         // No value-bearing side effect: never created a token, never provisioned.
@@ -220,15 +220,15 @@ public class FungibleTokenManagerTests
     [Fact]
     public async Task CreateAsync_DuplicateKey_ReplaysOriginalAndCreatesExactlyOnce()
     {
-        ApproveKyc(_avatarId);
-        var wallet = WalletFor(_avatarId, ChainType);
-        HasWallet(_avatarId, wallet);
+        ApproveKyc(_userId);
+        var wallet = WalletFor(_userId, ChainType);
+        HasWallet(_userId, wallet);
         var manager = BuildManager();
 
         var first = await manager.CreateAsync(
-            _avatarId, CreateRequest(), _callerAvatarId, "dup_key", ApiKeyId);
+            _userId, CreateRequest(), _callerUserId, "dup_key", ApiKeyId);
         var second = await manager.CreateAsync(
-            _avatarId, CreateRequest(), _callerAvatarId, "dup_key", ApiKeyId);
+            _userId, CreateRequest(), _callerUserId, "dup_key", ApiKeyId);
 
         first.IsError.Should().BeFalse(first.Message);
         first.Result!.Replayed.Should().BeFalse();
@@ -247,12 +247,12 @@ public class FungibleTokenManagerTests
     [Fact]
     public async Task CreateAsync_UnexpectedPreEffectFailure_BubblesAndSettlesSafeFailure()
     {
-        _valueAccess.Setup(k => k.RequireValueAccessAsync(_avatarId, null, It.IsAny<CancellationToken>()))
+        _valueAccess.Setup(k => k.RequireValueAccessAsync(_userId, null, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("sensitive diagnostic"));
         var manager = BuildManager();
 
         Func<Task> act = async () => await manager.CreateAsync(
-            _avatarId, CreateRequest(), _callerAvatarId, "pre_effect_failure", ApiKeyId);
+            _userId, CreateRequest(), _callerUserId, "pre_effect_failure", ApiKeyId);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         var record = await _idempotency.GetAsync(
@@ -264,8 +264,8 @@ public class FungibleTokenManagerTests
     [Fact]
     public async Task CreateAsync_UnexpectedProviderFailure_LeavesClaimInProgressAndDoesNotRetryEffect()
     {
-        ApproveKyc(_avatarId);
-        HasWallet(_avatarId, WalletFor(_avatarId, ChainType));
+        ApproveKyc(_userId);
+        HasWallet(_userId, WalletFor(_userId, ChainType));
         var manager = BuildManager();
         _asa.Setup(a => a.CreateASAAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
@@ -274,11 +274,11 @@ public class FungibleTokenManagerTests
             .ThrowsAsync(new InvalidOperationException("ambiguous provider failure"));
 
         Func<Task> first = async () => await manager.CreateAsync(
-            _avatarId, CreateRequest(), _callerAvatarId, "ambiguous", ApiKeyId);
+            _userId, CreateRequest(), _callerUserId, "ambiguous", ApiKeyId);
         await first.Should().ThrowAsync<InvalidOperationException>();
 
         var replay = await manager.CreateAsync(
-            _avatarId, CreateRequest(), _callerAvatarId, "ambiguous", ApiKeyId);
+            _userId, CreateRequest(), _callerUserId, "ambiguous", ApiKeyId);
         replay.IsError.Should().BeTrue();
         replay.Message.Should().Contain("in progress");
         var record = await _idempotency.GetAsync(

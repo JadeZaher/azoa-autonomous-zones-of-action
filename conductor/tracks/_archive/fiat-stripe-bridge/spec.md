@@ -4,7 +4,7 @@
 
 Expose the **thin AZOA-side seam** that a fiat-settlement tenant calls *after*
 money has already cleared on its own platform: "provision a custodial wallet for
-avatar X if one is absent, and/or allocate N units of asset A into avatar X's
+user X if one is absent, and/or allocate N units of asset A into user X's
 custodial wallet." AZOA contributes the **idempotent, KYC-gated,
 tenant-callable wallet-provisioning + asset-allocation primitive** and a
 **documented call contract**. AZOA does not run the fiat checkout, the token
@@ -56,8 +56,8 @@ contract down.
 - **Tenant identity via API key.** `ApiKeyAuthenticationHandler`
   (`Core/ApiKeyAuthenticationHandler.cs:28-94`) validates `X-Api-Key`
   (`:14,30`) and emits the *same* claims as JWT — `NameIdentifier` / `sub` /
-  `AvatarId` plus per-key `scope` claims (`:72-87`). A tenant authenticates as
-  an avatar-scoped principal; controllers cannot tell JWT from API key, which is
+  `UserId` plus per-key `scope` claims (`:72-87`). A tenant authenticates as
+  an user-scoped principal; controllers cannot tell JWT from API key, which is
   exactly what lets the existing wallet/NFT controllers serve a tenant caller
   unchanged.
 - **Wallet provisioning.** `WalletManager.GenerateWalletAsync`
@@ -68,7 +68,7 @@ contract down.
   (`Controllers/NftController.cs:42-52`) and `NftController.Transfer`
   (`:54-64`) → `INftManager.MintAsync` / `TransferAsync`
   (`Interfaces/Managers/INftManager.cs:10-11`). Both already resolve the caller
-  from claims (`GetAvatarIdFromClaims`, `NftController.cs:117-122`).
+  from claims (`GetUserIdFromClaims`, `NftController.cs:117-122`).
 - **The idempotency pattern to mirror.** `WalletController.TopUp`
   (`Controllers/WalletController.cs:152-169`) reads an optional
   `Idempotency-Key` header (`ReadIdempotencyKey`, `:176-185`) and threads it to
@@ -120,10 +120,10 @@ never inlined.
 ### In scope
 
 1. **An idempotent, KYC-gated asset-allocation primitive** callable by a tenant
-   API key. It accepts: target `AvatarId`, asset descriptor (chain + asset id /
+   API key. It accepts: target `UserId`, asset descriptor (chain + asset id /
    NFT mint request), amount, and the tenant's idempotency key (from the
    `Idempotency-Key` header, mirroring `WalletController.cs:164`). It:
-   - provisions a custodial wallet for the avatar **if absent** (reusing
+   - provisions a custodial wallet for the user **if absent** (reusing
      `GenerateWalletAsync`, `WalletManager.cs:218`), returning the existing one
      otherwise;
    - performs the allocation via the existing mint/transfer surface
@@ -131,7 +131,7 @@ never inlined.
      `INftManager.cs:10-11`, or the asset equivalent);
    - **dedupes** on the idempotency key so a replayed call returns the original
      result without re-executing the on-chain/custodial side effect;
-   - **rejects** the call when the target avatar's KYC status is not approved.
+   - **rejects** the call when the target user's KYC status is not approved.
 2. **KYC gating** wired to the `kyc-module` dependency. The primitive must fail
    closed: unknown / pending / rejected KYC ⇒ allocation denied, no wallet side
    effect that constitutes value transfer. (Wallet *provisioning* with zero
@@ -166,16 +166,16 @@ never inlined.
   exists that is callable by an `X-Api-Key` tenant principal and reads the
   `Idempotency-Key` header exactly as `WalletController.cs:176-185` does.
 - [ ] The primitive provisions a custodial wallet via `GenerateWalletAsync`
-  (`WalletManager.cs:218`) when the avatar has none for the target chain, and
+  (`WalletManager.cs:218`) when the user has none for the target chain, and
   reuses the existing wallet otherwise.
 - [ ] The primitive dedupes on the idempotency key: a duplicate call with the
   same key returns the first call's result and performs **no** second
   mint/transfer side effect. Unit test proves this.
-- [ ] The primitive is KYC-gated and **fails closed**: a target avatar whose KYC
+- [ ] The primitive is KYC-gated and **fails closed**: a target user whose KYC
   is not approved is rejected with no value-bearing side effect. Unit test
   proves this.
 - [ ] No client-supplied body field can redirect the allocation to a different
-  avatar than the route/contract specifies (IDOR-resistant, mirroring the
+  user than the route/contract specifies (IDOR-resistant, mirroring the
   STARODK precedent in project memory) — caller-supplied owner ids on the body
   are ignored.
 - [ ] `docs/INTEGRATION-CONTRACT.md` documents the ordered AZOA calls the
@@ -205,8 +205,8 @@ rung below the Tier 0 bridge/signing-safety work it depends on.
   track consumes the signing primitive for the allocation side effect; without
   it the allocation can only be stubbed.
 - **kyc-module** — the gating check. The allocation primitive calls into this to
-  resolve the target avatar's KYC status and fail closed when not approved.
+  resolve the target user's KYC status and fail closed when not approved.
 - **tenant-onboarding** — API-key tenant identity. Establishes how a tenant
-  (the fiat-settlement platform) is issued the avatar-scoped `X-Api-Key`
+  (the fiat-settlement platform) is issued the user-scoped `X-Api-Key`
   (`ApiKeyAuthenticationHandler.cs:14,72-87`) that this primitive trusts, and
   the scope claim that authorises allocation.

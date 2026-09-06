@@ -3,6 +3,6 @@ using SurrealForge.Client.Query;
 namespace AZOA.WebAPI.Mcp;
 
 public sealed record ToolCallContext(
-    Guid AvatarId,
+    Guid UserId,
     ISurrealExecutor Executor,
     IServiceProvider Services);

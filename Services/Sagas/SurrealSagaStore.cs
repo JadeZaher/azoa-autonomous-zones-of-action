@@ -60,7 +60,7 @@ public sealed class SurrealSagaStore : ISagaStore
     // record-link literal — either of which a SCHEMAFULL `TYPE string` field
     // rejects ("Expected string but found u'...'" / "...saga:..."). The saga
     // outbox's opaque tokens hit both: correlation_key/step_name are GUIDs on
-    // the quest-workflow path and step_idempotency_key is `saga:{corr}:{step}`.
+    // the action-workflow path and step_idempotency_key is `saga:{corr}:{step}`.
     // We tag every such token with this sentinel on the way to SurrealDB so it
     // stays a plain string, and strip it on the way back — transparent to every
     // caller (the tokens are store-internal and always round-trip through here).

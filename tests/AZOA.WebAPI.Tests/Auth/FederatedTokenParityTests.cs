@@ -26,13 +26,13 @@ public class FederatedTokenParityTests
 
     /// <summary>
     /// Claim-for-claim parity between the token the password path issues and the token
-    /// the federated path issues for the SAME avatar. Only the deliberately-unique
+    /// the federated path issues for the SAME user. Only the deliberately-unique
     /// claims (jti, auth_time) and the expiry may differ.
     /// </summary>
     [Fact]
     public async System.Threading.Tasks.Task Federated_and_password_tokens_carry_identical_claims()
     {
-        var avatar = new AZOA.WebAPI.Models.Avatar
+        var user = new AZOA.WebAPI.Models.User
         {
             Id = Guid.NewGuid(),
             Username = "parity-user",
@@ -43,18 +43,18 @@ public class FederatedTokenParityTests
 
         var configuration = BuildConfiguration();
 
-        // Password path — through the real manager, exactly as AvatarController calls it.
-        var store = new Mock<IAvatarStore>();
+        // Password path — through the real manager, exactly as UserController calls it.
+        var store = new Mock<IUserStore>();
         store.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<IEnumerable<IAvatar>>.Success([avatar]));
-        var manager = new AvatarManager(store.Object, configuration);
+            .ReturnsAsync(AZOAResult<IEnumerable<IUser>>.Success([user]));
+        var manager = new UserManager(store.Object, configuration);
 
         var passwordLogin = await manager.LoginAsync(
-            new AZOA.WebAPI.Models.AvatarLoginModel { Email = avatar.Email, Password = Password });
+            new AZOA.WebAPI.Models.UserLoginModel { Email = user.Email, Password = Password });
         passwordLogin.IsError.Should().BeFalse();
 
         // Federated path — the issuer the OAuth exchange endpoint uses.
-        var federatedToken = new AvatarLoginTokenIssuer(configuration).IssueLoginToken(avatar);
+        var federatedToken = new UserLoginTokenIssuer(configuration).IssueLoginToken(user);
 
         var passwordClaims = Claims(passwordLogin.Result!);
         var federatedClaims = Claims(federatedToken);
@@ -88,7 +88,7 @@ public class FederatedTokenParityTests
     [Fact]
     public void A_federated_token_is_a_login_token_and_never_a_tenant_child_credential()
     {
-        var avatar = new AZOA.WebAPI.Models.Avatar
+        var user = new AZOA.WebAPI.Models.User
         {
             Id = Guid.NewGuid(),
             Username = "oauth-user",
@@ -97,22 +97,22 @@ public class FederatedTokenParityTests
             DappRole = AzoaDappRoles.User,
         };
 
-        var claims = Claims(new AvatarLoginTokenIssuer(BuildConfiguration()).IssueLoginToken(avatar));
+        var claims = Claims(new UserLoginTokenIssuer(BuildConfiguration()).IssueLoginToken(user));
 
         Values(claims, AzoaClaims.TokenUse).Should().BeEquivalentTo([AzoaClaims.TokenUseLogin]);
         claims.Should().NotContain(claim => claim.Type == "act_as_tenant");
-        Values(claims, JwtRegisteredClaimNames.Sub).Should().BeEquivalentTo([avatar.Id.ToString()]);
+        Values(claims, JwtRegisteredClaimNames.Sub).Should().BeEquivalentTo([user.Id.ToString()]);
     }
 
     /// <summary>
     /// The dApp role and its implied scopes ride the federated token too. This is the
-    /// concrete drift AvatarLoginTokenIssuer's remarks describe: the wallet path's
+    /// concrete drift UserLoginTokenIssuer's remarks describe: the wallet path's
     /// hand-copied minter forgot exactly these claims.
     /// </summary>
     [Fact]
     public void A_federated_token_carries_the_dapp_role_scopes()
     {
-        var developer = new AZOA.WebAPI.Models.Avatar
+        var developer = new AZOA.WebAPI.Models.User
         {
             Id = Guid.NewGuid(),
             Username = "dev",
@@ -121,7 +121,7 @@ public class FederatedTokenParityTests
             DappRole = AzoaDappRoles.Developer,
         };
 
-        var claims = Claims(new AvatarLoginTokenIssuer(BuildConfiguration()).IssueLoginToken(developer));
+        var claims = Claims(new UserLoginTokenIssuer(BuildConfiguration()).IssueLoginToken(developer));
 
         Values(claims, "dapp_role").Should().BeEquivalentTo([AzoaDappRoles.Normalize(AzoaDappRoles.Developer)]);
         Values(claims, "scope").Should().Contain(AzoaScopes.DappDevelop);
@@ -131,7 +131,7 @@ public class FederatedTokenParityTests
     [Fact]
     public void A_federated_token_is_signed_for_the_same_issuer_audience_and_algorithm()
     {
-        var avatar = new AZOA.WebAPI.Models.Avatar
+        var user = new AZOA.WebAPI.Models.User
         {
             Id = Guid.NewGuid(),
             Username = "u",
@@ -140,13 +140,13 @@ public class FederatedTokenParityTests
         };
 
         var token = new JwtSecurityTokenHandler().ReadJwtToken(
-            new AvatarLoginTokenIssuer(BuildConfiguration()).IssueLoginToken(avatar));
+            new UserLoginTokenIssuer(BuildConfiguration()).IssueLoginToken(user));
 
         token.Issuer.Should().Be("AZOA.WebAPI");
         token.Audiences.Should().BeEquivalentTo(["AZOA.Client"]);
         token.Header.Alg.Should().Be("HS256");
         token.ValidTo.Should().BeCloseTo(
-            DateTime.UtcNow.Add(AvatarLoginTokenIssuer.TokenLifetime), TimeSpan.FromMinutes(2));
+            DateTime.UtcNow.Add(UserLoginTokenIssuer.TokenLifetime), TimeSpan.FromMinutes(2));
     }
 
     private static IConfiguration BuildConfiguration()

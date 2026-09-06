@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Manage federated providers attached to the signed-in avatar (Phase 1B, D18).
+ * Manage federated providers attached to the signed-in user (Phase 1B, D18).
  *
  * This page is the ONLY route by which a provider becomes attached to an existing
  * account. Rule 1 of D17: an OAuth identity is never auto-linked by matching email;
@@ -96,7 +96,7 @@ export default function LinkedAccountsPage() {
       <div className="space-y-4">
         <h1 className="text-2xl font-bold tracking-tight">Linked accounts</h1>
         <p className="text-sm text-muted-foreground">
-          Sign in to manage the providers connected to your avatar.
+          Sign in to manage the providers connected to your user.
         </p>
         <Link
           href="/login?returnTo=/linked-accounts"
@@ -117,7 +117,7 @@ export default function LinkedAccountsPage() {
         <h1 className="text-2xl font-bold tracking-tight">Linked accounts</h1>
         <p className="text-sm text-muted-foreground">
           Connect a provider to sign in faster. Connecting never merges another
-          account into yours — it attaches the provider to the avatar you are
+          account into yours — it attaches the provider to the user you are
           signed in as right now.
         </p>
       </div>

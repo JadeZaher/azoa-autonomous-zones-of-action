@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
 /// SurrealDB-backed <see cref="INftStore"/>. Maps between legacy domain
-/// models (<see cref="AvatarNFT"/>, <see cref="HolonNFTBinding"/>,
+/// models (<see cref="UserNFT"/>, <see cref="HolonNFTBinding"/>,
 /// <see cref="WalletNFTBinding"/>) and SurrealDB tables:
 /// <list type="bullet">
 ///   <item><c>nft_ownership</c> — generated POCO (<see cref="GeneratedNft"/>)</item>
@@ -22,7 +22,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 ///   <item><c>wallet_nft_binding</c> — no generated POCO; uses inline record type</item>
 /// </list>
 ///
-/// AvatarNFT composite lookup: (ChainType, ContractAddress, TokenId) with
+/// UserNFT composite lookup: (ChainType, ContractAddress, TokenId) with
 /// <c>is_current = true</c> to select live ownership rows only.
 /// </summary>
 public sealed class SurrealNftStore : INftStore
@@ -39,17 +39,17 @@ public sealed class SurrealNftStore : INftStore
         _executor = executor;
     }
 
-    // ── AvatarNFT ─────────────────────────────────────────────────────────────
+    // ── UserNFT ─────────────────────────────────────────────────────────────
 
-    public async Task<AZOAResult<IAvatarNFT>> UpsertAvatarNFTAsync(
-        IAvatarNFT avatarNFT, CancellationToken ct = default)
+    public async Task<AZOAResult<IUserNFT>> UpsertUserNFTAsync(
+        IUserNFT userNFT, CancellationToken ct = default)
     {
         try
         {
-            if (avatarNFT.Id == Guid.Empty)
-                avatarNFT.Id = Guid.NewGuid();
+            if (userNFT.Id == Guid.Empty)
+                userNFT.Id = Guid.NewGuid();
 
-            var poco   = ToNftPoco(avatarNFT);
+            var poco   = ToNftPoco(userNFT);
 
             // Coercion-safe SET-based UPSERT (SurrealWriter): omits null option<>
             // fields (3.x rejects an explicit null on option<string> like
@@ -60,25 +60,25 @@ public sealed class SurrealNftStore : INftStore
             resp.EnsureAllOk();
 
             var saved  = resp.GetValues<GeneratedNft>(0).FirstOrDefault();
-            var result = saved is not null ? FromPoco(saved) : avatarNFT;
+            var result = saved is not null ? FromPoco(saved) : userNFT;
 
-            return new AZOAResult<IAvatarNFT> { Result = result, Message = "Saved." };
+            return new AZOAResult<IUserNFT> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new AZOAResult<IAvatarNFT>().CaptureException(ex,
-                $"SurrealNftStore.UpsertAvatarNFTAsync failed: {ex.Message}");
+            return new AZOAResult<IUserNFT>().CaptureException(ex,
+                $"SurrealNftStore.UpsertUserNFTAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<AZOAResult<IAvatarNFT>> GetAvatarNFTByIdAsync(
+    public async Task<AZOAResult<IUserNFT>> GetUserNFTByIdAsync(
         Guid id, CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery.SelectById(GeneratedNft.SchemaNameConst, SurrealId.ToSurrealId(id));
             var row = await _executor.QuerySingleAsync<GeneratedNft>(q, ct);
-            return new AZOAResult<IAvatarNFT>
+            return new AZOAResult<IUserNFT>
             {
                 IsError = row == null,
                 Message = row == null ? "NFT not found." : "Success",
@@ -87,12 +87,12 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new AZOAResult<IAvatarNFT>().CaptureException(ex,
-                $"SurrealNftStore.GetAvatarNFTByIdAsync failed: {ex.Message}");
+            return new AZOAResult<IUserNFT>().CaptureException(ex,
+                $"SurrealNftStore.GetUserNFTByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<AZOAResult<IAvatarNFT>> GetAvatarNFTByTokenIdAsync(
+    public async Task<AZOAResult<IUserNFT>> GetUserNFTByTokenIdAsync(
         string chainType, string nftContractAddress, string tokenId, CancellationToken ct = default)
     {
         try
@@ -108,7 +108,7 @@ public sealed class SurrealNftStore : INftStore
             var rows = await _executor.QueryAsync<GeneratedNft>(q, ct);
             var row  = rows.Count > 0 ? rows[0] : null;
 
-            return new AZOAResult<IAvatarNFT>
+            return new AZOAResult<IUserNFT>
             {
                 IsError = row == null,
                 Message = row == null ? "NFT not found." : "Success",
@@ -117,22 +117,22 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new AZOAResult<IAvatarNFT>().CaptureException(ex,
-                $"SurrealNftStore.GetAvatarNFTByTokenIdAsync failed: {ex.Message}");
+            return new AZOAResult<IUserNFT>().CaptureException(ex,
+                $"SurrealNftStore.GetUserNFTByTokenIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<AZOAResult<IEnumerable<IAvatarNFT>>> GetAvatarNFTsByAvatarAsync(
-        Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<IUserNFT>>> GetUserNFTsByUserAsync(
+        Guid userId, CancellationToken ct = default)
     {
         try
         {
-            var avatarLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
+            var userLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(userId));
             var q = SurrealQuery<GeneratedNft>.From()
-                .Where(n => n.AvatarId == avatarLink);
+                .Where(n => n.UserId == userLink);
 
             var rows = await _executor.QueryAsync<GeneratedNft>(q, ct);
-            return new AZOAResult<IEnumerable<IAvatarNFT>>
+            return new AZOAResult<IEnumerable<IUserNFT>>
             {
                 Result  = rows.Select(FromPoco).ToList(),
                 Message = "Success"
@@ -140,12 +140,12 @@ public sealed class SurrealNftStore : INftStore
         }
         catch (Exception ex)
         {
-            return new AZOAResult<IEnumerable<IAvatarNFT>>().CaptureException(ex,
-                $"SurrealNftStore.GetAvatarNFTsByAvatarAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<IUserNFT>>().CaptureException(ex,
+                $"SurrealNftStore.GetUserNFTsByUserAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<AZOAResult<bool>> DeleteAvatarNFTAsync(
+    public async Task<AZOAResult<bool>> DeleteUserNFTAsync(
         Guid id, CancellationToken ct = default)
     {
         try
@@ -163,7 +163,7 @@ public sealed class SurrealNftStore : INftStore
         catch (Exception ex)
         {
             return new AZOAResult<bool>().CaptureException(ex,
-                $"SurrealNftStore.DeleteAvatarNFTAsync failed: {ex.Message}");
+                $"SurrealNftStore.DeleteUserNFTAsync failed: {ex.Message}");
         }
     }
 
@@ -222,14 +222,14 @@ public sealed class SurrealNftStore : INftStore
         }
     }
 
-    public async Task<AZOAResult<IEnumerable<IHolonNFTBinding>>> GetHolonNFTBindingsByAvatarNFTAsync(
-        Guid avatarNFTId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<IHolonNFTBinding>>> GetHolonNFTBindingsByUserNFTAsync(
+        Guid userNFTId, CancellationToken ct = default)
     {
         try
         {
-            var avatarNftId = SurrealId.ToSurrealId(avatarNFTId);
+            var userNftId = SurrealId.ToSurrealId(userNFTId);
             var q = SurrealQuery<SurrealHolonBinding>.From()
-                .Where(b => b.AvatarNftId == avatarNftId);
+                .Where(b => b.UserNftId == userNftId);
 
             var rows = await _executor.QueryAsync<SurrealHolonBinding>(q, ct);
             return new AZOAResult<IEnumerable<IHolonNFTBinding>>
@@ -241,7 +241,7 @@ public sealed class SurrealNftStore : INftStore
         catch (Exception ex)
         {
             return new AZOAResult<IEnumerable<IHolonNFTBinding>>().CaptureException(ex,
-                $"SurrealNftStore.GetHolonNFTBindingsByAvatarNFTAsync failed: {ex.Message}");
+                $"SurrealNftStore.GetHolonNFTBindingsByUserNFTAsync failed: {ex.Message}");
         }
     }
 
@@ -322,14 +322,14 @@ public sealed class SurrealNftStore : INftStore
         }
     }
 
-    public async Task<AZOAResult<IEnumerable<IWalletNFTBinding>>> GetWalletNFTBindingsByAvatarNFTAsync(
-        Guid avatarNFTId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<IWalletNFTBinding>>> GetWalletNFTBindingsByUserNFTAsync(
+        Guid userNFTId, CancellationToken ct = default)
     {
         try
         {
-            var avatarNftId = SurrealId.ToSurrealId(avatarNFTId);
+            var userNftId = SurrealId.ToSurrealId(userNFTId);
             var q = SurrealQuery<SurrealWalletBinding>.From()
-                .Where(b => b.AvatarNftId == avatarNftId);
+                .Where(b => b.UserNftId == userNftId);
 
             var rows = await _executor.QueryAsync<SurrealWalletBinding>(q, ct);
             return new AZOAResult<IEnumerable<IWalletNFTBinding>>
@@ -341,7 +341,7 @@ public sealed class SurrealNftStore : INftStore
         catch (Exception ex)
         {
             return new AZOAResult<IEnumerable<IWalletNFTBinding>>().CaptureException(ex,
-                $"SurrealNftStore.GetWalletNFTBindingsByAvatarNFTAsync failed: {ex.Message}");
+                $"SurrealNftStore.GetWalletNFTBindingsByUserNFTAsync failed: {ex.Message}");
         }
     }
 
@@ -371,9 +371,9 @@ public sealed class SurrealNftStore : INftStore
 
 
 
-    // ── AvatarNFT mapping ─────────────────────────────────────────────────────
+    // ── UserNFT mapping ─────────────────────────────────────────────────────
 
-    private static GeneratedNft ToNftPoco(IAvatarNFT n)
+    private static GeneratedNft ToNftPoco(IUserNFT n)
     {
         // ALWAYS serialize (empty → `{}`) so the SET-based upsert REPLACES the
         // column; see Providers/Stores/Surreal/AGENTS.md §set-omits-null.
@@ -382,7 +382,7 @@ public sealed class SurrealNftStore : INftStore
         return new GeneratedNft
         {
             Id                = SurrealId.ToSurrealId(n.Id),
-            AvatarId          = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(n.AvatarId))!,
+            UserId          = SurrealLink.ToLink("user", SurrealId.ToSurrealId(n.UserId))!,
             ChainType         = n.ChainType,
             ContractAddress   = n.NFTContractAddress,
             TokenId           = n.TokenId,
@@ -408,7 +408,7 @@ public sealed class SurrealNftStore : INftStore
         };
     }
 
-    private static AvatarNFT FromPoco(GeneratedNft p)
+    private static UserNFT FromPoco(GeneratedNft p)
     {
         Dictionary<string, string> attributes = new();
         if (p.Attributes.HasValue)
@@ -423,10 +423,10 @@ public sealed class SurrealNftStore : INftStore
             catch { /* best-effort */ }
         }
 
-        return new AvatarNFT
+        return new UserNFT
         {
             Id                  = SurrealId.FromSurrealId(p.Id),
-            AvatarId            = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+            UserId            = SurrealId.FromSurrealId(SurrealLink.FromLink(p.UserId)!),
             ChainType           = p.ChainType,
             NFTContractAddress  = p.ContractAddress,
             TokenId             = p.TokenId,
@@ -463,7 +463,7 @@ public sealed class SurrealNftStore : INftStore
         {
             Id              = SurrealId.ToSurrealId(b.Id),
             HolonId         = SurrealId.ToSurrealId(b.HolonId),
-            AvatarNftId     = SurrealId.ToSurrealId(b.AvatarNFTId),
+            UserNftId     = SurrealId.ToSurrealId(b.UserNFTId),
             Role            = b.Role,
             PermissionLevel = b.PermissionLevel,
             Permissions     = permissionsJson,
@@ -495,7 +495,7 @@ public sealed class SurrealNftStore : INftStore
         {
             Id              = SurrealId.FromSurrealId(s.Id),
             HolonId         = SurrealId.FromSurrealId(s.HolonId),
-            AvatarNFTId     = SurrealId.FromSurrealId(s.AvatarNftId),
+            UserNFTId     = SurrealId.FromSurrealId(s.UserNftId),
             Role            = s.Role,
             PermissionLevel = s.PermissionLevel,
             Permissions     = perms,
@@ -521,7 +521,7 @@ public sealed class SurrealNftStore : INftStore
         {
             Id                = SurrealId.ToSurrealId(b.Id),
             WalletId          = SurrealId.ToSurrealId(b.WalletId),
-            AvatarNftId       = SurrealId.ToSurrealId(b.AvatarNFTId),
+            UserNftId       = SurrealId.ToSurrealId(b.UserNFTId),
             BindingType       = b.BindingType,
             AccessLevel       = b.AccessLevel,
             AccessPermissions = permissionsJson,
@@ -553,7 +553,7 @@ public sealed class SurrealNftStore : INftStore
         {
             Id                = SurrealId.FromSurrealId(s.Id),
             WalletId          = SurrealId.FromSurrealId(s.WalletId),
-            AvatarNFTId       = SurrealId.FromSurrealId(s.AvatarNftId),
+            UserNFTId       = SurrealId.FromSurrealId(s.UserNftId),
             BindingType       = s.BindingType,
             AccessLevel       = s.AccessLevel,
             AccessPermissions = perms,
@@ -577,8 +577,8 @@ public sealed class SurrealNftStore : INftStore
         [JsonPropertyName("holon_id")]
         public string HolonId { get; set; } = string.Empty;
 
-        [JsonPropertyName("avatar_nft_id")]
-        public string AvatarNftId { get; set; } = string.Empty;
+        [JsonPropertyName("user_nft_id")]
+        public string UserNftId { get; set; } = string.Empty;
 
         [JsonPropertyName("role")]
         public string Role { get; set; } = string.Empty;
@@ -609,8 +609,8 @@ public sealed class SurrealNftStore : INftStore
         [JsonPropertyName("wallet_id")]
         public string WalletId { get; set; } = string.Empty;
 
-        [JsonPropertyName("avatar_nft_id")]
-        public string AvatarNftId { get; set; } = string.Empty;
+        [JsonPropertyName("user_nft_id")]
+        public string UserNftId { get; set; } = string.Empty;
 
         [JsonPropertyName("binding_type")]
         public string BindingType { get; set; } = string.Empty;

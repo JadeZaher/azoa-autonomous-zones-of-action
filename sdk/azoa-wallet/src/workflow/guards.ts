@@ -27,8 +27,8 @@ export function assertUuid(id: string, paramName: string): void {
 /**
  * Throws `SdkError(INVALID_INPUT)` unless `value` is a non-empty string.
  *
- * Used for the `gateId` signal argument: the backend (`QuestSignalRequest.GateId`,
- * `Models/Requests/QuestRequests.cs`) types it as a plain string, NOT a UUID — a
+ * Used for the `gateId` signal argument: the backend (`ActionSignalRequest.GateId`,
+ * `Models/Requests/ActionRequests.cs`) types it as a plain string, NOT a UUID — a
  * contract-confirmed relaxation of plan D6's `assertUuid(gateId)`. We still guard
  * it so an empty/whitespace gate id can never be interpolated into the URL body.
  */

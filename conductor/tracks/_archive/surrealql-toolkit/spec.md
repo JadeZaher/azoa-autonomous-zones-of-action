@@ -126,7 +126,7 @@ Three signals motivate codifying now:
   produce a human-readable drift report. Mirrors Prisma `migrate diff`.
 - **[`surrealql-studio`](../surrealql-studio/spec.md)** — read-only
   browse / typed query / EXPLAIN UI for a running namespace.
-  Avatar-scoped (reuses the `mcp-surface` auth pattern) so it's
+  User-scoped (reuses the `mcp-surface` auth pattern) so it's
   multi-tenant safe.
 - **[`surrealql-db-pull`](../surrealql-db-pull/spec.md)** — reverse-
   engineer `.mermaid` sources from a running database namespace.

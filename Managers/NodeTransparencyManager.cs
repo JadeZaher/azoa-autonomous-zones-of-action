@@ -222,7 +222,7 @@ public sealed class NodeTransparencyManager : INodeTransparencyManager
             Mint = Copy(source.Mint),
             Transfer = Copy(source.Transfer),
             Swap = Copy(source.Swap),
-            QuestComplete = Copy(source.QuestComplete),
+            ActionComplete = Copy(source.ActionComplete),
             FederationPublish = Copy(source.FederationPublish),
             Version = source.Version,
             UpdatedAt = source.UpdatedAt,
@@ -375,7 +375,7 @@ public sealed class NodeTransparencyManager : INodeTransparencyManager
             && IsValidFeeEntry(schedule.Mint)
             && IsValidFeeEntry(schedule.Transfer)
             && IsValidFeeEntry(schedule.Swap)
-            && IsValidFeeEntry(schedule.QuestComplete)
+            && IsValidFeeEntry(schedule.ActionComplete)
             && IsValidFeeEntry(schedule.FederationPublish);
 
     private static bool IsValidFeeEntry(NodeFeeScheduleEntryResponse? entry)

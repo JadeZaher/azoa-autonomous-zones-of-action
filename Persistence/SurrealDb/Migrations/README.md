@@ -10,7 +10,7 @@ Typical reasons to author a migration here:
 - **Rewrites** — change the wire format of an existing column on existing rows
 - **One-shot fixes** — patch a bad row produced by a prior bug
 - **Index-only changes** that need to land independently of the schema rebuild
-- **Seed data** — dev / test fixtures (e.g. an admin avatar in a fresh namespace)
+- **Seed data** — dev / test fixtures (e.g. an admin user in a fresh namespace)
 
 ## Naming convention
 
@@ -21,8 +21,8 @@ YYYYMMDD_HHMMSS__<short_description>.surql
 Examples:
 
 ```
-20260605_120000__backfill_avatar_records_with_default_karma.surql
-20260606_093000__seed_dev_admin_avatar.surql
+20260605_120000__backfill_user_records_with_default_karma.surql
+20260606_093000__seed_dev_admin_user.surql
 ```
 
 The timestamp prefix is lexically sortable; the `surrealforge up` runner

@@ -37,24 +37,24 @@ public class WalletManager : IWalletManager
         _blockchainConfig = new BlockchainConfigurationManager(config);
     }
 
-    public async Task<AZOAResult<IWallet>> GetAsync(Guid id, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IWallet>> GetAsync(Guid id, Guid userId, AZOARequest? request = null)
     {
         var result = await _walletStore.GetByIdAsync(id, default);
         if (result.IsError || result.Result == null) return result;
 
-        if (result.Result.AvatarId != avatarId)
+        if (result.Result.UserId != userId)
             return new AZOAResult<IWallet> { IsError = true, Message = "Wallet not found." };
 
         return result;
     }
 
-    public async Task<AZOAResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IWallet>>> QueryAsync(WalletQueryRequest query, Guid userId, AZOARequest? request = null)
     {
         var all = await _walletStore.GetAllAsync(default);
         if (all.IsError || all.Result == null) return all;
 
-        // Force the filter to the authenticated avatar — never trust query.AvatarId.
-        var filtered = all.Result.Where(w => w.AvatarId == avatarId);
+        // Force the filter to the authenticated user — never trust query.UserId.
+        var filtered = all.Result.Where(w => w.UserId == userId);
 
         if (!string.IsNullOrEmpty(query.ChainType))
             filtered = filtered.Where(w => w.ChainType.Equals(query.ChainType, StringComparison.OrdinalIgnoreCase));
@@ -64,7 +64,7 @@ public class WalletManager : IWalletManager
         return new AZOAResult<IEnumerable<IWallet>> { Result = filtered.ToList(), Message = "Success" };
     }
 
-    public async Task<AZOAResult<IWallet>> CreateAsync(WalletCreateModel model, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IWallet>> CreateAsync(WalletCreateModel model, Guid userId, AZOARequest? request = null)
     {
         // Address uniqueness per chain
         var all = await _walletStore.GetAllAsync(default);
@@ -77,7 +77,7 @@ public class WalletManager : IWalletManager
 
         var wallet = new Wallet
         {
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = model.ChainType,
             Address = model.Address,
             PublicKey = model.PublicKey,
@@ -88,18 +88,18 @@ public class WalletManager : IWalletManager
 
         if (model.IsDefault)
         {
-            await UnsetPreviousDefaultAsync(avatarId, model.ChainType, wallet.Id);
+            await UnsetPreviousDefaultAsync(userId, model.ChainType, wallet.Id);
         }
 
         return await _walletStore.UpsertAsync(wallet, default);
     }
 
-    public async Task<AZOAResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IWallet>> UpdateAsync(Guid id, WalletUpdateModel model, Guid userId, AZOARequest? request = null)
     {
         var existing = await _walletStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
 
-        if (existing.Result.AvatarId != avatarId)
+        if (existing.Result.UserId != userId)
             return new AZOAResult<IWallet> { IsError = true, Message = "Wallet not found." };
 
         var wallet = (Wallet)existing.Result;
@@ -107,7 +107,7 @@ public class WalletManager : IWalletManager
 
         if (model.IsDefault.HasValue && model.IsDefault.Value && !wallet.IsDefault)
         {
-            await UnsetPreviousDefaultAsync(wallet.AvatarId, wallet.ChainType, wallet.Id);
+            await UnsetPreviousDefaultAsync(wallet.UserId, wallet.ChainType, wallet.Id);
             wallet.IsDefault = true;
         }
         else if (model.IsDefault.HasValue)
@@ -118,29 +118,29 @@ public class WalletManager : IWalletManager
         return await _walletStore.UpsertAsync(wallet, default);
     }
 
-    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid userId, AZOARequest? request = null)
     {
         var existing = await _walletStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = "Wallet not found." };
 
-        if (existing.Result.AvatarId != avatarId)
+        if (existing.Result.UserId != userId)
             return new AZOAResult<bool> { IsError = true, Message = "Wallet not found." };
 
         return await _walletStore.DeleteAsync(id, default);
     }
 
-    public async Task<AZOAResult<bool>> SetDefaultAsync(Guid avatarId, Guid walletId, AZOARequest? request = null)
+    public async Task<AZOAResult<bool>> SetDefaultAsync(Guid userId, Guid walletId, AZOARequest? request = null)
     {
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = "Wallet not found." };
 
         var wallet = walletResult.Result;
-        if (wallet.AvatarId != avatarId)
-            return new AZOAResult<bool> { IsError = true, Message = "Wallet not owned by avatar." };
+        if (wallet.UserId != userId)
+            return new AZOAResult<bool> { IsError = true, Message = "Wallet not owned by user." };
 
-        await UnsetPreviousDefaultAsync(avatarId, wallet.ChainType, walletId);
+        await UnsetPreviousDefaultAsync(userId, wallet.ChainType, walletId);
 
         wallet.IsDefault = true;
         var saveResult = await _walletStore.UpsertAsync(wallet, default);
@@ -150,7 +150,7 @@ public class WalletManager : IWalletManager
         return new AZOAResult<bool> { Result = true, Message = "Default wallet set." };
     }
 
-    public async Task<AZOAResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<PortfolioResult>> GetPortfolioAsync(Guid walletId, Guid userId, AZOARequest? request = null)
     {
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result == null)
@@ -158,13 +158,13 @@ public class WalletManager : IWalletManager
 
         var wallet = walletResult.Result;
 
-        if (wallet.AvatarId != avatarId)
+        if (wallet.UserId != userId)
             return new AZOAResult<PortfolioResult> { IsError = true, Message = "Wallet not found." };
 
-        // Stub: linked NFT Holons for this avatar
+        // Stub: linked NFT Holons for this user
         var allHolons = await _holonStore.QueryAsync(null, default);
         var nfts = allHolons.Result?
-            .Where(h => h.AvatarId == wallet.AvatarId && h.AssetType == "NFT")
+            .Where(h => h.UserId == wallet.UserId && h.AssetType == "NFT")
             .Select(h => new NftHolding
             {
                 HolonId = h.Id,
@@ -358,7 +358,7 @@ public class WalletManager : IWalletManager
 
     // ─── New: Generate a wallet on-platform ───
 
-    public async Task<AZOAResult<IWallet>> GenerateWalletAsync(WalletGenerateRequest model, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IWallet>> GenerateWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null)
     {
         try
         {
@@ -375,7 +375,7 @@ public class WalletManager : IWalletManager
 
             var wallet = new Wallet
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 ChainType = model.ChainType,
                 Address = address,
                 PublicKey = publicKey,
@@ -387,7 +387,7 @@ public class WalletManager : IWalletManager
             };
 
             if (model.IsDefault)
-                await UnsetPreviousDefaultAsync(avatarId, model.ChainType, wallet.Id);
+                await UnsetPreviousDefaultAsync(userId, model.ChainType, wallet.Id);
 
             return await _walletStore.UpsertAsync(wallet, default);
         }
@@ -397,19 +397,19 @@ public class WalletManager : IWalletManager
         }
     }
 
-    public async Task<AZOAResult<IWallet>> BootstrapWalletAsync(WalletGenerateRequest model, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IWallet>> BootstrapWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null)
     {
-        if (avatarId == Guid.Empty)
-            return AZOAResult<IWallet>.Failure("An authenticated avatar is required.");
+        if (userId == Guid.Empty)
+            return AZOAResult<IWallet>.Failure("An authenticated user is required.");
 
         var chainType = WalletBootstrapIdentity.CanonicalChain(model.ChainType);
         if (chainType is null)
             return AZOAResult<IWallet>.Failure($"Chain type '{model.ChainType}' is not supported for wallet generation.");
 
-        var walletId = WalletBootstrapIdentity.For(avatarId, chainType);
+        var walletId = WalletBootstrapIdentity.For(userId, chainType);
         var existing = await _walletStore.GetByIdAsync(walletId, default);
         if (!existing.IsError && existing.Result is not null)
-            return ValidateBootstrapWallet(existing.Result, avatarId, chainType);
+            return ValidateBootstrapWallet(existing.Result, userId, chainType);
 
         try
         {
@@ -417,7 +417,7 @@ public class WalletManager : IWalletManager
             var candidate = new Wallet
             {
                 Id = walletId,
-                AvatarId = avatarId,
+                UserId = userId,
                 ChainType = chainType,
                 Address = address,
                 PublicKey = publicKey,
@@ -433,9 +433,9 @@ public class WalletManager : IWalletManager
                 return created;
 
             if (created.Result.IsDefault)
-                await UnsetPreviousDefaultAsync(avatarId, chainType, walletId);
+                await UnsetPreviousDefaultAsync(userId, chainType, walletId);
 
-            return ValidateBootstrapWallet(created.Result, avatarId, chainType);
+            return ValidateBootstrapWallet(created.Result, userId, chainType);
         }
         catch (NotSupportedException ex)
         {
@@ -443,9 +443,9 @@ public class WalletManager : IWalletManager
         }
     }
 
-    private static AZOAResult<IWallet> ValidateBootstrapWallet(IWallet wallet, Guid avatarId, string chainType)
+    private static AZOAResult<IWallet> ValidateBootstrapWallet(IWallet wallet, Guid userId, string chainType)
     {
-        if (wallet.AvatarId != avatarId
+        if (wallet.UserId != userId
             || wallet.WalletType != WalletType.Platform
             || !string.Equals(wallet.ChainType, chainType, StringComparison.OrdinalIgnoreCase))
         {
@@ -457,7 +457,7 @@ public class WalletManager : IWalletManager
 
     // ─── New: Connect an external wallet (MetaMask, Ghost, etc.) ───
 
-    public async Task<AZOAResult<IWallet>> ConnectWalletAsync(WalletConnectRequest model, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IWallet>> ConnectWalletAsync(WalletConnectRequest model, Guid userId, AZOARequest? request = null)
     {
         if (string.IsNullOrWhiteSpace(model.Address))
             return new AZOAResult<IWallet> { IsError = true, Message = "Address is required." };
@@ -477,16 +477,16 @@ public class WalletManager : IWalletManager
 
         if (existing != null)
         {
-            // If the wallet belongs to this avatar, return it
-            if (existing.AvatarId == avatarId)
+            // If the wallet belongs to this user, return it
+            if (existing.UserId == userId)
                 return new AZOAResult<IWallet> { Result = existing, Message = "Wallet already connected." };
 
-            return new AZOAResult<IWallet> { IsError = true, Message = "Address already registered by another avatar." };
+            return new AZOAResult<IWallet> { IsError = true, Message = "Address already registered by another user." };
         }
 
         var wallet = new Wallet
         {
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = model.ChainType,
             Address = model.Address,
             PublicKey = model.PublicKey,
@@ -496,14 +496,14 @@ public class WalletManager : IWalletManager
         };
 
         if (model.IsDefault)
-            await UnsetPreviousDefaultAsync(avatarId, model.ChainType, wallet.Id);
+            await UnsetPreviousDefaultAsync(userId, model.ChainType, wallet.Id);
 
         return await _walletStore.UpsertAsync(wallet, default);
     }
 
     // ─── New: Export wallet private key ───
 
-    public async Task<AZOAResult<WalletExportResult>> ExportWalletAsync(Guid walletId, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<WalletExportResult>> ExportWalletAsync(Guid walletId, Guid userId, AZOARequest? request = null)
     {
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result == null)
@@ -511,8 +511,8 @@ public class WalletManager : IWalletManager
 
         var wallet = walletResult.Result;
 
-        if (wallet.AvatarId != avatarId)
-            return new AZOAResult<WalletExportResult> { IsError = true, Message = "Wallet not owned by this avatar." };
+        if (wallet.UserId != userId)
+            return new AZOAResult<WalletExportResult> { IsError = true, Message = "Wallet not owned by this user." };
 
         if (wallet.WalletType != WalletType.Platform)
             return new AZOAResult<WalletExportResult> { IsError = true, Message = "Only platform-generated wallets can be exported. External wallets are managed by their respective browser wallet." };
@@ -549,7 +549,7 @@ public class WalletManager : IWalletManager
 
     // ─── New: Top-up a wallet via faucet (dev / test networks only) ───
 
-    public async Task<AZOAResult<object>> TopUpAsync(Guid walletId, decimal? amount, Guid avatarId, AZOARequest? request = null, string? clientIdempotencyKey = null)
+    public async Task<AZOAResult<object>> TopUpAsync(Guid walletId, decimal? amount, Guid userId, AZOARequest? request = null, string? clientIdempotencyKey = null)
     {
         var walletResult = await _walletStore.GetByIdAsync(walletId, default);
         if (walletResult.IsError || walletResult.Result == null)
@@ -558,8 +558,8 @@ public class WalletManager : IWalletManager
         var wallet = walletResult.Result;
 
         // Ownership check — mirror ExportWalletAsync.
-        if (wallet.AvatarId != avatarId)
-            return new AZOAResult<object> { IsError = true, Message = "Wallet not owned by this avatar." };
+        if (wallet.UserId != userId)
+            return new AZOAResult<object> { IsError = true, Message = "Wallet not owned by this user." };
 
         // HARD GUARD: never dispense on mainnet.
         var network = _blockchainConfig.GetDefaultNetwork(wallet.ChainType);
@@ -639,11 +639,11 @@ public class WalletManager : IWalletManager
         };
     }
 
-    private async Task UnsetPreviousDefaultAsync(Guid avatarId, string chainType, Guid exceptWalletId)
+    private async Task UnsetPreviousDefaultAsync(Guid userId, string chainType, Guid exceptWalletId)
     {
         var all = await _walletStore.GetAllAsync(default);
         var previous = all.Result?.FirstOrDefault(w =>
-            w.AvatarId == avatarId &&
+            w.UserId == userId &&
             w.ChainType.Equals(chainType, StringComparison.OrdinalIgnoreCase) &&
             w.IsDefault &&
             w.Id != exceptWalletId);

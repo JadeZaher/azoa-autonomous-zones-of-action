@@ -27,7 +27,7 @@ public sealed class RateLimitPartitionKeyTests
             User = Principal(
                 new Claim("AuthMethod", "ApiKey"),
                 new Claim("ApiKeyId", "6a4575a6-4187-46ad-a248-baa0b9823138"),
-                new Claim(ClaimTypes.NameIdentifier, "avatar-id")),
+                new Claim(ClaimTypes.NameIdentifier, "user-id")),
         };
         context.Request.Headers["X-Api-Key"] = "raw-secret-is-not-the-partition";
 

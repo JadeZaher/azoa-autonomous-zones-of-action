@@ -16,7 +16,7 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE node_treasury_audit TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS action ON TABLE node_treasury_audit TYPE string
     ASSERT $value INSIDE $node_treasury_audit_action;
-DEFINE FIELD IF NOT EXISTS actor_avatar_id ON TABLE node_treasury_audit TYPE record<avatar>;
+DEFINE FIELD IF NOT EXISTS actor_user_id ON TABLE node_treasury_audit TYPE record<user>;
 DEFINE FIELD IF NOT EXISTS chain ON TABLE node_treasury_audit TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS network ON TABLE node_treasury_audit TYPE string
@@ -38,7 +38,7 @@ DEFINE INDEX IF NOT EXISTS node_treasury_audit_occurred
 
 DEFINE INDEX IF NOT EXISTS node_treasury_audit_actor
     ON TABLE node_treasury_audit
-    FIELDS actor_avatar_id;
+    FIELDS actor_user_id;
 
 DEFINE INDEX IF NOT EXISTS node_treasury_audit_chain_network
     ON TABLE node_treasury_audit

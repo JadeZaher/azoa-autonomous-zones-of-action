@@ -94,7 +94,7 @@ public class TenantConsentController : ControllerBase
     };
 
     /// <summary>
-    /// The tenant id is the authenticated key's owner avatar id — ALWAYS from the
+    /// The tenant id is the authenticated key's owner user id — ALWAYS from the
     /// claim, never from a request body. Mirrors
     /// <c>TenantController.GetTenantIdFromClaims</c>.
     /// </summary>

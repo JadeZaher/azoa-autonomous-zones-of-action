@@ -139,7 +139,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     public async Task<AZOAResult<BridgeTransactionResult>> InitiateBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
-        string recipientAddress, Guid avatarId, RailAmount amount,
+        string recipientAddress, Guid userId, RailAmount amount,
         BridgeMode? mode = null, CancellationToken ct = default,
         string? clientIdempotencyKey = null)
     {
@@ -177,13 +177,13 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
             if (!simulatedRoute)
             {
-                var kycFailure = await RequireCurrentKycApprovalAsync(avatarId, ct);
+                var kycFailure = await RequireCurrentKycApprovalAsync(userId, ct);
                 if (kycFailure is not null)
                     return kycFailure;
             }
 
             return await InitiateTrustedBridgeAsync(
-                sourceChain, targetChain, tokenId, recipientAddress, avatarId,
+                sourceChain, targetChain, tokenId, recipientAddress, userId,
                 amount, baseUnits, sourceLeg.Result!, targetLeg.Result!, ct, clientIdempotencyKey);
         }
         catch (Exception ex)
@@ -194,10 +194,10 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     public async Task<AZOAResult<BridgeTransactionResult>> FetchVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
-        Guid? callerAvatarId = null)
+        Guid? callerUserId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null || !CallerOwns(tx, callerAvatarId))
+        if (tx == null || !CallerOwns(tx, callerUserId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         if (tx.Mode != _protocol.Mode)
@@ -278,10 +278,10 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     public async Task<AZOAResult<BridgeTransactionResult>> RedeemWithVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
         string? clientIdempotencyKey = null,
-        Guid? callerAvatarId = null)
+        Guid? callerUserId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null || !CallerOwns(tx, callerAvatarId))
+        if (tx == null || !CallerOwns(tx, callerUserId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         if (tx.Mode != _protocol.Mode)
@@ -304,7 +304,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
         if (!simulatedRoute)
         {
-            var kycFailure = await RequireCurrentKycApprovalAsync(tx.AvatarId, ct);
+            var kycFailure = await RequireCurrentKycApprovalAsync(tx.UserId, ct);
             if (kycFailure is not null)
                 return kycFailure;
         }
@@ -327,13 +327,13 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             return Error<BridgeTransactionResult>(digestResult.Message);
         }
         var vaaDigest = digestResult.Result!;
-        // Client-supplied Idempotency-Key wins but is avatar-namespaced (two avatars
+        // Client-supplied Idempotency-Key wins but is user-namespaced (two users
         // sending the same key must never collide on one claim record); else the
         // deterministic (bridge, VAA) content key. Absence is dedup-safe (never random).
         var hasClientIdempotencyKey = !string.IsNullOrWhiteSpace(clientIdempotencyKey);
         var idempotencyKey = !hasClientIdempotencyKey
             ? $"bridge-redeem:{tx.Id}:{vaaDigest}"
-            : BuildClientBridgeKey(tx.AvatarId, clientIdempotencyKey!);
+            : BuildClientBridgeKey(tx.UserId, clientIdempotencyKey!);
         var operationType = hasClientIdempotencyKey
             ? BuildBoundOperationType("bridge-redeem", tx.Id, vaaDigest)
             : "bridge-redeem";
@@ -699,10 +699,10 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     public async Task<AZOAResult<BridgeTransactionResult>> ReverseBridgeAsync(
         string bridgeTransactionId, string sourceRecipientAddress, CancellationToken ct = default,
         string? clientIdempotencyKey = null,
-        Guid? callerAvatarId = null)
+        Guid? callerUserId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null || !CallerOwns(tx, callerAvatarId))
+        if (tx == null || !CallerOwns(tx, callerUserId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         // Only a Completed bridge starts a fresh reversal. Refunded and Reversing
@@ -735,18 +735,18 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
         if (!simulatedRoute)
         {
-            var kycFailure = await RequireCurrentKycApprovalAsync(tx.AvatarId, ct);
+            var kycFailure = await RequireCurrentKycApprovalAsync(tx.UserId, ct);
             if (kycFailure is not null)
                 return kycFailure;
         }
 
         // The reversal itself is an irreversible chain effect (burn-wrapped) —
         // gate it so a retried/concurrent reverse cannot double-burn.
-        // Client Idempotency-Key wins but is avatar-namespaced; else deterministic key.
+        // Client Idempotency-Key wins but is user-namespaced; else deterministic key.
         var hasClientIdempotencyKey = !string.IsNullOrWhiteSpace(clientIdempotencyKey);
         var idempotencyKey = !hasClientIdempotencyKey
             ? $"bridge-reverse:{tx.Id}:{sourceRecipientAddress}"
-            : BuildClientBridgeKey(tx.AvatarId, clientIdempotencyKey!);
+            : BuildClientBridgeKey(tx.UserId, clientIdempotencyKey!);
         var operationType = hasClientIdempotencyKey
             ? BuildBoundOperationType("bridge-reverse", tx.Id, sourceRecipientAddress)
             : "bridge-reverse";
@@ -969,9 +969,9 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     }
 
     public async Task<AZOAResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
-        Guid avatarId, CancellationToken ct = default)
+        Guid userId, CancellationToken ct = default)
     {
-        var history = await _bridgeStore.GetBridgeHistoryAsync(avatarId, descending: true, ct);
+        var history = await _bridgeStore.GetBridgeHistoryAsync(userId, descending: true, ct);
 
         return Ok<IEnumerable<BridgeTransactionResult>>(
             history, $"Retrieved {history.Count} bridge transactions");
@@ -1029,10 +1029,10 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     public async Task<AZOAResult<BridgeTransactionResult>> GetBridgeStatusAsync(
         string bridgeTransactionId, CancellationToken ct = default,
-        Guid? callerAvatarId = null)
+        Guid? callerUserId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null || !CallerOwns(tx, callerAvatarId))
+        if (tx == null || !CallerOwns(tx, callerUserId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         return Ok(tx, $"Bridge status: {tx.Status} (mode: {tx.Mode})");
@@ -1040,29 +1040,29 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     /// <summary>
     /// IDOR guard: internal callers pass null (no scoping); an untrusted caller
-    /// passes its authenticated avatar id and may only touch its own rows. A
+    /// passes its authenticated user id and may only touch its own rows. A
     /// mismatch is surfaced as "not found" (never a distinct 403) so bridge-id
-    /// existence is not leaked across avatars.
+    /// existence is not leaked across users.
     /// </summary>
-    private static bool CallerOwns(BridgeTransactionResult tx, Guid? callerAvatarId)
-        => !callerAvatarId.HasValue || tx.AvatarId == callerAvatarId.Value;
+    private static bool CallerOwns(BridgeTransactionResult tx, Guid? callerUserId)
+        => !callerUserId.HasValue || tx.UserId == callerUserId.Value;
 
     // ─── Private: Trusted (custodial) flow ───
 
     private async Task<AZOAResult<BridgeTransactionResult>> InitiateTrustedBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
-        string recipientAddress, Guid avatarId, RailAmount amount, ulong baseUnits,
+        string recipientAddress, Guid userId, RailAmount amount, ulong baseUnits,
         IBridgeSourceLeg sourceLeg, IBridgeTargetLeg targetLeg,
         CancellationToken ct, string? clientIdempotencyKey = null)
     {
         // Deterministic idempotency key for the trusted lock→mint pair: identical
-        // bridge requests (same avatar/route/token/recipient/amount) collapse to
+        // bridge requests (same user/route/token/recipient/amount) collapse to
         // a single irreversible chain effect under duplicate/concurrent calls.
-        // Client Idempotency-Key wins but is avatar-namespaced; else the deterministic key.
+        // Client Idempotency-Key wins but is user-namespaced; else the deterministic key.
         var hasClientIdempotencyKey = !string.IsNullOrWhiteSpace(clientIdempotencyKey);
         var idempotencyKey = !hasClientIdempotencyKey
-            ? $"bridge-trusted:{avatarId:N}:{sourceChain}:{targetChain}:{tokenId}:{recipientAddress}:{baseUnits}"
-            : BuildClientBridgeKey(avatarId, clientIdempotencyKey!);
+            ? $"bridge-trusted:{userId:N}:{sourceChain}:{targetChain}:{tokenId}:{recipientAddress}:{baseUnits}"
+            : BuildClientBridgeKey(userId, clientIdempotencyKey!);
         var operationType = hasClientIdempotencyKey
             ? BuildBoundOperationType(
                 "bridge-trusted",
@@ -1095,7 +1095,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             {
                 return MatchesTrustedRequest(
                         prior, sourceChain, targetChain, tokenId, recipientAddress,
-                        avatarId, baseUnits, bridgeVault)
+                        userId, baseUnits, bridgeVault)
                     ? Ok(prior, $"Trusted bridge already completed (idempotent replay): {sourceChain} → {targetChain}")
                     : IdempotencyBindingError();
             }
@@ -1121,7 +1121,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         var candidate = new BridgeTransactionResult
         {
             Id = $"bridge_{IdempotencyReplay.ContentHash(idempotencyKey)[..32]}",
-            AvatarId = avatarId,
+            UserId = userId,
             SourceChain = sourceChain,
             TargetChain = targetChain,
             SourceTokenId = tokenId,
@@ -1144,7 +1144,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                 targetChain,
                 tokenId,
                 recipientAddress,
-                avatarId,
+                userId,
                 baseUnits,
                 bridgeVault))
         {
@@ -1446,10 +1446,10 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         string targetChain,
         string tokenId,
         string recipientAddress,
-        Guid avatarId,
+        Guid userId,
         ulong baseUnits,
         string bridgeVault)
-        => transaction.AvatarId == avatarId
+        => transaction.UserId == userId
            && transaction.Amount == baseUnits
            && transaction.Mode == BridgeMode.Trusted
            && transaction.Network == _network
@@ -1459,8 +1459,8 @@ public class CrossChainBridgeService : ICrossChainBridgeService
            && string.Equals(transaction.TargetAddress, recipientAddress, StringComparison.Ordinal)
            && string.Equals(transaction.SourceAddress, bridgeVault, StringComparison.Ordinal);
 
-    private static string BuildClientBridgeKey(Guid avatarId, string clientKey)
-        => $"bridge-client:{avatarId:N}:{IdempotencyReplay.ContentHash(clientKey.Trim())}";
+    private static string BuildClientBridgeKey(Guid userId, string clientKey)
+        => $"bridge-client:{userId:N}:{IdempotencyReplay.ContentHash(clientKey.Trim())}";
 
     private static string BuildBoundOperationType(string operation, params string[] requestFields)
     {
@@ -1502,10 +1502,10 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     }
 
     private async Task<AZOAResult<BridgeTransactionResult>?> RequireCurrentKycApprovalAsync(
-        Guid avatarId,
+        Guid userId,
         CancellationToken ct)
     {
-        var gate = await _realValueKycGate.RequireCurrentApprovalAsync(avatarId, ct);
+        var gate = await _realValueKycGate.RequireCurrentApprovalAsync(userId, ct);
         if (!gate.IsError && gate.Result)
             return null;
 

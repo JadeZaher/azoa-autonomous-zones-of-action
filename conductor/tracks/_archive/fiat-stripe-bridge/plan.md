@@ -11,7 +11,7 @@ phase.
 
 | # | Decision required | Recommendation |
 |---|-------------------|----------------|
-| D1 — Allocation surface | Expose a **new dedicated allocation endpoint** vs. reuse the existing `NftController.Mint`/`Transfer` (`Controllers/NftController.cs:42,54`) directly. | **New dedicated endpoint** (`POST /api/allocation` or `POST /api/wallet/{avatarId}/allocate`) so the idempotency + KYC + provision-if-absent composition lives in one place. It internally calls `GenerateWalletAsync` (`WalletManager.cs:218`) then the existing mint/transfer surface (`INftManager.cs:10-11`). The raw NFT endpoints stay as-is. `[ decision ]` |
+| D1 — Allocation surface | Expose a **new dedicated allocation endpoint** vs. reuse the existing `NftController.Mint`/`Transfer` (`Controllers/NftController.cs:42,54`) directly. | **New dedicated endpoint** (`POST /api/allocation` or `POST /api/wallet/{userId}/allocate`) so the idempotency + KYC + provision-if-absent composition lives in one place. It internally calls `GenerateWalletAsync` (`WalletManager.cs:218`) then the existing mint/transfer surface (`INftManager.cs:10-11`). The raw NFT endpoints stay as-is. `[ decision ]` |
 | D2 — Idempotency store | Where the idempotency record lives: reuse the faucet's deterministic content-key approach (`WalletManager.cs:386-392`, no persistence) vs. a **persisted allocation-idempotency record** keyed by `(tenantApiKeyId, idempotencyKey)`. | **Persisted record.** The faucet's content-addressed key is dedup-safe for a pure faucet dispense, but a value-bearing allocation needs the *original result* returned on replay, which requires storing it. Key on `(ApiKeyId from claims, Idempotency-Key header)`. `[ decision ]` |
 | D3 — KYC fail-closed scope | Does pre-KYC wallet **provisioning** (zero-balance) get blocked, or only the value-bearing **allocation**? | Per `kyc-module` policy. Default: **provisioning allowed pre-KYC, allocation blocked** until approved — so a wallet address can exist before funds move. Confirm against `kyc-module` before coding. `[ decision ]` |
 | D4 — Asset descriptor | What "allocate N of asset A" means on-chain: NFT mint (`MintAsync`) vs. fungible transfer vs. both behind one descriptor. | A single request DTO with an asset-kind discriminator that dispatches to `MintAsync`/`TransferAsync` (`INftManager.cs:10-11`) or the fungible equivalent from `signing-core-keystone`. `[ decision ]` |
@@ -35,11 +35,11 @@ phase.
 ## Phase 1 — Allocation primitive (manager)
 
 - [ ] Add `IAllocationManager` (or extend `IWalletManager`) with
-  `AllocateAsync(Guid avatarId, AllocationRequest request, Guid callerAvatarId,
+  `AllocateAsync(Guid userId, AllocationRequest request, Guid callerUserId,
   string? clientIdempotencyKey)`. Signature mirrors
   `WalletManager.TopUpAsync(…, clientIdempotencyKey)`
   (`Managers/WalletManager.cs:351`).
-- [ ] **Provision-if-absent.** Look up the avatar's wallet for the target chain;
+- [ ] **Provision-if-absent.** Look up the user's wallet for the target chain;
   if none, call `GenerateWalletAsync` (`WalletManager.cs:218-255`). Reuse the
   existing wallet otherwise. Never create a duplicate (uniqueness already guarded
   at `WalletManager.cs:226-231`).
@@ -49,11 +49,11 @@ phase.
 - [ ] **Idempotency.** Read/write the persisted allocation-idempotency record
   keyed on `(ApiKeyId, idempotencyKey)` (D2). On a hit, return the stored result
   and perform **no** second mint/transfer. On a miss, execute then persist.
-  Absent key ⇒ deterministic content key over `(avatarId, asset, amount)`,
+  Absent key ⇒ deterministic content key over `(userId, asset, amount)`,
   mirroring the faucet's "never a random per-request key" rule
   (`WalletManager.cs:386-392`).
 - [ ] **IDOR resistance.** The allocation target is the route/contract
-  `avatarId`; any owner id on the request body is ignored (STARODK precedent in
+  `userId`; any owner id on the request body is ignored (STARODK precedent in
   project memory). Caller authority comes from the API-key scope, not the body.
 - [ ] **Execute allocation** via `INftManager.MintAsync`/`TransferAsync`
   (`Interfaces/Managers/INftManager.cs:10-11`) or the fungible equivalent (D4).
@@ -65,7 +65,7 @@ phase.
 - [ ] Add the allocation endpoint (D1) on a controller gated by `[Authorize]`
   so the multi-scheme policy admits the `X-Api-Key` principal
   (`ApiKeyAuthenticationHandler.cs`). Resolve the caller via
-  `GetAvatarIdFromClaims` exactly like `NftController.cs:117-122` /
+  `GetUserIdFromClaims` exactly like `NftController.cs:117-122` /
   `WalletController.cs:211-216`.
 - [ ] Read the `Idempotency-Key` header with the same helper shape as
   `WalletController.ReadIdempotencyKey` (`Controllers/WalletController.cs:176-185`)
@@ -102,12 +102,12 @@ phase.
   `(ApiKeyId, idempotencyKey)` ⇒ second call returns the first result and the
   mint/transfer mock is invoked **exactly once**. (xUnit + Moq + FluentAssertions,
   Builder pattern per `IntegrationTests/Builders/TestDataBuilders.cs`.)
-- [ ] **KYC fail-closed.** Target avatar with pending/rejected/unknown KYC ⇒
+- [ ] **KYC fail-closed.** Target user with pending/rejected/unknown KYC ⇒
   allocation rejected, mint/transfer mock **never** invoked.
 - [ ] **Provision-if-absent.** No existing wallet ⇒ `GenerateWalletAsync` path
   taken once; existing wallet ⇒ reused, not duplicated.
-- [ ] **IDOR.** Body-supplied owner id different from the contract `avatarId` is
-  ignored; allocation targets the authorised avatar only.
+- [ ] **IDOR.** Body-supplied owner id different from the contract `userId` is
+  ignored; allocation targets the authorised user only.
 - [ ] (Optional, once the harness namespace-isolation follow-up lands)
   integration test through the WebAPI host with an `X-Api-Key` principal.
 

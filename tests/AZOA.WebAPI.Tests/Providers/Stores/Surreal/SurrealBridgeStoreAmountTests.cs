@@ -18,11 +18,11 @@ public sealed class SurrealBridgeStoreAmountTests
     [InlineData("1,000")]
     public async Task GetBridge_InvalidPersistedAmount_FailsClosed(string amount)
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var row = new BridgeTx
         {
             Id = "bridge_tx:bad_amount",
-            AvatarId = $"avatar:{avatarId:N}",
+            UserId = $"user:{userId:N}",
             SourceChain = "Solana",
             TargetChain = "Algorand",
             SourceTokenId = "token",
@@ -57,11 +57,11 @@ public sealed class SurrealBridgeStoreAmountTests
     [InlineData("115792089237316195423570985008687907853269984665640564039457584007913129639935")] // 2^256 - 1
     public async Task GetBridge_AmountAboveUlongMax_RoundTripsExactly(string amount)
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var row = new BridgeTx
         {
             Id = "bridge_tx:wide_amount",
-            AvatarId = $"avatar:{avatarId:N}",
+            UserId = $"user:{userId:N}",
             SourceChain = "Ethereum",
             TargetChain = "Algorand",
             SourceTokenId = "token",

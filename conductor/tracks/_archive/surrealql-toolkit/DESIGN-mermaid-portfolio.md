@@ -54,16 +54,16 @@ stringly-typed validator method names beyond well-known partial-method
 hooks).
 
 ```csharp
-// Persistence/SurrealDb/Models/Quest.cs (hand-authored)
-[SurrealTable("quest"), Slice("quest"), Schemafull]
-public partial class Quest
+// Persistence/SurrealDb/Models/ActionDefinition.cs (hand-authored)
+[SurrealTable("action"), Slice("action"), Schemafull]
+public partial class ActionDefinition
 {
     [Id]
     public Guid Id { get; set; }
 
-    [Column, References<Avatar>]
-    [Index("quest_by_avatar")]
-    public Guid AvatarId { get; set; }
+    [Column, References<User>]
+    [Index("action_by_user")]
+    public Guid UserId { get; set; }
 
     [Column, MaxLength(200)]
     public string Name { get; set; } = "";
@@ -71,12 +71,12 @@ public partial class Quest
     [Column, Optional]
     public string? Description { get; set; }
 
-    [Column, References<QuestTemplate>(Optional = true)]
-    [Index("quest_by_template")]
+    [Column, References<ActionTemplate>(Optional = true)]
+    [Index("action_by_template")]
     public Guid? TemplateId { get; set; }
 
     [Column, References<DappSeries>(Optional = true)]
-    [Index("quest_by_dapp_series")]
+    [Index("action_by_dapp_series")]
     public Guid? DappSeriesId { get; set; }
 
     [Column]
@@ -89,30 +89,30 @@ public partial class Quest
     public DateTime CreatedDate { get; set; }
 
     // Navigation properties — generator infers cardinality from
-    // the inverse side (QuestNode.QuestId is required, so 1:M).
-    [Relation(inverseOf: nameof(QuestNode.QuestId))]
-    public List<QuestNode> Nodes { get; set; } = new();
+    // the inverse side (ActionNode.ActionId is required, so 1:M).
+    [Relation(inverseOf: nameof(ActionNode.ActionId))]
+    public List<ActionNode> Nodes { get; set; } = new();
 
-    [Relation(inverseOf: nameof(QuestRun.QuestId))]
-    public List<QuestRun> Runs { get; set; } = new();
+    [Relation(inverseOf: nameof(ActionRun.ActionId))]
+    public List<ActionRun> Runs { get; set; } = new();
 }
 ```
 
 ### Partial class — validation + domain helpers
-The same Quest type, in a sibling partial-class file, carries
+The same ActionDefinition type, in a sibling partial-class file, carries
 executable logic the attribute layer cannot:
 
 ```csharp
-// Persistence/SurrealDb/Models/Quest.Validation.cs (hand-authored)
-public partial class Quest
+// Persistence/SurrealDb/Models/ActionDefinition.Validation.cs (hand-authored)
+public partial class ActionDefinition
 {
     // Well-known partial method the generator wires into the
     // validation pipeline. The generator emits the calling site;
     // authors fill in the body.
-    static partial void OnValidating(ValidationContext<Quest> ctx)
+    static partial void OnValidating(ValidationContext<ActionDefinition> ctx)
     {
         ctx.RuleFor(q => q.Name).NotEmpty().MaximumLength(200);
-        ctx.RuleFor(q => q.AvatarId).NotEmpty();
+        ctx.RuleFor(q => q.UserId).NotEmpty();
         ctx.RuleFor(q => q.Metadata)
            .Must(m => m.Count <= 50)
            .WithMessage("metadata limited to 50 keys");
@@ -262,7 +262,7 @@ emit the artifacts the Mermaid pipeline used to produce.
 - The partial-class convention (`Persistence/SurrealDb/CONVENTION.md`)
   — entities live in `Models/<Name>.cs` with helpers in sibling
   `Models/<Name>.<Aspect>.cs` files.
-- The slice concept — moves from `[Slice("quest")]` attribute, same
+- The slice concept — moves from `[Slice("action")]` attribute, same
   semantics.
 - `Azoa.SurrealDb.Client` (runtime + typed queries) — untouched.
   POCOs the client consumes are still POCOs; only their authorship
@@ -273,11 +273,11 @@ emit the artifacts the Mermaid pipeline used to produce.
 ```
 Persistence/SurrealDb/
     Models/
-        Quest.cs                  # attributes (hand-authored)
-        Quest.Validation.cs       # OnValidating + domain helpers (hand-authored)
-        Quest.g.cs                # generated — equality, copy ctors, JSON shape
-        QuestNode.cs
-        QuestNode.Validation.cs
+        ActionDefinition.cs                  # attributes (hand-authored)
+        ActionDefinition.Validation.cs       # OnValidating + domain helpers (hand-authored)
+        ActionDefinition.g.cs                # generated — equality, copy ctors, JSON shape
+        ActionNode.cs
+        ActionNode.Validation.cs
         ... (one Models/<Name>.cs per entity, plus sibling Validation files)
         BridgeStatus.cs           # state-machine enum + Allowed transitions
     Guardrails/

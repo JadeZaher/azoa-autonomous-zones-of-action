@@ -17,7 +17,7 @@ public class BridgeTransactionResult
     [MaxLength(64)]
     public string Id { get; set; } = string.Empty;
 
-    public Guid AvatarId { get; set; }
+    public Guid UserId { get; set; }
 
     [MaxLength(32)]
     public string SourceChain { get; set; } = string.Empty;

@@ -1839,7 +1839,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     /// <list type="bullet">
     /// <item><b>Per-user op</b> (<c>!IsPlatform</c>): routes through
     /// <see cref="IKeyCustodyService.WithSigningKeyAsync{T}"/>, inheriting its IDOR
-    /// guard (the avatar must own the wallet) and platform-wallet-type guard.</item>
+    /// guard (the user must own the wallet) and platform-wallet-type guard.</item>
     /// <item><b>Platform / ASA-admin op</b> (<c>IsPlatform</c>): routes through
     /// <see cref="IKeyCustodyService.WithPlatformSigningKeyAsync{T}"/>.</item>
     /// </list>
@@ -1908,7 +1908,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     /// IDOR-guarded <see cref="IKeyCustodyService.WithSigningKeyAsync{T}"/>;
     /// platform/ASA-admin ops use
     /// <see cref="IKeyCustodyService.WithPlatformSigningKeyAsync{T}"/>. A per-user
-    /// context with no resolvable wallet/avatar fails closed — never the platform key.
+    /// context with no resolvable wallet/user fails closed — never the platform key.
     /// </summary>
     private static async Task<AZOAResult<T>> SignWithCustodyAsync<T>(
         IKeyCustodyService custody, string opLabel, SigningContext ctx,
@@ -2018,7 +2018,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
             IsError = true,
             Message =
                 $"Cannot {opLabel}: a per-user custodial signature was requested but the signing " +
-                "context has no resolvable wallet/avatar (or no custody service is wired). Refusing " +
+                "context has no resolvable wallet/user (or no custody service is wired). Refusing " +
                 "to fall back to the platform key (value-path-wiring C1 interim safety)."
         };
 

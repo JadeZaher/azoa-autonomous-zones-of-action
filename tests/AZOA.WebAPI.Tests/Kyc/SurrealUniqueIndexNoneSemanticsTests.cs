@@ -24,15 +24,15 @@ namespace AZOA.WebAPI.Tests.Kyc;
 ///   columns. A SCHEMAFULL <c>option&lt;string&gt;</c> field refuses it outright:
 ///   <c>Couldn't coerce value for field `b`: Expected `none | string` but found
 ///   `NULL`</c>. The "NULL-equals-NULL collision semantics" phrasing carried by
-///   <c>api_key.surql</c> and <c>avatar.surql</c> names a hazard that cannot arise
+///   <c>api_key.surql</c> and <c>user.surql</c> names a hazard that cannot arise
 ///   in this schema; <c>bridge_tx.surql</c>'s "NULL rows do NOT collide" is the
 ///   correct statement of the behaviour.</description></item>
 /// </list>
 ///
 /// <para>Consequence for the suspected node-wide-brick scenario: it does not exist.
-/// One avatar holding an un-attached claim (<c>provider_session_id</c> NONE, which is
+/// One user holding an un-attached claim (<c>provider_session_id</c> NONE, which is
 /// exactly what a failed <c>/begin</c> deliberately leaves behind for retry) cannot
-/// make another avatar's <c>ClaimAdmissionAsync</c> CREATE fail. The unique index is
+/// make another user's <c>ClaimAdmissionAsync</c> CREATE fail. The unique index is
 /// therefore RETAINED: it is a real guarantee that two AZOA sessions never bind one
 /// vendor session, and the argument for removing it rested on a false premise.</para>
 ///

@@ -2,7 +2,7 @@
 
 This is a quickstart for a **third-party dApp developer** onboarding onto an Azoa
 node run by someone else (the "many devs, one node" model). You do not run the
-backend — a node operator does. You get an avatar on their node, issue a scoped
+backend — a node operator does. You get an user on their node, issue a scoped
 API key, point the SDK at their node URL, and start authoring dApps.
 
 All the code below uses the published SDK, `azoa-sdk` (TypeScript). Install it:
@@ -11,9 +11,9 @@ All the code below uses the published SDK, `azoa-sdk` (TypeScript). Install it:
 npm install azoa-sdk
 ```
 
-## 1. Register / login an avatar against the remote node
+## 1. Register / login an user against the remote node
 
-Point the client at the operator's node URL and create (or restore) an avatar.
+Point the client at the operator's node URL and create (or restore) an user.
 Authentication with email/password yields a JWT the SDK manages for you.
 
 ```ts
@@ -31,12 +31,12 @@ const reg = await azoa.auth.register({
 });
 if (!isOk(reg)) throw new Error(reg.error.message);
 
-console.log("my avatarId:", azoa.auth.avatarId);
+console.log("my userId:", azoa.auth.userId);
 ```
 
 ## 2. Issue a `dapp:develop` API key
 
-Authoring holons, quests, and dApp-series is gated by the `dapp:develop` scope.
+Authoring holons, actions, and dApp-series is gated by the `dapp:develop` scope.
 Mint a key that carries exactly that scope so your automation doesn't run as a
 full-access key.
 
@@ -70,7 +70,7 @@ scopes, and expiry while revoking the old one.
 
 > If a scoped key is missing `dapp:develop`, the write endpoints reply `403` with
 > an actionable body: *"This API key lacks the 'dapp:develop' scope required to
-> author holons/quests/dApp-series. Rotate the key with that scope."* — surfaced
+> author holons/actions/dApp-series. Rotate the key with that scope."* — surfaced
 > on the returned `SdkError.message`.
 
 ## 3. Point the SDK at the node with your key
@@ -85,11 +85,11 @@ const dapp = new AzoaClient({
 });
 ```
 
-## 4. First dApp end-to-end: series → quest → publish
+## 4. First dApp end-to-end: series → action → publish
 
-A **DappSeries** is an ordered collection of quests that compose into a
-deployable dApp. Create one, author a quest, add it to the series, and publish the
-quest to the marketplace.
+A **DappSeries** is an ordered collection of actions that compose into a
+deployable dApp. Create one, author a action, add it to the series, and publish the
+action to the marketplace.
 
 ```ts
 // 4a. Create the dApp-series (dapp:develop required)
@@ -100,59 +100,59 @@ const series = await dapp.api.createDappSeries({
 if (!isOk(series)) throw new Error(series.error.message);
 const seriesId = series.value.id;
 
-// 4b. Author a minimal quest (one entry node)
-const quest = await dapp.api.createQuest({
-  name: "Greeting quest",
-  description: "A one-step starter quest",
+// 4b. Author a minimal action (one entry node)
+const action = await dapp.api.createAction({
+  name: "Greeting action",
+  description: "A one-step starter action",
   nodes: [
     { name: "start", nodeType: "Gate", isEntry: true, isTerminal: true },
   ],
   edges: [],
   isPublic: true, // marketplace-visible once published
 });
-if (!isOk(quest)) throw new Error(quest.error.message);
-const questId = quest.value.id;
+if (!isOk(action)) throw new Error(action.error.message);
+const actionId = action.value.id;
 
-// 4c. Add the quest to the series at order 1
-const entry = await dapp.api.addSeriesQuest(seriesId, { questId, order: 1 });
+// 4c. Add the action to the series at order 1
+const entry = await dapp.api.addSeriesAction(seriesId, { actionId, order: 1 });
 if (!isOk(entry)) throw new Error(entry.error.message);
 
-// 4d. Publish the quest (validates the DAG, flips Draft → Active)
-const published = await dapp.api.publishQuest(questId);
+// 4d. Publish the action (validates the DAG, flips Draft → Active)
+const published = await dapp.api.publishAction(actionId);
 if (!isOk(published)) throw new Error(published.error.message);
 ```
 
-Manage the series' quests as your dApp grows:
+Manage the series' actions as your dApp grows:
 
-- `dapp.api.listSeriesQuests(seriesId)` — the ordered entries
-- `dapp.api.reorderSeriesQuest(seriesId, questId, newOrder)` — resequence
-- `dapp.api.updateSeriesMappings(seriesId, questId, inputMappingsJson)` — wire
-  cross-quest data flow
-- `dapp.api.removeSeriesQuest(seriesId, questId)` — drop an entry
+- `dapp.api.listSeriesActions(seriesId)` — the ordered entries
+- `dapp.api.reorderSeriesAction(seriesId, actionId, newOrder)` — resequence
+- `dapp.api.updateSeriesMappings(seriesId, actionId, inputMappingsJson)` — wire
+  cross-action data flow
+- `dapp.api.removeSeriesAction(seriesId, actionId)` — drop an entry
 - `dapp.api.listDappSeries()` / `dapp.api.getDappSeries(id)` /
   `dapp.api.updateDappSeries(id, {...})` / `dapp.api.deleteDappSeries(id)`
 
-## 5. Others can browse your published quest
+## 5. Others can browse your published action
 
-Once a quest is `isPublic` and Active, any avatar on the node can discover it via
-the public marketplace and start it under their own avatar:
+Once a action is `isPublic` and Active, any user on the node can discover it via
+the public marketplace and start it under their own user:
 
 ```ts
-const catalog = await azoa.api.listPublicQuests(); // GET /api/quest/public
+const catalog = await azoa.api.listPublicActions(); // GET /api/action/public
 if (isOk(catalog)) {
   for (const q of catalog.value) console.log(q.name, q.id);
 }
 
 // A non-owner starts one — the run is owned by the caller, with provenance
-// (originAvatarId / sourceQuestId) pointing back to you.
-await azoa.api.executeQuest(someQuestId);
+// (originUserId / sourceActionId) pointing back to you.
+await azoa.api.executeAction(someActionId);
 ```
 
-In the node's web UI, the **Quests → Start a Quest** tab renders this catalog as a
+In the node's web UI, the **Actions → Start a ActionDefinition** tab renders this catalog as a
 browsable grid of cards (no id-pasting required).
 
 ## Where to go next
 
 - `PROVIDERS.md` — the full API surface and provider architecture
 - `docs/NODE-HOST.md` — for operators: how to stand up the node you're building on
-- `README.md` — project overview and the identity / quest / dApp layering
+- `README.md` — project overview and the identity / action / dApp layering

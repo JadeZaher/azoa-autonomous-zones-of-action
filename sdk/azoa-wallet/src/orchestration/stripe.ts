@@ -33,7 +33,7 @@ export interface AzoaStripeOrchestratorConfig {
  * from this value or from client metadata (CRITICAL-1).
  */
 export interface CheckoutRequest {
-  avatarId: string;
+  userId: string;
   /** Fiat charge in dollars (decimal string). Priced into Stripe cents; NOT the mint qty. */
   amount: string;
   assetId: string;
@@ -86,7 +86,7 @@ export class AzoaStripeOrchestrator {
 
   /**
    * Generates a Stripe Checkout session. Metadata carries identity/routing
-   * (avatarId/assetId/chainType/kind) ONLY — never the mint quantity, which is
+   * (userId/assetId/chainType/kind) ONLY — never the mint quantity, which is
    * recomputed server-side from the confirmed charge at webhook time (CRITICAL-1).
    */
   async createCheckoutSession(request: CheckoutRequest): Promise<string> {
@@ -111,11 +111,11 @@ export class AzoaStripeOrchestrator {
       mode: "payment",
       success_url: this.config.successUrl,
       cancel_url: this.config.cancelUrl,
-      client_reference_id: request.avatarId,
+      client_reference_id: request.userId,
       // Identity/routing only. NO `amount` here — the mint qty is derived from
       // the Stripe-confirmed cents at webhook time.
       metadata: {
-        avatarId: request.avatarId,
+        userId: request.userId,
         assetId: request.assetId,
         chainType: request.chainType,
         kind: request.kind,
@@ -169,12 +169,12 @@ export class AzoaStripeOrchestrator {
     }
 
     const metadata = session.metadata ?? {};
-    const avatarId = metadata.avatarId;
+    const userId = metadata.userId;
     const assetId = metadata.assetId;
     const chainType = metadata.chainType;
     const kind = metadata.kind as "Mint" | "Transfer" | undefined;
 
-    if (!avatarId || !assetId || !chainType || !kind) {
+    if (!userId || !assetId || !chainType || !kind) {
       throw new WebhookValidationError("Missing AZOA identity/routing metadata in Stripe session");
     }
     if (kind !== "Mint" && kind !== "Transfer") {
@@ -212,7 +212,7 @@ export class AzoaStripeOrchestrator {
       description: `Settled via Stripe checkout ${idempotencyKey} (pi: ${paymentIntentId})`,
     };
 
-    const result = await this.config.azoaClient.allocate(avatarId, request, idempotencyKey);
+    const result = await this.config.azoaClient.allocate(userId, request, idempotencyKey);
 
     if (isOk(result)) {
       return { status: "settled", sessionId: idempotencyKey, amountTokens: amountTokensStr, amountTotalCents };

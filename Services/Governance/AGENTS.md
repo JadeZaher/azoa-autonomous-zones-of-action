@@ -27,7 +27,7 @@ decision and must be persisted with every consuming operation.
 
 The current settling consumer is allocation Mint, where the fee remains unminted.
 Allocation Transfer quotes the schedule but rejects a nonzero fee until a node
-treasury transfer can settle it on-chain. Swap, quest-completion,
+treasury transfer can settle it on-chain. Swap, action-completion,
 federation-publication, and direct NFT routes remain explicit follow-up consumers;
 do not describe their schedule entries as enforced until their value paths quote
 and settle them.
@@ -90,9 +90,9 @@ an in-flight fee.
 
 `NodeTransparencyManager` is the anonymous read boundary for current governance,
 fee, and treasury policy plus their audit histories. Its DTOs deliberately have
-no actor/avatar field, internal record id, raw snapshot JSON, or free-form audit
+no actor/user field, internal record id, raw snapshot JSON, or free-form audit
 detail. Actor continuity is omitted until a separately configured, node-scoped
-HMAC key exists; hashing a low-entropy avatar id without such a key would not be
+HMAC key exists; hashing a low-entropy user id without such a key would not be
 anonymization.
 
 History pages use descending `(occurred_at,id)` keyset order. The internal record
@@ -126,7 +126,7 @@ wallet or governance actor credential. The last signed checkpoint is protected
 beside that identity key, outside SurrealDB. A subsequent history must preserve
 the checkpoint's exact prefix before it may extend it; a rewrite, truncation, or
 mutation after a checkpoint fails closed. Public entries contain only a typed
-public payload, timestamp, kind, and content hash: no actor/avatar ids, record
+public payload, timestamp, kind, and content hash: no actor/user ids, record
 ids, raw persisted JSON, or free-form details.
 
 This is not a claim that a database root credential is solved. It has a trusted

@@ -298,7 +298,7 @@ public sealed class G1_CrashDurabilityTest : IntegrationTestBase
         return new BridgeTransactionResult
         {
             Id             = id,
-            AvatarId       = DeriveGuid(SeedBase, i),
+            UserId       = DeriveGuid(SeedBase, i),
             SourceChain    = "Algorand",
             TargetChain    = "Solana",
             SourceTokenId  = $"ASA:{1000 + i}",

@@ -19,9 +19,9 @@ public class HolonParentCycleGuardTests
     private readonly Mock<IHolonStore> _store = new();
     private readonly HolonManager _manager;
 
-    // Fail-closed ownership guard (see Managers/AGENTS.md §fail-closed-avatar):
-    // mutating calls now require the caller's avatar to own the target holon.
-    // Fixtures are tagged with Owner and Owner is passed as the acting avatarId.
+    // Fail-closed ownership guard (see Managers/AGENTS.md §fail-closed-user):
+    // mutating calls now require the caller's user to own the target holon.
+    // Fixtures are tagged with Owner and Owner is passed as the acting userId.
     private static readonly Guid Owner = Guid.NewGuid();
 
     public HolonParentCycleGuardTests()
@@ -72,7 +72,7 @@ public class HolonParentCycleGuardTests
 
     private void SetupExisting(Guid holonId)
     {
-        var holon = new Holon { Id = holonId, Name = "Existing", AvatarId = Owner };
+        var holon = new Holon { Id = holonId, Name = "Existing", UserId = Owner };
         _store
             .Setup(s => s.GetByIdAsync(holonId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });

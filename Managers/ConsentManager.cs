@@ -50,7 +50,7 @@ public class ConsentManager : IConsentManager
     }
 
     public async Task<AZOAResult<ConsentGrant>> GrantAsync(
-        Guid grantorAvatarId,
+        Guid grantorUserId,
         Guid tenantId,
         IEnumerable<string> scopes,
         GrantOrigin origin,
@@ -108,7 +108,7 @@ public class ConsentManager : IConsentManager
 
         var grant = new ConsentGrant
         {
-            GrantorAvatarId = grantorAvatarId,
+            GrantorUserId = grantorUserId,
             TenantId = tenantId,
             Scopes = normalizedScopes,
             GrantedAt = DateTime.UtcNow,
@@ -138,7 +138,7 @@ public class ConsentManager : IConsentManager
             ConsentAuditAction.Granted,
             persisted.Id,
             persisted.TenantId,
-            persisted.GrantorAvatarId,
+            persisted.GrantorUserId,
             string.Join(",", persisted.Scopes),
             persisted.Origin == GrantOrigin.Participation
                 ? $"origin=Participation; ref={persisted.ParticipationRef}"
@@ -164,7 +164,7 @@ public class ConsentManager : IConsentManager
     }
 
     public Task<AZOAResult<ConsentGrant>> GrantParticipationAsync(
-        Guid grantorAvatarId,
+        Guid grantorUserId,
         Guid tenantId,
         string participationRef,
         IEnumerable<string> scopes,
@@ -175,7 +175,7 @@ public class ConsentManager : IConsentManager
         // alone can never reach here with a grantor it has no user-authenticated
         // assertion for.
         => GrantAsync(
-            grantorAvatarId,
+            grantorUserId,
             tenantId,
             scopes,
             GrantOrigin.Participation,
@@ -183,7 +183,7 @@ public class ConsentManager : IConsentManager
             expiresAt: null,
             ct);
 
-    public async Task<AZOAResult<bool>> RevokeAsync(Guid grantorAvatarId, Guid grantId, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> RevokeAsync(Guid grantorUserId, Guid grantId, CancellationToken ct = default)
     {
         var result = new AZOAResult<bool>();
 
@@ -193,7 +193,7 @@ public class ConsentManager : IConsentManager
         // are reported IDENTICALLY as NOT_FOUND — a cross-user probe must be
         // indistinguishable from "no such grant", never Forbidden.
         if (loaded.IsError || loaded.Result is null
-            || loaded.Result.GrantorAvatarId != grantorAvatarId)
+            || loaded.Result.GrantorUserId != grantorUserId)
         {
             result.IsError = true;
             result.Message = TenantAuthorizationError.NotFound + "No such consent grant.";
@@ -222,7 +222,7 @@ public class ConsentManager : IConsentManager
                 ConsentAuditAction.Revoked,
                 grant.Id,
                 grant.TenantId,
-                grant.GrantorAvatarId,
+                grant.GrantorUserId,
                 string.Join(",", grant.Scopes),
                 "revoked by user",
                 ct);
@@ -242,15 +242,15 @@ public class ConsentManager : IConsentManager
         return result;
     }
 
-    public async Task<AZOAResult<IEnumerable<ConsentGrant>>> ListForUserAsync(Guid grantorAvatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<ConsentGrant>>> ListForUserAsync(Guid grantorUserId, CancellationToken ct = default)
     {
         // Store query is grantor-scoped — a cross-user probe yields an empty list,
         // never another user's grants (AC1).
-        var listed = await _grants.ListByGrantorAsync(grantorAvatarId, ct);
+        var listed = await _grants.ListByGrantorAsync(grantorUserId, ct);
         return Project(listed);
     }
 
-    public async Task<AZOAResult<ConsentGrant>> GetForUserAsync(Guid grantorAvatarId, Guid grantId, CancellationToken ct = default)
+    public async Task<AZOAResult<ConsentGrant>> GetForUserAsync(Guid grantorUserId, Guid grantId, CancellationToken ct = default)
     {
         var result = new AZOAResult<ConsentGrant>();
 
@@ -258,7 +258,7 @@ public class ConsentManager : IConsentManager
 
         // Same indistinguishable-from-miss rule as RevokeAsync (AC9).
         if (loaded.IsError || loaded.Result is null
-            || loaded.Result.GrantorAvatarId != grantorAvatarId)
+            || loaded.Result.GrantorUserId != grantorUserId)
         {
             result.IsError = true;
             result.Message = TenantAuthorizationError.NotFound + "No such consent grant.";
@@ -326,7 +326,7 @@ public class ConsentManager : IConsentManager
                 ConsentAuditAction.Revoked,
                 saved.Result.Id,
                 saved.Result.TenantId,
-                saved.Result.GrantorAvatarId,
+                saved.Result.GrantorUserId,
                 string.Join(",", saved.Result.Scopes),
                 $"offboard revoke; ref={participationRef.Trim()}",
                 ct);
@@ -368,7 +368,7 @@ public class ConsentManager : IConsentManager
         ConsentAuditAction action,
         Guid grantId,
         Guid tenantId,
-        Guid avatarId,
+        Guid userId,
         string scope,
         string? detail,
         CancellationToken ct)
@@ -378,7 +378,7 @@ public class ConsentManager : IConsentManager
             Action = action,
             GrantId = grantId,
             TenantId = tenantId,
-            AvatarId = avatarId,
+            UserId = userId,
             Scope = scope,
             Detail = detail,
             OccurredAt = DateTime.UtcNow,

@@ -40,15 +40,15 @@ public static class HolonManagerMocks
 
     /// <summary>
     /// Build a holon with a status (and optional extra metadata) for a gate test.
-    /// <paramref name="ownerAvatarId"/> sets <see cref="IHolon.AvatarId"/> — the
+    /// <paramref name="ownerUserId"/> sets <see cref="IHolon.UserId"/> — the
     /// GateCheck resolver is owner-scoped, so a legitimate-path test must seed the
-    /// holon's owner to match the run owner (the quest's AvatarId); a cross-tenant
+    /// holon's owner to match the run owner (the action's UserId); a cross-tenant
     /// test seeds a DIFFERENT owner to prove the read fails closed.
     /// </summary>
     public static Holon HolonWithStatus(
-        Guid id, string status, Guid? ownerAvatarId = null, params (string Key, string Value)[] extra)
+        Guid id, string status, Guid? ownerUserId = null, params (string Key, string Value)[] extra)
     {
-        var holon = new Holon { Id = id, Name = $"holon-{id}", IsActive = true, AvatarId = ownerAvatarId };
+        var holon = new Holon { Id = id, Name = $"holon-{id}", IsActive = true, UserId = ownerUserId };
         holon.Metadata["status"] = status;
         foreach (var (k, v) in extra)
             holon.Metadata[k] = v;

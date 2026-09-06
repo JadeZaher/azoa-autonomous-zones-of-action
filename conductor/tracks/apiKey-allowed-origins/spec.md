@@ -14,7 +14,7 @@ depends_on: []
 To make the AZOA SDK a highly public, frictionless open standard (similar to HTML or SQLite for Web3), third-party developers must be able to consume the SDK from any origin by default. 
 
 However, we also need to allow:
-1. **Dynamic CORS Security per key:** Developers or avatars may optionally lock their API keys down to specific trusted domains (e.g. `AllowedOrigins = "https://my-dapp.com"`).
+1. **Dynamic CORS Security per key:** Developers or users may optionally lock their API keys down to specific trusted domains (e.g. `AllowedOrigins = "https://my-dapp.com"`).
 2. **Secure Node Administration:** Administrative/JWT-based requests (like logging in to the node's official dashboard) must be restricted to the node operator's configured official domains (`Cors:AllowedOrigins` allowlist) to prevent Cross-Site Request Forgery (CSRF).
 
 Currently, the production CORS policy strictly blocks all origins unless they are statically declared in the backend's allowlist. We will replace this with a custom dynamic CORS policy provider.

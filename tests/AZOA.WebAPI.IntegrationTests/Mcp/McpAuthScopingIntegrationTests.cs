@@ -37,18 +37,18 @@ namespace AZOA.WebAPI.IntegrationTests.Mcp;
 [Trait("Category", "Mcp")]
 public class McpAuthScopingIntegrationTests : IntegrationTestBase
 {
-    // ── inner: per-avatar auth handler ────────────────────────────────────────
+    // ── inner: per-user auth handler ────────────────────────────────────────
 
     /// <summary>
-    /// Auth handler that reads the avatar id from the <c>X-Test-Avatar-Id</c>
-    /// header, falling back to <see cref="TestAuthHandler.DefaultAvatarId"/>.
-    /// Allows a single factory instance to issue requests as different avatars
-    /// without a full WebApplicationFactory restart per avatar.
+    /// Auth handler that reads the user id from the <c>X-Test-User-Id</c>
+    /// header, falling back to <see cref="TestAuthHandler.DefaultUserId"/>.
+    /// Allows a single factory instance to issue requests as different users
+    /// without a full WebApplicationFactory restart per user.
     /// </summary>
     private sealed class ParameterizedTestAuthHandler
         : AuthenticationHandler<AuthenticationSchemeOptions>
     {
-        public const string AvatarIdHeader = "X-Test-Avatar-Id";
+        public const string UserIdHeader = "X-Test-User-Id";
 
         public ParameterizedTestAuthHandler(
             IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -61,17 +61,17 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
             if (!Request.Headers.ContainsKey(TestAuthHandler.AuthHeaderName))
                 return Task.FromResult(AuthenticateResult.NoResult());
 
-            var avatarId = Request.Headers.TryGetValue(AvatarIdHeader, out var v)
-                ? v.FirstOrDefault() ?? TestAuthHandler.DefaultAvatarId
-                : TestAuthHandler.DefaultAvatarId;
+            var userId = Request.Headers.TryGetValue(UserIdHeader, out var v)
+                ? v.FirstOrDefault() ?? TestAuthHandler.DefaultUserId
+                : TestAuthHandler.DefaultUserId;
 
             var claims = new List<Claim>
             {
-                new(ClaimTypes.NameIdentifier, avatarId),
+                new(ClaimTypes.NameIdentifier, userId),
                 new(ClaimTypes.Name,  "testuser"),
                 new(ClaimTypes.Email, "test@azoa.local"),
-                new("sub",      avatarId),
-                new("AvatarId", avatarId),
+                new("sub",      userId),
+                new("UserId", userId),
                 new("dapp_role", AZOA.WebAPI.Core.AzoaDappRoles.Manager),
             };
 
@@ -95,7 +95,7 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
                     _testNamespace,
                     "admin_bootstrap_state",
                     "saga_steps",
-                    "avatar",
+                    "user",
                     "holon",
                     "holon_type_registry",
                     "node_governance_parameters")
@@ -147,13 +147,13 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
             });
         }
 
-        /// Create an HTTP client authenticated as <paramref name="avatarId"/>.
-        public HttpClient CreateClientForAvatar(Guid avatarId)
+        /// Create an HTTP client authenticated as <paramref name="userId"/>.
+        public HttpClient CreateClientForUser(Guid userId)
         {
             var client = CreateClient();
             client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
             client.DefaultRequestHeaders.Add(
-                ParameterizedTestAuthHandler.AvatarIdHeader, avatarId.ToString());
+                ParameterizedTestAuthHandler.UserIdHeader, userId.ToString());
             return client;
         }
 
@@ -193,17 +193,17 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
     // ── tests ─────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Proves that avatar A's authenticated request to a tool that references
-    /// avatar B's holon id never returns B's holon data. The auth pipeline
+    /// Proves that user A's authenticated request to a tool that references
+    /// user B's holon id never returns B's holon data. The auth pipeline
     /// (RequireAuthorization + McpAuthMiddleware) must scope the request to A's
     /// identity, and B's data must never appear in the response regardless of
     /// whether the tool exists or returns an error.
     ///
     /// This test is the primary cross-tenant isolation gate: even a misconfigured
-    /// or partially-wired MCP surface must not leak data across avatar boundaries.
+    /// or partially-wired MCP surface must not leak data across user boundaries.
     /// </summary>
     [SkippableFact]
-    public async Task CrossTenantQuery_AvatarA_CannotSeeAvatarBHolons()
+    public async Task CrossTenantQuery_UserA_CannotSeeUserBHolons()
     {
         Skip.IfNot(
             await SkipIfSurrealDbUnavailableAsync(),
@@ -212,14 +212,14 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
 
         using var pFactory = new ParameterizedAuthFactory();
 
-        var avatarAId = Guid.NewGuid();
-        var avatarBId = Guid.NewGuid();
+        var userAId = Guid.NewGuid();
+        var userBId = Guid.NewGuid();
 
-        // Seed avatar B's holons via the real API authenticated as B.
-        using var clientB = pFactory.CreateClientForAvatar(avatarBId);
+        // Seed user B's holons via the real API authenticated as B.
+        using var clientB = pFactory.CreateClientForUser(userBId);
 
-        // Create three holons "owned" by avatar B.  POST /api/holon uses
-        // GetAvatarIdFromClaims() to stamp AvatarId on the created record.
+        // Create three holons "owned" by user B.  POST /api/holon uses
+        // GetUserIdFromClaims() to stamp UserId on the created record.
         Guid targetHolonId = Guid.Empty;
         const string targetHolonName = "BHolon0";
         for (var i = 0; i < 2; i++)
@@ -229,7 +229,7 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
                 Name = $"BHolon{i}",
                 Description = "Cross-tenant MCP scope fixture.",
                 ProviderName = "test",
-                AvatarId = avatarBId,
+                UserId = userBId,
             };
             var seedResp = await clientB.PostAsJsonAsync("api/holon", seedPayload, _json);
             // If the seed endpoint returns an error here we still proceed —
@@ -237,7 +237,7 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
             // fails the holons simply don't exist, so A definitely can't see them.
             var seedBody = await seedResp.Content.ReadAsStringAsync();
             seedResp.IsSuccessStatusCode.Should().BeTrue(
-                $"avatar B holon {i} must exist before cross-tenant access is tested; response: {seedBody}");
+                $"user B holon {i} must exist before cross-tenant access is tested; response: {seedBody}");
 
             using var seedDocument = JsonDocument.Parse(seedBody);
             if (!seedDocument.RootElement.TryGetProperty("result", out var result)
@@ -245,18 +245,18 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
                 || !Guid.TryParse(idElement.GetString(), out var seededHolonId))
             {
                 throw new InvalidOperationException(
-                    $"Avatar B holon {i} seed did not return a valid id: {seedBody}");
+                    $"User B holon {i} seed did not return a valid id: {seedBody}");
             }
 
             if (i == 0)
                 targetHolonId = seededHolonId;
         }
 
-        // Authenticate as avatar A and call the MCP tool surface, requesting
+        // Authenticate as user A and call the MCP tool surface, requesting
         // one of B's holon ids (or a fabricated one if seeding failed).
-        using var clientA = pFactory.CreateClientForAvatar(avatarAId);
+        using var clientA = pFactory.CreateClientForUser(userAId);
         targetHolonId.Should().NotBe(Guid.Empty,
-            "the cross-tenant call must target a real avatar B holon");
+            "the cross-tenant call must target a real user B holon");
         var mcpContent = McpToolCallPayload(
             "holon_traverse",
             new { holon_id = targetHolonId.ToString() });
@@ -274,16 +274,16 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
         if (mcpResp.IsSuccessStatusCode)
         {
             // If the SDK returned 200, the body must be a JSON-RPC error or
-            // "not found" — it must NEVER contain B's avatar id.
+            // "not found" — it must NEVER contain B's user id.
             responseBody.Should().NotContain(
-                avatarBId.ToString(),
-                because: "avatar A must never receive avatar B's data in an MCP response");
+                userBId.ToString(),
+                because: "user A must never receive user B's data in an MCP response");
             responseBody.Should().NotContain(
                 targetHolonId.ToString(),
-                because: "avatar A must never receive avatar B's persisted holon id in an MCP response");
+                because: "user A must never receive user B's persisted holon id in an MCP response");
             responseBody.Should().NotContain(
                 targetHolonName,
-                because: "avatar A must never receive avatar B's holon payload in an MCP response");
+                because: "user A must never receive user B's holon payload in an MCP response");
         }
         else
         {
@@ -299,7 +299,7 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
     /// any tool logic runs. This is the no-credential gate — not a per-claim check.
     /// </summary>
     [SkippableFact]
-    public async Task NoAvatarClaim_Returns401()
+    public async Task NoUserClaim_Returns401()
     {
         Skip.IfNot(
             await SkipIfSurrealDbUnavailableAsync(),

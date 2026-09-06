@@ -392,7 +392,7 @@ public sealed class HostedSessionFlowTests
     private static HostedSessionRequest NewRequest() => new()
     {
         FlowKind = HostedSessionFlowKinds.Kyc,
-        SubjectAvatarId = Guid.NewGuid(),
+        SubjectUserId = Guid.NewGuid(),
         AdmissionKey = "kyc:identomat:subject:direct",
     };
 

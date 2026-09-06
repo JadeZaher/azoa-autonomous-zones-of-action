@@ -28,14 +28,14 @@ The known forward demand:
 - **F6 FK rewrite** (RUNBOOK §4.3 / surrealdb-migration SIGN-OFF F6) —
   after Phase C generator emits `record<table>` types, every existing
   row that carries a foreign-key string needs its value rewritten as a
-  SurrealDB `record::table:id` literal. ~10 columns across quest,
+  SurrealDB `record::table:id` literal. ~10 columns across action,
   bridge, holon, dapp_composition aggregates.
-- **Quest cutover dependency-persistence gap** (surrealdb-migration
-  D4) — when `quest_dependency.surql` lands its hand-written counterpart,
-  any historical `Quest.Dependencies` arrays embedded on `quest` need
+- **ActionDefinition cutover dependency-persistence gap** (surrealdb-migration
+  D4) — when `action_dependency.surql` lands its hand-written counterpart,
+  any historical `ActionDefinition.Dependencies` arrays embedded on `action` need
   to be split out into the new table.
 - **Embedding backfill** — when an embedding provider ships post-MCP,
-  every existing holon + quest row needs its `embedding` field
+  every existing holon + action row needs its `embedding` field
   populated from the row's textual content.
 - **Polyhierarchy graph remodel** (surrealdb-migration task 10) — when
   holon parent links flip from `parent_holon_id` scalar to a native
@@ -130,9 +130,9 @@ ecosystem.
 
 ## Acceptance
 1. F6 backfill exists as a registered module that converts every FK
-   string column on `quest`, `quest_node`, `quest_edge`,
-   `quest_dependency`, `quest_run`, `quest_node_execution`,
-   `bridge_tx`, `holon`, `dapp_series`, `dapp_series_quest` from
+   string column on `action`, `action_node`, `action_edge`,
+   `action_dependency`, `action_run`, `action_node_execution`,
+   `bridge_tx`, `holon`, `dapp_series`, `dapp_series_action` from
    `string` to `record<target_table>`. Idempotent across re-runs.
 2. CLI subcommands `list`, `apply`, `apply-all` work end-to-end against
    the testcontainer SurrealDB.

@@ -133,7 +133,7 @@ public class NftControllerTests
     [Fact]
     public async Task Transfer_Success_ReturnsOk()
     {
-        var req = new NftTransferRequest { TargetAvatarId = Guid.NewGuid(), WalletId = Guid.NewGuid() };
+        var req = new NftTransferRequest { TargetUserId = Guid.NewGuid(), WalletId = Guid.NewGuid() };
         _nftManager.Setup(m => m.TransferAsync(It.IsAny<Guid>(), req, It.IsAny<Guid>(), null, It.IsAny<Guid?>()))
             .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 

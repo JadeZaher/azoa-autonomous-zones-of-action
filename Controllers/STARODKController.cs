@@ -26,7 +26,7 @@ public class STARODKController : ControllerBase
     {
         // Owner-or-public read scope: a non-owner cannot read another tenant's private
         // STAR ODK by id (manager returns "not found" rather than confirming it).
-        var result = await _manager.GetAsync(id, GetAvatarIdFromClaims(), request);
+        var result = await _manager.GetAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
@@ -34,41 +34,41 @@ public class STARODKController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AZOAResult<IEnumerable<ISTARODK>>>> GetAll([FromQuery] AZOARequest? request)
     {
-        var result = await _manager.GetAllAsync(GetAvatarIdFromClaims(), request);
+        var result = await _manager.GetAllAsync(GetUserIdFromClaims(), request);
         return Ok(result);
     }
 
-    /// <summary>Creates a new STARODK owned by the authenticated avatar, or
+    /// <summary>Creates a new STARODK owned by the authenticated user, or
     /// upserts an existing record they already own (by name).</summary>
     [HttpPost]
     public async Task<ActionResult<AZOAResult<ISTARODK>>> CreateOrUpdate([FromBody] STARODKCreateModel model, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
 
-        var result = await _manager.CreateOrUpdateAsync(model, avatarId.Value, routeId: null, request);
+        var result = await _manager.CreateOrUpdateAsync(model, userId.Value, routeId: null, request);
         return TranslateUpsertResult(result);
     }
 
     /// <summary>Updates an existing STARODK by route id. Verifies the record is
-    /// owned by the authenticated avatar before writing — closes the PUT IDOR.</summary>
+    /// owned by the authenticated user before writing — closes the PUT IDOR.</summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<AZOAResult<ISTARODK>>> Update(Guid id, [FromBody] STARODKCreateModel model, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
 
-        var result = await _manager.CreateOrUpdateAsync(model, avatarId.Value, routeId: id, request);
+        var result = await _manager.CreateOrUpdateAsync(model, userId.Value, routeId: id, request);
         return TranslateUpsertResult(result);
     }
 
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
 
-        var result = await _manager.DeleteAsync(id, avatarId.Value, request);
+        var result = await _manager.DeleteAsync(id, userId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
         return Ok(new AZOAResponse { Message = "STAR ODK deleted." });
     }
@@ -76,20 +76,20 @@ public class STARODKController : ControllerBase
     [HttpPost("{id:guid}/generate")]
     public async Task<ActionResult<AZOAResult<ISTARODK>>> Generate(Guid id, [FromBody] STARDappGenerationRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
 
-        var result = await _manager.GenerateAsync(id, request, avatarId.Value, providerRequest);
+        var result = await _manager.GenerateAsync(id, request, userId.Value, providerRequest);
         return TranslateUpsertResult(result);
     }
 
     [HttpPost("{id:guid}/deploy")]
     public async Task<ActionResult<AZOAResult<ISTARODK>>> Deploy(Guid id, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
 
-        var result = await _manager.DeployAsync(id, avatarId.Value, providerRequest);
+        var result = await _manager.DeployAsync(id, userId.Value, providerRequest);
         return TranslateUpsertResult(result);
     }
 
@@ -97,26 +97,26 @@ public class STARODKController : ControllerBase
 
     /// <summary>Attaches a DappSeries (or nested STARODK) as a node in this
     /// STARODK's ecosystem tree and returns the recomposed tree. The owner is the
-    /// authenticated avatar — no owner id is read from the body (IDOR-resistant).</summary>
+    /// authenticated user — no owner id is read from the body (IDOR-resistant).</summary>
     [HttpPost("{id:guid}/ecosystem/dapp-series")]
     public async Task<ActionResult<AZOAResult<EcosystemTree>>> AddDappSeries(Guid id, [FromBody] AddDappSeriesRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
 
-        var result = await _manager.AddDappSeriesAsync(id, request, avatarId.Value, providerRequest);
+        var result = await _manager.AddDappSeriesAsync(id, request, userId.Value, providerRequest);
         return TranslateTreeResult(result);
     }
 
     /// <summary>Returns this STARODK's ecosystem assembled into a parent/children
-    /// tree. Ownership is verified against the authenticated avatar.</summary>
+    /// tree. Ownership is verified against the authenticated user.</summary>
     [HttpGet("{id:guid}/ecosystem")]
     public async Task<ActionResult<AZOAResult<EcosystemTree>>> GetEcosystem(Guid id, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
 
-        var result = await _manager.GetEcosystemAsync(id, avatarId.Value, providerRequest);
+        var result = await _manager.GetEcosystemAsync(id, userId.Value, providerRequest);
         return TranslateTreeResult(result);
     }
 
@@ -155,7 +155,7 @@ public class STARODKController : ControllerBase
         return BadRequest(result);
     }
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;

@@ -13,7 +13,7 @@ reopened_reason: >-
   API-URL build-bake, phantom backup/restore scripts behind the G5 gate, missing
   version/CHANGELOG, no CI, un-root-caused value-path test failures, doc-drift).
 supersedes:
-  - quest-value-engine-expressiveness
+  - action-value-engine-expressiveness
   - bridge-safety-hardening
   - project-asset-fractionalization
   - star-odk-ecosystem-tree
@@ -51,7 +51,7 @@ shims — prefer clean cutover over migration.
 
 The user chose **"include everything remaining"** and **"implement real bridge
 primitives now"**. So this track does the maximal cut: real cross-chain value
-primitives, all quest expressiveness features, all custody hardening, plus every
+primitives, all action expressiveness features, all custody hardening, plus every
 correctness/wiring/hygiene item. The only thing that still gates real *mainnet*
 value after this ships is operator guardian-set provisioning + the mainnet flip —
 both operator actions documented in NODE-HOST.
@@ -66,16 +66,16 @@ then hygiene, then the doc/bookkeeping close-out.
 
 ### Phase A — Correctness blockers (things shipped but broken)
 
-**A1. Durable quests are inert under shipped config — FIX.**
+**A1. Durable actions are inert under shipped config — FIX.**
 `Sagas:Enabled=false` (ADR-0001, premised on "zero consumers") but the durable
-quest engine IS a saga consumer: `QuestManager` enqueues run nodes via
-`ISagaStore.EnqueueNextStepAsync` under `QuestWorkflowSaga.Name`, and dispatch
+action engine IS a saga consumer: `ActionManager` enqueues run nodes via
+`ISagaStore.EnqueueNextStepAsync` under `ActionWorkflowSaga.Name`, and dispatch
 happens ONLY in `SagaProcessorHostedService`, which self-disables. Result: a
 durable run activates, enqueues its entry node, and never executes. Unit tests
-miss it (they drive the handler directly). See [[durable-quests-inert-sagas-disabled]].
+miss it (they drive the handler directly). See [[durable-actions-inert-sagas-disabled]].
 - Update/supersede `docs/adr/ADR-0001-sagas-disabled-prelaunch.md`.
 - Default `Sagas:Enabled=true` (or make it a hard, boot-checked prerequisite when
-  any quest workflow is registered).
+  any action workflow is registered).
 - **Add an API-level integration test**: start a workflow run through the HTTP
   surface with the hosted service on; assert the entry node actually executes and
   the run advances. This is the test that would have caught A1.
@@ -113,16 +113,16 @@ provider-level proof verify (or delete the always-true method so only the
 always-true verifier anywhere).
 
 **B3. Bridge-safety-hardening close-out.** The kill switch (`RealValueEnabled`),
-WHERE-guarded VAA save, avatar-scoped idempotency keys, and crash-resume paths are
+WHERE-guarded VAA save, user-scoped idempotency keys, and crash-resume paths are
 already in the tree (commit `3b5ff29`). Finish: the reconciliation-coverage gaps
 (Locked no-op loop, hardcoded Devnet, invisible lock-ok/mint-fail — Phase-0
 finding #3), and the integrated exactly-once/replay verification sweep.
 
-**B4. Reconcile-before-retry quest wiring (P7).** Foundation shipped
+**B4. Reconcile-before-retry action wiring (P7).** Foundation shipped
 (`ChainConfirmation`, `ChainActionRecovery` decision table, provider
 `GetTransactionConfirmationAsync`). Owed: record broadcast `TxHash` on
-`QuestNodeExecution`; on chain-action node failure probe chain truth and branch
-advance-reconciled / retry / park (`AwaitingReconciliation`); a quest-node
+`ActionNodeExecution`; on chain-action node failure probe chain truth and branch
+advance-reconciled / retry / park (`AwaitingReconciliation`); a action-node
 reconciliation sweep + manual re-probe endpoint. **Prevents double-mint on the
 Grant-bounty path.**
 
@@ -138,20 +138,20 @@ Grant-bounty path.**
 
 ---
 
-### Phase C — Quest value-engine expressiveness (F2–F7)
+### Phase C — ActionDefinition value-engine expressiveness (F2–F7)
 
-Absorbs all of `quest-value-engine-expressiveness` except F1 (shipped). Completes
+Absorbs all of `action-value-engine-expressiveness` except F1 (shipped). Completes
 the "anyone can define their own economic value engine" goal.
 
 - **F2 — OnFailure edge arm.** Enum + POCO done. Remaining: skip-loop logic, DAG
   validator, durable engine seam, edge input surfaces.
-- **F3 — `quest.emit` webhook events** (generalize the shipped consent outbox to
-  arbitrary quest events).
-- **F4 — `QuestDependency` enforcement at run start** (`CheckDependenciesAsync`).
+- **F3 — `action.emit` webhook events** (generalize the shipped consent outbox to
+  arbitrary action events).
+- **F4 — `ActionDependency` enforcement at run start** (`CheckDependenciesAsync`).
 - **F5 — opt-in Holon AssetType/metadata registry** (`HolonTypeRegistry` table +
   manager/controller).
 - **F6 — unpublish TOCTOU guard** (optimistic concurrency on publish/run-start).
-- **F7 — SDK + builder mirrors** (thin: `node-config.ts` + quest-builder).
+- **F7 — SDK + builder mirrors** (thin: `node-config.ts` + action-builder).
 
 ---
 
@@ -162,19 +162,19 @@ Phase B (real value) + Phase C (F-features). This is the ArdaNova deliverable th
 whole ardanova-rails initiative exists for; all its composable rails are shipped,
 so it is assembly.
 
-- **D1. `Bridge` + `Back` Tier-2 quest nodes** + 4 builder presets + one canonical
-  parameterized fractionalization quest template (peg math stays tenant-side, via
+- **D1. `Bridge` + `Back` Tier-2 action nodes** + 4 builder presets + one canonical
+  parameterized fractionalization action template (peg math stays tenant-side, via
   `Emit`).
 - **D2. STAR-ODK ecosystem tree.** `Ecosystem`/`EcosystemNode` on STARODK,
   `AddDappSeriesAsync`/`GetEcosystemAsync`, tree-walking multi-dApp codegen, and
-  the React Flow tree UI (reuse the quest-visual-builder canvas).
+  the React Flow tree UI (reuse the action-visual-builder canvas).
 
 ---
 
 ### Phase E — Data + query hygiene
 
 - **E1. surreal-linq-adoption-sweep** (S). Migrate the ~4 raw production `SELECT`
-  sites (`SurrealQuestStore`, `SurrealNftStore`) to typed/LINQ tiers; keep the raw
+  sites (`SurrealActionStore`, `SurrealNftStore`) to typed/LINQ tiers; keep the raw
   escape hatch for writes/RELATE/DDL. Add the `§query-surface` policy doc.
 - **E2. data-backfill-migrations.** `IBackfill` module primitive + `azoa-surreal
   backfill list/apply` CLI + `data_migration` ledger. First consumer: F6 FK string
@@ -191,12 +191,12 @@ so it is assembly.
 
 ### Phase F — Saga operator surface (rescoped durable-saga-orchestration)
 
-Phase 1 (the reusable saga skeleton) is delivered and has a live consumer (quest
+Phase 1 (the reusable saga skeleton) is delivered and has a live consumer (action
 workflow). Phase 2 (bridge-as-saga-consumer) is **dropped** — the bridge was
 hardened directly in Phase B, making the saga rewrite redundant (recorded
 decision). Remaining, small:
 - **F1. Operator/dead-letter surface**: requeue, cancel, and dead-letter inspection
-  for parked/failed saga steps (also serves the quest-node reconciliation sweep in
+  for parked/failed saga steps (also serves the action-node reconciliation sweep in
   B4). Close the track as "skeleton delivered + operator surface added; bridge
   adoption intentionally not pursued."
 
@@ -230,14 +230,14 @@ decision). Remaining, small:
 
 ## Acceptance criteria
 
-1. Durable quest run executes end-to-end through the HTTP API with the hosted
+1. Durable action run executes end-to-end through the HTTP API with the hosted
    service on (A1), proven by a new integration test.
 2. Real Solana signing + real bridge lock/burn/verify; no always-true verifier
    and no logged-only value primitive remains in the tree (B1, B2).
 3. Bridge exactly-once/replay verified; reconciliation coverage gaps closed (B3).
 4. Chain-action nodes reconcile-before-retry; no double-mint path (B4).
 5. Custody: zeroable `byte[]` decrypt + live rotation orchestration (B5).
-6. Quest F2–F7 all shipped and mirrored in SDK + builder (Phase C).
+6. ActionDefinition F2–F7 all shipped and mirrored in SDK + builder (Phase C).
 7. Fractionalization flow + ecosystem tree runnable end-to-end (Phase D).
 8. Raw-SELECT sweep done; backfill primitive built; 3.x upgrade closed (Phase E).
 9. Saga operator surface exists (Phase F).
@@ -261,7 +261,7 @@ decision). Remaining, small:
 
 ## Restructuring performed when this track was created (2026-07-05)
 
-- Absorbed (archived, work moved into this spec): quest-value-engine-expressiveness,
+- Absorbed (archived, work moved into this spec): action-value-engine-expressiveness,
   bridge-safety-hardening, project-asset-fractionalization, star-odk-ecosystem-tree,
   durable-saga-orchestration, data-backfill-migrations, surreal-linq-adoption-sweep,
   surrealdb-major-upgrade, blockchain-recovery-and-portable-wallets.
@@ -303,7 +303,7 @@ god-object splits) — those remain honest post-alpha follow-ups (see §H-follow
   are. Add a fail-fast: in a Production environment, `IsSimulatedMode ⇒ throw` at
   construction/boot (mirror the Program.cs secret/CORS guard pattern), so simulated
   settlement can never leak into prod. Cover with a test.
-- **H2. Admin-token mint path (S–M).** `AvatarManager.GenerateJwt` emits no
+- **H2. Admin-token mint path (S–M).** `UserManager.GenerateJwt` emits no
   role/scope claim, so NODE-HOST §8.9 operator onboarding is **not executable** —
   there is no way to mint the first `operator:admin` (`Core/AzoaScopes.cs:33`)
   principal. Provide a real bootstrap: a seed-admin config (env-driven, fail-closed,
@@ -392,6 +392,6 @@ verification (`WalletManager.cs:406-411` currently trusts caller-supplied addres
 challenge flow; the *fix* is deferred, the *verification* is H7-adjacent and should
 be noted) · convert-or-delete the dormant success-shaped Metaplex methods
 (`SolanaProvider.CreateMetadataAccountAsync`/`UpdateMetadataAsync` — no caller today)
-· god-object splits (`QuestManager.cs` ~98 KB, `CrossChainBridgeService.cs` ~59 KB)
+· god-object splits (`ActionManager.cs` ~98 KB, `CrossChainBridgeService.cs` ~59 KB)
 · real Solana SPL / Wormhole sequence / ETH secp256k1 value routes (stay
 `RealValueEnabled=false`, fail-closed).

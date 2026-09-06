@@ -77,7 +77,7 @@ for another year.
    embedded — e.g. `CONTENT does not support WHERE bind in
    SurrealDB 1.5.x`, `WHERE id = $id` Thing-vs-string behavior — plus
    the `type::record($_t, $_id)` workaround we just landed for the
-   avatar/holon stores. Walk every store under
+   user/holon stores. Walk every store under
    [Providers/Stores/Surreal/](../../../Providers/Stores/Surreal/) and
    confirm each query is valid + idiomatic on the chosen major.
 

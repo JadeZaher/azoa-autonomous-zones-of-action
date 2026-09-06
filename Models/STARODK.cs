@@ -9,7 +9,7 @@ public class STARODK : ISTARODK
     public string Description { get; set; } = string.Empty;
     public string? PublicKey { get; set; }
     public string? PrivateKeyHash { get; set; }
-    public Guid? AvatarId { get; set; }
+    public Guid? UserId { get; set; }
     public List<Guid> BoundHolonIds { get; set; } = new();
     public string? TargetChain { get; set; }
     public string? GeneratedCode { get; set; }

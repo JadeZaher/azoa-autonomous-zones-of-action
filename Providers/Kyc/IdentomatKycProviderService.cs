@@ -143,13 +143,13 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     /// <c>KycManager.ToSessionStart</c> projects that field to the tenant.
     /// </summary>
     public Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(
-        Guid avatarId,
+        Guid userId,
         CancellationToken ct = default)
-        => BeginSessionAsync(avatarId, null, ct);
+        => BeginSessionAsync(userId, null, ct);
 
     /// <inheritdoc cref="BeginSessionAsync(Guid, CancellationToken)" />
     public async Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct = default)
     {
@@ -173,11 +173,11 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             new HostedSessionRequest
             {
                 FlowKind = FlowKind,
-                SubjectAvatarId = avatarId,
+                SubjectUserId = userId,
                 TenantId = tenantId,
                 // One stable admission key per (subject, tenant): a retry resumes the
                 // same claim instead of opening a second Identomat session.
-                AdmissionKey = AdmissionKeyFor(avatarId, tenantId),
+                AdmissionKey = AdmissionKeyFor(userId, tenantId),
             },
             ct);
         if (started.IsError || started.Result is null)
@@ -207,7 +207,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     /// path from silently creating a second provider session.
     /// </summary>
     public Task<AZOAResult<string>> CreateSessionAsync(
-        Guid avatarId,
+        Guid userId,
         IReadOnlyList<KycDocumentModel> documents,
         CancellationToken ct = default)
         => Task.FromResult(AZOAResult<string>.Failure(
@@ -275,7 +275,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         {
             CompanyKey = _settings.CompanyKey!.Trim(),
             ConfigId = _settings.ConfigId!.Trim(),
-            ClientUserId = request.SubjectAvatarId.ToString("N"),
+            ClientUserId = request.SubjectUserId.ToString("N"),
         };
 
         var response = await _transport.PostAsync<IdentomatBeginRequest, IdentomatBeginResponse>(
@@ -434,8 +434,8 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     }
 
     /// <summary>Stable per-(subject, tenant) admission key; no secret material in it.</summary>
-    public static string AdmissionKeyFor(Guid avatarId, Guid? tenantId)
-        => $"kyc:{ProviderKeyValue}:{avatarId:N}:{(tenantId is null || tenantId == Guid.Empty ? "direct" : tenantId.Value.ToString("N"))}";
+    public static string AdmissionKeyFor(Guid userId, Guid? tenantId)
+        => $"kyc:{ProviderKeyValue}:{userId:N}:{(tenantId is null || tenantId == Guid.Empty ? "direct" : tenantId.Value.ToString("N"))}";
 
     /// <summary>
     /// Hash-then-compare so the comparison never short-circuits on length. A plain

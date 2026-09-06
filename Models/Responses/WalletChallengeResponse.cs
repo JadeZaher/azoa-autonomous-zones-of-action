@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Responses;
 
 /// <summary>
-/// Result of <c>POST api/avatar/auth/challenge</c> (user-sovereign-identity AC1/AC1b).
+/// Result of <c>POST api/user/auth/challenge</c> (user-sovereign-identity AC1/AC1b).
 /// The client signs <see cref="Message"/> EXACTLY (the domain-separated bytes) and
 /// returns the signature to <c>/auth/verify</c>.
 /// </summary>

@@ -5,7 +5,7 @@ namespace AZOA.WebAPI.Interfaces;
 public interface IWallet
 {
     Guid Id { get; set; }
-    Guid AvatarId { get; set; }
+    Guid UserId { get; set; }
     string ChainType { get; set; }
     string Address { get; set; }
     string? PublicKey { get; set; }

@@ -99,7 +99,7 @@ public sealed class OperatorTenantKycSummaryResponse : TenantKycSelectionRespons
 public sealed class OperatorKycSubmissionQueueItem
 {
     public Guid Id { get; set; }
-    public Guid AvatarId { get; set; }
+    public Guid UserId { get; set; }
     public Guid? TenantId { get; set; }
     public string ProviderKey { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -129,6 +129,6 @@ public sealed class KycControlAuditResponse
     public string? AssuranceLevel { get; set; }
     public long? PreviousTrustRevision { get; set; }
     public long? TrustRevision { get; set; }
-    public Guid ActorAvatarId { get; set; }
+    public Guid ActorUserId { get; set; }
     public DateTimeOffset OccurredAt { get; set; }
 }

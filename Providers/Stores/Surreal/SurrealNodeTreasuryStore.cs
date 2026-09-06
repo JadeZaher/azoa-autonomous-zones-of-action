@@ -56,14 +56,14 @@ public sealed class SurrealNodeTreasuryStore : INodeTreasuryStore
             .WithParam("_expected", expectedVersion ?? 0L);
 
         var upsertDestination = SurrealQuery
-            .Of("UPSERT type::record($_dt, $_did) SET chain = type::string($_chain), network = type::string($_network), address = array::join($_address_chars, ''), version = $_version, updated_by_avatar_id = $_actor, updated_at = $_updated_at RETURN AFTER")
+            .Of("UPSERT type::record($_dt, $_did) SET chain = type::string($_chain), network = type::string($_network), address = array::join($_address_chars, ''), version = $_version, updated_by_user_id = $_actor, updated_at = $_updated_at RETURN AFTER")
             .WithParam("_dt", DestinationTable)
             .WithParam("_did", destination.Id)
             .WithParam("_chain", destination.Chain)
             .WithParam("_network", destination.Network)
             .WithParam("_address_chars", destination.Address.Select(c => c.ToString()).ToArray())
             .WithParam("_version", destination.Version)
-            .WithParam("_actor", SurrealRecordParam.OfLink(destination.UpdatedByAvatarId))
+            .WithParam("_actor", SurrealRecordParam.OfLink(destination.UpdatedByUserId))
             .WithParam("_updated_at", destination.UpdatedAt);
 
         var appendAudit = SurrealQuery

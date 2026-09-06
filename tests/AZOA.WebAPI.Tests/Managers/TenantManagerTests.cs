@@ -27,13 +27,13 @@ namespace AZOA.WebAPI.Tests.Managers;
 /// </summary>
 public class TenantManagerTests
 {
-    private readonly Mock<IAvatarStore> _store;
+    private readonly Mock<IUserStore> _store;
     private readonly Mock<IConsentGrantStore> _grants;
     private readonly TenantManager _manager;
 
     public TenantManagerTests()
     {
-        _store = new Mock<IAvatarStore>();
+        _store = new Mock<IUserStore>();
         _grants = new Mock<IConsentGrantStore>();
 
         var config = new ConfigurationBuilder()
@@ -49,7 +49,7 @@ public class TenantManagerTests
         _grants.Setup(g => g.ListByGrantorAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IEnumerable<ConsentGrant>> { Result = Array.Empty<ConsentGrant>() });
         _store.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { IsError = true, Message = "Avatar not found." });
+            .ReturnsAsync(new AZOAResult<IUser> { IsError = true, Message = "User not found." });
 
         _manager = new TenantManager(_store.Object, config, _grants.Object);
     }
@@ -63,7 +63,7 @@ public class TenantManagerTests
                     new ConsentGrant
                     {
                         Id = Guid.NewGuid(),
-                        GrantorAvatarId = userId,
+                        GrantorUserId = userId,
                         TenantId = tenantId,
                         Scopes = scopes.ToList(),
                         GrantedAt = DateTime.UtcNow.AddMinutes(-1),
@@ -76,28 +76,28 @@ public class TenantManagerTests
     // ── Hard cutover: provision mints SELF-OWNED (AC6) ────────────────────────
 
     [Fact]
-    public async Task ProvisionChild_BindsUnclaimedAvatarToAuthenticatedTenant()
+    public async Task ProvisionChild_BindsUnclaimedUserToAuthenticatedTenant()
     {
         var tenantId = Guid.NewGuid();
         _store.Setup(s => s.GetByTenantAndExternalUserAsync(tenantId, "user-42", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
-        _store.Setup(s => s.CreateIfAbsentAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IAvatar a, CancellationToken _) => new AZOAResult<IAvatar> { Result = a });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = null });
+        _store.Setup(s => s.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IUser a, CancellationToken _) => new AZOAResult<IUser> { Result = a });
 
         var result = await _manager.ProvisionChildAsync(tenantId, new ProvisionChildModel { ExternalUserId = "user-42" });
 
         result.IsError.Should().BeFalse();
         _store.Verify(s => s.CreateIfAbsentAsync(
-            It.Is<IAvatar>(a => a.OwnerTenantId == tenantId && a.ExternalUserId == "user-42"),
+            It.Is<IUser>(a => a.OwnerTenantId == tenantId && a.ExternalUserId == "user-42"),
             It.IsAny<CancellationToken>()), Times.Once);
-        _store.Verify(s => s.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task ProvisionChild_RetryReturnsExistingAvatarWithoutCreatingAnother()
+    public async Task ProvisionChild_RetryReturnsExistingUserWithoutCreatingAnother()
     {
         var tenantId = Guid.NewGuid();
-        var existing = new Avatar
+        var existing = new User
         {
             Id = Guid.NewGuid(),
             OwnerTenantId = tenantId,
@@ -106,23 +106,23 @@ public class TenantManagerTests
             Email = "existing@example.test"
         };
         _store.Setup(s => s.GetByTenantAndExternalUserAsync(tenantId, "user-42", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = existing });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = existing });
 
         var result = await _manager.ProvisionChildAsync(
             tenantId, new ProvisionChildModel { ExternalUserId = "user-42" });
 
         result.IsError.Should().BeFalse();
-        result.Result!.AvatarId.Should().Be(existing.Id);
-        _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
-        _store.Verify(s => s.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+        result.Result!.UserId.Should().Be(existing.Id);
+        _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task ProvisionChild_PostClaimRetryReturnsOriginalWithoutOverwriting()
     {
         var tenantId = Guid.NewGuid();
-        var deterministicId = TenantAvatarId(tenantId, "user-42");
-        var claimed = new Avatar
+        var deterministicId = TenantUserId(tenantId, "user-42");
+        var claimed = new User
         {
             Id = deterministicId,
             OwnerTenantId = null,
@@ -132,34 +132,34 @@ public class TenantManagerTests
         };
         _store.Setup(s => s.GetByTenantAndExternalUserAsync(
                 tenantId, "user-42", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = null });
         _store.Setup(s => s.GetByIdAsync(deterministicId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = claimed });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = claimed });
 
         var result = await _manager.ProvisionChildAsync(
             tenantId,
             new ProvisionChildModel { ExternalUserId = "user-42" });
 
         result.IsError.Should().BeFalse();
-        result.Result!.AvatarId.Should().Be(deterministicId);
+        result.Result!.UserId.Should().Be(deterministicId);
         claimed.PasswordHash.Should().Be("claimed-password-hash");
         claimed.AuthWalletAddress.Should().Be("claimed-wallet");
-        _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
-        _store.Verify(s => s.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task ProvisionChild_DeterministicIdConflictNeverOverwrites()
     {
         var tenantId = Guid.NewGuid();
-        var deterministicId = TenantAvatarId(tenantId, "user-42");
+        var deterministicId = TenantUserId(tenantId, "user-42");
         _store.Setup(s => s.GetByTenantAndExternalUserAsync(
                 tenantId, "user-42", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = null });
         _store.Setup(s => s.GetByIdAsync(deterministicId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar>
+            .ReturnsAsync(new AZOAResult<IUser>
             {
-                Result = new Avatar
+                Result = new User
                 {
                     Id = deterministicId,
                     OwnerTenantId = Guid.NewGuid(),
@@ -173,8 +173,8 @@ public class TenantManagerTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("already bound");
-        _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
-        _store.Verify(s => s.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -192,8 +192,8 @@ public class TenantManagerTests
         var tenantId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         _store.Setup(s => s.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = new Avatar { Id = userId, OwnerTenantId = null } });
-        // No grant (default). Even though the avatar exists, issuance is denied.
+            .ReturnsAsync(new AZOAResult<IUser> { Result = new User { Id = userId, OwnerTenantId = null } });
+        // No grant (default). Even though the user exists, issuance is denied.
 
         var result = await _manager.IssueChildCredentialAsync(
             tenantId, userId, Array.Empty<string>(), new[] { AzoaScopes.WalletManage });
@@ -206,12 +206,12 @@ public class TenantManagerTests
     [Fact]
     public async Task IssueChildCredential_OwnershipAlone_IsNotEnough_M2()
     {
-        // A legacy-style OwnerTenantId == tenant avatar with NO grant must STILL be
+        // A legacy-style OwnerTenantId == tenant user with NO grant must STILL be
         // denied — there is no ownership-only issuance path after the cutover.
         var tenantId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         _store.Setup(s => s.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = new Avatar { Id = userId, OwnerTenantId = tenantId } });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = new User { Id = userId, OwnerTenantId = tenantId } });
 
         var result = await _manager.IssueChildCredentialAsync(
             tenantId, userId, Array.Empty<string>(), new[] { AzoaScopes.WalletManage });
@@ -226,7 +226,7 @@ public class TenantManagerTests
         var tenantId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         _store.Setup(s => s.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = new Avatar { Id = userId, OwnerTenantId = null } });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = new User { Id = userId, OwnerTenantId = null } });
         GivenLiveGrant(userId, tenantId, AzoaScopes.WalletManage, AzoaScopes.NftMint);
 
         var result = await _manager.IssueChildCredentialAsync(
@@ -235,7 +235,7 @@ public class TenantManagerTests
             tenantScopes: new[] { AzoaScopes.TenantProvision, AzoaScopes.WalletManage, AzoaScopes.NftMint });
 
         result.IsError.Should().BeFalse();
-        result.Result!.AvatarId.Should().Be(userId);
+        result.Result!.UserId.Should().Be(userId);
 
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(result.Result.Token);
         jwt.Subject.Should().Be(userId.ToString());
@@ -250,7 +250,7 @@ public class TenantManagerTests
         var tenantId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         _store.Setup(s => s.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = new Avatar { Id = userId, OwnerTenantId = null } });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = new User { Id = userId, OwnerTenantId = null } });
         // Grant covers wallet:manage ONLY (NOT nft:mint).
         GivenLiveGrant(userId, tenantId, AzoaScopes.WalletManage);
 
@@ -271,7 +271,7 @@ public class TenantManagerTests
         var tenantId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         _store.Setup(s => s.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = new Avatar { Id = userId, OwnerTenantId = null } });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = new User { Id = userId, OwnerTenantId = null } });
         _grants.Setup(g => g.ListByGrantorAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IEnumerable<ConsentGrant>>
             {
@@ -279,7 +279,7 @@ public class TenantManagerTests
                 {
                     new ConsentGrant
                     {
-                        Id = Guid.NewGuid(), GrantorAvatarId = userId, TenantId = tenantId,
+                        Id = Guid.NewGuid(), GrantorUserId = userId, TenantId = tenantId,
                         Scopes = new List<string> { AzoaScopes.WalletManage },
                         GrantedAt = DateTime.UtcNow.AddMinutes(-10),
                         RevokedAt = DateTime.UtcNow.AddMinutes(-1), // revoked
@@ -302,7 +302,7 @@ public class TenantManagerTests
         var otherTenant = Guid.NewGuid();
         var userId = Guid.NewGuid();
         _store.Setup(s => s.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = new Avatar { Id = userId, OwnerTenantId = null } });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = new User { Id = userId, OwnerTenantId = null } });
         GivenLiveGrant(userId, otherTenant, AzoaScopes.WalletManage);
 
         var result = await _manager.IssueChildCredentialAsync(
@@ -319,9 +319,9 @@ public class TenantManagerTests
         var userId = Guid.NewGuid();
         var watermark = DateTime.UtcNow.AddMinutes(30); // a future claim watermark
         _store.Setup(s => s.GetByIdAsync(userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar>
+            .ReturnsAsync(new AZOAResult<IUser>
             {
-                Result = new Avatar { Id = userId, OwnerTenantId = null, AuthNotBefore = watermark }
+                Result = new User { Id = userId, OwnerTenantId = null, AuthNotBefore = watermark }
             });
         GivenLiveGrant(userId, tenantId, AzoaScopes.WalletManage);
 
@@ -341,7 +341,7 @@ public class TenantManagerTests
     {
         var tenantId = Guid.NewGuid();
         _store.Setup(s => s.GetByTenantAndExternalUserAsync(tenantId, "ghost", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = null });
 
         var result = await _manager.ResolveChildAsync(tenantId, "ghost");
 
@@ -355,10 +355,10 @@ public class TenantManagerTests
         var tenantId = Guid.NewGuid();
         _store.Setup(s => s.GetByTenantAndExternalUserAsync(
                 tenantId, "user-42", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar>
+            .ReturnsAsync(new AZOAResult<IUser>
             {
                 IsError = true,
-                Message = "AVATAR_STORE_UNAVAILABLE: sql details",
+                Message = "USER_STORE_UNAVAILABLE: sql details",
                 Exception = new InvalidOperationException("credential-bearing internal detail")
             });
         var debugWasEnabled = AZOAResultDebug.Enabled;
@@ -380,10 +380,10 @@ public class TenantManagerTests
         }
     }
 
-    private static Guid TenantAvatarId(Guid tenantId, string externalUserId)
+    private static Guid TenantUserId(Guid tenantId, string externalUserId)
     {
         var hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
-            $"azoa:tenant-avatar:v1:{tenantId:N}:{externalUserId}"));
+            $"azoa:tenant-user:v1:{tenantId:N}:{externalUserId}"));
         return new Guid(hash.AsSpan(0, 16));
     }
 }

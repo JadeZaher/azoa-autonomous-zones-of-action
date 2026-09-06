@@ -12,8 +12,8 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { EcosystemNode, type EcosystemNodeData } from './ecosystem-node'
-// Reuse the quest-builder longest-path layout (pure helper, read-only import).
-import { layoutGraph } from '../quest-builder/layout'
+// Reuse the action-builder longest-path layout (pure helper, read-only import).
+import { layoutGraph } from '../action-builder/layout'
 
 const nodeTypes = { ecosystem: EcosystemNode }
 
@@ -87,7 +87,7 @@ function flatten(roots: EcosystemTreeNode[]): {
 
 /**
  * Read-only React Flow render of a STARODK ecosystem tree. Auto-lays-out with
- * the quest-builder's longest-path layering, so nesting depth reads top→bottom.
+ * the action-builder's longest-path layering, so nesting depth reads top→bottom.
  */
 export function EcosystemTreeFlow({ tree }: { tree: EcosystemTree }) {
   const { flowNodes, flowEdges } = useMemo(() => {

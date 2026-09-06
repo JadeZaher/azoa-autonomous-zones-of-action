@@ -6,12 +6,12 @@ namespace AZOA.WebAPI.Tests.TestSupport;
 internal sealed class ApprovedRealValueKycGate : IRealValueKycGate
 {
     public Task<AZOAResult<bool>> RequireCurrentApprovalAsync(
-        Guid avatarId,
+        Guid userId,
         CancellationToken ct = default)
         => Task.FromResult(AZOAResult<bool>.Success(true));
 
     public Task<AZOAResult<bool>> RequireCurrentApprovalAsync(
-        Guid avatarId,
+        Guid userId,
         Guid tenantId,
         CancellationToken ct = default)
         => Task.FromResult(AZOAResult<bool>.Success(true));

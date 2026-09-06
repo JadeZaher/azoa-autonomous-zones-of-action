@@ -7,7 +7,7 @@ Pending. Created 2026-05-27. **Tier 3.** Constituent track of the
 
 ## Goal
 A read-only **browse + typed query + EXPLAIN UI** for a running
-SurrealDB namespace. Avatar-scoped using the same auth pattern as
+SurrealDB namespace. User-scoped using the same auth pattern as
 `mcp-surface`, so it's multi-tenant safe. Prisma Studio analogue, with
 graph-native traversal as the differentiator.
 
@@ -26,9 +26,9 @@ during development. Operators need it for prod forensics
 3. Query playground with typed completion against the Mermaid schema
    + EXPLAIN output for the typed query.
 4. Per-table row count + index list visible without writing SurrealQL.
-5. Reuses `McpAuthMiddleware`-derived `AvatarId` for row-level
+5. Reuses `McpAuthMiddleware`-derived `UserId` for row-level
    scoping (no superuser surface even for admins; admins see
-   their own data via their own avatar).
+   their own data via their own user).
 6. Read-only — no write operations from studio. Writes go through
    the regular API surface so idempotency + saga + audit are not
    bypassed.
@@ -47,7 +47,7 @@ during development. Operators need it for prod forensics
 
 ## Dependencies
 - [[surrealql-drift-detection]] for the schema-introspection layer.
-- [[mcp-surface]] for the auth + avatar-scoping pattern.
+- [[mcp-surface]] for the auth + user-scoping pattern.
 
 ## Out of scope
 - Write operations (intentional — keeps the audit + idempotency

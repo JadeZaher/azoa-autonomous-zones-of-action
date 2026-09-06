@@ -14,10 +14,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealTable("kyc_submission",
         Aggregate = "KycSubmission (generic identity-verification module)",
         Guardrail = "G6 SCHEMAFULL")]
-    [SurrealNote("Provider-agnostic KYC ledger keyed to Avatar. The gate (IKycGateService) reads the most-recent APPROVED submission for an avatar rather than a denormalized level on the avatar table, so the shared avatar schema is untouched.")]
+    [SurrealNote("Provider-agnostic KYC ledger keyed to User. The gate (IKycGateService) reads the most-recent APPROVED submission for an user rather than a denormalized level on the user table, so the shared user schema is untouched.")]
     [SurrealNote("status / provider persist as string enum names (JsonStringEnumConverter) to keep rows human-legible. The active-submission guard queries status IN (PENDING, IN_REVIEW).")]
     [Slice("identity")]
-    [Index("kyc_submission_avatar_id", Fields = new[] { "avatar_id" })]
+    [Index("kyc_submission_user_id", Fields = new[] { "user_id" })]
     [Index("kyc_submission_status", Fields = new[] { "status" })]
     public partial class KycSubmission : ISurrealRecord
     {
@@ -29,11 +29,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [FieldGroup("Owner avatar (Guid('N') hex record link); indexed for owner lookups")]
-        [References(typeof(Avatar), Optional = true)]
-        public string? AvatarId { get; set; }
+        [FieldGroup("Owner user (Guid('N') hex record link); indexed for owner lookups")]
+        [References(typeof(User), Optional = true)]
+        public string? UserId { get; set; }
 
-        [References(typeof(Avatar), Optional = true)]
+        [References(typeof(User), Optional = true)]
         public string? TenantId { get; set; }
 
         [Default("0")]
@@ -61,7 +61,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         public string? RejectionReason { get; set; }
 
-        [FieldGroup("Provider session linkage (manual provider stamps the avatar id as a pseudo-session)")]
+        [FieldGroup("Provider session linkage (manual provider stamps the user id as a pseudo-session)")]
         public string? ProviderSessionId { get; set; }
 
         public bool HostedVerification { get; set; }

@@ -12,7 +12,7 @@ namespace AZOA.WebAPI.Tests.Managers;
 
 public class SearchManagerTests
 {
-    private readonly Mock<IAvatarStore> _avatarStore;
+    private readonly Mock<IUserStore> _userStore;
     private readonly Mock<IHolonStore> _holonStore;
     private readonly Mock<IWalletStore> _walletStore;
     private readonly Mock<IBlockchainOperationStore> _blockchainOperationStore;
@@ -21,13 +21,13 @@ public class SearchManagerTests
 
     public SearchManagerTests()
     {
-        _avatarStore = new Mock<IAvatarStore>();
+        _userStore = new Mock<IUserStore>();
         _holonStore = new Mock<IHolonStore>();
         _walletStore = new Mock<IWalletStore>();
         _blockchainOperationStore = new Mock<IBlockchainOperationStore>();
         _starStore = new Mock<ISTARStore>();
         _manager = new SearchManager(
-            _avatarStore.Object,
+            _userStore.Object,
             _holonStore.Object,
             _walletStore.Object,
             _blockchainOperationStore.Object,
@@ -35,11 +35,11 @@ public class SearchManagerTests
     }
 
     [Fact]
-    public async Task SearchAsync_ReturnsHitsFromAvatars()
+    public async Task SearchAsync_ReturnsHitsFromUsers()
     {
-        var avatar = new Avatar { Id = Guid.NewGuid(), Username = "neo", Email = "neo@matrix.com", CreatedDate = DateTime.UtcNow };
-        _avatarStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = new List<IAvatar> { avatar } });
+        var user = new User { Id = Guid.NewGuid(), Username = "neo", Email = "neo@matrix.com", CreatedDate = DateTime.UtcNow };
+        _userStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new List<IUser> { user } });
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon>() });
         _walletStore.Setup(p => p.GetAllAsync(default))
@@ -47,11 +47,11 @@ public class SearchManagerTests
         _starStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
 
-        var result = await _manager.SearchAsync(new SearchRequest { Query = "neo", EntityTypes = SearchableEntityType.Avatar }, callerAvatarId: null);
+        var result = await _manager.SearchAsync(new SearchRequest { Query = "neo", EntityTypes = SearchableEntityType.User }, callerUserId: null);
 
         result.IsError.Should().BeFalse();
         result.Result!.Hits.Should().ContainSingle();
-        result.Result!.Hits[0].EntityType.Should().Be(SearchableEntityType.Avatar);
+        result.Result!.Hits[0].EntityType.Should().Be(SearchableEntityType.User);
         result.Result!.TotalCount.Should().Be(1);
     }
 
@@ -60,17 +60,17 @@ public class SearchManagerTests
     {
         // Cross-tenant scoping: a holon is only searchable by its owner (or if public).
         var owner = Guid.NewGuid();
-        var holon = new Holon { Id = Guid.NewGuid(), Name = "WorldHolon", Description = "A world", AssetType = "World", AvatarId = owner, CreatedDate = DateTime.UtcNow };
-        _avatarStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = new List<IAvatar>() });
+        var holon = new Holon { Id = Guid.NewGuid(), Name = "WorldHolon", Description = "A world", AssetType = "World", UserId = owner, CreatedDate = DateTime.UtcNow };
+        _userStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new List<IUser>() });
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { holon } });
-        _walletStore.Setup(p => p.GetByAvatarAsync(owner, default))
+        _walletStore.Setup(p => p.GetByUserAsync(owner, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet>() });
         _starStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
 
-        var result = await _manager.SearchAsync(new SearchRequest { Query = "world", EntityTypes = SearchableEntityType.Holon }, callerAvatarId: owner);
+        var result = await _manager.SearchAsync(new SearchRequest { Query = "world", EntityTypes = SearchableEntityType.Holon }, callerUserId: owner);
 
         result.IsError.Should().BeFalse();
         result.Result!.Hits.Should().ContainSingle();
@@ -80,9 +80,9 @@ public class SearchManagerTests
     [Fact]
     public async Task SearchAsync_CaseInsensitiveQuery()
     {
-        var avatar = new Avatar { Id = Guid.NewGuid(), Username = "Neo", Email = "neo@matrix.com", CreatedDate = DateTime.UtcNow };
-        _avatarStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = new List<IAvatar> { avatar } });
+        var user = new User { Id = Guid.NewGuid(), Username = "Neo", Email = "neo@matrix.com", CreatedDate = DateTime.UtcNow };
+        _userStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new List<IUser> { user } });
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon>() });
         _walletStore.Setup(p => p.GetAllAsync(default))
@@ -90,7 +90,7 @@ public class SearchManagerTests
         _starStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
 
-        var result = await _manager.SearchAsync(new SearchRequest { Query = "NEO", EntityTypes = SearchableEntityType.Avatar }, callerAvatarId: null);
+        var result = await _manager.SearchAsync(new SearchRequest { Query = "NEO", EntityTypes = SearchableEntityType.User }, callerUserId: null);
 
         result.Result!.Hits.Should().ContainSingle();
     }
@@ -98,16 +98,16 @@ public class SearchManagerTests
     [Fact]
     public async Task SearchAsync_PaginationWorks()
     {
-        var avatars = Enumerable.Range(0, 10).Select(i => new Avatar
+        var users = Enumerable.Range(0, 10).Select(i => new User
         {
             Id = Guid.NewGuid(),
             Username = $"user{i}",
             Email = $"user{i}@test.com",
             CreatedDate = DateTime.UtcNow
-        }).Cast<IAvatar>().ToList();
+        }).Cast<IUser>().ToList();
 
-        _avatarStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = avatars });
+        _userStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = users });
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon>() });
         _walletStore.Setup(p => p.GetAllAsync(default))
@@ -115,7 +115,7 @@ public class SearchManagerTests
         _starStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
 
-        var result = await _manager.SearchAsync(new SearchRequest { Query = "user", EntityTypes = SearchableEntityType.Avatar, Page = 1, PageSize = 3 }, callerAvatarId: null);
+        var result = await _manager.SearchAsync(new SearchRequest { Query = "user", EntityTypes = SearchableEntityType.User, Page = 1, PageSize = 3 }, callerUserId: null);
 
         result.Result!.TotalCount.Should().Be(10);
         result.Result!.TotalPages.Should().Be(4);
@@ -126,14 +126,14 @@ public class SearchManagerTests
     [Fact]
     public async Task SearchAsync_EmptyQueryReturnsAllMatching()
     {
-        var avatars = new List<IAvatar>
+        var users = new List<IUser>
         {
-            new Avatar { Id = Guid.NewGuid(), Username = "alice", Email = "a@x.com", CreatedDate = DateTime.UtcNow },
-            new Avatar { Id = Guid.NewGuid(), Username = "bob", Email = "b@x.com", CreatedDate = DateTime.UtcNow }
+            new User { Id = Guid.NewGuid(), Username = "alice", Email = "a@x.com", CreatedDate = DateTime.UtcNow },
+            new User { Id = Guid.NewGuid(), Username = "bob", Email = "b@x.com", CreatedDate = DateTime.UtcNow }
         };
 
-        _avatarStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = avatars });
+        _userStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = users });
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon>() });
         _walletStore.Setup(p => p.GetAllAsync(default))
@@ -141,7 +141,7 @@ public class SearchManagerTests
         _starStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
 
-        var result = await _manager.SearchAsync(new SearchRequest { Query = "", EntityTypes = SearchableEntityType.Avatar }, callerAvatarId: null);
+        var result = await _manager.SearchAsync(new SearchRequest { Query = "", EntityTypes = SearchableEntityType.User }, callerUserId: null);
 
         result.Result!.TotalCount.Should().Be(2);
     }
@@ -150,18 +150,18 @@ public class SearchManagerTests
     public async Task SearchAsync_FiltersByAssetType()
     {
         var owner = Guid.NewGuid();
-        var nftHolon = new Holon { Id = Guid.NewGuid(), Name = "NFT1", AssetType = "NFT", AvatarId = owner, CreatedDate = DateTime.UtcNow };
-        var docHolon = new Holon { Id = Guid.NewGuid(), Name = "Doc1", AssetType = "Document", AvatarId = owner, CreatedDate = DateTime.UtcNow };
-        _avatarStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = new List<IAvatar>() });
+        var nftHolon = new Holon { Id = Guid.NewGuid(), Name = "NFT1", AssetType = "NFT", UserId = owner, CreatedDate = DateTime.UtcNow };
+        var docHolon = new Holon { Id = Guid.NewGuid(), Name = "Doc1", AssetType = "Document", UserId = owner, CreatedDate = DateTime.UtcNow };
+        _userStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new List<IUser>() });
         _holonStore.Setup(p => p.QueryAsync(null, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { nftHolon, docHolon } });
-        _walletStore.Setup(p => p.GetByAvatarAsync(owner, default))
+        _walletStore.Setup(p => p.GetByUserAsync(owner, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet>() });
         _starStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
 
-        var result = await _manager.SearchAsync(new SearchRequest { Query = "", EntityTypes = SearchableEntityType.Holon, AssetType = "NFT" }, callerAvatarId: owner);
+        var result = await _manager.SearchAsync(new SearchRequest { Query = "", EntityTypes = SearchableEntityType.Holon, AssetType = "NFT" }, callerUserId: owner);
 
         result.Result!.TotalCount.Should().Be(1);
     }
@@ -171,19 +171,19 @@ public class SearchManagerTests
     {
         // Facet counts are caller-scoped: Holon/STARODK = owner-or-public, Wallet = caller's own.
         var owner = Guid.NewGuid();
-        _avatarStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = new List<IAvatar> { new Avatar() } });
+        _userStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new List<IUser> { new User() } });
         _holonStore.Setup(p => p.QueryAsync(null, default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { new Holon { AvatarId = owner }, new Holon { AvatarId = owner } } });
-        _walletStore.Setup(p => p.GetByAvatarAsync(owner, default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { new Holon { UserId = owner }, new Holon { UserId = owner } } });
+        _walletStore.Setup(p => p.GetByUserAsync(owner, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet> { new Wallet() } });
         _starStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
 
-        var result = await _manager.GetFacetsAsync(callerAvatarId: owner);
+        var result = await _manager.GetFacetsAsync(callerUserId: owner);
 
         result.Result.Should().HaveCount(4);
-        result.Result!.First(f => f.EntityType == SearchableEntityType.Avatar).Count.Should().Be(1);
+        result.Result!.First(f => f.EntityType == SearchableEntityType.User).Count.Should().Be(1);
         result.Result!.First(f => f.EntityType == SearchableEntityType.Holon).Count.Should().Be(2);
     }
 }

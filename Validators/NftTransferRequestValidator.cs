@@ -7,8 +7,8 @@ public class NftTransferRequestValidator : AbstractValidator<NftTransferRequest>
 {
     public NftTransferRequestValidator()
     {
-        RuleFor(x => x.TargetAvatarId)
-            .NotEqual(Guid.Empty).WithMessage("TargetAvatarId must not be an empty GUID.");
+        RuleFor(x => x.TargetUserId)
+            .NotEqual(Guid.Empty).WithMessage("TargetUserId must not be an empty GUID.");
 
         RuleFor(x => x.WalletId)
             .NotEqual(Guid.Empty).WithMessage("WalletId must not be an empty GUID.");

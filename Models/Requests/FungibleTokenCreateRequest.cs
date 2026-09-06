@@ -7,12 +7,12 @@ namespace AZOA.WebAPI.Models.Requests;
 /// <see cref="Total"/> supply + <see cref="Decimals"/>, as opposed to the supply-1
 /// NFT path). The supply and decimals are tenant-supplied and authoritative — AZOA
 /// derives no economic meaning (peg/valuation stays tenant-side). The token is
-/// minted into the target avatar's provisioned custodial wallet, whose address is
+/// minted into the target user's provisioned custodial wallet, whose address is
 /// used as the ASA manager/reserve/freeze/clawback address (mechanism only;
 /// configurable roles are a follow-up).
 ///
 /// IDOR note: like <see cref="AllocationRequest"/>, this DTO carries no owner /
-/// target avatar id. The target avatar is supplied out-of-band (route / run
+/// target user id. The target user is supplied out-of-band (route / run
 /// context) and resolved from the authenticated principal; any owner id a caller
 /// might bolt on here would be ignored.
 /// </summary>
@@ -26,7 +26,7 @@ public class FungibleTokenCreateRequest
 
     /// <summary>
     /// Target chain for provision-if-absent + the token launch (e.g. "Algorand").
-    /// Matched case-insensitively against the avatar's wallets to decide reuse vs.
+    /// Matched case-insensitively against the user's wallets to decide reuse vs.
     /// generate. Algorand-only in v1 (the ASA module is Algorand-specific).
     /// </summary>
     public string ChainType { get; set; } = "Algorand";

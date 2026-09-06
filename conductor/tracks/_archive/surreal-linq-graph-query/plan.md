@@ -4,7 +4,7 @@ Build order: **adopt + broaden the existing translator first (it already works),
 then add the `IQueryable` provider on top, then the `DbContext`/unit-of-work seam,
 then the graph traversal operators (the differentiator), and finally the
 WebSocket live-query socket (the second differentiator, gated on the version
-pin).** Every phase keeps the existing **quest**, **saga**, and
+pin).** Every phase keeps the existing **action**, **saga**, and
 **`api-safety-hardening`** suites green — those are the regression gate. Tests
 run **once at the end of each phase**, not per-fix (per working preference).
 
@@ -30,7 +30,7 @@ filling the operator gaps*, not green-field translator work.
 | **D11** | Adoption scope in THIS track? | **2-3 representative stores**, lineage being the marquee (`GetLineageAsync` raw loop → one traversal query). Full-fleet migration is a follow-up sweep. | Proves every layer end-to-end on real consumers without a churny all-stores rewrite. |
 
 ## Phase 1 — Adopt + broaden the translator (make the dead code live)
-1. `[ ]` Wire `SurrealQuery{T}` into **one** real store as a pilot (a read-only list query, e.g. a saga or quest-run list) to prove the typed predicate path executes against a real SurrealDB and matches the prior raw-string result byte-for-byte.
+1. `[ ]` Wire `SurrealQuery{T}` into **one** real store as a pilot (a read-only list query, e.g. a saga or action-run list) to prove the typed predicate path executes against a real SurrealDB and matches the prior raw-string result byte-for-byte.
 2. `[ ]` Broaden `ExpressionTranslator`: ranges (`>= && <=` → SurrealDB range or compound), `IN`/`Contains` over collections → `INSIDE`, `string.StartsWith/EndsWith/Contains` → SurrealQL string ops, null-coalescing/`HasValue`, `DateTime` comparisons. Each unsupported node still throws the existing `NotSupportedException` with the fall-back recipe — never silent-wrong.
 3. `[ ]` Unit tests for every new operator (mirror `SurrealQueryTypedTests`); assert the emitted SurrealQL + parameter bag exactly.
 4. `[ ]` Keep all existing suites green; SRDB0001 analyzer passes.
@@ -52,7 +52,7 @@ filling the operator gaps*, not green-field translator work.
 14. `[ ]` Typed FETCH / eager-load: `.Fetch(r => r.SomeLink)` emits a real `FETCH` clause (today's string clause is unused) so a link column materializes its target — the `Include`-equivalent.
 15. `[ ]` Relationship-based computation (D6): `Graph.Count(x.Out<TEdge>())` and graph-relative aggregates emit `count(->edge->)` etc. inside a projection.
 16. `[ ]` Adopt typed RELATE (D7): surface `Query/RelateBuilder.cs` through the context; write a `forked_from` edge via the typed path.
-17. `[ ]` **Marquee proof:** rewrite `SurrealQuestRunStore.GetLineageAsync` from the client-side `parent_run_id` loop into ONE `<-forked_from<-quest_run` traversal query; its existing lineage tests stay green and now exercise a real graph read. Adopt the typed surface in 1-2 more stores (D11).
+17. `[ ]` **Marquee proof:** rewrite `SurrealActionRunStore.GetLineageAsync` from the client-side `parent_run_id` loop into ONE `<-forked_from<-action_run` traversal query; its existing lineage tests stay green and now exercise a real graph read. Adopt the typed surface in 1-2 more stores (D11).
 18. `[ ]` Graph unit + integration tests (arrow-path emit correctness; lineage traversal against a real SurrealDB). Suites green.
 
 ## Phase 5 — Live-query socket `ExecuteLiveAsync` (gated on version pin — D10)
@@ -64,7 +64,7 @@ filling the operator gaps*, not green-field translator work.
 
 ## Verification (run ONCE at the end of each phase, and a full sweep at track close)
 24. `[ ]` `dotnet build` — zero new warnings vs the 28-warning baseline.
-25. `[ ]` `dotnet test` — green incl. all existing quest / saga / `api-safety-hardening` suites + the new translator/provider/context/graph/live tests.
+25. `[ ]` `dotnet test` — green incl. all existing action / saga / `api-safety-hardening` suites + the new translator/provider/context/graph/live tests.
 26. `[ ]` SRDB0001 analyzer passes — no new string-concatenated SurrealQL.
 27. `[ ]` `GetLineageAsync` is a single traversal query (no client-side loop); ≥2-3 stores on the typed surface.
 28. `[ ]` `ExecuteLiveAsync` proven end-to-end against a real SurrealDB.

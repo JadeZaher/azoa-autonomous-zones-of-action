@@ -18,7 +18,7 @@ public sealed class ExternalAuthTokenResponse
     /// <summary>The standard AZOA login JWT — identical in claims to the password path's.</summary>
     public string Token { get; set; } = string.Empty;
 
-    public Guid AvatarId { get; set; }
+    public Guid UserId { get; set; }
 
     public string Username { get; set; } = string.Empty;
 
@@ -31,7 +31,7 @@ public sealed class ExternalAuthTokenResponse
     public string? ReturnTo { get; set; }
 }
 
-/// <summary>Authorises attaching a provider to the already-authenticated avatar.</summary>
+/// <summary>Authorises attaching a provider to the already-authenticated user.</summary>
 public sealed class ExternalAuthLinkTicketResponse
 {
     /// <summary>Single-use ticket to pass as <c>?ticket=</c> on the start redirect.</summary>
@@ -41,7 +41,7 @@ public sealed class ExternalAuthLinkTicketResponse
     public string StartUrl { get; set; } = string.Empty;
 }
 
-/// <summary>A provider currently attached to an avatar.</summary>
+/// <summary>A provider currently attached to an user.</summary>
 public sealed class ExternalAuthLinkResponse
 {
     public string Provider { get; set; } = string.Empty;

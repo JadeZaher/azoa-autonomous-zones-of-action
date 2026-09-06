@@ -31,7 +31,7 @@ public sealed class AllocationReceiptManagerTests
         result.IsError.Should().BeFalse(result.Message);
         result.Result!.State.Should().Be(AllocationReceiptState.Completed);
         result.Result.OperationId.Should().Be(operation.Id);
-        result.Result.AvatarId.Should().Be(allocation.AvatarId);
+        result.Result.UserId.Should().Be(allocation.UserId);
         result.Result.WalletAddress.Should().Be(allocation.WalletAddress);
         result.Result.TransactionReference.Should().Be("chain-tx-42");
 
@@ -141,7 +141,7 @@ public sealed class AllocationReceiptManagerTests
     private sealed class ReceiptHarness
     {
         internal Guid ApiKeyId { get; } = Guid.NewGuid();
-        private Guid AvatarId { get; } = Guid.NewGuid();
+        private Guid UserId { get; } = Guid.NewGuid();
         internal Mock<IBlockchainOperationStore> OperationStore { get; } = new();
         internal Mock<IReconciliationService> Reconciliation { get; } = new();
         internal Mock<IIdempotencyStore> IdempotencyStore { get; } = new();
@@ -159,7 +159,7 @@ public sealed class AllocationReceiptManagerTests
         internal AllocationReceiptRequest Request() => new()
         {
             ApiKeyId = ApiKeyId,
-            CallerAvatarId = AvatarId,
+            CallerUserId = UserId,
             ClientIdempotencyKey = "payment-intent-42",
         };
 
@@ -172,7 +172,7 @@ public sealed class AllocationReceiptManagerTests
             {
                 Id = Guid.NewGuid(),
                 IdempotencyKey = correlation,
-                InitiatorAvatarId = AvatarId,
+                InitiatorUserId = UserId,
                 InitiatorApiKeyId = ApiKeyId,
                 Status = status,
                 Parameters = new Dictionary<string, string>
@@ -184,7 +184,7 @@ public sealed class AllocationReceiptManagerTests
 
         internal AllocationResult Allocation(Guid operationId) => new()
         {
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             WalletId = Guid.NewGuid(),
             WalletAddress = "wallet-address-42",
             WalletProvisioned = true,

@@ -80,7 +80,7 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
                 AzoaErrorCodes.DependencyUnavailable);
         }
 
-        if (request.SubjectAvatarId == Guid.Empty)
+        if (request.SubjectUserId == Guid.Empty)
             return AZOAResult<HostedSessionStartResult>.Failure("An authenticated subject is required.");
         if (string.IsNullOrWhiteSpace(request.AdmissionKey))
             return AZOAResult<HostedSessionStartResult>.Failure("A stable admission key is required.");
@@ -92,7 +92,7 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
             FlowKind = request.FlowKind,
             ProviderKey = provider.ProviderKey,
             AdmissionKey = request.AdmissionKey,
-            SubjectAvatarId = request.SubjectAvatarId.ToString("N"),
+            SubjectUserId = request.SubjectUserId.ToString("N"),
             TenantId = request.TenantId?.ToString("N"),
             State = HostedSessionStates.Claimed,
             StateVersion = 0,

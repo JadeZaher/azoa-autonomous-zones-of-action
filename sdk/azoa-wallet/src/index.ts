@@ -10,7 +10,7 @@ export {
   mapErr,
   SdkError,
   SdkErrorCode,
-  isQuestConflict,
+  isActionConflict,
   toHex,
   fromHex,
   concatBytes,
@@ -64,8 +64,8 @@ export type { JupiterConfig } from "./dex/jupiter.js";
 export { AzoaApiClient, DAPP_ROLES } from "./api/index.js";
 export type {
   AzoaApiConfig,
-  // avatar-dapp-rbac: assignable DApp role allowlist + avatar DTO
-  AvatarResponse,
+  // user-dapp-rbac: assignable DApp role allowlist + user DTO
+  UserResponse,
   DappRole,
   TenantKycStatus,
   TenantCustodialAccountStatus,
@@ -84,14 +84,14 @@ export type {
   PortfolioAsset,
   PortfolioAssetKind,
   NftHolding,
-  // Quest + Holon AssetType registry (final-hardening Phase C)
-  QuestResult,
-  // Quest invitations + request/approval (quest-invitations-approval)
-  QuestRunAccess,
-  QuestAccessRequestStatus,
-  QuestAccessRequest,
+  // ActionDefinition + Holon AssetType registry (final-hardening Phase C)
+  ActionResult,
+  // ActionDefinition invitations + request/approval (action-invitations-approval)
+  ActionRunAccess,
+  ActionAccessRequestStatus,
+  ActionAccessRequest,
   SetRunAccessRequest,
-  InviteAvatarRequest,
+  InviteUserRequest,
   RequestAccessBody,
   DecideAccessRequestBody,
   HolonTypeResult,
@@ -106,8 +106,8 @@ export type {
   DappSeriesResult,
   DappSeriesCreateParams,
   DappSeriesUpdateParams,
-  DappSeriesQuestResult,
-  DappSeriesAddQuestParams,
+  DappSeriesActionResult,
+  DappSeriesAddActionParams,
   // Admin surfaces: saga operator dead-letters + key rotation (final-hardening Wave6)
   SagaStepStatus,
   SagaDeadLetterListParams,
@@ -130,11 +130,11 @@ export type { AuthProfile } from "./client/index.js";
 export { PortfolioAggregator } from "./client/index.js";
 export type { ChainBalance, PortfolioSummary } from "./client/index.js";
 
-// Workflow SDK (workflow-sdk) — template authoring + the fluent quest() run driver
+// Workflow SDK (workflow-sdk) — template authoring + the fluent action() run driver
 export {
   WorkflowClient,
   WorkflowRunHandle,
-  createQuestFactory,
+  createActionFactory,
   nodeConfig,
   isAwaiting,
   isTerminal,
@@ -142,7 +142,7 @@ export {
   TERMINAL_STATUSES,
 } from "./workflow/index.js";
 export type {
-  QuestFactory,
+  ActionFactory,
   SuspendCallback,
   WorkflowRunStatus,
   WorkflowRunResult,

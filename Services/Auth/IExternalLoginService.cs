@@ -29,55 +29,55 @@ public sealed record ExternalIdentity(
     string? FirstName = null,
     string? LastName = null);
 
-/// <summary>Maps verified federated identities onto AZOA avatars.</summary>
+/// <summary>Maps verified federated identities onto AZOA users.</summary>
 public interface IExternalLoginService
 {
     /// <summary>
-    /// Resolves the avatar bound to this federated identity within the tenant scope,
-    /// creating a NEW avatar when no binding exists.
+    /// Resolves the user bound to this federated identity within the tenant scope,
+    /// creating a NEW user when no binding exists.
     /// </summary>
     /// <remarks>
     /// Never merges into an existing account by email. See the implementation's remarks
     /// for why that absence is the security control.
     /// </remarks>
-    Task<AZOAResult<IAvatar>> ResolveOrCreateAsync(
+    Task<AZOAResult<IUser>> ResolveOrCreateAsync(
         ExternalIdentity identity,
         Guid? tenantId,
         CancellationToken ct = default);
 
     /// <summary>
-    /// Attaches a federated identity to an ALREADY-AUTHENTICATED avatar. This is the
+    /// Attaches a federated identity to an ALREADY-AUTHENTICATED user. This is the
     /// only path that can ever associate a provider with a pre-existing account.
     /// </summary>
-    Task<AZOAResult<AvatarExternalLogin>> LinkToAvatarAsync(
+    Task<AZOAResult<UserExternalLogin>> LinkToUserAsync(
         ExternalIdentity identity,
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct = default);
 
-    /// <summary>Providers currently attached to an avatar.</summary>
-    Task<AZOAResult<IReadOnlyList<AvatarExternalLogin>>> ListLinksAsync(
-        Guid avatarId,
+    /// <summary>Providers currently attached to an user.</summary>
+    Task<AZOAResult<IReadOnlyList<UserExternalLogin>>> ListLinksAsync(
+        Guid userId,
         CancellationToken ct = default);
 
     /// <summary>
-    /// Loads an avatar that is still allowed to sign in, re-checking its active state.
+    /// Loads an user that is still allowed to sign in, re-checking its active state.
     /// </summary>
     /// <remarks>
-    /// Called at code-redemption time rather than trusting the avatar snapshot taken at
+    /// Called at code-redemption time rather than trusting the user snapshot taken at
     /// callback time, so a deactivation in the seconds between the two takes effect.
     /// </remarks>
-    Task<AZOAResult<IAvatar>> ResolveBoundAvatarAsync(
-        Guid avatarId,
+    Task<AZOAResult<IUser>> ResolveBoundUserAsync(
+        Guid userId,
         CancellationToken ct = default);
 
     /// <summary>
-    /// Detaches a provider, refusing when it is the avatar's last remaining way in.
-    /// Removes the binding only — the avatar row is never cascaded.
+    /// Detaches a provider, refusing when it is the user's last remaining way in.
+    /// Removes the binding only — the user row is never cascaded.
     /// </summary>
     Task<AZOAResult<bool>> UnlinkAsync(
         ExternalAuthProvider provider,
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct = default);
 }

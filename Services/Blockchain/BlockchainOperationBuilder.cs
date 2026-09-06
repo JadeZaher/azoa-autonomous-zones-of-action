@@ -8,9 +8,9 @@ public class BlockchainOperationBuilder
 {
     private readonly BlockchainOperation _operation = new();
 
-    public BlockchainOperationBuilder ForAvatar(Guid avatarId)
+    public BlockchainOperationBuilder ForUser(Guid userId)
     {
-        _operation.AvatarId = avatarId;
+        _operation.UserId = userId;
         return this;
     }
 

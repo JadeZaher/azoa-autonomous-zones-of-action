@@ -77,8 +77,8 @@ public sealed class ConsentWebhookEvent
     /// <summary>The grant the event is about (payload <c>grantId</c>).</summary>
     public Guid GrantId { get; set; }
 
-    /// <summary>The grantor user's avatar (payload <c>avatarId</c>).</summary>
-    public Guid AvatarId { get; set; }
+    /// <summary>The grantor user's user (payload <c>userId</c>).</summary>
+    public Guid UserId { get; set; }
 
     /// <summary>The grant's scopes as a comma-separated string (payload <c>scopes</c>).
     /// Stored as CSV to mirror the <c>ConsentGrant</c> store's scope serialization.</summary>

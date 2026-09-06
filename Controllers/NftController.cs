@@ -33,7 +33,7 @@ public class NftController : ControllerBase
     {
         // Owner-or-public read scope: a non-owner cannot read another tenant's private
         // NFT by id (manager returns "not found" rather than confirming it).
-        var result = await _nftManager.GetAsync(id, GetAvatarIdFromClaims(), request);
+        var result = await _nftManager.GetAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError || result.Result == null) return NotFound(result);
 
         var nftResult = MapToNftResult(result.Result);
@@ -43,7 +43,7 @@ public class NftController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AZOAResult<IEnumerable<NftResult>>>> Query([FromQuery] NftQueryRequest query, [FromQuery] AZOARequest? request)
     {
-        var result = await _nftManager.QueryAsync(query, GetAvatarIdFromClaims(), request);
+        var result = await _nftManager.QueryAsync(query, GetUserIdFromClaims(), request);
         if (result.IsError || result.Result == null) return Ok(new AZOAResult<IEnumerable<NftResult>> { IsError = true, Message = result.Message });
 
         var mapped = result.Result.Select(MapToNftResult).ToList();
@@ -53,8 +53,8 @@ public class NftController : ControllerBase
     [HttpPost("mint")]
     public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Mint([FromBody] NftMintRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<BlockchainOperationResponse> { IsError = true, Message = "Invalid token." });
 
         if (!User.HasSigningScope(AzoaScopes.NftMint))
@@ -64,7 +64,7 @@ public class NftController : ControllerBase
                 Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to mint an NFT."
             });
 
-        var result = await _nftManager.MintAsync(request, avatarId.Value, providerRequest);
+        var result = await _nftManager.MintAsync(request, userId.Value, providerRequest);
         var response = BlockchainOperationResponse.Project(result);
         if (!response.IsError) return Ok(response);
 
@@ -81,19 +81,19 @@ public class NftController : ControllerBase
     /// <summary>
     /// One-shot fungible token mint (fungible-mint-and-render-model, §11.3): launch
     /// a fungible ASA with a real supply + decimals into the caller's provisioned
-    /// custodial wallet, WITHOUT authoring a quest DAG. The direct parallel to the
-    /// <c>FungibleTokenCreate</c> quest node — it shares the SAME manager path
+    /// custodial wallet, WITHOUT authoring a action DAG. The direct parallel to the
+    /// <c>FungibleTokenCreate</c> action node — it shares the SAME manager path
     /// (<see cref="IFungibleTokenManager.CreateAsync"/>), the SAME fail-closed KYC
     /// gate, and the SAME idempotency discipline.
     ///
     /// Idempotency: the optional <c>Idempotency-Key</c> header wins; absent ⇒ the
     /// manager derives a deterministic content key over the token descriptor (never
     /// random). The dedup namespace is partitioned by the API-key id when the caller
-    /// is an API-key principal, else by the authenticated avatar id (a stable
-    /// per-identity partition, mirroring the quest node's run-id sentinel) so two
-    /// avatars reusing the same human-friendly key never collide.
+    /// is an API-key principal, else by the authenticated user id (a stable
+    /// per-identity partition, mirroring the action node's run-id sentinel) so two
+    /// users reusing the same human-friendly key never collide.
     ///
-    /// IDOR: the target is ALWAYS the authenticated avatar; the body carries no
+    /// IDOR: the target is ALWAYS the authenticated user; the body carries no
     /// owner id. KYC gate (§11.4): the value-bearing launch is gated in the manager
     /// choke point — a fail-closed rejection carries the <c>KYC_FORBIDDEN:</c> prefix
     /// → 403 (consistent with <c>AllocationController</c> / the <c>Mint</c> route).
@@ -102,8 +102,8 @@ public class NftController : ControllerBase
     public async Task<ActionResult<AZOAResult<FungibleTokenResult>>> FungibleMint(
         [FromBody] FungibleMintRequest request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<FungibleTokenResult> { IsError = true, Message = "Invalid token." });
 
         if (!User.HasSigningScope(AzoaScopes.NftMint))
@@ -115,9 +115,9 @@ public class NftController : ControllerBase
 
         // The manager partitions the idempotency namespace by this id. An API-key
         // principal carries an ApiKeyId claim; a JWT self-run (the frontend test
-        // harness) does not — fall back to the avatar id so the partition is still
+        // harness) does not — fall back to the user id so the partition is still
         // stable and per-identity (FungibleTokenCreateNodeHandler run-id precedent).
-        var partitionId = GetApiKeyId() ?? avatarId.Value.ToString();
+        var partitionId = GetApiKeyId() ?? userId.Value.ToString();
 
         // Client Idempotency-Key wins; blank ⇒ null ⇒ the manager derives its
         // deterministic content key (never a random per-request key).
@@ -137,7 +137,7 @@ public class NftController : ControllerBase
         };
 
         var result = await _fungibleTokenManager.CreateAsync(
-            avatarId.Value, create, avatarId.Value, idempotencyKey, partitionId, actingTenantId);
+            userId.Value, create, userId.Value, idempotencyKey, partitionId, actingTenantId);
 
         if (result.IsError || result.Result == null)
         {
@@ -159,9 +159,9 @@ public class NftController : ControllerBase
             if (tokenId is not null || chainId is not null)
             {
                 var update = new HolonUpdateModel { TokenId = tokenId, ChainId = chainId };
-                // Scope the link to the authenticated avatar (IDOR-safe — a holon the
+                // Scope the link to the authenticated user (IDOR-safe — a holon the
                 // caller does not own is not updated).
-                var link = await _holonManager.UpdateAsync(holonId, update, avatarId.Value);
+                var link = await _holonManager.UpdateAsync(holonId, update, userId.Value);
                 if (link.IsError)
                     return BadRequest(new AZOAResult<FungibleTokenResult>
                     {
@@ -177,8 +177,8 @@ public class NftController : ControllerBase
     [HttpPost("{id:guid}/transfer")]
     public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Transfer(Guid id, [FromBody] NftTransferRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<BlockchainOperationResponse> { IsError = true, Message = "Invalid token." });
 
         if (!User.HasSigningScope(AzoaScopes.TransferSign))
@@ -188,7 +188,7 @@ public class NftController : ControllerBase
                 Message = $"Caller lacks the '{AzoaScopes.TransferSign}' scope required to transfer an NFT."
             });
 
-        var result = await _nftManager.TransferAsync(id, request, avatarId.Value, providerRequest);
+        var result = await _nftManager.TransferAsync(id, request, userId.Value, providerRequest);
         var response = BlockchainOperationResponse.Project(result);
         if (response.IsError) return BadRequest(response);
         return Ok(response);
@@ -197,8 +197,8 @@ public class NftController : ControllerBase
     [HttpPost("{id:guid}/burn")]
     public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Burn(Guid id, [FromBody] NftBurnRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<BlockchainOperationResponse> { IsError = true, Message = "Invalid token." });
 
         // Burn maps to nft:mint per AzoaScopes.OperationScopeMap.
@@ -209,7 +209,7 @@ public class NftController : ControllerBase
                 Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to burn an NFT."
             });
 
-        var result = await _nftManager.BurnAsync(id, request.WalletId, avatarId.Value, providerRequest);
+        var result = await _nftManager.BurnAsync(id, request.WalletId, userId.Value, providerRequest);
         var response = BlockchainOperationResponse.Project(result);
         if (response.IsError) return BadRequest(response);
         return Ok(response);
@@ -244,7 +244,7 @@ public class NftController : ControllerBase
             Id = holon.Id,
             Name = holon.Name,
             Description = holon.Description,
-            OwnerAvatarId = holon.AvatarId,
+            OwnerUserId = holon.UserId,
             ChainId = holon.ChainId ?? string.Empty,
             TokenId = holon.TokenId,
             Metadata = metadata,
@@ -254,7 +254,7 @@ public class NftController : ControllerBase
         };
     }
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;

@@ -13,7 +13,7 @@
 ## The corrected framing (the inversion)
 
 **Holonic transformations are the base layer; chain/economic actions are an
-opt-in capability on top.** A quest is a DAG of operations on holons (create,
+opt-in capability on top.** A action is a DAG of operations on holons (create,
 transform, compose, link, branch, gate, emit), where a holon may be **pure
 metadata** or carry chain data. The blockchain/economic nodes (mint, swap,
 transfer, grant, refund) are the **subset** that tack on-chain actions onto a
@@ -31,20 +31,20 @@ chain actions are the **same shape**; the distinction is a capability check,
 **NOT** a type hierarchy.
 
 - **Mechanism:** add `bool RequiresChainCapability => false;` to
-  `IQuestNodeHandler` (`Interfaces/Quest/IQuestNodeHandler.cs:18-32`),
+  `IActionNodeHandler` (`Interfaces/ActionDefinition/IActionNodeHandler.cs:18-32`),
   default-implemented to `false`. Tier-2 chain handlers override `=> true`.
-- **Gate location:** the existing dispatch seam in `QuestManager`
-  (`Managers/QuestManager.cs:328-337`) — after `_registry.TryGet(...)`, before
+- **Gate location:** the existing dispatch seam in `ActionManager`
+  (`Managers/ActionManager.cs:328-337`) — after `_registry.TryGet(...)`, before
   `handler.HandleAsync(ctx)`. If `handler.RequiresChainCapability` and the run
-  has no wallet bound, set `result = QuestNodeResults.Fail("chain capability
+  has no wallet bound, set `result = ActionNodeResults.Fail("chain capability
   required: no wallet bound to run")` and skip the handler. **Fails closed.**
-- **Wallet-bound resolution:** the run's actor is `QuestRun.AvatarId`
-  (`Models/Quest/QuestRun.cs:31`). "Has a wallet bound" = the actor avatar has a
+- **Wallet-bound resolution:** the run's actor is `ActionRun.UserId`
+  (`Models/ActionDefinition/ActionRun.cs:31`). "Has a wallet bound" = the actor user has a
   usable/default wallet (resolve via `WalletManager`;
   `KeyCustodyService.PlatformWalletId` `Managers/KeyCustodyService.cs:54` is the
   platform fallback). See D2 for whether to make the binding explicit.
-- **Pure-metadata quest** = every node `RequiresChainCapability == false`; never
-  binds a wallet, never touches an ASA/chain. **Chain quest** binds a wallet,
+- **Pure-metadata action** = every node `RequiresChainCapability == false`; never
+  binds a wallet, never touches an ASA/chain. **Chain action** binds a wallet,
   unlocking Tier-2.
 - **Alternative (documented, rejected):** a marker attribute
   `[RequiresChainCapability]` instead of the property. Rejected for the
@@ -52,7 +52,7 @@ chain actions are the **same shape**; the distinction is a capability check,
   ~32 existing handlers unchanged and is reflection-free at the gate. Revisit
   only if a handler needs a *runtime* capability decision (none does today).
 
-## Final `QuestNodeType` list — Tier-1 (no-chain) vs Tier-2 (chain)
+## Final `ActionNodeType` list — Tier-1 (no-chain) vs Tier-2 (chain)
 
 ### Tier 1 — holonic transformations (`RequiresChainCapability == false`)
 
@@ -78,7 +78,7 @@ chain actions are the **same shape**; the distinction is a capability check,
 | `Transform`/`Branch` | **NEW (only if needed — D8)** | — | generic value/branch shaping if the existing set lacks it |
 
 > The 14 `Holon*` members + `ComposeOutputs` already exist
-> (`QuestEnums.cs:21-35, 69`). The track's Tier-1 job is **audit + confirm**
+> (`ActionEnums.cs:21-35, 69`). The track's Tier-1 job is **audit + confirm**
 > these are chain-free, **add GateCheck + Emit**, and add a `Transform`/`Branch`
 > node **only if D8 finds a genuine gap** (default: do not add).
 
@@ -87,8 +87,8 @@ chain actions are the **same shape**; the distinction is a capability check,
 | New member | Handler | Wraps | Mechanism (no economics) |
 | --- | --- | --- | --- |
 | `Swap` | `SwapNodeHandler` | `ISwapManager.GetSwapTransactionAsync` | DEX rate; AZOA only passes params |
-| `Grant` (a.k.a. Mint) | `GrantNodeHandler` | `INftManager.MintAsync` | mint-to-actor (avatar from run ctx) + populate `Holon.token_id`/`chain_id` |
-| `Transfer` | `TransferNodeHandler` | `INftManager.TransferAsync` | move-to-actor (avatar from run ctx) |
+| `Grant` (a.k.a. Mint) | `GrantNodeHandler` | `INftManager.MintAsync` | mint-to-actor (user from run ctx) + populate `Holon.token_id`/`chain_id` |
+| `Transfer` | `TransferNodeHandler` | `INftManager.TransferAsync` | move-to-actor (user from run ctx) |
 | `Refund` | `RefundNodeHandler` | `INftManager.TransferAsync` (reverse) | transfer-back / clawback-deferred |
 
 > **4 new Tier-2 node types**, all `RequiresChainCapability == true`. `Grant` is
@@ -98,7 +98,7 @@ chain actions are the **same shape**; the distinction is a capability check,
 
 ### Existing `Condition` member — superseded
 
-`Condition` (`QuestEnums.cs:68`) is **superseded** by `GateCheck`; the no-op
+`Condition` (`ActionEnums.cs:68`) is **superseded** by `GateCheck`; the no-op
 `ConditionNodeHandler` is removed (D3). The enum member is kept for
 persistence-order safety; no handler is registered for it.
 
@@ -107,9 +107,9 @@ persistence-order safety; no handler is registered for it.
 ## Decisions
 
 ### D2 — Make the wallet binding explicit? (RESOLVED: resolve-from-actor; defer explicit field)
-Do **not** add a `QuestRun.BoundWalletId` field in this track. The capability
-check resolves "has a wallet bound" from the run's actor avatar
-(`QuestRun.AvatarId:31`) via `WalletManager`. If durable-workflow-engine
+Do **not** add a `ActionRun.BoundWalletId` field in this track. The capability
+check resolves "has a wallet bound" from the run's actor user
+(`ActionRun.UserId:31`) via `WalletManager`. If durable-workflow-engine
 (Track 2) introduces an explicit per-run wallet binding, the capability check
 reads that instead — a one-line change. Note the seam; don't pre-build it.
 
@@ -117,7 +117,7 @@ reads that instead — a one-line change. Note the seam; don't pre-build it.
 Remove the no-op `ConditionNodeHandler` (`ConditionNodeHandler.cs:15-21`); add
 `GateCheck`. Keep the `Condition` enum member for persistence-order safety but
 stop registering a handler for it. The DAG-skip logic in
-`QuestManager.cs:266-279` already gates once GateCheck returns Fail — **no
+`ActionManager.cs:266-279` already gates once GateCheck returns Fail — **no
 manager change needed beyond the capability gate (D1).**
 
 ### D4 — Predicate language + evaluator (RESOLVED: tiny whitelisted AST, no eval)
@@ -168,7 +168,7 @@ it. Soulbound reversal fails closed (clawback deferred,
 `DEPLOY-STEPS-TODO.md:224-227`).
 
 ### D8 — Emit: output-only first (RESOLVED: in-band output; webhook deferred)
-`Emit` writes a tenant-shaped payload to `QuestNodeExecution.Output` (consumed
+`Emit` writes a tenant-shaped payload to `ActionNodeExecution.Output` (consumed
 by ArdaNova reading the run). **No outbound webhook in this track** — deferred
 to `workflow-sdk`. Keeps fiat/payout settlement entirely tenant-side; AZOA
 holds no delivery/retry state.
@@ -203,7 +203,7 @@ T1 (SPI capability flag + enum + DI scaffolding)
  ├─ T6 Grant  (RequiresChainCapability=true) ──┤                 │      (swap→gate→grant, gate→refund-on-fail)
  ├─ T7 Transfer(RequiresChainCapability=true) ─┤                 │
  └─ T8 Refund (RequiresChainCapability=true) ──┘                 │
-T9  engine capability gate (QuestManager seam) + reject-test + pure-metadata-quest test
+T9  engine capability gate (ActionManager seam) + reject-test + pure-metadata-action test
 T12 Holon↔asset link (schema regen) — parallel to T3–T8
 T11 mechanism-only + safe-evaluator + tier-flag tests
 T13 brand-leak test + zero-warning build + full sweep (ONCE, at end)
@@ -212,16 +212,16 @@ T13 brand-leak test + zero-warning build + full sweep (ONCE, at end)
 ## Detailed TODOs
 
 - **T1 — SPI capability flag + enum members + config POCOs + DI.**
-  Add `bool RequiresChainCapability => false;` to `IQuestNodeHandler`
-  (`IQuestNodeHandler.cs:18-32`). Append `GateCheck, Emit, Swap, Grant,
-  Transfer, Refund` to `QuestNodeType` (`QuestEnums.cs:69`, **append-only**;
+  Add `bool RequiresChainCapability => false;` to `IActionNodeHandler`
+  (`IActionNodeHandler.cs:18-32`). Append `GateCheck, Emit, Swap, Grant,
+  Transfer, Refund` to `ActionNodeType` (`ActionEnums.cs:69`, **append-only**;
   existing rows persist as `(int)`). Add config POCOs to
-  `Models/Quest/NodeConfigs.cs` (`GateCheckNodeConfig` with `Predicate` string +
+  `Models/ActionDefinition/NodeConfigs.cs` (`GateCheckNodeConfig` with `Predicate` string +
   read bindings; `EmitNodeConfig` opaque `JsonElement Payload`; `SwapNodeConfig`;
   `GrantNodeConfig`/`TransferNodeConfig`; `RefundNodeConfig`). One
-  `AddSingleton<IQuestNodeHandler, …>` per handler.
+  `AddSingleton<IActionNodeHandler, …>` per handler.
   **Acceptance:** SPI default keeps all existing handlers compiling at `false`;
-  registry builds with no duplicate-type throw (`QuestNodeHandlerRegistry.cs:21-27`).
+  registry builds with no duplicate-type throw (`ActionNodeHandlerRegistry.cs:21-27`).
 
 - **T2 — Tier-1 audit (D9).**
   Confirm the 14 `Holon*` handlers + `ComposeOutputs` form a coherent
@@ -235,14 +235,14 @@ T13 brand-leak test + zero-warning build + full sweep (ONCE, at end)
   resolving `upstream.<node>.<path>` from `context.UpstreamExecutions` and
   `reads.<name>` from an injected read map sourced from upstream outputs.
   Returns `Ok {"pass":true}` on Pass; `Fail("gate not met: <predicate>")` on Fail
-  so the engine skips downstream (`QuestManager.cs:275-279`).
+  so the engine skips downstream (`ActionManager.cs:275-279`).
   `RequiresChainCapability == false`. **Acceptance:** Pass + Fail covered;
   malformed predicate → `Fail` with a clear parse error, never an exception
   escape.
 
 - **T4 — EmitNodeHandler (D8).**
   Serialize `EmitNodeConfig.Payload` (+ optionally merge referenced upstream
-  outputs) to `QuestNodeExecution.Output`. No webhook.
+  outputs) to `ActionNodeExecution.Output`. No webhook.
   `RequiresChainCapability == false`. **Acceptance:** pure pass-through; no
   settlement/fiat/payout computation.
 
@@ -254,14 +254,14 @@ T13 brand-leak test + zero-warning build + full sweep (ONCE, at end)
 
 - **T6 — GrantNodeHandler (`RequiresChainCapability => true`; + Holon↔asset, with T12).**
   Copy `NftMintNodeHandler` (`NftMintNodeHandler.cs:19-26`); actor =
-  `context.Quest.AvatarId`. On success, populate `Holon.token_id`/`chain_id`
+  `context.ActionDefinition.UserId`. On success, populate `Holon.token_id`/`chain_id`
   from the mint result (T12 link). **Acceptance:** mints via `INftManager.MintAsync`
-  with run-context avatar; body avatar ignored.
+  with run-context user; body user ignored.
 
 - **T7 — TransferNodeHandler (`RequiresChainCapability => true`).**
   Copy `NftTransferNodeHandler` (`NftTransferNodeHandler.cs:18-25`); actor from
   run context. **Acceptance:** transfers via `INftManager.TransferAsync`; body
-  avatar ignored.
+  user ignored.
 
 - **T8 — RefundNodeHandler (`RequiresChainCapability => true`, D7).**
   Reverse transfer via `INftManager.TransferAsync` (swap actors per
@@ -271,17 +271,17 @@ T13 brand-leak test + zero-warning build + full sweep (ONCE, at end)
 
 - **T9 — Engine capability gate + reject + pure-metadata tests (D1).**
   Insert the pre-execution capability check at the dispatch seam
-  (`QuestManager.cs:328-337`): if `handler.RequiresChainCapability` and no wallet
+  (`ActionManager.cs:328-337`): if `handler.RequiresChainCapability` and no wallet
   is bound to the run → `Fail("chain capability required: no wallet bound to
   run")` before `HandleAsync`. **Acceptance:** (1) a Tier-2 node is **rejected
   pre-execution** when no wallet/capability is bound (fails closed, no broadcast);
-  (2) a **pure-metadata quest** of only Tier-1 nodes (`HolonCreate →
+  (2) a **pure-metadata action** of only Tier-1 nodes (`HolonCreate →
   HolonInteract → GateCheck → Emit`) runs **end-to-end with NO wallet bound and
   NO chain call** (no `INftManager`/`ISwapManager`/provider invocation).
 
 - **T10 — Composed-DAG determinism tests.**
   With mocked managers, build `swap → gate → grant` (gate Pass ⇒ grant runs;
-  gate Fail ⇒ grant skipped via `QuestManager.cs:275-279`) and
+  gate Fail ⇒ grant skipped via `ActionManager.cs:275-279`) and
   `gate → refund-on-fail`. **Acceptance:** both DAGs deterministic; both gate
   branches exercised.
 
@@ -300,7 +300,7 @@ T13 brand-leak test + zero-warning build + full sweep (ONCE, at end)
   green.
 
 - **T13 — Brand-leak guard + final sweep (ONCE).**
-  Grep/test that `Services/Quest/Handlers/*` and new config POCOs contain no
+  Grep/test that `Services/ActionDefinition/Handlers/*` and new config POCOs contain no
   `ArdaNova|project-token|project|equity|vesting` strings. Then run the full
   `dotnet build` (zero warnings, `conductor/workflow.md:18`) + `dotnet test`
   sweep **once** at the end (run-once-at-end policy). **Acceptance:** zero
@@ -310,7 +310,7 @@ T13 brand-leak test + zero-warning build + full sweep (ONCE, at end)
 
 One commit per TODO, message form `[economic-primitive-nodes] <verb> <subject>`
 (prefix kept to match the legacy directory), e.g.:
-- `[economic-primitive-nodes] add RequiresChainCapability flag to IQuestNodeHandler SPI`
+- `[economic-primitive-nodes] add RequiresChainCapability flag to IActionNodeHandler SPI`
 - `[economic-primitive-nodes] add GateCheck/Emit Tier-1 + Swap/Grant/Transfer/Refund Tier-2 node types + DI`
 - `[economic-primitive-nodes] implement safe whitelisted GateCheck predicate evaluator`
 - `[economic-primitive-nodes] add EmitNode output sink (tenant settles)`
@@ -324,11 +324,11 @@ One commit per TODO, message form `[economic-primitive-nodes] <verb> <subject>`
 
 - One generic SPI + `RequiresChainCapability` flag; the engine refuses a
   chain-requiring node pre-execution when no wallet is bound (fails closed).
-- 6 net-new `QuestNodeType` values (2 Tier-1, 4 Tier-2), one handler + one DI
+- 6 net-new `ActionNodeType` values (2 Tier-1, 4 Tier-2), one handler + one DI
   line each; registry one-per-type invariant holds.
 - Tier-1 transforms (existing 14 `Holon*` + `ComposeOutputs` + new
   `GateCheck`/`Emit`) all `RequiresChainCapability == false`; a pure-metadata
-  quest runs end-to-end with no wallet and no chain call.
+  action runs end-to-end with no wallet and no chain call.
 - Tier-2 chain nodes (Swap/Grant/Transfer/Refund) all
   `RequiresChainCapability == true`; wrap real managers; actor always from run
   context; soulbound refund fails closed.

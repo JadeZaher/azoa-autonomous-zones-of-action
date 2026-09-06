@@ -119,16 +119,16 @@ public sealed class KeyCustodyService : IKeyCustodyService
         // tenant-consent-delegation C1/AC4: LIVE consent check BEFORE any decrypt.
         // No-op allow for a user-driven context; fail-closed for a tenant-driven one
         // with no covering grant — even though the ownership IDOR check below would
-        // pass (wallet.AvatarId == ctx.AvatarId). This is THE single chokepoint.
+        // pass (wallet.UserId == ctx.UserId). This is THE single chokepoint.
         var gate = await _consentGate.EnsureAllowedAsync(ctx);
         if (gate.IsError)
             return new AZOAResult<T> { IsError = true, Message = gate.Message };
 
-        return await WithSigningKeyAsync(ctx.WalletId, ctx.AvatarId, sign);
+        return await WithSigningKeyAsync(ctx.WalletId, ctx.UserId, sign);
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)
+    public async Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid userId, Func<byte[], Task<T>> sign)
     {
         ArgumentNullException.ThrowIfNull(sign);
         var result = new AZOAResult<T>();
@@ -144,12 +144,12 @@ public sealed class KeyCustodyService : IKeyCustodyService
 
         var wallet = walletResult.Result;
 
-        // 2. IDOR guard — caller-supplied avatar identity is the authority (STARODK
+        // 2. IDOR guard — caller-supplied user identity is the authority (STARODK
         //    precedent). Returns BEFORE any decrypt (mirror :313-314).
-        if (wallet.AvatarId != avatarId)
+        if (wallet.UserId != userId)
         {
             result.IsError = true;
-            result.Message = "Wallet not owned by this avatar.";
+            result.Message = "Wallet not owned by this user.";
             return result;
         }
 
@@ -221,7 +221,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
         var result = new AZOAResult<T>();
 
         // Platform-authority guard (decisions table option (c)): the platform
-        // pseudo-wallet has no AvatarId to compare, so authority is the caller's
+        // pseudo-wallet has no UserId to compare, so authority is the caller's
         // explicit assertion. Only platform-authority managers pass `true`; there is
         // deliberately no controller surface for this path. A non-platform caller
         // returns an error and performs NO decrypt.
@@ -312,7 +312,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
         string.IsNullOrWhiteSpace(ctx.ChainType) ? LegacyPlatformChainType : ctx.ChainType;
 
     /// <inheritdoc />
-    public async Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)
+    public async Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid userId)
     {
         // Ownership/eligibility predicate — NO decrypt. Same guards as the resolver,
         // surfaced as a pre-flight so callers can check without touching key bytes.
@@ -328,10 +328,10 @@ public sealed class KeyCustodyService : IKeyCustodyService
 
         var wallet = walletResult.Result;
 
-        if (wallet.AvatarId != avatarId)
+        if (wallet.UserId != userId)
         {
             result.IsError = true;
-            result.Message = "Wallet not owned by this avatar.";
+            result.Message = "Wallet not owned by this user.";
             return result;
         }
 
@@ -350,7 +350,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
         }
 
         result.Result = true;
-        result.Message = "Wallet is signable by this avatar.";
+        result.Message = "Wallet is signable by this user.";
         return result;
     }
 

@@ -18,7 +18,7 @@ public sealed class SagaOptions
     public const string SectionName = "Sagas";
 
     /// <summary>Whether the background processor is enabled. Default
-    /// <c>true</c>: the durable quest engine IS a live consumer (see
+    /// <c>true</c>: the durable action engine IS a live consumer (see
     /// <c>Services/Sagas/AGENTS.md</c> §activation and the superseded
     /// ADR-0001). A boot guard fails fast if this is off while a workflow
     /// consumer is registered.</summary>

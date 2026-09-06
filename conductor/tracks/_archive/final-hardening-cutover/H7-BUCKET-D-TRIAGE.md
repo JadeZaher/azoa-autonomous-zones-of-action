@@ -82,13 +82,13 @@ before the chain call — i.e. **no value op could be recorded at all**.
 
 **Fix:** the C#-first schema source POCO
 `Persistence/SurrealDb/Models/OperationLog.cs` now decorates `Parameters` with
-`[Column(Flexible = true)]` (mirroring `Quest.Metadata`). Regenerated the golden
+`[Column(Flexible = true)]` (mirroring `ActionDefinition.Metadata`). Regenerated the golden
 `operation_log.surql` via `AZOA_REGENERATE_GOLDENS=1` (never hand-edited) — the
 emitted field is now `TYPE option<object> FLEXIBLE`. The byte-equivalence golden
 test passes (39/39). Fresh per-class test namespaces apply the regenerated schema,
 so Mint/Exchange now persist and return 200.
 
-*Note (not owned here):* `AvatarNFTController.Mint → 500` in the passoff Bucket-D
+*Note (not owned here):* `UserNFTController.Mint → 500` in the passoff Bucket-D
 list is the **same** `operation_log.parameters` schema bug and is expected to clear
 with this fix; it lives in another lane's test file so it is not asserted here.
 
@@ -99,7 +99,7 @@ deployment."*
 
 **Root cause:** the test seeded with `STARODKBuilder.WithGeneratedCode("some
 code")`, but `STARODKCreateModel` carries only `Name/Description/PublicKey/
-AvatarId` — there is **no `GeneratedCode` field on the create model**, so the
+UserId` — there is **no `GeneratedCode` field on the create model**, so the
 builder's value is silently dropped on `POST /api/starodk`. The seeded record has
 empty `GeneratedCode`; `STARManager.DeployAsync` correctly rejects a deploy of an
 ungenerated dapp. This is the intended production flow: **create → generate →
@@ -136,12 +136,12 @@ challenge-signature flow. Verdict: SAFE for alpha; the fix stays a §H-followup.
 Evidence:
 
 1. **Not an auth/login path.** `ConnectWalletAsync` requires an **already
-   authenticated** caller — `avatarId` comes from the JWT, not from the connect
+   authenticated** caller — `userId` comes from the JWT, not from the connect
    payload. It cannot mint a session or elevate privilege.
 2. **Identity-granting is a separate, cryptographically-verified pipeline.**
    Login-with-wallet runs through `WalletAuthManager` (`CreateChallengeAsync` →
    `VerifyAsync` with a no-TOCTOU challenge consume + chain-specific signature
-   verify → claim token; sets `avatar.AuthWalletAddress`). None of that flows
+   verify → claim token; sets `user.AuthWalletAddress`). None of that flows
    through `ConnectWalletAsync`.
 3. **The connected wallet is unsignable.** `ConnectWalletAsync` creates a
    `WalletType.External` row with **no** `EncryptedPrivateKey`. The single custody
@@ -151,9 +151,9 @@ Evidence:
    therefore never sign a value-bearing transaction for an address a caller merely
    "connected" — a spoofed address yields nothing signable.
 
-**Residual risk (integrity/attribution only, not value):** an authenticated avatar
+**Residual risk (integrity/attribution only, not value):** an authenticated user
 can associate an address it does not provably own (a display/label concern), and
-because the uniqueness check (`WalletManager.cs:425`) blocks another avatar from
+because the uniqueness check (`WalletManager.cs:425`) blocks another user from
 later registering that same address, an unverified connect is a mild
 address-squat vector. Neither is value-bearing. Implementing the chain-specific
 signature verify is worth doing for attribution correctness but is correctly
@@ -174,7 +174,7 @@ bugs — one holon-store data-integrity bug + one schema bug hitting Mint & Exch
   previously-documented Buckets A–C (IDOR test-design, environment/repo-layout
   gates, store-layer socket/perf races) plus the two Bucket-D factory
   re-registration items (`G2_IdempotencyTocTou`, `McpAuthScoping` scheme collision)
-  — none of which are value-path product bugs. `AvatarNFTController.Mint → 500`
+  — none of which are value-path product bugs. `UserNFTController.Mint → 500`
   (another lane's file) is expected to clear via the shared `operation_log`
   FLEXIBLE fix, which would drop the tail further at the coordinator's final sweep.
 

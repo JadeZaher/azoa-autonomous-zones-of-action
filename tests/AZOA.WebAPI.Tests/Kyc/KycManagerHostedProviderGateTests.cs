@@ -55,9 +55,9 @@ public sealed class KycManagerHostedProviderGateTests
         var flow = new HostedSessionFlow(hostedStore, new NoopOutcomeHandler());
         var provider = new FakeSeamHostedKycProvider(flow);
         var manager = NewManager(store, provider);
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
-        var result = await manager.BeginAsync(avatarId);
+        var result = await manager.BeginAsync(userId);
 
         result.IsError.Should().BeFalse(result.Message);
         result.Result!.HostedVerification.Should().BeTrue();
@@ -67,7 +67,7 @@ public sealed class KycManagerHostedProviderGateTests
             It.Is<KycSubmission>(submission =>
                 submission.Provider == KycProvider.GENERIC_HOSTED
                 && submission.HostedVerification
-                && submission.AvatarId == avatarId.ToString("N")
+                && submission.UserId == userId.ToString("N")
                 && !string.IsNullOrWhiteSpace(submission.ProviderSessionId)),
             It.IsAny<IReadOnlyList<KycDocument>>(),
             It.IsAny<CancellationToken>()), Times.Once);
@@ -242,7 +242,7 @@ public sealed class KycManagerHostedProviderGateTests
         // KycManager's own ledger is deliberately kept blind to the first attempt
         // here (GetActive/GetLatest keep returning null on both calls), isolating
         // what actually stops a second external session: HostedSessionFlow's
-        // per-(avatar, tenant) admission claim inside the provider.
+        // per-(user, tenant) admission claim inside the provider.
         var store = new Mock<IKycStore>();
         SetupNoExistingSubmissions(store);
         SetupCreateEchoesSubmission(store);
@@ -250,10 +250,10 @@ public sealed class KycManagerHostedProviderGateTests
         var flow = new HostedSessionFlow(hostedStore, new NoopOutcomeHandler());
         var provider = new FakeSeamHostedKycProvider(flow);
         var manager = NewManager(store, provider);
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
-        var first = await manager.BeginAsync(avatarId);
-        var second = await manager.BeginAsync(avatarId);
+        var first = await manager.BeginAsync(userId);
+        var second = await manager.BeginAsync(userId);
 
         first.IsError.Should().BeFalse(first.Message);
         second.IsError.Should().BeFalse(second.Message);
@@ -283,9 +283,9 @@ public sealed class KycManagerHostedProviderGateTests
 
     private static void SetupNoExistingSubmissions(Mock<IKycStore> store)
     {
-        store.Setup(s => s.GetActiveSubmissionByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        store.Setup(s => s.GetActiveSubmissionByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = null });
-        store.Setup(s => s.GetLatestSubmissionByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        store.Setup(s => s.GetLatestSubmissionByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = null });
     }
 
@@ -341,15 +341,15 @@ public sealed class KycManagerHostedProviderGateTests
         };
 
         public async Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(
-            Guid avatarId, CancellationToken ct = default)
+            Guid userId, CancellationToken ct = default)
         {
             var started = await _flow.BeginAsync(
                 this,
                 new HostedSessionRequest
                 {
                     FlowKind = FlowKind,
-                    SubjectAvatarId = avatarId,
-                    AdmissionKey = $"kyc:{ProviderKey}:{avatarId:N}:direct",
+                    SubjectUserId = userId,
+                    AdmissionKey = $"kyc:{ProviderKey}:{userId:N}:direct",
                 },
                 ct);
             if (started.IsError || started.Result is null)
@@ -371,7 +371,7 @@ public sealed class KycManagerHostedProviderGateTests
         }
 
         public Task<AZOAResult<string>> CreateSessionAsync(
-            Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
+            Guid userId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<string>.Failure("Hosted; document references are not accepted."));
 
         public Task<AZOAResult<bool>> ValidateDocumentsAsync(
@@ -448,12 +448,12 @@ public sealed class KycManagerHostedProviderGateTests
         }
 
         public Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(
-            Guid avatarId, CancellationToken ct = default)
-            => inner.BeginSessionAsync(avatarId, ct);
+            Guid userId, CancellationToken ct = default)
+            => inner.BeginSessionAsync(userId, ct);
 
         public Task<AZOAResult<string>> CreateSessionAsync(
-            Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
-            => inner.CreateSessionAsync(avatarId, documents, ct);
+            Guid userId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
+            => inner.CreateSessionAsync(userId, documents, ct);
 
         public Task<AZOAResult<KycStatus>> GetSessionStatusAsync(
             string providerSessionId, CancellationToken ct = default)
@@ -505,12 +505,12 @@ public sealed class KycManagerHostedProviderGateTests
         }
 
         public Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(
-            Guid avatarId, CancellationToken ct = default)
-            => inner.BeginSessionAsync(avatarId, ct);
+            Guid userId, CancellationToken ct = default)
+            => inner.BeginSessionAsync(userId, ct);
 
         public Task<AZOAResult<string>> CreateSessionAsync(
-            Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
-            => inner.CreateSessionAsync(avatarId, documents, ct);
+            Guid userId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
+            => inner.CreateSessionAsync(userId, documents, ct);
 
         public Task<AZOAResult<KycStatus>> GetSessionStatusAsync(
             string providerSessionId, CancellationToken ct = default)

@@ -91,7 +91,7 @@ is a *public* constant — security is in the key, not the plaintext.
 ### security-review HIGH-2 — hardened `Operator` authorization (the two admin endpoints)
 
 `POST /api/admin/key-rotation/rotate` and `POST /api/admin/backfill/apply` are the most
-destructive surfaces in the tree (both rewrite state across every avatar). The app
+destructive surfaces in the tree (both rewrite state across every user). The app
 supports BOTH JWT and API-key auth (`ApiKeyAuthenticationHandler` emits "the same
 claims as JWT"). Finding: an API key can ONLY ever emit `scope` claims from its stored
 `ApiKey.Scopes` CSV — it emits NO `role` claim, is in NO role, and emits NO `is_admin`

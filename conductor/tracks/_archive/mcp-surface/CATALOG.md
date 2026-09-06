@@ -22,16 +22,16 @@ Transport: `ModelContextProtocol.AspNetCore` 1.3.0 HTTP transport (SSE + POST).
 Every `/mcp` request goes through the existing JWT + ApiKey multi-scheme
 authentication policy (`RequireAuthorization` on the MCP endpoint group).
 
-`McpAuthMiddleware` extracts `AvatarId` from the authenticated claims and
-stashes it in `HttpContext.Items["mcp.avatar_id"]`. The tool dispatcher reads
+`McpAuthMiddleware` extracts `UserId` from the authenticated claims and
+stashes it in `HttpContext.Items["mcp.user_id"]`. The tool dispatcher reads
 this to build a `ToolCallContext` so every tool executes within a scoped
 identity. Unauthenticated callers receive `401 mcp_unauthorized` before any
 tool code runs.
 
 ### Scoping
 
-All read tools enforce avatar scoping at the SurrealQL layer: `avatar_id` is
-sourced exclusively from `ToolCallContext.AvatarId` (set from claims), never
+All read tools enforce user scoping at the SurrealQL layer: `user_id` is
+sourced exclusively from `ToolCallContext.UserId` (set from claims), never
 from tool input parameters. Cross-tenant leakage is structurally impossible.
 
 ### Transport
@@ -44,13 +44,13 @@ the REST API. Tools are discovered via `McpToolRegistry`, which enumerates all
 
 ## 2. Tool Reference
 
-### quest_reachability
+### action_reachability
 
-**Name:** `quest_reachability`
+**Name:** `action_reachability`
 
-**Description:** Return the set of quest nodes reachable from a starting node
-via control-flow edges, scoped to a single quest definition owned by the
-calling avatar.
+**Description:** Return the set of action nodes reachable from a starting node
+via control-flow edges, scoped to a single action definition owned by the
+calling user.
 
 **Input schema:**
 
@@ -58,10 +58,10 @@ calling avatar.
 {
   "type": "object",
   "properties": {
-    "quest_id":     { "type": "string", "format": "uuid" },
+    "action_id":     { "type": "string", "format": "uuid" },
     "from_node_id": { "type": "string", "format": "uuid" }
   },
-  "required": ["quest_id", "from_node_id"]
+  "required": ["action_id", "from_node_id"]
 }
 ```
 
@@ -76,11 +76,11 @@ calling avatar.
 }
 ```
 
-Error shapes: `{ "error": "quest not found." }`,
+Error shapes: `{ "error": "action not found." }`,
 `{ "error": "forbidden" }`,
 `{ "error": "internal", "detail": "..." }`
 
-**Avatar scoping:** `avatar_id` read from `ToolCallContext`; quest must be
+**User scoping:** `user_id` read from `ToolCallContext`; action must be
 owned by the caller or the call returns `forbidden`.
 
 **Performance:** Nodes and edges are fetched in a single combined SurrealQL
@@ -92,8 +92,8 @@ criterion: one graph query, not N per-node fetches.
 
 ```
 Agent: "Which steps can I still reach if I am at step B?"
-→ POST /mcp  (tools/call quest_reachability)
-  { "quest_id": "<uuid>", "from_node_id": "<B-uuid>" }
+→ POST /mcp  (tools/call action_reachability)
+  { "action_id": "<uuid>", "from_node_id": "<B-uuid>" }
 ← { "reachable_node_ids": ["<C>","<D>"], "ordered_nodes": [...] }
 ```
 
@@ -104,7 +104,7 @@ Agent: "Which steps can I still reach if I am at step B?"
 **Name:** `holon_traverse`
 
 **Description:** Walk the holon polyhierarchy from a starting holon,
-returning the parent chain, child subtree, and peers (all avatar-scoped).
+returning the parent chain, child subtree, and peers (all user-scoped).
 
 **Input schema:**
 
@@ -133,9 +133,9 @@ returning the parent chain, child subtree, and peers (all avatar-scoped).
 Error shapes: `{ "error": "holon not found." }`, `{ "error": "forbidden" }`,
 `{ "error": "internal", "detail": "..." }`
 
-**Avatar scoping:** Root holon must be owned by the caller; ancestor/descendant
-queries are unrestricted by avatar (holons fetched by relationship, not
-re-checked by avatar ownership) — descendants and ancestors are structurally
+**User scoping:** Root holon must be owned by the caller; ancestor/descendant
+queries are unrestricted by user (holons fetched by relationship, not
+re-checked by user ownership) — descendants and ancestors are structurally
 reachable from the scoped root only.
 
 **Example agent workflow:**
@@ -153,7 +153,7 @@ Agent: "Show me everything connected to Holon X."
 
 **Name:** `nft_ownership_graph`
 
-**Description:** Return all NFT holons owned by the calling avatar, optionally
+**Description:** Return all NFT holons owned by the calling user, optionally
 filtered by chain. Results are grouped by chain in `by_chain`.
 
 **Input schema:**
@@ -185,8 +185,8 @@ filtered by chain. Results are grouped by chain in `by_chain`.
 
 Error shapes: `{ "error": "internal", "detail": "..." }`
 
-**Avatar scoping:** `avatar_id` from `ToolCallContext` only. NFTs for other
-avatars are structurally excluded by the `WHERE avatar_id = $avatar_id` clause.
+**User scoping:** `user_id` from `ToolCallContext` only. NFTs for other
+users are structurally excluded by the `WHERE user_id = $user_id` clause.
 
 **Example agent workflow:**
 
@@ -199,16 +199,16 @@ Agent: "What NFTs does this user own on Algorand?"
 
 ---
 
-### avatar_scoped_query
+### user_scoped_query
 
-**Name:** `avatar_scoped_query`
+**Name:** `user_scoped_query`
 
-**Description:** Generic avatar-scoped read query against an allowlisted table
+**Description:** Generic user-scoped read query against an allowlisted table
 with parameterized filters.
 
 **Security design:** Table name is validated against a static allowlist before
 substitution into the SQL template. Filter keys are validated against a filter
-allowlist. `avatar_id` is never accepted as a tool parameter — it comes
+allowlist. `user_id` is never accepted as a tool parameter — it comes
 exclusively from `ToolCallContext`.
 
 **Input schema:**
@@ -219,7 +219,7 @@ exclusively from `ToolCallContext`.
   "properties": {
     "table": {
       "type": "string",
-      "enum": ["wallet", "holon", "quest", "quest_run", "nft_ownership", "operation_log"]
+      "enum": ["wallet", "holon", "action", "action_run", "nft_ownership", "operation_log"]
     },
     "filters": {
       "type": "object",
@@ -250,14 +250,14 @@ Error shapes:
 - `{ "error": "table is required." }` — missing table parameter
 - `{ "error": "internal", "detail": "..." }` — DB error
 
-**Avatar scoping:** All rows are filtered by `avatar_id = $avatar_id` derived
+**User scoping:** All rows are filtered by `user_id = $user_id` derived
 from `ToolCallContext`. No cross-tenant reads are possible.
 
 **Example agent workflow:**
 
 ```
 Agent: "Show me this user's Algorand wallets."
-→ POST /mcp  (tools/call avatar_scoped_query)
+→ POST /mcp  (tools/call user_scoped_query)
   { "table": "wallet", "filters": { "chain_id": "algorand" }, "limit": 20 }
 ← { "table": "wallet", "rows": [...], "row_count": 2 }
 ```
@@ -268,8 +268,8 @@ Agent: "Show me this user's Algorand wallets."
 
 **Name:** `vector_search`
 
-**Description:** HNSW semantic search over holon or quest embeddings. Returns
-top-k matches by cosine similarity, scoped to the calling avatar.
+**Description:** HNSW semantic search over holon or action embeddings. Returns
+top-k matches by cosine similarity, scoped to the calling user.
 
 **Input schema:**
 
@@ -278,7 +278,7 @@ top-k matches by cosine similarity, scoped to the calling avatar.
   "type": "object",
   "properties": {
     "query_text": { "type": "string", "minLength": 1, "maxLength": 4096 },
-    "table":      { "type": "string", "enum": ["holon", "quest"], "default": "holon" },
+    "table":      { "type": "string", "enum": ["holon", "action"], "default": "holon" },
     "k":          { "type": "integer", "default": 10, "minimum": 1, "maximum": 100 }
   },
   "required": ["query_text"]
@@ -300,7 +300,7 @@ top-k matches by cosine similarity, scoped to the calling avatar.
 Error shapes: `{ "error": "internal", "detail": "..." }` (DB function absent
 or HNSW index not defined — see note below).
 
-**Avatar scoping:** `avatar_id` from `ToolCallContext` — all matches are
+**User scoping:** `user_id` from `ToolCallContext` — all matches are
 filtered to the caller's namespace.
 
 **Example agent workflow:**
@@ -373,12 +373,12 @@ and is agnostic to the implementation.
 |---|---|
 | 1. Choose MCP hosting approach | `Mcp/McpServerSetup.cs:14` — `AddMcpSurface` + `WithHttpTransport()` |
 | 2. Define tool catalog | This file; `Mcp/Tools/*.cs` (five tools) |
-| 3. Graph-traversal tools | `Mcp/Tools/QuestReachabilityTool.cs:84-85` — `SurrealQuery.Combine`; `Mcp/Tools/HolonTraverseTool.cs:83-100` |
-| 4. HNSW vector index + vector_search | `Mcp/Tools/VectorSearchTool.cs:57-67` — `HolonSearchSql`/`QuestSearchSql` using `vector::similarity::cosine` |
-| 5. Avatar scoping + auth | `Mcp/McpAuthMiddleware.cs:48-54`; privilege-escalation comments in every tool (line 61, 43, 58, 130, 116 respectively) |
+| 3. Graph-traversal tools | `Mcp/Tools/ActionReachabilityTool.cs:84-85` — `SurrealQuery.Combine`; `Mcp/Tools/HolonTraverseTool.cs:83-100` |
+| 4. HNSW vector index + vector_search | `Mcp/Tools/VectorSearchTool.cs:57-67` — `HolonSearchSql`/`ActionSearchSql` using `vector::similarity::cosine` |
+| 5. User scoping + auth | `Mcp/McpAuthMiddleware.cs:48-54`; privilege-escalation comments in every tool (line 61, 43, 58, 130, 116 respectively) |
 | 6. Write tools deferred | Section 3 of this file; `plan.md` task 6 prerequisite not yet met |
-| 7. Parameterized SurrealQL (G3) | `Mcp/Tools/AvatarScopedQueryTool.cs:62-85` — table + filter allowlists; all tools use `SurrealQuery.Of(...).WithParam(...)` |
-| 8. Integration tests: single graph query | `tests/.../Mcp/McpQuestReachabilityTest.cs:120` — `recorder.ExecuteAsyncCallCount.Should().Be(1)` |
-| 9. Auth/leakage tests | `tests/.../Mcp/McpToolCatalogTests.cs` — NFT cross-avatar test; `tests/.../Mcp/McpVectorSearchTest.cs` — `VectorSearch_CrossAvatarScoping_DoesNotLeak` |
+| 7. Parameterized SurrealQL (G3) | `Mcp/Tools/UserScopedQueryTool.cs:62-85` — table + filter allowlists; all tools use `SurrealQuery.Of(...).WithParam(...)` |
+| 8. Integration tests: single graph query | `tests/.../Mcp/McpActionReachabilityTest.cs:120` — `recorder.ExecuteAsyncCallCount.Should().Be(1)` |
+| 9. Auth/leakage tests | `tests/.../Mcp/McpToolCatalogTests.cs` — NFT cross-user test; `tests/.../Mcp/McpVectorSearchTest.cs` — `VectorSearch_CrossUserScoping_DoesNotLeak` |
 | 10. dotnet build zero warnings | Orchestrator CI step (not a test file) |
 | 11. Document tool catalog | This file (CATALOG.md) |

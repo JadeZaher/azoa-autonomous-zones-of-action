@@ -13,9 +13,9 @@ using AZOA.WebAPI.Models.Kyc;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("kyc_identity",
-        Aggregate = "KycIdentity (node-operator-only person<->avatar binding)",
+        Aggregate = "KycIdentity (node-operator-only person<->user binding)",
         Guardrail = "G6 SCHEMAFULL")]
-    [SurrealNote("NODE-OPERATOR-ONLY. Deliberately absent from SearchableEntityType, HolonQueryRequest, and the MCP avatar_scoped_query table allow-list; see Persistence/SurrealDb/Models/AGENTS.md #kyc-identity-binding.")]
+    [SurrealNote("NODE-OPERATOR-ONLY. Deliberately absent from SearchableEntityType, HolonQueryRequest, and the MCP user_scoped_query table allow-list; see Persistence/SurrealDb/Models/AGENTS.md #kyc-identity-binding.")]
     [SurrealNote("Stores a salted HMAC of document_number + issuing_state, never the raw document identifiers, and never address, personal_number, or any media/biometric material.")]
     [SurrealNote("Uniqueness is (tenant_scope, person_key). There is deliberately NO unique index on person_key alone: one human resolves to an unlinkable key per tenant (D23).")]
     [Slice("identity")]
@@ -40,8 +40,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string TenantScope { get; set; } = string.Empty;
 
-        /// <summary>Tenant avatar this binding belongs to; absent for node-direct flows.</summary>
-        [References(typeof(Avatar), Optional = true)]
+        /// <summary>Tenant user this binding belongs to; absent for node-direct flows.</summary>
+        [References(typeof(User), Optional = true)]
         public string? TenantId { get; set; }
 
         /// <summary>Per-tenant salted HMAC of document number + issuing state.</summary>
@@ -61,9 +61,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Default("1")]
         public int PersonKeyVersion { get; set; } = 1;
 
-        /// <summary>Avatars bound to this person within the scope; node-operator read only.</summary>
-        [FieldGroup("Person -> avatars link (NEVER projected to a consumer)")]
-        public IReadOnlyList<string>? AvatarIds { get; set; }
+        /// <summary>Users bound to this person within the scope; node-operator read only.</summary>
+        [FieldGroup("Person -> users link (NEVER projected to a consumer)")]
+        public IReadOnlyList<string>? UserIds { get; set; }
 
         /// <summary>Only these four personal fields are retained; cleared by erasure.</summary>
         [FieldGroup("Retained personal fields (the ONLY PII kept; tombstoned on erasure)")]

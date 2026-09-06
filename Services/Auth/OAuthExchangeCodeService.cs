@@ -42,7 +42,7 @@ public sealed class OAuthExchangeCodeService : IOAuthExchangeCodeService
     /// <inheritdoc />
     public async Task<AZOAResult<string>> MintAsync(
         OAuthExchangeCodePurpose purpose,
-        Guid avatarId,
+        Guid userId,
         ExternalAuthProvider provider,
         Guid? tenantId,
         string tenantScope,
@@ -57,7 +57,7 @@ public sealed class OAuthExchangeCodeService : IOAuthExchangeCodeService
             Id = Guid.NewGuid().ToString("N"),
             CodeHash = HashCode(code),
             Purpose = purpose,
-            AvatarId = avatarId.ToString("N"),
+            UserId = userId.ToString("N"),
             Provider = provider,
             TenantScope = tenantScope,
             TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),

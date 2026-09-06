@@ -5,7 +5,7 @@ namespace AZOA.WebAPI.Models.Blockchain;
 ///
 /// <para>Promotes the private <c>ChainVerdict</c> tri-state from
 /// <c>ReconciliationService</c> to a shared, public type so the bridge/operation
-/// reconciler AND the quest engine decide advance-vs-retry-vs-wait from ONE
+/// reconciler AND the action engine decide advance-vs-retry-vs-wait from ONE
 /// source of truth (blockchain-recovery-and-portable-wallets §1.1).</para>
 ///
 /// <para>The crucial distinction this type adds over the raw

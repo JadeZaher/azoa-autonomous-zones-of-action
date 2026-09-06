@@ -25,7 +25,7 @@ public sealed class NodeTransparencyManagerTests
                 AllowedChains = ["Algorand"],
                 AllowedAssetTypes = ["NFT"],
                 Version = 4,
-                UpdatedByAvatarId = actorId,
+                UpdatedByUserId = actorId,
                 UpdatedAt = DateTimeOffset.Parse("2026-07-11T12:00:00Z"),
             }));
         var fees = new Mock<INodeFeeScheduleManager>();
@@ -42,7 +42,7 @@ public sealed class NodeTransparencyManagerTests
                     Network = ChainNetwork.Devnet.ToString(),
                     Address = "sim:public-treasury",
                     Version = 2,
-                    UpdatedByAvatarId = $"avatar:{actorId:N}",
+                    UpdatedByUserId = $"user:{actorId:N}",
                     UpdatedAt = DateTimeOffset.Parse("2026-07-11T12:02:00Z"),
                 },
             ]));
@@ -175,7 +175,7 @@ public sealed class NodeTransparencyManagerTests
                 {
                     Id = "node_governance_audit:private-governance-id",
                     Action = "ParametersUpdated",
-                    ActorAvatarId = $"avatar:{actorId:N}",
+                    ActorUserId = $"user:{actorId:N}",
                     PreviousVersion = 0,
                     NewVersion = 1,
                     AllowedChains = ["Algorand"],
@@ -189,7 +189,7 @@ public sealed class NodeTransparencyManagerTests
             Network = ChainNetwork.Devnet,
             Address = "sim:public-address",
             Version = 1,
-            UpdatedByAvatarId = actorId,
+            UpdatedByUserId = actorId,
             UpdatedAt = occurredAt,
         };
         store.Setup(value => value.ListTreasuryAuditAsync(
@@ -202,7 +202,7 @@ public sealed class NodeTransparencyManagerTests
                 {
                     Id = "node_treasury_audit:private-treasury-id",
                     Action = "DestinationUpdated",
-                    ActorAvatarId = $"avatar:{actorId:N}",
+                    ActorUserId = $"user:{actorId:N}",
                     Chain = "Simulated",
                     Network = nameof(ChainNetwork.Devnet),
                     PreviousVersion = 0,
@@ -256,7 +256,7 @@ public sealed class NodeTransparencyManagerTests
         {
             Id = id,
             Action = "ScheduleUpdated",
-            ActorAvatarId = $"avatar:{actorId:N}",
+            ActorUserId = $"user:{actorId:N}",
             PreviousVersion = Math.Max(0, version - 1),
             NewVersion = version,
             PreviousScheduleJson = previous is null
@@ -274,10 +274,10 @@ public sealed class NodeTransparencyManagerTests
             Mint = new NodeFeeScheduleEntryResponse { FlatBaseUnits = version.ToString(), Bps = 10 },
             Transfer = new NodeFeeScheduleEntryResponse(),
             Swap = new NodeFeeScheduleEntryResponse(),
-            QuestComplete = new NodeFeeScheduleEntryResponse(),
+            ActionComplete = new NodeFeeScheduleEntryResponse(),
             FederationPublish = new NodeFeeScheduleEntryResponse(),
             Version = version,
-            UpdatedByAvatarId = actorId,
+            UpdatedByUserId = actorId,
             UpdatedAt = DateTimeOffset.Parse("2026-07-11T12:01:00Z"),
         };
 

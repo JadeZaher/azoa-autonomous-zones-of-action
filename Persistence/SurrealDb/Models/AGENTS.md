@@ -7,7 +7,7 @@ hand-edit; regenerate via the byte-equivalence test with
 `AZOA_REGENERATE_GOLDENS=1` (see `AttributePocoByteEquivalenceTests`).
 
 Each `*Kind` enum inside a POCO MIRRORS its domain enum
-(`Models/Quest/QuestEnums.cs`); the `[Inside(...)]` allow-list on the
+(`Models/ActionDefinition/ActionEnums.cs`); the `[Inside(...)]` allow-list on the
 string-enum field MUST enumerate exactly those names, or a SCHEMAFULL ASSERT
 rejects a legitimate write.
 
@@ -18,14 +18,14 @@ loss bug because reconciliation selects by the closed status set.
 
 ## §kyc-identity-binding
 
-`kyc_identity` binds a real person to their avatars. It is **node-operator-only**
+`kyc_identity` binds a real person to their users. It is **node-operator-only**
 and is structurally excluded from every generic consumer read surface:
 `SearchableEntityType` is a closed flags enum with no identity member,
 `HolonQueryRequest` exposes no table selector at all, and the MCP
-`avatar_scoped_query` tool's table allow-list does not contain it. That exclusion is
+`user_scoped_query` tool's table allow-list does not contain it. That exclusion is
 asserted by `KycIdentityReadSurfaceExclusionTests`, not assumed — this repo has
 leaked cross-tenant data through a generic read surface before, and the
-person→avatars link is exactly the field whose exposure would reveal that a subject
+person→users link is exactly the field whose exposure would reveal that a subject
 also exists under another tenant.
 
 **What is stored.** A salted HMAC of `document_number` + `issuing_state`, plus only
@@ -45,9 +45,9 @@ node-operator opt-in, never an implicit constraint.
 
 **D25 — erasure preserves the key.** `EraseAsync` uses an explicit `SET` clause that
 tombstones only the four personal fields and stamps `erased_at`/`erasure_reason`.
-`person_key`, `global_person_key`, `avatar_ids`, provenance, and `created_date` are
+`person_key`, `global_person_key`, `user_ids`, provenance, and `created_date` are
 untouched, so GDPR Art. 17 erasure and KYC record-keeping both hold: every readable
-personal attribute is gone while uniqueness, the avatar binding, and the audit trail
+personal attribute is gone while uniqueness, the user binding, and the audit trail
 survive. Erasure is idempotent. `retention_expires_at` drives the automatic sweep.
 
 **At-rest encryption posture.** These rows are pseudonymous by construction: the
@@ -133,51 +133,51 @@ matching amount decision.
 
 ## NFT transfer projection reservation
 
-`Holon.TransferReservationKey`, `TransferTargetAvatarId`, and
+`Holon.TransferReservationKey`, `TransferTargetUserId`, and
 `TransferReservedAt` form the pre-broadcast ownership reservation. The source
 owner remains authoritative until chain confirmation. A conditional finalize
-moves `AvatarId`, clears the reservation, and records
+moves `UserId`, clears the reservation, and records
 `LastTransferSettlementKey` so crash replay is idempotent. These fields are
 workflow provenance, not an off-chain asset balance. Reusing a reservation key
 with a different target is an idempotency conflict and must never rewrite the
 reserved target.
 
-## §quest-access-request
+## §action-access-request
 
-quest-invitations-approval track. Adds a **run-authorization** dimension to
-`Quest`, orthogonal to `is_public` (discoverability):
+action-invitations-approval track. Adds a **run-authorization** dimension to
+`ActionDefinition`, orthogonal to `is_public` (discoverability):
 
-- `quest.run_access` (`Open` | `InviteOnly`, default `Open`). `Open` is
+- `action.run_access` (`Open` | `InviteOnly`, default `Open`). `Open` is
   today's behavior — anyone who can view may run/fork. `InviteOnly` gates
-  run/fork to the owner + `quest.invited_avatar_ids`. Viewing is unaffected:
-  a public + InviteOnly quest is fully viewable by non-invited avatars; only
+  run/fork to the owner + `action.invited_user_ids`. Viewing is unaffected:
+  a public + InviteOnly action is fully viewable by non-invited users; only
   starting/forking is gated.
-- `quest.invited_avatar_ids` (`array<string>` of `avatar:hex` links) — the
+- `action.invited_user_ids` (`array<string>` of `user:hex` links) — the
   approved invite set. The owner is ALWAYS implicitly invited and is never
   written into this list.
 
-`quest_access_request` is the self-service request/approve flow for an
-InviteOnly quest.
+`action_access_request` is the self-service request/approve flow for an
+InviteOnly action.
 
 ### State machine (enforced in the manager, not the DB)
 
 ```
-Pending ──approve──▶ Approved   (owner; also appends requester to quest.invited_avatar_ids)
+Pending ──approve──▶ Approved   (owner; also appends requester to action.invited_user_ids)
 Pending ──reject───▶ Rejected   (owner)
 Pending ──withdraw─▶ Withdrawn  (requester)
 ```
 
 `Approved` / `Rejected` / `Withdrawn` are **terminal and immutable** — a
 transition off a terminal state is rejected by the manager. `decided_at` +
-`decided_by_avatar_id` are stamped on the terminal transition (owner for
+`decided_by_user_id` are stamped on the terminal transition (owner for
 approve/reject; requester for withdraw).
 
 ### Idempotency invariant
 
-At most ONE non-terminal (`Pending`) request per `(quest_id,
-requester_avatar_id)`. A re-request while a `Pending` one exists returns the
-existing row (`GetPendingForQuestAndRequesterAsync`); a re-request after a
-terminal state opens a fresh `Pending`. Owner or already-invited avatars are
+At most ONE non-terminal (`Pending`) request per `(action_id,
+requester_user_id)`. A re-request while a `Pending` one exists returns the
+existing row (`GetPendingForActionAndRequesterAsync`); a re-request after a
+terminal state opens a fresh `Pending`. Owner or already-invited users are
 rejected at the API — no request needed.
 
 ### Revoked-mid-run decision

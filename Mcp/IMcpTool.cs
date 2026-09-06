@@ -4,7 +4,7 @@ namespace AZOA.WebAPI.Mcp;
 
 public interface IMcpTool
 {
-    /// Snake-case identifier — e.g. "quest_reachability".
+    /// Snake-case identifier — e.g. "action_reachability".
     string Name { get; }
 
     /// Human-readable description for tool discovery.

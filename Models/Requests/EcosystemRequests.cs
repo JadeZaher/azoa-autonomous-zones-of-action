@@ -3,7 +3,7 @@ using AZOA.WebAPI.Models.Ecosystem;
 namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>Attach a DappSeries (or nested STARODK) as a node in a STARODK's
-/// ecosystem tree. The owner is always the authenticated avatar — no owner id
+/// ecosystem tree. The owner is always the authenticated user — no owner id
 /// is accepted on the body (IDOR-resistant, STARODK precedent).</summary>
 public class AddDappSeriesRequest
 {

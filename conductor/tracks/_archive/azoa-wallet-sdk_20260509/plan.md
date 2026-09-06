@@ -111,13 +111,13 @@ Six phases building from project scaffolding through chain-specific builders, th
 ### Tasks
 
 - [ ] Task 4.1: Define AZOA API response types (TDD)
-  Write tests for `AZOAResult<T>` type parsing from JSON. Mirror the server-side `AZOAResult<T>` / `AZOAResponse` shape. Define request/response types for avatar, wallet, NFT, bridge, holon endpoints. Implement in `src/api/types.ts`.
+  Write tests for `AZOAResult<T>` type parsing from JSON. Mirror the server-side `AZOAResult<T>` / `AZOAResponse` shape. Define request/response types for user, wallet, NFT, bridge, holon endpoints. Implement in `src/api/types.ts`.
 
 - [ ] Task 4.2: Implement base HTTP client (TDD)
   Write tests: mock `fetch`, assert correct headers (`Authorization: Bearer ...`, `Content-Type`), error handling (network error -> `Result.err`), timeout, retry with backoff. Implement `HttpClient` in `src/api/http.ts`.
 
-- [ ] Task 4.3: Implement Avatar API methods (TDD)
-  Write tests for `register`, `login`, `get`, `update`, `delete`. Assert correct URL paths, HTTP methods, request bodies. Implement in `src/api/avatar.ts`.
+- [ ] Task 4.3: Implement User API methods (TDD)
+  Write tests for `register`, `login`, `get`, `update`, `delete`. Assert correct URL paths, HTTP methods, request bodies. Implement in `src/api/user.ts`.
 
 - [ ] Task 4.4: Implement Wallet API methods (TDD)
   Write tests for `listWallets`, `createWallet`, `setDefault`, `getPortfolio`. Implement in `src/api/wallet.ts`.
@@ -129,7 +129,7 @@ Six phases building from project scaffolding through chain-specific builders, th
   Write tests for `initiate`, `complete`, `getHistory`, `getRoutes`. Implement in `src/api/bridge.ts`.
 
 - [ ] Task 4.7: Compose AzoaApiClient (TDD)
-  Write tests: `new AzoaApiClient({ baseUrl, token })` exposes `.avatar`, `.wallet`, `.nft`, `.bridge`, `.holon` namespaces. Test token refresh callback. Implement in `src/api/client.ts`.
+  Write tests: `new AzoaApiClient({ baseUrl, token })` exposes `.user`, `.wallet`, `.nft`, `.bridge`, `.holon` namespaces. Test token refresh callback. Implement in `src/api/client.ts`.
 
 - [ ] Task 4.8: Implement AzoaWallet facade — initialization (TDD)
   Write test: `AzoaWallet.create({ algorand: {...}, solana: {...} })` returns wallet instance with `.algorand` and `.solana` accessors. Only configured chains are available. Implement in `src/wallet.ts`.

@@ -20,7 +20,7 @@ interface LegacyAzoaAuthContextType {
   user: ReturnType<typeof useAzoa>['user']
   isAuthenticated: boolean
   loading: boolean
-  avatarId: string | null
+  userId: string | null
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   register: (params: { username: string; email: string; password: string }) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
@@ -35,7 +35,7 @@ export function useAzoaAuth(): LegacyAzoaAuthContextType {
       user: ctx.user,
       isAuthenticated: ctx.isAuthenticated,
       loading: ctx.authLoading,
-      avatarId: ctx.avatarId,
+      userId: ctx.userId,
       login: ctx.login,
       register: ctx.register,
       logout: ctx.logout,

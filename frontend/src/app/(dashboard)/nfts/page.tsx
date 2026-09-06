@@ -73,12 +73,12 @@ function MintNftForm() {
 
 function TransferDialog({ nftId, onDone }: { nftId: string; onDone: () => void }) {
   const [open, setOpen] = useState(false)
-  const [targetAvatarId, setTargetAvatarId] = useState('')
+  const [targetUserId, setTargetUserId] = useState('')
   const [walletId, setWalletId] = useState('')
   const [loading, setLoading] = useState(false)
   const handleTransfer = async () => {
     setLoading(true)
-    const res = await azoa.api.transferNft(nftId, { targetAvatarId, walletId })
+    const res = await azoa.api.transferNft(nftId, { targetUserId, walletId })
     if (isOk(res)) { onDone() } else { toast.error(res.error.message) }
     setLoading(false); setOpen(false)
   }
@@ -88,7 +88,7 @@ function TransferDialog({ nftId, onDone }: { nftId: string; onDone: () => void }
       <DialogContent>
         <DialogHeader><DialogTitle>Transfer NFT</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div className="space-y-1.5"><Label>Target Avatar ID</Label><Input value={targetAvatarId} onChange={e => setTargetAvatarId(e.target.value)} placeholder="GUID" /></div>
+          <div className="space-y-1.5"><Label>Target User ID</Label><Input value={targetUserId} onChange={e => setTargetUserId(e.target.value)} placeholder="GUID" /></div>
           <div className="space-y-1.5"><Label>Wallet ID</Label><Input value={walletId} onChange={e => setWalletId(e.target.value)} placeholder="GUID" /></div>
           <Button onClick={handleTransfer} disabled={loading} size="sm" className="w-full">{loading ? 'Transferring…' : 'Transfer'}</Button>
         </div>

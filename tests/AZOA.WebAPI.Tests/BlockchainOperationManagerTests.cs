@@ -163,7 +163,7 @@ public class BlockchainOperationManagerTests
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = op });
 
         var result = await _manager.BuildAndExecuteAsync(builder =>
-            builder.ForAvatar(Guid.NewGuid())
+            builder.ForUser(Guid.NewGuid())
                    .Mint("ipfs://test", 1, "NFT")
                    .Build());
 
@@ -185,16 +185,16 @@ public class BlockchainOperationManagerTests
     }
 
     [Fact]
-    public async Task GetByAvatarAsync_ShouldFilterByAvatarId()
+    public async Task GetByUserAsync_ShouldFilterByUserId()
     {
-        var avatarId = Guid.NewGuid();
-        _store.Setup(p => p.GetByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
+        var userId = Guid.NewGuid();
+        _store.Setup(p => p.GetByUserAsync(userId, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IBlockchainOperation>>
                  {
-                     Result = new[] { new BlockchainOperation { AvatarId = avatarId } }
+                     Result = new[] { new BlockchainOperation { UserId = userId } }
                  });
 
-        var result = await _manager.GetByAvatarAsync(avatarId);
+        var result = await _manager.GetByUserAsync(userId);
 
         result.Result.Should().HaveCount(1);
     }
@@ -418,7 +418,7 @@ public class BlockchainOperationManagerTests
     // under-allocation. Widening Amount to ulong keys off the true value.
     //
     // This drives the REAL DeriveIdempotencyKey path (no mocked ExecuteAsync): two
-    // distinct amounts both above int.MaxValue, same wallet/asset/avatar. Pre-fix:
+    // distinct amounts both above int.MaxValue, same wallet/asset/user. Pre-fix:
     // identical keys ⇒ ONE record, mintCalls == 1 (the bug). Post-fix: distinct keys
     // ⇒ TWO records, mintCalls == 2.
     [Fact]

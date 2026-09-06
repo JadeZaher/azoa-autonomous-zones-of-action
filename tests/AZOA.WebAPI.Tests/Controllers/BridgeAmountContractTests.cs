@@ -51,7 +51,7 @@ public sealed class BridgeAmountContractTests
     [Fact]
     public void Response_DoesNotSerializeServerIdempotencyKey()
     {
-        const string ledgerKey = "bridge-redeem:private-avatar:payment-intent";
+        const string ledgerKey = "bridge-redeem:private-user:payment-intent";
         var response = new BridgeTransactionResult { IdempotencyKey = ledgerKey };
 
         var json = JsonSerializer.Serialize(response, new JsonSerializerOptions(JsonSerializerDefaults.Web));

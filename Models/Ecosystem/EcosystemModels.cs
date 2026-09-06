@@ -14,7 +14,7 @@ public class EcosystemModel
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public Guid StarOdkId { get; set; }
-    public Guid AvatarId { get; set; }
+    public Guid UserId { get; set; }
     public string? TargetChain { get; set; }
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     public DateTime? ModifiedDate { get; set; }

@@ -32,8 +32,8 @@ public class KycGateServiceTests
             Environment(Environments.Development));
     }
 
-    private void SetupLatest(Guid avatarId, KycSubmission? submission)
-        => _store.Setup(s => s.GetLatestSubmissionByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
+    private void SetupLatest(Guid userId, KycSubmission? submission)
+        => _store.Setup(s => s.GetLatestSubmissionByUserAsync(userId, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<KycSubmission> { Result = submission });
 
     private static KycSubmission Submission(KycStatus status) => new()
@@ -49,10 +49,10 @@ public class KycGateServiceTests
     [Fact]
     public async Task RequireVerified_ManualSimulationNeverUnlocksValueOperations()
     {
-        var avatarId = Guid.NewGuid();
-        SetupLatest(avatarId, Submission(KycStatus.APPROVED));
+        var userId = Guid.NewGuid();
+        SetupLatest(userId, Submission(KycStatus.APPROVED));
 
-        var result = await _gate.RequireVerifiedAsync(avatarId);
+        var result = await _gate.RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Result.Should().BeFalse();
@@ -62,12 +62,12 @@ public class KycGateServiceTests
     [Fact]
     public async Task RequireVerified_ExpiredApproval_FailsClosed()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var submission = Submission(KycStatus.APPROVED);
         submission.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
-        SetupLatest(avatarId, submission);
+        SetupLatest(userId, submission);
 
-        var result = await _gate.RequireVerifiedAsync(avatarId);
+        var result = await _gate.RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(KycAuthorizationError.Forbidden);
@@ -76,12 +76,12 @@ public class KycGateServiceTests
     [Fact]
     public async Task RequireVerified_ApprovalWithoutExplicitExpiry_FailsClosed()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var submission = Submission(KycStatus.APPROVED);
         submission.ExpiresAt = null;
-        SetupLatest(avatarId, submission);
+        SetupLatest(userId, submission);
 
-        var result = await _gate.RequireVerifiedAsync(avatarId);
+        var result = await _gate.RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(KycAuthorizationError.Forbidden);
@@ -90,16 +90,16 @@ public class KycGateServiceTests
     [Fact]
     public async Task RequireVerified_RetiredPolicyApproval_FailsClosed()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var submission = Submission(KycStatus.APPROVED);
         submission.ProviderResult = KycApprovalTrust.CreateEnvelope(new KycApprovalProfile(
             KycProvider.MANUAL,
             "manual",
             "retired-policy",
             "development-manual"));
-        SetupLatest(avatarId, submission);
+        SetupLatest(userId, submission);
 
-        var result = await _gate.RequireVerifiedAsync(avatarId);
+        var result = await _gate.RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
     }
@@ -107,8 +107,8 @@ public class KycGateServiceTests
     [Fact]
     public async Task RequireVerified_ManualApprovalInProduction_FailsClosed()
     {
-        var avatarId = Guid.NewGuid();
-        SetupLatest(avatarId, Submission(KycStatus.APPROVED));
+        var userId = Guid.NewGuid();
+        SetupLatest(userId, Submission(KycStatus.APPROVED));
         var productionGate = new KycGateService(
             _store.Object,
             _screening,
@@ -116,7 +116,7 @@ public class KycGateServiceTests
             Options.Create(TrustedManualSettings()),
             Environment(Environments.Production));
 
-        var result = await productionGate.RequireVerifiedAsync(avatarId);
+        var result = await productionGate.RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
     }
@@ -124,10 +124,10 @@ public class KycGateServiceTests
     [Fact]
     public async Task RequireVerified_NoSubmission_ForbiddenWithPrefixAndGenericMessage()
     {
-        var avatarId = Guid.NewGuid();
-        SetupLatest(avatarId, null);
+        var userId = Guid.NewGuid();
+        SetupLatest(userId, null);
 
-        var result = await _gate.RequireVerifiedAsync(avatarId);
+        var result = await _gate.RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Result.Should().BeFalse();
@@ -142,10 +142,10 @@ public class KycGateServiceTests
     [InlineData(KycStatus.EXPIRED)]
     public async Task RequireVerified_NonApprovedLatest_Forbidden(KycStatus status)
     {
-        var avatarId = Guid.NewGuid();
-        SetupLatest(avatarId, Submission(status));
+        var userId = Guid.NewGuid();
+        SetupLatest(userId, Submission(status));
 
-        var result = await _gate.RequireVerifiedAsync(avatarId);
+        var result = await _gate.RequireVerifiedAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(KycAuthorizationError.Forbidden);
@@ -154,10 +154,10 @@ public class KycGateServiceTests
     [Fact]
     public async Task RequireVerified_MessageIsExactlyTheGenericForbiddenMessage()
     {
-        var avatarId = Guid.NewGuid();
-        SetupLatest(avatarId, Submission(KycStatus.REJECTED));
+        var userId = Guid.NewGuid();
+        SetupLatest(userId, Submission(KycStatus.REJECTED));
 
-        var result = await _gate.RequireVerifiedAsync(avatarId);
+        var result = await _gate.RequireVerifiedAsync(userId);
 
         // Frozen wire contract: Forbidden prefix + the brand-free generic message,
         // and nothing else. Guards against a vendor URL / product string sneaking in.
@@ -168,10 +168,10 @@ public class KycGateServiceTests
     [Fact]
     public async Task GetKycStatus_ReturnsLatestStatus()
     {
-        var avatarId = Guid.NewGuid();
-        SetupLatest(avatarId, Submission(KycStatus.IN_REVIEW));
+        var userId = Guid.NewGuid();
+        SetupLatest(userId, Submission(KycStatus.IN_REVIEW));
 
-        var result = await _gate.GetKycStatusAsync(avatarId);
+        var result = await _gate.GetKycStatusAsync(userId);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().Be(KycStatus.IN_REVIEW);
@@ -180,10 +180,10 @@ public class KycGateServiceTests
     [Fact]
     public async Task GetKycStatus_NoSubmission_NotFound()
     {
-        var avatarId = Guid.NewGuid();
-        SetupLatest(avatarId, null);
+        var userId = Guid.NewGuid();
+        SetupLatest(userId, null);
 
-        var result = await _gate.GetKycStatusAsync(avatarId);
+        var result = await _gate.GetKycStatusAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(KycAuthorizationError.NotFound);
@@ -192,13 +192,13 @@ public class KycGateServiceTests
     [Fact]
     public async Task GetKycStatus_RetiredProviderApprovalProjectsExpired()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var submission = Submission(KycStatus.APPROVED);
         submission.Provider = KycProvider.VERIFF;
         submission.ProviderKey = "veriff";
-        SetupLatest(avatarId, submission);
+        SetupLatest(userId, submission);
 
-        var result = await _gate.GetKycStatusAsync(avatarId);
+        var result = await _gate.GetKycStatusAsync(userId);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().Be(KycStatus.EXPIRED);

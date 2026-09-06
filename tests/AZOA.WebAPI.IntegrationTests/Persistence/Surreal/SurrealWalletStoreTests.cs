@@ -19,7 +19,7 @@ namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 ///
 /// Minimum coverage required:
 ///   1. Upsert → GetById round-trip
-///   2. GetByAvatar filters correctly
+///   2. GetByUser filters correctly
 ///   3. Delete removes the row
 ///   4. Upsert (update path) overwrites existing record
 ///   5. Delete of non-existent id returns IsError=true
@@ -78,7 +78,7 @@ public sealed class SurrealWalletStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var wallet = new WalletBuilder()
-            .ForAvatar(Guid.NewGuid())
+            .ForUser(Guid.NewGuid())
             .OnChain("Algorand")
             .WithAddress($"algo_{Guid.NewGuid():N}")
             .WithLabel("Test Wallet")
@@ -97,7 +97,7 @@ public sealed class SurrealWalletStoreTests : IAsyncLifetime
         getResult.Message.Should().Be("Success");
         getResult.Result.Should().NotBeNull();
         getResult.Result!.Id.Should().Be(wallet.Id);
-        getResult.Result.AvatarId.Should().Be(wallet.AvatarId);
+        getResult.Result.UserId.Should().Be(wallet.UserId);
         getResult.Result.ChainType.Should().Be("Algorand");
         getResult.Result.Label.Should().Be("Test Wallet");
         getResult.Result.WalletType.Should().Be(WalletType.Platform);
@@ -116,33 +116,33 @@ public sealed class SurrealWalletStoreTests : IAsyncLifetime
         result.Result.Should().BeNull();
     }
 
-    /// <summary>Test 3: GetByAvatar returns only wallets owned by that avatar.</summary>
+    /// <summary>Test 3: GetByUser returns only wallets owned by that user.</summary>
     [SkippableFact]
-    public async Task GetByAvatar_FiltersCorrectly()
+    public async Task GetByUser_FiltersCorrectly()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var targetAvatar = Guid.NewGuid();
-        var otherAvatar  = Guid.NewGuid();
+        var targetUser = Guid.NewGuid();
+        var otherUser  = Guid.NewGuid();
 
-        var w1 = new WalletBuilder().ForAvatar(targetAvatar).OnChain("Solana")
+        var w1 = new WalletBuilder().ForUser(targetUser).OnChain("Solana")
                                    .WithAddress($"sol_{Guid.NewGuid():N}").Build();
-        var w2 = new WalletBuilder().ForAvatar(targetAvatar).OnChain("Ethereum")
+        var w2 = new WalletBuilder().ForUser(targetUser).OnChain("Ethereum")
                                    .WithAddress($"eth_{Guid.NewGuid():N}").Build();
-        var w3 = new WalletBuilder().ForAvatar(otherAvatar).OnChain("Algorand")
+        var w3 = new WalletBuilder().ForUser(otherUser).OnChain("Algorand")
                                    .WithAddress($"algo_{Guid.NewGuid():N}").Build();
 
         await _store.UpsertAsync(w1);
         await _store.UpsertAsync(w2);
         await _store.UpsertAsync(w3);
 
-        var result = await _store.GetByAvatarAsync(targetAvatar);
+        var result = await _store.GetByUserAsync(targetUser);
 
         result.IsError.Should().BeFalse();
         result.Message.Should().Be("Success");
         var list = result.Result!.ToList();
         list.Should().HaveCount(2);
-        list.All(w => w.AvatarId == targetAvatar).Should().BeTrue();
+        list.All(w => w.UserId == targetUser).Should().BeTrue();
     }
 
     /// <summary>Test 4: Delete removes the wallet; subsequent GetById returns not-found.</summary>
@@ -152,7 +152,7 @@ public sealed class SurrealWalletStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var wallet = new WalletBuilder()
-            .ForAvatar(Guid.NewGuid())
+            .ForUser(Guid.NewGuid())
             .WithAddress($"del_{Guid.NewGuid():N}")
             .Build();
 
@@ -189,12 +189,12 @@ public sealed class SurrealWalletStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var id      = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
         var original = new Wallet
         {
             Id        = id,
-            AvatarId  = avatarId,
+            UserId  = userId,
             ChainType = "Solana",
             Address   = $"sol_{Guid.NewGuid():N}",
             Label     = "Original Label",
@@ -206,7 +206,7 @@ public sealed class SurrealWalletStoreTests : IAsyncLifetime
         var updated = new Wallet
         {
             Id         = id,
-            AvatarId   = avatarId,
+            UserId   = userId,
             ChainType  = "Solana",
             Address    = original.Address,
             Label      = "Updated Label",
@@ -229,9 +229,9 @@ public sealed class SurrealWalletStoreTests : IAsyncLifetime
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var avatarId = Guid.NewGuid();
-        var w1 = new WalletBuilder().ForAvatar(avatarId).WithAddress($"a_{Guid.NewGuid():N}").Build();
-        var w2 = new WalletBuilder().ForAvatar(avatarId).WithAddress($"b_{Guid.NewGuid():N}").Build();
+        var userId = Guid.NewGuid();
+        var w1 = new WalletBuilder().ForUser(userId).WithAddress($"a_{Guid.NewGuid():N}").Build();
+        var w2 = new WalletBuilder().ForUser(userId).WithAddress($"b_{Guid.NewGuid():N}").Build();
 
         await _store.UpsertAsync(w1);
         await _store.UpsertAsync(w2);

@@ -67,7 +67,7 @@ C4. Run integration tests against the new image. Focus areas in order
     d. Everything else (Mcp tests are SkippableFact-guarded; will
        light up automatically if the underlying executor is sound).
 C5. Audit the `SELECT * FROM type::record($_t, $_id)` workaround
-    landed in [SurrealAvatarStore](../../../Providers/Stores/Surreal/SurrealAvatarStore.cs)
+    landed in [SurrealUserStore](../../../Providers/Stores/Surreal/SurrealUserStore.cs)
     and [SurrealHolonStore](../../../Providers/Stores/Surreal/SurrealHolonStore.cs).
     On 2.x+ the `WHERE id = $id` form may match again (the Thing-vs-
     string strictness has been relaxed in some patch releases). If it

@@ -15,7 +15,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("Immutable audit trail for node fee schedule changes. Stores previous/new schedule snapshots as JSON strings so operators can reconstruct every version.")]
     [Slice("identity")]
     [Index("node_fee_audit_occurred", Fields = new[] { "occurred_at" })]
-    [Index("node_fee_audit_actor", Fields = new[] { "actor_avatar_id" })]
+    [Index("node_fee_audit_actor", Fields = new[] { "actor_user_id" })]
     public partial class NodeFeeAudit : ISurrealRecord
     {
         public const string SchemaNameConst = "node_fee_audit";
@@ -31,8 +31,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string Action { get; set; } = string.Empty;
 
         [Column(Order = 3)]
-        [References(typeof(Avatar))]
-        public string ActorAvatarId { get; set; } = string.Empty;
+        [References(typeof(User))]
+        public string ActorUserId { get; set; } = string.Empty;
 
         [Column(Order = 4)]
         public long PreviousVersion { get; set; }

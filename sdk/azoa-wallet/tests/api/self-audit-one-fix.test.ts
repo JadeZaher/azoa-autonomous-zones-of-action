@@ -114,13 +114,13 @@ describe("Finding 6 — listNfts() on AzoaApiClient", () => {
     );
   });
 
-  it("sends GET /api/nft?ownerAvatarId=... when param provided", async () => {
+  it("sends GET /api/nft?ownerUserId=... when param provided", async () => {
     mockFetch.mockReturnValueOnce(azoaResponse([{ id: "nft1", name: "My NFT" }]));
-    const result = await client.listNfts({ ownerAvatarId: "avatar-abc" });
+    const result = await client.listNfts({ ownerUserId: "user-abc" });
     expect(isOk(result)).toBe(true);
     const url: string = mockFetch.mock.calls[0][0];
     expect(url).toContain("/api/nft");
-    expect(url).toContain("ownerAvatarId=avatar-abc");
+    expect(url).toContain("ownerUserId=user-abc");
   });
 
   it("listNfts returns typed NftResult array", async () => {

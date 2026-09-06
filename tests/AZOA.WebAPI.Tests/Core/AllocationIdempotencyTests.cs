@@ -39,10 +39,10 @@ public sealed class AllocationIdempotencyTests
             Amount = "100",
             AssetId = "unit-1",
         };
-        var firstAvatar = Guid.NewGuid();
+        var firstUser = Guid.NewGuid();
 
-        var first = AllocationIdempotency.Create(apiKeyId, firstAvatar, request, null);
-        var replay = AllocationIdempotency.Create(apiKeyId, firstAvatar, request, null);
+        var first = AllocationIdempotency.Create(apiKeyId, firstUser, request, null);
+        var replay = AllocationIdempotency.Create(apiKeyId, firstUser, request, null);
         var differentTarget = AllocationIdempotency.Create(apiKeyId, Guid.NewGuid(), request, null);
 
         replay.Correlation.Should().Be(first.Correlation);

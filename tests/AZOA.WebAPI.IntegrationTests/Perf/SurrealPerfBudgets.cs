@@ -72,12 +72,12 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container unavailable.");
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var wallets  = new List<Wallet>(100);
         for (int i = 0; i < 100; i++)
         {
             var w = new WalletBuilder()
-                .ForAvatar(avatarId)
+                .ForUser(userId)
                 .OnChain("Algorand")
                 .WithAddress($"perf_{Guid.NewGuid():N}")
                 .Build();
@@ -103,7 +103,7 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container unavailable.");
 
-        var avatarId  = Guid.NewGuid();
+        var userId  = Guid.NewGuid();
         var durations = new List<double>(100);
 
         for (int i = 0; i < 100; i++)
@@ -111,7 +111,7 @@ public sealed class SurrealPerfBudgets : IAsyncLifetime
             var tx = new BridgeTransactionResult
             {
                 Id            = Guid.NewGuid().ToString("N"),
-                AvatarId      = avatarId,
+                UserId      = userId,
                 SourceChain   = "Algorand",
                 TargetChain   = "Solana",
                 SourceTokenId = "ALGO",

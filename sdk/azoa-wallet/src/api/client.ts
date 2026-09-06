@@ -34,7 +34,7 @@ interface AZOAResponse<T> {
 
 // ─── Response types matching .NET DTOs ───
 
-export interface AvatarResponse {
+export interface UserResponse {
   id: string;
   username: string;
   email: string;
@@ -52,7 +52,7 @@ export interface TenantCustodialAccountStatus {
   externalSubject: string;
   /** Compatibility alias emitted for the initial ArdaNova integration. */
   ardanovaUserId: string;
-  avatarId: string | null;
+  userId: string | null;
   walletId: string | null;
   walletAddress: string | null;
   kycStatus: TenantKycStatus;
@@ -107,7 +107,7 @@ export interface TenantKycSubmission {
 }
 
 /**
- * Assignable DApp role — the closed allowlist the `PUT /api/avatar/{id}/dapp-role`
+ * Assignable DApp role — the closed allowlist the `PUT /api/user/{id}/dapp-role`
  * endpoint accepts (mirrors `Core/AzoaDappRoles.cs`). `operator:admin` is
  * deliberately absent: operator authority is a JWT-only scope, never a DApp role,
  * so no value assignable here can yield operator privileges.
@@ -121,7 +121,7 @@ export interface NftResult {
   id: string;
   name: string;
   description: string;
-  ownerAvatarId?: string;
+  ownerUserId?: string;
   chainId: string;
   tokenId?: string;
   /** Asset type — defaults to "NFT" on the backend. */
@@ -134,7 +134,7 @@ export interface NftResult {
 
 /** Mirrors the .NET NftQueryRequest fields (sent as querystring). */
 export interface NftQueryParams {
-  ownerAvatarId?: string;
+  ownerUserId?: string;
   chainId?: string;
   tokenId?: string;
   name?: string;
@@ -151,7 +151,7 @@ export interface NftMetadata {
 // Public bridge response. Server-only idempotency metadata is deliberately omitted.
 export interface BridgeTransactionResult {
   id: string;
-  avatarId: string;
+  userId: string;
   sourceChain: string;
   targetChain: string;
   sourceTokenId: string;
@@ -217,7 +217,7 @@ export interface NftMintParams {
 }
 
 export interface NftTransferParams {
-  targetAvatarId: string;
+  targetUserId: string;
   walletId: string;
   memo?: string;
 }
@@ -225,7 +225,7 @@ export interface NftTransferParams {
 /**
  * Mirrors .NET FungibleMintRequest — the body for `POST /api/nft/fungible-mint`
  * (the one-shot, no-DAG fungible token launch). Field shape matches the
- * `FungibleTokenCreate` quest node config; total + decimals are tenant-authoritative.
+ * `FungibleTokenCreate` action node config; total + decimals are tenant-authoritative.
  */
 export interface FungibleMintParams {
   /** Target chain (e.g. "Algorand"). Algorand-only in v1. */
@@ -244,8 +244,8 @@ export interface FungibleMintParams {
 
 /** Mirrors .NET FungibleTokenResult — the outcome of a fungible-token (ASA) launch. */
 export interface FungibleTokenResult {
-  /** The avatar the token was launched for. */
-  avatarId: string;
+  /** The user the token was launched for. */
+  userId: string;
   /** The custodial wallet the token was launched from. */
   walletId: string;
   /** The on-chain address of the custodial wallet. */
@@ -321,7 +321,7 @@ export interface SearchParams {
   entityTypes?: number;
   chainId?: string;
   assetType?: string;
-  avatarId?: string;
+  userId?: string;
   createdAfter?: string;
   createdBefore?: string;
   sortBy?: string;
@@ -334,7 +334,7 @@ export interface SearchParams {
 
 export interface WalletResult {
   id: string;
-  avatarId: string;
+  userId: string;
   chainType: string;
   address: string;
   publicKey?: string;
@@ -357,7 +357,7 @@ export interface WalletUpdateParams {
 }
 
 export interface WalletQueryParams {
-  avatarId?: string;
+  userId?: string;
   chainType?: string;
   isDefault?: boolean;
 }
@@ -415,7 +415,7 @@ export interface NftHolding {
 
 export interface BlockchainOperationResult {
   id: string;
-  avatarId: string | null;
+  userId: string | null;
   walletId: string | null;
   operationType: string;
   status: string;
@@ -436,7 +436,7 @@ export interface STARODKResult {
   name: string;
   description: string;
   publicKey?: string;
-  avatarId?: string;
+  userId?: string;
   boundHolonIds: string[];
   targetChain?: string;
   generatedCode?: string;
@@ -450,7 +450,7 @@ export interface STARODKCreateParams {
   name: string;
   description: string;
   publicKey?: string;
-  avatarId?: string;
+  userId?: string;
 }
 
 export interface STARDappGenerationParams {
@@ -459,11 +459,11 @@ export interface STARDappGenerationParams {
   config?: Record<string, string>;
 }
 
-// ─── AvatarNFT types matching .NET DTOs ───
+// ─── UserNFT types matching .NET DTOs ───
 
-export interface AvatarNFTResult {
+export interface UserNFTResult {
   id: string;
-  avatarId: string;
+  userId: string;
   nftContractAddress?: string;
   tokenId?: string;
   chainType: string;
@@ -485,7 +485,7 @@ export interface AvatarNFTResult {
   walletBindings?: WalletNFTBindingResult[];
 }
 
-export interface AvatarNFTMintParams {
+export interface UserNFTMintParams {
   chainType: string;
   contractAddress?: string;
   tokenStandard?: string;
@@ -503,7 +503,7 @@ export interface AvatarNFTMintParams {
 export interface HolonNFTBindingResult {
   id: string;
   holonId: string;
-  avatarNFTId: string;
+  userNFTId: string;
   role: string;
   permissionLevel: string;
   permissions: Record<string, string>;
@@ -515,7 +515,7 @@ export interface HolonNFTBindingResult {
 export interface WalletNFTBindingResult {
   id: string;
   walletId: string;
-  avatarNFTId: string;
+  userNFTId: string;
   bindingType: string;
   accessLevel?: string;
   accessPermissions: Record<string, string>;
@@ -524,35 +524,35 @@ export interface WalletNFTBindingResult {
   isActive: boolean;
 }
 
-// ─── Quest types matching .NET DTOs ───
+// ─── ActionDefinition types matching .NET DTOs ───
 
-/** Quest status lifecycle */
-export type QuestStatus = "Draft" | "Active" | "Completed" | "Failed" | "Archived";
+/** ActionDefinition status lifecycle */
+export type ActionStatus = "Draft" | "Active" | "Completed" | "Failed" | "Archived";
 
 /** Node execution state */
-export type QuestNodeState = "Pending" | "Running" | "Succeeded" | "Failed" | "Skipped";
+export type ActionNodeState = "Pending" | "Running" | "Succeeded" | "Failed" | "Skipped";
 
 /** Edge types for DAG flow control */
-export type QuestEdgeType = "Control" | "Conditional";
+export type ActionEdgeType = "Control" | "Conditional";
 
-/** All supported quest node operation types */
-export type QuestNodeType =
+/** All supported action node operation types */
+export type ActionNodeType =
   | "HolonCreate" | "HolonUpdate" | "HolonDelete" | "HolonQuery"
   | "NftMint" | "NftTransfer" | "NftBurn"
   | "WalletCreate" | "WalletTransfer" | "WalletBalance"
   | "StarCreate" | "StarGenerate" | "StarDeploy"
   | "SearchQuery"
-  | "AvatarNftMint" | "AvatarNftTransfer" | "AvatarNftVerify"
+  | "UserNftMint" | "UserNftTransfer" | "UserNftVerify"
   | "BlockchainExecute"
   | "Gate" | "Delay" | "Webhook" | "Script"
   | string; // extensible
 
-export interface QuestNodeResult {
+export interface ActionNodeResult {
   id: string;
-  questId: string;
+  actionId: string;
   name: string;
   nodeType: string;
-  state: QuestNodeState;
+  state: ActionNodeState;
   config: string;
   output?: string;
   error?: string;
@@ -563,31 +563,31 @@ export interface QuestNodeResult {
   completedAt?: string;
 }
 
-export interface QuestEdgeResult {
+export interface ActionEdgeResult {
   id: string;
-  questId: string;
+  actionId: string;
   sourceNodeId: string;
   targetNodeId: string;
   condition?: string;
-  edgeType: QuestEdgeType;
+  edgeType: ActionEdgeType;
 }
 
-export interface QuestDependencyResult {
+export interface ActionDependencyResult {
   id: string;
-  questId: string;
-  dependsOnQuestId: string;
+  actionId: string;
+  dependsOnActionId: string;
   dependencyType: string;
 }
 
-export interface QuestResult {
+export interface ActionResult {
   id: string;
   name: string;
   description?: string;
-  avatarId: string;
-  status: QuestStatus;
-  nodes: QuestNodeResult[];
-  edges: QuestEdgeResult[];
-  dependencies: QuestDependencyResult[];
+  userId: string;
+  status: ActionStatus;
+  nodes: ActionNodeResult[];
+  edges: ActionEdgeResult[];
+  dependencies: ActionDependencyResult[];
   templateId?: string;
   dappSeriesId?: string;
   metadata: Record<string, string>;
@@ -596,43 +596,43 @@ export interface QuestResult {
   /**
    * Optimistic-concurrency version (final-hardening F6). Bumped on every
    * publish/unpublish transition; a stale read racing a concurrent transition
-   * surfaces as a "conflict" {@link SdkError} from {@link AzoaApiClient.publishQuest} /
-   * {@link AzoaApiClient.unpublishQuest} / workflow run-start — reload and retry.
+   * surfaces as a "conflict" {@link SdkError} from {@link AzoaApiClient.publishAction} /
+   * {@link AzoaApiClient.unpublishAction} / workflow run-start — reload and retry.
    */
   version: number;
   /**
-   * Marketplace visibility. When true and the quest is Active, a non-owner
-   * may start it (see {@link AzoaApiClient.executeQuest}) — the run is
-   * created under the caller's own avatar, linked back to the origin quest.
+   * Marketplace visibility. When true and the action is Active, a non-owner
+   * may start it (see {@link AzoaApiClient.executeAction}) — the run is
+   * created under the caller's own user, linked back to the origin action.
    */
   isPublic: boolean;
   /**
-   * Origin/creator avatar when this quest is a marketplace copy instantiated
-   * from a template (set to the template author's avatar id). Undefined for
-   * first-party quests created directly via {@link AzoaApiClient.createQuest}.
+   * Origin/creator user when this action is a marketplace copy instantiated
+   * from a template (set to the template author's user id). Undefined for
+   * first-party actions created directly via {@link AzoaApiClient.createAction}.
    */
-  originAvatarId?: string;
+  originUserId?: string;
 }
 
 /**
- * Lifecycle status of a single {@link QuestRunResult} (one execution attempt of a
- * Quest). Single source of truth: this is the {@link WorkflowRunStatus} union from
- * `workflow/types.ts` (both mirror C# `Models/Quest/QuestRunStatus.cs` 1:1) — the
+ * Lifecycle status of a single {@link ActionRunResult} (one execution attempt of a
+ * ActionDefinition). Single source of truth: this is the {@link WorkflowRunStatus} union from
+ * `workflow/types.ts` (both mirror C# `Models/ActionDefinition/ActionRunStatus.cs` 1:1) — the
  * alias keeps the two public surfaces from drifting apart.
  */
-export type QuestRunStatus = WorkflowRunStatus;
+export type ActionRunStatus = WorkflowRunStatus;
 
 /**
- * One execution attempt of a {@link QuestResult} definition (mirrors .NET
- * `QuestRun`). Returned by {@link AzoaApiClient.executeQuest}. Per-node
- * runtime state lives on {@link QuestNodeResult}, queryable separately by run id.
+ * One execution attempt of a {@link ActionResult} definition (mirrors .NET
+ * `ActionRun`). Returned by {@link AzoaApiClient.executeAction}. Per-node
+ * runtime state lives on {@link ActionNodeResult}, queryable separately by run id.
  */
-export interface QuestRunResult {
+export interface ActionRunResult {
   id: string;
-  questId: string;
-  avatarId: string;
+  actionId: string;
+  userId: string;
   actingTenantId?: string;
-  status: QuestRunStatus;
+  status: ActionRunStatus;
   startedAt: string;
   endedAt?: string;
   parentRunId?: string;
@@ -640,65 +640,65 @@ export interface QuestRunResult {
   forkReason?: string;
   failReason?: string;
   /**
-   * Marketplace provenance: the origin quest this run was started from when
-   * the runner is not the quest owner. Undefined for owner runs.
+   * Marketplace provenance: the origin action this run was started from when
+   * the runner is not the action owner. Undefined for owner runs.
    */
-  sourceQuestId?: string;
+  sourceActionId?: string;
   /**
-   * Marketplace provenance: the origin quest's owner/creator avatar when the
+   * Marketplace provenance: the origin action's owner/creator user when the
    * runner is not the owner. Undefined for owner runs.
    */
-  originAvatarId?: string;
+  originUserId?: string;
 }
 
-// ─── Quest invitations + request/approval (quest-invitations-approval) ───
+// ─── ActionDefinition invitations + request/approval (action-invitations-approval) ───
 
 /**
- * Run-authorization mode for a quest, orthogonal to `isPublic` discoverability
- * (mirrors C# `Models/Quest/QuestRunAccess`). `Open` = anyone who can view may
- * run/fork (today's default); `InviteOnly` = only owner + invited avatars may
- * run/fork, though the quest stays viewable.
+ * Run-authorization mode for a action, orthogonal to `isPublic` discoverability
+ * (mirrors C# `Models/ActionDefinition/ActionRunAccess`). `Open` = anyone who can view may
+ * run/fork (today's default); `InviteOnly` = only owner + invited users may
+ * run/fork, though the action stays viewable.
  */
-export type QuestRunAccess = "Open" | "InviteOnly";
+export type ActionRunAccess = "Open" | "InviteOnly";
 
 /**
- * Lifecycle status of a {@link QuestAccessRequest} (mirrors C#
- * `Models/Quest/QuestAccessRequestStatus`). Terminal states
+ * Lifecycle status of a {@link ActionAccessRequest} (mirrors C#
+ * `Models/ActionDefinition/ActionAccessRequestStatus`). Terminal states
  * (`Approved | Rejected | Withdrawn`) are immutable; a re-request after a
  * terminal state opens a fresh `Pending`.
  */
-export type QuestAccessRequestStatus = "Pending" | "Approved" | "Rejected" | "Withdrawn";
+export type ActionAccessRequestStatus = "Pending" | "Approved" | "Rejected" | "Withdrawn";
 
 /**
- * A self-service request by a non-invited avatar to run an `InviteOnly` quest
- * (mirrors .NET `QuestAccessRequest`). Owner approval appends the requester to
- * the quest's invited set; reject/withdraw closes it.
+ * A self-service request by a non-invited user to run an `InviteOnly` action
+ * (mirrors .NET `ActionAccessRequest`). Owner approval appends the requester to
+ * the action's invited set; reject/withdraw closes it.
  */
-export interface QuestAccessRequest {
+export interface ActionAccessRequest {
   id: string;
-  questId: string;
-  requesterAvatarId: string;
-  status: QuestAccessRequestStatus;
+  actionId: string;
+  requesterUserId: string;
+  status: ActionAccessRequestStatus;
   message?: string;
   decisionReason?: string;
   createdAt: string;
   decidedAt?: string;
-  decidedByAvatarId?: string;
+  decidedByUserId?: string;
 }
 
-/** Request body for {@link AzoaApiClient.setQuestRunAccess}. */
+/** Request body for {@link AzoaApiClient.setActionRunAccess}. */
 export interface SetRunAccessRequest {
-  runAccess: QuestRunAccess;
+  runAccess: ActionRunAccess;
   /** Optionally seed the invite list when switching to `InviteOnly`. */
-  invitedAvatarIds?: string[];
+  invitedUserIds?: string[];
 }
 
-/** Request body for {@link AzoaApiClient.inviteAvatar}. */
-export interface InviteAvatarRequest {
-  avatarId: string;
+/** Request body for {@link AzoaApiClient.inviteUser}. */
+export interface InviteUserRequest {
+  userId: string;
 }
 
-/** Request body for {@link AzoaApiClient.requestQuestAccess}. */
+/** Request body for {@link AzoaApiClient.requestActionAccess}. */
 export interface RequestAccessBody {
   /** Optional note from the requester to the owner. */
   message?: string;
@@ -784,65 +784,65 @@ export interface KeyRotationParams {
   newEncryptionKey: string;
 }
 
-export interface QuestNodeCreateParams {
+export interface ActionNodeCreateParams {
   name: string;
-  nodeType: QuestNodeType;
+  nodeType: ActionNodeType;
   config?: string;
   isEntry?: boolean;
   isTerminal?: boolean;
   nodeTemplateId?: string;
 }
 
-export interface QuestEdgeCreateParams {
+export interface ActionEdgeCreateParams {
   sourceNodeId: number;
   targetNodeId: number;
   condition?: string;
-  edgeType?: QuestEdgeType;
+  edgeType?: ActionEdgeType;
 }
 
-export interface QuestCreateParams {
+export interface ActionCreateParams {
   name: string;
   description?: string;
-  nodes: QuestNodeCreateParams[];
-  edges: QuestEdgeCreateParams[];
+  nodes: ActionNodeCreateParams[];
+  edges: ActionEdgeCreateParams[];
   /** Marketplace visibility. Defaults to false (private, owner-only) server-side. */
   isPublic?: boolean;
 }
 
-export interface QuestUpdateParams {
+export interface ActionUpdateParams {
   name?: string;
   description?: string;
-  status?: QuestStatus;
+  status?: ActionStatus;
   /** Marketplace visibility toggle. Omit to leave unchanged. */
   isPublic?: boolean;
 }
 
-export interface QuestTemplateResult {
+export interface ActionTemplateResult {
   id: string;
   name: string;
   description?: string;
-  authorAvatarId: string;
+  authorUserId: string;
   parameters: string;
   version: string;
   isPublic: boolean;
   tags: string[];
-  nodes: QuestNodeResult[];
-  edges: QuestEdgeResult[];
+  nodes: ActionNodeResult[];
+  edges: ActionEdgeResult[];
   createdDate: string;
 }
 
-export interface QuestTemplateCreateParams {
+export interface ActionTemplateCreateParams {
   name: string;
   description?: string;
-  nodes: QuestNodeCreateParams[];
-  edges: QuestEdgeCreateParams[];
+  nodes: ActionNodeCreateParams[];
+  edges: ActionEdgeCreateParams[];
   parameters?: string;
   version?: string;
   isPublic?: boolean;
   tags?: string[];
 }
 
-export interface QuestNodeTemplateResult {
+export interface ActionNodeTemplateResult {
   id: string;
   name: string;
   nodeType: string;
@@ -857,9 +857,9 @@ export interface QuestNodeTemplateResult {
   createdDate: string;
 }
 
-export interface QuestNodeTemplateCreateParams {
+export interface ActionNodeTemplateCreateParams {
   name: string;
-  nodeType: QuestNodeType;
+  nodeType: ActionNodeType;
   description?: string;
   defaultConfig?: string;
   configSchema?: string;
@@ -902,7 +902,7 @@ export interface ApiKeyInfo {
 }
 
 /**
- * The self-issuable scopes an ordinary avatar may attach to its own new API key
+ * The self-issuable scopes an ordinary user may attach to its own new API key
  * (mirrors .NET AzoaScopes.SelfIssuableScopes). An empty CSV still means legacy
  * "full access"; these are the explicit opt-in scopes.
  */
@@ -911,7 +911,7 @@ export type SelfIssuableApiKeyScope =
   | "dapp:manage"
   | "wallet:manage"
   | "nft:mint"
-  | "quest:execute"
+  | "action:execute"
   | "swap:sign"
   | "transfer:sign"
   | "grant:sign"
@@ -945,7 +945,7 @@ export interface AllocationRequest {
 }
 
 export interface AllocationResult {
-  avatarId: string;
+  userId: string;
   walletId: string;
   walletAddress: string;
   walletProvisioned: boolean;
@@ -962,14 +962,14 @@ export interface AllocationResult {
 /** DappSeries lifecycle status (mirrors .NET DappSeries.StatusKind). */
 export type DappSeriesStatus = "Draft" | "Building" | "Ready" | "Deployed" | "Archived";
 
-/** A linked series of quest DAGs that compose into a deployable dApp (mirrors .NET DappSeries). */
+/** A linked series of action DAGs that compose into a deployable dApp (mirrors .NET DappSeries). */
 export interface DappSeriesResult {
   id: string;
   name: string;
   description?: string;
-  avatarId: string;
+  userId: string;
   status: DappSeriesStatus;
-  /** Cross-quest deployment settings (string→string map), serialized as JSON on the row. */
+  /** Cross-action deployment settings (string→string map), serialized as JSON on the row. */
   sharedConfig?: unknown;
   starOdkId?: string;
   targetChain?: string;
@@ -993,22 +993,22 @@ export interface DappSeriesUpdateParams {
   sharedConfig?: Record<string, string>;
 }
 
-/** One ordered quest entry inside a series (mirrors .NET DappSeriesQuest). */
-export interface DappSeriesQuestResult {
+/** One ordered action entry inside a series (mirrors .NET DappSeriesAction). */
+export interface DappSeriesActionResult {
   id: string;
   dappSeriesId: string;
-  questId: string;
+  actionId: string;
   /** 1-indexed execution order within the series. */
   order: number;
-  /** JSON array of InputMapping entries; null when no cross-quest flow. */
+  /** JSON array of InputMapping entries; null when no cross-action flow. */
   inputMappings?: string;
 }
 
-/** Body for {@link AzoaApiClient.addSeriesQuest} (mirrors .NET DappSeriesAddQuestModel). */
-export interface DappSeriesAddQuestParams {
-  questId: string;
+/** Body for {@link AzoaApiClient.addSeriesAction} (mirrors .NET DappSeriesAddActionModel). */
+export interface DappSeriesAddActionParams {
+  actionId: string;
   order: number;
-  /** JSON array of InputMapping entries; omit when no cross-quest flow. */
+  /** JSON array of InputMapping entries; omit when no cross-action flow. */
   inputMappings?: string;
 }
 
@@ -1152,11 +1152,11 @@ export class AzoaApiClient {
     );
   }
 
-  // ─── Avatar ───
+  // ─── User ───
 
   async login(email: string, password: string): Promise<Result<string, SdkError>> {
     // .NET returns AZOAResult<string> where Result is the JWT token
-    return this.request("POST", "/api/avatar/login", { email, password });
+    return this.request("POST", "/api/user/login", { email, password });
   }
 
   async register(params: {
@@ -1166,53 +1166,53 @@ export class AzoaApiClient {
     title?: string;
     firstName?: string;
     lastName?: string;
-  }): Promise<Result<AvatarResponse, SdkError>> {
-    // .NET returns AZOAResult<IAvatar>
-    return this.request("POST", "/api/avatar/register", params);
+  }): Promise<Result<UserResponse, SdkError>> {
+    // .NET returns AZOAResult<IUser>
+    return this.request("POST", "/api/user/register", params);
   }
 
   /**
    * Server-side "logout everywhere": invalidates every live JWT for the
-   * authenticated avatar (bumps AuthNotBefore server-side). The subject is
+   * authenticated user (bumps AuthNotBefore server-side). The subject is
    * taken from the bearer token, never a URL/body param.
    */
   async logoutEverywhere(): Promise<Result<boolean, SdkError>> {
-    return this.request("POST", API_PATHS.AVATAR_LOGOUT);
+    return this.request("POST", API_PATHS.USER_LOGOUT);
   }
 
-  async getAvatar(avatarId: string): Promise<Result<AvatarResponse, SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/avatar/${avatarId}`);
+  async getUser(userId: string): Promise<Result<UserResponse, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/user/${userId}`);
   }
 
-  async getAllAvatars(): Promise<Result<AvatarResponse[], SdkError>> {
-    return this.request("GET", "/api/avatar");
+  async getAllUsers(): Promise<Result<UserResponse[], SdkError>> {
+    return this.request("GET", "/api/user");
   }
 
-  async updateAvatar(
-    avatarId: string,
+  async updateUser(
+    userId: string,
     params: { username?: string; email?: string; title?: string; firstName?: string; lastName?: string; isActive?: boolean }
-  ): Promise<Result<AvatarResponse, SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("PUT", `/api/avatar/${avatarId}`, params);
+  ): Promise<Result<UserResponse, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("PUT", `/api/user/${userId}`, params);
   }
 
-  async deleteAvatar(avatarId: string): Promise<Result<{ message: string }, SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("DELETE", `/api/avatar/${avatarId}`);
+  async deleteUser(userId: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("DELETE", `/api/user/${userId}`);
   }
 
   /**
-   * avatar-dapp-rbac: assign the target avatar's DApp role. The target is the
+   * user-dapp-rbac: assign the target user's DApp role. The target is the
    * route id (uuid-asserted). `role` is validated against the {@link DAPP_ROLES}
    * allowlist client-side; `operator:admin` is not assignable here. Authority is
    * enforced server-side (operator may grant any role incl. manager; a
    * dapp:manager may grant only developer/user; otherwise 403). Maps to
-   * `PUT /api/avatar/{id}/dapp-role`, returns the updated avatar.
+   * `PUT /api/user/{id}/dapp-role`, returns the updated user.
    */
-  async assignDappRole(avatarId: string, role: DappRole): Promise<Result<AvatarResponse, SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    const path = API_PATHS.AVATAR_DAPP_ROLE(avatarId);
+  async assignDappRole(userId: string, role: DappRole): Promise<Result<UserResponse, SdkError>> {
+    assertUuid(userId, "userId");
+    const path = API_PATHS.USER_DAPP_ROLE(userId);
     if (!(DAPP_ROLES as readonly string[]).includes(role)) {
       return err(
         new SdkError(
@@ -1254,7 +1254,7 @@ export class AzoaApiClient {
 
   /**
    * One-shot fungible token (ASA) mint — the direct (no-DAG) parallel to the
-   * `FungibleTokenCreate` quest node. Maps to `POST /api/nft/fungible-mint`
+   * `FungibleTokenCreate` action node. Maps to `POST /api/nft/fungible-mint`
    * (NftController.FungibleMint). KYC-gated (a fail-closed rejection surfaces as a
    * 403 → `SdkError` with the `KYC_FORBIDDEN:` message) and idempotent.
    *
@@ -1406,9 +1406,9 @@ export class AzoaApiClient {
     return this.request("GET", `/api/blockchainoperation/${operationId}`);
   }
 
-  async getBlockchainOperationsByAvatar(avatarId: string): Promise<Result<BlockchainOperationResult[], SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/blockchainoperation/avatar/${avatarId}`);
+  async getBlockchainOperationsByUser(userId: string): Promise<Result<BlockchainOperationResult[], SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/blockchainoperation/user/${userId}`);
   }
 
   // ─── STARODK ───
@@ -1530,12 +1530,12 @@ export class AzoaApiClient {
   /**
    * Executes an idempotent fiat-allocation bridge call (Mint or Transfer).
    *
-   * @param avatarId The target avatar receiving the asset
+   * @param userId The target user receiving the asset
    * @param request The allocation details (amount, chain, kind, etc.)
    * @param idempotencyKey The stable per-payment key (e.g. Stripe PaymentIntent ID). If omitted, a deterministic key is generated based on the request content.
    */
   async allocate(
-    avatarId: string,
+    userId: string,
     request: AllocationRequest,
     idempotencyKey?: string
   ): Promise<Result<AllocationResult, SdkError>> {
@@ -1545,7 +1545,7 @@ export class AzoaApiClient {
     }
     return this.request<AllocationResult>(
       "POST",
-      `/api/allocation/${avatarId}`,
+      `/api/allocation/${userId}`,
       request,
       false,
       headers
@@ -1590,298 +1590,298 @@ export class AzoaApiClient {
     );
   }
 
-  // ─── AvatarNFT ───
+  // ─── UserNFT ───
 
-  async mintAvatarNFT(params: AvatarNFTMintParams): Promise<Result<AvatarNFTResult, SdkError>> {
-    return this.request("POST", "/api/avatarnft/mint", params);
+  async mintUserNFT(params: UserNFTMintParams): Promise<Result<UserNFTResult, SdkError>> {
+    return this.request("POST", "/api/usernft/mint", params);
   }
 
-  async getAvatarNFT(id: string): Promise<Result<AvatarNFTResult, SdkError>> {
-    assertUuid(id, "avatarNFTId");
-    return this.request("GET", `/api/avatarnft/${id}`);
+  async getUserNFT(id: string): Promise<Result<UserNFTResult, SdkError>> {
+    assertUuid(id, "userNFTId");
+    return this.request("GET", `/api/usernft/${id}`);
   }
 
-  async getAvatarNFTByToken(chainType: string, contractAddress: string, tokenId: string): Promise<Result<AvatarNFTResult, SdkError>> {
-    return this.request("GET", `/api/avatarnft/by-token/${encodeURIComponent(chainType)}/${encodeURIComponent(contractAddress)}/${encodeURIComponent(tokenId)}`);
+  async getUserNFTByToken(chainType: string, contractAddress: string, tokenId: string): Promise<Result<UserNFTResult, SdkError>> {
+    return this.request("GET", `/api/usernft/by-token/${encodeURIComponent(chainType)}/${encodeURIComponent(contractAddress)}/${encodeURIComponent(tokenId)}`);
   }
 
-  async listAvatarNFTs(avatarId: string): Promise<Result<AvatarNFTResult[], SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/avatarnft/avatar/${avatarId}`);
+  async listUserNFTs(userId: string): Promise<Result<UserNFTResult[], SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/usernft/user/${userId}`);
   }
 
-  async transferAvatarNFT(id: string, recipientAddress: string): Promise<Result<AvatarNFTResult, SdkError>> {
-    assertUuid(id, "avatarNFTId");
-    return this.request("POST", `/api/avatarnft/${id}/transfer`, { recipientAddress });
+  async transferUserNFT(id: string, recipientAddress: string): Promise<Result<UserNFTResult, SdkError>> {
+    assertUuid(id, "userNFTId");
+    return this.request("POST", `/api/usernft/${id}/transfer`, { recipientAddress });
   }
 
-  async burnAvatarNFT(id: string): Promise<Result<{ message: string }, SdkError>> {
-    assertUuid(id, "avatarNFTId");
-    return this.request("DELETE", `/api/avatarnft/${id}`);
+  async burnUserNFT(id: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(id, "userNFTId");
+    return this.request("DELETE", `/api/usernft/${id}`);
   }
 
-  async bindHolonToNFT(avatarNFTId: string, holonId: string, params: { role: string; permissionLevel: string; permissions?: Record<string, string> }): Promise<Result<HolonNFTBindingResult, SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
+  async bindHolonToNFT(userNFTId: string, holonId: string, params: { role: string; permissionLevel: string; permissions?: Record<string, string> }): Promise<Result<HolonNFTBindingResult, SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
     assertUuid(holonId, "holonId");
-    return this.request("POST", `/api/avatarnft/${avatarNFTId}/holons/${holonId}/bind`, params);
+    return this.request("POST", `/api/usernft/${userNFTId}/holons/${holonId}/bind`, params);
   }
 
-  async listNFTHolonBindings(avatarNFTId: string): Promise<Result<HolonNFTBindingResult[], SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
-    return this.request("GET", `/api/avatarnft/${avatarNFTId}/holons`);
+  async listNFTHolonBindings(userNFTId: string): Promise<Result<HolonNFTBindingResult[], SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
+    return this.request("GET", `/api/usernft/${userNFTId}/holons`);
   }
 
   async updateHolonBinding(bindingId: string, params: { role?: string; permissionLevel?: string; permissions?: Record<string, string>; isActive?: boolean }): Promise<Result<HolonNFTBindingResult, SdkError>> {
     assertUuid(bindingId, "bindingId");
-    return this.request("PUT", `/api/avatarnft/holons/${bindingId}`, params);
+    return this.request("PUT", `/api/usernft/holons/${bindingId}`, params);
   }
 
   async removeHolonBinding(bindingId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(bindingId, "bindingId");
-    return this.request("DELETE", `/api/avatarnft/holons/${bindingId}`);
+    return this.request("DELETE", `/api/usernft/holons/${bindingId}`);
   }
 
-  async bindWalletToNFT(avatarNFTId: string, walletId: string, params: { bindingType: string; accessLevel: string; accessPermissions?: Record<string, string> }): Promise<Result<WalletNFTBindingResult, SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
+  async bindWalletToNFT(userNFTId: string, walletId: string, params: { bindingType: string; accessLevel: string; accessPermissions?: Record<string, string> }): Promise<Result<WalletNFTBindingResult, SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
     assertUuid(walletId, "walletId");
-    return this.request("POST", `/api/avatarnft/${avatarNFTId}/wallets/${walletId}/bind`, params);
+    return this.request("POST", `/api/usernft/${userNFTId}/wallets/${walletId}/bind`, params);
   }
 
-  async listNFTWalletBindings(avatarNFTId: string): Promise<Result<WalletNFTBindingResult[], SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
-    return this.request("GET", `/api/avatarnft/${avatarNFTId}/wallets`);
+  async listNFTWalletBindings(userNFTId: string): Promise<Result<WalletNFTBindingResult[], SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
+    return this.request("GET", `/api/usernft/${userNFTId}/wallets`);
   }
 
   async updateWalletBinding(bindingId: string, params: { bindingType?: string; accessLevel?: string; accessPermissions?: Record<string, string>; isActive?: boolean }): Promise<Result<WalletNFTBindingResult, SdkError>> {
     assertUuid(bindingId, "bindingId");
-    return this.request("PUT", `/api/avatarnft/wallets/${bindingId}`, params);
+    return this.request("PUT", `/api/usernft/wallets/${bindingId}`, params);
   }
 
   async removeWalletBinding(bindingId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(bindingId, "bindingId");
-    return this.request("DELETE", `/api/avatarnft/wallets/${bindingId}`);
+    return this.request("DELETE", `/api/usernft/wallets/${bindingId}`);
   }
 
-  async getAvatarNFTComposite(avatarNFTId: string): Promise<Result<AvatarNFTResult, SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
-    return this.request("GET", `/api/avatarnft/${avatarNFTId}/composite`);
+  async getUserNFTComposite(userNFTId: string): Promise<Result<UserNFTResult, SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
+    return this.request("GET", `/api/usernft/${userNFTId}/composite`);
   }
 
-  async listAvatarNFTComposites(avatarId: string): Promise<Result<AvatarNFTResult[], SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/avatarnft/avatar/${avatarId}/composite`);
+  async listUserNFTComposites(userId: string): Promise<Result<UserNFTResult[], SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/usernft/user/${userId}/composite`);
   }
 
   async verifyNFTOwnership(params: { chainType: string; nftContractAddress: string; tokenId: string }): Promise<Result<{ isOwner: boolean }, SdkError>> {
-    return this.request("POST", "/api/avatarnft/verify-ownership", params);
+    return this.request("POST", "/api/usernft/verify-ownership", params);
   }
 
-  async verifyHolonAccess(params: { avatarNFTId: string; holonId: string; requiredPermission?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
-    return this.request("POST", "/api/avatarnft/verify-holon-access", params);
+  async verifyHolonAccess(params: { userNFTId: string; holonId: string; requiredPermission?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
+    return this.request("POST", "/api/usernft/verify-holon-access", params);
   }
 
-  async verifyWalletAccess(params: { avatarNFTId: string; walletId: string; requiredAccess?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
-    return this.request("POST", "/api/avatarnft/verify-wallet-access", params);
+  async verifyWalletAccess(params: { userNFTId: string; walletId: string; requiredAccess?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
+    return this.request("POST", "/api/usernft/verify-wallet-access", params);
   }
 
-  // ─── Quest DAG Operations ───
+  // ─── ActionDefinition DAG Operations ───
 
-  /** Create a new quest with a DAG of nodes and edges. */
-  async createQuest(params: QuestCreateParams): Promise<Result<QuestResult, SdkError>> {
-    return this.request("POST", "/api/quest", params);
+  /** Create a new action with a DAG of nodes and edges. */
+  async createAction(params: ActionCreateParams): Promise<Result<ActionResult, SdkError>> {
+    return this.request("POST", "/api/action", params);
   }
 
-  /** Get a quest by ID, including all nodes, edges, and dependencies. */
-  async getQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("GET", `/api/quest/${questId}`);
+  /** Get a action by ID, including all nodes, edges, and dependencies. */
+  async getAction(actionId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("GET", `/api/action/${actionId}`);
   }
 
-  /** List all quests belonging to an avatar. */
-  async listQuestsByAvatar(avatarId: string): Promise<Result<QuestResult[], SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/quest/avatar/${avatarId}`);
+  /** List all actions belonging to an user. */
+  async listActionsByUser(userId: string): Promise<Result<ActionResult[], SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/action/user/${userId}`);
   }
 
   /**
-   * Marketplace browse: list every public + Active quest any authenticated avatar
-   * may fork/start (maps to `GET /api/quest/public`, QuestController.ListPublic). A
-   * non-owner starts one via {@link executeQuest}; the run is owned by the caller and
-   * carries provenance back to the origin quest ({@link QuestRunResult.originAvatarId}).
+   * Marketplace browse: list every public + Active action any authenticated user
+   * may fork/start (maps to `GET /api/action/public`, ActionController.ListPublic). A
+   * non-owner starts one via {@link executeAction}; the run is owned by the caller and
+   * carries provenance back to the origin action ({@link ActionRunResult.originUserId}).
    */
-  async listPublicQuests(): Promise<Result<QuestResult[], SdkError>> {
-    return this.request("GET", API_PATHS.QUEST_PUBLIC);
+  async listPublicActions(): Promise<Result<ActionResult[], SdkError>> {
+    return this.request("GET", API_PATHS.ACTION_PUBLIC);
   }
 
-  /** Update quest metadata or status. */
-  async updateQuest(questId: string, params: QuestUpdateParams): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("PUT", `/api/quest/${questId}`, params);
+  /** Update action metadata or status. */
+  async updateAction(actionId: string, params: ActionUpdateParams): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("PUT", `/api/action/${actionId}`, params);
   }
 
-  /** Delete a quest and all its nodes/edges. */
-  async deleteQuest(questId: string): Promise<Result<{ message: string }, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("DELETE", `/api/quest/${questId}`);
+  /** Delete a action and all its nodes/edges. */
+  async deleteAction(actionId: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("DELETE", `/api/action/${actionId}`);
   }
 
-  /** Validate quest DAG structure (checks for cycles, unreachable nodes, etc.). */
-  async validateQuestDag(questId: string): Promise<Result<boolean, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", `/api/quest/${questId}/validate`);
+  /** Validate action DAG structure (checks for cycles, unreachable nodes, etc.). */
+  async validateActionDag(actionId: string): Promise<Result<boolean, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", `/api/action/${actionId}/validate`);
   }
 
   /**
-   * Run the full validation stack and flip the quest from Draft to Active.
-   * Returns validation errors on failure (400); quest stays Draft. Also fails
+   * Run the full validation stack and flip the action from Draft to Active.
+   * Returns validation errors on failure (400); action stays Draft. Also fails
    * (400, message containing "Publish conflict") when a concurrent
    * publish/unpublish raced this call and won the optimistic-concurrency check
-   * on {@link QuestResult.version} (final-hardening F6) — use {@link isQuestConflict}
+   * on {@link ActionResult.version} (final-hardening F6) — use {@link isActionConflict}
    * to detect this case and prompt the caller to reload + retry.
    * See Managers/AGENTS.md §publish-lifecycle.
    */
-  async publishQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", API_PATHS.QUEST_PUBLISH(questId));
+  async publishAction(actionId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", API_PATHS.ACTION_PUBLISH(actionId));
   }
 
   /**
-   * Flip an Active quest back to Draft so its definition can be mutated.
-   * Returns an error if any in-flight runs exist for this quest, or (message
+   * Flip an Active action back to Draft so its definition can be mutated.
+   * Returns an error if any in-flight runs exist for this action, or (message
    * containing "Unpublish conflict") if a concurrent transition raced and won
-   * the version check (final-hardening F6) — see {@link isQuestConflict}.
+   * the version check (final-hardening F6) — see {@link isActionConflict}.
    */
-  async unpublishQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", API_PATHS.QUEST_UNPUBLISH(questId));
+  async unpublishAction(actionId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", API_PATHS.ACTION_UNPUBLISH(actionId));
   }
 
   /**
-   * Execute all ready nodes in the quest DAG. Returns the produced
-   * {@link QuestRunResult} (one execution attempt) — NOT the quest
-   * definition. Fails (400, message containing "Quest run conflict") if the
-   * quest was unpublished or modified concurrently (final-hardening F6) —
-   * see {@link isQuestConflict}. A non-owner may call this on a
-   * `isPublic` quest (quest-marketplace-provenance); the resulting run is
-   * owned by the caller and carries {@link QuestRunResult.sourceQuestId} /
-   * {@link QuestRunResult.originAvatarId} back to the quest owner.
+   * Execute all ready nodes in the action DAG. Returns the produced
+   * {@link ActionRunResult} (one execution attempt) — NOT the action
+   * definition. Fails (400, message containing "ActionDefinition run conflict") if the
+   * action was unpublished or modified concurrently (final-hardening F6) —
+   * see {@link isActionConflict}. A non-owner may call this on a
+   * `isPublic` action (action-marketplace-provenance); the resulting run is
+   * owned by the caller and carries {@link ActionRunResult.sourceActionId} /
+   * {@link ActionRunResult.originUserId} back to the action owner.
    */
-  async executeQuest(questId: string): Promise<Result<QuestRunResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", `/api/quest/${questId}/execute`);
+  async executeAction(actionId: string): Promise<Result<ActionRunResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", `/api/action/${actionId}/execute`);
   }
 
-  /** Execute a single node within a quest. */
-  async executeQuestNode(questId: string, nodeId: string): Promise<Result<QuestNodeResult, SdkError>> {
-    assertUuid(questId, "questId");
+  /** Execute a single node within a action. */
+  async executeActionNode(actionId: string, nodeId: string): Promise<Result<ActionNodeResult, SdkError>> {
+    assertUuid(actionId, "actionId");
     assertUuid(nodeId, "nodeId");
-    return this.request("POST", `/api/quest/${questId}/nodes/${nodeId}/execute`);
+    return this.request("POST", `/api/action/${actionId}/nodes/${nodeId}/execute`);
   }
 
-  // ─── Quest Invitations + Request/Approval (quest-invitations-approval) ───
+  // ─── ActionDefinition Invitations + Request/Approval (action-invitations-approval) ───
 
   /**
    * Owner-only: set the run-authorization mode (`Open` ↔ `InviteOnly`) and
    * optionally seed the invite list. Orthogonal to marketplace visibility
-   * ({@link QuestResult.isPublic}) — an `InviteOnly` quest stays viewable but
-   * runs/forks only for owner + invited avatars.
+   * ({@link ActionResult.isPublic}) — an `InviteOnly` action stays viewable but
+   * runs/forks only for owner + invited users.
    */
-  async setQuestRunAccess(questId: string, body: SetRunAccessRequest): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    if (body.invitedAvatarIds) {
-      for (const id of body.invitedAvatarIds) assertUuid(id, "invitedAvatarId");
+  async setActionRunAccess(actionId: string, body: SetRunAccessRequest): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    if (body.invitedUserIds) {
+      for (const id of body.invitedUserIds) assertUuid(id, "invitedUserId");
     }
-    return this.request("PUT", API_PATHS.QUEST_RUN_ACCESS(questId), body);
+    return this.request("PUT", API_PATHS.ACTION_RUN_ACCESS(actionId), body);
   }
 
-  /** Owner-only: directly invite an avatar to run an `InviteOnly` quest (no request needed). */
-  async inviteAvatar(questId: string, avatarId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    assertUuid(avatarId, "avatarId");
-    return this.request("POST", API_PATHS.QUEST_INVITE(questId), { avatarId } as InviteAvatarRequest);
+  /** Owner-only: directly invite an user to run an `InviteOnly` action (no request needed). */
+  async inviteUser(actionId: string, userId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    assertUuid(userId, "userId");
+    return this.request("POST", API_PATHS.ACTION_INVITE(actionId), { userId } as InviteUserRequest);
   }
 
-  /** Owner-only: revoke an avatar's invitation. In-flight runs are unaffected; new starts are gated. */
-  async revokeInvite(questId: string, avatarId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    assertUuid(avatarId, "avatarId");
-    return this.request("DELETE", API_PATHS.QUEST_INVITE_REVOKE(questId, avatarId));
+  /** Owner-only: revoke an user's invitation. In-flight runs are unaffected; new starts are gated. */
+  async revokeInvite(actionId: string, userId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    assertUuid(userId, "userId");
+    return this.request("DELETE", API_PATHS.ACTION_INVITE_REVOKE(actionId, userId));
   }
 
   /**
    * Open (or return the existing) Pending access request for an `InviteOnly`
-   * quest the caller can view. Idempotent per (quest, requester): re-requesting
+   * action the caller can view. Idempotent per (action, requester): re-requesting
    * while Pending returns the same request; re-requesting after a terminal state
    * opens a fresh Pending. Rejected server-side for owner / already-invited.
    */
-  async requestQuestAccess(questId: string, message?: string): Promise<Result<QuestAccessRequest, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", API_PATHS.QUEST_ACCESS_REQUESTS(questId), { message } as RequestAccessBody);
+  async requestActionAccess(actionId: string, message?: string): Promise<Result<ActionAccessRequest, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", API_PATHS.ACTION_ACCESS_REQUESTS(actionId), { message } as RequestAccessBody);
   }
 
-  /** Owner-only: list the approval queue for a quest, optionally filtered by status. */
-  async listAccessRequests(questId: string, status?: QuestAccessRequestStatus): Promise<Result<QuestAccessRequest[], SdkError>> {
-    assertUuid(questId, "questId");
+  /** Owner-only: list the approval queue for a action, optionally filtered by status. */
+  async listAccessRequests(actionId: string, status?: ActionAccessRequestStatus): Promise<Result<ActionAccessRequest[], SdkError>> {
+    assertUuid(actionId, "actionId");
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
-    return this.request("GET", `${API_PATHS.QUEST_ACCESS_REQUESTS(questId)}${query}`);
+    return this.request("GET", `${API_PATHS.ACTION_ACCESS_REQUESTS(actionId)}${query}`);
   }
 
   /**
    * Owner-only: approve (append requester to the invited set) or reject a
-   * Pending request. Scoped by the request's quest owner; terminal requests are
+   * Pending request. Scoped by the request's action owner; terminal requests are
    * immutable.
    */
-  async decideAccessRequest(requestId: string, approve: boolean, reason?: string): Promise<Result<QuestAccessRequest, SdkError>> {
+  async decideAccessRequest(requestId: string, approve: boolean, reason?: string): Promise<Result<ActionAccessRequest, SdkError>> {
     assertUuid(requestId, "requestId");
-    return this.request("POST", API_PATHS.QUEST_ACCESS_REQUEST_DECISION(requestId), { approve, reason } as DecideAccessRequestBody);
+    return this.request("POST", API_PATHS.ACTION_ACCESS_REQUEST_DECISION(requestId), { approve, reason } as DecideAccessRequestBody);
   }
 
   /** Requester-only: withdraw the caller's own Pending request. */
-  async withdrawAccessRequest(requestId: string): Promise<Result<QuestAccessRequest, SdkError>> {
+  async withdrawAccessRequest(requestId: string): Promise<Result<ActionAccessRequest, SdkError>> {
     assertUuid(requestId, "requestId");
-    return this.request("POST", API_PATHS.QUEST_ACCESS_REQUEST_WITHDRAW(requestId));
+    return this.request("POST", API_PATHS.ACTION_ACCESS_REQUEST_WITHDRAW(requestId));
   }
 
   /** Requester-only: list the caller's own outbound access requests, optionally filtered by status. */
-  async listMyAccessRequests(status?: QuestAccessRequestStatus): Promise<Result<QuestAccessRequest[], SdkError>> {
+  async listMyAccessRequests(status?: ActionAccessRequestStatus): Promise<Result<ActionAccessRequest[], SdkError>> {
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
-    return this.request("GET", `${API_PATHS.QUEST_ACCESS_REQUESTS_MINE}${query}`);
+    return this.request("GET", `${API_PATHS.ACTION_ACCESS_REQUESTS_MINE}${query}`);
   }
 
-  // ─── Quest Templates ───
+  // ─── ActionDefinition Templates ───
 
-  /** Create a reusable quest template. */
-  async createQuestTemplate(params: QuestTemplateCreateParams): Promise<Result<QuestTemplateResult, SdkError>> {
-    return this.request("POST", "/api/quest/templates", params);
+  /** Create a reusable action template. */
+  async createActionTemplate(params: ActionTemplateCreateParams): Promise<Result<ActionTemplateResult, SdkError>> {
+    return this.request("POST", "/api/action/templates", params);
   }
 
-  /** Get a quest template by ID. */
-  async getQuestTemplate(templateId: string): Promise<Result<QuestTemplateResult, SdkError>> {
+  /** Get a action template by ID. */
+  async getActionTemplate(templateId: string): Promise<Result<ActionTemplateResult, SdkError>> {
     assertUuid(templateId, "templateId");
-    return this.request("GET", `/api/quest/templates/${templateId}`);
+    return this.request("GET", `/api/action/templates/${templateId}`);
   }
 
-  /** List all available quest templates. */
-  async listQuestTemplates(): Promise<Result<QuestTemplateResult[], SdkError>> {
-    return this.request("GET", "/api/quest/templates");
+  /** List all available action templates. */
+  async listActionTemplates(): Promise<Result<ActionTemplateResult[], SdkError>> {
+    return this.request("GET", "/api/action/templates");
   }
 
-  /** Instantiate a quest from a template with optional parameter overrides. */
-  async instantiateQuestTemplate(templateId: string, parameters?: Record<string, string>): Promise<Result<QuestResult, SdkError>> {
+  /** Instantiate a action from a template with optional parameter overrides. */
+  async instantiateActionTemplate(templateId: string, parameters?: Record<string, string>): Promise<Result<ActionResult, SdkError>> {
     assertUuid(templateId, "templateId");
-    return this.request("POST", `/api/quest/templates/${templateId}/instantiate`, parameters);
+    return this.request("POST", `/api/action/templates/${templateId}/instantiate`, parameters);
   }
 
-  // ─── Quest Node Templates ───
+  // ─── ActionDefinition Node Templates ───
 
   /** Create a reusable node template. */
-  async createQuestNodeTemplate(params: QuestNodeTemplateCreateParams): Promise<Result<QuestNodeTemplateResult, SdkError>> {
-    return this.request("POST", "/api/quest/node-templates", params);
+  async createActionNodeTemplate(params: ActionNodeTemplateCreateParams): Promise<Result<ActionNodeTemplateResult, SdkError>> {
+    return this.request("POST", "/api/action/node-templates", params);
   }
 
   /** List all available node templates. */
-  async listQuestNodeTemplates(): Promise<Result<QuestNodeTemplateResult[], SdkError>> {
-    return this.request("GET", "/api/quest/node-templates");
+  async listActionNodeTemplates(): Promise<Result<ActionNodeTemplateResult[], SdkError>> {
+    return this.request("GET", "/api/action/node-templates");
   }
 
   // ─── API Key Management ───
@@ -1891,7 +1891,7 @@ export class AzoaApiClient {
     return this.request("POST", "/api/apikey", params);
   }
 
-  /** List all API keys for the authenticated avatar (raw keys are never returned). */
+  /** List all API keys for the authenticated user (raw keys are never returned). */
   async listApiKeys(): Promise<Result<ApiKeyInfo[], SdkError>> {
     return this.request("GET", "/api/apikey");
   }
@@ -1909,7 +1909,7 @@ export class AzoaApiClient {
   }
 
   /**
-   * List the scopes an avatar may self-issue on a new key, each with a human
+   * List the scopes an user may self-issue on a new key, each with a human
    * description (maps to `GET /api/apikey/scopes`). Drives the key-creation scope
    * picker. An empty CSV still means legacy "full access" — these are the opt-in scopes.
    */
@@ -1933,7 +1933,7 @@ export class AzoaApiClient {
   }
 
   // ─── DappSeries (DappSeriesController) ───
-  // Reads are authenticated-avatar reads; authoring writes require dapp:develop.
+  // Reads are authenticated-user reads; authoring writes require dapp:develop.
 
   /** List the caller's dApp-series, optionally filtered by status. */
   async listDappSeries(status?: DappSeriesStatus): Promise<Result<DappSeriesResult[], SdkError>> {
@@ -1964,38 +1964,38 @@ export class AzoaApiClient {
     return this.request("DELETE", API_PATHS.DAPP_SERIES_DELETE(id));
   }
 
-  /** List the ordered quest entries in a dApp-series. */
-  async listSeriesQuests(seriesId: string): Promise<Result<DappSeriesQuestResult[], SdkError>> {
+  /** List the ordered action entries in a dApp-series. */
+  async listSeriesActions(seriesId: string): Promise<Result<DappSeriesActionResult[], SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    return this.request("GET", API_PATHS.DAPP_SERIES_QUESTS(seriesId));
+    return this.request("GET", API_PATHS.DAPP_SERIES_ACTIONS(seriesId));
   }
 
-  /** Add a quest to a dApp-series at a given order. Requires the `dapp:develop` scope. */
-  async addSeriesQuest(seriesId: string, params: DappSeriesAddQuestParams): Promise<Result<DappSeriesQuestResult, SdkError>> {
+  /** Add a action to a dApp-series at a given order. Requires the `dapp:develop` scope. */
+  async addSeriesAction(seriesId: string, params: DappSeriesAddActionParams): Promise<Result<DappSeriesActionResult, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    assertUuid(params.questId, "questId");
-    return this.request("POST", API_PATHS.DAPP_SERIES_QUESTS(seriesId), params);
+    assertUuid(params.actionId, "actionId");
+    return this.request("POST", API_PATHS.DAPP_SERIES_ACTIONS(seriesId), params);
   }
 
-  /** Remove a quest from a dApp-series. Requires the `dapp:develop` scope. */
-  async removeSeriesQuest(seriesId: string, questId: string): Promise<Result<{ message: string }, SdkError>> {
+  /** Remove a action from a dApp-series. Requires the `dapp:develop` scope. */
+  async removeSeriesAction(seriesId: string, actionId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    assertUuid(questId, "questId");
-    return this.request("DELETE", API_PATHS.DAPP_SERIES_QUEST_REMOVE(seriesId, questId));
+    assertUuid(actionId, "actionId");
+    return this.request("DELETE", API_PATHS.DAPP_SERIES_ACTION_REMOVE(seriesId, actionId));
   }
 
-  /** Change a quest's 1-indexed order within a series. Requires the `dapp:develop` scope. */
-  async reorderSeriesQuest(seriesId: string, questId: string, newOrder: number): Promise<Result<DappSeriesQuestResult, SdkError>> {
+  /** Change a action's 1-indexed order within a series. Requires the `dapp:develop` scope. */
+  async reorderSeriesAction(seriesId: string, actionId: string, newOrder: number): Promise<Result<DappSeriesActionResult, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    assertUuid(questId, "questId");
-    return this.request("PUT", API_PATHS.DAPP_SERIES_QUEST_ORDER(seriesId, questId), { newOrder });
+    assertUuid(actionId, "actionId");
+    return this.request("PUT", API_PATHS.DAPP_SERIES_ACTION_ORDER(seriesId, actionId), { newOrder });
   }
 
-  /** Update a quest's cross-quest input mappings (JSON array). Requires the `dapp:develop` scope. */
-  async updateSeriesMappings(seriesId: string, questId: string, inputMappings: string | null): Promise<Result<DappSeriesQuestResult, SdkError>> {
+  /** Update a action's cross-action input mappings (JSON array). Requires the `dapp:develop` scope. */
+  async updateSeriesMappings(seriesId: string, actionId: string, inputMappings: string | null): Promise<Result<DappSeriesActionResult, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    assertUuid(questId, "questId");
-    return this.request("PUT", API_PATHS.DAPP_SERIES_QUEST_MAPPINGS(seriesId, questId), { inputMappings });
+    assertUuid(actionId, "actionId");
+    return this.request("PUT", API_PATHS.DAPP_SERIES_ACTION_MAPPINGS(seriesId, actionId), { inputMappings });
   }
 
   /**

@@ -28,7 +28,7 @@ namespace AZOA.WebAPI.Tests.Services;
 /// through <see cref="CrossChainBridgeService"/> AND the
 /// <see cref="ReconciliationService"/> sweep over ONE shared
 /// <see cref="FakeBridgeStore"/> + <see cref="FakeIdempotencyStore"/> — the
-/// integrated proof that the kill switch, VAA replay ledger, avatar-scoped
+/// integrated proof that the kill switch, VAA replay ledger, user-scoped
 /// idempotency, atomic status guards, and reconciliation compose into an
 /// exactly-once system: no replayed VAA / duplicate idempotency key ever
 /// double-mints or double-releases, and a crash-resume never re-broadcasts.
@@ -47,14 +47,14 @@ public sealed class BridgeExactlyOnceReplaySweepTests
     public async Task Trusted_DuplicateClientKey_ExactlyOneLockAndMint()
     {
         using var h = new SweepHarness();
-        var avatar = Guid.NewGuid();
+        var user = Guid.NewGuid();
 
-        // Both calls carry the SAME client idempotency key + same avatar.
+        // Both calls carry the SAME client idempotency key + same user.
         var first = await h.Bridge().InitiateBridgeAsync(
-            "Algorand", "Solana", "tok1", "recipient", avatar, amount: 1,
+            "Algorand", "Solana", "tok1", "recipient", user, amount: 1,
             mode: BridgeMode.Trusted, clientIdempotencyKey: "dup-key");
         var second = await h.Bridge().InitiateBridgeAsync(
-            "Algorand", "Solana", "tok1", "recipient", avatar, amount: 1,
+            "Algorand", "Solana", "tok1", "recipient", user, amount: 1,
             mode: BridgeMode.Trusted, clientIdempotencyKey: "dup-key");
 
         first.IsError.Should().BeFalse();
@@ -142,10 +142,10 @@ public sealed class BridgeExactlyOnceReplaySweepTests
     public async Task KillSwitch_Off_RefusesRealValueOnEveryPath_ZeroOnChain()
     {
         using var h = new SweepHarness(realValueEnabled: false);
-        var avatar = Guid.NewGuid();
+        var user = Guid.NewGuid();
 
         var init = await h.Bridge().InitiateBridgeAsync(
-            "Algorand", "Solana", "tok1", "recipient", avatar, 1, BridgeMode.Trusted);
+            "Algorand", "Solana", "tok1", "recipient", user, 1, BridgeMode.Trusted);
         init.IsError.Should().BeTrue("kill switch off must refuse a real-value initiate");
         init.Message.Should().Contain("disabled");
 
@@ -295,7 +295,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
             var id = $"wh_bridge_{Guid.NewGuid():N}";
             BridgeStore.SeedBridge(new BridgeTransactionResult
             {
-                Id = id, AvatarId = Guid.NewGuid(),
+                Id = id, UserId = Guid.NewGuid(),
                 SourceChain = "Algorand", TargetChain = "Solana",
                 SourceTokenId = "tok1", TargetAddress = "recipient",
                 Amount = 1, Mode = BridgeMode.Wormhole,
@@ -314,7 +314,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
             var row = new BridgeTransactionResult
             {
                 Id = $"wh_bridge_{Guid.NewGuid():N}",
-                AvatarId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
                 SourceChain = "Algorand", TargetChain = "Solana",
                 SourceTokenId = "tok1", TargetAddress = "recipient",
                 Amount = 1, Mode = BridgeMode.Wormhole,

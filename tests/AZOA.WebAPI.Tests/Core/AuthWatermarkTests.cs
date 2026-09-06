@@ -5,8 +5,8 @@ using AZOA.WebAPI.Core;
 namespace AZOA.WebAPI.Tests.Core;
 
 /// <summary>
-/// user-sovereign-identity AC3b (security-review fix): the per-avatar AuthNotBefore
-/// watermark cut. When a user CLAIMS an avatar, any credential minted BEFORE that
+/// user-sovereign-identity AC3b (security-review fix): the per-user AuthNotBefore
+/// watermark cut. When a user CLAIMS an user, any credential minted BEFORE that
 /// instant — notably a tenant child JWT issued in the window before the claim — is
 /// stale and must be rejected on EVERY request. These cases pin the adversarial
 /// boundary: a one-second grace for second-precision JWT timestamps, but anything
@@ -23,7 +23,7 @@ public class AuthWatermarkTests
     [InlineData(600)]      // token in the future
     public void NullWatermark_NeverStale_ForAnyTokenInstant(int offsetSeconds)
     {
-        // ATTACK BLOCKED: an avatar that was NEVER claimed has no watermark, so a
+        // ATTACK BLOCKED: an user that was NEVER claimed has no watermark, so a
         // legitimately-minted token (at any instant) must not be spuriously rejected.
         var tokenInstant = Base.AddSeconds(offsetSeconds);
         AuthWatermark.IsTokenStale(tokenInstant, watermark: null).Should().BeFalse();
@@ -33,8 +33,8 @@ public class AuthWatermarkTests
     public void TokenIssuedBeforeWatermark_IsStale()
     {
         // THE ATTACK: a tenant child JWT minted 10 minutes BEFORE the user claimed
-        // their avatar must be rejected on every request post-claim — it cannot be
-        // used to act on the now-self-sovereign avatar.
+        // their user must be rejected on every request post-claim — it cannot be
+        // used to act on the now-self-sovereign user.
         var watermark = Base;
         var tokenInstant = Base.AddMinutes(-10);
         AuthWatermark.IsTokenStale(tokenInstant, watermark).Should().BeTrue();

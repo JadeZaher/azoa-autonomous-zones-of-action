@@ -21,7 +21,7 @@ const KIND_COLOR: Record<string, { border: string; dot: string }> = {
 
 /**
  * Custom React Flow node for a single ecosystem tree entry. Mirrors the
- * quest-builder QuestNode card, keyed by ref kind instead of node category.
+ * action-builder ActionNode card, keyed by ref kind instead of node category.
  */
 function EcosystemNodeInner({ data, selected }: NodeProps) {
   const d = data as EcosystemNodeData

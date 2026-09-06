@@ -55,9 +55,9 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
 
     /// <inheritdoc />
     public async Task<AZOAResult<FungibleTokenResult>> CreateAsync(
-        Guid avatarId,
+        Guid userId,
         FungibleTokenCreateRequest request,
-        Guid callerAvatarId,
+        Guid callerUserId,
         string? clientIdempotencyKey,
         string apiKeyId,
         Guid? actingTenantId = null)
@@ -85,7 +85,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         // descriptor. NEVER a random per-request key. The whole key is partitioned
         // by apiKeyId so two tenants reusing the same human-friendly key cannot
         // collide.
-        var idempotencyKey = BuildIdempotencyKey(apiKeyId, avatarId, request, clientIdempotencyKey);
+        var idempotencyKey = BuildIdempotencyKey(apiKeyId, userId, request, clientIdempotencyKey);
 
         // ── Step 2: idempotency claim ─────────────────────────────────────────
         // TryClaim BEFORE any irreversible effect. On a lost claim we replay the
@@ -98,8 +98,8 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         try
         {
             // ── Step 3: KYC gate (fail-closed) ────────────────────────────────
-            // A rejected avatar produces NO side effect at all under a won claim.
-            var gate = await _valueAccess.RequireValueAccessAsync(avatarId, actingTenantId);
+            // A rejected user produces NO side effect at all under a won claim.
+            var gate = await _valueAccess.RequireValueAccessAsync(userId, actingTenantId);
             if (gate.IsError)
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, gate.Message, CancellationToken.None);
@@ -116,7 +116,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             }
 
             // ── Step 5: provision-if-absent ───────────────────────────────────
-            var (wallet, provisioned, walletError) = await EnsureWalletAsync(avatarId, request.ChainType);
+            var (wallet, provisioned, walletError) = await EnsureWalletAsync(userId, request.ChainType);
             if (wallet is null)
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, walletError, CancellationToken.None);
@@ -137,11 +137,11 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             var total = checked((int)request.Total);
             // AC4b: a FungibleTokenCreate is platform-SIGNED but may be tenant-DRIVEN.
             // When an acting tenant is present, build a tenant-driven platform context
-            // (grantor = the on-whose-behalf avatar, scope = token:create:sign) so the
+            // (grantor = the on-whose-behalf user, scope = token:create:sign) so the
             // custody seam runs the live consent check before key decrypt; otherwise a
             // plain platform context (no grant required).
             var signingContext = actingTenantId is { } tenant && tenant != Guid.Empty
-                ? SigningContext.Platform.ActingAs(tenant, AzoaScopes.TokenCreateSign, avatarId)
+                ? SigningContext.Platform.ActingAs(tenant, AzoaScopes.TokenCreateSign, userId)
                 : SigningContext.Platform;
             effectMayHaveStarted = true;
             var asaResult = await asa!.CreateASAAsync(
@@ -166,7 +166,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
 
             var result = new FungibleTokenResult
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 WalletId = wallet.Id,
                 WalletAddress = wallet.Address,
                 WalletProvisioned = provisioned,
@@ -192,13 +192,13 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
     // ── Provision-if-absent (mirrors AllocationManager.EnsureWalletAsync) ──────
 
     /// <summary>
-    /// Returns the avatar's existing wallet for the chain, or generates one.
+    /// Returns the user's existing wallet for the chain, or generates one.
     /// Never duplicates (uniqueness is also guarded inside GenerateWalletAsync).
     /// </summary>
     private async Task<(IWallet? Wallet, bool Provisioned, string Error)> EnsureWalletAsync(
-        Guid avatarId, string chainType)
+        Guid userId, string chainType)
     {
-        var existing = await _walletStore.GetByAvatarAsync(avatarId);
+        var existing = await _walletStore.GetByUserAsync(userId);
         // Fail closed on a query error: silently provisioning a new wallet would
         // risk a duplicate and mask the underlying database fault.
         if (existing.IsError)
@@ -213,7 +213,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
         }
 
         var gen = await _walletManager.GenerateWalletAsync(
-            new WalletGenerateRequest { ChainType = chainType }, avatarId);
+            new WalletGenerateRequest { ChainType = chainType }, userId);
         if (gen.IsError || gen.Result is null)
             return (null, false, gen.IsError ? gen.Message : "Wallet provisioning failed.");
 
@@ -294,18 +294,18 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
     /// present, else a deterministic SHA-256 over the token descriptor.
     /// </summary>
     private static string BuildIdempotencyKey(
-        string apiKeyId, Guid avatarId, FungibleTokenCreateRequest request, string? clientIdempotencyKey)
+        string apiKeyId, Guid userId, FungibleTokenCreateRequest request, string? clientIdempotencyKey)
     {
         var tail = !string.IsNullOrWhiteSpace(clientIdempotencyKey)
             ? clientIdempotencyKey.Trim()
-            : DeterministicContentKey(avatarId, request);
+            : DeterministicContentKey(userId, request);
         return $"fungible:{apiKeyId}:{tail}";
     }
 
-    private static string DeterministicContentKey(Guid avatarId, FungibleTokenCreateRequest request)
+    private static string DeterministicContentKey(Guid userId, FungibleTokenCreateRequest request)
     {
         var canonical = string.Join('|',
-            avatarId.ToString("N"),
+            userId.ToString("N"),
             request.ChainType.ToLowerInvariant(),
             request.Name,
             request.UnitName,

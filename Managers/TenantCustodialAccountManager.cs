@@ -218,7 +218,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 SafeIdentityMessage(child.Message));
 
         var capabilities = (await GetCapabilitiesAsync(tenantId, ct)).Result!;
-        var wallet = await FindBootstrapWalletAsync(child.Result.AvatarId, capabilities.WalletChain);
+        var wallet = await FindBootstrapWalletAsync(child.Result.UserId, capabilities.WalletChain);
         if (wallet.IsError)
             return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
                 "TENANT_WALLET_UNAVAILABLE: Custodial wallet status is temporarily unavailable.");
@@ -226,7 +226,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         return await BuildStatusAsync(
             tenantId,
             externalSubject,
-            child.Result.AvatarId,
+            child.Result.UserId,
             wallet.Result,
             capabilities,
             ct);
@@ -282,7 +282,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
             // immutable HTTP response". IKycManager owns durable attempt reuse
             // and server-side rollover after rejection/expiry.
             var started = await _kyc.BeginAsync(
-                child.Result.AvatarId,
+                child.Result.UserId,
                 tenantId,
                 claim.Won ? CancellationToken.None : ct);
             if (started.IsError || started.Result is null)
@@ -363,7 +363,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 "KYC document references must not contain null entries.");
         }
 
-        var current = await _kyc.GetStatusAsync(child.Result.AvatarId, tenantId, ct);
+        var current = await _kyc.GetStatusAsync(child.Result.UserId, tenantId, ct);
         if (!current.IsError && current.Result is not null
             && current.Result.Status is KycStatus.PENDING or KycStatus.IN_REVIEW or KycStatus.APPROVED)
         {
@@ -391,7 +391,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 FileSizeBytes = document.FileSizeBytes
             }).ToList()
         };
-        var submitted = await _kyc.SubmitAsync(model, child.Result.AvatarId, tenantId, ct);
+        var submitted = await _kyc.SubmitAsync(model, child.Result.UserId, tenantId, ct);
         if (submitted.IsError || submitted.Result is null)
             return AZOAResult<TenantKycSubmissionResponse>.Failure(
                 SafeKycMessage(submitted.Message, submitted.Exception));
@@ -402,12 +402,12 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
     private async Task<AZOAResult<TenantCustodialAccountStatusResponse>> BuildStatusAsync(
         Guid tenantId,
         string externalSubject,
-        Guid avatarId,
+        Guid userId,
         IWallet? wallet,
         TenantCustodialCapabilitiesResponse capabilities,
         CancellationToken ct)
     {
-        var kyc = await _kyc.GetStatusAsync(avatarId, tenantId, ct);
+        var kyc = await _kyc.GetStatusAsync(userId, tenantId, ct);
         var kycStatus = TenantKycStatus.Unknown;
         if (!kyc.IsError && kyc.Result is not null)
         {
@@ -422,7 +422,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         var walletReady = capabilities.WalletProvisioningReady
             && wallet is not null
             && wallet.Id != Guid.Empty
-            && wallet.AvatarId == avatarId
+            && wallet.UserId == userId
             && wallet.WalletType == WalletType.Platform
             && !string.IsNullOrWhiteSpace(wallet.Address)
             && !string.IsNullOrWhiteSpace(wallet.EncryptedPrivateKey);
@@ -435,7 +435,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         {
             TenantId = tenantId.ToString("D"),
             ExternalSubject = externalSubject,
-            AvatarId = avatarId.ToString("D"),
+            UserId = userId.ToString("D"),
             WalletId = wallet?.Id.ToString("D"),
             WalletAddress = wallet?.Address,
             KycStatus = kycStatus,
@@ -450,30 +450,30 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         });
     }
 
-    private async Task<AZOAResult<IWallet>> FindBootstrapWalletAsync(Guid avatarId, string chain)
+    private async Task<AZOAResult<IWallet>> FindBootstrapWalletAsync(Guid userId, string chain)
     {
         if (string.IsNullOrWhiteSpace(chain))
             return AZOAResult<IWallet>.Success(null!, "Custodial wallet chain is unavailable.");
 
-        var wallets = await _wallets.QueryAsync(new WalletQueryRequest { ChainType = chain }, avatarId);
+        var wallets = await _wallets.QueryAsync(new WalletQueryRequest { ChainType = chain }, userId);
         if (wallets.IsError)
             return AZOAResult<IWallet>.Failure(
                 "TENANT_WALLET_UNAVAILABLE: Custodial wallet status is temporarily unavailable.");
 
-        var expectedId = WalletBootstrapIdentity.For(avatarId, chain);
+        var expectedId = WalletBootstrapIdentity.For(userId, chain);
         return AZOAResult<IWallet>.Success(
             wallets.Result?.SingleOrDefault(wallet => wallet.Id == expectedId)!,
             "Success");
     }
 
-    private async Task<AZOAResult<ChildAvatarResponse>> ResolveOwnedChildAsync(
+    private async Task<AZOAResult<ChildUserResponse>> ResolveOwnedChildAsync(
         Guid tenantId,
         string externalSubject,
         CancellationToken ct)
     {
         var validation = ValidateResourceIdentity(tenantId, externalSubject, idempotencyKey: null);
         if (validation is not null)
-            return AZOAResult<ChildAvatarResponse>.Failure(validation);
+            return AZOAResult<ChildUserResponse>.Failure(validation);
 
         return await _tenants.ResolveChildAsync(tenantId, externalSubject.Trim(), ct);
     }
@@ -765,7 +765,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                     Label = $"{capabilities.WalletChain} custodial wallet",
                     IsDefault = true
                 },
-                provisioned.Result.AvatarId);
+                provisioned.Result.UserId);
             if (bootstrapped.IsError || bootstrapped.Result is null)
             {
                 return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
@@ -777,7 +777,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         return await BuildStatusAsync(
             tenantId,
             externalSubject,
-            provisioned.Result.AvatarId,
+            provisioned.Result.UserId,
             wallet,
             capabilities,
             ct);

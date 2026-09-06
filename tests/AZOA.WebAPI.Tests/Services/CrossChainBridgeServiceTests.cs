@@ -359,19 +359,19 @@ public class CrossChainBridgeServiceTests
     // ─── History ───
 
     [Fact]
-    public async Task GetBridgeHistory_ReturnsAvatarBridges()
+    public async Task GetBridgeHistory_ReturnsUserBridges()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
         _legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<BridgeLock> { IsError = false, Result = new BridgeLock("tx", PendingConfirmation: false, "confirmed") });
         _legs.Target.Setup(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { IsError = false, Result = "tx" });
 
-        await _service.InitiateBridgeAsync("Solana", "Algorand", "t1", "r", avatarId, 1, BridgeMode.Trusted);
-        await _service.InitiateBridgeAsync("Solana", "Algorand", "t2", "r", avatarId, 2, BridgeMode.Trusted);
+        await _service.InitiateBridgeAsync("Solana", "Algorand", "t1", "r", userId, 1, BridgeMode.Trusted);
+        await _service.InitiateBridgeAsync("Solana", "Algorand", "t2", "r", userId, 2, BridgeMode.Trusted);
 
-        var history = await _service.GetBridgeHistoryAsync(avatarId);
+        var history = await _service.GetBridgeHistoryAsync(userId);
         history.IsError.Should().BeFalse();
         history.Result!.Count().Should().Be(2);
     }
@@ -577,7 +577,7 @@ public class CrossChainBridgeServiceTests
     public async Task DuplicateWormholeInitiate_IsRejectedBeforeOnChainLockOrPersistence()
     {
         using var harness = new FakeBridgeHarness();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
         harness.WormholeMock.Setup(w => w.IsRouteSupported("Solana", "Algorand")).Returns(true);
 
@@ -605,11 +605,11 @@ public class CrossChainBridgeServiceTests
 
         var (svc1, _) = harness.CreateService();
         var first = await svc1.InitiateBridgeAsync(
-            "Solana", "Algorand", "token1", "recipient", avatarId, 1, BridgeMode.Wormhole);
+            "Solana", "Algorand", "token1", "recipient", userId, 1, BridgeMode.Wormhole);
 
         var (svc2, _) = harness.CreateService();
         var second = await svc2.InitiateBridgeAsync(
-            "Solana", "Algorand", "token1", "recipient", avatarId, 1, BridgeMode.Wormhole);
+            "Solana", "Algorand", "token1", "recipient", userId, 1, BridgeMode.Wormhole);
 
         first.IsError.Should().BeTrue();
         second.IsError.Should().BeTrue();
@@ -884,10 +884,10 @@ public class CrossChainBridgeServiceTests
                 return new AZOAResult<string> { Result = "mint_tx" };
             });
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var (firstService, store) = harness.CreateService(idempotency, staleClaimTakeoverSeconds: 0);
         var first = await firstService.InitiateBridgeAsync(
-            "Solana", "Algorand", "token1", "recipient", avatarId, 1,
+            "Solana", "Algorand", "token1", "recipient", userId, 1,
             BridgeMode.Trusted, clientIdempotencyKey: "crash-recovery-key");
 
         first.IsError.Should().BeTrue();
@@ -899,7 +899,7 @@ public class CrossChainBridgeServiceTests
 
         var (retryService, _) = harness.CreateService(idempotency, staleClaimTakeoverSeconds: 0);
         var retry = await retryService.InitiateBridgeAsync(
-            "Solana", "Algorand", "token1", "recipient", avatarId, 1,
+            "Solana", "Algorand", "token1", "recipient", userId, 1,
             BridgeMode.Trusted, clientIdempotencyKey: "crash-recovery-key");
 
         retry.IsError.Should().BeFalse();
@@ -931,11 +931,11 @@ public class CrossChainBridgeServiceTests
                 return new AZOAResult<string> { Result = "resumed_mint_tx" };
             });
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var idempotency = new FakeIdempotencyStore();
         var (service, store) = harness.CreateService(idempotency, staleClaimTakeoverSeconds: 0);
         var first = await service.InitiateBridgeAsync(
-            "Solana", "Algorand", "token1", "recipient", avatarId, 1,
+            "Solana", "Algorand", "token1", "recipient", userId, 1,
             BridgeMode.Trusted, clientIdempotencyKey: "pending-lock-resume");
 
         first.IsError.Should().BeFalse();
@@ -945,7 +945,7 @@ public class CrossChainBridgeServiceTests
 
         var (retryService, _) = harness.CreateService(idempotency, staleClaimTakeoverSeconds: 0);
         var retry = await retryService.InitiateBridgeAsync(
-            "Solana", "Algorand", "token1", "recipient", avatarId, 1,
+            "Solana", "Algorand", "token1", "recipient", userId, 1,
             BridgeMode.Trusted, clientIdempotencyKey: "pending-lock-resume");
 
         retry.IsError.Should().BeFalse();
@@ -1043,7 +1043,7 @@ public class CrossChainBridgeServiceTests
             _trackingStore.SeedBridge(new BridgeTransactionResult
             {
                 Id = id,
-                AvatarId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
                 SourceChain = "Solana",
                 TargetChain = "Algorand",
                 SourceTokenId = "token1",
@@ -1068,7 +1068,7 @@ public class CrossChainBridgeServiceTests
             _trackingStore.SeedBridge(new BridgeTransactionResult
             {
                 Id = id,
-                AvatarId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
                 SourceChain = "Solana",
                 TargetChain = "Algorand",
                 SourceTokenId = "token1",
@@ -1093,7 +1093,7 @@ public class CrossChainBridgeServiceTests
             _trackingStore.SeedBridge(new BridgeTransactionResult
             {
                 Id = id,
-                AvatarId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
                 SourceChain = "Solana",
                 TargetChain = "Algorand",
                 SourceTokenId = "token1",
@@ -1193,8 +1193,8 @@ public class CrossChainBridgeServiceTests
             => _inner.GetBridgeAsync(id, ct);
 
         public Task<IReadOnlyList<BridgeTransactionResult>> GetBridgeHistoryAsync(
-            Guid avatarId, bool descending = false, CancellationToken ct = default)
-            => _inner.GetBridgeHistoryAsync(avatarId, descending, ct);
+            Guid userId, bool descending = false, CancellationToken ct = default)
+            => _inner.GetBridgeHistoryAsync(userId, descending, ct);
 
         public Task<IReadOnlyList<string>> GetNonTerminalBridgeIdsAsync(
             IReadOnlyCollection<BridgeStatus> nonTerminal, DateTime staleBefore, int batch,

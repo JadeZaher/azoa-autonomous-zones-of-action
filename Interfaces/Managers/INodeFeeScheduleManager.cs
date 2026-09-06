@@ -11,11 +11,11 @@ public interface INodeFeeScheduleManager
 
     /// <summary>Validates and atomically versions a schedule plus its audit row.</summary>
     /// <param name="request">Partial schedule values and optional expected version.</param>
-    /// <param name="actorAvatarId">Authenticated node-governance actor.</param>
+    /// <param name="actorUserId">Authenticated node-governance actor.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<AZOAResult<NodeFeeScheduleResponse>> UpdateScheduleAsync(
         NodeFeeScheduleUpdateRequest request,
-        Guid actorAvatarId,
+        Guid actorUserId,
         CancellationToken ct = default);
 
     /// <summary>Loads the newest operator-only fee audit rows.</summary>

@@ -11,7 +11,7 @@ idempotency key.
 The minted token quantity is derived at webhook time from the **Stripe-confirmed**
 `session.amount_total` (cents) times the operator's price schedule
 (`TOKENS_PER_CENT`), floored to an integer. Client checkout metadata carries only
-identity/routing (`avatarId`/`assetId`/`chainType`/`kind`) — it CANNOT carry the
+identity/routing (`userId`/`assetId`/`chainType`/`kind`) — it CANNOT carry the
 mint quantity. This closes the CRITICAL-1 money-printer where a client could mint
 an arbitrary amount for a trivial payment.
 

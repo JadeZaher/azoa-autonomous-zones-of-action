@@ -43,7 +43,7 @@ public sealed class SagaOperatorStoreTests
     private async Task<SagaStepRecord> SeedParkedAsync()
     {
         var corr = $"corr-{Guid.NewGuid():N}";
-        var enq = await _store.EnqueueAsync("quest-workflow", "gate", corr,
+        var enq = await _store.EnqueueAsync("action-workflow", "gate", corr,
             $"idem-{Guid.NewGuid():N}", "{}", false, Ct);
         var claimedAt = await ClaimAsync(enq.Id);
         (await _store.ParkStepAsync(

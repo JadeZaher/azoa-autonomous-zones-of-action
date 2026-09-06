@@ -17,7 +17,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         Guardrail = "G6 SCHEMAFULL")]
     [SurrealNote("ParentHolon / SubHolons are navigation properties from EF -- not persisted. Polyhierarchy graph remodel lives in surrealdb-migration task 10.")]
     [Slice("identity")]
-    [Index("holon_avatar_id", Fields = new[] { "avatar_id" })]
+    [Index("holon_user_id", Fields = new[] { "user_id" })]
     [Index("holon_parent", Fields = new[] { "parent_holon_id" })]
     [Index("holon_provider_chain", Fields = new[] { "provider_name", "chain_id" })]
     [Index("holon_asset_type", Fields = new[] { "asset_type" })]
@@ -44,8 +44,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? ParentHolonId { get; set; }
 
         [Column(Order = 5)]
-        [References(typeof(Avatar), Optional = true)]
-        public string? AvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? UserId { get; set; }
 
         [Column(Order = 6)]
         [Required(NotEmpty = true)]
@@ -86,8 +86,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? SourceHolonId { get; set; }
 
         [Column(Order = 17)]
-        [References(typeof(Avatar), Optional = true)]
-        public string? OriginAvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? OriginUserId { get; set; }
 
         [Column(Order = 18)]
         [Default("false")]
@@ -97,8 +97,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? TransferReservationKey { get; set; }
 
         [Column(Order = 20)]
-        [References(typeof(Avatar), Optional = true)]
-        public string? TransferTargetAvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? TransferTargetUserId { get; set; }
 
         [Column(Order = 21)]
         public DateTimeOffset? TransferReservedAt { get; set; }

@@ -29,7 +29,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
     private readonly IKycProviderRegistry _registry;
     private readonly IKycManager _kyc;
     private readonly IApiKeyStore _apiKeys;
-    private readonly IAvatarStore _avatars;
+    private readonly IUserStore _users;
     private readonly IAdminBootstrapStateStore _operatorState;
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration _configuration;
@@ -40,7 +40,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         IKycProviderRegistry registry,
         IKycManager kyc,
         IApiKeyStore apiKeys,
-        IAvatarStore avatars,
+        IUserStore users,
         IAdminBootstrapStateStore operatorState,
         IHostEnvironment environment,
         IConfiguration configuration)
@@ -50,7 +50,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         _registry = registry;
         _kyc = kyc;
         _apiKeys = apiKeys;
-        _avatars = avatars;
+        _users = users;
         _operatorState = operatorState;
         _environment = environment;
         _configuration = configuration;
@@ -63,7 +63,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
     public async Task<AZOAResult<KycProviderProfileResponse>> UpdateProfileAsync(
         string providerKey,
         UpdateKycProviderProfileRequest request,
-        Guid operatorAvatarId,
+        Guid operatorUserId,
         CancellationToken ct = default)
     {
         providerKey = KycProviderRegistry.NormalizeProviderKey(providerKey);
@@ -118,7 +118,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             TrustRevision = current is null
                 ? 1
                 : current.TrustRevision + (trustChanged ? 1 : 0),
-            UpdatedByAvatarId = SurrealId.ToSurrealId(operatorAvatarId),
+            UpdatedByUserId = SurrealId.ToSurrealId(operatorUserId),
             CreatedAt = current?.CreatedAt ?? now,
             UpdatedAt = now,
         };
@@ -144,7 +144,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             AssuranceLevel = profile.AssuranceLevel,
             PreviousTrustRevision = current?.TrustRevision,
             TrustRevision = profile.TrustRevision,
-            ActorAvatarId = SurrealId.ToSurrealId(operatorAvatarId),
+            ActorUserId = SurrealId.ToSurrealId(operatorUserId),
             OccurredAt = now,
         };
         var saved = await _control.SaveProfileAsync(
@@ -192,7 +192,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
     public async Task<AZOAResult<TenantKycSelectionResponse>> SelectTenantProviderAsync(
         Guid tenantId,
         SelectTenantKycProviderRequest request,
-        Guid actorAvatarId,
+        Guid actorUserId,
         bool requireTenantAuthority,
         CancellationToken ct = default)
     {
@@ -203,12 +203,12 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             return requireTenantAuthority
                 ? Forbidden<TenantKycSelectionResponse>("TENANT_CONFIGURATION_FORBIDDEN")
                 : NotFound<TenantKycSelectionResponse>("Tenant not found.");
-        var tenant = await _avatars.GetByIdAsync(tenantId, ct);
+        var tenant = await _users.GetByIdAsync(tenantId, ct);
         if (tenant.IsError)
             return string.Equals(tenant.Code, AzoaErrorCodes.NotFound, StringComparison.Ordinal)
                 ? NotFound<TenantKycSelectionResponse>("Tenant not found.")
                 : DependencyUnavailable<TenantKycSelectionResponse>();
-        if (tenant.Result is null || !tenant.Result.IsActive || tenantId == NodeOperatorIdentity.AvatarId)
+        if (tenant.Result is null || !tenant.Result.IsActive || tenantId == NodeOperatorIdentity.UserId)
         {
             return NotFound<TenantKycSelectionResponse>("Tenant not found.");
         }
@@ -249,7 +249,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             TenantId = SurrealId.ToSurrealId(tenantId),
             ProviderKey = providerKey,
             SelectionVersion = (current?.SelectionVersion ?? 0) + 1,
-            UpdatedByAvatarId = SurrealId.ToSurrealId(actorAvatarId),
+            UpdatedByUserId = SurrealId.ToSurrealId(actorUserId),
             CreatedAt = current?.CreatedAt ?? now,
             UpdatedAt = now,
         };
@@ -261,7 +261,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             ProviderKey = providerKey,
             PreviousProviderKey = current?.ProviderKey,
             Version = selection.SelectionVersion,
-            ActorAvatarId = SurrealId.ToSurrealId(actorAvatarId),
+            ActorUserId = SurrealId.ToSurrealId(actorUserId),
             OccurredAt = now,
         };
         var saved = await _control.SaveSelectionAsync(
@@ -282,24 +282,24 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
     {
         if (limit is < 1 or > 100 || (search?.Length ?? 0) > 100 || !TryDecodeCursor(cursor, out var offset))
             return Invalid<CursorPage<OperatorTenantKycSummaryResponse>>("Invalid pagination request.");
-        var avatars = await _avatars.ListTenantPrincipalsPageAsync(offset, limit + 1, search, ct);
-        if (avatars.IsError || avatars.Result is null)
+        var users = await _users.ListTenantPrincipalsPageAsync(offset, limit + 1, search, ct);
+        if (users.IsError || users.Result is null)
             return DependencyUnavailable<CursorPage<OperatorTenantKycSummaryResponse>>();
 
-        var selected = avatars.Result.Take(limit).ToList();
+        var selected = users.Result.Take(limit).ToList();
         var items = new List<OperatorTenantKycSummaryResponse>(selected.Count);
-        foreach (var avatar in selected)
+        foreach (var user in selected)
         {
-            var selection = await _control.GetSelectionAsync(avatar.Id, ct);
+            var selection = await _control.GetSelectionAsync(user.Id, ct);
             if (selection.IsError)
                 return CopyFailure<TenantKycProviderSelection?, CursorPage<OperatorTenantKycSummaryResponse>>(selection);
-            var response = await ToSelectionResponseAsync(avatar.Id, selection.Result, ct);
+            var response = await ToSelectionResponseAsync(user.Id, selection.Result, ct);
             if (response.IsError || response.Result is null)
                 return CopyFailure<TenantKycSelectionResponse, CursorPage<OperatorTenantKycSummaryResponse>>(response);
             items.Add(new OperatorTenantKycSummaryResponse
             {
                 TenantId = response.Result.TenantId,
-                Username = avatar.Username,
+                Username = user.Username,
                 ProviderKey = response.Result.ProviderKey,
                 ProviderDisplayName = response.Result.ProviderDisplayName,
                 SelectionVersion = response.Result.SelectionVersion,
@@ -313,7 +313,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         return AZOAResult<CursorPage<OperatorTenantKycSummaryResponse>>.Success(new CursorPage<OperatorTenantKycSummaryResponse>
         {
             Items = items,
-            NextCursor = avatars.Result.Count > limit ? EncodeCursor(offset + limit) : null,
+            NextCursor = users.Result.Count > limit ? EncodeCursor(offset + limit) : null,
         });
     }
 
@@ -351,7 +351,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
     public async Task<AZOAResult<OperatorKycSubmissionQueueItem>> DecideAsync(
         Guid submissionId,
         OperatorKycDecisionRequest request,
-        Guid operatorAvatarId,
+        Guid operatorUserId,
         CancellationToken ct = default)
     {
         var loaded = await _kycStore.GetSubmissionByIdAsync(submissionId, ct);
@@ -373,8 +373,8 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
 
         AZOAResult<KycSubmissionModel> result = decision switch
         {
-            "approve" => await _kyc.ApproveAsync(submissionId, operatorAvatarId, request.Notes, ct),
-            "reject" => await _kyc.RejectAsync(submissionId, operatorAvatarId, request.Notes, request.Reason, ct),
+            "approve" => await _kyc.ApproveAsync(submissionId, operatorUserId, request.Notes, ct),
+            "reject" => await _kyc.RejectAsync(submissionId, operatorUserId, request.Notes, request.Reason, ct),
             _ => Invalid<KycSubmissionModel>("Decision must be approve or reject."),
         };
         if (result.IsError || result.Result is null)
@@ -396,9 +396,9 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         var pending = await _kycStore.CountEffectiveStatusAsync("pending", ct);
         var selections = await _control.CountSelectionsAsync(ct);
         var state = await _operatorState.GetAsync(ct);
-        var avatar = await _avatars.GetByIdAsync(NodeOperatorIdentity.AvatarId, ct);
+        var user = await _users.GetByIdAsync(NodeOperatorIdentity.UserId, ct);
         var persistenceReady = !profiles.IsError && !pending.IsError && !selections.IsError
-            && !state.IsError && !avatar.IsError && avatar.Result is not null;
+            && !state.IsError && !user.IsError && user.Result is not null;
         return AZOAResult<NodeOperatorOverviewResponse>.Success(new NodeOperatorOverviewResponse
         {
             Node = new NodeRuntimeSummary
@@ -410,7 +410,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             },
             Operator = new NodeOperatorIdentitySummary
             {
-                Username = avatar.Result?.Username ?? string.Empty,
+                Username = user.Result?.Username ?? string.Empty,
                 CredentialRevision = state.Result?.CredentialRevision ?? 0,
                 ActivatedAt = state.Result?.ActivatedAt ?? default,
                 CredentialUpdatedAt = state.Result?.CredentialUpdatedAt ?? state.Result?.ActivatedAt ?? default,
@@ -437,7 +437,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         if (limit is < 1 or > 100
             || !TryDecodeAuditCursor(cursor, out var before)
             || tenantId == Guid.Empty
-            || tenantId == NodeOperatorIdentity.AvatarId)
+            || tenantId == NodeOperatorIdentity.UserId)
         {
             return Invalid<CursorPage<KycControlAuditResponse>>("Invalid audit pagination or tenant filter.");
         }
@@ -476,19 +476,19 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
 
     private async Task<AZOAResult<bool>> HasCurrentTenantAuthorityAsync(Guid tenantId, CancellationToken ct)
     {
-        if (tenantId == Guid.Empty || tenantId == NodeOperatorIdentity.AvatarId)
+        if (tenantId == Guid.Empty || tenantId == NodeOperatorIdentity.UserId)
             return AZOAResult<bool>.Success(false);
-        var avatar = await _avatars.GetByIdAsync(tenantId, ct);
-        if (avatar.IsError)
-            return string.Equals(avatar.Code, AzoaErrorCodes.NotFound, StringComparison.Ordinal)
+        var user = await _users.GetByIdAsync(tenantId, ct);
+        if (user.IsError)
+            return string.Equals(user.Code, AzoaErrorCodes.NotFound, StringComparison.Ordinal)
                 ? AZOAResult<bool>.Success(false)
                 : DependencyUnavailable<bool>();
-        if (avatar.Result is null || !avatar.Result.IsActive)
+        if (user.Result is null || !user.Result.IsActive)
             return AZOAResult<bool>.Success(false);
         IReadOnlyList<AZOA.WebAPI.Models.ApiKey> keys;
         try
         {
-            keys = await _apiKeys.ListByAvatarAsync(tenantId, ct);
+            keys = await _apiKeys.ListByUserAsync(tenantId, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -559,7 +559,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         return AZOAResult<OperatorKycSubmissionQueueItem>.Success(new OperatorKycSubmissionQueueItem
         {
             Id = Guid.TryParse(submission.Id, out var id) ? id : Guid.Empty,
-            AvatarId = Guid.TryParse(submission.AvatarId, out var avatarId) ? avatarId : Guid.Empty,
+            UserId = Guid.TryParse(submission.UserId, out var userId) ? userId : Guid.Empty,
             TenantId = Guid.TryParse(submission.TenantId, out var tenantId) ? tenantId : null,
             ProviderKey = submission.ProviderKey,
             Status = status,
@@ -631,7 +631,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         AssuranceLevel = audit.AssuranceLevel,
         PreviousTrustRevision = audit.PreviousTrustRevision,
         TrustRevision = audit.TrustRevision,
-        ActorAvatarId = Guid.TryParse(audit.ActorAvatarId, out var actorId) ? actorId : Guid.Empty,
+        ActorUserId = Guid.TryParse(audit.ActorUserId, out var actorId) ? actorId : Guid.Empty,
         OccurredAt = audit.OccurredAt,
     };
 

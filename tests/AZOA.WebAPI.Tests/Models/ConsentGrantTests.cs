@@ -14,7 +14,7 @@ public class ConsentGrantTests
     private static ConsentGrant Grant(DateTime? expires = null, DateTime? revoked = null, params string[] scopes)
         => new()
         {
-            GrantorAvatarId = Guid.NewGuid(),
+            GrantorUserId = Guid.NewGuid(),
             TenantId = Guid.NewGuid(),
             Scopes = scopes.ToList(),
             GrantedAt = DateTime.UtcNow.AddMinutes(-5),
@@ -40,7 +40,7 @@ public class ConsentGrantTests
 
     [Fact]
     public void Covers_False_WhenScopeAbsent()
-        => Grant(scopes: AzoaScopes.QuestExecute).Covers(AzoaScopes.SwapSign, DateTime.UtcNow).Should().BeFalse();
+        => Grant(scopes: AzoaScopes.ActionExecute).Covers(AzoaScopes.SwapSign, DateTime.UtcNow).Should().BeFalse();
 
     [Fact]
     public void Covers_False_WhenRevoked_EvenIfScopePresent()

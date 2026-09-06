@@ -10,7 +10,7 @@ namespace AZOA.WebAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]  // Optional: quotas via avatar
+[Authorize]  // Optional: quotas via user
 public class SwapController : ControllerBase
 {
     private readonly ISwapManager _swapManager;

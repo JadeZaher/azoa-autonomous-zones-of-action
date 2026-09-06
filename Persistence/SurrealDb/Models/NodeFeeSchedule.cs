@@ -58,12 +58,12 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 8)]
         [Default("\"0\"")]
         [Assert("string::matches($value, \"^[0-9]+$\")")]
-        public string QuestCompleteFlatBaseUnits { get; set; } = "0";
+        public string ActionCompleteFlatBaseUnits { get; set; } = "0";
 
         [Column(Order = 9)]
         [Default("0")]
         [Assert("$value >= 0 AND $value <= 10000")]
-        public long QuestCompleteBps { get; set; }
+        public long ActionCompleteBps { get; set; }
 
         [Column(Order = 10)]
         [Default("\"0\"")]
@@ -80,8 +80,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public long Version { get; set; }
 
         [Column(Order = 13)]
-        [References(typeof(Avatar), Optional = true)]
-        public string? UpdatedByAvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? UpdatedByUserId { get; set; }
 
         [Column(Order = 14)]
         [Default("time::now()")]

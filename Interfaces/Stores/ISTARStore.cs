@@ -10,11 +10,11 @@ public interface ISTARStore
 
     /// <summary>
     /// Loads the STAR ODK matching <paramref name="name"/> (case-insensitive)
-    /// AND owned by <paramref name="avatarId"/>. Returns <c>Result == null</c>
+    /// AND owned by <paramref name="userId"/>. Returns <c>Result == null</c>
     /// (no error) when no match exists — the manager interprets that as
     /// "create new". This is the IDOR-safe lookup the manager uses on POST.
     /// </summary>
-    Task<AZOAResult<ISTARODK>> GetByNameAndAvatarAsync(string name, Guid avatarId, CancellationToken ct = default);
+    Task<AZOAResult<ISTARODK>> GetByNameAndUserAsync(string name, Guid userId, CancellationToken ct = default);
 
     /// <summary>Loads every STAR ODK.</summary>
     Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(CancellationToken ct = default);

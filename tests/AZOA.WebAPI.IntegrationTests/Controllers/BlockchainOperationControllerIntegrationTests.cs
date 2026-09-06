@@ -32,13 +32,13 @@ public class BlockchainOperationControllerIntegrationTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task GetByAvatar_ShouldReturnOperationsForAvatar()
+    public async Task GetByUser_ShouldReturnOperationsForUser()
     {
-        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        await SeedBlockchainOperationAsync(o => o.ForAvatar(avatarId).OfType("Mint"));
-        await SeedBlockchainOperationAsync(o => o.ForAvatar(avatarId).OfType("Burn"));
+        var userId = Guid.Parse(TestAuthHandler.DefaultUserId);
+        await SeedBlockchainOperationAsync(o => o.ForUser(userId).OfType("Mint"));
+        await SeedBlockchainOperationAsync(o => o.ForUser(userId).OfType("Burn"));
 
-        var response = await Client.GetAsync($"api/blockchainoperation/avatar/{avatarId}");
+        var response = await Client.GetAsync($"api/blockchainoperation/user/{userId}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<IEnumerable<BlockchainOperation>>(response);

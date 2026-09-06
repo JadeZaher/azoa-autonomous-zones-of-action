@@ -97,7 +97,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
 
         // Seed one legitimate wallet so we can measure row counts before/after.
         var seedWallet = await SeedWalletAsync(w =>
-            w.ForAvatar(Guid.Parse(TestAuthHandler.DefaultAvatarId))
+            w.ForUser(Guid.Parse(TestAuthHandler.DefaultUserId))
              .OnChain("Algorand")
              .WithAddress($"g3seed{Guid.NewGuid():N}")
              .WithLabel("G3-Seed"));
@@ -151,7 +151,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
                 new[] { HttpStatusCode.BadRequest, HttpStatusCode.NotFound },
                 "ApiKeyController must reject hostile id without store interaction");
 
-            // ── 1d: BridgeController GET /api/bridge/history (avatar-scoped, no free id)
+            // ── 1d: BridgeController GET /api/bridge/history (user-scoped, no free id)
             //   We probe the routes endpoint as a safe read-only path that does not
             //   accept a user-controlled string id:
             var bridgeRoutesResponse = await Client.GetAsync("api/bridge/routes");
@@ -202,7 +202,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
         var controlWallet = new Wallet
         {
             Id        = Guid.NewGuid(),
-            AvatarId  = Guid.NewGuid(),
+            UserId  = Guid.NewGuid(),
             ChainType = "Solana",
             Address   = $"g3_ctrl_{Guid.NewGuid():N}",
             Label     = "G3-Control",
@@ -221,7 +221,7 @@ public sealed class G3_InjectionSuiteTest : IntegrationTestBase
             var target = new Wallet
             {
                 Id        = Guid.NewGuid(),
-                AvatarId  = Guid.NewGuid(),
+                UserId  = Guid.NewGuid(),
                 ChainType = "Ethereum",
                 Address   = $"g3_inj_{Guid.NewGuid():N}",
                 Label     = payload,   // hostile string stored as label

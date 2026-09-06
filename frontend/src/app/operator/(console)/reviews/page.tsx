@@ -194,9 +194,9 @@ function ReviewCard({
             <CardContent className="space-y-4 text-sm">
                 <dl className="grid gap-3 sm:grid-cols-2">
                     <QueueDatum
-                        label="Avatar"
-                        value={`${submission.avatarId.slice(0, 8)}…`}
-                        title={submission.avatarId}
+                        label="User"
+                        value={`${submission.userId.slice(0, 8)}…`}
+                        title={submission.userId}
                     />
                     <QueueDatum
                         label="Tenant"

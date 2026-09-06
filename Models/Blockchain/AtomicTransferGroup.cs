@@ -119,7 +119,7 @@ public sealed record AtomicTransferGroupRequest
         && !string.IsNullOrWhiteSpace(effect.FromAddress)
         && !string.IsNullOrWhiteSpace(effect.ToAddress)
         && (effect.SigningContext.IsPlatform
-            ? effect.SigningContext.AvatarId == Guid.Empty && effect.SigningContext.WalletId == Guid.Empty
+            ? effect.SigningContext.UserId == Guid.Empty && effect.SigningContext.WalletId == Guid.Empty
             : effect.SigningContext.IsResolvableUserContext);
 
     private static AtomicTransferEffect Normalize(AtomicTransferEffect effect) => effect with
@@ -152,11 +152,11 @@ public sealed record AtomicTransferGroupRequest
         AppendCanonical(builder, effect.FromAddress);
         AppendCanonical(builder, effect.ToAddress);
         AppendCanonical(builder, effect.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        AppendCanonical(builder, effect.SigningContext.AvatarId.ToString("N"));
+        AppendCanonical(builder, effect.SigningContext.UserId.ToString("N"));
         AppendCanonical(builder, effect.SigningContext.WalletId.ToString("N"));
         AppendCanonical(builder, effect.SigningContext.IsPlatform ? "1" : "0");
         AppendCanonical(builder, effect.SigningContext.ActingTenantId.ToString("N"));
-        AppendCanonical(builder, effect.SigningContext.GrantorAvatarId.ToString("N"));
+        AppendCanonical(builder, effect.SigningContext.GrantorUserId.ToString("N"));
         AppendCanonical(builder, effect.SigningContext.Scope ?? string.Empty);
     }
 

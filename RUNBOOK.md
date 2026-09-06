@@ -122,7 +122,7 @@ restarts or replicas.
    in the node owner's password manager before relying on the console.
 2. Complete the serial rollout and wait for the schema job, API `/health`, and
    frontend `/api/health` gates. Open the frontend's `/operator/login`; do not
-   use ordinary avatar login for node authority.
+   use ordinary user login for node authority.
 3. Confirm the overview reports durable persistence ready. Provider credentials
    stay in the API service's secret store. The Providers page displays only
    `requiredConfigurationKeys`, `missingConfigurationKeys`, configured flags,
@@ -271,10 +271,10 @@ neither claim resurfaces:
 
 1. **Sagas default is `Enabled=true`, not `false`.** `docs/GO-TO-PROD.md` (dated
    2026-05-18) and its "no consumer until durable-saga Phase 2" premise are
-   superseded — the durable-quest engine IS a saga consumer
-   (`QuestManager`/`SagaProcessorHostedService`), so `Sagas:Enabled=true` ships
+   superseded — the durable-action engine IS a saga consumer
+   (`ActionManager`/`SagaProcessorHostedService`), so `Sagas:Enabled=true` ships
    as the deliberate default with a boot guard. See
-   [[durable-quests-inert-sagas-disabled]] for the fix history.
+   [[durable-actions-inert-sagas-disabled]] for the fix history.
 2. **The G1 durability gate is live and green on SurrealDB 3.1.4.** RocksDB WAL
    sync (`SURREAL_SYNC_DATA: "true"`) + `SurrealRuntime__G1DurabilityAcknowledged=true`
    were re-verified against the 3.1.4 pin during `final-hardening-cutover`; the

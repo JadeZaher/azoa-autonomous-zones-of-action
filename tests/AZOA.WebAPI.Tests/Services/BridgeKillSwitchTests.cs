@@ -268,7 +268,7 @@ public class BridgeKillSwitchTests
         var seededBridge = new BridgeTransactionResult
         {
             Id = "wh_bridge_test",
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana",
             TargetChain = "Algorand",
             SourceTokenId = "tok1",
@@ -287,7 +287,7 @@ public class BridgeKillSwitchTests
         var completedBridge = new BridgeTransactionResult
         {
             Id = "bridge_completed",
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana",
             TargetChain = "Algorand",
             SourceTokenId = "tok1",

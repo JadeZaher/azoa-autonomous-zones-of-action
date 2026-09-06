@@ -38,11 +38,11 @@ public class BridgeReverseRecoveryTests
     {
         using var h = new ReverseHarness(staleSeconds: 60);
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"bridge_{Guid.NewGuid():N}",
-            AvatarId = avatarId,
+            UserId = userId,
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetTokenId = "wrapped-token",
             SourceAddress = "src", TargetAddress = "tgt",
@@ -81,11 +81,11 @@ public class BridgeReverseRecoveryTests
     {
         using var h = new ReverseHarness(staleSeconds: 60);
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"bridge_{Guid.NewGuid():N}",
-            AvatarId = avatarId,
+            UserId = userId,
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetTokenId = "wrapped-token-resume",
             SourceAddress = "src", TargetAddress = "tgt",
@@ -132,11 +132,11 @@ public class BridgeReverseRecoveryTests
     {
         using var h = new ReverseHarness(staleSeconds: 60);
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"bridge_{Guid.NewGuid():N}",
-            AvatarId = avatarId,
+            UserId = userId,
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetTokenId = "wrapped-token-reversing",
             SourceAddress = "src", TargetAddress = "tgt",
@@ -173,11 +173,11 @@ public class BridgeReverseRecoveryTests
         using var h = new ReverseHarness(staleSeconds: 300);
         const int concurrency = 10;
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"bridge_{Guid.NewGuid():N}",
-            AvatarId = avatarId,
+            UserId = userId,
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetTokenId = "wrapped-concurrent",
             SourceAddress = "src", TargetAddress = "tgt",

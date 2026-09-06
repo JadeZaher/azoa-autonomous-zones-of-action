@@ -10,10 +10,10 @@ namespace AZOA.WebAPI.Models.Requests;
 /// </summary>
 public enum AllocationKind
 {
-    /// <summary>Mint a new asset into the avatar's custodial wallet.</summary>
+    /// <summary>Mint a new asset into the user's custodial wallet.</summary>
     Mint = 0,
 
-    /// <summary>Transfer an existing asset into the avatar's custodial wallet.</summary>
+    /// <summary>Transfer an existing asset into the user's custodial wallet.</summary>
     Transfer = 1
 }
 
@@ -24,8 +24,8 @@ public enum AllocationKind
 /// its economics. AZOA validates it and applies the node's server-authoritative
 /// fee schedule before materialising the wallet and moving the net asset.
 ///
-/// IDOR note: this DTO intentionally does NOT carry an owner / target avatar id.
-/// The allocation target avatar is supplied out-of-band (route / contract
+/// IDOR note: this DTO intentionally does NOT carry an owner / target user id.
+/// The allocation target user is supplied out-of-band (route / contract
 /// parameter) and resolved from the authenticated principal; any owner id a
 /// caller might bolt on here would be ignored (STARODK precedent). The amount /
 /// asset descriptor are the only economically meaningful fields.
@@ -41,7 +41,7 @@ public class AllocationRequest
 
     /// <summary>
     /// Target chain for provision-if-absent + the allocation (e.g. "Algorand",
-    /// "Solana"). Matched case-insensitively against the avatar's wallets to
+    /// "Solana"). Matched case-insensitively against the user's wallets to
     /// decide reuse vs. generate.
     /// </summary>
     public string ChainType { get; set; } = string.Empty;
@@ -68,7 +68,7 @@ public class AllocationRequest
 
     /// <summary>
     /// For <see cref="AllocationKind.Transfer"/>: the existing AZOA asset (NFT)
-    /// id to transfer to the target avatar's custodial wallet.
+    /// id to transfer to the target user's custodial wallet.
     /// </summary>
     public Guid? AssetRecordId { get; set; }
 

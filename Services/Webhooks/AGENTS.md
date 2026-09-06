@@ -15,33 +15,33 @@ re-checked immediately before each POST for DNS-rebind defence), `WebhookHmacSig
 granted/revoked/expired). Observe-only: it never writes back to `consent_grant`.
 tenant-consent-delegation §4 AC7/AC8/H5.
 
-## §quest-webhook
+## §action-webhook
 
-`QuestWebhookDeliveryWorker` (final-hardening F3) drains `quest_webhook_event` — the
-GENERIC mirror for arbitrary tenant-defined `quest.emit` events fired by an `Emit`
-quest node.
+`ActionWebhookDeliveryWorker` (final-hardening F3) drains `action_webhook_event` — the
+GENERIC mirror for arbitrary tenant-defined `action.emit` events fired by an `Emit`
+action node.
 
 **Why a parallel outbox rather than one generic table.** The consent outbox is a shipped,
 security-reviewed path with a fixed event shape (grantId/scopes/participationRef). Rather
 than reshape it and risk regressing consent delivery, F3 adds a PARALLEL outbox
-(`quest_webhook_event`) with its own POCO/store/emitter/worker, and REUSES the shared
+(`action_webhook_event`) with its own POCO/store/emitter/worker, and REUSES the shared
 security + registration infra unchanged. A tenant configures ONE `WebhookRegistration`;
-that single endpoint receives BOTH its consent events and its quest.emit events, each
+that single endpoint receives BOTH its consent events and its action.emit events, each
 signed with the tenant's own secret. Net result: zero consent-path change, full infra
-reuse, and a clean generic quest event surface.
+reuse, and a clean generic action event surface.
 
-**Payload shape.** `{ eventType, runId, nodeId, questId, payload, occurredAt,
+**Payload shape.** `{ eventType, runId, nodeId, actionId, payload, occurredAt,
 idempotencyId }` where `payload` is the tenant's opaque object re-embedded as a nested
 JSON object (a malformed stored payload degrades to `{}` rather than failing delivery).
 `eventType` is the tenant-defined name from the `Emit` node config (defaults to
-`quest.emit`). The HMAC is computed over EXACTLY the serialized body string.
+`action.emit`). The HMAC is computed over EXACTLY the serialized body string.
 
-**Best-effort boundary.** The worker never writes back to `quest_run` /
-`quest_node_execution`. A dead-lettered event does not fail or roll back the run — the
+**Best-effort boundary.** The worker never writes back to `action_run` /
+`action_node_execution`. A dead-lettered event does not fail or roll back the run — the
 `Emit` node's serialized `Output` remains the tenant's authoritative settlement surface;
 the webhook is a convenience push on top.
 
-**Delivery uses its own named HttpClient** (`WebhookOptions.QuestHttpClientName =
-"quest-webhook"`) configured with the SAME SSRF-guarded, `AllowAutoRedirect=false`
+**Delivery uses its own named HttpClient** (`WebhookOptions.ActionHttpClientName =
+"action-webhook"`) configured with the SAME SSRF-guarded, `AllowAutoRedirect=false`
 primary handler as the consent client, so a 3xx to an internal address surfaces as a
 delivery failure instead of being silently followed.

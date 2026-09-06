@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         Guardrail = "G6 SCHEMAFULL")]
     [SurrealNote("Generated code + deployment config can be large strings; SurrealDB has no per-field size limit but operators should monitor row size.")]
     [Slice("identity")]
-    [Index("star_avatar_id", Fields = new[] { "avatar_id" })]
+    [Index("star_user_id", Fields = new[] { "user_id" })]
     [Index("star_target_chain", Fields = new[] { "target_chain" })]
     [Index("star_is_active", Fields = new[] { "is_active" })]
     public partial class StarOdk : ISurrealRecord
@@ -37,8 +37,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         public string? PrivateKeyHash { get; set; }
 
-        [References(typeof(Avatar), Optional = true)]
-        public string? AvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? UserId { get; set; }
 
         [FieldGroup("BoundHolonIds (list of holon-id strings)")]
         public IReadOnlyList<string>? BoundHolonIds { get; set; }

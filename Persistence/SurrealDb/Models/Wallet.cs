@@ -21,10 +21,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         Aggregate = "Wallet (Models/Wallet.cs)",
         Guardrail = "G6 SCHEMAFULL")]
     [SurrealNote("No balance field -- chain is source of truth (data-engine-decision).")]
-    [SurrealNote("B3 review: wallet_avatar_chain_address UNIQUE is on (avatar_id, chain_type, address) -- all three NOT NULL; SurrealDB NULL-collision concern does not apply.")]
+    [SurrealNote("B3 review: wallet_user_chain_address UNIQUE is on (user_id, chain_type, address) -- all three NOT NULL; SurrealDB NULL-collision concern does not apply.")]
     [Slice("wallet_nft")]
-    [Index("wallet_avatar_chain_address", Fields = new[] { "avatar_id", "chain_type", "address" }, Unique = true)]
-    [Index("wallet_avatar_chain", Fields = new[] { "avatar_id", "chain_type" })]
+    [Index("wallet_user_chain_address", Fields = new[] { "user_id", "chain_type", "address" }, Unique = true)]
+    [Index("wallet_user_chain", Fields = new[] { "user_id", "chain_type" })]
     public partial class Wallet : ISurrealRecord
     {
         public const string SchemaNameConst = "wallet";
@@ -39,8 +39,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Id]
         public string Id { get; set; } = string.Empty;
 
-        [References(typeof(Avatar))]
-        public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(User))]
+        public string UserId { get; set; } = string.Empty;
 
         [Required(NotEmpty = true)]
         public string ChainType { get; set; } = string.Empty;

@@ -1,6 +1,6 @@
 # Tenant custodial account and KYC contract
 
-Azoa owns the avatar, encrypted platform wallet, KYC submission, and KYC
+Azoa owns the user, encrypted platform wallet, KYC submission, and KYC
 document-reference ledger. A tenant such as ArdaNova keeps only the returned
 public ids/address and readiness status. It never receives signing keys, seed
 phrases, encrypted custody material, KYC document references, provider payloads,
@@ -8,7 +8,7 @@ or reviewer data.
 
 ## Authentication and isolation
 
-Use an Azoa tenant API key whose subject is the tenant avatar id and whose scopes
+Use an Azoa tenant API key whose subject is the tenant user id and whose scopes
 include `tenant:provision`, `wallet:manage`, `kyc:read`, and `kyc:submit`. The API
 never accepts a tenant id in a route or body. Every lookup is scoped to the
 authenticated tenant plus its opaque `externalSubject`; another tenant receives
@@ -16,14 +16,14 @@ the same not-found result as a missing subject.
 
 ### Bootstrap the tenant key
 
-An ordinary avatar cannot self-issue `tenant:provision`. A JWT-authenticated
-Azoa operator creates the first key for an existing tenant avatar:
+An ordinary user cannot self-issue `tenant:provision`. A JWT-authenticated
+Azoa operator creates the first key for an existing tenant user:
 
 ```bash
 curl -X POST "$AZOA_URL/api/apikey/tenant" \
   -H "Authorization: Bearer $AZOA_OPERATOR_JWT" \
   -H "Content-Type: application/json" \
-  -d '{"tenantAvatarId":"00000000-0000-0000-0000-000000000000","name":"ArdaNova local","expiresInDays":90}'
+  -d '{"tenantUserId":"00000000-0000-0000-0000-000000000000","name":"ArdaNova local","expiresInDays":90}'
 ```
 
 The target id is loaded before creation. The endpoint is `Operator`-policy
@@ -38,13 +38,13 @@ persists only its hash/prefix.
 - `GET /api/tenant/custodial-accounts/capabilities` reports custody, chain, and
   KYC provider availability.
 - `PUT /api/tenant/custodial-accounts/{externalSubject}` requires a stable
-  `Idempotency-Key` header and ensures one deterministic avatar plus one
+  `Idempotency-Key` header and ensures one deterministic user plus one
   deterministic platform wallet on the configured chain.
 - `GET /api/tenant/custodial-accounts/{externalSubject}` reports the same
   secret-free state without creating anything.
 
 Creation is create-only. User claim may clear the legacy `OwnerTenantId`
-correlation, but a retry resolves the immutable tenant-partitioned avatar id and
+correlation, but a retry resolves the immutable tenant-partitioned user id and
 never rewrites the claimed account. The raw idempotency key is SHA-256 hashed in
 a tenant-scoped ledger namespace. Reusing one key for another external subject
 is rejected; a completed replay refreshes current KYC/readiness state without a
@@ -54,13 +54,13 @@ when custody becomes available.
 
 The response carries `tenantId`, canonical `externalSubject`, compatibility
 alias `ardanovaUserId`, optional public
-`avatarId`/`walletId`/`walletAddress`, `kycStatus`, `walletReady`, `ready`, and an
+`userId`/`walletId`/`walletAddress`, `kycStatus`, `walletReady`, `ready`, and an
 optional `unavailableReason`. `ready` means the runtime capabilities are healthy,
 the platform wallet has protected custody material, and Azoa's latest KYC status
 is `Approved`.
 
 Readiness is intentionally decomposed. `identityReady` means the deterministic
-avatar exists; `kycReady` means the selected provider can accept verification;
+user exists; `kycReady` means the selected provider can accept verification;
 `walletReady` means the platform wallet is present and usable under the current
 custody mode. Capabilities additionally expose `walletProvisioningReady`.
 Aggregate `ready` requires all three plus approved KYC. If production KMS/HSM
@@ -138,7 +138,7 @@ Even with every hosted key supplied, capabilities remain unavailable. A hosted
 adapter is not safe to enable until it implements one durable idempotent attempt,
 persists the session before returning a redirect, verifies signed webhook
 headers over the raw request body, deduplicates provider event ids, maps the
-event to the attempt/avatar, and CAS-updates terminal status. Likewise the
+event to the attempt/user, and CAS-updates terminal status. Likewise the
 Veriff adapter is currently a contract stub, not a working integration.
 
 ## Deployment gate

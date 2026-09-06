@@ -25,16 +25,16 @@ is simply under-adopted. A read-only census of the production tree (excluding
 - **Raw `SurrealQuery.Of(...)` production call sites: 12, across 6 files.**
   Broken down by intent:
   - **~4 raw `SELECT` sites** — the migratable read surface. Locations:
-    - `Providers/Stores/Surreal/SurrealQuestStore.cs:318`
-      (`SELECT * FROM quest_template`)
-    - `Providers/Stores/Surreal/SurrealQuestStore.cs:428`
-      (`SELECT * FROM quest_node_template`)
+    - `Providers/Stores/Surreal/SurrealActionStore.cs:318`
+      (`SELECT * FROM action_template`)
+    - `Providers/Stores/Surreal/SurrealActionStore.cs:428`
+      (`SELECT * FROM action_node_template`)
     - `Providers/Stores/Surreal/SurrealNftStore.cs:232`
-      (`SELECT * FROM holon_nft_binding WHERE avatar_nft_id = $avatar_nft_id`)
+      (`SELECT * FROM holon_nft_binding WHERE user_nft_id = $user_nft_id`)
     - `Providers/Stores/Surreal/SurrealNftStore.cs:332`
-      (`SELECT * FROM wallet_nft_binding WHERE avatar_nft_id = $avatar_nft_id`)
+      (`SELECT * FROM wallet_nft_binding WHERE user_nft_id = $user_nft_id`)
   - **The remaining ~8 sites are writes / transaction control / infra** —
-    `BEGIN`/`COMMIT` pairs (`SurrealQuestRunStore.cs:114,119`), conditional
+    `BEGIN`/`COMMIT` pairs (`SurrealActionRunStore.cs:114,119`), conditional
     `UPDATE … WHERE`, `RELATE`, `DELETE`, `LET`-var multi-statements
     (`SurrealBridgeStore.cs`, `SurrealNftStore.cs`), and one health-check probe
     (`Observability/StorageHealthCheck.cs`) + startup DDL (`Program.cs`).
@@ -43,7 +43,7 @@ is simply under-adopted. A read-only census of the production tree (excluding
 - **5 stores already use the typed `SurrealQuery<T>` surface**, proving the
   ergonomics in production:
   `SurrealBlockchainOperationStore.cs`, `SurrealHolonStore.cs`,
-  `SurrealNftStore.cs`, `SurrealQuestRunStore.cs`, `SurrealWalletStore.cs`.
+  `SurrealNftStore.cs`, `SurrealActionRunStore.cs`, `SurrealWalletStore.cs`.
 
 - **The `Services/Sagas/SurrealSagaStore.cs` conditional-UPDATE primitives are
   deliberately raw** (atomic single-winner `UPDATE … WHERE status = …`, the
@@ -85,7 +85,7 @@ Concretely:
 1. Migrate the ~4 raw `SELECT` sites to Tier 2 (`SurrealQuery<T>`) or Tier 3
    (`ctx.Set<T>()`), whichever is the smaller diff per site.
 2. Close any `ExpressionTranslator` gap those real queries expose (e.g. the
-   `avatar_nft_id = $x` filters are trivial `==`; verify no site needs an
+   `user_nft_id = $x` filters are trivial `==`; verify no site needs an
    operator the translator lacks). Any unsupported shape stays raw with a
    one-line pointer explaining why — **never** a silent wrong translation.
 3. Establish `ctx.Set<T>()` (Tier 3) as the **documented default** for new read
@@ -113,18 +113,18 @@ Concretely:
 
 ```csharp
 // BEFORE (SurrealNftStore.cs:232) — raw
-var q = SurrealQuery.Of("SELECT * FROM holon_nft_binding WHERE avatar_nft_id = $avatar_nft_id")
-    .WithParam("avatar_nft_id", link);
+var q = SurrealQuery.Of("SELECT * FROM holon_nft_binding WHERE user_nft_id = $user_nft_id")
+    .WithParam("user_nft_id", link);
 var rows = await _executor.QueryAsync<HolonNftBinding>(q, ct);
 
 // AFTER — Tier 2 (typed, smaller diff, same executor path)
 var q = SurrealQuery<HolonNftBinding>.From()
-    .Where(b => b.AvatarNftId == avatarNftId);
+    .Where(b => b.UserNftId == userNftId);
 var rows = await _executor.QueryAsync<HolonNftBinding>(q, ct);
 
 // OR AFTER — Tier 3 (deferred LINQ, if a SurrealContext is in scope)
 var rows = await ctx.Set<HolonNftBinding>()
-    .Where(b => b.AvatarNftId == avatarNftId)
+    .Where(b => b.UserNftId == userNftId)
     .ToListAsync(ct);
 ```
 
@@ -158,7 +158,7 @@ var q = SurrealQuery
    is reserved for writes/DDL/atomic-conditional and must be labelled.
 6. **Build + test green.** `dotnet build` zero new warnings vs the 28-warning
    baseline ([[build-warning-baseline-2026-06-16]]); `dotnet test` green
-   including quest/saga/nft/`api-safety-hardening` suites. SDK `tsc` unaffected
+   including action/saga/nft/`api-safety-hardening` suites. SDK `tsc` unaffected
    (no SDK change). Per user policy, run the full sweep **once at the end**, not
    after each site.
 7. **SRDB0001 still passes** — no new string-concatenated SurrealQL; typed

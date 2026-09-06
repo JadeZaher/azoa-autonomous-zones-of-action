@@ -28,8 +28,8 @@ Every inventory row has one of three dispositions:
 
 The third bucket caught real crash windows. Saga compensation and forward
 continuation now use lease-guarded `BEGIN`/`COMMIT` requests, so neither can
-persist its source transition without its successor. Quest aggregate upsert,
-Quest aggregate delete, and API-key create-plus-scope-write remain atomicity
+persist its source transition without its successor. ActionDefinition aggregate upsert,
+ActionDefinition aggregate delete, and API-key create-plus-scope-write remain atomicity
 remediation items; a mechanical typed rewrite must not bless their split writes.
 
 ## Required standards

@@ -15,7 +15,7 @@ activation_gate: >-
   standalone (it is also the certification primitive the Commons network later reads).
 depends_on:
   - final-hardening-cutover        # value engine, custody, holon graph, MCP surface
-  - user-sovereign-identity        # self-owned avatars = portable identity substrate
+  - user-sovereign-identity        # self-owned users = portable identity substrate
   - tenant-consent-delegation      # revocable per-scope grants = per-node consent substrate
 related:
   - consent-gate-architecture
@@ -65,7 +65,7 @@ AZOA node monorepo. This is the single most important structural decision in thi
 
 | Repo | Owns | Does NOT own |
 |---|---|---|
-| **`AZOA.Commons`** (new, separate) | The Holochain **DNA/hApp** (zomes + validation rules for the federation facts), the conductor/runtime story, the .NET (or Rust-binding) **Holochain client**, the Commons entry schemas, and the certification/conformance vocabulary. This is what the *community* maintains — a public hApp/DNA anyone can run, plus optionally a private one. | AZOA node domain logic, SurrealDB access, the value engine, quest execution, custody. |
+| **`AZOA.Commons`** (new, separate) | The Holochain **DNA/hApp** (zomes + validation rules for the federation facts), the conductor/runtime story, the .NET (or Rust-binding) **Holochain client**, the Commons entry schemas, and the certification/conformance vocabulary. This is what the *community* maintains — a public hApp/DNA anyone can run, plus optionally a private one. | AZOA node domain logic, SurrealDB access, the value engine, action execution, custody. |
 | **`azoa` node** (this monorepo) | A **thin integration client** (`AZOA.Commons.Client`) and a small `HoloFederationService` that maps between local domain objects and Commons entries. Nothing more. | The Holochain runtime, the DNA, consensus/validation logic, the P2P networking. |
 
 The AZOA node's coupling to federation is a **slim client dependency**, not the Holochain
@@ -194,17 +194,17 @@ demand:
 ### L3 — Identity portability  *(the consume-side unlock)*
 
 The hard part already exists ([[user-sovereign-identity]] + [[consent-gate-architecture]]):
-a self-owning avatar presents the **same identity to multiple nodes** and issues
+a self-owning user presents the **same identity to multiple nodes** and issues
 **revocable, per-node-scoped consent grants**.
 
-- Federation adds: an avatar proves "same principal on Node A and Node B" via a signed
+- Federation adds: an user proves "same principal on Node A and Node B" via a signed
   challenge (reuse `IWalletSignatureVerifier` / the WalletAuth challenge flow). Note this is
-  the **avatar/user** identity, distinct from the **node/agent** identity that signs Commons
+  the **user/user** identity, distinct from the **node/agent** identity that signs Commons
   entries (see §Identity) — do not conflate them.
 - This turns N sovereign nodes into a **community a user moves through** — the actual
   consume-side value. Consent grants stay per-node and revocable, so portability never
   becomes cross-node custody.
-- AC: an avatar authenticates the same key against two nodes; a grant on Node A is provably
+- AC: an user authenticates the same key against two nodes; a grant on Node A is provably
   absent on Node B unless separately issued; revocation on one node does not require the other.
 
 ---
@@ -216,7 +216,7 @@ this surface small; everything else is optional or Commons-side.
 
 1. **Submit a holon for federation.** Publish a holon reference/entry to the Commons DHT
    (the L1 `HolonReference`). Default remains private/local; a holon is federated only when
-   its owner opts in per-holon (or via a quest that opts in, or a template share).
+   its owner opts in per-holon (or via a action that opts in, or a template share).
 2. **Submit audit/conformance data to stay certified.** Publish the L0 certification proof
    (the machine-readable gate-result manifest) so the node remains a certified member the
    network trusts. Certification is a live, re-published fact, not a one-time badge.
@@ -224,13 +224,13 @@ this surface small; everything else is optional or Commons-side.
    or as a separate service** at the operator's choice. Hosting is what makes the operator a
    P2P community member.
 
-Product-level federation *modes* (per-holon, quest-on-complete, template federation) all
+Product-level federation *modes* (per-holon, action-on-complete, template federation) all
 reduce to function #1 with different triggers:
 
 - **User-driven per-holon:** operator/user marks a holon federatable, publishes a reference.
-- **Quest-driven on complete:** a quest completion emits a signed, idempotent federation
+- **ActionDefinition-driven on complete:** a action completion emits a signed, idempotent federation
   receipt referencing run/holon outputs — never copying the local DB.
-- **Template federation:** share quest/holon/node/economic templates as Commons entries;
+- **Template federation:** share action/holon/node/economic templates as Commons entries;
   imported templates stay provenance-tagged and locally reviewed before activation.
 
 Fiat integrations use these modes only as receipts/metadata: Stripe or other fiat can
@@ -251,7 +251,7 @@ Two distinct identities, do not conflate:
   node's existing key material (so the descriptor and the agent are provably the same
   principal), or independent with a signed linking entry? Capture: the node MUST present a
   stable, verifiable agent identity that a peer can tie to the L0 descriptor.
-- **Avatar/user identity (already exists).** Self-sovereign avatars + WalletAuth challenge
+- **User/user identity (already exists).** Self-sovereign users + WalletAuth challenge
   (L3). Unchanged.
 
 ---
@@ -320,7 +320,7 @@ publishable, tested, and useful by itself.
    attestation rejected; unavailable-node degrades honestly; cross-node **type mismatch is
    surfaced fail-closed** against a versioned `HolonType` vocabulary.
 4. L2: a node joins via bootstrap and discovers peers/references through the DHT.
-5. L3: same-key avatar identity proof across two nodes with per-node revocable grants intact,
+5. L3: same-key user identity proof across two nodes with per-node revocable grants intact,
    kept distinct from node/agent identity.
 6. The three-function operator surface (submit holon, submit certification, host cell) is the
    only *required* node-side surface.

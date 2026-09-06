@@ -39,7 +39,7 @@ import type { AllocationResult } from "../api/client.js";
 
 function makeAllocationResult(): AllocationResult {
   return {
-    avatarId: "avatar-1",
+    userId: "user-1",
     walletId: "wallet-1",
     walletAddress: "ADDR",
     walletProvisioned: false,
@@ -77,7 +77,7 @@ function completedEvent(opts: {
         payment_intent: opts.paymentIntent ?? "pi_123",
         metadata:
           opts.metadata ?? {
-            avatarId: "avatar-1",
+            userId: "user-1",
             assetId: "asset-1",
             chainType: "algorand",
             kind: "Mint",
@@ -157,7 +157,7 @@ describe("CRITICAL-1 — mint amount comes from the confirmed event, not metadat
       completedEvent({
         amountTotal: 500,
         metadata: {
-          avatarId: "avatar-1",
+          userId: "user-1",
           assetId: "asset-1",
           chainType: "algorand",
           kind: "Mint",

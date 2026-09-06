@@ -18,7 +18,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 ///
 /// Mapping notes:
 ///   - BlockchainOperation.Id (Guid)        → OperationLog.Id (string, "N" format, lowercase)
-///   - BlockchainOperation.AvatarId (Guid?) → OperationLog.AvatarId (string?, "N" format)
+///   - BlockchainOperation.UserId (Guid?) → OperationLog.UserId (string?, "N" format)
 ///   - BlockchainOperation.WalletId (Guid?) → OperationLog.WalletId (string?, "N" format)
 ///   - BlockchainOperation.Amount (RailAmount) → OperationLog.Amount (string?, decimal base units)
 ///   - BlockchainOperation.ValueStamp (D16)  → OperationLog.Value* columns (all-null = unpriced)
@@ -27,7 +27,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 ///   - BlockchainOperation.CompletedDate (DateTime?) → OperationLog.CompletedDate (DateTimeOffset?)
 ///   - BlockchainOperation.Status (string)  → OperationLog.Status (OperationLog.StatusKind enum)
 ///   - BlockchainOperation.IdempotencyKey (string?) → OperationLog.IdempotencyKey (safe correlation)
-///   - BlockchainOperation.InitiatorAvatarId (Guid?) → OperationLog.InitiatorAvatarId (record link)
+///   - BlockchainOperation.InitiatorUserId (Guid?) → OperationLog.InitiatorUserId (record link)
 ///   - BlockchainOperation.InitiatorApiKeyId (Guid?) → OperationLog.InitiatorApiKeyId (record link)
 ///
 /// Fields in OperationLog NOT in BlockchainOperation / IBlockchainOperation:
@@ -77,7 +77,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         }
     }
 
-    // ── Receipt correlation and avatar history reads ───────────────────────────
+    // ── Receipt correlation and user history reads ───────────────────────────
 
     /// <inheritdoc />
     public async Task<AZOAResult<IBlockchainOperation>> GetByIdempotencyKeyAsync(
@@ -128,17 +128,17 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         }
     }
 
-    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(
-        Guid avatarId,
+    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByUserAsync(
+        Guid userId,
         CancellationToken ct = default)
     {
         try
         {
-            var avatarSurrealId = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
+            var userSurrealId = SurrealLink.ToLink("user", SurrealId.ToSurrealId(userId));
 
-            // SELECT * FROM operation_log WHERE avatar_id = $avatar_id
+            // SELECT * FROM operation_log WHERE user_id = $user_id
             var q = SurrealQuery<OperationLog>.From()
-                .Where(o => o.AvatarId == avatarSurrealId);
+                .Where(o => o.UserId == userSurrealId);
 
             var rows = await _executor.QueryAsync<OperationLog>(q, ct);
             var results = rows.Select(r => (IBlockchainOperation)ToDomain(r)).ToList();
@@ -152,7 +152,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         catch (Exception ex)
         {
             return new AZOAResult<IEnumerable<IBlockchainOperation>>()
-                .CaptureException(ex, $"SurrealBlockchainOperationStore.GetByAvatarAsync failed: {ex.Message}");
+                .CaptureException(ex, $"SurrealBlockchainOperationStore.GetByUserAsync failed: {ex.Message}");
         }
     }
 
@@ -184,7 +184,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
                 // Null option fields are omitted by the typed writer, preserving creation provenance.
                 poco.IdempotencyKey = null;
-                poco.InitiatorAvatarId = null;
+                poco.InitiatorUserId = null;
                 poco.InitiatorApiKeyId = null;
             }
 
@@ -215,8 +215,8 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
     {
         return !MatchesImmutableValue(operation.IdempotencyKey, existing.IdempotencyKey)
             || !MatchesImmutableValue(
-                operation.InitiatorAvatarId,
-                ToOptionalGuid(existing.InitiatorAvatarId))
+                operation.InitiatorUserId,
+                ToOptionalGuid(existing.InitiatorUserId))
             || !MatchesImmutableValue(
                 operation.InitiatorApiKeyId,
                 ToOptionalGuid(existing.InitiatorApiKeyId));
@@ -326,7 +326,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         return new OperationLog
         {
             Id            = SurrealId.ToSurrealId(op.Id),
-            AvatarId      = op.AvatarId.HasValue  ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(op.AvatarId.Value)) : null,
+            UserId      = op.UserId.HasValue  ? SurrealLink.ToLink("user", SurrealId.ToSurrealId(op.UserId.Value)) : null,
             WalletId      = op.WalletId.HasValue   ? SurrealLink.ToLink("wallet", SurrealId.ToSurrealId(op.WalletId.Value)) : null,
             OperationType = op.OperationType,
             Status        = statusKind,
@@ -369,8 +369,8 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // Durable allocation receipt context.
             IdempotencyKey = op.IdempotencyKey,
-            InitiatorAvatarId = op.InitiatorAvatarId.HasValue
-                ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(op.InitiatorAvatarId.Value))
+            InitiatorUserId = op.InitiatorUserId.HasValue
+                ? SurrealLink.ToLink("user", SurrealId.ToSurrealId(op.InitiatorUserId.Value))
                 : null,
             InitiatorApiKeyId = op.InitiatorApiKeyId.HasValue
                 ? SurrealLink.ToLink("api_key", SurrealId.ToSurrealId(op.InitiatorApiKeyId.Value))
@@ -379,7 +379,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             // tenant-consent-delegation AC4: persist the acting tenant + signing
             // scope so the seam's live consent check survives the async saga hop.
             ActingTenantId = op.ActingTenantId.HasValue
-                             ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(op.ActingTenantId.Value))
+                             ? SurrealLink.ToLink("user", SurrealId.ToSurrealId(op.ActingTenantId.Value))
                              : null,
             SigningScope   = op.SigningScope,
 
@@ -406,7 +406,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         return new BlockchainOperation
         {
             Id            = SurrealId.FromSurrealId(poco.Id),
-            AvatarId      = poco.AvatarId  is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.AvatarId)!) : null,
+            UserId      = poco.UserId  is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.UserId)!) : null,
             WalletId      = poco.WalletId  is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.WalletId)!) : null,
             OperationType = poco.OperationType,
             Status        = poco.Status.ToString(), // enum.ToString() matches OperationStatus const names
@@ -438,8 +438,8 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             RecipientAddress = poco.RecipientAddress,
 
             IdempotencyKey = poco.IdempotencyKey,
-            InitiatorAvatarId = poco.InitiatorAvatarId is not null
-                ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.InitiatorAvatarId)!)
+            InitiatorUserId = poco.InitiatorUserId is not null
+                ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.InitiatorUserId)!)
                 : null,
             InitiatorApiKeyId = poco.InitiatorApiKeyId is not null
                 ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.InitiatorApiKeyId)!)

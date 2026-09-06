@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Services.Consent;
 /// <para><b>Fail-closed posture.</b> Every guard returns a denial result rather than
 /// throwing; an exception while looking up the grant is treated as a denial (a DB
 /// hiccup must NOT open the gate). A tenant-driven sign with no covering live grant
-/// is rejected even though <c>wallet.AvatarId == claimAvatarId</c> would otherwise
+/// is rejected even though <c>wallet.UserId == claimUserId</c> would otherwise
 /// pass the legacy custody IDOR check — that is the entire point of C1.</para>
 /// </summary>
 public sealed class TenantConsentGate : ITenantConsentGate
@@ -44,7 +44,7 @@ public sealed class TenantConsentGate : ITenantConsentGate
             return result;
 
         // ── Tenant-driven: fail closed unless a live covering grant exists. ──────
-        var grantor = ctx.GrantorAvatarId;
+        var grantor = ctx.GrantorUserId;
         var tenant = ctx.ActingTenantId;
         var scope = ctx.Scope;
         var now = DateTime.UtcNow;
@@ -101,7 +101,7 @@ public sealed class TenantConsentGate : ITenantConsentGate
             Action = ConsentAuditAction.TenantSignAllowed,
             GrantId = grant.Id,
             TenantId = tenant,
-            AvatarId = grantor,
+            UserId = grantor,
             Scope = scope,
             OccurredAt = now,
         }, ct);
@@ -117,7 +117,7 @@ public sealed class TenantConsentGate : ITenantConsentGate
             Action = ConsentAuditAction.TenantSignDenied,
             GrantId = grantId,
             TenantId = tenant,
-            AvatarId = grantor,
+            UserId = grantor,
             Scope = scope,
             Detail = reason,
             OccurredAt = now,

@@ -22,10 +22,10 @@ public class BlockchainOperationController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
 
-        var result = await _manager.GetAsync(id, avatarId.Value, request);
+        var result = await _manager.GetAsync(id, userId.Value, request);
         if (result.IsError || result.Result == null)
         {
             return NotFound(AZOAResult<BlockchainOperationResponse>.FailureWithCode(
@@ -36,15 +36,15 @@ public class BlockchainOperationController : ControllerBase
             BlockchainOperationResponse.From(result.Result), result.Message));
     }
 
-    [HttpGet("avatar/{avatarId:guid}")]
-    public async Task<ActionResult<AZOAResult<IEnumerable<BlockchainOperationResponse>>>> GetByAvatar(Guid avatarId, [FromQuery] AZOARequest? request)
+    [HttpGet("user/{userId:guid}")]
+    public async Task<ActionResult<AZOAResult<IEnumerable<BlockchainOperationResponse>>>> GetByUser(Guid userId, [FromQuery] AZOARequest? request)
     {
-        var callerId = GetAvatarIdFromClaims();
+        var callerId = GetUserIdFromClaims();
         if (callerId == null) return Unauthorized();
-        if (avatarId != callerId.Value)
+        if (userId != callerId.Value)
             return StatusCode(StatusCodes.Status403Forbidden);
 
-        var result = await _manager.GetByAvatarAsync(avatarId, request);
+        var result = await _manager.GetByUserAsync(userId, request);
         if (result.IsError || result.Result is null)
         {
             return Ok(AZOAResult<IEnumerable<BlockchainOperationResponse>>.FailureWithCode(
@@ -55,7 +55,7 @@ public class BlockchainOperationController : ControllerBase
             result.Result.Select(BlockchainOperationResponse.From), result.Message));
     }
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
         var sub = User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User?.FindFirst("sub")?.Value;

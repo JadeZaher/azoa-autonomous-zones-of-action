@@ -28,14 +28,14 @@ honestly scoped.**
 ## 3 genuine product bugs found by H7 (not test noise)
 
 1. **All 5 MCP tools broken in production** — compared `record<>` link columns
-   (`id`, `avatar_id`, `parent_holon_id`, `quest_id`, node ids) against **bare-hex**
+   (`id`, `user_id`, `parent_holon_id`, `action_id`, node ids) against **bare-hex**
    strings ⇒ every query returned 0 rows against real store data. Fixed: bind via
    `SurrealLink.ToLink("<table>", hex)` (the canonical helper used by 24 store files).
    Plus `HolonTraverseTool.peer_holon_ids` POCO `string?` → `JsonElement?` (stored as
    `array<string>`). See `Mcp/AGENTS.md §record-id-binding`.
-2. **AvatarNFT mint unsettable** — `nft_ownership.token_id` required non-empty but no
-   DTO/service path supplied it (broken since 2026-06-08). Fixed: `AvatarNFTService`
-   auto-assigns `token_id` (chain-mint) + optional `AvatarNFTMintModel.TokenId`.
+2. **UserNFT mint unsettable** — `nft_ownership.token_id` required non-empty but no
+   DTO/service path supplied it (broken since 2026-06-08). Fixed: `UserNFTService`
+   auto-assigns `token_id` (chain-mint) + optional `UserNFTMintModel.TokenId`.
 3. **Holon empty-collection no-op** — `SurrealHolonStore.ToPoco` only serialized
    `PeerHolonIds`/`Metadata` when non-empty; SurrealForge SET omits null `option<>`
    fields, so emptying a collection never cleared the column (silent data loss).
@@ -57,7 +57,7 @@ validation. See `tests/AZOA.WebAPI.IntegrationTests/AGENTS.md` §param-binding +
 - `dotnet build`: **0 warnings / 0 errors**.
 - Unit: **1235 passed / 0 failed / 1 skipped** (documented-unreachable).
 - SDK: **163 vitest passed**.
-- Integration: every previously-red class green **in isolation** (AvatarNFT 10/10,
+- Integration: every previously-red class green **in isolation** (UserNFT 10/10,
   MCP 8/8, G5 1/1, Holon/STARODK scoped 41/41). The full-suite **37-failure tail is
   pre-existing shared-SurrealDB-container parallel contention** — the exact same
   classes pass when run as a scoped group; consistent with the documented

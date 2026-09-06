@@ -33,9 +33,9 @@ public sealed class KycIdentityReadSurfaceExclusionTests
 
     [Theory]
     [MemberData(nameof(OperatorOnlyTables))]
-    public async Task McpAvatarScopedQuery_RejectsOperatorOnlyTables(string table)
+    public async Task McpUserScopedQuery_RejectsOperatorOnlyTables(string table)
     {
-        var tool = new AvatarScopedQueryTool();
+        var tool = new UserScopedQueryTool();
         var args = JsonSerializer.Deserialize<JsonElement>(
             JsonSerializer.Serialize(new { table }));
         var context = new ToolCallContext(
@@ -54,7 +54,7 @@ public sealed class KycIdentityReadSurfaceExclusionTests
     [MemberData(nameof(OperatorOnlyTables))]
     public void McpInputSchemaEnum_DoesNotAdvertiseOperatorOnlyTables(string table)
     {
-        var tool = new AvatarScopedQueryTool();
+        var tool = new UserScopedQueryTool();
 
         var advertised = tool.InputSchema
             .GetProperty("properties")
@@ -78,7 +78,7 @@ public sealed class KycIdentityReadSurfaceExclusionTests
         var members = Enum.GetNames<SearchableEntityType>();
 
         members.Should().BeEquivalentTo(
-            "None", "Avatar", "Holon", "Wallet", "BlockchainOperation", "STARODK", "All");
+            "None", "User", "Holon", "Wallet", "BlockchainOperation", "STARODK", "All");
         members.Should().NotContain(name =>
             name.Contains("Identity", StringComparison.OrdinalIgnoreCase)
             || name.Contains("Kyc", StringComparison.OrdinalIgnoreCase)
@@ -106,12 +106,12 @@ public sealed class KycIdentityReadSurfaceExclusionTests
     }
 
     /// <summary>
-    /// The link from a person to their avatars is what would reveal cross-tenant
+    /// The link from a person to their users is what would reveal cross-tenant
     /// existence. It must not be projected by any consumer-facing DTO, so no such
     /// DTO may carry the field at all.
     /// </summary>
     [Fact]
-    public void NoConsumerFacingModelProjectsThePersonToAvatarLink()
+    public void NoConsumerFacingModelProjectsThePersonToUserLink()
     {
         var assembly = typeof(KycIdentity).Assembly;
         var leaking = assembly.GetTypes()
@@ -123,13 +123,13 @@ public sealed class KycIdentityReadSurfaceExclusionTests
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Select(property => new { Type = type, Property = property }))
             .Where(entry =>
-                entry.Property.Name is "PersonKey" or "GlobalPersonKey" or "AvatarIds"
+                entry.Property.Name is "PersonKey" or "GlobalPersonKey" or "UserIds"
                 || entry.Property.Name.Contains("PersonKey", StringComparison.Ordinal))
             .Select(entry => $"{entry.Type.FullName}.{entry.Property.Name}")
             .ToList();
 
         leaking.Should().BeEmpty(
-            "person keys and the person->avatars link are node-operator-only; a "
+            "person keys and the person->users link are node-operator-only; a "
             + "response DTO carrying either would expose cross-tenant existence");
     }
 }

@@ -100,7 +100,7 @@ export interface OperatorTenantKycSummaryResponse extends TenantKycSelectionResp
 
 export interface OperatorKycSubmissionQueueItem {
     id: string;
-    avatarId: string;
+    userId: string;
     tenantId?: string | null;
     providerKey: string;
     status: string;
@@ -134,7 +134,7 @@ export interface KycControlAuditResponse {
     assuranceLevel?: string | null;
     previousTrustRevision?: number | null;
     trustRevision?: number | null;
-    actorAvatarId: string;
+    actorUserId: string;
     occurredAt: string;
 }
 

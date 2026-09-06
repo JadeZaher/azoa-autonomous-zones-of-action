@@ -22,21 +22,21 @@ public sealed class AllocationReceiptControllerTests
     {
         var manager = new Mock<IAllocationReceiptManager>();
         var apiKeyId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         AllocationReceiptRequest? captured = null;
         manager.Setup(candidate => candidate.GetAsync(
                 It.IsAny<AllocationReceiptRequest>(),
                 It.IsAny<CancellationToken>()))
             .Callback<AllocationReceiptRequest, CancellationToken>((request, _) => captured = request)
             .ReturnsAsync(AZOAResult<AllocationReceiptResponse>.Success(new AllocationReceiptResponse()));
-        var controller = CreateController(manager.Object, apiKeyId, avatarId, AzoaScopes.NftMint);
+        var controller = CreateController(manager.Object, apiKeyId, userId, AzoaScopes.NftMint);
 
         var result = await controller.Get("  payment-intent-42  ", CancellationToken.None);
 
         result.Result.Should().BeOfType<OkObjectResult>();
         captured.Should().NotBeNull();
         captured!.ApiKeyId.Should().Be(apiKeyId);
-        captured.CallerAvatarId.Should().Be(avatarId);
+        captured.CallerUserId.Should().Be(userId);
         captured.ClientIdempotencyKey.Should().Be("payment-intent-42");
     }
 
@@ -109,14 +109,14 @@ public sealed class AllocationReceiptControllerTests
     private static AllocationReceiptController CreateController(
         IAllocationReceiptManager manager,
         Guid apiKeyId,
-        Guid avatarId,
+        Guid userId,
         params string[] scopes)
     {
         var claims = new List<Claim>
         {
             new("AuthMethod", "ApiKey"),
             new("ApiKeyId", apiKeyId.ToString()),
-            new("AvatarId", avatarId.ToString()),
+            new("UserId", userId.ToString()),
         };
         claims.AddRange(scopes.Select(scope => new Claim("scope", scope)));
         return new AllocationReceiptController(manager)

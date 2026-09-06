@@ -58,7 +58,7 @@ public class WalletManagerTests
     }
 
     [Fact]
-    public async Task CreateAsync_ShouldSetAvatarIdAndSave()
+    public async Task CreateAsync_ShouldSetUserIdAndSave()
     {
         _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = Array.Empty<IWallet>() });
@@ -66,12 +66,12 @@ public class WalletManagerTests
                  .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
 
         var model = new WalletCreateModel { ChainType = "Solana", Address = "addr1", IsDefault = false };
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
-        var result = await _manager.CreateAsync(model, avatarId);
+        var result = await _manager.CreateAsync(model, userId);
 
         result.IsError.Should().BeFalse();
-        result.Result!.AvatarId.Should().Be(avatarId);
+        result.Result!.UserId.Should().Be(userId);
         result.Result.Address.Should().Be("addr1");
     }
 
@@ -92,14 +92,14 @@ public class WalletManagerTests
     [Fact]
     public async Task CreateAsync_WithDefault_ShouldUnsetPreviousDefault()
     {
-        var prev = new Wallet { Id = Guid.NewGuid(), AvatarId = Guid.NewGuid(), ChainType = "Solana", Address = "old", IsDefault = true };
+        var prev = new Wallet { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), ChainType = "Solana", Address = "old", IsDefault = true };
         _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { prev } });
         _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
 
         var model = new WalletCreateModel { ChainType = "Solana", Address = "new", IsDefault = true };
-        var result = await _manager.CreateAsync(model, prev.AvatarId);
+        var result = await _manager.CreateAsync(model, prev.UserId);
 
         result.IsError.Should().BeFalse();
         _walletStore.Verify(p => p.UpsertAsync(It.Is<IWallet>(w => w.Id == prev.Id && !w.IsDefault), It.IsAny<CancellationToken>()), Times.Once);
@@ -108,7 +108,7 @@ public class WalletManagerTests
     [Fact]
     public async Task BootstrapWalletAsync_RetryReturnsSameCreateOnlyWalletWithoutSerializingKeyMaterial()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         IWallet? persisted = null;
         _walletStore.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid id, CancellationToken _) => persisted is not null && persisted.Id == id
@@ -122,14 +122,14 @@ public class WalletManagerTests
             });
 
         var request = new WalletGenerateRequest { ChainType = "Algorand", IsDefault = false };
-        var first = await _manager.BootstrapWalletAsync(request, avatarId);
-        var retry = await _manager.BootstrapWalletAsync(request, avatarId);
+        var first = await _manager.BootstrapWalletAsync(request, userId);
+        var retry = await _manager.BootstrapWalletAsync(request, userId);
 
         first.IsError.Should().BeFalse();
         retry.IsError.Should().BeFalse();
         retry.Result!.Id.Should().Be(first.Result!.Id);
         retry.Result.Address.Should().Be(first.Result.Address);
-        retry.Result.AvatarId.Should().Be(avatarId);
+        retry.Result.UserId.Should().Be(userId);
         retry.Result.WalletType.Should().Be(WalletType.Platform);
         retry.Result.EncryptedSeedPhrase.Should().BeNull();
         _walletStore.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -145,7 +145,7 @@ public class WalletManagerTests
         _walletStore.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<IWallet>.Success(new Wallet
             {
-                AvatarId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
                 ChainType = "Algorand",
                 WalletType = WalletType.Platform
             }));
@@ -161,13 +161,13 @@ public class WalletManagerTests
     [Fact]
     public async Task UpdateAsync_ShouldApplyPartialChanges()
     {
-        var wallet = new Wallet { Id = Guid.NewGuid(), AvatarId = Guid.NewGuid(), ChainType = "Solana", Address = "addr", Label = "Old", IsDefault = false };
+        var wallet = new Wallet { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), ChainType = "Solana", Address = "addr", Label = "Old", IsDefault = false };
         _walletStore.Setup(p => p.GetByIdAsync(wallet.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IWallet> { Result = wallet });
         _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
 
-        var result = await _manager.UpdateAsync(wallet.Id, new WalletUpdateModel { Label = "New" }, wallet.AvatarId);
+        var result = await _manager.UpdateAsync(wallet.Id, new WalletUpdateModel { Label = "New" }, wallet.UserId);
 
         result.IsError.Should().BeFalse();
         result.Result!.Label.Should().Be("New");
@@ -177,9 +177,9 @@ public class WalletManagerTests
     [Fact]
     public async Task SetDefaultAsync_ShouldSwapDefaultFlag()
     {
-        var avatarId = Guid.NewGuid();
-        var prev = new Wallet { Id = Guid.NewGuid(), AvatarId = avatarId, ChainType = "Solana", Address = "old", IsDefault = true };
-        var current = new Wallet { Id = Guid.NewGuid(), AvatarId = avatarId, ChainType = "Solana", Address = "new", IsDefault = false };
+        var userId = Guid.NewGuid();
+        var prev = new Wallet { Id = Guid.NewGuid(), UserId = userId, ChainType = "Solana", Address = "old", IsDefault = true };
+        var current = new Wallet { Id = Guid.NewGuid(), UserId = userId, ChainType = "Solana", Address = "new", IsDefault = false };
 
         _walletStore.Setup(p => p.GetByIdAsync(current.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IWallet> { Result = current });
@@ -188,7 +188,7 @@ public class WalletManagerTests
         _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
 
-        var result = await _manager.SetDefaultAsync(avatarId, current.Id);
+        var result = await _manager.SetDefaultAsync(userId, current.Id);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().BeTrue();
@@ -197,9 +197,9 @@ public class WalletManagerTests
     }
 
     [Fact]
-    public async Task SetDefaultAsync_WrongAvatar_ReturnsError()
+    public async Task SetDefaultAsync_WrongUser_ReturnsError()
     {
-        var wallet = new Wallet { Id = Guid.NewGuid(), AvatarId = Guid.NewGuid(), ChainType = "Solana", Address = "addr" };
+        var wallet = new Wallet { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), ChainType = "Solana", Address = "addr" };
         _walletStore.Setup(p => p.GetByIdAsync(wallet.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IWallet> { Result = wallet });
 
@@ -212,16 +212,16 @@ public class WalletManagerTests
     [Fact]
     public async Task GetPortfolioAsync_ShouldReturnStubWithNfts()
     {
-        var avatarId = Guid.NewGuid();
-        var wallet = new Wallet { Id = Guid.NewGuid(), AvatarId = avatarId, ChainType = "Solana", Address = "addr1" };
-        var nft = new Holon { Id = Guid.NewGuid(), AvatarId = avatarId, AssetType = "NFT", Name = "MyNFT", TokenId = "123", Metadata = new Dictionary<string, string> { ["image"] = "ipfs://img" } };
+        var userId = Guid.NewGuid();
+        var wallet = new Wallet { Id = Guid.NewGuid(), UserId = userId, ChainType = "Solana", Address = "addr1" };
+        var nft = new Holon { Id = Guid.NewGuid(), UserId = userId, AssetType = "NFT", Name = "MyNFT", TokenId = "123", Metadata = new Dictionary<string, string> { ["image"] = "ipfs://img" } };
 
         _walletStore.Setup(p => p.GetByIdAsync(wallet.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IWallet> { Result = wallet });
         _holonStore.Setup(p => p.QueryAsync(null, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { nft } });
 
-        var result = await _manager.GetPortfolioAsync(wallet.Id, avatarId);
+        var result = await _manager.GetPortfolioAsync(wallet.Id, userId);
 
         result.IsError.Should().BeFalse();
         result.Result!.WalletId.Should().Be(wallet.Id);
@@ -233,13 +233,13 @@ public class WalletManagerTests
     [Fact]
     public async Task QueryAsync_WithFilters_ShouldReturnFiltered()
     {
-        var w1 = new Wallet { Id = Guid.NewGuid(), AvatarId = Guid.NewGuid(), ChainType = "Solana", IsDefault = true };
-        var w2 = new Wallet { Id = Guid.NewGuid(), AvatarId = w1.AvatarId, ChainType = "Algorand", IsDefault = false };
+        var w1 = new Wallet { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), ChainType = "Solana", IsDefault = true };
+        var w2 = new Wallet { Id = Guid.NewGuid(), UserId = w1.UserId, ChainType = "Algorand", IsDefault = false };
 
         _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { w1, w2 } });
 
-        var result = await _manager.QueryAsync(new WalletQueryRequest { AvatarId = w1.AvatarId, IsDefault = true }, w1.AvatarId);
+        var result = await _manager.QueryAsync(new WalletQueryRequest { UserId = w1.UserId, IsDefault = true }, w1.UserId);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().ContainSingle(w => w.Id == w1.Id);
@@ -247,12 +247,12 @@ public class WalletManagerTests
 
     // ─── TopUpAsync (faucet) ───
 
-    private Wallet GivenOwnedAlgorandWallet(Guid avatarId)
+    private Wallet GivenOwnedAlgorandWallet(Guid userId)
     {
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = "Algorand",
             Address = "RECIPIENTADDRESSALGORAND234567ABCDEFGHIJKLMNOPQRSTUVWXYZ23",
             WalletType = WalletType.Platform
@@ -276,7 +276,7 @@ public class WalletManagerTests
     }
 
     [Fact]
-    public async Task TopUpAsync_WrongAvatar_ReturnsError()
+    public async Task TopUpAsync_WrongUser_ReturnsError()
     {
         var wallet = GivenOwnedAlgorandWallet(Guid.NewGuid());
 
@@ -302,10 +302,10 @@ public class WalletManagerTests
         var manager = new WalletManager(_walletStore.Object, _holonStore.Object, chainFactory.Object,
             new WalletKeyService(mainnetConfig), mainnetConfig);
 
-        var avatarId = Guid.NewGuid();
-        var wallet = GivenOwnedAlgorandWallet(avatarId);
+        var userId = Guid.NewGuid();
+        var wallet = GivenOwnedAlgorandWallet(userId);
 
-        var result = await manager.TopUpAsync(wallet.Id, 5m, avatarId);
+        var result = await manager.TopUpAsync(wallet.Id, 5m, userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("mainnet");
@@ -317,8 +317,8 @@ public class WalletManagerTests
     [Fact]
     public async Task TopUpAsync_AlgorandFaucetNotConfigured_ReturnsClearError()
     {
-        var avatarId = Guid.NewGuid();
-        var wallet = GivenOwnedAlgorandWallet(avatarId);
+        var userId = Guid.NewGuid();
+        var wallet = GivenOwnedAlgorandWallet(userId);
         var provider = GivenFaucetProvider("Algorand");
         provider
             .Setup(p => p.DispenseFromFaucetAsync(
@@ -329,7 +329,7 @@ public class WalletManagerTests
                 Message = "Algorand faucet is not configured (set Blockchain:Faucet:Algorand:Mnemonic)."
             });
 
-        var result = await _manager.TopUpAsync(wallet.Id, 5m, avatarId);
+        var result = await _manager.TopUpAsync(wallet.Id, 5m, userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Blockchain:Faucet:Algorand:Mnemonic");
@@ -338,8 +338,8 @@ public class WalletManagerTests
     [Fact]
     public async Task TopUpAsync_AlgorandSuccess_ReturnsTxHashAndUsesDefaultAmount()
     {
-        var avatarId = Guid.NewGuid();
-        var wallet = GivenOwnedAlgorandWallet(avatarId);
+        var userId = Guid.NewGuid();
+        var wallet = GivenOwnedAlgorandWallet(userId);
         var provider = GivenFaucetProvider("Algorand");
         provider
             .Setup(p => p.DispenseFromFaucetAsync(
@@ -349,7 +349,7 @@ public class WalletManagerTests
                 Result = new FaucetDispenseResult("TXHASH123", IsClientSide: false, "Dispensed 5 test ALGO.")
             });
 
-        var result = await _manager.TopUpAsync(wallet.Id, null, avatarId);
+        var result = await _manager.TopUpAsync(wallet.Id, null, userId);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().NotBeNull();
@@ -363,8 +363,8 @@ public class WalletManagerTests
     [Fact]
     public async Task TopUpAsync_AlgorandFaucetErrors_ReturnsError()
     {
-        var avatarId = Guid.NewGuid();
-        var wallet = GivenOwnedAlgorandWallet(avatarId);
+        var userId = Guid.NewGuid();
+        var wallet = GivenOwnedAlgorandWallet(userId);
         var provider = GivenFaucetProvider("Algorand");
         provider
             .Setup(p => p.DispenseFromFaucetAsync(
@@ -375,7 +375,7 @@ public class WalletManagerTests
                 Message = "Algorand faucet failed: algod unreachable"
             });
 
-        var result = await _manager.TopUpAsync(wallet.Id, 5m, avatarId);
+        var result = await _manager.TopUpAsync(wallet.Id, 5m, userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("algod unreachable");
@@ -384,15 +384,15 @@ public class WalletManagerTests
     [Fact]
     public async Task TopUpAsync_ProviderThrows_ReturnsErrorNotThrows()
     {
-        var avatarId = Guid.NewGuid();
-        var wallet = GivenOwnedAlgorandWallet(avatarId);
+        var userId = Guid.NewGuid();
+        var wallet = GivenOwnedAlgorandWallet(userId);
         var provider = GivenFaucetProvider("Algorand");
         provider
             .Setup(p => p.DispenseFromFaucetAsync(
                 It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
 
-        var result = await _manager.TopUpAsync(wallet.Id, 5m, avatarId);
+        var result = await _manager.TopUpAsync(wallet.Id, 5m, userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("boom");
@@ -401,11 +401,11 @@ public class WalletManagerTests
     [Fact]
     public async Task TopUpAsync_Solana_ReturnsClientSideMessageWithoutError()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = "Solana",
             Address = "SoLaNaAddr1111111111111111111111111111111111",
             WalletType = WalletType.Platform
@@ -422,7 +422,7 @@ public class WalletManagerTests
                     "Solana devnet/testnet top-up is performed client-side via RPC airdrop (requestAirdrop).")
             });
 
-        var result = await _manager.TopUpAsync(wallet.Id, 1m, avatarId);
+        var result = await _manager.TopUpAsync(wallet.Id, 1m, userId);
 
         result.IsError.Should().BeFalse();
         result.Message.Should().Contain("client-side");
@@ -431,11 +431,11 @@ public class WalletManagerTests
     [Fact]
     public async Task TopUpAsync_UnsupportedChain_ReturnsError()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = "Ethereum",
             Address = "0xabc",
             WalletType = WalletType.Platform
@@ -445,7 +445,7 @@ public class WalletManagerTests
         // A provider with no faucet path (SupportsFaucet == false) ⇒ "not supported".
         GivenFaucetProvider("Ethereum", supportsFaucet: false);
 
-        var result = await _manager.TopUpAsync(wallet.Id, 1m, avatarId);
+        var result = await _manager.TopUpAsync(wallet.Id, 1m, userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("not supported");

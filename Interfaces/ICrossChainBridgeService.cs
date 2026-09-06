@@ -17,7 +17,7 @@ public interface ICrossChainBridgeService
     /// </summary>
     /// <param name="clientIdempotencyKey">
     /// Optional client-supplied idempotency key (the <c>Idempotency-Key</c>
-    /// request header). The service hashes and avatar-namespaces it, then binds
+    /// request header). The service hashes and user-namespaces it, then binds
     /// its ledger record to the exact operation and request fingerprint. When
     /// null the service derives a deterministic content key.
     /// </param>
@@ -29,7 +29,7 @@ public interface ICrossChainBridgeService
     /// </param>
     Task<AZOAResult<BridgeTransactionResult>> InitiateBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
-        string recipientAddress, Guid avatarId, RailAmount amount,
+        string recipientAddress, Guid userId, RailAmount amount,
         BridgeMode? mode = null, CancellationToken ct = default,
         string? clientIdempotencyKey = null);
 
@@ -39,7 +39,7 @@ public interface ICrossChainBridgeService
     /// </summary>
     Task<AZOAResult<BridgeTransactionResult>> FetchVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
-        Guid? callerAvatarId = null);
+        Guid? callerUserId = null);
 
     /// <summary>
     /// Redeem a Wormhole bridge on the target chain using a verified VAA.
@@ -47,32 +47,32 @@ public interface ICrossChainBridgeService
     /// </summary>
     /// <param name="clientIdempotencyKey">
     /// Optional client <c>Idempotency-Key</c>. The service hashes and
-    /// avatar-namespaces it and binds it to this exact redeem request. When null
+    /// user-namespaces it and binds it to this exact redeem request. When null
     /// the service derives a deterministic key from the bridge id and VAA digest.
     /// </param>
     Task<AZOAResult<BridgeTransactionResult>> RedeemWithVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
         string? clientIdempotencyKey = null,
-        Guid? callerAvatarId = null);
+        Guid? callerUserId = null);
 
     /// <summary>
     /// Reverse bridge: burn wrapped on target, release original on source.
     /// </summary>
     /// <param name="clientIdempotencyKey">
     /// Optional client <c>Idempotency-Key</c>. The service hashes and
-    /// avatar-namespaces it and binds it to this exact reversal request. When
+    /// user-namespaces it and binds it to this exact reversal request. When
     /// null the service derives a deterministic bridge-and-recipient key.
     /// </param>
     Task<AZOAResult<BridgeTransactionResult>> ReverseBridgeAsync(
         string bridgeTransactionId, string sourceRecipientAddress, CancellationToken ct = default,
         string? clientIdempotencyKey = null,
-        Guid? callerAvatarId = null);
+        Guid? callerUserId = null);
 
     /// <summary>
-    /// Get bridge history for an avatar.
+    /// Get bridge history for an user.
     /// </summary>
     Task<AZOAResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
-        Guid avatarId, CancellationToken ct = default);
+        Guid userId, CancellationToken ct = default);
 
     /// <summary>
     /// Get all supported bridge routes (including Wormhole availability).
@@ -85,5 +85,5 @@ public interface ICrossChainBridgeService
     /// </summary>
     Task<AZOAResult<BridgeTransactionResult>> GetBridgeStatusAsync(
         string bridgeTransactionId, CancellationToken ct = default,
-        Guid? callerAvatarId = null);
+        Guid? callerUserId = null);
 }

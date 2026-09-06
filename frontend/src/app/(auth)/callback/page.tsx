@@ -17,7 +17,7 @@ import { exchangeOAuthCode, safeReturnTo } from '@/lib/oauth'
 const ERROR_COPY: Record<string, string> = {
   sign_in_failed: 'That sign-in could not be completed. Please try again.',
   link_failed: 'That account could not be linked. Start the linking flow again.',
-  link_conflict: 'That provider account is already linked to a different avatar.',
+  link_conflict: 'That provider account is already linked to a different user.',
   unsupported_provider: 'That sign-in provider is not available on this node.',
 }
 

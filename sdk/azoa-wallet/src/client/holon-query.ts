@@ -9,7 +9,7 @@ import { API_PATHS } from "../api/api-version.js";
  */
 export interface HolonQueryParams {
   name?: string;
-  avatarId?: string;
+  userId?: string;
   providerName?: string;
   chainId?: string;
   assetType?: string;
@@ -21,7 +21,7 @@ export interface HolonResult {
   id: string;
   name: string;
   description?: string;
-  avatarId?: string;
+  userId?: string;
   parentHolonId?: string;
   providerName?: string;
   chainId?: string;
@@ -34,8 +34,8 @@ export interface HolonResult {
   modifiedDate?: string;
   /** Clone provenance: the holon this one was cloned from. Undefined for non-clones. */
   sourceHolonId?: string;
-  /** Clone provenance: the owning avatar of the source holon at clone time. Undefined for non-clones. */
-  originAvatarId?: string;
+  /** Clone provenance: the owning user of the source holon at clone time. Undefined for non-clones. */
+  originUserId?: string;
 }
 
 /** Request body for {@link HolonQueryBuilder.clone}. Mirrors .NET `HolonCloneRequest`. */
@@ -53,7 +53,7 @@ export interface HolonCloneParams {
  * ```ts
  * const nfts = await azoa.holons
  *   .where({ assetType: "NFT", chainId: "algorand" })
- *   .ownedBy(avatarId)
+ *   .ownedBy(userId)
  *   .active()
  *   .execute();
  * ```
@@ -78,9 +78,9 @@ export class HolonQueryBuilder {
     return this;
   }
 
-  /** Filter by owning avatar. */
-  ownedBy(avatarId: string): this {
-    this.params.avatarId = avatarId;
+  /** Filter by owning user. */
+  ownedBy(userId: string): this {
+    this.params.userId = userId;
     return this;
   }
 
@@ -167,7 +167,7 @@ export class HolonQueryBuilder {
    * Clone a holon (optionally with its subtree). The clone is a new holon
    * owned by the caller, unbound from the source's on-chain asset (tokenId is
    * reset), carrying provenance back to the source via
-   * {@link HolonResult.sourceHolonId} / {@link HolonResult.originAvatarId}.
+   * {@link HolonResult.sourceHolonId} / {@link HolonResult.originUserId}.
    */
   async clone(id: string, params?: HolonCloneParams): Promise<Result<HolonResult, SdkError>> {
     return this.api.request<HolonResult>("POST", API_PATHS.HOLON_CLONE(id), params ?? {});

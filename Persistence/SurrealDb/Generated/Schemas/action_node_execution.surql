@@ -1,0 +1,68 @@
+-- ============================================================
+-- Table: action_node_execution
+-- Aggregate: ActionNodeExecution (Models/ActionDefinition/ActionNodeExecution.cs)
+-- Guardrail: G6 SCHEMAFULL; G2 exactly-once claim primitive (api-safety-hardening). One row per (run, node).
+-- Note: Per-(run, node) execution row. Replaces the in-place mutation of ActionNode.State/Output/Error which prevented re-runs from preserving prior attempt's outputs.
+-- Note: On a fork, the same execution row can be referenced by both parent and child run via the `executes` RELATE edge for nodes whose execution_order < forkPoint (copy-by-reference, no duplication). Scalar run_id is the originating run; cross-run reference happens through the RELATE edge defined separately in surrealdb-migration §6.2.
+-- Note: The G2 claim primitive (TryClaimPendingAsync) is a conditional UPDATE that only succeeds when current state == 'Pending'. Empty-result case = lost race (already claimed by another worker). The (run_id, node_id) UNIQUE index is what makes the claim atomically safe.
+-- Note: output stores the JSON-serialized AZOAResult<T> from the handler call. error carries the failure message when state = Failed. Both are null in non-terminal states.
+-- ============================================================
+
+-- ── Enums ─────────────────────────────────────────────────
+
+-- ActionNodeExecution.ActionNodeState
+DEFINE PARAM IF NOT EXISTS $action_node_execution_state VALUE ["Pending", "Running", "Succeeded", "Failed", "Skipped", "Cancelled"];
+
+DEFINE TABLE IF NOT EXISTS action_node_execution SCHEMAFULL;
+
+-- Execution row identity (record id is the Guid('N') of ActionNodeExecution.Id)
+DEFINE FIELD IF NOT EXISTS id ON TABLE action_node_execution TYPE string
+    ASSERT $value != NONE AND $value != "";
+
+-- Owning run (originating run; cross-run references via `executes` RELATE edge)
+DEFINE FIELD IF NOT EXISTS run_id ON TABLE action_node_execution TYPE record<action_run>;
+
+-- ActionDefinition definition node this execution corresponds to
+DEFINE FIELD IF NOT EXISTS node_id ON TABLE action_node_execution TYPE record<action_node>;
+
+-- ActionNodeState enum name
+DEFINE FIELD IF NOT EXISTS state ON TABLE action_node_execution TYPE string
+    ASSERT $value INSIDE $action_node_execution_state
+    DEFAULT "Pending";
+
+-- Serialized AZOAResult<T> from the handler call (null until Succeeded)
+DEFINE FIELD IF NOT EXISTS output ON TABLE action_node_execution TYPE option<string>;
+
+-- Failure message when state is Failed
+DEFINE FIELD IF NOT EXISTS error ON TABLE action_node_execution TYPE option<string>;
+
+-- Broadcast tx hash when this node put a tx on-chain (null otherwise). Carried so the reconciliation sweep can re-probe chain truth for a node parked in AwaitingReconciliation, and so a reconciled-to-success chain-action node records the hash that landed (blockchain-recovery-and-portable-wallets §1.3).
+DEFINE FIELD IF NOT EXISTS tx_hash ON TABLE action_node_execution TYPE option<string>;
+
+-- Chain the tx was broadcast to (e.g. "Algorand"), for provider resolution during reconciliation (null when no tx broadcast)
+DEFINE FIELD IF NOT EXISTS chain_type ON TABLE action_node_execution TYPE option<string>;
+
+-- Wall-clock time at which the row entered Running
+DEFINE FIELD IF NOT EXISTS started_at ON TABLE action_node_execution TYPE datetime;
+
+-- Wall-clock time at which the row reached a terminal state (null while non-terminal)
+DEFINE FIELD IF NOT EXISTS ended_at ON TABLE action_node_execution TYPE option<datetime>;
+
+-- ── Indexes ──────────────────────────────────────────────────
+
+DEFINE INDEX IF NOT EXISTS action_node_execution_run_node
+    ON TABLE action_node_execution
+    FIELDS run_id, node_id
+    UNIQUE;
+
+DEFINE INDEX IF NOT EXISTS action_node_execution_by_run
+    ON TABLE action_node_execution
+    FIELDS run_id;
+
+DEFINE INDEX IF NOT EXISTS action_node_execution_by_node
+    ON TABLE action_node_execution
+    FIELDS node_id;
+
+DEFINE INDEX IF NOT EXISTS action_node_execution_by_state
+    ON TABLE action_node_execution
+    FIELDS state;

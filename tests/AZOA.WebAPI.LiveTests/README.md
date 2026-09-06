@@ -37,15 +37,15 @@ Edit `appsettings.LiveTests.json` or override with CLI flags / environment varia
 
 ```json
 {
-  "id": "register_avatar",
-  "description": "Register a new avatar",
+  "id": "register_user",
+  "description": "Register a new user",
   "method": "POST",
-  "path": "/api/avatar/register",
+  "path": "/api/user/register",
   "headers": { "Content-Type": "application/json" },
   "body": { "username": "tester", "email": "test@example.com", "password": "Test123!" },
   "expectedStatus": 200,
-  "extract": { "avatarId": "result.id" },
-  "saveAs": "avatar1"
+  "extract": { "userId": "result.id" },
+  "saveAs": "user1"
 }
 ```
 
@@ -55,7 +55,7 @@ Use `{{namespace.variable}}` anywhere (path, headers, body). Values are extracte
 
 ```json
 {
-  "path": "/api/avatar/{{avatar1.avatarId}}",
+  "path": "/api/user/{{user1.userId}}",
   "headers": { "Authorization": "Bearer {{auth1.token}}" }
 }
 ```
@@ -74,9 +74,9 @@ Simple dot-notation supported: `result.id`, `result.0.name`, `data.items.2.token
 
 | File | Controller | Cases |
 |------|------------|-------|
-| `AvatarController.jsonl` | Avatar register/login/CRUD/wallets | 11 |
+| `UserController.jsonl` | User register/login/CRUD/wallets | 11 |
 | `HolonController.jsonl` | Holon CRUD/interact lifecycle | 9 |
-| `BlockchainOperationController.jsonl` | Operation query by avatar | 6 |
+| `BlockchainOperationController.jsonl` | Operation query by user | 6 |
 | `STARODKController.jsonl` | ODK create/get/generate/deploy/delete | 8 |
 
 Add new `.jsonl` files to `live-tests/` — they are picked up automatically.

@@ -6,17 +6,17 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 namespace AZOA.WebAPI.Interfaces.Stores;
 
 /// <summary>
-/// NODE-OPERATOR-ONLY persistence for the person-to-avatar binding. No consumer
+/// NODE-OPERATOR-ONLY persistence for the person-to-user binding. No consumer
 /// path may reach this store; see <c>Persistence/SurrealDb/Models/AGENTS.md</c>
 /// §kyc-identity-binding.
 /// </summary>
 public interface IKycIdentityStore
 {
     /// <summary>
-    /// Binds an avatar to a person key inside a scope, creating the row when absent
-    /// and appending the avatar when present. Returns the resulting binding.
+    /// Binds an user to a person key inside a scope, creating the row when absent
+    /// and appending the user when present. Returns the resulting binding.
     /// </summary>
-    Task<AZOAResult<KycIdentity>> BindAvatarAsync(
+    Task<AZOAResult<KycIdentity>> BindUserAsync(
         KycIdentity candidate,
         CancellationToken ct = default);
 
@@ -42,7 +42,7 @@ public interface IKycIdentityStore
 
     /// <summary>
     /// Tombstones the four retained personal fields while PRESERVING both person
-    /// keys, the avatar links, and the audit timestamps, so erasure and KYC
+    /// keys, the user links, and the audit timestamps, so erasure and KYC
     /// record-keeping both hold (D25).
     /// </summary>
     Task<AZOAResult<KycIdentity>> EraseAsync(

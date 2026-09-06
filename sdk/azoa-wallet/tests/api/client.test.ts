@@ -41,7 +41,7 @@ describe("AzoaApiClient", () => {
     );
   });
 
-  describe("avatar endpoints", () => {
+  describe("user endpoints", () => {
     it("login sends POST and returns JWT string", async () => {
       mockFetch.mockReturnValueOnce(azoaResponse("jwt-token-here"));
       const result = await client.login("test@test.com", "password");
@@ -49,7 +49,7 @@ describe("AzoaApiClient", () => {
       if (result.ok) expect(result.value).toBe("jwt-token-here");
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:5000/api/avatar/login",
+        "http://localhost:5000/api/user/login",
         expect.objectContaining({ method: "POST" })
       );
     });
@@ -60,13 +60,13 @@ describe("AzoaApiClient", () => {
       expect(isOk(result)).toBe(true);
     });
 
-    it("getAvatar sends GET with id", async () => {
-      const avatarId = "00000000-0000-4000-8000-00000000000a";
-      mockFetch.mockReturnValueOnce(azoaResponse({ id: avatarId, username: "test" }));
-      const result = await client.getAvatar(avatarId);
+    it("getUser sends GET with id", async () => {
+      const userId = "00000000-0000-4000-8000-00000000000a";
+      mockFetch.mockReturnValueOnce(azoaResponse({ id: userId, username: "test" }));
+      const result = await client.getUser(userId);
       expect(isOk(result)).toBe(true);
       expect(mockFetch).toHaveBeenCalledWith(
-        `http://localhost:5000/api/avatar/${avatarId}`,
+        `http://localhost:5000/api/user/${userId}`,
         expect.objectContaining({ method: "GET" })
       );
     });
@@ -92,7 +92,7 @@ describe("AzoaApiClient", () => {
       const nftId = "aaaaaaaa-1111-4111-8111-111111111111";
       mockFetch.mockReturnValueOnce(azoaResponse({ id: "op2" }));
       await client.transferNft(nftId, {
-        targetAvatarId: "bbbbbbbb-2222-4222-8222-222222222222",
+        targetUserId: "bbbbbbbb-2222-4222-8222-222222222222",
         walletId: "cccccccc-3333-4333-8333-333333333333",
       });
 
@@ -196,17 +196,17 @@ describe("AzoaApiClient", () => {
 
   describe("error handling", () => {
     it("returns SdkError for AZOAResult errors", async () => {
-      mockFetch.mockReturnValueOnce(azoaError("Avatar not found"));
-      const result = await client.getAvatar("00000000-0000-4000-8000-000000000001");
+      mockFetch.mockReturnValueOnce(azoaError("User not found"));
+      const result = await client.getUser("00000000-0000-4000-8000-000000000001");
       expect(isErr(result)).toBe(true);
       // The SDK prefixes errors with method+path for traceability, so the
       // server message is contained rather than the whole string.
-      if (!result.ok) expect(result.error.message).toContain("Avatar not found");
+      if (!result.ok) expect(result.error.message).toContain("User not found");
     });
 
     it("handles network errors", async () => {
       mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-      const result = await client.getAvatar("00000000-0000-4000-8000-000000000002");
+      const result = await client.getUser("00000000-0000-4000-8000-000000000002");
       expect(isErr(result)).toBe(true);
       if (!result.ok) expect(result.error.code).toBe("NETWORK_ERROR");
     });
@@ -226,12 +226,12 @@ describe("AzoaApiClient", () => {
             }),
         })
       );
-      const result = await client.getAvatar(UUID);
+      const result = await client.getUser(UUID);
       expect(isErr(result)).toBe(true);
       if (!result.ok) {
         expect(result.error.status).toBe(500);
         expect(result.error.method).toBe("GET");
-        expect(result.error.path).toBe(`/api/avatar/${UUID}`);
+        expect(result.error.path).toBe(`/api/user/${UUID}`);
         expect(result.error.detail?.type).toBe("System.InvalidOperationException");
       }
     });
@@ -267,7 +267,7 @@ describe("AzoaApiClient", () => {
           json: () => Promise.resolve({ isError: true, message: "bad" }),
         })
       );
-      await dbgClient.getAvatar(UUID);
+      await dbgClient.getUser(UUID);
       expect(debugLogger.debug).toHaveBeenCalled(); // request logged
       expect(debugLogger.error).toHaveBeenCalled(); // error logged
     });
@@ -283,7 +283,7 @@ describe("AzoaApiClient", () => {
         Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve({ isError: true, message: "Unauthorized" }) })
       );
 
-      const result = await client.getAvatar("00000000-0000-4000-8000-000000000003");
+      const result = await client.getUser("00000000-0000-4000-8000-000000000003");
       expect(isErr(result)).toBe(true);
       // Should only refresh once, not loop
       expect(refreshFn).toHaveBeenCalledTimes(2); // initial + one retry
@@ -294,7 +294,7 @@ describe("AzoaApiClient", () => {
   describe("auth headers", () => {
     it("sends Bearer token", async () => {
       mockFetch.mockReturnValueOnce(azoaResponse({}));
-      await client.getAvatar("00000000-0000-4000-8000-000000000004");
+      await client.getUser("00000000-0000-4000-8000-000000000004");
 
       const headers = mockFetch.mock.calls[0][1].headers;
       expect(headers["Authorization"]).toBe("Bearer test-jwt-token");
@@ -312,13 +312,13 @@ describe("AzoaApiClient", () => {
       );
     });
 
-    it("sends GET /api/nft with chainId+ownerAvatarId querystring", async () => {
+    it("sends GET /api/nft with chainId+ownerUserId querystring", async () => {
       mockFetch.mockReturnValueOnce(azoaResponse([]));
-      await client.listNfts({ chainId: "algorand", ownerAvatarId: "11111111-1111-1111-1111-111111111111" });
+      await client.listNfts({ chainId: "algorand", ownerUserId: "11111111-1111-1111-1111-111111111111" });
       const url = mockFetch.mock.calls[0][0] as string;
       expect(url.startsWith("http://localhost:5000/api/nft?")).toBe(true);
       expect(url).toContain("chainId=algorand");
-      expect(url).toContain("ownerAvatarId=11111111-1111-1111-1111-111111111111");
+      expect(url).toContain("ownerUserId=11111111-1111-1111-1111-111111111111");
     });
   });
 

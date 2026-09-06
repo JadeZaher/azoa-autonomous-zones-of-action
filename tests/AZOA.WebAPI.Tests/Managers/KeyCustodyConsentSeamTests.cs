@@ -22,7 +22,7 @@ namespace AZOA.WebAPI.Tests.Managers;
 /// (<c>WithPlatformSigningKeyAsync(bool, SigningContext)</c>) overloads.
 ///
 /// <para>The C1 crux: a tenant-driven sign is REJECTED even though
-/// <c>wallet.AvatarId == ctx.AvatarId</c> would pass the legacy ownership IDOR
+/// <c>wallet.UserId == ctx.UserId</c> would pass the legacy ownership IDOR
 /// check. The denial happens with NO decrypt and the signer is never invoked.</para>
 ///
 /// <para><b>AC4b sign-path enumeration.</b> Every value-signing path in the system
@@ -33,9 +33,9 @@ namespace AZOA.WebAPI.Tests.Managers;
 /// <item>AllocationManager Mint  → platform op  (BuildSigningContext platformOp) → <see cref="WithPlatformSigningKeyAsync"/></item>
 /// <item>AllocationManager Transfer → user op   (BuildSigningContext) → <see cref="WithSigningKeyAsync"/></item>
 /// <item>FungibleTokenManager Create (ASA) → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
-/// <item>Quest Grant (mint) → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
-/// <item>Quest Transfer / Refund → user op → <see cref="WithSigningKeyAsync"/></item>
-/// <item>Quest FungibleTokenCreate → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
+/// <item>ActionDefinition Grant (mint) → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
+/// <item>ActionDefinition Transfer / Refund → user op → <see cref="WithSigningKeyAsync"/></item>
+/// <item>ActionDefinition FungibleTokenCreate → platform op → <see cref="WithPlatformSigningKeyAsync"/></item>
 /// <item>Bridge → BlockchainOperation → BuildSigningContext → one of the two</item>
 /// <item>Swap → UNSIGNED (client-side); no server sign path to gate</item>
 /// </list>
@@ -76,14 +76,14 @@ public class KeyCustodyConsentSeamTests
         return mock;
     }
 
-    private static Wallet OwnedPlatformWallet(WalletKeyService keyService, Guid avatarId)
+    private static Wallet OwnedPlatformWallet(WalletKeyService keyService, Guid userId)
     {
         var raw = new byte[64];
         for (int i = 0; i < raw.Length; i++) raw[i] = (byte)(i + 1);
         return new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = "Algorand",
             Address = "TESTADDR",
             WalletType = WalletType.Platform,
@@ -108,13 +108,13 @@ public class KeyCustodyConsentSeamTests
     public async Task WithSigningKey_TenantDriven_NoGrant_Rejected_EvenThoughOwnershipMatches()
     {
         var keyService = KeyService();
-        var avatarId = Guid.NewGuid();
-        var wallet = OwnedPlatformWallet(keyService, avatarId);     // wallet.AvatarId == avatarId
+        var userId = Guid.NewGuid();
+        var wallet = OwnedPlatformWallet(keyService, userId);     // wallet.UserId == userId
         var (svc, gate) = NewServiceWithDenyingGate(StoreWith(wallet).Object);
 
         // Tenant-driven user context: grantor == wallet owner, but no live grant.
-        var ctx = SigningContext.ForUser(avatarId, wallet.Id)
-            .ActingAs(Guid.NewGuid(), AzoaScopes.TransferSign, avatarId);
+        var ctx = SigningContext.ForUser(userId, wallet.Id)
+            .ActingAs(Guid.NewGuid(), AzoaScopes.TransferSign, userId);
 
         var signerRan = false;
         var r = await svc.WithSigningKeyAsync<byte[]>(ctx, _ => { signerRan = true; return Task.FromResult(Array.Empty<byte>()); });
@@ -130,15 +130,15 @@ public class KeyCustodyConsentSeamTests
     public async Task WithSigningKey_UserDriven_Allowed_SignerRuns()
     {
         var keyService = KeyService();
-        var avatarId = Guid.NewGuid();
-        var wallet = OwnedPlatformWallet(keyService, avatarId);
+        var userId = Guid.NewGuid();
+        var wallet = OwnedPlatformWallet(keyService, userId);
         var store = new Mock<IWalletStore>(MockBehavior.Loose);
         store.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IWallet> { Result = wallet });
         var (svc, _) = NewServiceWithDenyingGate(store.Object);
 
         // No acting tenant → user-driven → gate allows → signer runs.
-        var ctx = SigningContext.ForUser(avatarId, wallet.Id);
+        var ctx = SigningContext.ForUser(userId, wallet.Id);
         var signerRan = false;
         var r = await svc.WithSigningKeyAsync<byte[]>(ctx, _ => { signerRan = true; return Task.FromResult(new byte[] { 9 }); });
 

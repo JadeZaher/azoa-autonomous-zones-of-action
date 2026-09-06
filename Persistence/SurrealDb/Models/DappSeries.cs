@@ -13,12 +13,12 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("dapp_series",
         Aggregate = "DappSeries (dapp-composition track -- new entity, no hand-written model)",
-        Guardrail = "G6 SCHEMAFULL; greenfield entity introduced by the dapp-composition track. Owns the composed-quest-series shape.")]
-    [SurrealNote("A DappSeries is a linked series of quest DAGs that compose into a deployable dApp contract via STAR generation. Status transitions: Draft -> Building -> Ready -> Deployed -> Archived. The quest entries are stored separately in dapp_series_quest (table 220) keyed by dapp_series_id; they are queried + reordered independently of the parent.")]
-    [SurrealNote("shared_config is a string->string map for cross-quest deployment settings (e.g. chain, provider RPC URL). It is overlaid with each DappSeriesQuest's input mappings to produce the per-quest runtime config at execution time.")]
+        Guardrail = "G6 SCHEMAFULL; greenfield entity introduced by the dapp-composition track. Owns the composed-action-series shape.")]
+    [SurrealNote("A DappSeries is a linked series of action DAGs that compose into a deployable dApp contract via STAR generation. Status transitions: Draft -> Building -> Ready -> Deployed -> Archived. The action entries are stored separately in dapp_series_action (table 220) keyed by dapp_series_id; they are queried + reordered independently of the parent.")]
+    [SurrealNote("shared_config is a string->string map for cross-action deployment settings (e.g. chain, provider RPC URL). It is overlaid with each DappSeriesAction's input mappings to produce the per-action runtime config at execution time.")]
     [SurrealNote("manifest stores the composed DappManifest as JSON-on-row (string-encoded). DappManifest is a transient artifact produced by ComposeAsync -- it is NOT a separate aggregate root because it is always read whole alongside its parent series. star_odk_id is populated by GenerateAsync after the STARODK record is created via ISTARManager.CreateOrUpdateAsync.")]
     [Slice("dapp_composition")]
-    [Index("dapp_series_by_avatar", Fields = new[] { "avatar_id" })]
+    [Index("dapp_series_by_user", Fields = new[] { "user_id" })]
     [Index("dapp_series_by_status", Fields = new[] { "status" })]
     [Index("dapp_series_by_star_odk", Fields = new[] { "star_odk_id" })]
     public partial class DappSeries : ISurrealRecord
@@ -47,9 +47,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Optional description")]
         public string? Description { get; set; }
 
-        [FieldGroup("Owner avatar (Guid('N') hex)")]
-        [References(typeof(Avatar))]
-        public string AvatarId { get; set; } = string.Empty;
+        [FieldGroup("Owner user (Guid('N') hex)")]
+        [References(typeof(User))]
+        public string UserId { get; set; } = string.Empty;
 
         [FieldGroup("DappSeriesStatus enum name")]
         [Inside("Draft", "Building", "Ready", "Deployed", "Archived")]
@@ -57,7 +57,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public StatusKind Status { get; set; }
 
-        [FieldGroup("Shared deployment config across all quests in the series (string->string map)")]
+        [FieldGroup("Shared deployment config across all actions in the series (string->string map)")]
         public JsonElement SharedConfig { get; set; }
 
         [FieldGroup("Linked STARODK.Id, populated by GenerateAsync (null until generation)")]

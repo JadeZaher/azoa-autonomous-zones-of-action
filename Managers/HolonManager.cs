@@ -30,52 +30,52 @@ public class HolonManager : IHolonManager
         _nodeGovernance = nodeGovernance ?? NodeGovernanceGuard.Unrestricted;
     }
 
-    private static bool IsOwnedBy(IHolon holon, Guid avatarId) => holon.AvatarId == avatarId;
+    private static bool IsOwnedBy(IHolon holon, Guid userId) => holon.UserId == userId;
 
     // Cross-tenant read scope: a holon is readable iff the caller owns it OR it is
-    // IsPublic. A null callerAvatarId fails closed (public-only). See
+    // IsPublic. A null callerUserId fails closed (public-only). See
     // Controllers/AGENTS.md §cross-tenant-read-scope.
-    private static bool CanRead(IHolon holon, Guid? callerAvatarId) =>
-        callerAvatarId.HasValue && holon.AvatarId == callerAvatarId.Value || holon.IsPublic;
+    private static bool CanRead(IHolon holon, Guid? callerUserId) =>
+        callerUserId.HasValue && holon.UserId == callerUserId.Value || holon.IsPublic;
 
-    public async Task<AZOAResult<IHolon>> GetAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IHolon>> GetAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var result = await _holonStore.GetByIdAsync(id, default);
         // Do NOT confirm existence of a non-owned, non-public holon: return a
         // "not found"-style result so id-probing cannot enumerate other tenants.
         if (result.IsError || result.Result == null) return result;
-        if (!CanRead(result.Result, callerAvatarId))
+        if (!CanRead(result.Result, callerUserId))
             return new AZOAResult<IHolon> { IsError = true, Message = "Holon not found." };
         return result;
     }
 
-    public async Task<AZOAResult<IEnumerable<IHolon>>> GetAllAsync(Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetAllAsync(Guid? callerUserId = null, AZOARequest? request = null)
     {
         var result = await _holonStore.QueryAsync(null, default);
-        return ScopeReadable(result, callerAvatarId);
+        return ScopeReadable(result, callerUserId);
     }
 
     // Owner-or-public filter applied in-memory over a store result (mirrors
     // SearchManager). Preserves an error result verbatim.
     private static AZOAResult<IEnumerable<IHolon>> ScopeReadable(
-        AZOAResult<IEnumerable<IHolon>> result, Guid? callerAvatarId)
+        AZOAResult<IEnumerable<IHolon>> result, Guid? callerUserId)
     {
         if (result.IsError || result.Result == null) return result;
         return new AZOAResult<IEnumerable<IHolon>>
         {
-            Result = result.Result.Where(h => CanRead(h, callerAvatarId)).ToList(),
+            Result = result.Result.Where(h => CanRead(h, callerUserId)).ToList(),
             Message = result.Message
         };
     }
 
-    public async Task<AZOAResult<IHolon>> CreateAsync(HolonCreateModel model, Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IHolon>> CreateAsync(HolonCreateModel model, Guid userId, AZOARequest? request = null)
     {
         var holon = new Holon
         {
             Name = model.Name,
             Description = model.Description,
             ParentHolonId = model.ParentHolonId,
-            AvatarId = avatarId,
+            UserId = userId,
             ProviderName = model.ProviderName,
             ChainId = model.ChainId,
             AssetType = model.AssetType,
@@ -106,12 +106,12 @@ public class HolonManager : IHolonManager
         return await _holonStore.UpsertAsync(holon, default);
     }
 
-    public async Task<AZOAResult<IHolon>> UpdateAsync(Guid id, HolonUpdateModel model, Guid? avatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IHolon>> UpdateAsync(Guid id, HolonUpdateModel model, Guid? userId = null, AZOARequest? request = null)
     {
         var existing = await _holonStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
-        if (avatarId.HasValue && !IsOwnedBy(existing.Result, avatarId.Value))
-            return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different avatar." };
+        if (userId.HasValue && !IsOwnedBy(existing.Result, userId.Value))
+            return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different user." };
 
         var holon = (Holon)existing.Result;
         if (model.Name != null) holon.Name = model.Name;
@@ -150,30 +150,30 @@ public class HolonManager : IHolonManager
         return await _holonStore.UpsertAsync(holon, default);
     }
 
-    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? userId = null, AZOARequest? request = null)
     {
         var existing = await _holonStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = existing.Message ?? "Holon not found." };
-        if (avatarId.HasValue && !IsOwnedBy(existing.Result, avatarId.Value))
-            return new AZOAResult<bool> { IsError = true, Message = "Holon is owned by a different avatar." };
+        if (userId.HasValue && !IsOwnedBy(existing.Result, userId.Value))
+            return new AZOAResult<bool> { IsError = true, Message = "Holon is owned by a different user." };
 
         return await _holonStore.DeleteAsync(id, default);
     }
 
-    public async Task<AZOAResult<IEnumerable<IHolon>>> QueryAsync(HolonQueryRequest query, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> QueryAsync(HolonQueryRequest query, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var result = await _holonStore.QueryAsync(query, default);
-        return ScopeReadable(result, callerAvatarId);
+        return ScopeReadable(result, callerUserId);
     }
 
-    public async Task<AZOAResult<IHolon>> InteractAsync(Guid id, HolonInteractionRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<IHolon>> InteractAsync(Guid id, HolonInteractionRequest request, Guid? userId = null, AZOARequest? providerRequest = null)
     {
         var existing = await _holonStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
-        // Fail-closed: a mutating call with no acting avatar is a wiring bug, not an admin escape hatch.
-        if (!avatarId.HasValue || !IsOwnedBy(existing.Result, avatarId.Value))
-            return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different avatar." };
+        // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
+        if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
+            return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different user." };
 
         var holon = (Holon)existing.Result;
 
@@ -213,37 +213,37 @@ public class HolonManager : IHolonManager
         return await _holonStore.UpsertAsync(holon, default);
     }
 
-    public async Task<AZOAResult<IEnumerable<IHolon>>> GetChildrenAsync(Guid parentId, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetChildrenAsync(Guid parentId, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var query = new HolonQueryRequest { ParentHolonId = parentId };
         var result = await _holonStore.QueryAsync(query, default);
-        return ScopeReadable(result, callerAvatarId);
+        return ScopeReadable(result, callerUserId);
     }
 
-    public async Task<AZOAResult<IEnumerable<IHolon>>> GetPeersAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetPeersAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var existing = await _holonStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return new AZOAResult<IEnumerable<IHolon>> { IsError = true, Message = existing.Message };
         // Own-or-public gate on the anchor holon: a non-owner may not enumerate a
         // private holon's peer graph (would leak peer ids by id-probing).
-        if (!CanRead(existing.Result, callerAvatarId))
+        if (!CanRead(existing.Result, callerUserId))
             return new AZOAResult<IEnumerable<IHolon>> { IsError = true, Message = "Holon not found." };
 
         var peerIds = existing.Result.PeerHolonIds;
         if (!peerIds.Any()) return new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>(), Message = "No peers." };
 
         var all = await _holonStore.QueryAsync(null, default);
-        var peers = all.Result?.Where(h => peerIds.Contains(h.Id) && CanRead(h, callerAvatarId)).ToList() ?? new List<IHolon>();
+        var peers = all.Result?.Where(h => peerIds.Contains(h.Id) && CanRead(h, callerUserId)).ToList() ?? new List<IHolon>();
 
         return new AZOAResult<IEnumerable<IHolon>> { Result = peers, Message = $"Found {peers.Count} peers." };
     }
 
-    public async Task<AZOAResult<IEnumerable<IHolon>>> GetAncestorsAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetAncestorsAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var anchor = await _holonStore.GetByIdAsync(id, default);
         if (anchor.IsError || anchor.Result == null)
             return new AZOAResult<IEnumerable<IHolon>> { IsError = true, Message = anchor.Message ?? "Holon not found." };
-        if (!CanRead(anchor.Result, callerAvatarId))
+        if (!CanRead(anchor.Result, callerUserId))
             return new AZOAResult<IEnumerable<IHolon>> { IsError = true, Message = "Holon not found." };
 
         var ancestors = new List<IHolon>();
@@ -264,7 +264,7 @@ public class HolonManager : IHolonManager
 
             // Only surface ancestors the caller may read (owner-or-public); a private
             // ancestor owned by another tenant is elided from the chain.
-            if (CanRead(parentResult.Result, callerAvatarId))
+            if (CanRead(parentResult.Result, callerUserId))
                 ancestors.Add(parentResult.Result);
             currentId = parentId.Value;
         }
@@ -272,16 +272,16 @@ public class HolonManager : IHolonManager
         return new AZOAResult<IEnumerable<IHolon>> { Result = ancestors, Message = $"Found {ancestors.Count} ancestors." };
     }
 
-    public async Task<AZOAResult<IEnumerable<IHolon>>> GetDescendantsAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IHolon>>> GetDescendantsAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var anchor = await _holonStore.GetByIdAsync(id, default);
         if (anchor.IsError || anchor.Result == null)
             return new AZOAResult<IEnumerable<IHolon>> { IsError = true, Message = anchor.Message ?? "Holon not found." };
-        if (!CanRead(anchor.Result, callerAvatarId))
+        if (!CanRead(anchor.Result, callerUserId))
             return new AZOAResult<IEnumerable<IHolon>> { IsError = true, Message = "Holon not found." };
 
         var descendants = await CollectDescendantsAsync(id);
-        var readable = descendants.Where(h => CanRead(h, callerAvatarId)).ToList();
+        var readable = descendants.Where(h => CanRead(h, callerUserId)).ToList();
         return new AZOAResult<IEnumerable<IHolon>> { Result = readable, Message = $"Found {readable.Count} descendants." };
     }
 
@@ -318,14 +318,14 @@ public class HolonManager : IHolonManager
     // HOLONIC FUNCTIONALITY
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<AZOAResult<int>> PropagateAsync(Guid id, HolonPropagateRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<int>> PropagateAsync(Guid id, HolonPropagateRequest request, Guid? userId = null, AZOARequest? providerRequest = null)
     {
         var rootResult = await _holonStore.GetByIdAsync(id, default);
         if (rootResult.IsError || rootResult.Result == null)
             return new AZOAResult<int> { IsError = true, Message = rootResult.Message ?? "Holon not found." };
-        // Fail-closed: a mutating call with no acting avatar is a wiring bug, not an admin escape hatch.
-        if (!avatarId.HasValue || !IsOwnedBy(rootResult.Result, avatarId.Value))
-            return new AZOAResult<int> { IsError = true, Message = "Holon is owned by a different avatar." };
+        // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
+        if (!userId.HasValue || !IsOwnedBy(rootResult.Result, userId.Value))
+            return new AZOAResult<int> { IsError = true, Message = "Holon is owned by a different user." };
 
         var count = 0;
         var queue = new Queue<Guid>();
@@ -375,14 +375,14 @@ public class HolonManager : IHolonManager
         return new AZOAResult<int> { Result = count, Message = $"Propagated to {count} holons." };
     }
 
-    public async Task<AZOAResult<HolonComposition>> ComposeAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<HolonComposition>> ComposeAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var rootResult = await _holonStore.GetByIdAsync(id, default);
         if (rootResult.IsError || rootResult.Result == null)
             return new AZOAResult<HolonComposition> { IsError = true, Message = "Holon not found." };
         // Own-or-public gate on the root: don't confirm a private holon's existence
         // or compose over another tenant's subtree.
-        if (!CanRead(rootResult.Result, callerAvatarId))
+        if (!CanRead(rootResult.Result, callerUserId))
             return new AZOAResult<HolonComposition> { IsError = true, Message = "Holon not found." };
 
         var root = rootResult.Result;
@@ -409,7 +409,7 @@ public class HolonManager : IHolonManager
                     // Traverse the full subtree structurally (depth stays correct) but
                     // only aggregate over holons the caller may read — a private
                     // cross-tenant descendant must not leak into the composition stats.
-                    if (CanRead(child, callerAvatarId))
+                    if (CanRead(child, callerUserId))
                         allDescendants.Add(child);
                     depthMap[child.Id] = currentDepth + 1;
                     queue.Enqueue(child.Id);
@@ -422,7 +422,7 @@ public class HolonManager : IHolonManager
             allInSubtree.Add(root);
 
         var readableChildCount = (await _holonStore.QueryAsync(new HolonQueryRequest { ParentHolonId = id }, default))
-            .Result?.Count(h => CanRead(h, callerAvatarId)) ?? 0;
+            .Result?.Count(h => CanRead(h, callerUserId)) ?? 0;
 
         var composition = new HolonComposition
         {
@@ -442,18 +442,18 @@ public class HolonManager : IHolonManager
         return new AZOAResult<HolonComposition> { Result = composition, Message = "Composition computed." };
     }
 
-    public async Task<AZOAResult<IHolon>> CloneAsync(Guid id, HolonCloneRequest request, Guid avatarId, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<IHolon>> CloneAsync(Guid id, HolonCloneRequest request, Guid userId, AZOARequest? providerRequest = null)
     {
         var originalResult = await _holonStore.GetByIdAsync(id, default);
         if (originalResult.IsError || originalResult.Result == null)
             return new AZOAResult<IHolon> { IsError = true, Message = "Holon not found." };
 
         var original = (Holon)originalResult.Result;
-        // H-2: cross-avatar clone is the marketplace TEMPLATE mechanic — only the
+        // H-2: cross-user clone is the marketplace TEMPLATE mechanic — only the
         // owner, or anyone when the source is IsPublic, may clone. A non-owner
         // cloning a private holon is a cross-tenant IP-theft vector; fail closed as
         // "not found" so a private holon's existence is not confirmed by id probing.
-        if (!IsOwnedBy(original, avatarId) && !original.IsPublic)
+        if (!IsOwnedBy(original, userId) && !original.IsPublic)
             return new AZOAResult<IHolon> { IsError = true, Message = "Holon not found." };
 
         var idMap = new Dictionary<Guid, Guid>();
@@ -465,19 +465,19 @@ public class HolonManager : IHolonManager
             Name = request.Name ?? $"{original.Name} (Copy)",
             Description = original.Description,
             ParentHolonId = request.NewParentId,
-            AvatarId = avatarId,
+            UserId = userId,
             ProviderName = original.ProviderName,
             ChainId = original.ChainId,
             AssetType = original.AssetType,
             TokenId = null, // cloned holon is not the same on-chain asset
-            // cross-avatar clone omits private_* metadata keys — see hardening review M2.
+            // cross-user clone omits private_* metadata keys — see hardening review M2.
             Metadata = CloneMetadataWithoutPrivateKeys(original.Metadata, original.Id),
             PeerHolonIds = new List<Guid>(original.PeerHolonIds),
             IsActive = original.IsActive,
             // Clone provenance: link back to the source holon and its owner (the
-            // cross-avatar template mechanic — caller becomes owner via AvatarId above).
+            // cross-user template mechanic — caller becomes owner via UserId above).
             SourceHolonId = original.Id,
-            OriginAvatarId = original.AvatarId
+            OriginUserId = original.UserId
         };
 
         idMap[original.Id] = clone.Id;
@@ -506,18 +506,18 @@ public class HolonManager : IHolonManager
                         Name = child.Name,
                         Description = child.Description,
                         ParentHolonId = idMap[currentOriginalId],
-                        AvatarId = avatarId,
+                        UserId = userId,
                         ProviderName = child.ProviderName,
                         ChainId = child.ChainId,
                         AssetType = child.AssetType,
                         TokenId = null,
-                        // cross-avatar clone omits private_* metadata keys — see hardening review M2.
+                        // cross-user clone omits private_* metadata keys — see hardening review M2.
                         Metadata = CloneMetadataWithoutPrivateKeys(child.Metadata, child.Id),
                         PeerHolonIds = new List<Guid>(),
                         IsActive = child.IsActive,
                         // Clone provenance: link back to the source child + its owner.
                         SourceHolonId = child.Id,
-                        OriginAvatarId = child.AvatarId
+                        OriginUserId = child.UserId
                     };
 
                     idMap[child.Id] = childClone.Id;
@@ -533,7 +533,7 @@ public class HolonManager : IHolonManager
     /// <summary>
     /// Copies metadata for a clone, unconditionally dropping any key starting with
     /// "private_" (case-insensitive) and stamping "cloned_from" provenance.
-    /// Cross-avatar clone is an intentionally open template mechanic, so private_*
+    /// Cross-user clone is an intentionally open template mechanic, so private_*
     /// keys must never leak into a non-owner's copy — see hardening review M2.
     /// </summary>
     private static Dictionary<string, string> CloneMetadataWithoutPrivateKeys(Dictionary<string, string> source, Guid sourceHolonId)
@@ -545,7 +545,7 @@ public class HolonManager : IHolonManager
         return copy;
     }
 
-    public async Task<AZOAResult<bool>> MoveSubtreeAsync(Guid id, Guid newParentId, Guid? avatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<bool>> MoveSubtreeAsync(Guid id, Guid newParentId, Guid? userId = null, AZOARequest? request = null)
     {
         // FR-6 / AC-6a: guard via shared helper (MoveSubtree precedent).
         var cycleError = await EnsureNotDescendantAsync(id, newParentId, request);
@@ -554,9 +554,9 @@ public class HolonManager : IHolonManager
         var holonResult = await _holonStore.GetByIdAsync(id, default);
         if (holonResult.IsError || holonResult.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = "Holon not found." };
-        // Fail-closed: a mutating call with no acting avatar is a wiring bug, not an admin escape hatch.
-        if (!avatarId.HasValue || !IsOwnedBy(holonResult.Result, avatarId.Value))
-            return new AZOAResult<bool> { IsError = true, Message = "Holon is owned by a different avatar." };
+        // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
+        if (!userId.HasValue || !IsOwnedBy(holonResult.Result, userId.Value))
+            return new AZOAResult<bool> { IsError = true, Message = "Holon is owned by a different user." };
 
         var holon = (Holon)holonResult.Result;
         holon.ParentHolonId = newParentId;

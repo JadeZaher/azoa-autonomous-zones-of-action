@@ -22,7 +22,7 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE consent_webhook_event TYPE string
     ASSERT $value != NONE AND $value != "";
 
 -- Owning tenant — the per-tenant isolation key (H5). Resolves ONLY this tenant's registration + secret at delivery.
-DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE consent_webhook_event TYPE record<avatar>;
+DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE consent_webhook_event TYPE record<user>;
 
 -- Which consent lifecycle transition this describes
 DEFINE FIELD IF NOT EXISTS event_type ON TABLE consent_webhook_event TYPE string
@@ -31,8 +31,8 @@ DEFINE FIELD IF NOT EXISTS event_type ON TABLE consent_webhook_event TYPE string
 -- Event payload — the consent_grant this event is about
 DEFINE FIELD IF NOT EXISTS grant_id ON TABLE consent_webhook_event TYPE record<consent_grant>;
 
--- Event payload — the grantor user's avatar
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE consent_webhook_event TYPE record<avatar>;
+-- Event payload — the grantor user's user
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE consent_webhook_event TYPE record<user>;
 
 -- Event payload — scopes (CSV, mirrors consent_grant.scopes)
 DEFINE FIELD IF NOT EXISTS scopes ON TABLE consent_webhook_event TYPE string;

@@ -19,7 +19,7 @@ namespace AZOA.WebAPI.Controllers;
 /// 403 — so it is indistinguishable from "no such grant".
 /// </summary>
 [ApiController]
-[Route("api/avatar/consent")]
+[Route("api/user/consent")]
 [Authorize(Policy = "FirstPartyLogin")]
 public class ConsentController : ControllerBase
 {
@@ -39,7 +39,7 @@ public class ConsentController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<AZOAResult<ConsentGrantResponse>>> Grant([FromBody] GrantConsentRequest request)
     {
-        var userId = GetAvatarIdFromClaims();
+        var userId = GetUserIdFromClaims();
         if (userId is null) return Unauthorized();
 
         if (request is null)
@@ -77,7 +77,7 @@ public class ConsentController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult<AZOAResult<bool>>> Revoke(Guid id)
     {
-        var userId = GetAvatarIdFromClaims();
+        var userId = GetUserIdFromClaims();
         if (userId is null) return Unauthorized();
 
         var result = await _manager.RevokeAsync(userId.Value, id, HttpContext.RequestAborted);
@@ -91,7 +91,7 @@ public class ConsentController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AZOAResult<IEnumerable<ConsentGrantResponse>>>> List()
     {
-        var userId = GetAvatarIdFromClaims();
+        var userId = GetUserIdFromClaims();
         if (userId is null) return Unauthorized();
 
         var result = await _manager.ListForUserAsync(userId.Value, HttpContext.RequestAborted);
@@ -104,7 +104,7 @@ public class ConsentController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AZOAResult<ConsentGrantResponse>>> Get(Guid id)
     {
-        var userId = GetAvatarIdFromClaims();
+        var userId = GetUserIdFromClaims();
         if (userId is null) return Unauthorized();
 
         var result = await _manager.GetForUserAsync(userId.Value, id, HttpContext.RequestAborted);
@@ -170,11 +170,11 @@ public class ConsentController : ControllerBase
     }
 
     /// <summary>
-    /// The grantor is the authenticated user's avatar id — ALWAYS from the token
+    /// The grantor is the authenticated user's user id — ALWAYS from the token
     /// subject claim, never from a request body (AC9). Mirrors
-    /// <c>AvatarController.GetAvatarIdFromClaims</c>.
+    /// <c>UserController.GetUserIdFromClaims</c>.
     /// </summary>
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
         var sub = User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User?.FindFirst("sub")?.Value;

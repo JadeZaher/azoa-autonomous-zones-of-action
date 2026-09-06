@@ -4,7 +4,7 @@ public interface IHolonNFTBinding
 {
     Guid Id { get; set; }
     Guid HolonId { get; set; }
-    Guid AvatarNFTId { get; set; }
+    Guid UserNFTId { get; set; }
     string Role { get; set; }
     string? PermissionLevel { get; set; }
     Dictionary<string, string> Permissions { get; set; }

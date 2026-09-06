@@ -20,7 +20,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("D16: value_currency_code / value_minor_units / value_rate / value_rate_as_of / value_rate_source are the fiat value stamped at settlement. They move as a group: all five NONE means the operation was never priced, which is deliberately distinguishable from value_rate = \"0\" (a real quote of zero). A partial stamp is not a stamp and reads back as unpriced. No rate source exists in this codebase yet -- IValueRateSource is the seam, and until something implements it every row is legitimately unstamped. Never backfill these from a later price: the point of storing the rate and its timestamp is that the figure stays auditable and re-derivable from what was actually known at settlement.")]
     [Slice("bridge")]
     [Index("operation_log_idempotency_key", Fields = new[] { "idempotency_key" }, Unique = true)]
-    [Index("operation_log_avatar_created", Fields = new[] { "avatar_id", "created_date" })]
+    [Index("operation_log_user_created", Fields = new[] { "user_id", "created_date" })]
     [Index("operation_log_status", Fields = new[] { "status" })]
     public partial class OperationLog : ISurrealRecord
     {
@@ -48,8 +48,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [References(typeof(Avatar), Optional = true)]
-        public string? AvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? UserId { get; set; }
 
         [References(typeof(Wallet), Optional = true)]
         public string? WalletId { get; set; }
@@ -68,7 +68,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         // (TokenUri, Amount, AssetType, WalletAddress, TxHash, ...). A bare
         // SCHEMAFULL option<object> rejects any undeclared sub-field with
         // "Found field 'parameters.X', but no such field exists" — FLEXIBLE lets
-        // the object carry arbitrary keys. Mirrors Quest.Metadata.
+        // the object carry arbitrary keys. Mirrors ActionDefinition.Metadata.
         [Column(Flexible = true)]
         [FieldGroup("Opaque parameters bag (Dictionary<string,string>)")]
         public JsonElement? Parameters { get; set; }
@@ -99,8 +99,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? IdempotencyKey { get; set; }
 
         [FieldGroup("Allocation receipt initiator context")]
-        [References(typeof(Avatar), Optional = true)]
-        public string? InitiatorAvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? InitiatorUserId { get; set; }
 
         [References(typeof(ApiKey), Optional = true)]
         public string? InitiatorApiKeyId { get; set; }
@@ -112,7 +112,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         // The tenant that DROVE this value op via a child credential (null =
         // user-driven / platform-internal). Carried on the durable row so the signing
         // seam's live consent check survives the async saga-worker hop.
-        [References(typeof(Avatar), Optional = true)]
+        [References(typeof(User), Optional = true)]
         public string? ActingTenantId { get; set; }
 
         public string? SigningScope { get; set; }

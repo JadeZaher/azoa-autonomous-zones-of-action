@@ -89,5 +89,5 @@ behaviour change; it was left out of the seam change to keep the diff reviewable
 `SettlementProfile` and `RailAmount` live in `Core` — see `Core/AGENTS.md`
 §settlement-profile and §rail-amount.
 
-`IQuestNodeHandler.ResolveSettlementRailId` declares which rail a node settles on, read from
-the node's DECLARED config. See `Services/Quest/AGENTS.md` §rail-capability.
+`IActionNodeHandler.ResolveSettlementRailId` declares which rail a node settles on, read from
+the node's DECLARED config. See `Services/ActionDefinition/AGENTS.md` §rail-capability.

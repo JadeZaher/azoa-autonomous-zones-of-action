@@ -12,19 +12,19 @@ using AZOA.WebAPI.Settings;
 namespace AZOA.WebAPI.Services.Kyc;
 
 /// <summary>
-/// Records the person-to-avatar binding produced by a verified identity and
+/// Records the person-to-user binding produced by a verified identity and
 /// answers eligibility questions about it. Every consumer-visible answer is
 /// deliberately coarse; see <c>Services/Kyc/AGENTS.md</c> §identity-binding.
 /// </summary>
 public interface IKycIdentityBindingService
 {
     /// <summary>
-    /// Derives the scope-salted person key and binds the avatar to it. Fails closed
+    /// Derives the scope-salted person key and binds the user to it. Fails closed
     /// when the derivation inputs or the root secret are unusable — an unbound
     /// verification is recoverable, a wrongly-bound one is not.
     /// </summary>
     Task<AZOAResult<KycIdentity>> BindAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         KycProvider provider,
         string providerKey,
@@ -32,11 +32,11 @@ public interface IKycIdentityBindingService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Decides whether this avatar may claim a person-scoped benefit. The result is
+    /// Decides whether this user may claim a person-scoped benefit. The result is
     /// intentionally two-valued at the consumer boundary.
     /// </summary>
     Task<AZOAResult<KycEligibilityDecision>> EvaluateEligibilityAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         string personKey,
         CancellationToken ct = default);
@@ -47,10 +47,10 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
 {
     /// <summary>
     /// The SINGLE denial message a consumer may ever see. "Already claimed by
-    /// another avatar" and "not verified" must be indistinguishable: the former
+    /// another user" and "not verified" must be indistinguishable: the former
     /// would tell a caller that their subject exists somewhere else on the node.
     /// </summary>
-    public const string IneligibleMessage = "This avatar is not eligible for this operation.";
+    public const string IneligibleMessage = "This user is not eligible for this operation.";
 
     private const string UnavailableMessage = "Identity binding is unavailable.";
     private const int ErasureBatchLimit = 200;
@@ -76,7 +76,7 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
     }
 
     public async Task<AZOAResult<KycIdentity>> BindAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         KycProvider provider,
         string providerKey,
@@ -84,8 +84,8 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(attributes);
-        if (avatarId == Guid.Empty)
-            return AZOAResult<KycIdentity>.Failure("An avatar is required to bind an identity.");
+        if (userId == Guid.Empty)
+            return AZOAResult<KycIdentity>.Failure("An user is required to bind an identity.");
         if (!_deriver.IsConfigured)
         {
             _logger.LogError(
@@ -108,8 +108,8 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
         if (personKey is null || globalPersonKey is null)
         {
             _logger.LogWarning(
-                "A verified identity carried no usable document identity; refusing to bind avatar {AvatarId}.",
-                avatarId);
+                "A verified identity carried no usable document identity; refusing to bind user {UserId}.",
+                userId);
             return AZOAResult<KycIdentity>.Failure(
                 "The verified identity did not carry a usable document identity.");
         }
@@ -123,7 +123,7 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
             PersonKey = personKey,
             GlobalPersonKey = globalPersonKey,
             PersonKeyVersion = _deriver.RecipeVersion,
-            AvatarIds = [avatarId.ToString("N")],
+            UserIds = [userId.ToString("N")],
             FirstName = Trim(attributes.FirstName),
             LastName = Trim(attributes.LastName),
             Birthday = Trim(attributes.Birthday),
@@ -135,23 +135,23 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
             ModifiedDate = now,
         };
 
-        var bound = await _store.BindAvatarAsync(candidate, ct);
+        var bound = await _store.BindUserAsync(candidate, ct);
         if (bound.IsError || bound.Result is null)
             return bound;
 
         // The store's append is conditional, so a person key already held by ANOTHER
-        // avatar in this scope comes back without the caller in it. That is the D3/D23
+        // user in this scope comes back without the caller in it. That is the D3/D23
         // Sybil refusal, and it is detected by reading the result rather than by
         // trusting the write — an unconditional append would make it undetectable.
-        var avatarKey = avatarId.ToString("N");
-        if (!(bound.Result.AvatarIds ?? []).Contains(avatarKey, StringComparer.Ordinal))
+        var userKey = userId.ToString("N");
+        if (!(bound.Result.UserIds ?? []).Contains(userKey, StringComparer.Ordinal))
         {
             _logger.LogWarning(
-                "Refusing to bind avatar {AvatarId}: this person is already bound to a different avatar in the same scope ({Cause}).",
-                avatarId,
-                KycIneligibilityCause.PersonAlreadyBoundToAnotherAvatar);
+                "Refusing to bind user {UserId}: this person is already bound to a different user in the same scope ({Cause}).",
+                userId,
+                KycIneligibilityCause.PersonAlreadyBoundToAnotherUser);
             // The consumer-visible sentence is the SAME one every other refusal uses.
-            // "Already claimed by another avatar" would tell a tenant its subject
+            // "Already claimed by another user" would tell a tenant its subject
             // exists elsewhere, which is exactly the fact per-tenant salting hides.
             return AZOAResult<KycIdentity>.FailureWithCode(
                 IneligibleMessage,
@@ -162,12 +162,12 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
     }
 
     public async Task<AZOAResult<KycEligibilityDecision>> EvaluateEligibilityAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         string personKey,
         CancellationToken ct = default)
     {
-        if (avatarId == Guid.Empty || string.IsNullOrWhiteSpace(personKey))
+        if (userId == Guid.Empty || string.IsNullOrWhiteSpace(personKey))
             return Ineligible(KycIneligibilityCause.NoVerifiedIdentity);
 
         var scope = _deriver.ScopeFor(tenantId);
@@ -182,14 +182,14 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
         if (existing.Result is null)
             return Ineligible(KycIneligibilityCause.NoVerifiedIdentity);
 
-        var avatarKey = avatarId.ToString("N");
-        var boundAvatars = existing.Result.AvatarIds ?? [];
-        if (boundAvatars.Contains(avatarKey, StringComparer.Ordinal))
+        var userKey = userId.ToString("N");
+        var boundUsers = existing.Result.UserIds ?? [];
+        if (boundUsers.Contains(userKey, StringComparer.Ordinal))
             return AZOAResult<KycEligibilityDecision>.Success(KycEligibilityDecision.Eligible());
 
-        // A different avatar already holds this person key inside this scope. The
+        // A different user already holds this person key inside this scope. The
         // operator-side cause records why; the consumer-side message does not.
-        return Ineligible(KycIneligibilityCause.PersonAlreadyBoundToAnotherAvatar);
+        return Ineligible(KycIneligibilityCause.PersonAlreadyBoundToAnotherUser);
     }
 
     /// <summary>Batch size the erasure sweep may claim in one pass.</summary>

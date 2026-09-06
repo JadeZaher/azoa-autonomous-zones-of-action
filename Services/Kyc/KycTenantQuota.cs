@@ -38,7 +38,7 @@ public sealed class KycTenantQuota : IKycTenantQuota
     /// Node-direct flows share ONE partition rather than bypassing the quota, so a
     /// direct-user storm cannot drain the shared vendor budget out from under every
     /// tenant. The cost is deliberate and known: direct users contend with each other
-    /// rather than each holding an individual allowance. A per-avatar partition would
+    /// rather than each holding an individual allowance. A per-user partition would
     /// make the ceiling unbounded in the number of unauthenticated-to-a-tenant users,
     /// which is the exact denial-of-service this class exists to stop.
     /// </summary>

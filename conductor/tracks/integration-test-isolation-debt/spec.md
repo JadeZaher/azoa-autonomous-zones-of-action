@@ -31,9 +31,9 @@ collect one complete filtered post-fix run before archive.
    namespace. Methods within a class retain their deliberate shared-fixture
    semantics.
 2. **Bucket A — IDOR test-design conflicts (~15 tests)** — tests seed a random
-   avatar but the controller acts on the authenticated `DefaultAvatarId`
+   user but the controller acts on the authenticated `DefaultUserId`
    (IDOR-resistant scoping working as designed). Fix per test: seed with the
-   default identity or authenticate as the seeded avatar.
+   default identity or authenticate as the seeded user.
 3. **Bucket B — env/repo-layout drift (5 tests)** — stale gate config paths
    (`podman-compose.yml` at root, container-name mismatch), machine-dependent
    perf budget (`WalletGetById_P99_Under50ms`).

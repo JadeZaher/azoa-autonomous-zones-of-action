@@ -36,7 +36,7 @@ public sealed class PublicNodeFeeScheduleResponse
 
     public NodeFeeScheduleEntryResponse Swap { get; set; } = new();
 
-    public NodeFeeScheduleEntryResponse QuestComplete { get; set; } = new();
+    public NodeFeeScheduleEntryResponse ActionComplete { get; set; } = new();
 
     public NodeFeeScheduleEntryResponse FederationPublish { get; set; } = new();
 

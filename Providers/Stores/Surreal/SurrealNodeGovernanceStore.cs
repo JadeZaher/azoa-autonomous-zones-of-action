@@ -49,7 +49,7 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
             .WithParam("_expected", expectedVersion ?? 0L);
 
         var upsertParameters = SurrealQuery
-            .Of("UPSERT type::record($_pt, $_pid) SET allowed_chains = (IF $_has_allowed_chains THEN $_allowed_chains ELSE NONE END), allowed_asset_types = (IF $_has_allowed_asset_types THEN $_allowed_asset_types ELSE NONE END), version = $_version, updated_by_avatar_id = $_actor, updated_at = $_updated_at RETURN AFTER")
+            .Of("UPSERT type::record($_pt, $_pid) SET allowed_chains = (IF $_has_allowed_chains THEN $_allowed_chains ELSE NONE END), allowed_asset_types = (IF $_has_allowed_asset_types THEN $_allowed_asset_types ELSE NONE END), version = $_version, updated_by_user_id = $_actor, updated_at = $_updated_at RETURN AFTER")
             .WithParam("_pt", ParametersTable)
             .WithParam("_pid", NodeGovernanceParameters.LocalId)
             .WithParam("_has_allowed_chains", parameters.AllowedChains is not null)
@@ -57,7 +57,7 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
             .WithParam("_has_allowed_asset_types", parameters.AllowedAssetTypes is not null)
             .WithParam("_allowed_asset_types", parameters.AllowedAssetTypes ?? Array.Empty<string>())
             .WithParam("_version", parameters.Version)
-            .WithParam("_actor", SurrealRecordParam.OfLink(parameters.UpdatedByAvatarId))
+            .WithParam("_actor", SurrealRecordParam.OfLink(parameters.UpdatedByUserId))
             .WithParam("_updated_at", parameters.UpdatedAt);
 
         var appendAudit = SurrealQuery

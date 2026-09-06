@@ -3,12 +3,12 @@
 ## Goal
 
 Port ArdaNova's provider-agnostic KYC subsystem into AZOA as a **generic,
-reusable identity-verification module** keyed to `Avatar`. ArdaNova offered the
+reusable identity-verification module** keyed to `User`. ArdaNova offered the
 code as a gift; this track lifts the *design* (the `IKycProviderService` seam, a
 manual-review default provider, a Veriff adapter behind config, and a reusable
 KYC gate) and re-expresses it in AZOA conventions: `Controllers → Managers →
-Providers/Stores`, `AZOAResult<T>`, SurrealDB-only persistence, Avatar
-identity, IDOR-safe Avatar-scoped routes.
+Providers/Stores`, `AZOAResult<T>`, SurrealDB-only persistence, User
+identity, IDOR-safe User-scoped routes.
 
 **No ArdaNova branding may leak into AZOA.** Every namespace, type name,
 string literal, URL, and user-facing message is genericized. The ArdaNova files
@@ -68,29 +68,29 @@ Two impedance mismatches drive the port and are the source of every decision in
    `IUnitOfWork` and keys KYC to `User.id` (string). AZOA persists via
    **SurrealDB only** through a hand-authored store seam
    (`Interfaces/Stores/ISTARStore.cs`, `Providers/Stores/Surreal/SurrealStarStore.cs`)
-   and keys ownership to `Avatar` (`Persistence/SurrealDb/Models/Avatar.cs:20`).
-   ArdaNova's `userId` → AZOA `AvatarId` throughout.
+   and keys ownership to `User` (`Persistence/SurrealDb/Models/User.cs:20`).
+   ArdaNova's `userId` → AZOA `UserId` throughout.
 
 ArdaNova also auto-upgrades a `User` to a `VerificationLevel.PRO` enum on approval
 (`KycService.cs:184-186`) and the gate reads that enum
-(`KycGateService.cs:18-30`). AZOA `Avatar` has only a boolean `IsVerified`
-(`Avatar.cs:69-72`) and no `VerificationLevel`. The AZOA gate therefore reads
-**KYC submission status** (the most-recent APPROVED submission for the avatar)
-rather than a denormalized level on the avatar — this avoids schema-changing the
-shared `avatar` table from inside a feature module. See plan decision **D3**.
+(`KycGateService.cs:18-30`). AZOA `User` has only a boolean `IsVerified`
+(`User.cs:69-72`) and no `VerificationLevel`. The AZOA gate therefore reads
+**KYC submission status** (the most-recent APPROVED submission for the user)
+rather than a denormalized level on the user — this avoids schema-changing the
+shared `user` table from inside a feature module. See plan decision **D3**.
 
 ## Scope (what this track ports)
 
 ### 1. Domain model as SurrealDB POCOs
 
 Two hand-authored POCOs under `Persistence/SurrealDb/Models/`, following the
-`Holon.cs` / `Avatar.cs` pattern (`SurrealTable`, `Slice`, `Index`, `Id`,
+`Holon.cs` / `User.cs` pattern (`SurrealTable`, `Slice`, `Index`, `Id`,
 `Column(Order=…)`, `JsonPropertyName`, `Assert`, `Default`; `ISurrealRecord`
 with `SchemaNameConst`):
 
-- `KycSubmission` — table `kyc_submission`, keyed by `AvatarId`
-  (`References(typeof(Avatar), Optional=true)` like `Holon.cs:50-52`), with
-  `Index("kyc_submission_avatar_id")` and `Index("kyc_submission_status")`
+- `KycSubmission` — table `kyc_submission`, keyed by `UserId`
+  (`References(typeof(User), Optional=true)` like `Holon.cs:50-52`), with
+  `Index("kyc_submission_user_id")` and `Index("kyc_submission_status")`
   (mirrors ArdaNova's `KycSubmission.cs` fields: `provider`, `status`,
   `reviewer_id`, `review_notes`, `rejection_reason`, `provider_session_id`,
   `provider_result`, `submitted_at`, `reviewed_at`, `expires_at`, `created_date`,
@@ -108,14 +108,14 @@ consistent with existing SurrealDB POCO conventions (decision **D4**).
 
 A `SurrealKycStore` (`Providers/Stores/Surreal/`) implementing an `IKycStore`
 seam (`Interfaces/Stores/IKycStore.cs`), mirroring `SurrealStarStore` —
-`ToSurrealId` / `FromSurrealId`, `SurrealLink.ToLink("avatar", …)` for the
-`avatar_id` link (`SurrealStarStore.cs:180,218`), inline-or-model-POCO mapping,
-`UPSERT … CONTENT … RETURN AFTER`. Store surface (Avatar-scoped where it matters
+`ToSurrealId` / `FromSurrealId`, `SurrealLink.ToLink("user", …)` for the
+`user_id` link (`SurrealStarStore.cs:180,218`), inline-or-model-POCO mapping,
+`UPSERT … CONTENT … RETURN AFTER`. Store surface (User-scoped where it matters
 for IDOR):
 
 - `GetSubmissionByIdAsync(Guid id)`
-- `GetLatestSubmissionByAvatarAsync(Guid avatarId)` — most-recent by `submitted_at`
-- `GetActiveSubmissionByAvatarAsync(Guid avatarId)` — PENDING or IN_REVIEW
+- `GetLatestSubmissionByUserAsync(Guid userId)` — most-recent by `submitted_at`
+- `GetActiveSubmissionByUserAsync(Guid userId)` — PENDING or IN_REVIEW
 - `GetPendingAsync()` — admin queue
 - `UpsertSubmissionAsync(KycSubmission)`
 - `GetDocumentsBySubmissionAsync(Guid submissionId)`
@@ -126,13 +126,13 @@ for IDOR):
 - `IKycProviderService` (`Interfaces/Providers/IKycProviderService.cs`) — the
   genericized port of ArdaNova's `IKycProviderService.cs:7-13`, returning
   `AZOAResult<T>`:
-  - `CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents)`
+  - `CreateSessionAsync(Guid userId, IReadOnlyList<KycDocumentModel> documents)`
   - `GetSessionStatusAsync(string providerSessionId)`
   - `HandleWebhookAsync(string payload)`
   - `ValidateDocumentsAsync(IReadOnlyList<SubmitKycDocumentModel> documents)`
 - `ManualKycProviderService` (`Providers/Kyc/ManualKycProviderService.cs`) — the
   **default**. Ports `ManualKycProviderService.cs:8-71` exactly in behaviour:
-  no external session (returns the avatar id as a pseudo-session id), status
+  no external session (returns the user id as a pseudo-session id), status
   PENDING until admin review, and the document validator with the same
   **genericized** MIME allow-list (`image/jpeg`, `image/png`, `image/gif`,
   `image/webp`, `image/bmp`, `application/pdf`) and 10 MB cap.
@@ -148,25 +148,25 @@ for IDOR):
 `KycManager : IKycManager` (`Managers/KycManager.cs`,
 `Interfaces/Managers/IKycManager.cs`), the genericized port of `KycService.cs`,
 returning `AZOAResult<T>` and depending on `IKycStore` + `IKycProviderService`.
-Methods (Avatar-scoped):
+Methods (User-scoped):
 
-- `SubmitAsync(SubmitKycModel model, Guid avatarId)` — rejects when an active
-  (PENDING/IN_REVIEW) submission already exists for the avatar (ports
+- `SubmitAsync(SubmitKycModel model, Guid userId)` — rejects when an active
+  (PENDING/IN_REVIEW) submission already exists for the user (ports
   `KycService.cs:41-47`); validates documents via the provider; persists
   submission + documents; calls `CreateSessionAsync`; stamps
   `provider_session_id`.
-- `GetStatusAsync(Guid avatarId)` — most-recent submission for the avatar (ports
+- `GetStatusAsync(Guid userId)` — most-recent submission for the user (ports
   `GetByUserIdAsync`, `KycService.cs:120-133`).
-- `GetByIdAsync(Guid submissionId, Guid avatarId)` — **IDOR-scoped**: loads by id
-  then requires the loaded submission's `AvatarId == avatarId` (see Scope item 5),
+- `GetByIdAsync(Guid submissionId, Guid userId)` — **IDOR-scoped**: loads by id
+  then requires the loaded submission's `UserId == userId` (see Scope item 5),
   unlike ArdaNova's unscoped `GetByIdAsync` (`KycService.cs:108-118`).
-- `ListDocumentsAsync(Guid submissionId, Guid avatarId)` — **IDOR-scoped** the
+- `ListDocumentsAsync(Guid submissionId, Guid userId)` — **IDOR-scoped** the
   same way.
 - Admin surface: `GetPendingAsync()`, `ApproveAsync(Guid submissionId, Guid
-  reviewerAvatarId, string? notes)`, `RejectAsync(Guid submissionId, Guid
-  reviewerAvatarId, string? notes, string? rejectionReason)` — port
+  reviewerUserId, string? notes)`, `RejectAsync(Guid submissionId, Guid
+  reviewerUserId, string? notes, string? rejectionReason)` — port
   `KycService.cs:165-218`. On approval the manager flips submission status to
-  APPROVED and sets `Avatar.IsVerified = true` (decision **D3** — replaces
+  APPROVED and sets `User.IsVerified = true` (decision **D3** — replaces
   ArdaNova's `UpdateVerificationLevelAsync(... PRO)` at `KycService.cs:184-186`).
 
 DI registration in `Program.cs` alongside the existing manager/store block
@@ -179,12 +179,12 @@ DI registration in `Program.cs` alongside the existing manager/store block
 - `IKycGateService` (`Interfaces/Managers/IKycGateService.cs`) — genericized port
   of `IKycGateService.cs:6-11`, returning `AZOAResult<bool>` /
   `AZOAResult<KycStatus>`:
-  - `RequireVerifiedAsync(Guid avatarId)` — succeeds when the avatar has an
+  - `RequireVerifiedAsync(Guid userId)` — succeeds when the user has an
     APPROVED KYC submission; otherwise returns a **Forbidden-prefixed** error
     (mirrors the STARODK discriminator pattern,
     `ISTARManager.cs:12-19`) carrying a generic message ("KYC verification
     required. Complete identity verification to unlock this feature.").
-  - `GetKycStatusAsync(Guid avatarId)` — the avatar's current effective status.
+  - `GetKycStatusAsync(Guid userId)` — the user's current effective status.
 - `KycGateService : IKycGateService` (`Managers/KycGateService.cs`) — reads via
   `IKycStore` (ports `KycGateService.cs:18-52` but keyed off submission status,
   not a `VerificationLevel` enum — decision **D3**).
@@ -194,25 +194,25 @@ DI registration in `Program.cs` alongside the existing manager/store block
   can translate the gate result to 403 without a new result type. The gate is
   injected into a consuming manager and invoked before the sensitive op.
 
-### 5. `KycController` — Avatar-scoped with IDOR guards
+### 5. `KycController` — User-scoped with IDOR guards
 
 `KycController : ControllerBase` (`Controllers/KycController.cs`), `[Authorize]`,
 mirroring `STARODKController` (`Controllers/STARODKController.cs:14-118`):
 
-- Reads the authenticated avatar via `GetAvatarIdFromClaims()` (copy the helper
+- Reads the authenticated user via `GetUserIdFromClaims()` (copy the helper
   at `STARODKController.cs:113-118` — `NameIdentifier`/`sub` claim → `Guid`).
-- `POST /api/kyc/submit` — submit for the authenticated avatar
-  (`model.AvatarId`, if present on the body, is **ignored**; authenticated avatar
+- `POST /api/kyc/submit` — submit for the authenticated user
+  (`model.UserId`, if present on the body, is **ignored**; authenticated user
   is authoritative — the STARODK precedent at `STARManager.cs:62-66`).
-- `GET /api/kyc/status` — status for the authenticated avatar (no `{avatarId}` in
-  the route; the avatar comes from the token, closing ArdaNova's
+- `GET /api/kyc/status` — status for the authenticated user (no `{userId}` in
+  the route; the user comes from the token, closing ArdaNova's
   `GET /status/{userId}` IDOR at `KycController.cs:28-33`).
 - `GET /api/kyc/{id:guid}` — get-by-id, scoped: 404/403 if the submission is not
-  owned by the authenticated avatar.
+  owned by the authenticated user.
 - `GET /api/kyc/{id:guid}/documents` — documents for an owned submission only.
 - Admin: `GET /api/kyc/pending`, `POST /api/kyc/{id:guid}/approve`,
   `POST /api/kyc/{id:guid}/reject` — gated by an admin policy/role (decision
-  **D5**); `reviewerAvatarId` comes from the admin's token, not the body.
+  **D5**); `reviewerUserId` comes from the admin's token, not the body.
 - A private `TranslateResult(...)` that maps the manager's message-prefix
   discriminator to 403/404/400, copied from `STARODKController.cs:100-111`.
 
@@ -242,19 +242,19 @@ zero `ArdaNova` / `Karma`-style brand tokens in the new files.
 
 - [ ] `KycSubmission` + `KycDocument` SurrealDB POCOs authored under
   `Persistence/SurrealDb/Models/`, following the `Holon.cs` attribute pattern,
-  keyed to `AvatarId`, with the listed indexes; both implement `ISurrealRecord`.
+  keyed to `UserId`, with the listed indexes; both implement `ISurrealRecord`.
 - [ ] `KycStatus`, `KycProvider`, `KycDocumentType` enums ported (values only)
   under the AZOA namespace.
 - [ ] `IKycStore` seam + `SurrealKycStore` implementation authored, mirroring
-  `SurrealStarStore` id-encoding + `avatar` link conventions.
+  `SurrealStarStore` id-encoding + `user` link conventions.
 - [ ] `IKycProviderService` seam + `ManualKycProviderService` (default) +
   `VeriffKycProviderService` (stub) authored; provider selected by `Kyc:Provider`.
 - [ ] `IKycManager` + `KycManager` authored, returning `AZOAResult<T>`, with the
   message-prefix discriminator for Forbidden/NotFound.
 - [ ] `IKycGateService` + `KycGateService` authored with a `KycAuthorizationError`
   static; one consuming example documented (see cross-track seam below).
-- [ ] `KycController` authored, `[Authorize]`, Avatar-scoped, IDOR-guarded
-  (route + authenticated avatar; body `AvatarId` ignored); admin endpoints gated.
+- [ ] `KycController` authored, `[Authorize]`, User-scoped, IDOR-guarded
+  (route + authenticated user; body `UserId` ignored); admin endpoints gated.
 - [ ] All managers/providers/stores registered in `Program.cs` DI.
 - [ ] `KycSettings` + `Kyc` config section + `appsettings.json` placeholders; Veriff
   secrets flagged as a deploy-stub in `conductor/DEPLOY-STEPS-TODO.md`.
@@ -275,7 +275,7 @@ zero `ArdaNova` / `Karma`-style brand tokens in the new files.
 other tracks. This track does **not** rewrite them. Instead it:
 
 1. Ships the reusable `IKycGateService` + `KycAuthorizationError` so a future
-   wallet/mint change can call `await _kycGate.RequireVerifiedAsync(avatarId)`
+   wallet/mint change can call `await _kycGate.RequireVerifiedAsync(userId)`
    and translate a Forbidden result to 403 before generating a wallet or minting.
 2. Documents **one worked example** in `plan.md` (the exact call site shape and
    the controller translation) as the integration contract, so the owning track
@@ -291,7 +291,7 @@ other tracks. This track does **not** rewrite them. Instead it:
 - A frontend verification UI / SDK methods (separate frontend track).
 - Document upload/storage (the model stores a `file_url`; blob storage is out of
   scope — same posture as ArdaNova).
-- Adding a `VerificationLevel` enum or any new column to the shared `avatar`
+- Adding a `VerificationLevel` enum or any new column to the shared `user`
   table (decision **D3** keeps the gate reading submission status instead).
 - Integration tests via the WebApplicationFactory host — blocked on the pending
   `integration-test-namespace-isolation` harness fix (project memory); unit

@@ -54,7 +54,7 @@ public sealed class SurrealOAuthExchangeCodeStore : IOAuthExchangeCodeStore
                     CREATE type::record($_t, $_id)
                     SET code_hash = $_hash,
                         purpose = $_purpose,
-                        avatar_id = $_avatar,
+                        user_id = $_user,
                         provider = $_provider,
                         tenant_scope = $_scope,
                         tenant_id = $_tenant,
@@ -67,10 +67,10 @@ public sealed class SurrealOAuthExchangeCodeStore : IOAuthExchangeCodeStore
                 .WithParam("_id", body.Id)
                 .WithParam("_hash", body.CodeHash)
                 .WithParam("_purpose", body.Purpose.ToString())
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", code.AvatarId))
+                .WithParam("_user", SurrealRecordParam.Of("user", code.UserId))
                 .WithParam("_provider", body.Provider.ToString())
                 .WithParam("_scope", body.TenantScope)
-                .WithParam("_tenant", SurrealRecordParam.Of("avatar", code.TenantId))
+                .WithParam("_tenant", SurrealRecordParam.Of("user", code.TenantId))
                 .WithParam("_return_to", body.ReturnTo)
                 .WithParam("_expires", body.ExpiresAt);
 
@@ -161,12 +161,12 @@ public sealed class SurrealOAuthExchangeCodeStore : IOAuthExchangeCodeStore
         Id = code.Id,
         CodeHash = code.CodeHash,
         Purpose = code.Purpose,
-        AvatarId = SurrealLink.ToLink("avatar", code.AvatarId) ?? string.Empty,
+        UserId = SurrealLink.ToLink("user", code.UserId) ?? string.Empty,
         Provider = code.Provider,
         TenantScope = code.TenantScope,
         TenantId = string.IsNullOrWhiteSpace(code.TenantId)
             ? null
-            : SurrealLink.ToLink("avatar", code.TenantId),
+            : SurrealLink.ToLink("user", code.TenantId),
         ReturnTo = code.ReturnTo,
         ExpiresAt = code.ExpiresAt.ToUniversalTime(),
         ConsumedAt = code.ConsumedAt?.ToUniversalTime(),
@@ -178,7 +178,7 @@ public sealed class SurrealOAuthExchangeCodeStore : IOAuthExchangeCodeStore
         Id = SurrealLink.FromLink(code.Id) ?? string.Empty,
         CodeHash = code.CodeHash,
         Purpose = code.Purpose,
-        AvatarId = SurrealLink.FromLink(code.AvatarId) ?? string.Empty,
+        UserId = SurrealLink.FromLink(code.UserId) ?? string.Empty,
         Provider = code.Provider,
         TenantScope = code.TenantScope,
         TenantId = string.IsNullOrWhiteSpace(code.TenantId)

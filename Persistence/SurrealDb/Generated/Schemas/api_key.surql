@@ -13,8 +13,8 @@ DEFINE TABLE IF NOT EXISTS api_key SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS id ON TABLE api_key TYPE string
     ASSERT $value != NONE AND $value != "";
 
--- Owner avatar (Guid('N') hex); indexed for ListByAvatar
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE api_key TYPE record<avatar>;
+-- Owner user (Guid('N') hex); indexed for ListByUser
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE api_key TYPE record<user>;
 
 -- Caller-supplied label (free string)
 DEFINE FIELD IF NOT EXISTS name ON TABLE api_key TYPE string;
@@ -58,6 +58,6 @@ DEFINE INDEX IF NOT EXISTS api_key_unique_hash
     FIELDS key_hash
     UNIQUE;
 
-DEFINE INDEX IF NOT EXISTS api_key_by_avatar
+DEFINE INDEX IF NOT EXISTS api_key_by_user
     ON TABLE api_key
-    FIELDS avatar_id;
+    FIELDS user_id;

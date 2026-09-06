@@ -29,9 +29,9 @@ router.post("/", async (req: Request, res: Response) => {
 
   const correlationId = randomUUID();
   try {
-    const { avatarId, amount, assetId, chainType, kind } = req.body ?? {};
+    const { userId, amount, assetId, chainType, kind } = req.body ?? {};
 
-    if (!avatarId || !amount || !assetId || !chainType || !kind) {
+    if (!userId || !amount || !assetId || !chainType || !kind) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
@@ -46,7 +46,7 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const url = await orchestrator.createCheckoutSession({
-      avatarId: String(avatarId),
+      userId: String(userId),
       amount: String(amount),
       assetId: String(assetId),
       chainType: String(chainType),

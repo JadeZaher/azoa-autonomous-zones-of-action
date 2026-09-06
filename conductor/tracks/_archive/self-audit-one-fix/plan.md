@@ -65,11 +65,11 @@ Findings 2, 4, 9, 10.
   with `azoa.getApiUrl()` (introduce this public accessor on `AzoaClient` in
   `sdk/azoa-wallet/src/client/azoa-client.ts` as part of this fix).
 - [ ] **Finding 9** — `frontend/src/lib/azoa-hooks.ts:132`: replace raw
-  `azoa.api.request("GET", \`/api/wallet?avatarId=${avatarId}\`)` with
-  `azoa.api.listWallets({ avatarId })`.
+  `azoa.api.request("GET", \`/api/wallet?userId=${userId}\`)` with
+  `azoa.api.listWallets({ userId })`.
 - [ ] **Finding 10** — Delete the AuthWrapper cluster atomically:
   - `frontend/src/components/AuthWrapper.tsx`
-  - `frontend/src/components/AvatarNFTDashboard.tsx`
+  - `frontend/src/components/UserNFTDashboard.tsx`
   - `frontend/src/components/BlockchainDashboard.tsx`
   - `frontend/src/components/WalletManager.tsx`
   - `frontend/src/components/TransactionHistory.tsx`
@@ -84,7 +84,7 @@ Findings 2, 4, 9, 10.
 - [x] `cd sdk/azoa-wallet && pnpm build` — green (CJS + ESM + DTS).
 - [x] `cd sdk/azoa-wallet && pnpm test` — 123 passed / 7 pre-existing `assertUuid` failures in `tests/api/client.test.ts` (literal IDs `"abc"`, `"nft-guid-123"` — branch-level test debt, unrelated). 17/17 new self-audit-one-fix tests pass. 20/20 algorand-msgpack tests pass.
 - [x] `dotnet build` — green (0 errors, 44 pre-existing warnings).
-- [x] STARODK IDOR closed (PUT and POST both scope upsert by route id + authenticated avatar). 36 unit tests cover the closure (`STARManagerTests` + `STARODKControllerTests`).
+- [x] STARODK IDOR closed (PUT and POST both scope upsert by route id + authenticated user). 36 unit tests cover the closure (`STARManagerTests` + `STARODKControllerTests`).
 
 ## Phase 4 — Multi-architect validation
 
@@ -94,7 +94,7 @@ Findings 2, 4, 9, 10.
 
 ## Known follow-ups (filed separately)
 
-- **integration-test-namespace-isolation**: `IntegrationTestBase` creates a per-test SurrealDB namespace but `ISurrealExecutor` reads `SurrealDb:Namespace` from in-memory config (`azoa/azoa`), so the WebAPI never sees the per-test namespace. 22 baseline integration tests fail with `(no detail)` UPSERT errors. Discovered while validating the 3 new IDOR integration tests (`Update_DifferentAvatar_Returns403`, etc.) — they are correctly structured and will pass once the harness is fixed.
+- **integration-test-namespace-isolation**: `IntegrationTestBase` creates a per-test SurrealDB namespace but `ISurrealExecutor` reads `SurrealDb:Namespace` from in-memory config (`azoa/azoa`), so the WebAPI never sees the per-test namespace. 22 baseline integration tests fail with `(no detail)` UPSERT errors. Discovered while validating the 3 new IDOR integration tests (`Update_DifferentUser_Returns403`, etc.) — they are correctly structured and will pass once the harness is fixed.
 - **assertUuid test-fixture refresh**: 7 tests in `sdk/azoa-wallet/tests/api/client.test.ts` use literal IDs (`"abc"`, `"nft-guid-123"`) that fail the hardened `assertUuid` guard. Replace with valid UUIDs.
 - **msgpack nested omit-empty**: top-level only today. `apgs`/`apls` state-schema fields will need recursive omit-empty when app-create / schema-update tx builders are added. Documented inline at `coerceField`.
 - [ ] `dotnet build` from repo root — 0 errors.

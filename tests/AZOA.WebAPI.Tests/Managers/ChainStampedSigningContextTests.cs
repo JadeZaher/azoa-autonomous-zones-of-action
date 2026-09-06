@@ -91,14 +91,14 @@ public sealed class ChainStampedSigningContextTests
     [Fact]
     public async Task A_per_user_transfer_carries_the_chain_too_so_no_context_is_unstamped()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
         var (manager, captured) = NewManagerCapturing("Solana");
 
         await manager.ExecuteAsync(new BlockchainOperation
         {
             OperationType = "Transfer",
-            AvatarId = avatarId,
+            UserId = userId,
             WalletId = walletId,
             RecipientAddress = "recipient",
             Parameters = new Dictionary<string, string>
@@ -111,7 +111,7 @@ public sealed class ChainStampedSigningContextTests
 
         var ctx = captured.Value!.Value;
         ctx.IsPlatform.Should().BeFalse("a transfer from a user's custodial wallet signs with that user's key");
-        ctx.AvatarId.Should().Be(avatarId);
+        ctx.UserId.Should().Be(userId);
         ctx.WalletId.Should().Be(walletId);
         ctx.ChainType.Should().Be("Solana",
             "stamping every context, not only platform ones, is what makes drift impossible");

@@ -17,7 +17,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("B3 review: swap_state_idempotency_key UNIQUE on option<string>. Same NULL-collision caveat as bridge_tx: the swap-execute flow MUST supply an idempotency_key (api-safety-hardening §4 validator); NULL rows are diagnostic-only and the claim path never inserts NULL.")]
     [Slice("wallet_nft")]
     [Index("swap_state_idempotency_key", Fields = new[] { "idempotency_key" }, Unique = true)]
-    [Index("swap_state_avatar_id", Fields = new[] { "avatar_id" })]
+    [Index("swap_state_user_id", Fields = new[] { "user_id" })]
     [Index("swap_state_status", Fields = new[] { "status" })]
     public partial class SwapState : ISurrealRecord
     {
@@ -45,8 +45,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [References(typeof(Avatar))]
-        public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(User))]
+        public string UserId { get; set; } = string.Empty;
 
         [Required(NotEmpty = true)]
         public string Chain { get; set; } = string.Empty;

@@ -54,12 +54,12 @@ public sealed class FakeBridgeStore : IBridgeStore
     }
 
     public Task<IReadOnlyList<BridgeTransactionResult>> GetBridgeHistoryAsync(
-        Guid avatarId, bool descending = false, CancellationToken ct = default)
+        Guid userId, bool descending = false, CancellationToken ct = default)
     {
         lock (_lock)
         {
             var matched = _bridges.Values
-                .Where(b => b.AvatarId == avatarId)
+                .Where(b => b.UserId == userId)
                 .Select(Clone);
             matched = descending
                 ? matched.OrderByDescending(b => b.CreatedAt)
@@ -276,7 +276,7 @@ public sealed class FakeBridgeStore : IBridgeStore
     private static BridgeTransactionResult Clone(BridgeTransactionResult b) => new()
     {
         Id = b.Id,
-        AvatarId = b.AvatarId,
+        UserId = b.UserId,
         SourceChain = b.SourceChain,
         TargetChain = b.TargetChain,
         SourceTokenId = b.SourceTokenId,
@@ -305,7 +305,7 @@ public sealed class FakeBridgeStore : IBridgeStore
     private static BlockchainOperation Clone(BlockchainOperation o) => new()
     {
         Id = o.Id,
-        AvatarId = o.AvatarId,
+        UserId = o.UserId,
         WalletId = o.WalletId,
         OperationType = o.OperationType,
         Status = o.Status,

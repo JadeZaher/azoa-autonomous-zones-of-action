@@ -1,0 +1,17 @@
+# ═══════════════════════════════════════════════════════════════
+# UserController live API payloads
+# Lines are JSON test cases executed sequentially within this suite.
+# Use {{varName}} for context substitution (values extracted from prior responses).
+# ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"usercontroller"}}
+{"id":"register_user","description":"Register a new user","method":"POST","path":"/api/user/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_livetester","email":"{{suitePrefix}}_live@test.azoa","password":"TestPass123!","title":"Tester","firstName":"Live","lastName":"Test"},"expectedStatus":200,"extract":{"userId":"result.id","email":"result.email"},"saveAs":"user1"}
+{"id":"register_duplicate","description":"Register duplicate email should fail","method":"POST","path":"/api/user/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_livetester2","email":"{{suitePrefix}}_live@test.azoa","password":"TestPass123!"},"expectedStatus":400}
+{"id":"login_user","description":"Login with registered credentials","method":"POST","path":"/api/user/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_live@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"auth1"}
+{"id":"get_user","description":"Get user by extracted ID","method":"GET","path":"/api/user/{{user1.userId}}","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"get_all_users","description":"List all users","method":"GET","path":"/api/user","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"update_user","description":"Update user first name","method":"PUT","path":"/api/user/{{user1.userId}}","headers":{"Content-Type":"application/json","Authorization":"Bearer {{auth1.token}}"},"body":{"firstName":"UpdatedLive"},"expectedStatus":200}
+{"id":"add_wallet","description":"Add a wallet to the user","method":"POST","path":"/api/user/{{user1.userId}}/wallets","headers":{"Content-Type":"application/json","Authorization":"Bearer {{auth1.token}}"},"body":{"chainType":"Algorand","address":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ","label":"LiveTestWallet","isDefault":true},"expectedStatus":200,"extract":{"walletId":"result.id"},"saveAs":"wallet1"}
+{"id":"get_wallets","description":"Get wallets for the user","method":"GET","path":"/api/user/{{user1.userId}}/wallets","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"remove_wallet","description":"Remove the wallet","method":"DELETE","path":"/api/user/{{user1.userId}}/wallets/{{wallet1.walletId}}","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"delete_user","description":"Delete the user","method":"DELETE","path":"/api/user/{{user1.userId}}","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":200}
+{"id":"get_deleted_user","description":"Get deleted user should 404","method":"GET","path":"/api/user/{{user1.userId}}","headers":{"Authorization":"Bearer {{auth1.token}}"},"expectedStatus":404}

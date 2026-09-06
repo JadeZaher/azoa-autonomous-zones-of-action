@@ -2,7 +2,7 @@ namespace AZOA.WebAPI.Models;
 
 /// <summary>
 /// A tenant-minted, single-use, short-TTL claim-invite token (user-sovereign-identity
-/// §2, AC4). A tenant generates it for a child avatar it owns; the user later redeems
+/// §2, AC4). A tenant generates it for a child user it owns; the user later redeems
 /// it together with a USER-SIDE credential (a fresh wallet challenge OR a user-chosen
 /// password) to take ownership.
 ///
@@ -19,8 +19,8 @@ public class WalletAuthClaimToken
     /// <summary>The cryptographically-random one-time token value; UNIQUE across the table.</summary>
     public string Token { get; set; } = string.Empty;
 
-    /// <summary>The child avatar this token authorizes a claim for.</summary>
-    public Guid TargetAvatarId { get; set; }
+    /// <summary>The child user this token authorizes a claim for.</summary>
+    public Guid TargetUserId { get; set; }
 
     /// <summary>The tenant principal that minted the token (asserted owner at mint time).</summary>
     public Guid TenantId { get; set; }

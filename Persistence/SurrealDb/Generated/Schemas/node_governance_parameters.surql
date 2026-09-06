@@ -17,7 +17,7 @@ DEFINE FIELD IF NOT EXISTS allowed_chains ON TABLE node_governance_parameters TY
 DEFINE FIELD IF NOT EXISTS allowed_asset_types ON TABLE node_governance_parameters TYPE option<array<string>>;
 DEFINE FIELD IF NOT EXISTS version ON TABLE node_governance_parameters TYPE int
     DEFAULT 0;
-DEFINE FIELD IF NOT EXISTS updated_by_avatar_id ON TABLE node_governance_parameters TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS updated_by_user_id ON TABLE node_governance_parameters TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE node_governance_parameters TYPE datetime
     DEFAULT time::now()
     READONLY;

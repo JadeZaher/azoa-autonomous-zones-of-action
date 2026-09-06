@@ -66,13 +66,13 @@ public sealed class SurrealWalletStore : IWalletStore
         }
     }
 
-    public async Task<AZOAResult<IEnumerable<IWallet>>> GetByAvatarAsync(Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<IWallet>>> GetByUserAsync(Guid userId, CancellationToken ct = default)
     {
         try
         {
-            var avatarLink = SurrealLink.ToLink("avatar", avatarId.ToString("N").ToLowerInvariant());
+            var userLink = SurrealLink.ToLink("user", userId.ToString("N").ToLowerInvariant());
             var q = SurrealQuery<GeneratedWallet>.From()
-                .Where(w => w.AvatarId == avatarLink);
+                .Where(w => w.UserId == userLink);
             var rows = await _executor.QueryAsync<GeneratedWallet>(q, ct);
             return new AZOAResult<IEnumerable<IWallet>>
             {
@@ -82,7 +82,7 @@ public sealed class SurrealWalletStore : IWalletStore
         }
         catch (Exception ex)
         {
-            return new AZOAResult<IEnumerable<IWallet>>().CaptureException(ex, $"SurrealWalletStore.GetByAvatarAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<IWallet>>().CaptureException(ex, $"SurrealWalletStore.GetByUserAsync failed: {ex.Message}");
         }
     }
 
@@ -164,7 +164,7 @@ public sealed class SurrealWalletStore : IWalletStore
     private static GeneratedWallet ToPoco(IWallet w) => new()
     {
         Id                   = SurrealId.ToSurrealId(w.Id),
-        AvatarId             = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(w.AvatarId))!,
+        UserId             = SurrealLink.ToLink("user", SurrealId.ToSurrealId(w.UserId))!,
         ChainType            = w.ChainType,
         Address              = w.Address,
         PublicKey            = w.PublicKey,
@@ -180,7 +180,7 @@ public sealed class SurrealWalletStore : IWalletStore
     private static Wallet FromPoco(GeneratedWallet p) => new()
     {
         Id                  = SurrealId.FromSurrealId(p.Id),
-        AvatarId            = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+        UserId            = SurrealId.FromSurrealId(SurrealLink.FromLink(p.UserId)!),
         ChainType           = p.ChainType,
         Address             = p.Address,
         PublicKey           = p.PublicKey,

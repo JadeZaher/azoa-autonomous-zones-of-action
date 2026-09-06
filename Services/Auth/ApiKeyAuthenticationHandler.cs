@@ -66,19 +66,19 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
             return AuthenticateResult.Fail("API key has expired.");
         }
 
-        if (apiKey.AvatarId == AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId)
+        if (apiKey.UserId == AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId)
         {
             return AuthenticateResult.Fail("API keys cannot authenticate the reserved node operator identity.");
         }
 
-        var avatarStore = scope.ServiceProvider.GetRequiredService<IAvatarStore>();
-        var avatar = await avatarStore.GetByIdAsync(apiKey.AvatarId, Context.RequestAborted);
-        if (avatar.IsError || avatar.Result is null || !avatar.Result.IsActive)
+        var userStore = scope.ServiceProvider.GetRequiredService<IUserStore>();
+        var user = await userStore.GetByIdAsync(apiKey.UserId, Context.RequestAborted);
+        if (user.IsError || user.Result is null || !user.Result.IsActive)
         {
-            return AuthenticateResult.Fail("API key avatar is not active.");
+            return AuthenticateResult.Fail("API key user is not active.");
         }
 
-        var dappRole = AzoaDappRoles.Normalize(avatar.Result.DappRole);
+        var dappRole = AzoaDappRoles.Normalize(user.Result.DappRole);
 
         // Update last_used timestamp on a detached scope so a slow / failing
         // DB write never blocks (or fails) the request being authenticated.
@@ -92,9 +92,9 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
 
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, apiKey.AvatarId.ToString()),
-            new("sub", apiKey.AvatarId.ToString()),
-            new("AvatarId", apiKey.AvatarId.ToString()),
+            new(ClaimTypes.NameIdentifier, apiKey.UserId.ToString()),
+            new("sub", apiKey.UserId.ToString()),
+            new("UserId", apiKey.UserId.ToString()),
             new("ApiKeyId", apiKey.Id.ToString()),
             new("AuthMethod", "ApiKey"),
             new("dapp_role", dappRole),

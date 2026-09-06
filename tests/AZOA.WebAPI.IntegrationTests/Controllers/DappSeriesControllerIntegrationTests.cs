@@ -157,31 +157,31 @@ public class DappSeriesControllerIntegrationTests : IntegrationTestBase
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // QUEST MANAGEMENT
+    // ACTION MANAGEMENT
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task ListQuests_NewSeries_ShouldReturnEmptyList()
+    public async Task ListActions_NewSeries_ShouldReturnEmptyList()
     {
         var series = await SeedSeriesAsync();
 
-        var response = await Client.GetAsync($"api/dapp-series/{series.Id}/quests");
+        var response = await Client.GetAsync($"api/dapp-series/{series.Id}/actions");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await ReadResultAsync<IEnumerable<DappSeriesQuest>>(response);
+        var result = await ReadResultAsync<IEnumerable<DappSeriesAction>>(response);
         result!.IsError.Should().BeFalse();
         result.Result.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task AddQuest_NonExistentQuest_ShouldReturnBadRequest()
+    public async Task AddAction_NonExistentAction_ShouldReturnBadRequest()
     {
         var series = await SeedSeriesAsync();
-        var model  = new DappSeriesAddQuestModel { QuestId = Guid.NewGuid(), Order = 1 };
+        var model  = new DappSeriesAddActionModel { ActionId = Guid.NewGuid(), Order = 1 };
 
-        var response = await Client.PostAsJsonAsync($"api/dapp-series/{series.Id}/quests", model, JsonOptions);
+        var response = await Client.PostAsJsonAsync($"api/dapp-series/{series.Id}/actions", model, JsonOptions);
 
-        // The manager validates that the quest exists in IQuestStore;
+        // The manager validates that the action exists in IActionStore;
         // a random Guid won't exist → BadRequest
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -211,7 +211,7 @@ public class DappSeriesControllerIntegrationTests : IntegrationTestBase
 
         var response = await Client.PostAsync($"api/dapp-series/{series.Id}/compose", null);
 
-        // No quests → composition validation fails → BadRequest
+        // No actions → composition validation fails → BadRequest
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var result = await response.Content.ReadFromJsonAsync<AZOAResult<DappManifest>>(JsonOptions);
         result!.IsError.Should().BeTrue();
@@ -339,10 +339,10 @@ public class DappSeriesControllerIntegrationTests : IntegrationTestBase
         {
             "/api/dapp-series",
             "/api/dapp-series/{id}",
-            "/api/dapp-series/{seriesId}/quests",
-            "/api/dapp-series/{seriesId}/quests/{questId}",
-            "/api/dapp-series/{seriesId}/quests/{questId}/order",
-            "/api/dapp-series/{seriesId}/quests/{questId}/mappings",
+            "/api/dapp-series/{seriesId}/actions",
+            "/api/dapp-series/{seriesId}/actions/{actionId}",
+            "/api/dapp-series/{seriesId}/actions/{actionId}/order",
+            "/api/dapp-series/{seriesId}/actions/{actionId}/mappings",
             "/api/dapp-series/{id}/compose",
             "/api/dapp-series/{id}/validate",
             "/api/dapp-series/{id}/manifest",

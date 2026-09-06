@@ -6,11 +6,11 @@ namespace AZOA.WebAPI.Models;
 public class BlockchainOperation : IBlockchainOperation, IMintOperation, IExchangeOperation, ITransferOperation
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public Guid? AvatarId { get; set; }
+    public Guid? UserId { get; set; }
     public Guid? WalletId { get; set; }
 
     public string? IdempotencyKey { get; set; }
-    public Guid? InitiatorAvatarId { get; set; }
+    public Guid? InitiatorUserId { get; set; }
     public Guid? InitiatorApiKeyId { get; set; }
 
     // tenant-consent-delegation AC4 — see IBlockchainOperation.

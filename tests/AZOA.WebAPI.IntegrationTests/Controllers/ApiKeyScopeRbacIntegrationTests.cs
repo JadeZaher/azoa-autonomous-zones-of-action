@@ -27,9 +27,9 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
         ProviderName = "SurrealDb",
     };
 
-    // Mints a REAL API key for the given avatar (persisted key row + hash) so a
+    // Mints a REAL API key for the given user (persisted key row + hash) so a
     // subsequent X-Api-Key request exercises the real ApiKeyAuthenticationHandler.
-    // The caller must be authenticated as an avatar whose CURRENT role can self-issue
+    // The caller must be authenticated as an user whose CURRENT role can self-issue
     // the requested scope.
     private async Task<string> MintRealApiKeyAsync(HttpClient owner, string? scopes)
     {
@@ -174,17 +174,17 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task ApiKey_WithStaleDappDevelopScope_AfterRoleRevocation_Returns403()
     {
-        var avatar = await SeedAvatarAsync();
+        var user = await SeedUserAsync();
         using var operatorClient = Factory.CreateOperatorClient();
 
         // Promote to developer, then mint a scoped key as that developer.
-        (await AssignRoleAsync(operatorClient, avatar.Id, AzoaDappRoles.Developer))
+        (await AssignRoleAsync(operatorClient, user.Id, AzoaDappRoles.Developer))
             .StatusCode.Should().Be(HttpStatusCode.OK);
-        using var developer = Factory.CreateAuthenticatedClientForAvatar(avatar.Id, AzoaDappRoles.Developer);
+        using var developer = Factory.CreateAuthenticatedClientForUser(user.Id, AzoaDappRoles.Developer);
         var rawKey = await MintRealApiKeyAsync(developer, AzoaScopes.DappDevelop);
 
         // Revoke the role back to plain user.
-        (await AssignRoleAsync(operatorClient, avatar.Id, AzoaDappRoles.User))
+        (await AssignRoleAsync(operatorClient, user.Id, AzoaDappRoles.User))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
         // The stale-scope key can no longer reach a DappDevelop write surface.
@@ -197,16 +197,16 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
     // AC2: new keys require explicit scopes, while a pre-hardening persisted empty-scope
     // key remains compatible. Its owner still needs the current developer role.
     [Fact]
-    public async Task ApiKey_EmptyCsvLegacyKey_AgainstDemotedAvatar_Returns403()
+    public async Task ApiKey_EmptyCsvLegacyKey_AgainstDemotedUser_Returns403()
     {
-        var avatar = await SeedAvatarAsync();
+        var user = await SeedUserAsync();
         using var operatorClient = Factory.CreateOperatorClient();
 
-        (await AssignRoleAsync(operatorClient, avatar.Id, AzoaDappRoles.Developer))
+        (await AssignRoleAsync(operatorClient, user.Id, AzoaDappRoles.Developer))
             .StatusCode.Should().Be(HttpStatusCode.OK);
-        var rawKey = await SeedLegacyApiKeyAsync(avatar.Id);
+        var rawKey = await SeedLegacyApiKeyAsync(user.Id);
 
-        (await AssignRoleAsync(operatorClient, avatar.Id, AzoaDappRoles.User))
+        (await AssignRoleAsync(operatorClient, user.Id, AzoaDappRoles.User))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var apiKeyClient = Factory.CreateApiKeyClient(rawKey);
@@ -231,7 +231,7 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task AssignRole_AsPlainUser_Returns403()
     {
-        var target = await SeedAvatarAsync();
+        var target = await SeedUserAsync();
         using var plainUser = Factory.CreateAuthenticatedClient(AzoaDappRoles.User);
 
         var response = await AssignRoleAsync(plainUser, target.Id, AzoaDappRoles.Developer);
@@ -242,7 +242,7 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task AssignRole_AsDeveloper_Returns403()
     {
-        var target = await SeedAvatarAsync();
+        var target = await SeedUserAsync();
         using var developer = Factory.CreateAuthenticatedClient(AzoaDappRoles.Developer);
 
         var response = await AssignRoleAsync(developer, target.Id, AzoaDappRoles.Developer);
@@ -254,7 +254,7 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task AssignRole_AsManager_GrantingManager_Returns403()
     {
-        var target = await SeedAvatarAsync();
+        var target = await SeedUserAsync();
         using var manager = Factory.CreateAuthenticatedClient(AzoaDappRoles.Manager);
 
         var response = await AssignRoleAsync(manager, target.Id, AzoaDappRoles.Manager);
@@ -265,7 +265,7 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task AssignRole_AsManager_GrantingDeveloper_Succeeds()
     {
-        var target = await SeedAvatarAsync();
+        var target = await SeedUserAsync();
         using var manager = Factory.CreateAuthenticatedClient(AzoaDappRoles.Manager);
 
         var response = await AssignRoleAsync(manager, target.Id, AzoaDappRoles.Developer);
@@ -278,7 +278,7 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task AssignRole_AsOperator_WithOperatorAdminValue_Returns403()
     {
-        var target = await SeedAvatarAsync();
+        var target = await SeedUserAsync();
         using var operatorClient = Factory.CreateOperatorClient();
 
         var response = await AssignRoleAsync(operatorClient, target.Id, AzoaScopes.Operator);
@@ -286,19 +286,19 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    // The endpoint actually works: operator promotes an avatar to developer, and that
-    // avatar can then reach a DappDevelop endpoint via a freshly-issued principal.
+    // The endpoint actually works: operator promotes an user to developer, and that
+    // user can then reach a DappDevelop endpoint via a freshly-issued principal.
     [Fact]
-    public async Task AssignRole_AsOperator_ToDeveloper_ThenAvatarCanAuthor()
+    public async Task AssignRole_AsOperator_ToDeveloper_ThenUserCanAuthor()
     {
-        var avatar = await SeedAvatarAsync();
+        var user = await SeedUserAsync();
         using var operatorClient = Factory.CreateOperatorClient();
 
-        (await AssignRoleAsync(operatorClient, avatar.Id, AzoaDappRoles.Developer))
+        (await AssignRoleAsync(operatorClient, user.Id, AzoaDappRoles.Developer))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Fresh principal reflecting the new developer role reaches the authoring surface.
-        using var developer = Factory.CreateAuthenticatedClientForAvatar(avatar.Id, AzoaDappRoles.Developer);
+        using var developer = Factory.CreateAuthenticatedClientForUser(user.Id, AzoaDappRoles.Developer);
         var response = await developer.PostAsJsonAsync("api/holon", AuthoringHolon(), JsonOptions);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -308,7 +308,7 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task AssignRole_AsOperator_ToManager_Succeeds()
     {
-        var target = await SeedAvatarAsync();
+        var target = await SeedUserAsync();
         using var operatorClient = Factory.CreateOperatorClient();
 
         var response = await AssignRoleAsync(operatorClient, target.Id, AzoaDappRoles.Manager);
@@ -316,16 +316,16 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    private Task<HttpResponseMessage> AssignRoleAsync(HttpClient client, Guid avatarId, string role)
-        => client.PutAsJsonAsync($"api/avatar/{avatarId}/dapp-role",
-            new AvatarRoleAssignmentModel { Role = role }, JsonOptions);
+    private Task<HttpResponseMessage> AssignRoleAsync(HttpClient client, Guid userId, string role)
+        => client.PutAsJsonAsync($"api/user/{userId}/dapp-role",
+            new UserRoleAssignmentModel { Role = role }, JsonOptions);
 
-    private async Task<string> SeedLegacyApiKeyAsync(Guid avatarId)
+    private async Task<string> SeedLegacyApiKeyAsync(Guid userId)
     {
         var rawKey = ApiKeyAuthenticationHandler.GenerateRawKey();
         var legacyKey = new ApiKey
         {
-            AvatarId = avatarId,
+            UserId = userId,
             Name = "legacy-empty-scope-key",
             KeyHash = ApiKeyAuthenticationHandler.HashKey(rawKey),
             KeyPrefix = rawKey[..16],

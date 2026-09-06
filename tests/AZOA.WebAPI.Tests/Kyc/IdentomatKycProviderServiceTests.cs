@@ -356,13 +356,13 @@ public sealed class IdentomatKycProviderServiceTests
     [Fact]
     public void AdmissionKey_IsStablePerSubjectAndTenant()
     {
-        var avatar = Guid.NewGuid();
+        var user = Guid.NewGuid();
         var tenant = Guid.NewGuid();
 
-        var first = IdentomatKycProviderService.AdmissionKeyFor(avatar, tenant);
-        var second = IdentomatKycProviderService.AdmissionKeyFor(avatar, tenant);
-        var direct = IdentomatKycProviderService.AdmissionKeyFor(avatar, null);
-        var otherTenant = IdentomatKycProviderService.AdmissionKeyFor(avatar, Guid.NewGuid());
+        var first = IdentomatKycProviderService.AdmissionKeyFor(user, tenant);
+        var second = IdentomatKycProviderService.AdmissionKeyFor(user, tenant);
+        var direct = IdentomatKycProviderService.AdmissionKeyFor(user, null);
+        var otherTenant = IdentomatKycProviderService.AdmissionKeyFor(user, Guid.NewGuid());
 
         first.Should().Be(second, "a retry must resume the same claim, not open a second session");
         first.Should().NotBe(direct);

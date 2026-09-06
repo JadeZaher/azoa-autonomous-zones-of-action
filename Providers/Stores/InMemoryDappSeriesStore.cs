@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Providers.Stores;
 public sealed class InMemoryDappSeriesStore : IDappSeriesStore
 {
     private readonly ConcurrentDictionary<Guid, DappSeries> _series = new();
-    private readonly ConcurrentDictionary<Guid, DappSeriesQuest> _entries = new();
+    private readonly ConcurrentDictionary<Guid, DappSeriesAction> _entries = new();
 
     public Task<AZOAResult<DappSeries>> GetSeriesAsync(Guid id, CancellationToken ct = default)
     {
@@ -30,9 +30,9 @@ public sealed class InMemoryDappSeriesStore : IDappSeriesStore
         });
     }
 
-    public Task<AZOAResult<IEnumerable<DappSeries>>> GetSeriesByAvatarAsync(Guid avatarId, CancellationToken ct = default)
+    public Task<AZOAResult<IEnumerable<DappSeries>>> GetSeriesByUserAsync(Guid userId, CancellationToken ct = default)
     {
-        var matches = _series.Values.Where(s => s.AvatarIdGuid == avatarId).ToList();
+        var matches = _series.Values.Where(s => s.UserIdGuid == userId).ToList();
         return Task.FromResult(new AZOAResult<IEnumerable<DappSeries>>
         {
             Result = matches,
@@ -70,35 +70,35 @@ public sealed class InMemoryDappSeriesStore : IDappSeriesStore
         });
     }
 
-    public Task<AZOAResult<IEnumerable<DappSeriesQuest>>> GetQuestsBySeriesAsync(Guid seriesId, CancellationToken ct = default)
+    public Task<AZOAResult<IEnumerable<DappSeriesAction>>> GetActionsBySeriesAsync(Guid seriesId, CancellationToken ct = default)
     {
         var matches = _entries.Values
             .Where(e => e.DappSeriesIdGuid == seriesId)
             .OrderBy(e => e.Order)
             .ToList();
-        return Task.FromResult(new AZOAResult<IEnumerable<DappSeriesQuest>>
+        return Task.FromResult(new AZOAResult<IEnumerable<DappSeriesAction>>
         {
             Result = matches,
             Message = "Success",
         });
     }
 
-    public Task<AZOAResult<DappSeriesQuest>> UpsertSeriesQuestAsync(DappSeriesQuest entry, CancellationToken ct = default)
+    public Task<AZOAResult<DappSeriesAction>> UpsertSeriesActionAsync(DappSeriesAction entry, CancellationToken ct = default)
     {
         Guid id;
         try { id = entry.IdGuid; }
-        catch (FormatException) { return Task.FromResult(StoreFail<DappSeriesQuest>("DappSeriesQuest.Id must be a Guid('N') hex string.")); }
+        catch (FormatException) { return Task.FromResult(StoreFail<DappSeriesAction>("DappSeriesAction.Id must be a Guid('N') hex string.")); }
 
         _entries[id] = entry;
-        return Task.FromResult(new AZOAResult<DappSeriesQuest> { Result = entry, Message = "Upserted." });
+        return Task.FromResult(new AZOAResult<DappSeriesAction> { Result = entry, Message = "Upserted." });
     }
 
-    public Task<AZOAResult<bool>> DeleteSeriesQuestAsync(Guid seriesId, Guid questId, CancellationToken ct = default)
+    public Task<AZOAResult<bool>> DeleteSeriesActionAsync(Guid seriesId, Guid actionId, CancellationToken ct = default)
     {
         var match = _entries.Values.FirstOrDefault(e =>
-            e.DappSeriesIdGuid == seriesId && e.QuestIdGuid == questId);
+            e.DappSeriesIdGuid == seriesId && e.ActionIdGuid == actionId);
         if (match is null)
-            return Task.FromResult(StoreFail<bool>($"No DappSeriesQuest entry for series {seriesId} + quest {questId}."));
+            return Task.FromResult(StoreFail<bool>($"No DappSeriesAction entry for series {seriesId} + action {actionId}."));
 
         var removed = _entries.TryRemove(match.IdGuid, out _);
         return Task.FromResult(new AZOAResult<bool>

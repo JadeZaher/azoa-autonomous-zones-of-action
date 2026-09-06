@@ -12,7 +12,7 @@ DEFINE FIELD IF NOT EXISTS name ON TABLE holon TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS description ON TABLE holon TYPE string;
 DEFINE FIELD IF NOT EXISTS parent_holon_id ON TABLE holon TYPE option<record<holon>>;
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE holon TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE holon TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS provider_name ON TABLE holon TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS chain_id ON TABLE holon TYPE option<string>;
@@ -33,15 +33,15 @@ DEFINE FIELD IF NOT EXISTS modified_date ON TABLE holon TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS is_active ON TABLE holon TYPE bool
     DEFAULT true;
 DEFINE FIELD IF NOT EXISTS source_holon_id ON TABLE holon TYPE option<record<holon>>;
-DEFINE FIELD IF NOT EXISTS origin_avatar_id ON TABLE holon TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS origin_user_id ON TABLE holon TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS is_public ON TABLE holon TYPE bool
     DEFAULT false;
 
 -- ── Indexes ──────────────────────────────────────────────────
 
-DEFINE INDEX IF NOT EXISTS holon_avatar_id
+DEFINE INDEX IF NOT EXISTS holon_user_id
     ON TABLE holon
-    FIELDS avatar_id;
+    FIELDS user_id;
 
 DEFINE INDEX IF NOT EXISTS holon_parent
     ON TABLE holon

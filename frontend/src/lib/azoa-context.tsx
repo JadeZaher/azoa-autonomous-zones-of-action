@@ -54,7 +54,7 @@ export interface AzoaState {
   user: AuthProfile | null
   isAuthenticated: boolean
   authLoading: boolean
-  avatarId: string | null
+  userId: string | null
   wallets: WalletEntry[]
   walletsLoading: boolean
   walletsError: string | null
@@ -113,19 +113,19 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
     restore()
   }, [])
 
-  const avatarId = azoa.auth.avatarId
+  const userId = azoa.auth.userId
 
   const refreshWallets = useCallback(async () => {
-    if (!avatarId) { setWallets([]); return }
+    if (!userId) { setWallets([]); return }
     setWalletsLoading(true); setWalletsError(null)
-    const result = await azoa.api.request<WalletEntry[]>('GET', `/api/wallet?avatarId=${avatarId}`)
+    const result = await azoa.api.request<WalletEntry[]>('GET', `/api/wallet?userId=${userId}`)
     if (isOk(result)) setWallets(result.value.map(normalizeWalletEntry)); else setWalletsError(result.error.message)
     setWalletsLoading(false)
-  }, [avatarId])
+  }, [userId])
 
   useEffect(() => {
-    if (avatarId) refreshWallets(); else setWallets([])
-  }, [avatarId, refreshWallets])
+    if (userId) refreshWallets(); else setWallets([])
+  }, [userId, refreshWallets])
 
   const refreshProfile = useCallback(async () => {
     if (!azoa.auth.isAuthenticated) return
@@ -170,7 +170,7 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
 
   /**
    * Server-side "logout everywhere": invalidates every live JWT for this
-   * avatar, then clears the local session (same effect as `logout` locally).
+   * user, then clears the local session (same effect as `logout` locally).
    */
   const logoutEverywhere = useCallback(async () => {
     const result = await azoa.auth.logoutEverywhere()
@@ -185,15 +185,15 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
   }, [refreshWallets])
 
   const addWallet = useCallback(async (params: { chainType: string; address: string; label?: string; isDefault?: boolean }) => {
-    if (!avatarId) return { success: false, error: 'No avatar ID' }
+    if (!userId) return { success: false, error: 'No user ID' }
     const result = await azoa.api.request('POST', '/api/wallet', {
-      avatarId, chainType: params.chainType, address: params.address.trim(),
+      userId, chainType: params.chainType, address: params.address.trim(),
       label: params.label?.trim() || undefined, isDefault: params.isDefault ?? false,
       walletType: 'External',
     })
     if (isOk(result)) { await refreshWallets(); return { success: true } }
     return { success: false, error: result.error.message }
-  }, [avatarId, refreshWallets])
+  }, [userId, refreshWallets])
 
   const removeWallet = useCallback(async (walletId: string) => {
     const result = await azoa.api.request('DELETE', `/api/wallet/${walletId}`)
@@ -204,7 +204,7 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
   // ─── New: Generate wallet on-platform ───
 
   const generateWallet = useCallback(async (params: { chainType: string; label?: string; isDefault?: boolean }) => {
-    if (!avatarId) return { success: false, error: 'No avatar ID' }
+    if (!userId) return { success: false, error: 'No user ID' }
     const result = await azoa.api.request('POST', '/api/wallet/generate', {
       chainType: params.chainType,
       label: params.label?.trim() || undefined,
@@ -212,12 +212,12 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
     })
     if (isOk(result)) { await refreshWallets(); return { success: true } }
     return { success: false, error: result.error.message }
-  }, [avatarId, refreshWallets])
+  }, [userId, refreshWallets])
 
   // ─── New: Connect external wallet ───
 
   const connectExternalWallet = useCallback(async (params: { chainType: string; address: string; publicKey?: string; label?: string; isDefault?: boolean }) => {
-    if (!avatarId) return { success: false, error: 'No avatar ID' }
+    if (!userId) return { success: false, error: 'No user ID' }
     const result = await azoa.api.request('POST', '/api/wallet/connect', {
       chainType: params.chainType,
       address: params.address.trim(),
@@ -227,7 +227,7 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
     })
     if (isOk(result)) { await refreshWallets(); return { success: true } }
     return { success: false, error: result.error.message }
-  }, [avatarId, refreshWallets])
+  }, [userId, refreshWallets])
 
   // ─── New: Export wallet private key ───
 
@@ -327,12 +327,12 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
   const defaultWallet = useMemo(() => wallets.find(w => w.isDefault) ?? wallets[0] ?? null, [wallets])
 
   const value = useMemo<AzoaState>(() => ({
-    user, isAuthenticated: azoa.auth.isAuthenticated, authLoading, avatarId,
+    user, isAuthenticated: azoa.auth.isAuthenticated, authLoading, userId,
     wallets, walletsLoading, walletsError, defaultWallet,
     login, register, logout, logoutEverywhere, refreshProfile, refreshWallets, setDefaultWallet, addWallet, removeWallet,
     generateWallet, connectExternalWallet, exportWallet,
     browserWalletAvailable, getBrowserWalletAddress, connectBrowserWallet,
-  }), [user, authLoading, avatarId, wallets, walletsLoading, walletsError, defaultWallet, login, register, logout, logoutEverywhere, refreshProfile, refreshWallets, setDefaultWallet, addWallet, removeWallet, generateWallet, connectExternalWallet, exportWallet, browserWalletAvailable, getBrowserWalletAddress, connectBrowserWallet])
+  }), [user, authLoading, userId, wallets, walletsLoading, walletsError, defaultWallet, login, register, logout, logoutEverywhere, refreshProfile, refreshWallets, setDefaultWallet, addWallet, removeWallet, generateWallet, connectExternalWallet, exportWallet, browserWalletAvailable, getBrowserWalletAddress, connectBrowserWallet])
 
   return <AzoaContext.Provider value={value}>{children}</AzoaContext.Provider>
 }

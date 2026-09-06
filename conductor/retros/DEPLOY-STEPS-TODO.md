@@ -29,8 +29,8 @@
 | P1 | Key zeroing (byte[]) | ✅ done at the custody boundary (`DecryptPrivateKeyBytes`). Residual follow-up: the `RewrapAsync` cold-path still routes a hex `string` intermediate |
 | P2 | Key rotation | ✅ live orchestration done (dual-key window, batch re-wrap, rollback, admin endpoint) — operator note: persist the pending-key marker on a volume, `NODE-HOST` §8.2 |
 | P5 | KYC gating (mint) | ✅ done at the NftManager choke point |
-| P7 | Reconcile-before-retry (quest engine) | ✅ done (no double-mint on chain-action nodes) |
-| A1 | Durable quests inert under `Sagas:Enabled=false` | ✅ fixed (`Sagas:Enabled=true` default + boot guard) |
+| P7 | Reconcile-before-retry (action engine) | ✅ done (no double-mint on chain-action nodes) |
+| A1 | Durable actions inert under `Sagas:Enabled=false` | ✅ fixed (`Sagas:Enabled=true` default + boot guard) |
 | NU1903 | AutoMapper high-severity vuln | ✅ fixed (12.0.1 → 15.1.3) |
 | H1 | Solana/Ethereum real keygen+signing | Algorand real; **Solana/ETH value routes fail-closed and stay disabled** until follow-ups — see `NODE-HOST` §4.1 |
 

@@ -32,11 +32,11 @@ public class STARManagerEcosystemTests
         _store.Setup(p => p.GetByIdAsync(star.Id, It.IsAny<CancellationToken>()))
               .ReturnsAsync(new AZOAResult<ISTARODK> { Result = star });
 
-    private void OwnSeries(Guid seriesId, Guid avatarId) =>
+    private void OwnSeries(Guid seriesId, Guid userId) =>
         _dappSeriesStore.Setup(p => p.GetSeriesAsync(seriesId, It.IsAny<CancellationToken>()))
               .ReturnsAsync(new AZOAResult<PocoDappSeries>
               {
-                  Result = new PocoDappSeries { Id = seriesId.ToString("N"), AvatarId = avatarId.ToString("N"), Name = "S" }
+                  Result = new PocoDappSeries { Id = seriesId.ToString("N"), UserId = userId.ToString("N"), Name = "S" }
               });
 
     private void CaptureEcosystemUpserts(List<PocoEcosystem> ecos, List<PocoEcosystemNode> nodes)
@@ -56,17 +56,17 @@ public class STARManagerEcosystemTests
     [Fact]
     public async Task AddDappSeries_FirstAttach_LazilyCreatesEcosystem_AndRegeneratesCode()
     {
-        var avatar = Guid.NewGuid();
-        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", AvatarId = avatar };
+        var user = Guid.NewGuid();
+        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", UserId = user };
         var seriesId = Guid.NewGuid();
         OwnStar(star);
-        OwnSeries(seriesId, avatar);
+        OwnSeries(seriesId, user);
         var ecos = new List<PocoEcosystem>();
         var nodes = new List<PocoEcosystemNode>();
         CaptureEcosystemUpserts(ecos, nodes);
 
         var req = new AddDappSeriesRequest { RefId = seriesId, RefKind = EcosystemRefKind.DappSeries };
-        var result = await _manager.AddDappSeriesAsync(star.Id, req, avatar);
+        var result = await _manager.AddDappSeriesAsync(star.Id, req, user);
 
         result.IsError.Should().BeFalse();
         result.Result!.Roots.Should().HaveCount(1);
@@ -81,7 +81,7 @@ public class STARManagerEcosystemTests
     {
         var owner = Guid.NewGuid();
         var attacker = Guid.NewGuid();
-        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", AvatarId = owner };
+        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", UserId = owner };
         OwnStar(star);
 
         var req = new AddDappSeriesRequest { RefId = Guid.NewGuid() };
@@ -95,16 +95,16 @@ public class STARManagerEcosystemTests
     [Fact]
     public async Task AddDappSeries_ForeignSeries_ReturnsForbidden()
     {
-        var avatar = Guid.NewGuid();
-        var otherAvatar = Guid.NewGuid();
-        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", AvatarId = avatar };
+        var user = Guid.NewGuid();
+        var otherUser = Guid.NewGuid();
+        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", UserId = user };
         var seriesId = Guid.NewGuid();
         OwnStar(star);
-        // Series owned by a DIFFERENT avatar.
-        OwnSeries(seriesId, otherAvatar);
+        // Series owned by a DIFFERENT user.
+        OwnSeries(seriesId, otherUser);
 
         var req = new AddDappSeriesRequest { RefId = seriesId };
-        var result = await _manager.AddDappSeriesAsync(star.Id, req, avatar);
+        var result = await _manager.AddDappSeriesAsync(star.Id, req, user);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(STARODKAuthorizationError.Forbidden);
@@ -113,22 +113,22 @@ public class STARManagerEcosystemTests
     [Fact]
     public async Task AddDappSeries_NestedUnderParent_BuildsTwoLevelTree()
     {
-        var avatar = Guid.NewGuid();
-        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", AvatarId = avatar };
+        var user = Guid.NewGuid();
+        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", UserId = user };
         var s1 = Guid.NewGuid();
         var s2 = Guid.NewGuid();
         OwnStar(star);
-        OwnSeries(s1, avatar);
-        OwnSeries(s2, avatar);
+        OwnSeries(s1, user);
+        OwnSeries(s2, user);
         var ecos = new List<PocoEcosystem>();
         var nodes = new List<PocoEcosystemNode>();
         CaptureEcosystemUpserts(ecos, nodes);
 
-        var r1 = await _manager.AddDappSeriesAsync(star.Id, new AddDappSeriesRequest { RefId = s1 }, avatar);
+        var r1 = await _manager.AddDappSeriesAsync(star.Id, new AddDappSeriesRequest { RefId = s1 }, user);
         var rootNodeId = r1.Result!.Roots[0].Node.Id;
 
         var r2 = await _manager.AddDappSeriesAsync(star.Id,
-            new AddDappSeriesRequest { RefId = s2, ParentNodeId = rootNodeId }, avatar);
+            new AddDappSeriesRequest { RefId = s2, ParentNodeId = rootNodeId }, user);
 
         r2.IsError.Should().BeFalse();
         r2.Result!.Roots.Should().HaveCount(1);
@@ -139,17 +139,17 @@ public class STARManagerEcosystemTests
     [Fact]
     public async Task AddDappSeries_UnknownParent_Rejected()
     {
-        var avatar = Guid.NewGuid();
-        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", AvatarId = avatar };
+        var user = Guid.NewGuid();
+        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", UserId = user };
         var seriesId = Guid.NewGuid();
         OwnStar(star);
-        OwnSeries(seriesId, avatar);
+        OwnSeries(seriesId, user);
         var ecos = new List<PocoEcosystem>();
         var nodes = new List<PocoEcosystemNode>();
         CaptureEcosystemUpserts(ecos, nodes);
 
         var req = new AddDappSeriesRequest { RefId = seriesId, ParentNodeId = Guid.NewGuid() };
-        var result = await _manager.AddDappSeriesAsync(star.Id, req, avatar);
+        var result = await _manager.AddDappSeriesAsync(star.Id, req, user);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Parent node");
@@ -159,12 +159,12 @@ public class STARManagerEcosystemTests
     public async Task GetEcosystem_CycleInParentChain_ReturnsError()
     {
         // Craft two nodes that point at each other (cycle) directly in the store.
-        var avatar = Guid.NewGuid();
-        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", AvatarId = avatar };
+        var user = Guid.NewGuid();
+        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", UserId = user };
         OwnStar(star);
 
         var ecoId = Guid.NewGuid();
-        var eco = new PocoEcosystem { Id = ecoId.ToString("N"), Name = "E", StarOdkId = star.Id.ToString("N"), AvatarId = avatar.ToString("N") };
+        var eco = new PocoEcosystem { Id = ecoId.ToString("N"), Name = "E", StarOdkId = star.Id.ToString("N"), UserId = user.ToString("N") };
         var a = Guid.NewGuid().ToString("N");
         var b = Guid.NewGuid().ToString("N");
         var nA = new PocoEcosystemNode { Id = a, EcosystemId = eco.Id, ParentNodeId = b, RefId = Guid.NewGuid().ToString("N") };
@@ -175,7 +175,7 @@ public class STARManagerEcosystemTests
         _ecosystemStore.Setup(e => e.GetNodesAsync(ecoId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IEnumerable<PocoEcosystemNode>> { Result = new[] { nA, nB } });
 
-        var result = await _manager.GetEcosystemAsync(star.Id, avatar);
+        var result = await _manager.GetEcosystemAsync(star.Id, user);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("cycle");
@@ -186,7 +186,7 @@ public class STARManagerEcosystemTests
     {
         var owner = Guid.NewGuid();
         var attacker = Guid.NewGuid();
-        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", AvatarId = owner };
+        var star = new STARODK { Id = Guid.NewGuid(), Name = "Star", UserId = owner };
         OwnStar(star);
 
         var result = await _manager.GetEcosystemAsync(star.Id, attacker);

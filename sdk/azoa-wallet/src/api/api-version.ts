@@ -2,7 +2,7 @@
  * API version configuration for the AZOA SDK.
  *
  * Supports routing to different API versions and base paths.
- * When the .NET backend introduces versioned endpoints (e.g., /api/v2/avatar),
+ * When the .NET backend introduces versioned endpoints (e.g., /api/v2/user),
  * consumers can configure the version here to route automatically.
  */
 
@@ -17,16 +17,16 @@ export interface ApiVersionConfig {
 
 /** All .NET controllers that the SDK maps to. */
 export type ApiController =
-  | "avatar"
+  | "user"
   | "holon"
   | "wallet"
   | "nft"
-  | "avatarnft"
+  | "usernft"
   | "bridge"
   | "search"
   | "blockchainoperation"
   | "starodk"
-  | "quest"
+  | "action"
   | "apikey"
   | "dappseries"
   | "tenant"
@@ -37,9 +37,9 @@ export type ApiController =
 /**
  * Resolves the API path for a given controller and sub-path.
  *
- * With default config: resolveApiPath("avatar", "/login") → "/api/avatar/login"
- * With version: resolveApiPath("avatar", "/login") → "/api/v2/avatar/login"
- * With override: resolveApiPath("avatar", "/login") → "/custom/auth/login"
+ * With default config: resolveApiPath("user", "/login") → "/api/user/login"
+ * With version: resolveApiPath("user", "/login") → "/api/v2/user/login"
+ * With override: resolveApiPath("user", "/login") → "/custom/auth/login"
  */
 export function resolveApiPath(
   controller: ApiController,
@@ -62,20 +62,20 @@ export function resolveApiPath(
  * Update this map when the backend adds versioned routes.
  */
 export const API_PATHS = {
-  // Avatar
-  AVATAR_REGISTER: "/api/avatar/register",
-  AVATAR_LOGIN: "/api/avatar/login",
+  // User
+  USER_REGISTER: "/api/user/register",
+  USER_LOGIN: "/api/user/login",
   // Server-side "logout everywhere": bumps AuthNotBefore, invalidating all
-  // outstanding JWTs for the avatar (not just the local session).
-  AVATAR_LOGOUT: "/api/avatar/logout",
-  AVATAR_GET: (id: string) => `/api/avatar/${id}`,
-  AVATAR_LIST: "/api/avatar",
-  AVATAR_UPDATE: (id: string) => `/api/avatar/${id}`,
-  AVATAR_DELETE: (id: string) => `/api/avatar/${id}`,
-  // avatar-dapp-rbac: assign an avatar's DApp role. Operator (JWT operator:admin)
+  // outstanding JWTs for the user (not just the local session).
+  USER_LOGOUT: "/api/user/logout",
+  USER_GET: (id: string) => `/api/user/${id}`,
+  USER_LIST: "/api/user",
+  USER_UPDATE: (id: string) => `/api/user/${id}`,
+  USER_DELETE: (id: string) => `/api/user/${id}`,
+  // user-dapp-rbac: assign an user's DApp role. Operator (JWT operator:admin)
   // may assign any role incl. manager; a dapp:manager may assign only
   // developer/user. operator:admin is never assignable via this route.
-  AVATAR_DAPP_ROLE: (id: string) => `/api/avatar/${id}/dapp-role`,
+  USER_DAPP_ROLE: (id: string) => `/api/user/${id}/dapp-role`,
 
   // Holon
   HOLON_GET: (id: string) => `/api/holon/${id}`,
@@ -106,7 +106,7 @@ export const API_PATHS = {
   NFT_LIST: "/api/nft",
   NFT_MINT: "/api/nft/mint",
   // fungible-mint-and-render-model (§11.3): one-shot fungible token (ASA) launch,
-  // the direct (no-DAG) parallel to the FungibleTokenCreate quest node.
+  // the direct (no-DAG) parallel to the FungibleTokenCreate action node.
   NFT_FUNGIBLE_MINT: "/api/nft/fungible-mint",
   NFT_TRANSFER: (id: string) => `/api/nft/${id}/transfer`,
   NFT_BURN: (id: string) => `/api/nft/${id}/burn`,
@@ -129,43 +129,43 @@ export const API_PATHS = {
   SWAP_QUOTE: "/api/swap/quote",
   SWAP_EXECUTE: "/api/swap/execute",
 
-  // Marketplace browse: public + Active quests any authenticated avatar may fork/start.
-  QUEST_PUBLIC: "/api/quest/public",
+  // Marketplace browse: public + Active actions any authenticated user may fork/start.
+  ACTION_PUBLIC: "/api/action/public",
 
-  // Quest definition lifecycle (quest-dag-semantic-hardening FR-2 / FR-8).
-  QUEST_PUBLISH: (questId: string) => `/api/quest/${questId}/publish`,
-  QUEST_UNPUBLISH: (questId: string) => `/api/quest/${questId}/unpublish`,
+  // ActionDefinition definition lifecycle (action-dag-semantic-hardening FR-2 / FR-8).
+  ACTION_PUBLISH: (actionId: string) => `/api/action/${actionId}/publish`,
+  ACTION_UNPUBLISH: (actionId: string) => `/api/action/${actionId}/unpublish`,
 
   // Durable workflow engine (durable-workflow-engine) — run-driver surface on
-  // QuestController. `start-workflow` starts a durable run on an existing quest;
+  // ActionController. `start-workflow` starts a durable run on an existing action;
   // `advance` is the `.step(nodeId)` primitive; `signal` un-parks a gate.
-  QUEST_START_WORKFLOW: (questId: string) => `/api/quest/${questId}/start-workflow`,
-  QUEST_RUN_ADVANCE: (runId: string) => `/api/quest/runs/${runId}/advance`,
-  QUEST_RUN_SIGNAL: (runId: string) => `/api/quest/runs/${runId}/signal`,
-  QUEST_RUN_STATUS: (runId: string) => `/api/quest/runs/${runId}`,
-  QUEST_RUN_EXECUTION_STATE: (runId: string) => `/api/quest/runs/${runId}/execution-state`,
-  // All runs of a quest definition (`ListRunsByQuest`); avatar-scoped read.
-  QUEST_RUNS_BY_QUEST: (questId: string) => `/api/quest/${questId}/runs`,
+  ACTION_START_WORKFLOW: (actionId: string) => `/api/action/${actionId}/start-workflow`,
+  ACTION_RUN_ADVANCE: (runId: string) => `/api/action/runs/${runId}/advance`,
+  ACTION_RUN_SIGNAL: (runId: string) => `/api/action/runs/${runId}/signal`,
+  ACTION_RUN_STATUS: (runId: string) => `/api/action/runs/${runId}`,
+  ACTION_RUN_EXECUTION_STATE: (runId: string) => `/api/action/runs/${runId}/execution-state`,
+  // All runs of a action definition (`ListRunsByAction`); user-scoped read.
+  ACTION_RUNS_BY_ACTION: (actionId: string) => `/api/action/${actionId}/runs`,
   // Per-run reconciliation re-probe (reconcile-before-retry §7). Un-parks an
   // `AwaitingReconciliation` run against chain truth; NEVER re-broadcasts.
-  QUEST_RUN_RECONCILE: (runId: string) => `/api/quest/runs/${runId}/reconcile`,
+  ACTION_RUN_RECONCILE: (runId: string) => `/api/action/runs/${runId}/reconcile`,
 
-  // Invite-gated quests + request/approval flow (quest-invitations-approval).
-  // Run-access is orthogonal to `IsPublic` discoverability: an Open quest runs
-  // for any viewer; an InviteOnly quest runs only for owner + invited avatars.
+  // Invite-gated actions + request/approval flow (action-invitations-approval).
+  // Run-access is orthogonal to `IsPublic` discoverability: an Open action runs
+  // for any viewer; an InviteOnly action runs only for owner + invited users.
   // Owner-scoped: run-access mode, direct invite/revoke, approval queue.
-  QUEST_RUN_ACCESS: (questId: string) => `/api/quest/${questId}/run-access`,
-  QUEST_INVITE: (questId: string) => `/api/quest/${questId}/invite`,
-  QUEST_INVITE_REVOKE: (questId: string, avatarId: string) => `/api/quest/${questId}/invite/${avatarId}`,
-  QUEST_ACCESS_REQUESTS: (questId: string) => `/api/quest/${questId}/access-requests`,
+  ACTION_RUN_ACCESS: (actionId: string) => `/api/action/${actionId}/run-access`,
+  ACTION_INVITE: (actionId: string) => `/api/action/${actionId}/invite`,
+  ACTION_INVITE_REVOKE: (actionId: string, userId: string) => `/api/action/${actionId}/invite/${userId}`,
+  ACTION_ACCESS_REQUESTS: (actionId: string) => `/api/action/${actionId}/access-requests`,
   // Requester-scoped: decide (owner), withdraw (requester), my outbound requests.
-  QUEST_ACCESS_REQUEST_DECISION: (requestId: string) => `/api/quest/access-requests/${requestId}/decision`,
-  QUEST_ACCESS_REQUEST_WITHDRAW: (requestId: string) => `/api/quest/access-requests/${requestId}/withdraw`,
-  QUEST_ACCESS_REQUESTS_MINE: "/api/quest/access-requests/mine",
+  ACTION_ACCESS_REQUEST_DECISION: (requestId: string) => `/api/action/access-requests/${requestId}/decision`,
+  ACTION_ACCESS_REQUEST_WITHDRAW: (requestId: string) => `/api/action/access-requests/${requestId}/withdraw`,
+  ACTION_ACCESS_REQUESTS_MINE: "/api/action/access-requests/mine",
 
   // Tenant onboarding (tenant-onboarding) — child credential issuance the
-  // `forActor` actor abstraction threads (tenant acts FOR a child avatar).
-  TENANT_CHILD_CREDENTIAL: (avatarId: string) => `/api/tenant/avatars/${avatarId}/credential`,
+  // `forActor` actor abstraction threads (tenant acts FOR a child user).
+  TENANT_CHILD_CREDENTIAL: (userId: string) => `/api/tenant/users/${userId}/credential`,
   TENANT_CUSTODIAL_CAPABILITIES: "/api/tenant/custodial-accounts/capabilities",
   TENANT_CUSTODIAL_ACCOUNT: (externalSubject: string) =>
     `/api/tenant/custodial-accounts/${encodeURIComponent(externalSubject)}`,
@@ -196,15 +196,15 @@ export const API_PATHS = {
   APIKEY_SCOPES: "/api/apikey/scopes",
   APIKEY_ROTATE: (id: string) => `/api/apikey/${id}/rotate`,
 
-  // DappSeries CRUD + quest management. Reads are authenticated-avatar reads;
+  // DappSeries CRUD + action management. Reads are authenticated-user reads;
   // authoring writes require dapp:develop, lifecycle writes require dapp:manage.
   DAPP_SERIES_LIST: "/api/dapp-series",
   DAPP_SERIES_GET: (id: string) => `/api/dapp-series/${id}`,
   DAPP_SERIES_CREATE: "/api/dapp-series",
   DAPP_SERIES_UPDATE: (id: string) => `/api/dapp-series/${id}`,
   DAPP_SERIES_DELETE: (id: string) => `/api/dapp-series/${id}`,
-  DAPP_SERIES_QUESTS: (seriesId: string) => `/api/dapp-series/${seriesId}/quests`,
-  DAPP_SERIES_QUEST_REMOVE: (seriesId: string, questId: string) => `/api/dapp-series/${seriesId}/quests/${questId}`,
-  DAPP_SERIES_QUEST_ORDER: (seriesId: string, questId: string) => `/api/dapp-series/${seriesId}/quests/${questId}/order`,
-  DAPP_SERIES_QUEST_MAPPINGS: (seriesId: string, questId: string) => `/api/dapp-series/${seriesId}/quests/${questId}/mappings`,
+  DAPP_SERIES_ACTIONS: (seriesId: string) => `/api/dapp-series/${seriesId}/actions`,
+  DAPP_SERIES_ACTION_REMOVE: (seriesId: string, actionId: string) => `/api/dapp-series/${seriesId}/actions/${actionId}`,
+  DAPP_SERIES_ACTION_ORDER: (seriesId: string, actionId: string) => `/api/dapp-series/${seriesId}/actions/${actionId}/order`,
+  DAPP_SERIES_ACTION_MAPPINGS: (seriesId: string, actionId: string) => `/api/dapp-series/${seriesId}/actions/${actionId}/mappings`,
 } as const;

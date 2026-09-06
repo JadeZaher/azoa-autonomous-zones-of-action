@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Controllers;
 /// with applied/pending status and apply the pending ones. Guarded by the hardened
 /// <c>Operator</c> policy (security-review HIGH-2: JWT-scheme floor + explicit
 /// operator capability — an API key can NEVER reach this) — the same gate as the
-/// cross-avatar reconcile sweep, since a backfill rewrites data across avatars.
+/// cross-user reconcile sweep, since a backfill rewrites data across users.
 /// The apply endpoint is additionally rate-limited by the <c>financial</c> policy.
 /// </summary>
 /// <remarks>Contract + rationale: <c>Services/Backfill/AGENTS.md</c>.</remarks>
@@ -38,7 +38,7 @@ public sealed class BackfillController : ControllerBase
 
     /// <summary>Applies every not-yet-applied backfill in order and records each. Idempotent — re-running is a no-op.</summary>
     [HttpPost("apply")]
-    [EnableRateLimiting("financial")] // security-review HIGH-2: throttle the cross-avatar mutating admin endpoint.
+    [EnableRateLimiting("financial")] // security-review HIGH-2: throttle the cross-user mutating admin endpoint.
     [ProducesResponseType(typeof(IReadOnlyList<BackfillApplyOutcome>), 200)]
     public async Task<IActionResult> Apply(CancellationToken ct)
         => Ok(await _runner.ApplyPendingAsync(ct));

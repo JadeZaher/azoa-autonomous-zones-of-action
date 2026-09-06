@@ -34,12 +34,12 @@ public class NftManager : INftManager
     }
 
     // Cross-tenant read scope: an NFT (a Holon with AssetType=="NFT") is readable iff
-    // the caller owns it OR the underlying holon is IsPublic. A null callerAvatarId
+    // the caller owns it OR the underlying holon is IsPublic. A null callerUserId
     // fails closed (public-only). See Controllers/AGENTS.md §cross-tenant-read-scope.
-    private static bool CanRead(IHolon holon, Guid? callerAvatarId) =>
-        callerAvatarId.HasValue && holon.AvatarId == callerAvatarId.Value || holon.IsPublic;
+    private static bool CanRead(IHolon holon, Guid? callerUserId) =>
+        callerUserId.HasValue && holon.UserId == callerUserId.Value || holon.IsPublic;
 
-    public async Task<AZOAResult<INft>> GetAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<INft>> GetAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var result = await _holonStore.GetByIdAsync(id, default);
         if (result.IsError || result.Result == null) return new AZOAResult<INft> { IsError = true, Message = result.Message };
@@ -48,26 +48,26 @@ public class NftManager : INftManager
             return new AZOAResult<INft> { IsError = true, Message = "Holon is not an NFT." };
 
         // Own-or-public gate: don't confirm a private NFT's existence to a non-owner.
-        if (!CanRead(result.Result, callerAvatarId))
+        if (!CanRead(result.Result, callerUserId))
             return new AZOAResult<INft> { IsError = true, Message = "NFT not found." };
 
         return new AZOAResult<INft> { Result = (INft)result.Result, Message = "Success" };
     }
 
-    public async Task<AZOAResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<INft>>> QueryAsync(NftQueryRequest query, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var all = await _holonStore.QueryAsync(null, default);
         if (all.IsError || all.Result == null) return new AZOAResult<IEnumerable<INft>> { IsError = true, Message = all.Message };
 
         var filtered = all.Result
             .Where(h => string.Equals(h.AssetType, "NFT", StringComparison.OrdinalIgnoreCase))
-            // Force owner-or-public FIRST — the caller-supplied query.OwnerAvatarId can
+            // Force owner-or-public FIRST — the caller-supplied query.OwnerUserId can
             // only ever narrow WITHIN what the caller may already read (no cross-tenant
-            // enumeration by supplying another avatar's id).
-            .Where(h => CanRead(h, callerAvatarId));
+            // enumeration by supplying another user's id).
+            .Where(h => CanRead(h, callerUserId));
 
-        if (query.OwnerAvatarId.HasValue)
-            filtered = filtered.Where(h => h.AvatarId == query.OwnerAvatarId.Value);
+        if (query.OwnerUserId.HasValue)
+            filtered = filtered.Where(h => h.UserId == query.OwnerUserId.Value);
         if (!string.IsNullOrEmpty(query.ChainId))
             filtered = filtered.Where(h => h.ChainId?.Equals(query.ChainId, StringComparison.OrdinalIgnoreCase) == true);
         if (!string.IsNullOrEmpty(query.TokenId))
@@ -79,14 +79,14 @@ public class NftManager : INftManager
     }
 
     /// <inheritdoc/>
-    public async Task<AZOAResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid avatarId, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
+    public async Task<AZOAResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid userId, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
     {
-        return await MintCoreAsync(request, avatarId, actingTenantId);
+        return await MintCoreAsync(request, userId, actingTenantId);
     }
 
     private async Task<AZOAResult<IBlockchainOperation>> MintCoreAsync(
         NftMintRequest request,
-        Guid avatarId,
+        Guid userId,
         Guid? actingTenantId)
     {
         var governance = await _nodeGovernance.EnsureAllowedAsync(request.ChainId, "NFT", "nft:mint");
@@ -98,11 +98,11 @@ public class NftManager : INftManager
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = mintFeeBlocker };
 
         // Value readiness is mandatory before a mint writes its Holon or operation.
-        var gate = await _valueAccess.RequireValueAccessAsync(avatarId, actingTenantId);
+        var gate = await _valueAccess.RequireValueAccessAsync(userId, actingTenantId);
         if (gate.IsError)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
 
-        var holon = NftHolonFactory.Create(request, avatarId);
+        var holon = NftHolonFactory.Create(request, userId);
 
         var saveResult = await _holonStore.UpsertAsync(holon, default);
         if (saveResult.IsError || saveResult.Result == null)
@@ -111,11 +111,11 @@ public class NftManager : INftManager
         // Build blockchain operation for mint
         var operation = new BlockchainOperation
         {
-            AvatarId = avatarId,
+            UserId = userId,
             WalletId = request.WalletId,
             OperationType = "Mint",
             Status = OperationStatus.Pending,
-            // tenant-consent-delegation AC4: when a tenant-driven quest Grant node
+            // tenant-consent-delegation AC4: when a tenant-driven action Grant node
             // drives this mint, stamp the acting tenant + the nft:mint signing scope
             // so BuildSigningContext marks the op tenant-driven and the custody seam
             // fails closed without a live consent grant. NftMint is the scope a
@@ -136,13 +136,13 @@ public class NftManager : INftManager
     }
 
     /// <inheritdoc/>
-    public async Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid avatarId, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
+    public async Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid userId, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
     {
         var transferFeeBlocker = await GetDirectFeeBlockerAsync(NodeFeeOperation.Transfer);
         if (transferFeeBlocker is not null)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = transferFeeBlocker };
 
-        var gate = await _valueAccess.RequireValueAccessAsync(avatarId, actingTenantId);
+        var gate = await _valueAccess.RequireValueAccessAsync(userId, actingTenantId);
         if (gate.IsError)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
 
@@ -159,11 +159,11 @@ public class NftManager : INftManager
         if (governance.IsError)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = governance.Message };
 
-        if (holon.AvatarId != avatarId)
+        if (holon.UserId != userId)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };
 
         // Transfer ownership
-        holon.AvatarId = request.TargetAvatarId;
+        holon.UserId = request.TargetUserId;
         holon.ModifiedDate = DateTime.UtcNow;
 
         var saveResult = await _holonStore.UpsertAsync(holon, default);
@@ -173,11 +173,11 @@ public class NftManager : INftManager
         // Build blockchain operation for transfer
         var operation = new BlockchainOperation
         {
-            AvatarId = avatarId,
+            UserId = userId,
             WalletId = request.WalletId,
             OperationType = "Transfer",
             Status = OperationStatus.Pending,
-            // tenant-consent-delegation AC4: a tenant-driven quest Transfer/Refund
+            // tenant-consent-delegation AC4: a tenant-driven action Transfer/Refund
             // node stamps the acting tenant + the transfer:sign scope so the custody
             // seam runs its live consent gate (fail-closed without a grant). The
             // Refund node reuses this path (reversed direction), so transfer:sign
@@ -187,8 +187,8 @@ public class NftManager : INftManager
             Parameters = new Dictionary<string, string>
             {
                 ["holonId"] = nftId.ToString(),
-                ["fromAvatarId"] = avatarId.ToString(),
-                ["toAvatarId"] = request.TargetAvatarId.ToString(),
+                ["fromUserId"] = userId.ToString(),
+                ["toUserId"] = request.TargetUserId.ToString(),
                 ["memo"] = request.Memo ?? string.Empty
             }
         };
@@ -216,9 +216,9 @@ public class NftManager : INftManager
             : null;
     }
 
-    public async Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid avatarId, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid userId, AZOARequest? providerRequest = null)
     {
-        var gate = await _valueAccess.RequireValueAccessAsync(avatarId);
+        var gate = await _valueAccess.RequireValueAccessAsync(userId);
         if (gate.IsError)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = gate.Message, Exception = gate.Exception };
 
@@ -235,7 +235,7 @@ public class NftManager : INftManager
         if (governance.IsError)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = governance.Message };
 
-        if (holon.AvatarId != avatarId)
+        if (holon.UserId != userId)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };
 
         // Burn: deactivate the holon
@@ -249,7 +249,7 @@ public class NftManager : INftManager
         // Build blockchain operation for burn
         var operation = new BlockchainOperation
         {
-            AvatarId = avatarId,
+            UserId = userId,
             WalletId = walletId,
             OperationType = "Burn",
             Status = OperationStatus.Pending,

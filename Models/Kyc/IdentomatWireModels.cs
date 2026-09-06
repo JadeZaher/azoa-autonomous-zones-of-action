@@ -26,7 +26,7 @@ public sealed class IdentomatBeginRequest
     [JsonPropertyName("configId")]
     public string? ConfigId { get; set; }
 
-    /// <summary>The AZOA avatar id — this is the avatar-to-person binding correlation.</summary>
+    /// <summary>The AZOA user id — this is the user-to-person binding correlation.</summary>
     [JsonPropertyName("clientUserId")]
     public string? ClientUserId { get; set; }
 }

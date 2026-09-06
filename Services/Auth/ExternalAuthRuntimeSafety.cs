@@ -130,7 +130,7 @@ public static class ExternalAuthRuntimeSafety
                  {
                      typeof(IExternalLoginService),
                      typeof(IOAuthExchangeCodeService),
-                     typeof(IAvatarLoginTokenIssuer),
+                     typeof(IUserLoginTokenIssuer),
                  })
         {
             if (scope.ServiceProvider.GetService(required) is null)

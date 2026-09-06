@@ -2,7 +2,7 @@
  * Workflow SDK — run-driver tests (workflow-sdk track, FR-6).
  *
  * Mocks `fetch` (mirroring tests/api/self-audit-one-fix.test.ts:13-24) and proves
- * the fluent `quest()` chain issues the correct ordered HTTP calls and honors
+ * the fluent `action()` chain issues the correct ordered HTTP calls and honors
  * every guard. Asserts ordered calls via `mockFetch.mock.calls`.
  */
 
@@ -22,7 +22,7 @@ import { isOk } from "../../src/core/result.js";
 import { ApiConfigBuilder } from "../builders/index.js";
 
 /**
- * Pinned mirror of C# `Models/Quest/QuestRunStatus.cs` — all 9 members, in enum
+ * Pinned mirror of C# `Models/ActionDefinition/ActionRunStatus.cs` — all 9 members, in enum
  * order. If the C# enum grows, this list AND the union must grow together; the
  * completeness test below fails otherwise.
  */
@@ -45,12 +45,12 @@ vi.stubGlobal("fetch", mockFetch);
 const BASE = "http://localhost:5000";
 
 // Stable UUIDs for the fixtures.
-const QUEST_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const ACTION_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const TEMPLATE_ID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const RUN_ID = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 const NODE_B = "11111111-1111-1111-1111-111111111111";
 const NODE_C = "22222222-2222-2222-2222-222222222222";
-const CHILD_AVATAR = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+const CHILD_USER = "dddddddd-dddd-dddd-dddd-dddddddddddd";
 
 /** AZOAResult<T>-wrapped success response (the request() unwrap path). */
 function azoaResponse<T>(result: T) {
@@ -64,8 +64,8 @@ function azoaResponse<T>(result: T) {
 function runResult(overrides: Record<string, unknown> = {}) {
   return {
     id: RUN_ID,
-    questId: QUEST_ID,
-    avatarId: CHILD_AVATAR,
+    actionId: ACTION_ID,
+    userId: CHILD_USER,
     status: "Running",
     startedAt: "2026-06-17T00:00:00Z",
     ...overrides,
@@ -106,7 +106,7 @@ describe("status helpers mirror the engine enum", () => {
     expect(isTerminal("AwaitingReconciliation")).toBe(false);
   });
 
-  it("the union covers all 9 C# QuestRunStatus members with no drift", () => {
+  it("the union covers all 9 C# ActionRunStatus members with no drift", () => {
     // Every awaiting + terminal + the two active states must partition the union.
     const active: WorkflowRunStatus[] = ["Pending", "Running"];
     const covered = new Set<WorkflowRunStatus>([
@@ -121,7 +121,7 @@ describe("status helpers mirror the engine enum", () => {
   });
 });
 
-describe("ordered-call: quest(a).start().step(b).step(c)", () => {
+describe("ordered-call: action(a).start().step(b).step(c)", () => {
   it("issues start-workflow → advance{fromNodeId:b} → advance{fromNodeId:c} in order", async () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch
@@ -129,22 +129,22 @@ describe("ordered-call: quest(a).start().step(b).step(c)", () => {
       .mockReturnValueOnce(azoaResponse(runResult({ status: "Suspended" }))) // advance b
       .mockReturnValueOnce(azoaResponse(runResult({ status: "Running" })));  // advance c
 
-    const result = await wf.quest(QUEST_ID).start().step(NODE_B).step(NODE_C);
+    const result = await wf.action(ACTION_ID).start().step(NODE_B).step(NODE_C);
 
     expect(isOk(result)).toBe(true);
     expect(mockFetch.mock.calls).toHaveLength(3);
 
     const [u0, i0] = mockFetch.mock.calls[0];
-    expect(u0).toBe(`${BASE}${API_PATHS.QUEST_START_WORKFLOW(QUEST_ID)}`);
+    expect(u0).toBe(`${BASE}${API_PATHS.ACTION_START_WORKFLOW(ACTION_ID)}`);
     expect(i0.method).toBe("POST");
 
     const [u1, i1] = mockFetch.mock.calls[1];
-    expect(u1).toBe(`${BASE}${API_PATHS.QUEST_RUN_ADVANCE(RUN_ID)}`);
+    expect(u1).toBe(`${BASE}${API_PATHS.ACTION_RUN_ADVANCE(RUN_ID)}`);
     expect(i1.method).toBe("POST");
     expect(JSON.parse(i1.body).fromNodeId).toBe(NODE_B);
 
     const [u2, i2] = mockFetch.mock.calls[2];
-    expect(u2).toBe(`${BASE}${API_PATHS.QUEST_RUN_ADVANCE(RUN_ID)}`);
+    expect(u2).toBe(`${BASE}${API_PATHS.ACTION_RUN_ADVANCE(RUN_ID)}`);
     expect(JSON.parse(i2.body).fromNodeId).toBe(NODE_C);
   });
 
@@ -160,7 +160,7 @@ describe("ordered-call: quest(a).start().step(b).step(c)", () => {
         })
       ); // advance b fails — chain must stop here
 
-    const result = await wf.quest(QUEST_ID).start().step(NODE_B).step(NODE_C);
+    const result = await wf.action(ACTION_ID).start().step(NODE_B).step(NODE_C);
 
     expect(isOk(result)).toBe(false);
     // start + advance(b) only — advance(c) never issued.
@@ -175,13 +175,13 @@ describe("hybrid: start → signal{gateId, payload}", () => {
       .mockReturnValueOnce(azoaResponse(runResult({ status: "AwaitingSignal" })))
       .mockReturnValueOnce(azoaResponse(runResult({ status: "Running" })));
 
-    const result = await wf.quest(QUEST_ID).start().signal("gate-phase-1", "phase-met");
+    const result = await wf.action(ACTION_ID).start().signal("gate-phase-1", "phase-met");
 
     expect(isOk(result)).toBe(true);
     expect(mockFetch.mock.calls).toHaveLength(2);
 
     const [u1, i1] = mockFetch.mock.calls[1];
-    expect(u1).toBe(`${BASE}${API_PATHS.QUEST_RUN_SIGNAL(RUN_ID)}`);
+    expect(u1).toBe(`${BASE}${API_PATHS.ACTION_RUN_SIGNAL(RUN_ID)}`);
     expect(i1.method).toBe("POST");
     const body = JSON.parse(i1.body);
     expect(body.gateId).toBe("gate-phase-1");
@@ -194,7 +194,7 @@ describe("hybrid: start → signal{gateId, payload}", () => {
       .mockReturnValueOnce(azoaResponse(runResult()))
       .mockReturnValueOnce(azoaResponse(runResult()));
 
-    await wf.quest(QUEST_ID).start().signal("gate-x");
+    await wf.action(ACTION_ID).start().signal("gate-x");
 
     const body = JSON.parse(mockFetch.mock.calls[1][1].body);
     expect(body.payload).toBeNull();
@@ -202,19 +202,19 @@ describe("hybrid: start → signal{gateId, payload}", () => {
 });
 
 describe("fromTemplate: instantiate → start-workflow", () => {
-  it("instantiates the template then starts the resulting quest", async () => {
+  it("instantiates the template then starts the resulting action", async () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch
-      .mockReturnValueOnce(azoaResponse({ id: QUEST_ID, name: "q", avatarId: CHILD_AVATAR, status: "Active", nodes: [], edges: [], dependencies: [], metadata: {}, createdDate: "x" })) // instantiate
+      .mockReturnValueOnce(azoaResponse({ id: ACTION_ID, name: "q", userId: CHILD_USER, status: "Active", nodes: [], edges: [], dependencies: [], metadata: {}, createdDate: "x" })) // instantiate
       .mockReturnValueOnce(azoaResponse(runResult())); // start-workflow
 
-    const result = await wf.quest.fromTemplate(TEMPLATE_ID).start({ params: { amount: "1000" } });
+    const result = await wf.action.fromTemplate(TEMPLATE_ID).start({ params: { amount: "1000" } });
 
     expect(isOk(result)).toBe(true);
     const [u0] = mockFetch.mock.calls[0];
-    expect(u0).toBe(`${BASE}/api/quest/templates/${TEMPLATE_ID}/instantiate`);
+    expect(u0).toBe(`${BASE}/api/action/templates/${TEMPLATE_ID}/instantiate`);
     const [u1] = mockFetch.mock.calls[1];
-    expect(u1).toBe(`${BASE}${API_PATHS.QUEST_START_WORKFLOW(QUEST_ID)}`);
+    expect(u1).toBe(`${BASE}${API_PATHS.ACTION_START_WORKFLOW(ACTION_ID)}`);
   });
 });
 
@@ -225,7 +225,7 @@ describe("idempotency passthrough", () => {
       .mockReturnValueOnce(azoaResponse(runResult()))
       .mockReturnValueOnce(azoaResponse(runResult()));
 
-    await wf.quest(QUEST_ID).start().step(NODE_B, { idempotencyKey: "key-123" });
+    await wf.action(ACTION_ID).start().step(NODE_B, { idempotencyKey: "key-123" });
 
     const init = mockFetch.mock.calls[1][1];
     expect(init.headers["Idempotency-Key"]).toBe("key-123");
@@ -237,28 +237,28 @@ describe("idempotency passthrough", () => {
       .mockReturnValueOnce(azoaResponse(runResult()))
       .mockReturnValueOnce(azoaResponse(runResult()));
 
-    await wf.quest(QUEST_ID).start().signal("gate", "p", { idempotencyKey: "sig-key" });
+    await wf.action(ACTION_ID).start().signal("gate", "p", { idempotencyKey: "sig-key" });
 
     expect(mockFetch.mock.calls[1][1].headers["Idempotency-Key"]).toBe("sig-key");
   });
 });
 
 describe("guards throw before any fetch", () => {
-  it("quest(badQuestId) throws synchronously", () => {
+  it("action(badActionId) throws synchronously", () => {
     const wf = new WorkflowClient(makeClient());
-    expect(() => wf.quest("not-a-uuid")).toThrow("Invalid questId");
+    expect(() => wf.action("not-a-uuid")).toThrow("Invalid actionId");
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("quest.run(badRunId) throws synchronously", () => {
+  it("action.run(badRunId) throws synchronously", () => {
     const wf = new WorkflowClient(makeClient());
-    expect(() => wf.quest.run("nope")).toThrow("Invalid runId");
+    expect(() => wf.action.run("nope")).toThrow("Invalid runId");
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("forActor(badChildId) throws synchronously", () => {
     const wf = new WorkflowClient(makeClient());
-    expect(() => wf.quest(QUEST_ID).forActor("bad")).toThrow("Invalid childAvatarId");
+    expect(() => wf.action(ACTION_ID).forActor("bad")).toThrow("Invalid childUserId");
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -266,7 +266,7 @@ describe("guards throw before any fetch", () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch.mockReturnValueOnce(azoaResponse(runResult())); // only start
 
-    const result = await wf.quest(QUEST_ID).start().step("not-a-uuid");
+    const result = await wf.action(ACTION_ID).start().step("not-a-uuid");
 
     expect(isOk(result)).toBe(false);
     if (!isOk(result)) expect(result.error.message).toContain("Invalid fromNodeId");
@@ -278,7 +278,7 @@ describe("guards throw before any fetch", () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch.mockReturnValueOnce(azoaResponse(runResult())); // only start
 
-    const result = await wf.quest(QUEST_ID).start().signal("   ");
+    const result = await wf.action(ACTION_ID).start().signal("   ");
 
     expect(isOk(result)).toBe(false);
     if (!isOk(result)) expect(result.error.message).toContain("Invalid gateId");
@@ -293,17 +293,17 @@ describe("child-credential acquisition (forActor)", () => {
       .mockReturnValueOnce(azoaResponse(runResult())) // start-workflow (X-Api-Key)
       .mockReturnValueOnce(
         azoaResponse({
-          avatarId: CHILD_AVATAR,
+          userId: CHILD_USER,
           token: "CHILD-JWT",
           expiresAt: "2999-01-01T00:00:00Z",
-          scopes: ["quest"],
+          scopes: ["action"],
         })
       ) // credential POST (X-Api-Key)
       .mockReturnValueOnce(azoaResponse(runResult())); // advance (child Bearer)
 
     const result = await wf
-      .quest(QUEST_ID)
-      .forActor(CHILD_AVATAR)
+      .action(ACTION_ID)
+      .forActor(CHILD_USER)
       .start()
       .step(NODE_B);
 
@@ -312,20 +312,20 @@ describe("child-credential acquisition (forActor)", () => {
 
     // call 0: start-workflow under tenant X-Api-Key (no Bearer yet)
     const i0 = mockFetch.mock.calls[0][1];
-    expect(mockFetch.mock.calls[0][0]).toBe(`${BASE}${API_PATHS.QUEST_START_WORKFLOW(QUEST_ID)}`);
+    expect(mockFetch.mock.calls[0][0]).toBe(`${BASE}${API_PATHS.ACTION_START_WORKFLOW(ACTION_ID)}`);
     expect(i0.headers["X-Api-Key"]).toBe("tenant-api-key");
     expect(i0.headers["Authorization"]).toBeUndefined();
 
     // call 1: credential acquisition under tenant X-Api-Key (the principal)
     const [u1, i1] = mockFetch.mock.calls[1];
-    expect(u1).toBe(`${BASE}${API_PATHS.TENANT_CHILD_CREDENTIAL(CHILD_AVATAR)}`);
+    expect(u1).toBe(`${BASE}${API_PATHS.TENANT_CHILD_CREDENTIAL(CHILD_USER)}`);
     expect(i1.method).toBe("POST");
     expect(i1.headers["X-Api-Key"]).toBe("tenant-api-key");
     expect(i1.headers["Authorization"]).toBeUndefined();
 
     // call 2: advance uses the child JWT as Bearer (override wins for this call)
     const i2 = mockFetch.mock.calls[2][1];
-    expect(mockFetch.mock.calls[2][0]).toBe(`${BASE}${API_PATHS.QUEST_RUN_ADVANCE(RUN_ID)}`);
+    expect(mockFetch.mock.calls[2][0]).toBe(`${BASE}${API_PATHS.ACTION_RUN_ADVANCE(RUN_ID)}`);
     expect(i2.headers["Authorization"]).toBe("Bearer CHILD-JWT");
   });
 
@@ -334,17 +334,17 @@ describe("child-credential acquisition (forActor)", () => {
     mockFetch
       .mockReturnValueOnce(azoaResponse(runResult())) // start
       .mockReturnValueOnce(
-        azoaResponse({ avatarId: CHILD_AVATAR, token: "CHILD-JWT", expiresAt: "2999-01-01T00:00:00Z", scopes: [] })
+        azoaResponse({ userId: CHILD_USER, token: "CHILD-JWT", expiresAt: "2999-01-01T00:00:00Z", scopes: [] })
       ) // credential (once)
       .mockReturnValueOnce(azoaResponse(runResult())) // advance b
       .mockReturnValueOnce(azoaResponse(runResult())); // advance c
 
-    await wf.quest(QUEST_ID).forActor(CHILD_AVATAR).start().step(NODE_B).step(NODE_C);
+    await wf.action(ACTION_ID).forActor(CHILD_USER).start().step(NODE_B).step(NODE_C);
 
     // start + 1 credential + 2 advances = 4 (NOT 5 — credential not re-fetched)
     expect(mockFetch.mock.calls).toHaveLength(4);
     const credentialCalls = mockFetch.mock.calls.filter(
-      ([u]) => u === `${BASE}${API_PATHS.TENANT_CHILD_CREDENTIAL(CHILD_AVATAR)}`
+      ([u]) => u === `${BASE}${API_PATHS.TENANT_CHILD_CREDENTIAL(CHILD_USER)}`
     );
     expect(credentialCalls).toHaveLength(1);
     // both advances carried the same child Bearer
@@ -354,17 +354,17 @@ describe("child-credential acquisition (forActor)", () => {
 });
 
 describe("status() + onSuspend", () => {
-  it("status() maps GET /api/quest/runs/{runId} to a typed WorkflowRunStatus", async () => {
+  it("status() maps GET /api/action/runs/{runId} to a typed WorkflowRunStatus", async () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch.mockReturnValueOnce(azoaResponse(runResult({ status: "AwaitingTimer" })));
 
-    const handle = wf.quest.run(RUN_ID);
+    const handle = wf.action.run(RUN_ID);
     const res = await handle.status();
 
     expect(isOk(res)).toBe(true);
     if (isOk(res)) expect(res.value.status).toBe("AwaitingTimer");
     const [u0, i0] = mockFetch.mock.calls[0];
-    expect(u0).toBe(`${BASE}${API_PATHS.QUEST_RUN_STATUS(RUN_ID)}`);
+    expect(u0).toBe(`${BASE}${API_PATHS.ACTION_RUN_STATUS(RUN_ID)}`);
     expect(i0.method).toBe("GET");
   });
 
@@ -374,7 +374,7 @@ describe("status() + onSuspend", () => {
 
     const seen: string[] = [];
     await wf
-      .quest(QUEST_ID)
+      .action(ACTION_ID)
       .onSuspend((run) => seen.push(run.status))
       .start();
 
@@ -386,7 +386,7 @@ describe("status() + onSuspend", () => {
     mockFetch.mockReturnValueOnce(azoaResponse(runResult({ status: "Running" })));
 
     const seen: string[] = [];
-    await wf.quest(QUEST_ID).onSuspend((run) => seen.push(run.status)).start();
+    await wf.action(ACTION_ID).onSuspend((run) => seen.push(run.status)).start();
 
     expect(seen).toEqual([]);
   });
@@ -429,10 +429,10 @@ describe("nodeConfig builders match the C# config POCO shapes", () => {
   });
 
   it("transfer / refund → { nftId, request: NftTransferRequest }", () => {
-    const t = JSON.parse(nodeConfig.transfer({ nftId: "n1", request: { targetAvatarId: "a1", walletId: "w1" } }));
-    expect(t).toEqual({ nftId: "n1", request: { targetAvatarId: "a1", walletId: "w1" } });
-    const r = JSON.parse(nodeConfig.refund({ nftId: "n2", request: { targetAvatarId: "a2", walletId: "w2", memo: "m" } }));
-    expect(r).toEqual({ nftId: "n2", request: { targetAvatarId: "a2", walletId: "w2", memo: "m" } });
+    const t = JSON.parse(nodeConfig.transfer({ nftId: "n1", request: { targetUserId: "a1", walletId: "w1" } }));
+    expect(t).toEqual({ nftId: "n1", request: { targetUserId: "a1", walletId: "w1" } });
+    const r = JSON.parse(nodeConfig.refund({ nftId: "n2", request: { targetUserId: "a2", walletId: "w2", memo: "m" } }));
+    expect(r).toEqual({ nftId: "n2", request: { targetUserId: "a2", walletId: "w2", memo: "m" } });
   });
 
   it("raw passes a string through and serializes an object", () => {
@@ -442,7 +442,7 @@ describe("nodeConfig builders match the C# config POCO shapes", () => {
 });
 
 describe("listRuns", () => {
-  it("maps GET /api/quest/{questId}/runs to a typed WorkflowRunResult[]", async () => {
+  it("maps GET /api/action/{actionId}/runs to a typed WorkflowRunResult[]", async () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch.mockReturnValueOnce(
       azoaResponse([
@@ -451,7 +451,7 @@ describe("listRuns", () => {
       ])
     );
 
-    const res = await wf.listRuns(QUEST_ID);
+    const res = await wf.listRuns(ACTION_ID);
 
     expect(isOk(res)).toBe(true);
     if (isOk(res)) {
@@ -460,19 +460,19 @@ describe("listRuns", () => {
       expect(res.value[1].status).toBe("AwaitingReconciliation");
     }
     const [u0, i0] = mockFetch.mock.calls[0];
-    expect(u0).toBe(`${BASE}${API_PATHS.QUEST_RUNS_BY_QUEST(QUEST_ID)}`);
+    expect(u0).toBe(`${BASE}${API_PATHS.ACTION_RUNS_BY_ACTION(ACTION_ID)}`);
     expect(i0.method).toBe("GET");
   });
 
-  it("assertUuid rejects a bad questId before any fetch", () => {
+  it("assertUuid rejects a bad actionId before any fetch", () => {
     const wf = new WorkflowClient(makeClient());
-    expect(() => wf.listRuns("not-a-uuid")).toThrow("Invalid questId");
+    expect(() => wf.listRuns("not-a-uuid")).toThrow("Invalid actionId");
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
 
 describe("reconcileRun", () => {
-  it("POSTs /api/quest/runs/{runId}/reconcile and maps the reconciliation result", async () => {
+  it("POSTs /api/action/runs/{runId}/reconcile and maps the reconciliation result", async () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch.mockReturnValueOnce(
       azoaResponse({
@@ -494,7 +494,7 @@ describe("reconcileRun", () => {
       expect(res.value.stillIndeterminate).toBe(0);
     }
     const [u0, i0] = mockFetch.mock.calls[0];
-    expect(u0).toBe(`${BASE}${API_PATHS.QUEST_RUN_RECONCILE(RUN_ID)}`);
+    expect(u0).toBe(`${BASE}${API_PATHS.ACTION_RUN_RECONCILE(RUN_ID)}`);
     expect(i0.method).toBe("POST");
   });
 
@@ -513,17 +513,17 @@ describe("onSuspend fires for AwaitingReconciliation", () => {
     );
 
     const seen: string[] = [];
-    await wf.quest(QUEST_ID).onSuspend((run) => seen.push(run.status)).start();
+    await wf.action(ACTION_ID).onSuspend((run) => seen.push(run.status)).start();
 
     expect(seen).toEqual(["AwaitingReconciliation"]);
   });
 });
 
 describe("facade composition", () => {
-  it("WorkflowClient exposes the quest factory with explicit variants", () => {
+  it("WorkflowClient exposes the action factory with explicit variants", () => {
     const wf = new WorkflowClient(makeClient());
-    expect(typeof wf.quest).toBe("function");
-    expect(typeof wf.quest.fromTemplate).toBe("function");
-    expect(typeof wf.quest.run).toBe("function");
+    expect(typeof wf.action).toBe("function");
+    expect(typeof wf.action.fromTemplate).toBe("function");
+    expect(typeof wf.action.run).toBe("function");
   });
 });

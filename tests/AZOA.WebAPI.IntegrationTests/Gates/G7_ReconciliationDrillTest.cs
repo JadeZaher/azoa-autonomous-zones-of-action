@@ -66,7 +66,7 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
         var bridge = new BridgeTransactionResult
         {
             Id             = bridgeId,
-            AvatarId       = Guid.NewGuid(),
+            UserId       = Guid.NewGuid(),
             SourceChain    = "Solana",
             TargetChain    = "Algorand",
             SourceTokenId  = "SOL:native",

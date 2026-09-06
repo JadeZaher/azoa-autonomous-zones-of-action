@@ -1,9 +1,9 @@
 -- ============================================================
 -- Table: dapp_series
 -- Aggregate: DappSeries (dapp-composition track -- new entity, no hand-written model)
--- Guardrail: G6 SCHEMAFULL; greenfield entity introduced by the dapp-composition track. Owns the composed-quest-series shape.
--- Note: A DappSeries is a linked series of quest DAGs that compose into a deployable dApp contract via STAR generation. Status transitions: Draft -> Building -> Ready -> Deployed -> Archived. The quest entries are stored separately in dapp_series_quest (table 220) keyed by dapp_series_id; they are queried + reordered independently of the parent.
--- Note: shared_config is a string->string map for cross-quest deployment settings (e.g. chain, provider RPC URL). It is overlaid with each DappSeriesQuest's input mappings to produce the per-quest runtime config at execution time.
+-- Guardrail: G6 SCHEMAFULL; greenfield entity introduced by the dapp-composition track. Owns the composed-action-series shape.
+-- Note: A DappSeries is a linked series of action DAGs that compose into a deployable dApp contract via STAR generation. Status transitions: Draft -> Building -> Ready -> Deployed -> Archived. The action entries are stored separately in dapp_series_action (table 220) keyed by dapp_series_id; they are queried + reordered independently of the parent.
+-- Note: shared_config is a string->string map for cross-action deployment settings (e.g. chain, provider RPC URL). It is overlaid with each DappSeriesAction's input mappings to produce the per-action runtime config at execution time.
 -- Note: manifest stores the composed DappManifest as JSON-on-row (string-encoded). DappManifest is a transient artifact produced by ComposeAsync -- it is NOT a separate aggregate root because it is always read whole alongside its parent series. star_odk_id is populated by GenerateAsync after the STARODK record is created via ISTARManager.CreateOrUpdateAsync.
 -- ============================================================
 
@@ -25,15 +25,15 @@ DEFINE FIELD IF NOT EXISTS name ON TABLE dapp_series TYPE string
 -- Optional description
 DEFINE FIELD IF NOT EXISTS description ON TABLE dapp_series TYPE option<string>;
 
--- Owner avatar (Guid('N') hex)
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE dapp_series TYPE record<avatar>;
+-- Owner user (Guid('N') hex)
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE dapp_series TYPE record<user>;
 
 -- DappSeriesStatus enum name
 DEFINE FIELD IF NOT EXISTS status ON TABLE dapp_series TYPE string
     ASSERT $value INSIDE $dapp_series_status
     DEFAULT "Draft";
 
--- Shared deployment config across all quests in the series (string->string map)
+-- Shared deployment config across all actions in the series (string->string map)
 DEFINE FIELD IF NOT EXISTS shared_config ON TABLE dapp_series TYPE object;
 
 -- Linked STARODK.Id, populated by GenerateAsync (null until generation)
@@ -54,9 +54,9 @@ DEFINE FIELD IF NOT EXISTS deployed_date ON TABLE dapp_series TYPE option<dateti
 
 -- ── Indexes ──────────────────────────────────────────────────
 
-DEFINE INDEX IF NOT EXISTS dapp_series_by_avatar
+DEFINE INDEX IF NOT EXISTS dapp_series_by_user
     ON TABLE dapp_series
-    FIELDS avatar_id;
+    FIELDS user_id;
 
 DEFINE INDEX IF NOT EXISTS dapp_series_by_status
     ON TABLE dapp_series

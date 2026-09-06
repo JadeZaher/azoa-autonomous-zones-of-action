@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 namespace AZOA.WebAPI.Models.Kyc;
 
 /// <summary>
-/// Operator-side reason an avatar was refused. NEVER projected to a consumer:
+/// Operator-side reason an user was refused. NEVER projected to a consumer:
 /// distinguishing "already bound elsewhere" from "not verified" tells a caller
 /// that their subject exists under a different tenant on this node.
 /// </summary>
@@ -16,8 +16,8 @@ public enum KycIneligibilityCause
     /// <summary>No binding exists for this person key in this scope.</summary>
     NoVerifiedIdentity,
 
-    /// <summary>The person key is already bound to a different avatar in this scope.</summary>
-    PersonAlreadyBoundToAnotherAvatar,
+    /// <summary>The person key is already bound to a different user in this scope.</summary>
+    PersonAlreadyBoundToAnotherUser,
 
     /// <summary>The binding exists but its personal fields were erased.</summary>
     IdentityErased
@@ -30,7 +30,7 @@ public enum KycIneligibilityCause
 /// </summary>
 public sealed class KycEligibilityDecision
 {
-    /// <summary>Whether the avatar may proceed.</summary>
+    /// <summary>Whether the user may proceed.</summary>
     public bool IsEligible { get; init; }
 
     /// <summary>The single message any consumer may see when refused.</summary>
@@ -46,6 +46,6 @@ public sealed class KycEligibilityDecision
     {
         IsEligible = false,
         Cause = cause,
-        Message = "This avatar is not eligible for this operation.",
+        Message = "This user is not eligible for this operation.",
     };
 }

@@ -21,7 +21,7 @@ DEFINE TABLE IF NOT EXISTS bridge_tx SCHEMAFULL;
 -- Core identity
 DEFINE FIELD IF NOT EXISTS id ON TABLE bridge_tx TYPE string
     ASSERT $value != NONE AND $value != "";
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE bridge_tx TYPE record<avatar>;
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE bridge_tx TYPE record<user>;
 
 -- Route
 DEFINE FIELD IF NOT EXISTS source_chain ON TABLE bridge_tx TYPE string
@@ -93,9 +93,9 @@ DEFINE INDEX IF NOT EXISTS bridge_tx_wormhole_vaa
     FIELDS wormhole_emitter_chain_id, wormhole_emitter_address, wormhole_sequence
     UNIQUE;
 
-DEFINE INDEX IF NOT EXISTS bridge_tx_avatar_id
+DEFINE INDEX IF NOT EXISTS bridge_tx_user_id
     ON TABLE bridge_tx
-    FIELDS avatar_id;
+    FIELDS user_id;
 
 DEFINE INDEX IF NOT EXISTS bridge_tx_status
     ON TABLE bridge_tx

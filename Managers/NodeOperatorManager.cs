@@ -22,20 +22,20 @@ public sealed class NodeOperatorManager : INodeOperatorManager
     private static readonly string DummyHash = BCrypt.Net.BCrypt.HashPassword(
         "azoa-dummy-operator-credential-never-valid", workFactor: 12);
     private readonly IAdminBootstrapStateStore _state;
-    private readonly IAvatarStore _avatars;
+    private readonly IUserStore _users;
     private readonly NodeOperatorOptions _options;
     private readonly IConfiguration _configuration;
     private readonly NodeOperatorLoginThrottle _throttle;
 
     public NodeOperatorManager(
         IAdminBootstrapStateStore state,
-        IAvatarStore avatars,
+        IUserStore users,
         IOptions<NodeOperatorOptions> options,
         IConfiguration configuration,
         NodeOperatorLoginThrottle throttle)
     {
         _state = state;
-        _avatars = avatars;
+        _users = users;
         _options = options.Value;
         _configuration = configuration;
         _throttle = throttle;
@@ -91,10 +91,10 @@ public sealed class NodeOperatorManager : INodeOperatorManager
             return ServiceUnavailable();
         }
 
-        AZOAResult<AZOA.WebAPI.Interfaces.IAvatar> avatar;
+        AZOAResult<AZOA.WebAPI.Interfaces.IUser> user;
         try
         {
-            avatar = await _avatars.GetByIdAsync(NodeOperatorIdentity.AvatarId, ct);
+            user = await _users.GetByIdAsync(NodeOperatorIdentity.UserId, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -105,20 +105,20 @@ public sealed class NodeOperatorManager : INodeOperatorManager
             _ = BCrypt.Net.BCrypt.Verify(suppliedPassword, DummyHash);
             return ServiceUnavailable();
         }
-        var passwordHash = avatar.Result?.PasswordHash ?? DummyHash;
+        var passwordHash = user.Result?.PasswordHash ?? DummyHash;
         var passwordMatches = NodeOperatorIdentity.VerifyPassword(suppliedPassword, passwordHash);
-        var expectedLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(NodeOperatorIdentity.AvatarId));
-        if (avatar.IsError
-            || avatar.Result is null
-            || !avatar.Result.IsActive
-            || !string.Equals(state.Result.AvatarId, expectedLink, StringComparison.Ordinal)
-            || !string.Equals(avatar.Result.Email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase)
-            || !NodeOperatorIdentity.IsValidUsername(avatar.Result.Username)
-            || !NodeOperatorIdentity.IsStructurallyValidPasswordHash(avatar.Result.PasswordHash))
+        var expectedLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(NodeOperatorIdentity.UserId));
+        if (user.IsError
+            || user.Result is null
+            || !user.Result.IsActive
+            || !string.Equals(state.Result.UserId, expectedLink, StringComparison.Ordinal)
+            || !string.Equals(user.Result.Email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase)
+            || !NodeOperatorIdentity.IsValidUsername(user.Result.Username)
+            || !NodeOperatorIdentity.IsStructurallyValidPasswordHash(user.Result.PasswordHash))
         {
             return ServiceUnavailable();
         }
-        if (!string.Equals(avatar.Result.Username, username, StringComparison.Ordinal)
+        if (!string.Equals(user.Result.Username, username, StringComparison.Ordinal)
             || !passwordMatches)
         {
             return AZOAResult<NodeOperatorSessionResponse>.Failure(InvalidCredentials);
@@ -128,7 +128,7 @@ public sealed class NodeOperatorManager : INodeOperatorManager
         var authenticatedAt = DateTimeOffset.UtcNow;
         var expiresAt = authenticatedAt.AddMinutes(Math.Clamp(_options.SessionMinutes, 5, 30));
         var token = CreateToken(
-            avatar.Result.Username,
+            user.Result.Username,
             state.Result.CredentialRevision,
             state.Result.SessionRevision,
             authenticatedAt,
@@ -137,14 +137,14 @@ public sealed class NodeOperatorManager : INodeOperatorManager
         {
             AccessToken = token,
             ExpiresAt = expiresAt,
-            Username = avatar.Result.Username,
+            Username = user.Result.Username,
         }, "Node operator authenticated.");
     }
 
     public async Task<AZOAResult<bool>> RevokeAllSessionsAsync(CancellationToken ct = default)
     {
-        var avatar = await _avatars.GetByIdAsync(NodeOperatorIdentity.AvatarId, ct);
-        if (avatar.IsError || avatar.Result is null)
+        var user = await _users.GetByIdAsync(NodeOperatorIdentity.UserId, ct);
+        if (user.IsError || user.Result is null)
             return AZOAResult<bool>.Failure("Node operator identity is unavailable.", false);
         var state = await _state.GetAsync(ct);
         if (state.IsError || state.Result is null)
@@ -178,7 +178,7 @@ public sealed class NodeOperatorManager : INodeOperatorManager
             SecurityAlgorithms.HmacSha256);
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, NodeOperatorIdentity.AvatarId.ToString("D")),
+            new(JwtRegisteredClaimNames.Sub, NodeOperatorIdentity.UserId.ToString("D")),
             new(ClaimTypes.Name, username),
             new(AzoaClaims.TokenUse, AzoaClaims.TokenUseNodeOperator),
             new(AzoaClaims.OperatorRevision, revision.ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64),

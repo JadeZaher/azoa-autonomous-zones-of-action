@@ -50,10 +50,10 @@ The AZOA WebAPI provides server-side blockchain provider orchestration (Algorand
 **Priority:** P0
 
 ### FR-4: AZOA API Client
-**Description:** Typed HTTP client for the AZOA WebAPI, covering Avatar, Holon, NFT, Wallet, and Bridge endpoints.
+**Description:** Typed HTTP client for the AZOA WebAPI, covering User, Holon, NFT, Wallet, and Bridge endpoints.
 **Acceptance Criteria:**
 - `AzoaApiClient` accepts `baseUrl` and optional JWT token
-- Covers avatar CRUD (register, login, get, update, delete)
+- Covers user CRUD (register, login, get, update, delete)
 - Covers wallet endpoints (list, create, set-default, portfolio)
 - Covers NFT endpoints (mint, transfer, burn, metadata)
 - Covers bridge endpoints (initiate, complete, history, routes)

@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Controllers;
 /// <c>tenant:provision</c> scope via the <c>TenantScope</c> policy. The tenant id
 /// is sourced exclusively from the authenticated key's claim — never from a
 /// request body (IDOR rule). Cross-tenant / unowned targets return 404 (not 403)
-/// so a prober cannot enumerate another tenant's avatars (isolation crux, B5).
+/// so a prober cannot enumerate another tenant's users (isolation crux, B5).
 /// </summary>
 [ApiController]
 [Route("api/tenant")]
@@ -41,7 +41,7 @@ public class TenantController : ControllerBase
             HttpContext.RequestAborted));
     }
 
-    /// <summary>Idempotently ensures one Azoa avatar and platform wallet for an external subject.</summary>
+    /// <summary>Idempotently ensures one Azoa user and platform wallet for an external subject.</summary>
     [HttpPut("custodial-accounts/{externalSubject}")]
     [EnableRateLimiting("tenant-custodial")]
     public async Task<ActionResult<AZOAResult<TenantCustodialAccountStatusResponse>>> EnsureCustodialAccount(
@@ -120,9 +120,9 @@ public class TenantController : ControllerBase
         return TranslateResult(result);
     }
 
-    /// <summary>Provision a new child avatar under the authenticated tenant.</summary>
-    [HttpPost("avatars")]
-    public async Task<ActionResult<AZOAResult<ChildAvatarResponse>>> ProvisionChild([FromBody] ProvisionChildModel model)
+    /// <summary>Provision a new child user under the authenticated tenant.</summary>
+    [HttpPost("users")]
+    public async Task<ActionResult<AZOAResult<ChildUserResponse>>> ProvisionChild([FromBody] ProvisionChildModel model)
     {
         var tenantId = GetTenantIdFromClaims();
         if (tenantId is null) return Unauthorized();
@@ -131,9 +131,9 @@ public class TenantController : ControllerBase
         return TranslateResult(result);
     }
 
-    /// <summary>List the tenant's child avatars (optionally filtered by external user id).</summary>
-    [HttpGet("avatars")]
-    public async Task<ActionResult<AZOAResult<IEnumerable<ChildAvatarResponse>>>> ListChildren([FromQuery] string? externalUserId)
+    /// <summary>List the tenant's child users (optionally filtered by external user id).</summary>
+    [HttpGet("users")]
+    public async Task<ActionResult<AZOAResult<IEnumerable<ChildUserResponse>>>> ListChildren([FromQuery] string? externalUserId)
     {
         var tenantId = GetTenantIdFromClaims();
         if (tenantId is null) return Unauthorized();
@@ -144,8 +144,8 @@ public class TenantController : ControllerBase
     }
 
     /// <summary>Resolve one child by the tenant's own external user id.</summary>
-    [HttpGet("avatars/{externalUserId}")]
-    public async Task<ActionResult<AZOAResult<ChildAvatarResponse>>> ResolveChild(string externalUserId)
+    [HttpGet("users/{externalUserId}")]
+    public async Task<ActionResult<AZOAResult<ChildUserResponse>>> ResolveChild(string externalUserId)
     {
         var tenantId = GetTenantIdFromClaims();
         if (tenantId is null) return Unauthorized();
@@ -155,7 +155,7 @@ public class TenantController : ControllerBase
     }
 
     /// <summary>Issue a short-lived child-scoped credential to act as that child.</summary>
-    [HttpPost("avatars/{id:guid}/credential")]
+    [HttpPost("users/{id:guid}/credential")]
     public ActionResult<AZOAResult<ChildCredentialResponse>> IssueChildCredential(Guid id, [FromBody] IssueChildCredentialModel? model)
     {
         return StatusCode(
@@ -203,9 +203,9 @@ public class TenantController : ControllerBase
             AZOAResult<T>.Failure($"Caller lacks required scope: {scopes}."));
 
     /// <summary>
-    /// The tenant id is the authenticated key's owner avatar id — ALWAYS from the
+    /// The tenant id is the authenticated key's owner user id — ALWAYS from the
     /// claim, never from a request body. Mirrors
-    /// <c>STARODKController.GetAvatarIdFromClaims</c>.
+    /// <c>STARODKController.GetUserIdFromClaims</c>.
     /// </summary>
     private Guid? GetTenantIdFromClaims()
     {

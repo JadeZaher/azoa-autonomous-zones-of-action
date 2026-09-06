@@ -45,7 +45,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// Field mapping notes for <see cref="BridgeTransactionResult"/> ⇔
 /// <see cref="BridgeTx"/>:
 /// <list type="bullet">
-///   <item><c>AvatarId</c>: Guid → 32-char "N" string.</item>
+///   <item><c>UserId</c>: Guid → 32-char "N" string.</item>
 ///   <item><c>Amount</c>: RailAmount → canonical decimal base-unit string. The column
 ///         was already a string, so the D13 widening of the domain type needed no
 ///         schema change: the full BigInteger range round-trips.</item>
@@ -159,9 +159,9 @@ public sealed class SurrealBridgeStore : IBridgeStore
     }
 
     public async Task<IReadOnlyList<BridgeTransactionResult>> GetBridgeHistoryAsync(
-        Guid avatarId, bool descending = false, CancellationToken ct = default)
+        Guid userId, bool descending = false, CancellationToken ct = default)
     {
-        var avatarSurrealId = AvatarToSurrealId(avatarId);
+        var userSurrealId = UserToSurrealId(userId);
 
         // Sort direction is an author-controlled literal (ASC/DESC), NOT a
         // parameter — SurrealQL does not support parameter-bound sort direction.
@@ -170,15 +170,15 @@ public sealed class SurrealBridgeStore : IBridgeStore
         if (descending)
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM bridge_tx WHERE avatar_id = $_avatar ORDER BY created_at DESC")
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", avatarSurrealId));
+                .Of("SELECT * FROM bridge_tx WHERE user_id = $_user ORDER BY created_at DESC")
+                .WithParam("_user", SurrealRecordParam.Of("user", userSurrealId));
             rows = await _executor.QueryAsync<BridgeTx>(q, ct);
         }
         else
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM bridge_tx WHERE avatar_id = $_avatar ORDER BY created_at ASC")
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", avatarSurrealId));
+                .Of("SELECT * FROM bridge_tx WHERE user_id = $_user ORDER BY created_at ASC")
+                .WithParam("_user", SurrealRecordParam.Of("user", userSurrealId));
             rows = await _executor.QueryAsync<BridgeTx>(q, ct);
         }
         return rows.Select(FromBridgePoco).ToList();
@@ -547,7 +547,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
     private static BridgeTx ToBridgePoco(BridgeTransactionResult tx) => new BridgeTx
     {
         Id                       = tx.Id,
-        AvatarId                 = SurrealLink.ToLink("avatar", AvatarToSurrealId(tx.AvatarId)) ?? string.Empty,
+        UserId                 = SurrealLink.ToLink("user", UserToSurrealId(tx.UserId)) ?? string.Empty,
         SourceChain              = tx.SourceChain,
         TargetChain              = tx.TargetChain,
         SourceTokenId            = tx.SourceTokenId,
@@ -576,7 +576,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
     private static BridgeTransactionResult FromBridgePoco(BridgeTx poco) => new BridgeTransactionResult
     {
         Id                     = StripSurrealIdPrefix(poco.Id, BridgeTable),
-        AvatarId               = AvatarFromSurrealId(SurrealLink.FromLink(poco.AvatarId)),
+        UserId               = UserFromSurrealId(SurrealLink.FromLink(poco.UserId)),
         SourceChain            = poco.SourceChain,
         TargetChain            = poco.TargetChain,
         SourceTokenId          = poco.SourceTokenId,
@@ -645,7 +645,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         return new BlockchainOperation
         {
             Id            = FromSurrealGuid(poco.Id),
-            AvatarId      = poco.AvatarId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.AvatarId)!) : null,
+            UserId      = poco.UserId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.UserId)!) : null,
             WalletId      = poco.WalletId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.WalletId)!) : null,
             OperationType = poco.OperationType,
             Status        = poco.Status.ToString(),
@@ -662,8 +662,8 @@ public sealed class SurrealBridgeStore : IBridgeStore
             ExchangeRate  = poco.ExchangeRate,
             RecipientAddress = poco.RecipientAddress,
             IdempotencyKey = poco.IdempotencyKey,
-            InitiatorAvatarId = poco.InitiatorAvatarId is not null
-                ? FromSurrealGuid(SurrealLink.FromLink(poco.InitiatorAvatarId)!)
+            InitiatorUserId = poco.InitiatorUserId is not null
+                ? FromSurrealGuid(SurrealLink.FromLink(poco.InitiatorUserId)!)
                 : null,
             InitiatorApiKeyId = poco.InitiatorApiKeyId is not null
                 ? FromSurrealGuid(SurrealLink.FromLink(poco.InitiatorApiKeyId)!)
@@ -734,10 +734,10 @@ public sealed class SurrealBridgeStore : IBridgeStore
 
     // ── Id helpers ────────────────────────────────────────────────────────────
 
-    private static string AvatarToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
+    private static string UserToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
     private static string GuidToSurrealId(Guid id)   => id.ToString("N").ToLowerInvariant();
 
-    private static Guid AvatarFromSurrealId(string? id)
+    private static Guid UserFromSurrealId(string? id)
     {
         if (string.IsNullOrEmpty(id)) return Guid.Empty;
         return FromSurrealGuid(id);

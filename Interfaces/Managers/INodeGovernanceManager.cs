@@ -11,7 +11,7 @@ public interface INodeGovernanceManager
     /// <summary>Validates and applies an expected-version governance update.</summary>
     Task<AZOAResult<NodeGovernanceParametersResponse>> UpdateParametersAsync(
         NodeGovernanceParametersUpdateRequest request,
-        Guid actorAvatarId,
+        Guid actorUserId,
         CancellationToken ct = default);
 
     /// <summary>Returns the operator-visible governance audit history.</summary>

@@ -84,8 +84,8 @@ transport) is gone from both the app and the integration harness. The single
 fact that everything below follows from:
 
 > **SurrealDB coerces JSON text into typed columns. It does not coerce CBOR
-> text.** A `TYPE record<avatar>` column accepted the JSON string
-> `"avatar:abc"`; over CBOR it rejects it, and the row it now holds is a genuine
+> text.** A `TYPE record<user>` column accepted the JSON string
+> `"user:abc"`; over CBOR it rejects it, and the row it now holds is a genuine
 > record link that no string will ever compare equal to.
 
 ### §cbor-registration

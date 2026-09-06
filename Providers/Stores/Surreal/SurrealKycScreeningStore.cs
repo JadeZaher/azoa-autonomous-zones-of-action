@@ -36,23 +36,23 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         "(($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE))";
 
     private const string LatestResultQuery =
-        "SELECT * FROM type::table($_t) WHERE subject_avatar_id = $_avatar AND "
+        "SELECT * FROM type::table($_t) WHERE subject_user_id = $_user AND "
         + TenantPredicate
         + " ORDER BY screened_at DESC LIMIT 1";
 
-    private const string ResultsForAvatarQuery =
-        "SELECT * FROM type::table($_t) WHERE subject_avatar_id = $_avatar AND "
+    private const string ResultsForUserQuery =
+        "SELECT * FROM type::table($_t) WHERE subject_user_id = $_user AND "
         + TenantPredicate
         + " ORDER BY screened_at DESC LIMIT $_limit";
 
     private const string EraseSubjectQuery =
         "UPDATE type::table($_result_t) SET query_full_name = NONE, query_birthday_time_from = NONE,"
         + " erased_at = $_erased_at, erasure_reason = $_reason, modified_date = $_erased_at"
-        + " WHERE subject_avatar_id INSIDE $_avatars AND " + TenantPredicate + " AND erased_at = NONE"
+        + " WHERE subject_user_id INSIDE $_users AND " + TenantPredicate + " AND erased_at = NONE"
         + " RETURN VALUE id;"
         + " UPDATE type::table($_monitor_t) SET query_full_name = NONE, query_birthday_time_from = NONE,"
         + " erased_at = $_erased_at, erasure_reason = $_reason, modified_date = $_erased_at"
-        + " WHERE subject_avatar_id INSIDE $_avatars AND " + TenantPredicate + " AND erased_at = NONE"
+        + " WHERE subject_user_id INSIDE $_users AND " + TenantPredicate + " AND erased_at = NONE"
         + " RETURN VALUE id;";
 
     private readonly ISurrealExecutor _executor;
@@ -100,7 +100,7 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
     }
 
     public async Task<AZOAResult<KycScreeningResult>> GetLatestResultAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct = default)
     {
@@ -109,10 +109,10 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
             var query = SurrealQuery
                 .Of(LatestResultQuery)
                 .WithParam("_t", KycScreeningResult.SchemaNameConst)
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", avatarId.ToString("N")))
+                .WithParam("_user", SurrealRecordParam.Of("user", userId.ToString("N")))
                 .WithParam("_has_tenant", tenantId.HasValue && tenantId.Value != Guid.Empty)
                 .WithParam("_tenant", tenantId.HasValue && tenantId.Value != Guid.Empty
-                    ? SurrealRecordParam.Of("avatar", tenantId.Value.ToString("N"))
+                    ? SurrealRecordParam.Of("user", tenantId.Value.ToString("N"))
                     : null);
 
             var row = await _executor.QuerySingleAsync<KycScreeningResult>(query, ct);
@@ -128,12 +128,12 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         }
         catch (Exception exception)
         {
-            return StoreFailure<KycScreeningResult>(exception, nameof(GetLatestResultAsync), avatarId);
+            return StoreFailure<KycScreeningResult>(exception, nameof(GetLatestResultAsync), userId);
         }
     }
 
-    public async Task<AZOAResult<IReadOnlyList<KycScreeningResult>>> GetResultsForAvatarAsync(
-        Guid avatarId,
+    public async Task<AZOAResult<IReadOnlyList<KycScreeningResult>>> GetResultsForUserAsync(
+        Guid userId,
         Guid? tenantId,
         int limit,
         CancellationToken ct = default)
@@ -141,12 +141,12 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         try
         {
             var query = SurrealQuery
-                .Of(ResultsForAvatarQuery)
+                .Of(ResultsForUserQuery)
                 .WithParam("_t", KycScreeningResult.SchemaNameConst)
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", avatarId.ToString("N")))
+                .WithParam("_user", SurrealRecordParam.Of("user", userId.ToString("N")))
                 .WithParam("_has_tenant", tenantId.HasValue && tenantId.Value != Guid.Empty)
                 .WithParam("_tenant", tenantId.HasValue && tenantId.Value != Guid.Empty
-                    ? SurrealRecordParam.Of("avatar", tenantId.Value.ToString("N"))
+                    ? SurrealRecordParam.Of("user", tenantId.Value.ToString("N"))
                     : null)
                 .WithParam("_limit", Math.Clamp(limit, 1, 500));
 
@@ -162,8 +162,8 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         {
             return StoreFailure<IReadOnlyList<KycScreeningResult>>(
                 exception,
-                nameof(GetResultsForAvatarAsync),
-                avatarId);
+                nameof(GetResultsForUserAsync),
+                userId);
         }
     }
 
@@ -260,7 +260,7 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         try
         {
             // Projects the opaque provider id ONLY. There is no row here to leak a
-            // subject avatar, a tenant id, or a retained name to another tenant.
+            // subject user, a tenant id, or a retained name to another tenant.
             var query = SurrealQuery
                 .Of("SELECT VALUE provider_monitor_id FROM type::table($_t) WHERE query_full_name = $_name AND query_birthday_time_from = $_birthday AND state = $_active LIMIT 1")
                 .WithParam("_t", KycScreeningMonitor.SchemaNameConst)
@@ -407,22 +407,22 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
     // ── Retention + erasure (D25) ───────────────────────────────────────────
 
     public async Task<AZOAResult<int>> EraseSubjectAsync(
-        IReadOnlyList<string> avatarIds,
+        IReadOnlyList<string> userIds,
         Guid? tenantId,
         string reason,
         DateTimeOffset erasedAt,
         CancellationToken ct = default)
     {
-        if (avatarIds is null || avatarIds.Count == 0)
+        if (userIds is null || userIds.Count == 0)
             return AZOAResult<int>.Success(0);
 
         try
         {
-            // Of() accepts both the bare hex kyc_identity.avatar_ids holds and an
+            // Of() accepts both the bare hex kyc_identity.user_ids holds and an
             // already-prefixed link, so either storage shape binds as a record id.
-            var links = avatarIds
+            var links = userIds
                 .Where(id => !string.IsNullOrWhiteSpace(id))
-                .Select(id => SurrealRecordParam.Of("avatar", id))
+                .Select(id => SurrealRecordParam.Of("user", id))
                 .Where(link => link is not null)
                 .ToArray();
             if (links.Length == 0)
@@ -431,7 +431,7 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
             var erasedAtUtc = erasedAt.ToUniversalTime();
             var hasTenant = tenantId.HasValue && tenantId.Value != Guid.Empty;
             var tenantLink = hasTenant
-                ? SurrealRecordParam.Of("avatar", tenantId!.Value.ToString("N"))
+                ? SurrealRecordParam.Of("user", tenantId!.Value.ToString("N"))
                 : null;
 
             // Explicit SET: the verdict, the provider ids, the scope, and the audit
@@ -440,7 +440,7 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
                 .Of(EraseSubjectQuery)
                 .WithParam("_result_t", KycScreeningResult.SchemaNameConst)
                 .WithParam("_monitor_t", KycScreeningMonitor.SchemaNameConst)
-                .WithParam("_avatars", links)
+                .WithParam("_users", links)
                 .WithParam("_has_tenant", hasTenant)
                 .WithParam("_tenant", tenantLink)
                 .WithParam("_erased_at", erasedAtUtc)
@@ -635,12 +635,12 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
     private static KycScreeningResult ToStorage(KycScreeningResult result) => new()
     {
         Id = result.Id,
-        SubjectAvatarId = string.IsNullOrWhiteSpace(result.SubjectAvatarId)
+        SubjectUserId = string.IsNullOrWhiteSpace(result.SubjectUserId)
             ? null
-            : SurrealLink.ToLink("avatar", result.SubjectAvatarId),
+            : SurrealLink.ToLink("user", result.SubjectUserId),
         TenantId = string.IsNullOrWhiteSpace(result.TenantId)
             ? null
-            : SurrealLink.ToLink("avatar", result.TenantId),
+            : SurrealLink.ToLink("user", result.TenantId),
         QueryFullName = result.QueryFullName,
         QueryBirthdayTimeFrom = result.QueryBirthdayTimeFrom,
         ScoreThreshold = result.ScoreThreshold,
@@ -663,9 +663,9 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
     private static KycScreeningResult FromStorage(KycScreeningResult result) => new()
     {
         Id = result.Id,
-        SubjectAvatarId = string.IsNullOrWhiteSpace(result.SubjectAvatarId)
+        SubjectUserId = string.IsNullOrWhiteSpace(result.SubjectUserId)
             ? null
-            : SurrealLink.FromLink(result.SubjectAvatarId),
+            : SurrealLink.FromLink(result.SubjectUserId),
         TenantId = string.IsNullOrWhiteSpace(result.TenantId)
             ? null
             : SurrealLink.FromLink(result.TenantId),
@@ -693,12 +693,12 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         Id = monitor.Id,
         ProviderMonitorId = monitor.ProviderMonitorId,
         TenantScope = monitor.TenantScope,
-        SubjectAvatarId = string.IsNullOrWhiteSpace(monitor.SubjectAvatarId)
+        SubjectUserId = string.IsNullOrWhiteSpace(monitor.SubjectUserId)
             ? null
-            : SurrealLink.ToLink("avatar", monitor.SubjectAvatarId),
+            : SurrealLink.ToLink("user", monitor.SubjectUserId),
         TenantId = string.IsNullOrWhiteSpace(monitor.TenantId)
             ? null
-            : SurrealLink.ToLink("avatar", monitor.TenantId),
+            : SurrealLink.ToLink("user", monitor.TenantId),
         QueryFullName = monitor.QueryFullName,
         QueryBirthdayTimeFrom = monitor.QueryBirthdayTimeFrom,
         FollowUpScoreThreshold = monitor.FollowUpScoreThreshold,
@@ -721,9 +721,9 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         Id = monitor.Id,
         ProviderMonitorId = monitor.ProviderMonitorId,
         TenantScope = monitor.TenantScope,
-        SubjectAvatarId = string.IsNullOrWhiteSpace(monitor.SubjectAvatarId)
+        SubjectUserId = string.IsNullOrWhiteSpace(monitor.SubjectUserId)
             ? null
-            : SurrealLink.FromLink(monitor.SubjectAvatarId),
+            : SurrealLink.FromLink(monitor.SubjectUserId),
         TenantId = string.IsNullOrWhiteSpace(monitor.TenantId)
             ? null
             : SurrealLink.FromLink(monitor.TenantId),

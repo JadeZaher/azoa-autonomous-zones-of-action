@@ -12,10 +12,10 @@ remaining after this tag are operator actions (`railway up` + secret/guardian-se
 provisioning), documented in `docs/NODE-HOST.md`.
 
 ### Core platform
-- Self-sovereign avatar identity (self-owned avatars, external-wallet
+- Self-sovereign user identity (self-owned users, external-wallet
   challenge-signature auth) with a revocable, live-checked tenant-consent model
   (`KeyCustodyService` + `TenantConsentGate`).
-- Durable Quest workflow engine: DAG-defined multi-step workflows (gates,
+- Durable ActionDefinition workflow engine: DAG-defined multi-step workflows (gates,
   transfers, swaps, grants, external calls) that survive restarts, reconcile
   against chain truth before retrying a chain-action node, and never
   double-spend. Runs execute through the HTTP API with the saga hosted service
@@ -25,18 +25,18 @@ provisioning), documented in `docs/NODE-HOST.md`.
 - Holon storage model (NFTs, fungible tokens, and generic assets modeled as
   holons) with cross-provider search, mint, exchange, and an opt-in
   `HolonTypeRegistry` for typed asset metadata.
-- Cross-chain bridge: real Algorand lock/burn value primitives, avatar-scoped
+- Cross-chain bridge: real Algorand lock/burn value primitives, user-scoped
   idempotency keys, WHERE-guarded VAA replay protection, and a kill switch
   (`RealValueEnabled`) gating any real-value path. The Wormhole
   `Secp256k1VaaSignatureVerifier` is the only VAA-proof verifier in the tree —
   the always-true provider-level stub was removed.
-- Fractionalization flow: `Bridge`/`Back` Tier-2 quest nodes plus a canonical
-  parameterized fractionalization quest template.
+- Fractionalization flow: `Bridge`/`Back` Tier-2 action nodes plus a canonical
+  parameterized fractionalization action template.
 - SurrealDB is the sole persistence engine (Postgres/EF/in-memory fallbacks
   removed); backed by SurrealForge (`SurrealForge.Client`/`.Schema`/`.Analyzer`)
   for typed queries, schema generation, and safe-SurrealQL enforcement.
 - Cross-platform `@azoa/sdk` TypeScript SDK: client-side signing, multi-chain
-  wallet management, DEX adapters, holon/quest/workflow API clients.
+  wallet management, DEX adapters, holon/action/workflow API clients.
 - MCP surface (`/mcp`) exposing read-only tools behind the same JWT/API-key
   auth as REST.
 

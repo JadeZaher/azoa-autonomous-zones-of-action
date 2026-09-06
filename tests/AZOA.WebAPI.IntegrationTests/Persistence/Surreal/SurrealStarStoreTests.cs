@@ -86,7 +86,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
             Description      = "A test STAR ODK",
             PublicKey        = "pk_test_abc123",
             PrivateKeyHash   = "hash_test_xyz789",
-            AvatarId         = Guid.NewGuid(),
+            UserId         = Guid.NewGuid(),
             BoundHolonIds    = new List<Guid> { holonId1, holonId2 },
             TargetChain      = "Algorand",
             GeneratedCode    = "// generated code placeholder",
@@ -112,7 +112,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         getResult.Result.Description.Should().Be("A test STAR ODK");
         getResult.Result.PublicKey.Should().Be("pk_test_abc123");
         getResult.Result.PrivateKeyHash.Should().Be("hash_test_xyz789");
-        getResult.Result.AvatarId.Should().Be(odk.AvatarId);
+        getResult.Result.UserId.Should().Be(odk.UserId);
         getResult.Result.TargetChain.Should().Be("Algorand");
         getResult.Result.GeneratedCode.Should().Be("// generated code placeholder");
         getResult.Result.DeploymentConfig.Should().Be("{\"env\":\"test\"}");
@@ -260,7 +260,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 
     /// <summary>
     /// Test 7: Empty BoundHolonIds list survives round-trip;
-    /// nullable PublicKey/PrivateKeyHash/AvatarId round-trip both null and set.
+    /// nullable PublicKey/PrivateKeyHash/UserId round-trip both null and set.
     /// </summary>
     [SkippableFact]
     public async Task Upsert_PreservesBoundHolonIdsAndNullableFields()
@@ -275,7 +275,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
             Description      = string.Empty,
             PublicKey        = null,
             PrivateKeyHash   = null,
-            AvatarId         = null,
+            UserId         = null,
             BoundHolonIds    = new List<Guid>(),
             TargetChain      = null,
             GeneratedCode    = null,
@@ -291,12 +291,12 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         var nullsRt = nullsResult.Result!;
         nullsRt.PublicKey.Should().BeNull();
         nullsRt.PrivateKeyHash.Should().BeNull();
-        nullsRt.AvatarId.Should().BeNull();
+        nullsRt.UserId.Should().BeNull();
         nullsRt.BoundHolonIds.Should().BeEmpty();
         nullsRt.TargetChain.Should().BeNull();
 
         // Record with all nullables populated and non-empty BoundHolonIds.
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var holonId  = Guid.NewGuid();
 
         var odkPopulated = new STARODK
@@ -306,7 +306,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
             Description      = "desc",
             PublicKey        = "pub-key",
             PrivateKeyHash   = "priv-hash",
-            AvatarId         = avatarId,
+            UserId         = userId,
             BoundHolonIds    = new List<Guid> { holonId },
             TargetChain      = "Solana",
             GeneratedCode    = "code",
@@ -322,7 +322,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         var popRt = popResult.Result!;
         popRt.PublicKey.Should().Be("pub-key");
         popRt.PrivateKeyHash.Should().Be("priv-hash");
-        popRt.AvatarId.Should().Be(avatarId);
+        popRt.UserId.Should().Be(userId);
         popRt.BoundHolonIds.Should().HaveCount(1);
         popRt.BoundHolonIds.Should().Contain(holonId);
         popRt.TargetChain.Should().Be("Solana");
@@ -333,25 +333,25 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Test 8: GetByNameAndAvatarAsync matches owner-scoped records (case-insensitive)
-    /// and returns Result=null without IsError when no record is owned by the avatar.
+    /// Test 8: GetByNameAndUserAsync matches owner-scoped records (case-insensitive)
+    /// and returns Result=null without IsError when no record is owned by the user.
     /// This is the IDOR-safe lookup that <see cref="STARManager.CreateOrUpdateAsync"/>
     /// uses on POST.
     /// </summary>
     [SkippableFact]
-    public async Task GetByNameAndAvatarAsync_ScopesByOwnerAndIsCaseInsensitive()
+    public async Task GetByNameAndUserAsync_ScopesByOwnerAndIsCaseInsensitive()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var avatarA = Guid.NewGuid();
-        var avatarB = Guid.NewGuid();
+        var userA = Guid.NewGuid();
+        var userB = Guid.NewGuid();
 
         var ownedByA = new STARODK
         {
             Id          = Guid.NewGuid(),
             Name        = "Shared Name",
             Description = "A's data",
-            AvatarId    = avatarA,
+            UserId    = userA,
             CreatedDate = DateTime.UtcNow,
             IsActive    = true
         };
@@ -360,7 +360,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
             Id          = Guid.NewGuid(),
             Name        = "Shared Name",
             Description = "B's data",
-            AvatarId    = avatarB,
+            UserId    = userB,
             CreatedDate = DateTime.UtcNow,
             IsActive    = true
         };
@@ -368,18 +368,18 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         await _store.UpsertAsync(ownedByB);
 
         // Case-insensitive match scoped to A.
-        var resultA = await _store.GetByNameAndAvatarAsync("shared name", avatarA);
+        var resultA = await _store.GetByNameAndUserAsync("shared name", userA);
         resultA.IsError.Should().BeFalse();
         resultA.Result.Should().NotBeNull();
-        resultA.Result!.Id.Should().Be(ownedByA.Id, "name lookup must be scoped to the calling avatar");
+        resultA.Result!.Id.Should().Be(ownedByA.Id, "name lookup must be scoped to the calling user");
         resultA.Result.Description.Should().Be("A's data");
 
-        // Same name -> B's record for avatar B.
-        var resultB = await _store.GetByNameAndAvatarAsync("Shared Name", avatarB);
+        // Same name -> B's record for user B.
+        var resultB = await _store.GetByNameAndUserAsync("Shared Name", userB);
         resultB.Result!.Id.Should().Be(ownedByB.Id);
 
         // A stranger never sees either record.
-        var resultStranger = await _store.GetByNameAndAvatarAsync("Shared Name", Guid.NewGuid());
+        var resultStranger = await _store.GetByNameAndUserAsync("Shared Name", Guid.NewGuid());
         resultStranger.IsError.Should().BeFalse();
         resultStranger.Result.Should().BeNull();
     }

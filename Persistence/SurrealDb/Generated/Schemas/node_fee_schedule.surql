@@ -27,10 +27,10 @@ DEFINE FIELD IF NOT EXISTS swap_flat_base_units ON TABLE node_fee_schedule TYPE 
 DEFINE FIELD IF NOT EXISTS swap_bps ON TABLE node_fee_schedule TYPE int
     ASSERT $value >= 0 AND $value <= 10000
     DEFAULT 0;
-DEFINE FIELD IF NOT EXISTS quest_complete_flat_base_units ON TABLE node_fee_schedule TYPE string
+DEFINE FIELD IF NOT EXISTS action_complete_flat_base_units ON TABLE node_fee_schedule TYPE string
     ASSERT string::matches($value, "^[0-9]+$")
     DEFAULT "0";
-DEFINE FIELD IF NOT EXISTS quest_complete_bps ON TABLE node_fee_schedule TYPE int
+DEFINE FIELD IF NOT EXISTS action_complete_bps ON TABLE node_fee_schedule TYPE int
     ASSERT $value >= 0 AND $value <= 10000
     DEFAULT 0;
 DEFINE FIELD IF NOT EXISTS federation_publish_flat_base_units ON TABLE node_fee_schedule TYPE string
@@ -41,7 +41,7 @@ DEFINE FIELD IF NOT EXISTS federation_publish_bps ON TABLE node_fee_schedule TYP
     DEFAULT 0;
 DEFINE FIELD IF NOT EXISTS version ON TABLE node_fee_schedule TYPE int
     DEFAULT 0;
-DEFINE FIELD IF NOT EXISTS updated_by_avatar_id ON TABLE node_fee_schedule TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS updated_by_user_id ON TABLE node_fee_schedule TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE node_fee_schedule TYPE datetime
     DEFAULT time::now()
     READONLY;

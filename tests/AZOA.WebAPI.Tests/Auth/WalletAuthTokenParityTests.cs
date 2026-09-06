@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 // The wallet-authenticated session must carry the SAME authority as the password
-// session for the identical avatar. WalletAuthManager.GenerateLoginJwt used to be a
-// hand-copied mirror of AvatarManager.GenerateJwt that silently dropped the
+// session for the identical user. WalletAuthManager.GenerateLoginJwt used to be a
+// hand-copied mirror of UserManager.GenerateJwt that silently dropped the
 // dapp_role/scope claims (never calling StampDappRoleClaims) — a wallet-authenticated
-// avatar's token carried no dApp authority while a password login for the SAME avatar
-// got both. Both paths now delegate to the one shared AvatarLoginTokenIssuer, so this
+// user's token carried no dApp authority while a password login for the SAME user
+// got both. Both paths now delegate to the one shared UserLoginTokenIssuer, so this
 // suite asserts equivalence directly rather than the presence of specific claims: the
 // next divergence fails regardless of which claim drifts.
 
@@ -38,7 +38,7 @@ public class WalletAuthTokenParityTests
 
     private readonly Mock<IWalletAuthChallengeStore> _challenges = new();
     private readonly Mock<IWalletAuthClaimTokenStore> _claimTokens = new();
-    private readonly Mock<IAvatarStore> _avatars = new();
+    private readonly Mock<IUserStore> _users = new();
     private readonly Mock<IWalletSignatureVerifier> _verifier = new();
     private readonly Mock<IConsentGrantStore> _consentGrants = new();
     private readonly IConfiguration _config;
@@ -58,7 +58,7 @@ public class WalletAuthTokenParityTests
             .ReturnsAsync(new AZOAResult<int> { Result = 0 });
 
         _walletMgr = new WalletAuthManager(
-            _challenges.Object, _claimTokens.Object, _avatars.Object, _verifier.Object, _consentGrants.Object, _config);
+            _challenges.Object, _claimTokens.Object, _users.Object, _verifier.Object, _consentGrants.Object, _config);
     }
 
     /// <summary>
@@ -88,29 +88,29 @@ public class WalletAuthTokenParityTests
         _verifier.Setup(v => v.Verify(Chain, Addr, It.IsAny<byte[]>(), It.IsAny<byte[]>())).Returns(true);
     }
 
-    /// <summary>Logs the given (already wallet-bound) avatar in through the wallet-verify path.</summary>
-    private async Task<string> WalletLoginTokenAsync(IAvatar avatar)
+    /// <summary>Logs the given (already wallet-bound) user in through the wallet-verify path.</summary>
+    private async Task<string> WalletLoginTokenAsync(IUser user)
     {
         GivenLiveChallengeAndValidSignature();
-        _avatars
+        _users
             .Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = avatar });
+            .ReturnsAsync(new AZOAResult<IUser> { Result = user });
 
         var result = await _walletMgr.VerifyAsync(Addr, Chain, "c2ln", null);
         result.IsError.Should().BeFalse(result.Message);
         return result.Result!.Token;
     }
 
-    /// <summary>Logs the identical avatar in through the password path (the reference token).</summary>
-    private async Task<string> PasswordLoginTokenAsync(IAvatar avatar)
+    /// <summary>Logs the identical user in through the password path (the reference token).</summary>
+    private async Task<string> PasswordLoginTokenAsync(IUser user)
     {
-        var store = new Mock<IAvatarStore>();
+        var store = new Mock<IUserStore>();
         store.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<IEnumerable<IAvatar>>.Success([avatar]));
-        var passwordMgr = new AvatarManager(store.Object, _config);
+            .ReturnsAsync(AZOAResult<IEnumerable<IUser>>.Success([user]));
+        var passwordMgr = new UserManager(store.Object, _config);
 
         var result = await passwordMgr.LoginAsync(
-            new AvatarLoginModel { Email = avatar.Email, Password = Password });
+            new UserLoginModel { Email = user.Email, Password = Password });
         result.IsError.Should().BeFalse(result.Message);
         return result.Result!;
     }
@@ -123,14 +123,14 @@ public class WalletAuthTokenParityTests
 
     /// <summary>
     /// The defect, asserted structurally: whatever claim TYPES a password login emits,
-    /// a wallet login for the same avatar emits the same set — no claim is silently
+    /// a wallet login for the same user emits the same set — no claim is silently
     /// dropped on the wallet path. Only the deliberately-unique claims (jti, auth_time)
     /// and the expiry may differ in value.
     /// </summary>
     [Fact]
     public async Task Wallet_and_password_login_tokens_carry_equivalent_claim_sets()
     {
-        var avatar = new Avatar
+        var user = new User
         {
             Id = Guid.NewGuid(),
             Username = "parity-wallet-user",
@@ -141,8 +141,8 @@ public class WalletAuthTokenParityTests
             AuthWalletChainType = Chain,
         };
 
-        var passwordClaims = Claims(await PasswordLoginTokenAsync(avatar));
-        var walletClaims = Claims(await WalletLoginTokenAsync(avatar));
+        var passwordClaims = Claims(await PasswordLoginTokenAsync(user));
+        var walletClaims = Claims(await WalletLoginTokenAsync(user));
 
         walletClaims.Select(c => c.Type).Should().BeEquivalentTo(passwordClaims.Select(c => c.Type));
 
@@ -157,7 +157,7 @@ public class WalletAuthTokenParityTests
         {
             Values(walletClaims, type).Should().BeEquivalentTo(
                 Values(passwordClaims, type),
-                $"the '{type}' claim must be identical between wallet-auth and password logins for the same avatar");
+                $"the '{type}' claim must be identical between wallet-auth and password logins for the same user");
         }
 
         // Multi-valued: the manager role implies BOTH dapp:develop and dapp:manage
@@ -166,14 +166,14 @@ public class WalletAuthTokenParityTests
     }
 
     /// <summary>
-    /// The concrete drift this fix closes: a wallet-authenticated avatar's token now
+    /// The concrete drift this fix closes: a wallet-authenticated user's token now
     /// carries its dApp role and the scopes that role implies, exactly like the
-    /// AvatarLoginTokenIssuer remarks describe the password path always has.
+    /// UserLoginTokenIssuer remarks describe the password path always has.
     /// </summary>
     [Fact]
     public async Task A_wallet_login_token_carries_the_dapp_role_and_scope_claims()
     {
-        var avatar = new Avatar
+        var user = new User
         {
             Id = Guid.NewGuid(),
             Username = "wallet-dev",
@@ -184,7 +184,7 @@ public class WalletAuthTokenParityTests
             AuthWalletChainType = Chain,
         };
 
-        var claims = Claims(await WalletLoginTokenAsync(avatar));
+        var claims = Claims(await WalletLoginTokenAsync(user));
 
         Values(claims, "dapp_role").Should().BeEquivalentTo([AzoaDappRoles.Normalize(AzoaDappRoles.Developer)]);
         Values(claims, "scope").Should().Contain(AzoaScopes.DappDevelop);
@@ -202,7 +202,7 @@ public class WalletAuthTokenParityTests
     [Fact]
     public async Task A_wallet_authenticated_developer_satisfies_the_DappDevelop_policy_check()
     {
-        var avatar = new Avatar
+        var user = new User
         {
             Id = Guid.NewGuid(),
             Username = "wallet-dev-2",
@@ -213,7 +213,7 @@ public class WalletAuthTokenParityTests
             AuthWalletChainType = Chain,
         };
 
-        var token = await WalletLoginTokenAsync(avatar);
+        var token = await WalletLoginTokenAsync(user);
         var principal = PrincipalFromToken(token);
 
         // No "AuthMethod" claim on a JWT principal (only ApiKeyAuthenticationHandler
@@ -228,7 +228,7 @@ public class WalletAuthTokenParityTests
     [Fact]
     public async Task A_wallet_authenticated_manager_satisfies_the_DappManage_policy_check()
     {
-        var avatar = new Avatar
+        var user = new User
         {
             Id = Guid.NewGuid(),
             Username = "wallet-manager",
@@ -239,7 +239,7 @@ public class WalletAuthTokenParityTests
             AuthWalletChainType = Chain,
         };
 
-        var token = await WalletLoginTokenAsync(avatar);
+        var token = await WalletLoginTokenAsync(user);
         var principal = PrincipalFromToken(token);
 
         principal.HasDappManageAccess().Should().BeTrue(

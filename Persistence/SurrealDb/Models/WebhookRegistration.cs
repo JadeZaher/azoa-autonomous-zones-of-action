@@ -31,7 +31,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [FieldGroup("Owning tenant — unique, one active registration per tenant for v1")]
         [JsonPropertyName("tenant_id")]
-        [References(typeof(Avatar))]
+        [References(typeof(User))]
         public string TenantId { get; set; } = string.Empty;
 
         [FieldGroup("Receiver endpoint — https-only + public-IP, SSRF-guarded at delivery time")]

@@ -5,9 +5,9 @@
 Every self-hosted Azoa node has one reserved operator identity for configuring
 the node, monitoring readiness, assigning tenant KYC policy, and making the
 small set of decisions that must remain human. It is deliberately separate
-from ordinary avatar login, tenant API keys, and the legacy admin-claim path.
+from ordinary user login, tenant API keys, and the legacy admin-claim path.
 
-The reserved identity is fixed at avatar id
+The reserved identity is fixed at user id
 `a20a0000-0000-4000-8000-000000000001` and email
 `node-operator@azoa.invalid`. A node launch supplies these settings from its
 secret store:
@@ -23,8 +23,8 @@ start without it, but the operator console will remain unavailable.
 ## Seed and rotation contract
 
 `SeedAdminHostedService` reads `admin_bootstrap_state:local` before changing
-anything. On the first complete seed it creates the reserved avatar if absent,
-hashes the password with bcrypt, and binds the fixed avatar id once. The raw
+anything. On the first complete seed it creates the reserved user if absent,
+hashes the password with bcrypt, and binds the fixed user id once. The raw
 password is never persisted or returned.
 
 Subsequent launches behave as follows:
@@ -48,9 +48,9 @@ binding and issues a short-lived JWT with:
 - `token_use=node_operator`;
 - `scope=operator:admin` and `scope=node:govern`;
 - `operator_revision`, `operator_session_revision`, `auth_time`, and a unique `jti`;
-- the reserved avatar id as `sub`.
+- the reserved user id as `sub`.
 
-Operator tokens are not ordinary avatar tokens and must never be accepted as
+Operator tokens are not ordinary user tokens and must never be accepted as
 tenant API keys. The reference frontend keeps the token in a SameSite=Strict,
 HttpOnly cookie scoped to its operator BFF. Normal sign-out clears only the
 current browser cookie. `POST /api/operator/session/revoke` is the separate,

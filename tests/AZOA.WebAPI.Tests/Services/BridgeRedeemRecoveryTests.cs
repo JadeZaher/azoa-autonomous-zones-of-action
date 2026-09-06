@@ -139,7 +139,7 @@ public class BridgeRedeemRecoveryTests
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"wh_bridge_{Guid.NewGuid():N}",
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetAddress = "recipient",
             Amount = 1, Mode = BridgeMode.Wormhole,
@@ -180,7 +180,7 @@ public class BridgeRedeemRecoveryTests
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"wh_bridge_{Guid.NewGuid():N}",
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetAddress = "recipient",
             Amount = 1, Mode = BridgeMode.Wormhole,
@@ -216,7 +216,7 @@ public class BridgeRedeemRecoveryTests
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"wh_bridge_{Guid.NewGuid():N}",
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetAddress = "recipient",
             Amount = 1, Mode = BridgeMode.Wormhole,
@@ -277,7 +277,7 @@ public class BridgeRedeemRecoveryTests
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"wh_bridge_{Guid.NewGuid():N}",
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetAddress = "recipient",
             Amount = 1, Mode = BridgeMode.Wormhole,
@@ -327,7 +327,7 @@ public class BridgeRedeemRecoveryTests
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"wh_bridge_{Guid.NewGuid():N}",
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetAddress = "recipient",
             Amount = 1, Mode = BridgeMode.Wormhole,
@@ -393,7 +393,7 @@ public class BridgeRedeemRecoveryTests
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"wh_bridge_{Guid.NewGuid():N}",
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetAddress = "recipient",
             Amount = 1, Mode = BridgeMode.Wormhole,
@@ -431,7 +431,7 @@ public class BridgeRedeemRecoveryTests
         var bridgeId = h.SeedBridge(new BridgeTransactionResult
         {
             Id = $"wh_bridge_{Guid.NewGuid():N}",
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetAddress = "recipient",
             Amount = 1, Mode = BridgeMode.Wormhole,
@@ -462,7 +462,7 @@ public class BridgeRedeemRecoveryTests
         h.BridgeStore.SeedBridge(new BridgeTransactionResult
         {
             Id = bridgeId,
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             SourceChain = "Solana", TargetChain = "Algorand",
             SourceTokenId = "token1", TargetAddress = "recipient",
             Amount = 1, Mode = BridgeMode.Wormhole,
@@ -523,7 +523,7 @@ public class BridgeRedeemRecoveryTests
             var id = $"wh_bridge_{Guid.NewGuid():N}";
             BridgeStore.SeedBridge(new BridgeTransactionResult
             {
-                Id = id, AvatarId = Guid.NewGuid(),
+                Id = id, UserId = Guid.NewGuid(),
                 SourceChain = "Solana", TargetChain = "Algorand",
                 SourceTokenId = "token1", TargetAddress = "recipient",
                 Amount = 1, Mode = BridgeMode.Wormhole,

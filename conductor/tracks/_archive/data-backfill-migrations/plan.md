@@ -40,24 +40,24 @@ schema-migration runner / `.surql` emit untouched.
 Pre-req: RUNBOOK §4.3 Phase C ships (generator emits FK columns as
 `record<table>` not `string`).
 
-8. [ ] `AZOA.WebAPI/Persistence/SurrealDb/Backfills/001_quest_fk_to_record.cs` —
-   walk `quest`, `quest_node`, `quest_edge`, `quest_dependency`,
-   `quest_run`, `quest_node_execution` and rewrite FK columns
-   (avatar_id, quest_id, source_node_id, etc.) from
+8. [ ] `AZOA.WebAPI/Persistence/SurrealDb/Backfills/001_action_fk_to_record.cs` —
+   walk `action`, `action_node`, `action_edge`, `action_dependency`,
+   `action_run`, `action_node_execution` and rewrite FK columns
+   (user_id, action_id, source_node_id, etc.) from
    `"00abc..."` strings to `record<target_table>` literals via
-   `UPDATE quest:id SET avatar_id = type::thing('avatar', $value) ...`
+   `UPDATE action:id SET user_id = type::thing('user', $value) ...`
 9. [ ] `Backfills/002_bridge_fk_to_record.cs` — same for bridge slice
-   (bridge_tx.avatar_id, operation_log.avatar_id+wallet_id,
+   (bridge_tx.user_id, operation_log.user_id+wallet_id,
    consumed_vaa_ledger.bridge_transaction_id).
-10. [ ] `Backfills/003_holon_fk_to_record.cs` — holon.avatar_id +
+10. [ ] `Backfills/003_holon_fk_to_record.cs` — holon.user_id +
     parent_holon_id; peer_holon_ids array elements stay strings (the
     array is conceptually a tag bag, not strict FK).
 11. [ ] `Backfills/004_dapp_composition_fk_to_record.cs` —
-    dapp_series.avatar_id + star_odk_id; dapp_series_quest cross-slice
-    FKs (dapp_series_id + quest_id).
+    dapp_series.user_id + star_odk_id; dapp_series_action cross-slice
+    FKs (dapp_series_id + action_id).
 12. [ ] Concurrency test: spawn 5 parallel CLI invocations of the same
     backfill; exactly one wins, others see "already-applied."
-13. [ ] All 28 quest-store integration tests still pass after the
+13. [ ] All 28 action-store integration tests still pass after the
     backfill (when E1 image fix lands and tests can run).
 
 ## Phase 3 — Generalize + observability + ops surface
@@ -65,7 +65,7 @@ Pre-req: RUNBOOK §4.3 Phase C ships (generator emits FK columns as
     surrealdb-migration task 10 ships) — rewrite holon.parent_holon_id
     scalar as a `RELATE holon -> parent_of -> holon` edge.
 15. [ ] `Backfills/006_embedding_backfill.cs` (when MCP gets a real
-    embedding provider) — populate holon.embedding + quest.embedding
+    embedding provider) — populate holon.embedding + action.embedding
     from textual content.
 16. [ ] Operator runbook section under `docs/operators/` covering:
     apply order, dry-run interpretation, recovery from a failed batch,

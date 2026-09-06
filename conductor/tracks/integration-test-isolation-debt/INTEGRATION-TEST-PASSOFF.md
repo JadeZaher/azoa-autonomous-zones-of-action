@@ -118,14 +118,14 @@ below.
    - `Builders/TestDataBuilders.cs` WalletBuilder default address `addr_{guid}`
      → `addr{guid}` (underscore violated `WalletCreateModelValidator`'s
      `^[a-zA-Z0-9]+$`, `Validators/WalletCreateModelValidator.cs:18`).
-   - `Builders/TestDataBuilders.cs` AvatarBuilder default username/email made
+   - `Builders/TestDataBuilders.cs` UserBuilder default username/email made
      **unique per instance** (were constant `testuser`/`test@azoa.local`) — with
-     a class sharing one namespace, the second `SeedAvatarAsync()` hit
+     a class sharing one namespace, the second `SeedUserAsync()` hit
      "An account with this email already exists."
-   - `Controllers/AvatarControllerIntegrationTests.cs` — passwords
+   - `Controllers/UserControllerIntegrationTests.cs` — passwords
      `secret123`/`right` (no uppercase / too short) and usernames `a1`/`a2`
      (< 3 chars) replaced with validator-compliant values
-     (`AvatarRegisterValidator.cs:10-16`).
+     (`UserRegisterValidator.cs:10-16`).
    - `Controllers/WalletControllerIntegrationTests.cs` — inline addresses
      `sol_addr_1`/`dup_addr` → `soladdr1`/`dupaddr`.
 
@@ -145,30 +145,30 @@ now actually run instead of skipping/failing at setup.)
 
 ### Bucket A — test design conflicts with the IDOR-hardening (≈15 tests)
 
-**Root cause (file:line):** `Controllers/AvatarController.cs:61-77` (Update,
+**Root cause (file:line):** `Controllers/UserController.cs:61-77` (Update,
 Delete) and the wallet/NFT/blockchain-op controllers pass BOTH the route id AND
-the **authenticated** avatar id (`GetAvatarIdFromClaims()` → `TestAuthHandler`
-`DefaultAvatarId` = `a1111111-1111-1111-1111-111111111111`) to the manager,
-which scopes the operation to the authenticated avatar (the IDOR-resistant
+the **authenticated** user id (`GetUserIdFromClaims()` → `TestAuthHandler`
+`DefaultUserId` = `a1111111-1111-1111-1111-111111111111`) to the manager,
+which scopes the operation to the authenticated user (the IDOR-resistant
 "owned-resource" pattern recorded in project memory, STARODK precedent).
 
-The failing tests seed a resource owned by a **fresh random** avatar
+The failing tests seed a resource owned by a **fresh random** user
 (`Guid.NewGuid()` or the register-generated id) and then act on it while
-authenticated as `DefaultAvatarId`. The manager correctly finds no row matching
+authenticated as `DefaultUserId`. The manager correctly finds no row matching
 (id = seeded, owner = default) and returns 404 / empty.
 
 Representative failures:
-- `AvatarControllerIntegrationTests.{Delete,Update,AddWallet,GetWallets,RemoveWallet}` → 404 / 400
-- `AvatarNFTControllerIntegrationTests.*` (Get/Bind/Transfer/Verify/composite) → 400, and `GetAvatarNFTsByAvatarAsync` → found 0
-- `BlockchainOperationControllerIntegrationTests.{Get_ExistingOperation,GetByAvatar}` → 404 / found 0
-- `Mcp*` happy-path tools (`AvatarScopedQuery`, `NftOwnershipGraph`,
-  `HolonTraverse`, `QuestReachability`, `VectorSearch`) → "found 0" /
-  "quest/holon not found" (same avatar-scoping mismatch in the seed-vs-query
+- `UserControllerIntegrationTests.{Delete,Update,AddWallet,GetWallets,RemoveWallet}` → 404 / 400
+- `UserNFTControllerIntegrationTests.*` (Get/Bind/Transfer/Verify/composite) → 400, and `GetUserNFTsByUserAsync` → found 0
+- `BlockchainOperationControllerIntegrationTests.{Get_ExistingOperation,GetByUser}` → 404 / found 0
+- `Mcp*` happy-path tools (`UserScopedQuery`, `NftOwnershipGraph`,
+  `HolonTraverse`, `ActionReachability`, `VectorSearch`) → "found 0" /
+  "action/holon not found" (same user-scoping mismatch in the seed-vs-query
   identity).
 
 **Why not fixed here:** the correct fix is per-test and intent-sensitive —
-either seed the resource owned by `DefaultAvatarId`, or drive the request with
-`factory.CreateAuthenticatedClientForAvatar(seededAvatarId)`. Doing this
+either seed the resource owned by `DefaultUserId`, or drive the request with
+`factory.CreateAuthenticatedClientForUser(seededUserId)`. Doing this
 wholesale risks silently neutering the IDOR assertions these tests are partly
 meant to guard. This needs the test owner to confirm, per test, whether the
 intent is "act on my own resource" (use the seeded id as the auth identity) or
@@ -178,14 +178,14 @@ intent is "act on my own resource" (use the seeded id as the auth identity) or
 1. For "happy path on my own resource" tests, replace
    `var x = await SeedXAsync(...)` + `Client.<verb>(...)` with a client
    authenticated as the resource owner:
-   `var client = Factory.CreateAuthenticatedClientForAvatar(ownerId);` and use
-   `ownerId` consistently for both the seed's `ForAvatar(ownerId)` and the
-   request. Use `Guid.Parse(TestAuthHandler.DefaultAvatarId)` as `ownerId` when
+   `var client = Factory.CreateAuthenticatedClientForUser(ownerId);` and use
+   `ownerId` consistently for both the seed's `ForUser(ownerId)` and the
+   request. Use `Guid.Parse(TestAuthHandler.DefaultUserId)` as `ownerId` when
    the default client is used.
-2. For the avatar self-CRUD tests (Update/Delete), the authenticated identity
-   IS the avatar, so they must operate on `DefaultAvatarId`. Add a seed path that
-   registers/ös upserts the avatar row with `Id == DefaultAvatarId` (e.g. a
-   `SeedSelfAvatarAsync()` helper that writes via `SurrealClient` with the fixed
+2. For the user self-CRUD tests (Update/Delete), the authenticated identity
+   IS the user, so they must operate on `DefaultUserId`. Add a seed path that
+   registers/ös upserts the user row with `Id == DefaultUserId` (e.g. a
+   `SeedSelfUserAsync()` helper that writes via `SurrealClient` with the fixed
    id) and call Update/Delete on that id.
 
 ### Bucket B — environment / repo-layout dependent (5 tests)
@@ -215,7 +215,7 @@ warm-up + higher budget, or `[Trait("Category","Perf")]` + skip locally).
   `The namespace 'test<guid>' does not exist` — these construct their OWN
   per-test namespace via `SurrealTestSchema`/direct client and have a
   cross-connection DB-visibility race (documented in `SurrealTestSchema.cs:50-55`).
-- `SurrealQuestStoreTests.UpsertQuest_RewritesChildren...` →
+- `SurrealActionStoreTests.UpsertAction_RewritesChildren...` →
   `Only one usage of each socket address ... (127.0.0.1:8000)` — ephemeral
   `HttpClient`-per-call socket exhaustion under parallel load. This one is
   **non-deterministic** (it passed in run #2, failed in run #3), confirming a
@@ -248,7 +248,7 @@ persists.
 - `HolonControllerIntegrationTests.{Mint,Exchange}` and
   `STARODKControllerIntegrationTests.Deploy` → 400 from the chain-action path;
   likely the chain-capability gate / wallet pre-conditions, and
-  `AvatarNFTController.Mint` → 500. These should be re-checked with the
+  `UserNFTController.Mint` → 500. These should be re-checked with the
   now-surfaced body (the seed diagnostic does not cover non-seed POSTs; add the
   same body-surfacing to the assertion or read `response.Content` in the test to
   see the real error before deciding fix vs accept).
@@ -263,8 +263,8 @@ persists.
   `EnsureSeedSucceededAsync` (body-surfacing) on all seed helpers; add
   `JsonStringEnumConverter` to `JsonOptions`.
 - `Builders/TestDataBuilders.cs` — alphanumeric wallet address default; unique
-  avatar username/email defaults.
-- `Controllers/AvatarControllerIntegrationTests.cs` — validator-compliant
+  user username/email defaults.
+- `Controllers/UserControllerIntegrationTests.cs` — validator-compliant
   seed credentials/usernames.
 - `Controllers/WalletControllerIntegrationTests.cs` — alphanumeric inline
   addresses.

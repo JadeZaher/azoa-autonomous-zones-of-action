@@ -12,14 +12,14 @@ review: done (commit 10e5dad, 2026-06-22)
 ## Overview
 
 Strip the tenant (ArdaNova) of **blanket authority** over its users. Today a tenant
-can mint a short-lived child JWT for **any** avatar it owns, **with no per-user
+can mint a short-lived child JWT for **any** user it owns, **with no per-user
 consent and no revocation** ([Managers/TenantManager.cs](../../../Managers/TenantManager.cs)
 `IssueChildCredentialAsync` — the only check is `child.OwnerTenantId == tenantId`).
 This is the 3rd-party custody role the user wants removed.
 
 This track adds a **user-granted, revocable consent model**: a tenant may act for a
 user **only** within scopes the user has granted, and the user can revoke at any
-time. Combined with [[user-sovereign-identity]] (self-owned avatars + own login),
+time. Combined with [[user-sovereign-identity]] (self-owned users + own login),
 this makes the tenant a **driver the user authorizes**, not a custodian.
 
 **Decisions (2026-06-21):**
@@ -47,9 +47,9 @@ time-boxed, always revocable.
 public sealed class ConsentGrant
 {
     public Guid Id { get; set; }
-    public Guid GrantorAvatarId { get; set; }   // the USER (must own the avatar)
+    public Guid GrantorUserId { get; set; }   // the USER (must own the user)
     public Guid TenantId { get; set; }           // the tenant being authorized
-    public List<string> Scopes { get; set; }     // e.g. quest:execute, swap:sign, nft:mint
+    public List<string> Scopes { get; set; }     // e.g. action:execute, swap:sign, nft:mint
     public DateTime GrantedAt { get; set; }
     public DateTime? ExpiresAt { get; set; }      // null = until revoked
     public DateTime? RevokedAt { get; set; }      // set on revoke; grant inert after
@@ -70,33 +70,33 @@ public enum GrantOrigin { UserExplicit, Participation }
 The join flow hides crypto, but the grant cannot be fabricated by the tenant alone. At
 join, the **user** authenticates (self-signup login JWT OR wallet-challenge JWT from
 [[user-sovereign-identity]]); that user-issued credential is what authorizes the grant.
-The tenant API-key principal **CANNOT** create a grant naming a `GrantorAvatarId` it
+The tenant API-key principal **CANNOT** create a grant naming a `GrantorUserId` it
 lacks a user-authenticated assertion for — otherwise "joining = consent" degenerates
 into the tenant self-issuing blanket authority under a consent label (the exact thing
 this track removes). Practically: the grant call is authed as the USER (the user's
 token), even though the surrounding join UX is ArdaNova-branded and crypto-free.
 
 **Scope minimization for the no-UX standing grant (H4).** A `Participation` grant
-carries only the **minimum** scopes (e.g. `quest:execute`, read scopes). **Value-moving
+carries only the **minimum** scopes (e.g. `action:execute`, read scopes). **Value-moving
 / signing scopes (`swap:sign`, transfer/grant/mint signing) are EXCLUDED from the
 standing participation grant** and require a `UserExplicit` grant — a value action gets
 a deliberate, user-authenticated authorization, not a side effect of joining.
 
 **Endpoints:**
-- `POST /api/avatar/consent` (**authed as the USER** — the user's own token, never the
+- `POST /api/user/consent` (**authed as the USER** — the user's own token, never the
   tenant API-key alone) — grant a tenant scopes. The ArdaNova join flow surfaces this in
   plain-language terms; the user's token is what signs the request, no wallet prompt.
-- `DELETE /api/avatar/consent/{id}` (authed as the USER) — revoke. Offboarding revokes
+- `DELETE /api/user/consent/{id}` (authed as the USER) — revoke. Offboarding revokes
   by `(tenantId, ParticipationRef)` **exact-match within the tenant's own grants only**
   (L3 — no cross-tenant ref collision, no loose match).
-- `GET /api/avatar/consent` — user-scoped list of the user's own grants.
+- `GET /api/user/consent` — user-scoped list of the user's own grants.
 - `GET /api/tenant/consent` — **separate** tenant-scoped endpoint (L2): a tenant lists
   ONLY grants made to itself; a principal-type assertion guarantees a tenant can never
   receive another tenant's or a non-grantee's grants.
 
 ### 2. Enforce consent at credential issuance AND at the single signing chokepoint
 
-**(a) Credential issuance.** Every avatar is self-owned after the
+**(a) Credential issuance.** Every user is self-owned after the
 [[user-sovereign-identity]] hard cutover, so `IssueChildCredentialAsync` ALWAYS
 requires a **live ConsentGrant** (grantor=user, tenant=caller, scope ⊇ requested, not
 expired/revoked) — else NotFound (isolation crux). **There is NO `OwnerTenantId ==
@@ -111,27 +111,27 @@ and tenant identity MUST be derived from the authenticated tenant principal
 are a hard ceiling no request field can widen.
 
 **(c) The signing seam is structurally consent-blind today — this MUST be fixed (C1).**
-The child JWT sets `Sub`/`AvatarId = childAvatarId` (the USER's avatar id —
+The child JWT sets `Sub`/`UserId = childUserId` (the USER's user id —
 [Managers/TenantManager.cs](../../../Managers/TenantManager.cs) `GenerateChildJwt`),
-so at `KeyCustodyService.WithSigningKeyAsync(walletId, avatarId, sign)` a tenant-driven
+so at `KeyCustodyService.WithSigningKeyAsync(walletId, userId, sign)` a tenant-driven
 action is **indistinguishable** from a user-driven one — its only check is
-`wallet.AvatarId == avatarId`, which passes, and the consent grant is never consulted.
-`SigningContext` carries only `(AvatarId, WalletId, IsPlatform)` — no tenant, no scope.
+`wallet.UserId == userId`, which passes, and the consent grant is never consulted.
+`SigningContext` carries only `(UserId, WalletId, IsPlatform)` — no tenant, no scope.
 **Required rearchitecture:**
   - The child JWT MUST carry a distinguishing `act_as_tenant` claim (the `TenantId`).
   - `SigningContext` / `WithSigningKeyAsync` MUST be extended to carry that tenant
     identity + the requested signing scope.
   - When a `tenantId` is present, the seam does a **live** `ConsentGrant` lookup
-    (grantor=avatarId, tenant=tenantId, scope ⊇ op, `RevokedAt == null` AND
+    (grantor=userId, tenant=tenantId, scope ⊇ op, `RevokedAt == null` AND
     (`ExpiresAt == null` OR `now < ExpiresAt`)) **inside the call, before key decrypt**,
-    failing closed. An avatar-id-only seam cannot satisfy revocation or consent.
+    failing closed. An user-id-only seam cannot satisfy revocation or consent.
 
 **(d) Single chokepoint — enumerate EVERY sign path (C2).** The grant check lives at
 ONE custody chokepoint inside `KeyCustodyService` (covering both `WithSigningKeyAsync`
 AND every tenant-reachable caller of `WithPlatformSigningKeyAsync`), NOT scattered
 "in some managers." Before merge, **exhaustively enumerate** every path that reaches a
 provider sign and prove each fails closed without a grant: `AllocationManager`,
-`FungibleTokenManager`, the bridge, swap, and each Tier-2 economic quest node
+`FungibleTokenManager`, the bridge, swap, and each Tier-2 economic action node
 (`Swap`/`Grant`/`Transfer`/`Refund`/`FungibleTokenCreate`). No "or" — all of them.
 
 ### 3. Revocation is immediate — live re-check is MANDATORY (H3, M4)
@@ -150,11 +150,11 @@ AZOA is the source of truth + enforcement for consent/revocation; ArdaNova's
 no-blockchain orchestration must be able to *read* and *react* without owning the
 decision.
 - **REST (read/trigger):** the grant/revoke/list endpoints above + a status query
-  `GET /api/avatar/consent/{id}` and a participation-scoped lookup
+  `GET /api/user/consent/{id}` and a participation-scoped lookup
   `GET /api/tenant/consent?participationRef=…` (tenant-scoped). ArdaNova grants at
   join, revokes at offboard, queries status anytime.
 - **Webhook events (react):** AZOA pushes `consent.granted` / `consent.revoked` /
-  `consent.expired` (+ payload: grantId, avatarId, tenantId, scopes, participationRef,
+  `consent.expired` (+ payload: grantId, userId, tenantId, scopes, participationRef,
   occurredAt) to a tenant-registered endpoint. This is **new outbound infra** — there
   is no webhook mechanism today (the saga **transactional outbox**,
   `Services/Sagas/SagaProcessor.cs` `EnqueueNextStepAsync`, is internal-only). Build
@@ -179,7 +179,7 @@ decision.
 ## Acceptance Criteria
 
 - [x] AC1 — `ConsentGrant` model + SCHEMAFULL POCO (`consent_grant`); separate
-      user-scoped (`ConsentController`, `GET /api/avatar/consent`) + tenant-scoped
+      user-scoped (`ConsentController`, `GET /api/user/consent`) + tenant-scoped
       (`TenantConsentController`, `GET /api/tenant/consent`, `[Authorize(Policy="TenantScope")]`)
       lists; store queries are grantor/tenant-scoped (L2). Tests in `ConsentManagerTests`.
 - [x] AC2 — `IssueChildCredentialAsync` requires a **live** grant; **no ownership-only
@@ -190,7 +190,7 @@ decision.
       `IssueChildCredential_ScopeCeiling_IsTenantIntersectGrantIntersectRequested_M3`.
 - [x] **AC4 (CRITICAL)** — Signing seam carries tenant identity + scope and does a LIVE
       grant check before key decrypt. → `SigningContext` extended with
-      `(ActingTenantId, GrantorAvatarId, Scope)`; `KeyCustodyService.WithSigningKeyAsync(ctx)`
+      `(ActingTenantId, GrantorUserId, Scope)`; `KeyCustodyService.WithSigningKeyAsync(ctx)`
       + `WithPlatformSigningKeyAsync(bool, ctx)` consult `ITenantConsentGate` BEFORE
       decrypt; `act_as_tenant` JWT claim from `IssueChildCredentialAsync`. Test:
       `WithSigningKey_TenantDriven_NoGrant_Rejected_EvenThoughOwnershipMatches` (the C1 proof).
@@ -203,9 +203,9 @@ decision.
       | AllocationManager Mint | platform | `BuildSigningContext(platformOp)` + acting-tenant |
       | AllocationManager Transfer | user | `BuildSigningContext` + acting-tenant |
       | FungibleTokenManager Create (ASA) | platform | `CreateASAAsync(…, SigningContext)` overload |
-      | Quest Grant (mint) | platform | `QuestRun.ActingTenantId`→`NftManager.MintAsync` |
-      | Quest Transfer / Refund | user | `QuestRun.ActingTenantId`→`NftManager.TransferAsync` |
-      | Quest FungibleTokenCreate | platform | `QuestRun.ActingTenantId`→`FungibleTokenManager` |
+      | ActionDefinition Grant (mint) | platform | `ActionRun.ActingTenantId`→`NftManager.MintAsync` |
+      | ActionDefinition Transfer / Refund | user | `ActionRun.ActingTenantId`→`NftManager.TransferAsync` |
+      | ActionDefinition FungibleTokenCreate | platform | `ActionRun.ActingTenantId`→`FungibleTokenManager` |
       | Bridge | per-op | `BlockchainOperation.ActingTenantId`→`BuildSigningContext` |
       | Swap | **UNSIGNED** (client-side) | no server sign path to gate (documented) |
       Tests: `KeyCustodyConsentSeamTests` (both seam methods, tenant-driven deny + user/
@@ -261,12 +261,12 @@ decision.
 - Delegation chains (tenant sub-delegating to another tenant).
 - A general-purpose webhook framework for all AZOA events — this track ships ONLY
   the consent events; generalizing the outbound emitter is a follow-up (it may later
-  serve the `Emit` quest node, bridge status, etc.).
+  serve the `Emit` action node, bridge status, etc.).
 
 ## Adversarial review applied (2026-06-21)
 
 A hostile security pass found that the signing seam is structurally consent-blind
-(the child JWT 'Sub' = the user's avatar id, so a tenant action is indistinguishable
+(the child JWT 'Sub' = the user's user id, so a tenant action is indistinguishable
 from a user action) — without the C1 rearchitecture the whole consent model is theater.
 Folded in: tenant identity + scope on `SigningContext` + a LIVE per-sign grant check
 before decrypt (C1); single chokepoint enumerating every sign path incl.

@@ -51,7 +51,7 @@ public partial class Wallet
         set => Id = value.ToString("N");
     }
 
-    public bool OwnedBy(Guid avatarId) => AvatarId == avatarId.ToString("N");
+    public bool OwnedBy(Guid userId) => UserId == userId.ToString("N");
 }
 ```
 
@@ -77,14 +77,14 @@ unions, in-flight state machines) live as plain C# classes in
 namespace (NOT the persistence namespace):
 
 ```csharp
-namespace AZOA.WebAPI.Models.Quest;
+namespace AZOA.WebAPI.Models.Actions;
 
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
-public sealed record QuestNodeExecutionContext(
-    QuestRun Run,
-    QuestNode Node,
-    IReadOnlyDictionary<Guid, QuestNodeExecution> UpstreamOutputs);
+public sealed record ActionNodeExecutionContext(
+    ActionRun Run,
+    ActionNode Node,
+    IReadOnlyDictionary<Guid, ActionNodeExecution> UpstreamOutputs);
 ```
 
 ### 2.3 Request / response DTOs — `Models/Requests/`
@@ -113,9 +113,9 @@ public class DappSeriesUpdateModel
 |---|---|
 | "Where do I add a new persisted column?" | Add a `[Column(Order = N, Type = "...")]`-decorated property to the POCO in [Models/](Models/). Build → `.surql` regenerates. |
 | "Where do I add `Guid IdGuid { get; set; }`?" | A sibling partial-class file under [Models/](Models/), same namespace. |
-| "Where do I add a `QuestStartedNotification` DTO?" | `Models/Requests/QuestRequests.cs`. References `AZOA.WebAPI.Persistence.SurrealDb.Models.Quest` by type if it needs to. |
+| "Where do I add a `ActionStartedNotification` DTO?" | `Models/Requests/ActionRequests.cs`. References `AZOA.WebAPI.Persistence.SurrealDb.Models.ActionDefinition` by type if it needs to. |
 | "Where do I write `ComposeAsync(...)` validation logic?" | The manager (`Managers/DappCompositionManager.cs`). Never on the entity. |
-| "What about a *computed* `IsActive` from latest QuestRun?" | Manager-level method, not a partial. The entity doesn't get to query a different aggregate. |
+| "What about a *computed* `IsActive` from latest ActionRun?" | Manager-level method, not a partial. The entity doesn't get to query a different aggregate. |
 | "How do I regenerate the `.surql` files?" | `surrealforge generate-from-assembly bin/Debug/net8.0/AZOA.WebAPI.dll`. Or just run the byte-equivalence test — failures point at drift. |
 
 ---
@@ -139,9 +139,9 @@ public partial class StarOdk : ISurrealRecord
     public string Id { get; set; } = "";
 
     [Column(Order = 2, Type = "string")]
-    [References(typeof(Avatar), Optional = false)]
-    [JsonPropertyName("avatar_id")]
-    public string AvatarId { get; set; } = "";
+    [References(typeof(User), Optional = false)]
+    [JsonPropertyName("user_id")]
+    public string UserId { get; set; } = "";
 
     [Column(Order = 3, Type = "int")]
     [Default("0")]
@@ -235,14 +235,14 @@ INSIDE [...]` clause has to match the committed `.surql`.
 ## 5. RELATE-edge tables
 
 Tables that exist purely as graph edges (e.g. `forked_from`,
-`executes` in the quest graph) carry the `[RelateEdge(typeof(From),
+`executes` in the action graph) carry the `[RelateEdge(typeof(From),
 typeof(To))]` class-level attribute. They have exactly two columns,
 `in` and `out`, typed `string` and storing record-id references:
 
 ```csharp
 [SurrealTable("forked_from", ..., Schemafull = true)]
-[RelateEdge(typeof(QuestRun), typeof(QuestRun))]
-[Slice("quest")]
+[RelateEdge(typeof(ActionRun), typeof(ActionRun))]
+[Slice("action")]
 public partial class ForkedFrom : ISurrealRecord
 {
     [Column(Order = 1, Type = "string"), JsonPropertyName("in")]
@@ -272,15 +272,15 @@ SurrealQL on the parent table's column.
 ## 7. Generated output
 
 > **Canonical counts as of 2026-06-10:** **26 POCOs** in
-> `Persistence/SurrealDb/Models/` (`ApiKey`, `Avatar`, `BridgeTx`,
-> `ConsumedVaaLedger`, `DappSeries`, `DappSeriesQuest`, `Executes`,
-> `ForkedFrom`, `HnswHolonEmbedding`, `HnswQuestEmbedding`, `Holon`,
-> `IdempotencyKeyStore`, `NftOwnership`, `OperationLog`, `Quest`,
-> `QuestDependency`, `QuestEdge`, `QuestNode`, `QuestNodeExecution`,
-> `QuestNodeTemplate`, `QuestRun`, `QuestTemplate`, `SagaSteps`, `StarOdk`,
+> `Persistence/SurrealDb/Models/` (`ApiKey`, `User`, `BridgeTx`,
+> `ConsumedVaaLedger`, `DappSeries`, `DappSeriesAction`, `Executes`,
+> `ForkedFrom`, `HnswHolonEmbedding`, `HnswActionEmbedding`, `Holon`,
+> `IdempotencyKeyStore`, `NftOwnership`, `OperationLog`, `ActionDefinition`,
+> `ActionDependency`, `ActionEdge`, `ActionNode`, `ActionNodeExecution`,
+> `ActionNodeTemplate`, `ActionRun`, `ActionTemplate`, `SagaSteps`, `StarOdk`,
 > `SwapState`, `Wallet`) producing **26 `.surql` schema files** and
 > **6 slice flowcharts** (`bridge`, `dapp_composition`, `identity`,
-> `quest`, `quest_templates`, `wallet_nft`) plus the `domain.flowchart.mermaid`
+> `action`, `action_templates`, `wallet_nft`) plus the `domain.flowchart.mermaid`
 > master — **7 generated files total** under `Persistence/SurrealDb/Generated/Flowcharts/`.
 
 The build emits derived artifacts to `Persistence/SurrealDb/Generated/`:
@@ -354,7 +354,7 @@ master flowchart's enum legend surfaces every closed set.
 ### Wire format for FK columns (resolved; see SurrealForge 1.0.0)
 
 Flipping FK columns to `record<target>` changed the wire format from the
-raw hex string (`"abc123"`) to the prefixed form (`"avatar:abc123"`). The
+raw hex string (`"abc123"`) to the prefixed form (`"user:abc123"`). The
 store adapters in
 [`Providers/Stores/Surreal/`](../../Providers/Stores/Surreal/) build the
 prefixed form with `SurrealLink.ToLink(table, SurrealId.ToSurrealId(guid))`

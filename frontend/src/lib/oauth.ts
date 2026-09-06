@@ -28,11 +28,11 @@ export const OAUTH_PROVIDERS: readonly OAuthProvider[] = ['github', 'google']
  * outside `session.login()` is adopted, using only the SDK's public surface.
  */
 const SESSION_TOKEN_KEY = 'azoa_token'
-const SESSION_AVATAR_KEY = 'azoa_avatar_id'
+const SESSION_USER_KEY = 'azoa_user_id'
 
 export interface OAuthExchangeResult {
   token: string
-  avatarId: string
+  userId: string
   username: string
   email: string
   provider: OAuthProvider
@@ -136,11 +136,11 @@ export async function exchangeOAuthCode(code: string): Promise<OAuthExchangeResu
   const result = body?.result ?? body?.Result
   if (!result?.token) throw new Error('The sign-in response did not contain a session.')
 
-  await adoptSession(result.token, result.avatarId)
+  await adoptSession(result.token, result.userId)
 
   return {
     token: result.token,
-    avatarId: result.avatarId,
+    userId: result.userId,
     username: result.username,
     email: result.email,
     provider: result.provider,
@@ -152,16 +152,16 @@ export async function exchangeOAuthCode(code: string): Promise<OAuthExchangeResu
  * Stores the token under the SDK's session keys and reloads it into the live
  * client, so a federated session behaves exactly like a password one.
  */
-export async function adoptSession(token: string, avatarId?: string): Promise<void> {
+export async function adoptSession(token: string, userId?: string): Promise<void> {
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(SESSION_TOKEN_KEY, token)
-    if (avatarId) window.localStorage.setItem(SESSION_AVATAR_KEY, avatarId)
+    if (userId) window.localStorage.setItem(SESSION_USER_KEY, userId)
   }
   await azoa.session.restore()
 }
 
 /**
- * Attaches a provider to the ALREADY-AUTHENTICATED avatar.
+ * Attaches a provider to the ALREADY-AUTHENTICATED user.
  *
  * Two steps by necessity: the redirect that follows is a top-level navigation and
  * carries no Authorization header, so the authenticated call happens first and
@@ -201,7 +201,7 @@ export async function beginProviderLink(
   )
 }
 
-/** Providers currently attached to the authenticated avatar. */
+/** Providers currently attached to the authenticated user. */
 export async function listLinkedProviders(): Promise<LinkedProvider[]> {
   const token = azoa.session.token
   if (!token) return []

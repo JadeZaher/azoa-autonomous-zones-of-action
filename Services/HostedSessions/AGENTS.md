@@ -78,7 +78,7 @@ nothing — the authoritative fetch additionally requires the company key.
 
 `hosted_session_provider_session` is `UNIQUE(flow_kind, provider_key,
 provider_session_id)` and `provider_session_id` is `option<string>`, NONE on every
-freshly claimed row. That looks like it could brick KYC node-wide — one avatar
+freshly claimed row. That looks like it could brick KYC node-wide — one user
 holding an un-attached claim would make every other `ClaimAdmissionAsync` CREATE
 fail — and a failed `/begin` deliberately leaves exactly such a claim open for retry.
 

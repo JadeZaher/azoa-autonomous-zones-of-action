@@ -5,19 +5,19 @@ namespace AZOA.WebAPI.Models.Requests;
 /// <summary>
 /// Body for the one-shot <c>POST /api/nft/fungible-mint</c> endpoint
 /// (fungible-mint-and-render-model, §11.3). The direct (no-DAG) parallel to the
-/// <c>FungibleTokenCreate</c> quest node: launch a fungible token (an Algorand ASA
+/// <c>FungibleTokenCreate</c> action node: launch a fungible token (an Algorand ASA
 /// with a real <see cref="Total"/> supply + <see cref="Decimals"/>) into the
 /// caller's provisioned custodial wallet, gated by the SAME KYC choke point and
-/// deduped by the SAME idempotency discipline the quest node uses.
+/// deduped by the SAME idempotency discipline the action node uses.
 ///
-/// The field shape mirrors <see cref="AZOA.WebAPI.Models.Quest.FungibleTokenCreateNodeConfig"/>
+/// The field shape mirrors <see cref="AZOA.WebAPI.Models.Actions.FungibleTokenCreateNodeConfig"/>
 /// for consistency between the in-DAG and direct launch paths — total supply +
 /// decimals are tenant-supplied and authoritative; AZOA derives no economic
 /// meaning (peg/valuation stays tenant-side).
 ///
 /// IDOR note: like <see cref="FungibleTokenCreateRequest"/> and
-/// <see cref="AllocationRequest"/>, this DTO carries no owner / target avatar id.
-/// The target avatar is resolved from the authenticated principal; any owner id a
+/// <see cref="AllocationRequest"/>, this DTO carries no owner / target user id.
+/// The target user is resolved from the authenticated principal; any owner id a
 /// caller might bolt on would be ignored.
 /// </summary>
 public class FungibleMintRequest

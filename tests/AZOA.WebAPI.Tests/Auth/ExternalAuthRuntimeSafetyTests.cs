@@ -246,7 +246,7 @@ public class ExternalAuthRuntimeSafetyTests
         var services = new ServiceCollection();
         services.AddSingleton(Mock.Of<IExternalLoginService>());
         services.AddSingleton(Mock.Of<IOAuthExchangeCodeService>());
-        services.AddSingleton(Mock.Of<IAvatarLoginTokenIssuer>());
+        services.AddSingleton(Mock.Of<IUserLoginTokenIssuer>());
         return services;
     }
 

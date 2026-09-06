@@ -10,22 +10,22 @@ a contained change rather than a rewrite.
 ### Thin persistence seam (the key enabler)
 Today there are **two overlapping storage abstractions**: the god interface
 `IAZOAStorageProvider` (41 methods, 11 entities — `IAZOAStorageProvider.cs` +
-`IAZOAStorageProviderNFTExtensions.cs`) and a redundant `IQuestRepository`
-(`Interfaces/IQuestRepository.cs` + `Services/Quest/QuestRepository.cs`), both
+`IAZOAStorageProviderNFTExtensions.cs`) and a redundant `IActionRepository`
+(`Interfaces/IActionRepository.cs` + `Services/ActionDefinition/ActionRepository.cs`), both
 wrapping `AZOADbContext`. Collapse both into **one coherent set of
-per-aggregate, graph-aware interfaces** (Avatar/Wallet/Holon/Quest/NFT/Bridge).
+per-aggregate, graph-aware interfaces** (User/Wallet/Holon/ActionDefinition/NFT/Bridge).
 This single seam is what isolates the later SurrealDB SDK behind one file.
 **Not** a generic `IRepository<T>` — that is an anti-pattern over a graph DB.
 
 ### God manager
-`QuestManager` (9 ctor deps, 908-line file) has a ~315-line, 34-case
-`ExecuteNodeInternalAsync` switch (`QuestManager.cs:317-631`). Extract an
-`IQuestNodeHandler` strategy map (one handler per `QuestNodeType`, 34 values in
-`QuestEnums.cs:19-70`). No such type exists today.
+`ActionManager` (9 ctor deps, 908-line file) has a ~315-line, 34-case
+`ExecuteNodeInternalAsync` switch (`ActionManager.cs:317-631`). Extract an
+`IActionNodeHandler` strategy map (one handler per `ActionNodeType`, 34 values in
+`ActionEnums.cs:19-70`). No such type exists today.
 
 ### Duplicated computation
-`ExecutionOrder` is computed twice — `QuestDagValidator.cs:97-102` **and**
-`QuestManager.cs:187-196` — a latent divergence bug. Single authoritative
+`ExecutionOrder` is computed twice — `ActionDagValidator.cs:97-102` **and**
+`ActionManager.cs:187-196` — a latent divergence bug. Single authoritative
 computation.
 
 ### Static cache
@@ -46,8 +46,8 @@ SurrealDB cutover so the unfamiliar engine is observable.
 
 ## Acceptance
 - One per-aggregate persistence interface set; god interface +
-  `IQuestRepository` deleted; all managers depend only on the new seam.
-- `QuestManager` node dispatch is a handler registry; the 315-line switch is
+  `IActionRepository` deleted; all managers depend only on the new seam.
+- `ActionManager` node dispatch is a handler registry; the 315-line switch is
   gone; open/closed for new node types.
 - `ExecutionOrder` computed once.
 - Swap quote cache is `IMemoryCache` with bounds + expiry.

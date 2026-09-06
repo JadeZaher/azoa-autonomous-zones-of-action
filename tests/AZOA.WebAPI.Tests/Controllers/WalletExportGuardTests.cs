@@ -17,7 +17,7 @@ namespace AZOA.WebAPI.Tests.Controllers;
 /// Adversarial coverage for the custody-export bypass fix (security-review).
 /// <para><b>The attack.</b> Raw-key export is the ONE path that emits cleartext signing
 /// material, sidestepping the consent gate entirely. A tenant-driven child credential
-/// (<c>act_as_tenant</c>) carries the USER's avatar id as its subject — so without a
+/// (<c>act_as_tenant</c>) carries the USER's user id as its subject — so without a
 /// guard a tenant could call <c>POST /wallet/{id}/export</c>, exfiltrate the user's
 /// private key, and sign offline forever, defeating every consent grant, scope ceiling,
 /// and revocation.</para>
@@ -34,7 +34,7 @@ public class WalletExportGuardTests
 
     private WalletController BuildController(ClaimsPrincipal principal)
     {
-        // WalletController.GetAvatarIdFromClaims reads ClaimTypes.NameIdentifier first,
+        // WalletController.GetUserIdFromClaims reads ClaimTypes.NameIdentifier first,
         // then "sub" — principals here use ClaimTypes.NameIdentifier to match exactly.
         var controller = new WalletController(_walletManager.Object)
         {
@@ -49,12 +49,12 @@ public class WalletExportGuardTests
     [Fact]
     public async Task Export_TenantDrivenChildCredential_IsForbidden()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var tenantId = Guid.NewGuid();
-        // A tenant-driven child credential: valid sub (the USER's avatar id) AND
+        // A tenant-driven child credential: valid sub (the USER's user id) AND
         // act_as_tenant. The shared subject is exactly what makes the bypass possible.
         var principal = PrincipalWith(
-            new Claim(ClaimTypes.NameIdentifier, avatarId.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseChild),
             new Claim("act_as_tenant", tenantId.ToString()));
         var controller = BuildController(principal);
@@ -71,15 +71,15 @@ public class WalletExportGuardTests
     [Fact]
     public async Task Export_PlainUser_IsAllowedThrough()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
         // A plain user login: sub but NO act_as_tenant.
         var principal = PrincipalWith(
-            new Claim(ClaimTypes.NameIdentifier, avatarId.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin));
         var controller = BuildController(principal);
 
-        _walletManager.Setup(m => m.ExportWalletAsync(walletId, avatarId, It.IsAny<AZOARequest>()))
+        _walletManager.Setup(m => m.ExportWalletAsync(walletId, userId, It.IsAny<AZOARequest>()))
             .ReturnsAsync(new AZOAResult<WalletExportResult>
             {
                 Result = new WalletExportResult
@@ -96,13 +96,13 @@ public class WalletExportGuardTests
         result.Result.Should().BeOfType<OkObjectResult>();
         controller.Response.Headers.CacheControl.ToString().Should().Be("no-store");
         // The user's own export DOES go through to the manager.
-        _walletManager.Verify(m => m.ExportWalletAsync(walletId, avatarId, It.IsAny<AZOARequest>()), Times.Once);
+        _walletManager.Verify(m => m.ExportWalletAsync(walletId, userId, It.IsAny<AZOARequest>()), Times.Once);
     }
 
     [Fact]
     public async Task Export_Unauthenticated_NoSub_ReturnsUnauthorized()
     {
-        // No sub claim at all → the avatar-id resolution fails before any guard.
+        // No sub claim at all → the user-id resolution fails before any guard.
         var principal = PrincipalWith(new Claim("irrelevant", "x"));
         var controller = BuildController(principal);
 
@@ -116,9 +116,9 @@ public class WalletExportGuardTests
     [Fact]
     public async Task Export_ApiKeyPrincipal_IsForbidden()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var controller = BuildController(PrincipalWith(
-            new Claim(ClaimTypes.NameIdentifier, avatarId.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim("AuthMethod", "ApiKey")));
 
         var result = await controller.Export(Guid.NewGuid(), null);

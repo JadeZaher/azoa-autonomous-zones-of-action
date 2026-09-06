@@ -50,7 +50,7 @@ public sealed class NodeFeeScheduleManagerTests
         result.Result.Mint.Bps.Should().Be(100);
         result.Result.Transfer.FlatBaseUnits.Should().Be("7");
         result.Result.Transfer.Bps.Should().Be(50);
-        result.Result.UpdatedByAvatarId.Should().Be(actor);
+        result.Result.UpdatedByUserId.Should().Be(actor);
         store.Audits.Should().ContainSingle();
         store.Audits[0].PreviousVersion.Should().Be(3);
         store.Audits[0].NewVersion.Should().Be(4);

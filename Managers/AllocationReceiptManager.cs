@@ -159,7 +159,7 @@ public sealed class AllocationReceiptManager : IAllocationReceiptManager
                 State = state,
                 IsTerminal = state != AllocationReceiptState.AwaitingReconciliation,
                 RequiresReconciliation = state == AllocationReceiptState.AwaitingReconciliation,
-                AvatarId = result?.AvatarId,
+                UserId = result?.UserId,
                 WalletId = result?.WalletId,
                 WalletAddress = result?.WalletAddress,
                 WalletProvisioned = result?.WalletProvisioned,
@@ -177,7 +177,7 @@ public sealed class AllocationReceiptManager : IAllocationReceiptManager
     private static bool IsValid(AllocationReceiptRequest? request)
         => request is not null
            && request.ApiKeyId != Guid.Empty
-           && request.CallerAvatarId != Guid.Empty
+           && request.CallerUserId != Guid.Empty
            && !string.IsNullOrWhiteSpace(request.ClientIdempotencyKey);
 
     private static bool IsOwnedAllocation(
@@ -186,7 +186,7 @@ public sealed class AllocationReceiptManager : IAllocationReceiptManager
         string correlation)
         => string.Equals(operation.IdempotencyKey, correlation, StringComparison.Ordinal)
            && operation.InitiatorApiKeyId == request.ApiKeyId
-           && operation.InitiatorAvatarId == request.CallerAvatarId;
+           && operation.InitiatorUserId == request.CallerUserId;
 
     private static bool IsAbsentOperation(AZOAResult<IBlockchainOperation> result)
         => string.Equals(result.Code, AzoaErrorCodes.NotFound, StringComparison.Ordinal)

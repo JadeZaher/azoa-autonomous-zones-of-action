@@ -18,17 +18,17 @@ explicitly `true`.
 
 This reverses the original pre-launch posture (ADR-0001, now **superseded**),
 which defaulted it `false` on the premise that the module had **zero
-consumers**. That premise went stale the moment the **durable quest workflow
+consumers**. That premise went stale the moment the **durable action workflow
 engine** (`durable-workflow-engine`) shipped: it is a real consumer.
 
-- `QuestManager.StartWorkflowRunAsync` creates a run and enqueues its entry
-  node as a saga step under `QuestWorkflowSaga.Name` (`"quest-workflow"`).
+- `ActionManager.StartWorkflowRunAsync` creates a run and enqueues its entry
+  node as a saga step under `ActionWorkflowSaga.Name` (`"action-workflow"`).
 - Dispatch happens **only** in `SagaProcessorHostedService.ExecuteAsync`.
 - With `Enabled=false`, that service early-returned — so a durable run
   activated, enqueued its entry node, and **never executed**. The engine was
   inert under shipped config. Unit tests missed it because they drive the node
   handler directly, bypassing the processor. Recorded as
-  `[[durable-quests-inert-sagas-disabled]]`; fixed in `final-hardening-cutover`
+  `[[durable-actions-inert-sagas-disabled]]`; fixed in `final-hardening-cutover`
   Phase A1.
 
 ## §boot-guard — fail fast, never ship inert again
@@ -55,7 +55,7 @@ is a canonical GUID is inlined as a `uuid` literal (`u'...'`), and a
 `table:id`-shaped value as a record-link literal. A `SCHEMAFULL` field declared
 `TYPE string` then rejects it — *"Couldn't coerce value for field
 `correlation_key` … Expected `string` but found `u'…'`"* (and likewise for the
-`saga:{corr}:{step}` idempotency key). The durable quest-workflow path hits both:
+`saga:{corr}:{step}` idempotency key). The durable action-workflow path hits both:
 correlation key = run id (`runId.ToString()`), entry step name = a node id (both
 canonical GUIDs), and the idempotency key is colon-delimited (`saga:…:…`).
 
@@ -99,18 +99,18 @@ processor scan (neither is `Pending` nor timer-`Parked`). `Cancelled` was added
 to the `StepStatus` enum + POCO `[Inside]` set in Phase-F; the `.surql` was
 REGENERATED from the POCO (never hand-edited — see `../../Persistence/SurrealDb/CONVENTION.md`).
 
-### Relationship to the B4 quest reconcile sweep (do not duplicate)
+### Relationship to the B4 action reconcile sweep (do not duplicate)
 
-`QuestController` already exposes `runs/{id}/reconcile` + `runs/reconcile-sweep`
-(also `Operator`-guarded). Those are QUEST-DOMAIN-SPECIFIC: they probe *chain
+`ActionController` already exposes `runs/{id}/reconcile` + `runs/reconcile-sweep`
+(also `Operator`-guarded). Those are ACTION-DOMAIN-SPECIFIC: they probe *chain
 truth* for a run parked in `AwaitingReconciliation` and branch
 advance-reconciled / retry / park — a higher-level, chain-aware decision that
 prevents double-mint on the Grant-bounty path. This saga operator surface is the
-LOWER-LEVEL primitive beneath it: it knows nothing about chains or quests, only
-about generic outbox steps (park/dead-letter/requeue/cancel). A quest that
-dead-letters at the saga layer surfaces here for a raw requeue/cancel; a quest
-parked on `AwaitingReconciliation` at the DOMAIN layer is resolved by the quest
-reconcile endpoints (which never re-broadcast). They complement — the quest
+LOWER-LEVEL primitive beneath it: it knows nothing about chains or actions, only
+about generic outbox steps (park/dead-letter/requeue/cancel). A action that
+dead-letters at the saga layer surfaces here for a raw requeue/cancel; a action
+parked on `AwaitingReconciliation` at the DOMAIN layer is resolved by the action
+reconcile endpoints (which never re-broadcast). They complement — the action
 endpoints own chain-truth reconciliation, this surface owns generic step
 lifecycle recovery. Neither calls the other.
 
@@ -119,7 +119,7 @@ lifecycle recovery. Neither calls the other.
 `durable-saga-orchestration` (folded into `final-hardening-cutover` Phase F):
 **skeleton delivered + operator surface added; bridge adoption intentionally not
 pursued.** Phase 1 (the reusable saga skeleton) shipped with a live consumer
-(the durable quest workflow — the A1 fix made it active). Phase 2
+(the durable action workflow — the A1 fix made it active). Phase 2
 (bridge-as-saga-consumer) was DROPPED: the bridge was hardened directly in
 `final-hardening-cutover` Phase B, making the saga rewrite redundant (recorded
 decision). This §operator-surface is the remaining F1 deliverable.
@@ -129,7 +129,7 @@ decision). This §operator-surface is the remaining F1 deliverable.
 The scoped `ISagaProcessor.ProcessDueStepsAsync` can always be invoked directly
 (a fresh DI scope), independent of the hosted loop. This is the deterministic
 tick used by the A1 integration test
-(`QuestWorkflowDurableExecutionIntegrationTests`): rather than sleeping for a
+(`ActionWorkflowDurableExecutionIntegrationTests`): rather than sleeping for a
 poll interval, the test resolves `ISagaProcessor` and drains due steps
 synchronously, then asserts the run advanced past its entry node.
 

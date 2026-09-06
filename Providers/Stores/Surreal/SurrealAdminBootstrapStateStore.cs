@@ -51,7 +51,7 @@ public sealed class SurrealAdminBootstrapStateStore : IAdminBootstrapStateStore
 
     /// <inheritdoc/>
     public async Task<AZOAResult<AdminBootstrapState>> RotateCredentialsAsync(
-        Guid avatarId,
+        Guid userId,
         string username,
         string passwordHash,
         long expectedRevision,
@@ -63,27 +63,27 @@ public sealed class SurrealAdminBootstrapStateStore : IAdminBootstrapStateStore
             return AZOAResult<AdminBootstrapState>.Failure(
                 "Node operator credential revision must increase.");
 
-        var avatarRecordId = SurrealId.ToSurrealId(avatarId);
-        var avatarLink = SurrealLink.ToLink("avatar", avatarRecordId);
+        var userRecordId = SurrealId.ToSurrealId(userId);
+        var userLink = SurrealLink.ToLink("user", userRecordId);
         // raw: credential revision CAS, hash rotation, and JWT watermark advance must commit together.
         var transaction = SurrealQuery.Combine(
             SurrealQuery.Of("BEGIN"),
             SurrealQuery
-                .Of("LET $_binding = SELECT VALUE credential_revision FROM type::record($_state_table, $_state_id) WHERE avatar_id = $_avatar")
+                .Of("LET $_binding = SELECT VALUE credential_revision FROM type::record($_state_table, $_state_id) WHERE user_id = $_user")
                 .WithParam("_state_table", AdminBootstrapState.SchemaNameConst)
                 .WithParam("_state_id", AdminBootstrapState.LocalId)
-                .WithParam("_avatar", SurrealRecordParam.OfLink(avatarLink)),
+                .WithParam("_user", SurrealRecordParam.OfLink(userLink)),
             SurrealQuery
                 .Of("IF array::len($_binding) != 1 OR $_binding[0] != $_expected { THROW 'Node operator credential revision conflict' }")
                 .WithParam("_expected", expectedRevision),
             SurrealQuery
-                .Of("LET $_avatar_updated = (UPDATE type::record($_avatar_table, $_avatar_id) SET username = $_username, password_hash = $_password_hash, auth_not_before = $_changed_at RETURN AFTER)")
-                .WithParam("_avatar_table", "avatar")
-                .WithParam("_avatar_id", avatarRecordId)
+                .Of("LET $_user_updated = (UPDATE type::record($_user_table, $_user_id) SET username = $_username, password_hash = $_password_hash, auth_not_before = $_changed_at RETURN AFTER)")
+                .WithParam("_user_table", "user")
+                .WithParam("_user_id", userRecordId)
                 .WithParam("_username", username)
                 .WithParam("_password_hash", passwordHash)
                 .WithParam("_changed_at", changedAt),
-            SurrealQuery.Of("IF array::len($_avatar_updated) != 1 { THROW 'Node operator avatar is missing' }"),
+            SurrealQuery.Of("IF array::len($_user_updated) != 1 { THROW 'Node operator user is missing' }"),
             SurrealQuery
                 .Of("LET $_state_updated = (UPDATE type::record($_state_table, $_state_id) SET credential_revision = $_next, credential_updated_at = $_changed_at RETURN AFTER)")
                 .WithParam("_state_table", AdminBootstrapState.SchemaNameConst)
@@ -121,26 +121,26 @@ public sealed class SurrealAdminBootstrapStateStore : IAdminBootstrapStateStore
         DateTimeOffset changedAt,
         CancellationToken ct = default)
     {
-        var operatorId = AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId;
-        var avatarLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(operatorId));
+        var operatorId = AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId;
+        var userLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(operatorId));
         var transaction = SurrealQuery.Combine(
             SurrealQuery.Of("BEGIN"),
             SurrealQuery
-                .Of("LET $_binding = SELECT credential_revision, session_revision FROM type::record($_state_table, $_state_id) WHERE avatar_id = $_avatar")
+                .Of("LET $_binding = SELECT credential_revision, session_revision FROM type::record($_state_table, $_state_id) WHERE user_id = $_user")
                 .WithParam("_state_table", AdminBootstrapState.SchemaNameConst)
                 .WithParam("_state_id", AdminBootstrapState.LocalId)
-                .WithParam("_avatar", SurrealRecordParam.OfLink(avatarLink)),
+                .WithParam("_user", SurrealRecordParam.OfLink(userLink)),
             SurrealQuery
                 .Of("IF array::len($_binding) != 1 OR $_binding[0].credential_revision != $_expected_credential OR $_binding[0].session_revision != $_expected_session { THROW 'Node operator session revision conflict' }")
                 .WithParam("_expected_credential", expectedCredentialRevision)
                 .WithParam("_expected_session", expectedSessionRevision),
             SurrealQuery
-                .Of("LET $_updated = (UPDATE type::record($_avatar_table, $_avatar_id) SET auth_not_before = $_changed_at WHERE email = $_reserved_email RETURN AFTER)")
-                .WithParam("_avatar_table", "avatar")
-                .WithParam("_avatar_id", SurrealId.ToSurrealId(operatorId))
+                .Of("LET $_updated = (UPDATE type::record($_user_table, $_user_id) SET auth_not_before = $_changed_at WHERE email = $_reserved_email RETURN AFTER)")
+                .WithParam("_user_table", "user")
+                .WithParam("_user_id", SurrealId.ToSurrealId(operatorId))
                 .WithParam("_changed_at", changedAt)
                 .WithParam("_reserved_email", AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.ReservedEmail),
-            SurrealQuery.Of("IF array::len($_updated) != 1 { THROW 'Node operator avatar integrity conflict' }"),
+            SurrealQuery.Of("IF array::len($_updated) != 1 { THROW 'Node operator user integrity conflict' }"),
             SurrealQuery
                 .Of("LET $_state_updated = (UPDATE type::record($_state_table, $_state_id) SET session_revision = $_next_session WHERE credential_revision = $_expected_credential AND session_revision = $_expected_session RETURN AFTER)")
                 .WithParam("_state_table", AdminBootstrapState.SchemaNameConst)

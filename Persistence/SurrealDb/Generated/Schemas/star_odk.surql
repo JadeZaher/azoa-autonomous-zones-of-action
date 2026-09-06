@@ -14,7 +14,7 @@ DEFINE FIELD IF NOT EXISTS name ON TABLE star_odk TYPE string
 DEFINE FIELD IF NOT EXISTS description ON TABLE star_odk TYPE string;
 DEFINE FIELD IF NOT EXISTS public_key ON TABLE star_odk TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS private_key_hash ON TABLE star_odk TYPE option<string>;
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE star_odk TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE star_odk TYPE option<record<user>>;
 
 -- BoundHolonIds (list of holon-id strings)
 DEFINE FIELD IF NOT EXISTS bound_holon_ids ON TABLE star_odk TYPE option<array<string>>;
@@ -31,9 +31,9 @@ DEFINE FIELD IF NOT EXISTS is_public ON TABLE star_odk TYPE bool
 
 -- ── Indexes ──────────────────────────────────────────────────
 
-DEFINE INDEX IF NOT EXISTS star_avatar_id
+DEFINE INDEX IF NOT EXISTS star_user_id
     ON TABLE star_odk
-    FIELDS avatar_id;
+    FIELDS user_id;
 
 DEFINE INDEX IF NOT EXISTS star_target_chain
     ON TABLE star_odk

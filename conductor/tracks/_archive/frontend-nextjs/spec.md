@@ -33,7 +33,7 @@ frontend-nextjs/
 │   │   │   ├── wallet-connect.tsx
 │   │   │   └── wallet-selector.tsx
 │   │   ├── identity/
-│   │   │   ├── avatar-form.tsx
+│   │   │   ├── user-form.tsx
 │   │   │   └── wallet-registration.tsx
 │   │   └── blockchain/
 │   │       ├── balance-display.tsx
@@ -45,7 +45,7 @@ frontend-nextjs/
 │   │   └── utils.ts
 │   └── hooks/
 │       ├── use-wallet.ts
-│       └── use-avatar.ts
+│       └── use-user.ts
 ├── package.json
 ├── tailwind.config.ts
 ├── next.config.ts
@@ -61,7 +61,7 @@ frontend-nextjs/
 - Code examples for identity, NFT, and bridge operations
 
 ### 2. Identity Management
-- Avatar creation form (username, email)
+- User creation form (username, email)
 - Wallet registration for multiple chains (Algorand, Solana)
 - Wallet connection and management interface
 
@@ -86,15 +86,15 @@ export class AZOAApiClient {
   private baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   
   // Identity operations
-  async createAvatar(data: { username: string; email: string }) {
-    return await fetch(`${this.baseUrl}/api/avatar`, {
+  async createUser(data: { username: string; email: string }) {
+    return await fetch(`${this.baseUrl}/api/user`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
   }
   
-  async createWallet(data: { avatarId: string; chainType: string; address: string }) {
+  async createWallet(data: { userId: string; chainType: string; address: string }) {
     return await fetch(`${this.baseUrl}/api/wallets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -148,11 +148,11 @@ export function WalletConnect({ onConnect, availableChains }: WalletConnectProps
 ```typescript
 // src/components/identity/wallet-registration.tsx
 interface WalletRegistrationProps {
-  avatarId: string;
+  userId: string;
   onWalletRegistered: (wallet: Wallet) => void;
 }
 
-export function WalletRegistration({ avatarId, onWalletRegistered }: WalletRegistrationProps) {
+export function WalletRegistration({ userId, onWalletRegistered }: WalletRegistrationProps) {
   const [formData, setFormData] = useState({
     chainType: 'Solana',
     address: '',
@@ -166,7 +166,7 @@ export function WalletRegistration({ avatarId, onWalletRegistered }: WalletRegis
       <form onSubmit={async (e) => {
         e.preventDefault();
         const response = await api.createWallet({
-          avatarId,
+          userId,
           ...formData
         });
         onWalletRegistered(response.data);
@@ -181,7 +181,7 @@ export function WalletRegistration({ avatarId, onWalletRegistered }: WalletRegis
 
 ## State Management
 - React hooks for local state
-- Context API for global state (wallets, avatar)
+- Context API for global state (wallets, user)
 - Zustand for complex state if needed
 
 ## Styling
@@ -199,7 +199,7 @@ NEXT_PUBLIC_SOLANA_DEVNET_URL=https://api.devnet.solana.com
 
 ## Acceptance Criteria
 - [ ] Landing page replicates azoaweb4.com design and content
-- [ ] Avatar creation form works with backend API
+- [ ] User creation form works with backend API
 - [ ] Wallet registration supports Algorand and Solana devnet
 - [ ] Wallet connection and display functionality
 - [ ] Balance display for connected wallets

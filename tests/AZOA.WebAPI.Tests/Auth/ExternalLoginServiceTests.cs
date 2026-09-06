@@ -34,7 +34,7 @@ public class ExternalLoginServiceTests
     [Fact]
     public async Task Google_sign_in_never_merges_into_a_password_account_with_the_same_email()
     {
-        var attackerAccount = new AZOA.WebAPI.Models.Avatar
+        var attackerAccount = new AZOA.WebAPI.Models.User
         {
             Id = Guid.NewGuid(),
             Username = "attacker",
@@ -42,7 +42,7 @@ public class ExternalLoginServiceTests
             PasswordHash = "attacker-chosen-hash",
         };
 
-        var harness = new Harness(seedAvatars: [attackerAccount]);
+        var harness = new Harness(seedUsers: [attackerAccount]);
 
         // The victim's Google account asserts the SAME email the attacker squatted.
         var identity = new ExternalIdentity(
@@ -56,7 +56,7 @@ public class ExternalLoginServiceTests
         resolved.IsError.Should().BeFalse();
         resolved.Result.Should().NotBeNull();
 
-        // The decisive assertion: a brand-new avatar, NOT the attacker's.
+        // The decisive assertion: a brand-new user, NOT the attacker's.
         resolved.Result!.Id.Should().NotBe(attackerAccount.Id,
             "merging on a matching email is the account pre-hijacking vector D17 forbids");
 
@@ -66,16 +66,16 @@ public class ExternalLoginServiceTests
     }
 
     /// <summary>
-    /// The structural half of rule 1: the resolve path must never even ASK the avatar
+    /// The structural half of rule 1: the resolve path must never even ASK the user
     /// store for a list it could search by email. GetAllAsync is the only method that
     /// could serve an email lookup, so its call count is the proof.
     /// </summary>
     [Fact]
-    public async Task Resolving_a_federated_identity_never_enumerates_avatars_by_email()
+    public async Task Resolving_a_federated_identity_never_enumerates_users_by_email()
     {
-        var harness = new Harness(seedAvatars:
+        var harness = new Harness(seedUsers:
         [
-            new AZOA.WebAPI.Models.Avatar
+            new AZOA.WebAPI.Models.User
             {
                 Id = Guid.NewGuid(), Username = "someone", Email = VictimEmail, PasswordHash = "x",
             }
@@ -85,7 +85,7 @@ public class ExternalLoginServiceTests
             new ExternalIdentity(ExternalAuthProvider.GOOGLE, "subject-abc", Email: VictimEmail),
             tenantId: null);
 
-        harness.AvatarStore.Verify(
+        harness.UserStore.Verify(
             store => store.GetAllAsync(It.IsAny<CancellationToken>()),
             Times.Never,
             "an email-based lookup is the pre-hijacking vector; the resolve path must not have one");
@@ -109,32 +109,32 @@ public class ExternalLoginServiceTests
             .Should().BeNull("the subject must be the provider's stable id, never the email");
     }
 
-    /// <summary>Linking is the ONLY route from a federated identity to an existing avatar.</summary>
+    /// <summary>Linking is the ONLY route from a federated identity to an existing user.</summary>
     [Fact]
-    public async Task Linking_requires_an_authenticated_avatar_and_attaches_to_exactly_that_account()
+    public async Task Linking_requires_an_authenticated_user_and_attaches_to_exactly_that_account()
     {
-        var existing = new AZOA.WebAPI.Models.Avatar
+        var existing = new AZOA.WebAPI.Models.User
         {
             Id = Guid.NewGuid(), Username = "real-user", Email = VictimEmail, PasswordHash = "hash",
         };
-        var harness = new Harness(seedAvatars: [existing]);
+        var harness = new Harness(seedUsers: [existing]);
 
-        var linked = await harness.Service.LinkToAvatarAsync(
+        var linked = await harness.Service.LinkToUserAsync(
             new ExternalIdentity(ExternalAuthProvider.GOOGLE, "subject-xyz", Email: VictimEmail),
             existing.Id,
             tenantId: null);
 
         linked.IsError.Should().BeFalse();
-        linked.Result!.AvatarId.Should().Be(existing.Id.ToString("N"));
+        linked.Result!.UserId.Should().Be(existing.Id.ToString("N"));
 
-        // A second avatar cannot steal an already-linked provider account.
-        var thief = new AZOA.WebAPI.Models.Avatar
+        // A second user cannot steal an already-linked provider account.
+        var thief = new AZOA.WebAPI.Models.User
         {
             Id = Guid.NewGuid(), Username = "thief", Email = "thief@example.com", PasswordHash = "hash",
         };
-        harness.SeedAvatar(thief);
+        harness.SeedUser(thief);
 
-        var stolen = await harness.Service.LinkToAvatarAsync(
+        var stolen = await harness.Service.LinkToUserAsync(
             new ExternalIdentity(ExternalAuthProvider.GOOGLE, "subject-xyz"),
             thief.Id,
             tenantId: null);
@@ -142,13 +142,13 @@ public class ExternalLoginServiceTests
         stolen.IsError.Should().BeTrue();
     }
 
-    /// <summary>An authenticated caller with no avatar identity cannot link anything.</summary>
+    /// <summary>An authenticated caller with no user identity cannot link anything.</summary>
     [Fact]
-    public async Task Linking_without_an_avatar_identity_is_refused()
+    public async Task Linking_without_an_user_identity_is_refused()
     {
         var harness = new Harness();
 
-        var linked = await harness.Service.LinkToAvatarAsync(
+        var linked = await harness.Service.LinkToUserAsync(
             new ExternalIdentity(ExternalAuthProvider.GITHUB, "gh-1"),
             Guid.Empty,
             tenantId: null);
@@ -160,12 +160,12 @@ public class ExternalLoginServiceTests
 
     /// <summary>
     /// The same Google account signing in to two different consumers must land on two
-    /// unlinkable avatars. A node-global binding would collapse them into one identity
+    /// unlinkable users. A node-global binding would collapse them into one identity
     /// — the cross-tenant failure D1/D23 exist to prevent, and the one
     /// kyc_screening_monitor's uniqueness note calls out explicitly.
     /// </summary>
     [Fact]
-    public async Task The_same_provider_subject_in_two_tenants_yields_two_distinct_avatars()
+    public async Task The_same_provider_subject_in_two_tenants_yields_two_distinct_users()
     {
         var harness = new Harness();
         var tenantA = Guid.NewGuid();
@@ -180,7 +180,7 @@ public class ExternalLoginServiceTests
         inTenantB.IsError.Should().BeFalse();
 
         inTenantA.Result!.Id.Should().NotBe(inTenantB.Result!.Id,
-            "one provider account must resolve to a separate avatar per tenant");
+            "one provider account must resolve to a separate user per tenant");
 
         harness.Bindings.Should().HaveCount(2);
         harness.Bindings.Select(binding => binding.TenantScope).Should()
@@ -194,9 +194,9 @@ public class ExternalLoginServiceTests
         ]);
     }
 
-    /// <summary>Signing in twice under one tenant converges on the SAME avatar.</summary>
+    /// <summary>Signing in twice under one tenant converges on the SAME user.</summary>
     [Fact]
-    public async Task Repeated_sign_in_within_one_tenant_resolves_to_the_same_avatar()
+    public async Task Repeated_sign_in_within_one_tenant_resolves_to_the_same_user()
     {
         var harness = new Harness();
         var tenant = Guid.NewGuid();
@@ -209,13 +209,13 @@ public class ExternalLoginServiceTests
         harness.Bindings.Should().HaveCount(1);
     }
 
-    // ── A revoked provider account must not orphan the avatar ─────────────────
+    // ── A revoked provider account must not orphan the user ─────────────────
 
-    /// <summary>Unlinking removes the binding and leaves the avatar row intact.</summary>
+    /// <summary>Unlinking removes the binding and leaves the user row intact.</summary>
     [Fact]
-    public async Task Unlinking_a_provider_never_deletes_the_avatar()
+    public async Task Unlinking_a_provider_never_deletes_the_user()
     {
-        var avatar = new AZOA.WebAPI.Models.Avatar
+        var user = new AZOA.WebAPI.Models.User
         {
             Id = Guid.NewGuid(),
             Username = "has-password",
@@ -223,27 +223,27 @@ public class ExternalLoginServiceTests
             // A real password credential, so the account stays reachable after unlink.
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("Sup3rSecret"),
         };
-        var harness = new Harness(seedAvatars: [avatar]);
+        var harness = new Harness(seedUsers: [user]);
 
-        await harness.Service.LinkToAvatarAsync(
-            new ExternalIdentity(ExternalAuthProvider.GOOGLE, "sub-1"), avatar.Id, null);
+        await harness.Service.LinkToUserAsync(
+            new ExternalIdentity(ExternalAuthProvider.GOOGLE, "sub-1"), user.Id, null);
 
-        var unlinked = await harness.Service.UnlinkAsync(ExternalAuthProvider.GOOGLE, avatar.Id, null);
+        var unlinked = await harness.Service.UnlinkAsync(ExternalAuthProvider.GOOGLE, user.Id, null);
 
         unlinked.IsError.Should().BeFalse();
         harness.Bindings.Should().BeEmpty();
 
-        harness.AvatarStore.Verify(
+        harness.UserStore.Verify(
             store => store.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never,
-            "unlinking a provider must never cascade to the avatar");
+            "unlinking a provider must never cascade to the user");
 
-        var stillThere = await harness.AvatarStore.Object.GetByIdAsync(avatar.Id);
+        var stillThere = await harness.UserStore.Object.GetByIdAsync(user.Id);
         stillThere.Result.Should().NotBeNull();
     }
 
     /// <summary>
-    /// Removing the LAST way into an account is refused. The avatar would survive the
+    /// Removing the LAST way into an account is refused. The user would survive the
     /// delete but nobody could ever reach it again, which is orphaning by another name.
     /// </summary>
     [Fact]
@@ -258,23 +258,23 @@ public class ExternalLoginServiceTests
             ExternalAuthProvider.GOOGLE, created.Result!.Id, tenantId: null);
 
         unlinked.IsError.Should().BeTrue(
-            "an OAuth-created avatar has no password its owner knows; removing the "
+            "an OAuth-created user has no password its owner knows; removing the "
             + "binding would strand the account");
         harness.Bindings.Should().HaveCount(1);
     }
 
-    /// <summary>A binding whose avatar has vanished fails closed instead of re-creating one.</summary>
+    /// <summary>A binding whose user has vanished fails closed instead of re-creating one.</summary>
     [Fact]
-    public async Task A_binding_pointing_at_a_missing_avatar_fails_closed()
+    public async Task A_binding_pointing_at_a_missing_user_fails_closed()
     {
         var harness = new Harness();
-        harness.Bindings.Add(new AvatarExternalLogin
+        harness.Bindings.Add(new UserExternalLogin
         {
             Id = "orphan",
             TenantScope = KycPersonKeyDeriver.ScopeValue(null),
             Provider = ExternalAuthProvider.GOOGLE,
             Subject = "ghost",
-            AvatarId = Guid.NewGuid().ToString("N"),
+            UserId = Guid.NewGuid().ToString("N"),
         });
 
         var resolved = await harness.Service.ResolveOrCreateAsync(
@@ -285,11 +285,11 @@ public class ExternalLoginServiceTests
             + "identity carrying none of the original's history");
     }
 
-    /// <summary>A deactivated avatar cannot be signed into through a federated provider.</summary>
+    /// <summary>A deactivated user cannot be signed into through a federated provider.</summary>
     [Fact]
-    public async Task A_deactivated_avatar_cannot_sign_in()
+    public async Task A_deactivated_user_cannot_sign_in()
     {
-        var avatar = new AZOA.WebAPI.Models.Avatar
+        var user = new AZOA.WebAPI.Models.User
         {
             Id = Guid.NewGuid(),
             Username = "disabled",
@@ -297,14 +297,14 @@ public class ExternalLoginServiceTests
             PasswordHash = "hash",
             IsActive = false,
         };
-        var harness = new Harness(seedAvatars: [avatar]);
-        harness.Bindings.Add(new AvatarExternalLogin
+        var harness = new Harness(seedUsers: [user]);
+        harness.Bindings.Add(new UserExternalLogin
         {
             Id = "b1",
             TenantScope = KycPersonKeyDeriver.ScopeValue(null),
             Provider = ExternalAuthProvider.GOOGLE,
             Subject = "sub-disabled",
-            AvatarId = avatar.Id.ToString("N"),
+            UserId = user.Id.ToString("N"),
         });
 
         var resolved = await harness.Service.ResolveOrCreateAsync(
@@ -322,78 +322,78 @@ public class ExternalLoginServiceTests
     /// </summary>
     private sealed class Harness
     {
-        public Mock<IAvatarStore> AvatarStore { get; } = new(MockBehavior.Strict);
+        public Mock<IUserStore> UserStore { get; } = new(MockBehavior.Strict);
 
-        public List<AvatarExternalLogin> Bindings { get; } = [];
+        public List<UserExternalLogin> Bindings { get; } = [];
 
         public ExternalLoginService Service { get; }
 
-        private readonly Dictionary<Guid, IAvatar> _avatars = [];
+        private readonly Dictionary<Guid, IUser> _users = [];
 
-        public Harness(IEnumerable<AZOA.WebAPI.Models.Avatar>? seedAvatars = null)
+        public Harness(IEnumerable<AZOA.WebAPI.Models.User>? seedUsers = null)
         {
-            foreach (var avatar in seedAvatars ?? [])
-                _avatars[avatar.Id] = avatar;
+            foreach (var user in seedUsers ?? [])
+                _users[user.Id] = user;
 
-            AvatarStore
+            UserStore
                 .Setup(store => store.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((Guid id, CancellationToken _) => _avatars.TryGetValue(id, out var found)
-                    ? AZOAResult<IAvatar>.Success(found)
-                    : AZOAResult<IAvatar>.Failure("Avatar not found."));
+                .ReturnsAsync((Guid id, CancellationToken _) => _users.TryGetValue(id, out var found)
+                    ? AZOAResult<IUser>.Success(found)
+                    : AZOAResult<IUser>.Failure("User not found."));
 
-            AvatarStore
-                .Setup(store => store.CreateIfAbsentAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((IAvatar avatar, CancellationToken _) =>
+            UserStore
+                .Setup(store => store.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((IUser user, CancellationToken _) =>
                 {
-                    if (_avatars.TryGetValue(avatar.Id, out var existing))
-                        return AZOAResult<IAvatar>.Success(existing);
+                    if (_users.TryGetValue(user.Id, out var existing))
+                        return AZOAResult<IUser>.Success(existing);
 
-                    // The real store's global UNIQUE index on avatar.email. If the
+                    // The real store's global UNIQUE index on user.email. If the
                     // service ever reused a provider address, this would throw and the
                     // cross-tenant test would fail — which is the point.
-                    if (_avatars.Values.Any(candidate =>
-                            string.Equals(candidate.Email, avatar.Email, StringComparison.OrdinalIgnoreCase)))
+                    if (_users.Values.Any(candidate =>
+                            string.Equals(candidate.Email, user.Email, StringComparison.OrdinalIgnoreCase)))
                     {
-                        return AZOAResult<IAvatar>.Failure("Duplicate email (UNIQUE index).");
+                        return AZOAResult<IUser>.Failure("Duplicate email (UNIQUE index).");
                     }
 
-                    _avatars[avatar.Id] = avatar;
-                    return AZOAResult<IAvatar>.Success(avatar);
+                    _users[user.Id] = user;
+                    return AZOAResult<IUser>.Success(user);
                 });
 
-            var loginStore = new Mock<IAvatarExternalLoginStore>(MockBehavior.Strict);
+            var loginStore = new Mock<IUserExternalLoginStore>(MockBehavior.Strict);
 
             loginStore
                 .Setup(store => store.GetBySubjectAsync(
                     It.IsAny<string>(), It.IsAny<ExternalAuthProvider>(), It.IsAny<string>(),
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync((string scope, ExternalAuthProvider provider, string subject, CancellationToken _) =>
-                    AZOAResult<AvatarExternalLogin?>.Success(Bindings.FirstOrDefault(binding =>
+                    AZOAResult<UserExternalLogin?>.Success(Bindings.FirstOrDefault(binding =>
                         binding.TenantScope == scope
                         && binding.Provider == provider
                         && binding.Subject == subject)));
 
             loginStore
                 .Setup(store => store.CreateAsync(
-                    It.IsAny<AvatarExternalLogin>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((AvatarExternalLogin binding, CancellationToken _) =>
+                    It.IsAny<UserExternalLogin>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((UserExternalLogin binding, CancellationToken _) =>
                 {
                     var collides = Bindings.Any(existing =>
                         existing.TenantScope == binding.TenantScope
                         && existing.Provider == binding.Provider
                         && existing.Subject == binding.Subject);
                     if (collides)
-                        return AZOAResult<AvatarExternalLogin>.Failure("UNIQUE index violation.");
+                        return AZOAResult<UserExternalLogin>.Failure("UNIQUE index violation.");
 
                     Bindings.Add(binding);
-                    return AZOAResult<AvatarExternalLogin>.Success(binding);
+                    return AZOAResult<UserExternalLogin>.Success(binding);
                 });
 
             loginStore
-                .Setup(store => store.GetByAvatarAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((string avatarId, CancellationToken _) =>
-                    AZOAResult<IReadOnlyList<AvatarExternalLogin>>.Success(
-                        Bindings.Where(binding => binding.AvatarId == avatarId).ToList()));
+                .Setup(store => store.GetByUserAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string userId, CancellationToken _) =>
+                    AZOAResult<IReadOnlyList<UserExternalLogin>>.Success(
+                        Bindings.Where(binding => binding.UserId == userId).ToList()));
 
             loginStore
                 .Setup(store => store.TouchLastLoginAsync(
@@ -404,19 +404,19 @@ public class ExternalLoginServiceTests
                 .Setup(store => store.DeleteAsync(
                     It.IsAny<string>(), It.IsAny<ExternalAuthProvider>(), It.IsAny<string>(),
                     It.IsAny<CancellationToken>()))
-                .ReturnsAsync((string scope, ExternalAuthProvider provider, string avatarId, CancellationToken _) =>
+                .ReturnsAsync((string scope, ExternalAuthProvider provider, string userId, CancellationToken _) =>
                     AZOAResult<bool>.Success(
                         Bindings.RemoveAll(binding =>
                             binding.TenantScope == scope
                             && binding.Provider == provider
-                            && binding.AvatarId == avatarId) > 0));
+                            && binding.UserId == userId) > 0));
 
             Service = new ExternalLoginService(
-                AvatarStore.Object,
+                UserStore.Object,
                 loginStore.Object,
                 NullLogger<ExternalLoginService>.Instance);
         }
 
-        public void SeedAvatar(AZOA.WebAPI.Models.Avatar avatar) => _avatars[avatar.Id] = avatar;
+        public void SeedUser(AZOA.WebAPI.Models.User user) => _users[user.Id] = user;
     }
 }

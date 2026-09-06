@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Tests.Fakes;
 /// identically to one driven over SurrealDB — the durable-workflow-engine
 /// acceptance proof needs no real database.
 ///
-/// <para><b>Clone-on-read/write.</b> Like <see cref="AZOA.WebAPI.Providers.Stores.InMemoryQuestNodeExecutionStore"/>,
+/// <para><b>Clone-on-read/write.</b> Like <see cref="AZOA.WebAPI.Providers.Stores.InMemoryActionNodeExecutionStore"/>,
 /// every value handed out (and stored) is a defensive deep copy of the
 /// <see cref="SagaStepRecord"/> so a caller can never mutate the backing store
 /// through a returned reference. <see cref="SagaStepRecord"/> has no Clone of its

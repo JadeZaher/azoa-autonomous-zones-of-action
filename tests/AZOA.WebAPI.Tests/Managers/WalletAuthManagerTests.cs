@@ -19,7 +19,7 @@ public class WalletAuthManagerTests
 {
     private readonly Mock<IWalletAuthChallengeStore> _challenges = new();
     private readonly Mock<IWalletAuthClaimTokenStore> _claimTokens = new();
-    private readonly Mock<IAvatarStore> _avatars = new();
+    private readonly Mock<IUserStore> _users = new();
     private readonly Mock<IWalletSignatureVerifier> _verifier = new();
     private readonly Mock<IConsentGrantStore> _consentGrants = new();
     private readonly WalletAuthManager _mgr;
@@ -39,7 +39,7 @@ public class WalletAuthManagerTests
         // assert the call happens / fails gracefully.
         _consentGrants.Setup(c => c.RevokeAllByGrantorAsync(It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<int> { Result = 0 });
-        _mgr = new WalletAuthManager(_challenges.Object, _claimTokens.Object, _avatars.Object, _verifier.Object, _consentGrants.Object, config);
+        _mgr = new WalletAuthManager(_challenges.Object, _claimTokens.Object, _users.Object, _verifier.Object, _consentGrants.Object, config);
     }
 
     private void GivenLiveChallengeAndValidSignature()
@@ -61,40 +61,40 @@ public class WalletAuthManagerTests
     }
 
     [Fact]
-    public async Task Verify_UnknownWallet_CreatesSelfOwnedAvatar_AC2()
+    public async Task Verify_UnknownWallet_CreatesSelfOwnedUser_AC2()
     {
         GivenLiveChallengeAndValidSignature();
-        // Wallet not bound to any avatar yet.
-        _avatars.Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
-        _avatars.Setup(a => a.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IAvatar a, CancellationToken _) => new AZOAResult<IAvatar> { Result = a });
+        // Wallet not bound to any user yet.
+        _users.Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser> { Result = null });
+        _users.Setup(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IUser a, CancellationToken _) => new AZOAResult<IUser> { Result = a });
 
         var r = await _mgr.VerifyAsync(Addr, Chain, "c2ln", null);
 
         r.IsError.Should().BeFalse();
         r.Result!.Token.Should().NotBeNullOrEmpty();
-        // The minted avatar is SELF-OWNED with the wallet binding set.
-        _avatars.Verify(a => a.UpsertAsync(
-            It.Is<IAvatar>(x => x.OwnerTenantId == null
+        // The minted user is SELF-OWNED with the wallet binding set.
+        _users.Verify(a => a.UpsertAsync(
+            It.Is<IUser>(x => x.OwnerTenantId == null
                 && x.AuthWalletAddress == Addr && x.AuthWalletChainType == Chain),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task Verify_KnownWallet_LogsIntoThatAvatar_NoNewAvatar_AC2()
+    public async Task Verify_KnownWallet_LogsIntoThatUser_NoNewUser_AC2()
     {
         GivenLiveChallengeAndValidSignature();
-        var existing = new Avatar { Id = Guid.NewGuid(), OwnerTenantId = null, AuthWalletAddress = Addr, AuthWalletChainType = Chain };
-        _avatars.Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = existing });
+        var existing = new User { Id = Guid.NewGuid(), OwnerTenantId = null, AuthWalletAddress = Addr, AuthWalletChainType = Chain };
+        _users.Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser> { Result = existing });
 
         var r = await _mgr.VerifyAsync(Addr, Chain, "c2ln", null);
 
         r.IsError.Should().BeFalse();
-        r.Result!.AvatarId.Should().Be(existing.Id);
-        // No new avatar minted for a known wallet.
-        _avatars.Verify(a => a.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+        r.Result!.UserId.Should().Be(existing.Id);
+        // No new user minted for a known wallet.
+        _users.Verify(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -102,14 +102,14 @@ public class WalletAuthManagerTests
     {
         GivenLiveChallengeAndValidSignature();
         _verifier.Setup(v => v.Verify(Chain, Addr, It.IsAny<byte[]>(), It.IsAny<byte[]>())).Returns(false);
-        _avatars.Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
+        _users.Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser> { Result = null });
 
         var r = await _mgr.VerifyAsync(Addr, Chain, "badsig", null);
 
         r.IsError.Should().BeTrue();
-        // Never minted an avatar on a bad signature.
-        _avatars.Verify(a => a.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()), Times.Never);
+        // Never minted an user on a bad signature.
+        _users.Verify(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -148,8 +148,8 @@ public class WalletAuthManagerTests
     public async Task Verify_ClientMessageMismatch_Rejected_AC1b()
     {
         GivenLiveChallengeAndValidSignature();
-        _avatars.Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = null });
+        _users.Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser> { Result = null });
 
         // A tampered client echo of the signed message must reject (domain separation).
         var r = await _mgr.VerifyAsync(Addr, Chain, "c2ln", message: "TAMPERED-MESSAGE");
@@ -161,10 +161,10 @@ public class WalletAuthManagerTests
 
     /// <summary>
     /// Wires the claim-token happy path: a single-use token resolves the target
-    /// avatar, the avatar loads + echoes back on upsert. The user-side credential is
+    /// user, the user loads + echoes back on upsert. The user-side credential is
     /// a password (the simplest legal "exactly one of {password,wallet}" choice — it
     /// avoids the challenge/verify pipeline entirely so the test isolates the
-    /// revoke-on-claim behaviour). Returns the claimed avatar id.
+    /// revoke-on-claim behaviour). Returns the claimed user id.
     /// </summary>
     private Guid GivenClaimTokenHappyPath()
     {
@@ -173,19 +173,19 @@ public class WalletAuthManagerTests
         _claimTokens.Setup(t => t.GetByTokenAsync(token, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<WalletAuthClaimToken>
             {
-                Result = new WalletAuthClaimToken { Token = token, TargetAvatarId = targetId }
+                Result = new WalletAuthClaimToken { Token = token, TargetUserId = targetId }
             });
         // Atomic single-use redeem wins.
         _claimTokens.Setup(t => t.TryConsumeAsync(token, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<bool> { Result = true });
-        // The tenant-provisioned avatar still has a tenant owner pre-claim.
-        _avatars.Setup(a => a.GetByIdAsync(targetId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar>
+        // The tenant-provisioned user still has a tenant owner pre-claim.
+        _users.Setup(a => a.GetByIdAsync(targetId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser>
             {
-                Result = new Avatar { Id = targetId, OwnerTenantId = Guid.NewGuid() }
+                Result = new User { Id = targetId, OwnerTenantId = Guid.NewGuid() }
             });
-        _avatars.Setup(a => a.UpsertAsync(It.IsAny<IAvatar>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IAvatar a, CancellationToken _) => new AZOAResult<IAvatar> { Result = a });
+        _users.Setup(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IUser a, CancellationToken _) => new AZOAResult<IUser> { Result = a });
         return targetId;
     }
 
@@ -196,7 +196,7 @@ public class WalletAuthManagerTests
 
         // Claim with a password user-side credential (no wallet fields).
         var r = await _mgr.ClaimAsync(
-            authedAvatarId: null,
+            authedUserId: null,
             claimToken: "claim-token-abc",
             newPassword: "a-strong-new-password",
             address: null, chainType: null, signature: null, message: null);
@@ -204,7 +204,7 @@ public class WalletAuthManagerTests
         r.IsError.Should().BeFalse();
         // THE attack closed: a tenant's still-live consent grant is revoked the moment
         // the user claims, so a residual child JWT can no longer drive the signing seam.
-        // Revocation is keyed by the CLAIMED avatar id (the grantor), exactly once.
+        // Revocation is keyed by the CLAIMED user id (the grantor), exactly once.
         _consentGrants.Verify(c => c.RevokeAllByGrantorAsync(
             targetId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -220,7 +220,7 @@ public class WalletAuthManagerTests
             .ReturnsAsync(new AZOAResult<int> { IsError = true, Message = "store unavailable" });
 
         var r = await _mgr.ClaimAsync(
-            authedAvatarId: null,
+            authedUserId: null,
             claimToken: "claim-token-abc",
             newPassword: "a-strong-new-password",
             address: null, chainType: null, signature: null, message: null);

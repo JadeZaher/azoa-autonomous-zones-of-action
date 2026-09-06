@@ -21,7 +21,7 @@ public interface IIdentomatScreeningService
 {
     /// <summary>Runs a one-off screening query and persists the AZOA-derived verdict.</summary>
     Task<AZOAResult<KycScreeningResult>> ScreenAsync(
-        Guid subjectAvatarId,
+        Guid subjectUserId,
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
@@ -33,7 +33,7 @@ public interface IIdentomatScreeningService
     /// idempotent success, not a failure.
     /// </summary>
     Task<AZOAResult<KycScreeningMonitor>> RegisterMonitorAsync(
-        Guid subjectAvatarId,
+        Guid subjectUserId,
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
@@ -115,7 +115,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
     }
 
     public async Task<AZOAResult<KycScreeningResult>> ScreenAsync(
-        Guid subjectAvatarId,
+        Guid subjectUserId,
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
@@ -149,7 +149,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
         var record = new KycScreeningResult
         {
             Id = Guid.NewGuid().ToString("N"),
-            SubjectAvatarId = subjectAvatarId == Guid.Empty ? null : subjectAvatarId.ToString("N"),
+            SubjectUserId = subjectUserId == Guid.Empty ? null : subjectUserId.ToString("N"),
             TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),
             QueryFullName = fullName.Trim(),
             QueryBirthdayTimeFrom = string.IsNullOrWhiteSpace(birthdayTimeFrom) ? null : birthdayTimeFrom.Trim(),
@@ -173,7 +173,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
     }
 
     public async Task<AZOAResult<KycScreeningMonitor>> RegisterMonitorAsync(
-        Guid subjectAvatarId,
+        Guid subjectUserId,
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
@@ -257,7 +257,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
 
             // No row in THIS scope. One upstream monitor legitimately backs one row
             // per tenant, so recover the id another scope already holds. Only the
-            // opaque id crosses over — never a row, an avatar, or a tenant.
+            // opaque id crosses over — never a row, an user, or a tenant.
             if (string.IsNullOrWhiteSpace(providerMonitorId))
             {
                 var shared = await _store.GetProviderMonitorIdByQueryAsync(canonicalName, canonicalBirthday, ct);
@@ -296,7 +296,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
                 Id = Guid.NewGuid().ToString("N"),
                 ProviderMonitorId = providerMonitorId,
                 TenantScope = scope,
-                SubjectAvatarId = subjectAvatarId == Guid.Empty ? null : subjectAvatarId.ToString("N"),
+                SubjectUserId = subjectUserId == Guid.Empty ? null : subjectUserId.ToString("N"),
                 TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),
                 QueryFullName = canonicalName,
                 QueryBirthdayTimeFrom = canonicalBirthday,
@@ -653,7 +653,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
             new KycScreeningResult
             {
                 Id = Guid.NewGuid().ToString("N"),
-                SubjectAvatarId = monitor.SubjectAvatarId,
+                SubjectUserId = monitor.SubjectUserId,
                 TenantId = monitor.TenantId,
                 QueryFullName = monitor.QueryFullName,
                 QueryBirthdayTimeFrom = string.IsNullOrWhiteSpace(monitor.QueryBirthdayTimeFrom)

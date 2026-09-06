@@ -50,7 +50,7 @@ async function main() {
   }
 
   // Cross-chain portfolio aggregation (uses chain providers)
-  // const fullPortfolio = await azoa.portfolio.getAll(avatarId);
+  // const fullPortfolio = await azoa.portfolio.getAll(userId);
 
   // Delete
   const deleted = await azoa.api.deleteWallet(created.value.id);

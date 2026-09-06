@@ -9,7 +9,7 @@ namespace AZOA.WebAPI.Interfaces.Stores;
 /// <summary>
 /// Persistence boundary for the KYC aggregate (<see cref="KycSubmission"/> +
 /// <see cref="KycDocument"/>). Hand-authored SurrealDB store; no AutoMapper, no
-/// EF. Owner-scoped queries (by <c>avatar_id</c>) are the IDOR-safe primitives
+/// EF. Owner-scoped queries (by <c>user_id</c>) are the IDOR-safe primitives
 /// the manager builds on.
 /// </summary>
 public interface IKycStore
@@ -19,26 +19,26 @@ public interface IKycStore
 
     /// <summary>
     /// Loads the most-recent submission (by <c>submitted_at</c>) owned by the
-    /// avatar, or <c>Result == null</c> with no error when the avatar has none.
+    /// user, or <c>Result == null</c> with no error when the user has none.
     /// </summary>
-    Task<AZOAResult<KycSubmission>> GetLatestSubmissionByAvatarAsync(Guid avatarId, CancellationToken ct = default);
+    Task<AZOAResult<KycSubmission>> GetLatestSubmissionByUserAsync(Guid userId, CancellationToken ct = default);
 
-    /// <summary>Loads latest provenance for exactly one avatar/tenant authority tuple.</summary>
+    /// <summary>Loads latest provenance for exactly one user/tenant authority tuple.</summary>
     Task<AZOAResult<KycSubmission>> GetLatestSubmissionAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct = default);
 
     /// <summary>
-    /// Loads the avatar's single active (PENDING or IN_REVIEW) submission if one
+    /// Loads the user's single active (PENDING or IN_REVIEW) submission if one
     /// exists, else <c>Result == null</c>. The manager uses this to reject a
     /// second concurrent submission.
     /// </summary>
-    Task<AZOAResult<KycSubmission>> GetActiveSubmissionByAvatarAsync(Guid avatarId, CancellationToken ct = default);
+    Task<AZOAResult<KycSubmission>> GetActiveSubmissionByUserAsync(Guid userId, CancellationToken ct = default);
 
-    /// <summary>Loads the active attempt for exactly one avatar/tenant authority tuple.</summary>
+    /// <summary>Loads the active attempt for exactly one user/tenant authority tuple.</summary>
     Task<AZOAResult<KycSubmission>> GetActiveSubmissionAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct = default);
 
@@ -78,7 +78,7 @@ public interface IKycStore
 
     /// <summary>
     /// Atomically creates one active submission and its documents. The storage
-    /// transaction rejects a second active submission for the avatar.
+    /// transaction rejects a second active submission for the user.
     /// </summary>
     Task<AZOAResult<KycSubmission>> CreateSubmissionAsync(
         KycSubmission submission,

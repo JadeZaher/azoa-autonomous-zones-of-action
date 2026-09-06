@@ -1,10 +1,10 @@
 /**
  * Typed `nodeConfig` builders — pure helpers that serialize the **generic
  * mechanism** params of the `economic-primitive-nodes` node types into the
- * `Config` JSON string a `QuestNode` / template node carries on the wire.
+ * `Config` JSON string a `ActionNode` / template node carries on the wire.
  *
  * Each builder mirrors the corresponding C# config POCO in
- * `Models/Quest/NodeConfigs.cs` exactly. They type ONLY generic mechanism params —
+ * `Models/ActionDefinition/NodeConfigs.cs` exactly. They type ONLY generic mechanism params —
  * amounts stay STRINGS, and there is NO rate, NO token meaning, NO ArdaNova
  * economic concept anywhere here (NFR-4). For any node kind the SDK has not typed
  * (forward-compat), {@link nodeConfig.raw} accepts a pre-built object/string as an
@@ -32,8 +32,8 @@ export interface GateCheckConfig {
  * holds no settlement/fiat/payout state — the tenant settles). `eventType` is an
  * optional free-form event name (final-hardening F3): when the run has an acting
  * tenant with a webhook registration, the node ALSO enqueues a best-effort
- * `quest.emit` webhook outbox event carrying this name (defaults server-side to
- * `"quest.emit"` when omitted). The node's serialized output remains the
+ * `action.emit` webhook outbox event carrying this name (defaults server-side to
+ * `"action.emit"` when omitted). The node's serialized output remains the
  * authoritative settlement surface; the webhook is push-on-top only.
  */
 export interface EmitConfig {
@@ -72,14 +72,14 @@ export interface NftMintRequestParams {
 
 /** A generic NFT transfer request (`NftTransferRequest`). */
 export interface NftTransferRequestParams {
-  targetAvatarId: string;
+  targetUserId: string;
   walletId: string;
   memo?: string;
 }
 
 /**
  * Grant (mint-to-actor) config. Mirrors `GrantNodeConfig { NftMintRequest
- * Request; Guid? HolonId }`. The actor avatar is taken from the run context,
+ * Request; Guid? HolonId }`. The actor user is taken from the run context,
  * never this body.
  */
 export interface GrantConfig {
@@ -90,7 +90,7 @@ export interface GrantConfig {
 
 /**
  * Transfer (move-to-actor) config. Mirrors `TransferNodeConfig { Guid NftId;
- * NftTransferRequest Request }`. Actor avatar from run context.
+ * NftTransferRequest Request }`. Actor user from run context.
  */
 export interface TransferConfig {
   nftId: string;
@@ -124,7 +124,7 @@ function buildNftTransferRequest(
   p: NftTransferRequestParams
 ): Record<string, unknown> {
   return {
-    targetAvatarId: p.targetAvatarId,
+    targetUserId: p.targetUserId,
     walletId: p.walletId,
     ...(p.memo !== undefined ? { memo: p.memo } : {}),
   };
@@ -132,7 +132,7 @@ function buildNftTransferRequest(
 
 /**
  * Pure typed builders for the generic node `Config` JSON string. Each returns the
- * serialized string the template/quest node DTO expects on the wire; `raw` is the
+ * serialized string the template/action node DTO expects on the wire; `raw` is the
  * forward-compat escape hatch for un-typed node kinds.
  */
 export const nodeConfig = {

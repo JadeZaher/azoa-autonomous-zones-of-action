@@ -6,7 +6,7 @@ import { afterEach } from 'vitest'
  * Global jsdom setup for every test file. jsdom implements neither the layout
  * engine nor the observer APIs React Flow measures nodes with, so a bare jsdom
  * environment cannot mount `<ReactFlow>` at all — everything below closes that
- * gap. See `src/components/quest-builder/AGENTS.md` §testing.
+ * gap. See `src/components/action-builder/AGENTS.md` §testing.
  */
 
 /** jsdom ships no ResizeObserver; React Flow constructs one per canvas to measure node cards. */

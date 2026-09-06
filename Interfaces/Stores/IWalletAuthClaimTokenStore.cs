@@ -19,7 +19,7 @@ public interface IWalletAuthClaimTokenStore
 
     /// <summary>
     /// Loads a claim token by its UNIQUE value, or <c>Result == null</c> with no error
-    /// when none matches. Used to resolve the target avatar before redemption.
+    /// when none matches. Used to resolve the target user before redemption.
     /// </summary>
     Task<AZOAResult<WalletAuthClaimToken>> GetByTokenAsync(string token, CancellationToken ct = default);
 

@@ -24,7 +24,7 @@ public sealed class TenantCustodialAccountStatusResponse
         get => ExternalSubject;
         set => ExternalSubject = value;
     }
-    public string? AvatarId { get; set; }
+    public string? UserId { get; set; }
     public string? WalletId { get; set; }
     public string? WalletAddress { get; set; }
     public TenantKycStatus KycStatus { get; set; }

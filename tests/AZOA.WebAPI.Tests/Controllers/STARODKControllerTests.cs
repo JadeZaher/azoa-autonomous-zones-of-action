@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Tests.Controllers;
 
 public class STARODKControllerTests
 {
-    private static readonly Guid AuthenticatedAvatarId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly Guid AuthenticatedUserId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     private readonly Mock<ISTARManager> _manager;
     private readonly STARODKController _controller;
@@ -23,14 +23,14 @@ public class STARODKControllerTests
     {
         _manager = new Mock<ISTARManager>();
         _controller = new STARODKController(_manager.Object);
-        // Inject a ClaimsPrincipal so GetAvatarIdFromClaims() resolves.
+        // Inject a ClaimsPrincipal so GetUserIdFromClaims() resolves.
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
             {
                 User = new ClaimsPrincipal(new ClaimsIdentity(new[]
                 {
-                    new Claim(ClaimTypes.NameIdentifier, AuthenticatedAvatarId.ToString())
+                    new Claim(ClaimTypes.NameIdentifier, AuthenticatedUserId.ToString())
                 }, "TestScheme"))
             }
         };
@@ -75,7 +75,7 @@ public class STARODKControllerTests
     public async Task CreateOrUpdate_Success_ReturnsOk()
     {
         var model = new STARODKCreateModel { Name = "Test" };
-        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedAvatarId, null, It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, null, It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
 
         var result = await _controller.CreateOrUpdate(model, null);
@@ -87,7 +87,7 @@ public class STARODKControllerTests
     public async Task CreateOrUpdate_Error_ReturnsBadRequest()
     {
         var model = new STARODKCreateModel();
-        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedAvatarId, null, It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, null, It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Message = "boom" });
 
         var result = await _controller.CreateOrUpdate(model, null);
@@ -98,7 +98,7 @@ public class STARODKControllerTests
     [Fact]
     public async Task CreateOrUpdate_NoAuthClaim_ReturnsUnauthorized()
     {
-        // Wipe the principal -- simulate a request where no avatar claim is present.
+        // Wipe the principal -- simulate a request where no user claim is present.
         _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity());
 
         var result = await _controller.CreateOrUpdate(new STARODKCreateModel(), null);
@@ -183,7 +183,7 @@ public class STARODKControllerTests
     {
         var id = Guid.NewGuid();
         var model = new STARODKCreateModel { Name = "Updated" };
-        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedAvatarId, id, It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, id, It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
 
         var result = await _controller.Update(id, model, null);
@@ -196,7 +196,7 @@ public class STARODKControllerTests
     {
         var id = Guid.NewGuid();
         var model = new STARODKCreateModel();
-        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedAvatarId, id, It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, id, It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Message = "boom" });
 
         var result = await _controller.Update(id, model, null);
@@ -210,11 +210,11 @@ public class STARODKControllerTests
         // Controller translates the STARODK_FORBIDDEN: prefix to 403 Forbidden.
         var id = Guid.NewGuid();
         var model = new STARODKCreateModel { Name = "X" };
-        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedAvatarId, id, It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, id, It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<ISTARODK>
                 {
                     IsError = true,
-                    Message = STARODKAuthorizationError.Forbidden + "owned by another avatar"
+                    Message = STARODKAuthorizationError.Forbidden + "owned by another user"
                 });
 
         var result = await _controller.Update(id, model, null);
@@ -228,7 +228,7 @@ public class STARODKControllerTests
     {
         var id = Guid.NewGuid();
         var model = new STARODKCreateModel { Name = "X" };
-        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedAvatarId, id, It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, id, It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<ISTARODK>
                 {
                     IsError = true,

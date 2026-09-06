@@ -28,45 +28,45 @@ public class STARManager : ISTARManager
         _dappSeriesStore = dappSeriesStore;
     }
 
-    public async Task<AZOAResult<ISTARODK>> GetAsync(Guid id, Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<ISTARODK>> GetAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var result = await _starStore.GetByIdAsync(id, default);
         if (result.IsError || result.Result == null) return result;
         // Own-or-public read scope: don't confirm a private STAR ODK's existence to a
         // non-owner. See Controllers/AGENTS.md §cross-tenant-read-scope.
-        if (!CanRead(result.Result, callerAvatarId))
+        if (!CanRead(result.Result, callerUserId))
             return new AZOAResult<ISTARODK> { IsError = true, Message = "STAR ODK not found." };
         return result;
     }
 
-    public async Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(Guid? callerAvatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(Guid? callerUserId = null, AZOARequest? request = null)
     {
         var result = await _starStore.GetAllAsync(default);
         if (result.IsError || result.Result == null) return result;
         return new AZOAResult<IEnumerable<ISTARODK>>
         {
-            Result = result.Result.Where(s => CanRead(s, callerAvatarId)).ToList(),
+            Result = result.Result.Where(s => CanRead(s, callerUserId)).ToList(),
             Message = result.Message
         };
     }
 
     // Cross-tenant read scope: a STAR ODK is readable iff the caller owns it OR it is
-    // IsPublic. A null callerAvatarId fails closed (public-only).
-    private static bool CanRead(ISTARODK record, Guid? callerAvatarId) =>
-        callerAvatarId.HasValue && record.AvatarId == callerAvatarId.Value || record.IsPublic;
+    // IsPublic. A null callerUserId fails closed (public-only).
+    private static bool CanRead(ISTARODK record, Guid? callerUserId) =>
+        callerUserId.HasValue && record.UserId == callerUserId.Value || record.IsPublic;
 
     public async Task<AZOAResult<ISTARODK>> CreateOrUpdateAsync(
         STARODKCreateModel model,
-        Guid avatarId,
+        Guid userId,
         Guid? routeId = null,
         AZOARequest? request = null)
     {
         // IDOR-safe upsert:
-        //   - PUT (routeId != null): load by id, then require IsOwnedBy(record, avatarId)
-        //   - POST (routeId == null): load by (name, avatarId) — name collisions
-        //     across avatars never overwrite each other.
-        // The caller-supplied model.AvatarId is intentionally ignored — the
-        // authenticated avatar id from the controller is the only source of truth.
+        //   - PUT (routeId != null): load by id, then require IsOwnedBy(record, userId)
+        //   - POST (routeId == null): load by (name, userId) — name collisions
+        //     across users never overwrite each other.
+        // The caller-supplied model.UserId is intentionally ignored — the
+        // authenticated user id from the controller is the only source of truth.
 
         STARODK odk;
         if (routeId.HasValue)
@@ -75,53 +75,53 @@ public class STARManager : ISTARManager
             if (loaded.IsError || loaded.Result == null)
                 return Fail(STARODKAuthorizationError.NotFound + "STAR ODK not found.");
 
-            if (!IsOwnedBy(loaded.Result, avatarId))
-                return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different avatar.");
+            if (!IsOwnedBy(loaded.Result, userId))
+                return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different user.");
 
             odk = (STARODK)loaded.Result;
         }
         else
         {
-            var match = await _starStore.GetByNameAndAvatarAsync(model.Name, avatarId, default);
-            odk = (match.Result as STARODK) ?? new STARODK { AvatarId = avatarId };
+            var match = await _starStore.GetByNameAndUserAsync(model.Name, userId, default);
+            odk = (match.Result as STARODK) ?? new STARODK { UserId = userId };
         }
 
         odk.Name         = model.Name;
         odk.Description  = model.Description;
         odk.PublicKey    = model.PublicKey;
-        odk.AvatarId     = avatarId; // authoritative — never trust model.AvatarId
+        odk.UserId     = userId; // authoritative — never trust model.UserId
         odk.ModifiedDate = DateTime.UtcNow;
 
         return await _starStore.UpsertAsync(odk, default);
     }
 
-    private static bool IsOwnedBy(ISTARODK record, Guid avatarId) =>
-        record.AvatarId.HasValue && record.AvatarId.Value == avatarId;
+    private static bool IsOwnedBy(ISTARODK record, Guid userId) =>
+        record.UserId.HasValue && record.UserId.Value == userId;
 
     private static AZOAResult<ISTARODK> Fail(string message) =>
         new() { IsError = true, Message = message };
 
-    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? avatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? userId = null, AZOARequest? request = null)
     {
-        if (avatarId.HasValue)
+        if (userId.HasValue)
         {
             var loaded = await _starStore.GetByIdAsync(id, default);
             if (loaded.IsError || loaded.Result == null)
                 return new AZOAResult<bool> { IsError = true, Message = "STAR ODK not found." };
-            if (!IsOwnedBy(loaded.Result, avatarId.Value))
-                return new AZOAResult<bool> { IsError = true, Message = "STAR ODK is owned by a different avatar." };
+            if (!IsOwnedBy(loaded.Result, userId.Value))
+                return new AZOAResult<bool> { IsError = true, Message = "STAR ODK is owned by a different user." };
         }
 
         return await _starStore.DeleteAsync(id, default);
     }
 
-    public async Task<AZOAResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<ISTARODK>> GenerateAsync(Guid id, STARDappGenerationRequest request, Guid? userId = null, AZOARequest? providerRequest = null)
     {
         var existing = await _starStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
-        // Fail-closed: a mutating call with no acting avatar is a wiring bug, not an admin escape hatch.
-        if (!avatarId.HasValue || !IsOwnedBy(existing.Result, avatarId.Value))
-            return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different avatar.");
+        // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
+        if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
+            return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different user.");
 
         var odk = (STARODK)existing.Result;
         odk.TargetChain = request.TargetChain;
@@ -132,13 +132,13 @@ public class STARManager : ISTARManager
         return await _starStore.UpsertAsync(odk, default);
     }
 
-    public async Task<AZOAResult<ISTARODK>> DeployAsync(Guid id, Guid? avatarId = null, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<ISTARODK>> DeployAsync(Guid id, Guid? userId = null, AZOARequest? providerRequest = null)
     {
         var existing = await _starStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
-        // Fail-closed: a mutating call with no acting avatar is a wiring bug, not an admin escape hatch.
-        if (!avatarId.HasValue || !IsOwnedBy(existing.Result, avatarId.Value))
-            return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different avatar.");
+        // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
+        if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
+            return Fail(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different user.");
 
         var odk = (STARODK)existing.Result;
         if (string.IsNullOrEmpty(odk.GeneratedCode))
@@ -173,20 +173,20 @@ public class STARManager : ISTARManager
     // ── Ecosystem tree (D2) ─────────────────────────────────────────────────
 
     public async Task<AZOAResult<EcosystemTree>> AddDappSeriesAsync(
-        Guid starOdkId, AddDappSeriesRequest request, Guid? avatarId = null, AZOARequest? providerRequest = null)
+        Guid starOdkId, AddDappSeriesRequest request, Guid? userId = null, AZOARequest? providerRequest = null)
     {
-        // 1. Load + own-check the STARODK (IDOR: scope by route id + authenticated avatar).
+        // 1. Load + own-check the STARODK (IDOR: scope by route id + authenticated user).
         var starResult = await _starStore.GetByIdAsync(starOdkId, default);
         if (starResult.IsError || starResult.Result == null)
             return FailTree(STARODKAuthorizationError.NotFound + "STAR ODK not found.");
-        if (avatarId.HasValue && !IsOwnedBy(starResult.Result, avatarId.Value))
-            return FailTree(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different avatar.");
+        if (userId.HasValue && !IsOwnedBy(starResult.Result, userId.Value))
+            return FailTree(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different user.");
         var star = (STARODK)starResult.Result;
-        var ownerAvatar = avatarId ?? star.AvatarId ?? Guid.Empty;
+        var ownerUser = userId ?? star.UserId ?? Guid.Empty;
 
-        // 2. Validate the attached reference exists AND is owned by the same avatar.
+        // 2. Validate the attached reference exists AND is owned by the same user.
         //    Caller-supplied owner ids are never trusted — ownership is re-checked here.
-        var refError = await ValidateRefOwnershipAsync(request.RefKind, request.RefId, avatarId);
+        var refError = await ValidateRefOwnershipAsync(request.RefKind, request.RefId, userId);
         if (refError != null) return FailTree(refError);
 
         // 3. Resolve (or lazily create) the ecosystem for this STARODK.
@@ -201,7 +201,7 @@ public class STARManager : ISTARManager
                 Id = Guid.NewGuid().ToString("N"),
                 Name = string.IsNullOrWhiteSpace(request.EcosystemName) ? $"{star.Name} Ecosystem" : request.EcosystemName!,
                 StarOdkId = starOdkId.ToString("N"),
-                AvatarId = ownerAvatar.ToString("N"),
+                UserId = ownerUser.ToString("N"),
                 TargetChain = request.TargetChain ?? star.TargetChain,
                 CreatedDate = DateTimeOffset.UtcNow,
             };
@@ -258,13 +258,13 @@ public class STARManager : ISTARManager
     }
 
     public async Task<AZOAResult<EcosystemTree>> GetEcosystemAsync(
-        Guid starOdkId, Guid? avatarId = null, AZOARequest? providerRequest = null)
+        Guid starOdkId, Guid? userId = null, AZOARequest? providerRequest = null)
     {
         var starResult = await _starStore.GetByIdAsync(starOdkId, default);
         if (starResult.IsError || starResult.Result == null)
             return FailTree(STARODKAuthorizationError.NotFound + "STAR ODK not found.");
-        if (avatarId.HasValue && !IsOwnedBy(starResult.Result, avatarId.Value))
-            return FailTree(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different avatar.");
+        if (userId.HasValue && !IsOwnedBy(starResult.Result, userId.Value))
+            return FailTree(STARODKAuthorizationError.Forbidden + "STAR ODK is owned by a different user.");
 
         var ecoResult = await _ecosystemStore.GetByStarOdkAsync(starOdkId, default);
         if (ecoResult.IsError) return FailTree(ecoResult.Message ?? "Failed to load ecosystem.");
@@ -287,16 +287,16 @@ public class STARManager : ISTARManager
         new() { IsError = true, Message = message };
 
     /// <summary>Confirms the attached DappSeries/STARODK exists and is owned by
-    /// the calling avatar. Returns an error message or null when valid.</summary>
-    private async Task<string?> ValidateRefOwnershipAsync(EcosystemRefKind kind, Guid refId, Guid? avatarId)
+    /// the calling user. Returns an error message or null when valid.</summary>
+    private async Task<string?> ValidateRefOwnershipAsync(EcosystemRefKind kind, Guid refId, Guid? userId)
     {
         if (kind == EcosystemRefKind.DappSeries)
         {
             var series = await _dappSeriesStore.GetSeriesAsync(refId, default);
             if (series.IsError || series.Result == null)
                 return $"DappSeries {refId} not found.";
-            if (avatarId.HasValue && series.Result.AvatarId != avatarId.Value.ToString("N"))
-                return STARODKAuthorizationError.Forbidden + "DappSeries is owned by a different avatar.";
+            if (userId.HasValue && series.Result.UserId != userId.Value.ToString("N"))
+                return STARODKAuthorizationError.Forbidden + "DappSeries is owned by a different user.";
             return null;
         }
 
@@ -304,8 +304,8 @@ public class STARManager : ISTARManager
         var star = await _starStore.GetByIdAsync(refId, default);
         if (star.IsError || star.Result == null)
             return $"STAR ODK {refId} not found.";
-        if (avatarId.HasValue && !IsOwnedBy(star.Result, avatarId.Value))
-            return STARODKAuthorizationError.Forbidden + "Referenced STAR ODK is owned by a different avatar.";
+        if (userId.HasValue && !IsOwnedBy(star.Result, userId.Value))
+            return STARODKAuthorizationError.Forbidden + "Referenced STAR ODK is owned by a different user.";
         return null;
     }
 
@@ -393,7 +393,7 @@ public class STARManager : ISTARManager
         Name = e.Name,
         Description = e.Description,
         StarOdkId = ParseHexOrEmpty(e.StarOdkId),
-        AvatarId = ParseHexOrEmpty(e.AvatarId),
+        UserId = ParseHexOrEmpty(e.UserId),
         TargetChain = e.TargetChain,
         CreatedDate = e.CreatedDate.UtcDateTime,
         ModifiedDate = e.ModifiedDate?.UtcDateTime,

@@ -212,7 +212,7 @@ public interface ISagaStore
     /// dead-letter inspection), newest-updated first, bounded by
     /// <paramref name="limit"/>. Read-only; carries enough of each record
     /// (saga/correlation/step/status/attempt/last_error) for an operator to
-    /// diagnose. The generic saga-step primitive beneath the quest-specific
+    /// diagnose. The generic saga-step primitive beneath the action-specific
     /// reconcile board — see Services/Sagas/AGENTS.md §operator-surface.
     /// </summary>
     Task<IReadOnlyList<SagaStepRecord>> ListByStatusesAsync(

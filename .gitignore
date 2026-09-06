@@ -227,3 +227,4 @@ conductor/.conductor_session_log
 
 # scrt/mpg local search caches (machine-local, regenerable)
 .mpg/
+scripts/__pycache__/

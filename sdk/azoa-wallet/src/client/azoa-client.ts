@@ -52,7 +52,7 @@ export interface AzoaClientConfig {
  * - `api` — Typed HTTP client for all .NET API endpoints
  * - `wallet` — Multi-chain wallet with client-side signing
  * - `session` — JWT lifecycle management with pluggable storage
- * - `auth` — OAuth-compatible auth provider using AZOA avatars
+ * - `auth` — OAuth-compatible auth provider using AZOA users
  * - `holons` — Fluent query builder for holon data
  * - `portfolio` — Cross-chain balance aggregation
  *
@@ -76,7 +76,7 @@ export interface AzoaClientConfig {
  * const nfts = await azoa.holons.where({ assetType: "NFT" }).active().execute();
  *
  * // Check portfolio
- * const portfolio = await azoa.portfolio.getAll(azoa.auth.avatarId!);
+ * const portfolio = await azoa.portfolio.getAll(azoa.auth.userId!);
  *
  * // Build and sign a transaction
  * const tx = await azoa.wallet.buildTransfer("algorand", { from, to, amount: "1.0" });
@@ -103,7 +103,7 @@ export class AzoaClient {
 
   /**
    * Workflow surface — template authoring + run reads, plus the fluent
-   * `azoa.workflow.quest(...)` run driver. The headline ergonomics of the
+   * `azoa.workflow.action(...)` run driver. The headline ergonomics of the
    * workflow-engine initiative.
    */
   readonly workflow: WorkflowClient;

@@ -33,7 +33,7 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
     public bool FailMonitorLookup { get; set; }
 
     public KycScreeningResult SeedResult(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         KycScreeningDecision decision,
         DateTimeOffset? screenedAt = null,
@@ -42,7 +42,7 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
         var result = new KycScreeningResult
         {
             Id = Guid.NewGuid().ToString("N"),
-            SubjectAvatarId = avatarId.ToString("N"),
+            SubjectUserId = userId.ToString("N"),
             TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),
             QueryFullName = "Ada Lovelace",
             QueryBirthdayTimeFrom = "1815-12-10",
@@ -61,7 +61,7 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
         string birthday,
         string providerMonitorId,
         Guid? tenantId = null,
-        Guid? subjectAvatarId = null,
+        Guid? subjectUserId = null,
         string? lastObserved = null,
         DateTimeOffset? retentionExpiresAt = null)
     {
@@ -71,7 +71,7 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
             ProviderMonitorId = providerMonitorId,
             TenantScope = KycPersonKeyDeriver.ScopeValue(tenantId),
             TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),
-            SubjectAvatarId = subjectAvatarId?.ToString("N"),
+            SubjectUserId = subjectUserId?.ToString("N"),
             QueryFullName = fullName,
             QueryBirthdayTimeFrom = birthday,
             FollowUpScoreThreshold = 80,
@@ -91,25 +91,25 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
     }
 
     public Task<AZOAResult<KycScreeningResult>> GetLatestResultAsync(
-        Guid avatarId, Guid? tenantId, CancellationToken ct = default)
+        Guid userId, Guid? tenantId, CancellationToken ct = default)
     {
         if (FailReads)
             return Task.FromResult(AZOAResult<KycScreeningResult>.Failure("store unavailable"));
 
-        var row = MatchingResults(avatarId, tenantId)
+        var row = MatchingResults(userId, tenantId)
             .OrderByDescending(item => item.ScreenedAt)
             .FirstOrDefault();
         return Task.FromResult(new AZOAResult<KycScreeningResult> { Result = row });
     }
 
-    public Task<AZOAResult<IReadOnlyList<KycScreeningResult>>> GetResultsForAvatarAsync(
-        Guid avatarId, Guid? tenantId, int limit, CancellationToken ct = default)
+    public Task<AZOAResult<IReadOnlyList<KycScreeningResult>>> GetResultsForUserAsync(
+        Guid userId, Guid? tenantId, int limit, CancellationToken ct = default)
     {
         if (FailReads)
             return Task.FromResult(AZOAResult<IReadOnlyList<KycScreeningResult>>.Failure("store unavailable"));
 
         return Task.FromResult(AZOAResult<IReadOnlyList<KycScreeningResult>>.Success(
-            MatchingResults(avatarId, tenantId)
+            MatchingResults(userId, tenantId)
                 .OrderByDescending(item => item.ScreenedAt)
                 .Take(limit)
                 .ToList()));
@@ -210,7 +210,7 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
     }
 
     public Task<AZOAResult<int>> EraseSubjectAsync(
-        IReadOnlyList<string> avatarIds,
+        IReadOnlyList<string> userIds,
         Guid? tenantId,
         string reason,
         DateTimeOffset erasedAt,
@@ -220,8 +220,8 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
         var erased = 0;
 
         foreach (var result in _results.Where(item =>
-                     item.SubjectAvatarId is not null
-                     && avatarIds.Contains(item.SubjectAvatarId, StringComparer.Ordinal)
+                     item.SubjectUserId is not null
+                     && userIds.Contains(item.SubjectUserId, StringComparer.Ordinal)
                      && item.TenantId == tenantKey
                      && item.ErasedAt is null))
         {
@@ -230,8 +230,8 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
         }
 
         foreach (var monitor in _monitors.Where(item =>
-                     item.SubjectAvatarId is not null
-                     && avatarIds.Contains(item.SubjectAvatarId, StringComparer.Ordinal)
+                     item.SubjectUserId is not null
+                     && userIds.Contains(item.SubjectUserId, StringComparer.Ordinal)
                      && item.TenantId == tenantKey
                      && item.ErasedAt is null))
         {
@@ -295,11 +295,11 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
         return Task.FromResult(AZOAResult<bool>.Success(true));
     }
 
-    private IEnumerable<KycScreeningResult> MatchingResults(Guid avatarId, Guid? tenantId)
+    private IEnumerable<KycScreeningResult> MatchingResults(Guid userId, Guid? tenantId)
     {
-        var avatarKey = avatarId.ToString("N");
+        var userKey = userId.ToString("N");
         var tenantKey = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N");
-        return _results.Where(item => item.SubjectAvatarId == avatarKey && item.TenantId == tenantKey);
+        return _results.Where(item => item.SubjectUserId == userKey && item.TenantId == tenantKey);
     }
 
     private static void Tombstone(KycScreeningResult result, string reason, DateTimeOffset erasedAt)

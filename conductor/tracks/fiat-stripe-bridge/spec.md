@@ -35,7 +35,7 @@ const orchestrator = new AzoaStripeOrchestrator({
 
 // 1. Generate Checkout
 const url = await orchestrator.createCheckoutSession({
-  avatarId, amount, assetId, chainType, kind: "Mint"
+  userId, amount, assetId, chainType, kind: "Mint"
 });
 
 // 2. Handle Webhook

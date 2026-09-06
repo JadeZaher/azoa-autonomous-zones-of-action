@@ -255,7 +255,7 @@ public class SolanaProviderSplPipelineTests
         stub.ExistingAccounts.Add(Ata(user.PublicKey, _mint).Key);
         stub.ExistingAccounts.Add(Ata(_recipient, _mint).Key);
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
 
         var custody = new Mock<IKeyCustodyService>();
@@ -274,13 +274,13 @@ public class SolanaProviderSplPipelineTests
 
         var result = await provider.TransferAsync(
             _mint.Key, user.PublicKey.Key, _recipient.Key, 5,
-            SigningContext.ForUser(avatarId, walletId));
+            SigningContext.ForUser(userId, walletId));
 
         result.IsError.Should().BeFalse(result.Message);
         SignedMessage().AccountKeys[0].Key.Should().Be(user.PublicKey.Key, "the user's key is the fee payer");
 
         custody.Verify(c => c.WithSigningKeyAsync(
-            It.Is<SigningContext>(x => x.WalletId == walletId && x.AvatarId == avatarId),
+            It.Is<SigningContext>(x => x.WalletId == walletId && x.UserId == userId),
             It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()), Times.Once);
         custody.Verify(c => c.WithPlatformSigningKeyAsync(
             It.IsAny<bool>(), It.IsAny<SigningContext>(), It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()), Times.Never);

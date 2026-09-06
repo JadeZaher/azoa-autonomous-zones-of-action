@@ -197,7 +197,7 @@ function InitiateBridgeForm() {
         targetChain: form.targetChain,
         tokenId: form.tokenId,
         recipientAddress: form.recipientAddress,
-        amount: Number(form.amount),
+        amount: form.amount,
         mode: form.mode as "Trusted" | "Wormhole",
       })
       if (isOk(res)) {
@@ -447,7 +447,7 @@ function BridgeStatusTracker() {
                   variant="outline"
                   disabled={actionLoading}
                   onClick={() =>
-                    runAction('complete', () => azoa.api.completeBridge(bridgeId))
+                    runAction('complete', () => azoa.api.redeemBridge(bridgeId))
                   }
                 >
                   Complete

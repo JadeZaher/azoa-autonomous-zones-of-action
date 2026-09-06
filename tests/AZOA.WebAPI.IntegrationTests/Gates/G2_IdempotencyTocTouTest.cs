@@ -129,7 +129,7 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
         var bridgeId = $"g2_bridge_{Guid.NewGuid():N}";
         var vaaBytes = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"VAA-g2-idempotency-gate-{bridgeId}"));
         var wormholeSequence = BitConverter.ToInt64(Guid.NewGuid().ToByteArray(), 0) & long.MaxValue;
-        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
+        var userId = Guid.Parse(TestAuthHandler.DefaultUserId);
 
         var executor = await CreateExecutorAsync(testNs);
         var bridgeStore = new SurrealBridgeStore(executor);
@@ -137,7 +137,7 @@ public sealed class G2_IdempotencyTocTouTest : IntegrationTestBase
         await bridgeStore.AddBridgeAsync(new BridgeTransactionResult
         {
             Id                    = bridgeId,
-            AvatarId              = avatarId,
+            UserId              = userId,
             SourceChain           = "Solana",
             TargetChain           = "Algorand",
             SourceTokenId         = "token_g2",

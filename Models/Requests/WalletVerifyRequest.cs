@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
-/// Body for <c>POST api/avatar/auth/verify</c> (user-sovereign-identity AC1/AC1b).
+/// Body for <c>POST api/user/auth/verify</c> (user-sovereign-identity AC1/AC1b).
 /// The user submits the signature over the challenge's domain message. The server
 /// resolves the live challenge for <c>(Address, ChainType)</c> and re-validates every
 /// field; <see cref="Message"/> is an OPTIONAL exact-equality cross-check echo of the

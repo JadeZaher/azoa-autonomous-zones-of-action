@@ -22,7 +22,7 @@ import { azoa, isOk } from '@/lib/azoa'
 
 // SearchableEntityType flags (bitmask)
 const ENTITY_TYPES = [
-  { label: 'Avatar', value: 'Avatar', flag: 1 },
+  { label: 'User', value: 'User', flag: 1 },
   { label: 'Holon', value: 'Holon', flag: 2 },
   { label: 'Wallet', value: 'Wallet', flag: 4 },
   { label: 'Blockchain Operation', value: 'BlockchainOperation', flag: 8 },
@@ -53,7 +53,7 @@ interface FacetData {
 
 function entityTypeBadgeClass(type: string) {
   switch (type?.toLowerCase()) {
-    case 'avatar': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+    case 'user': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
     case 'holon': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
     case 'wallet': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
     case 'blockchainoperation': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
@@ -68,7 +68,7 @@ export default function SearchPage() {
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set())
   const [chainId, setChainId] = useState('')
   const [assetType, setAssetType] = useState('')
-  const [avatarId, setAvatarId] = useState('')
+  const [userId, setUserId] = useState('')
   const [sortBy, setSortBy] = useState('CreatedDate')
   const [sortDescending, setSortDescending] = useState(true)
   const [pageSize, setPageSize] = useState(10)
@@ -91,9 +91,9 @@ export default function SearchPage() {
     })
   }
 
-  // .NET SearchableEntityType is a flags enum: Avatar=1, Holon=2, Wallet=4, BlockchainOperation=8, STARODK=16, All=31
+  // .NET SearchableEntityType is a flags enum: User=1, Holon=2, Wallet=4, BlockchainOperation=8, STARODK=16, All=31
   const entityTypeFlags: Record<string, number> = {
-    Avatar: 1, Holon: 2, Wallet: 4, BlockchainOperation: 8, STARODK: 16,
+    User: 1, Holon: 2, Wallet: 4, BlockchainOperation: 8, STARODK: 16,
   }
   const buildEntityTypes = (): number | undefined => {
     if (selectedTypes.size === 0) return undefined
@@ -112,7 +112,7 @@ export default function SearchPage() {
           entityTypes: buildEntityTypes(),
           chainId: chainId || undefined,
           assetType: assetType || undefined,
-          avatarId: avatarId || undefined,
+          userId: userId || undefined,
           sortBy,
           sortDescending,
           page: targetPage,
@@ -131,7 +131,7 @@ export default function SearchPage() {
         setLoading(false)
       }
     },
-    [query, selectedTypes, chainId, assetType, avatarId, sortBy, sortDescending, pageSize]
+    [query, selectedTypes, chainId, assetType, userId, sortBy, sortDescending, pageSize]
   )
 
   const loadFacets = async () => {
@@ -157,7 +157,7 @@ export default function SearchPage() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight tracking-tight">Search</h1>
         <p className="text-sm text-muted-foreground">
-          Search across avatars, holons, wallets, and blockchain operations
+          Search across users, holons, wallets, and blockchain operations
         </p>
       </div>
 
@@ -224,11 +224,11 @@ export default function SearchPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Avatar ID</Label>
+                  <Label>User ID</Label>
                   <Input
                     placeholder="Optional"
-                    value={avatarId}
-                    onChange={(e) => setAvatarId(e.target.value)}
+                    value={userId}
+                    onChange={(e) => setUserId(e.target.value)}
                   />
                 </div>
               </div>

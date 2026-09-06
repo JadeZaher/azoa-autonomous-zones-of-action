@@ -7,7 +7,7 @@ graph operations** (`->edge->` traversal, relationship-based `count()`) **and a
 live-query WebSocket socket** on the `surreal-linq-graph-query` branch.
 
 As-built so far:
-- **Phase 1 (translator adopt + broaden):** `SurrealQuestRunStore.GetByStatusAsync`
+- **Phase 1 (translator adopt + broaden):** `SurrealActionRunStore.GetByStatusAsync`
   pilots `SurrealQuery<T>`; `ExpressionTranslator` broadened (null↔NONE,
   `HasValue`, `string::starts_with/ends_with/contains`, ranges).
 - **Phase 2 (`IQueryable` deferral):** `SurrealQueryable<T>` + `SurrealQueryProvider`
@@ -64,7 +64,7 @@ A read-only audit (2026-06-17) established the honest starting point:
   `Services/Sagas/SurrealSagaStore.cs`) hand-writes raw `SurrealQuery.Of("...")`.
   Closing the gap is therefore mostly *finishing + adopting*, not *building from
   scratch*.
-- **The graph gap is concrete.** `SurrealQuestRunStore.GetLineageAsync` walks the
+- **The graph gap is concrete.** `SurrealActionRunStore.GetLineageAsync` walks the
   `parent_run_id` scalar chain in a **client-side C# loop** with a comment that
   "the typed builder does not yet have a fluent graph-traversal helper" — even
   though the `forked_from` RELATE edge is written. We write graph edges and never
@@ -100,15 +100,15 @@ Give application code (stores, managers, future SDK) a **typed, composable,
 analyzer-safe** query surface over SurrealDB that:
 
 1. Reads like LINQ/EF for the relational 80%:
-   `ctx.QuestRuns.Where(r => r.Status == Running).OrderBy(r => r.CreatedAt).Take(20)`
+   `ctx.ActionRuns.Where(r => r.Status == Running).OrderBy(r => r.CreatedAt).Take(20)`
    — deferred, composable, server-translated.
 2. Reads like **graph traversal** for the SurrealDB 20%:
-   `ctx.QuestRuns.Traverse(r => r.Out<ForkedFrom>().To<QuestRun>())`
-   → `->forked_from->quest_run`, with relationship-based computation
+   `ctx.ActionRuns.Traverse(r => r.Out<ForkedFrom>().To<ActionRun>())`
+   → `->forked_from->action_run`, with relationship-based computation
    (`Count(r.Out<Member>())`, graph-relative aggregates) on the same arrow-path
    support — so `GetLineageAsync` becomes one traversal query, not a C# loop.
 3. Exposes a **live-query subscription socket** for push-based reads:
-   `await foreach (var n in ctx.QuestRuns.Where(...).ExecuteLiveAsync(ct))`
+   `await foreach (var n in ctx.ActionRuns.Where(...).ExecuteLiveAsync(ct))`
    yielding `{ action: Create|Update|Delete, record }` over WebSocket, with
    `KILL` on cancellation.
 
@@ -133,16 +133,16 @@ by construction).
 
 ```csharp
 // 1. Relational — deferred, composable
-var runs = await ctx.QuestRuns
-    .Where(r => r.Status == QuestRunStatus.Running && r.AvatarId == avatarId)
+var runs = await ctx.ActionRuns
+    .Where(r => r.Status == ActionRunStatus.Running && r.UserId == userId)
     .OrderByDescending(r => r.CreatedAt)
     .Take(20)
     .ToListAsync(ct);
 
 // 2. Graph traversal — replaces the client-side lineage loop
-var lineage = await ctx.QuestRuns
+var lineage = await ctx.ActionRuns
     .Key(runId)
-    .Traverse(r => r.In<ForkedFrom>().From<QuestRun>())   // <-forked_from<-quest_run
+    .Traverse(r => r.In<ForkedFrom>().From<ActionRun>())   // <-forked_from<-action_run
     .ToListAsync(ct);
 
 // 3. Relationship-based computation
@@ -151,11 +151,11 @@ var memberCounts = await ctx.Holons
     .ToListAsync(ct);
 
 // 4. Live subscription socket
-await foreach (var n in ctx.QuestRuns
-    .Where(r => r.AvatarId == avatarId)
+await foreach (var n in ctx.ActionRuns
+    .Where(r => r.UserId == userId)
     .ExecuteLiveAsync(ct))         // LIVE SELECT ... over WebSocket
 {
-    // n.Action is Create | Update | Delete; n.Record is QuestRun
+    // n.Action is Create | Update | Delete; n.Record is ActionRun
 }
 ```
 
@@ -182,7 +182,7 @@ await foreach (var n in ctx.QuestRuns
 6. **At least 2-3 production stores adopt the typed surface** (lineage being the
    marquee proof); the rest may stay raw-string and are tracked as a follow-up.
 7. `dotnet build` zero new warnings (vs the 28-warning baseline); `dotnet test`
-   green including all existing quest + saga + `api-safety-hardening` suites.
+   green including all existing action + saga + `api-safety-hardening` suites.
 8. SRDB0001 analyzer still passes — no new string-concatenated SurrealQL; the
    typed/graph/live builders are the sanctioned construction path.
 

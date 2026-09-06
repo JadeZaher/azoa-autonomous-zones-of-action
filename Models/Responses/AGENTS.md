@@ -10,7 +10,7 @@ ordinary persistence methods let unexpected exceptions reach central logging.
 ## public node transparency
 
 `NodeTransparencyResponses` is a purpose-built public projection. Do not replace
-it with the operator governance DTOs: those include actor avatar ids and raw JSON
+it with the operator governance DTOs: those include actor user ids and raw JSON
 snapshots intended only for `node:govern` principals. Public audit items contain
 typed economic fields, versions, and timestamps only. Their opaque cursor is a
 transport token, not a record id. `ContentSha256` is a weak semantic ETag,
@@ -51,8 +51,8 @@ new fact.
 
 `BridgeTransactionResult.IdempotencyKey` remains a persisted, server-only
 exactly-once key. Its JSON serialization is explicitly suppressed so direct
-bridge endpoints and flat Bridge/Back quest outputs cannot disclose a raw
-client key or its avatar-namespaced ledger derivative. Store mappings preserve
+bridge endpoints and flat Bridge/Back action outputs cannot disclose a raw
+client key or its user-namespaced ledger derivative. Store mappings preserve
 the field for replay and reconciliation; do not replace it with a public
 diagnostic field.
 

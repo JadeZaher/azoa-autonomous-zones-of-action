@@ -26,16 +26,16 @@ public sealed class BridgeKycGateTests
     public async Task Initiate_ExpiredApproval_DeniesBeforeClaimPersistenceOrChainEffect()
     {
         var harness = new Harness(DeniedGate());
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
         var result = await harness.Service.InitiateBridgeAsync(
-            "Algorand", "Solana", "token", "recipient", avatarId, 1,
+            "Algorand", "Solana", "token", "recipient", userId, 1,
             mode: BridgeMode.Trusted);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(KycAuthorizationError.Forbidden);
         harness.Gate.Verify(item => item.RequireCurrentApprovalAsync(
-            avatarId, It.IsAny<CancellationToken>()), Times.Once);
+            userId, It.IsAny<CancellationToken>()), Times.Once);
         harness.AssertNoValueEffect();
     }
 
@@ -50,7 +50,7 @@ public sealed class BridgeKycGateTests
             .ReturnsAsync(new BridgeTransactionResult
             {
                 Id = bridgeId,
-                AvatarId = owner,
+                UserId = owner,
                 SourceChain = "Algorand",
                 TargetChain = "Solana",
                 Mode = BridgeMode.Wormhole,
@@ -77,7 +77,7 @@ public sealed class BridgeKycGateTests
             .ReturnsAsync(new BridgeTransactionResult
             {
                 Id = bridgeId,
-                AvatarId = owner,
+                UserId = owner,
                 SourceChain = "Algorand",
                 TargetChain = "Solana",
                 SourceTokenId = "source-token",

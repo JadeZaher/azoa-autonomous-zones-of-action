@@ -39,11 +39,11 @@ public sealed class AllocationControllerTests
     }
 
     [Fact]
-    public async Task Allocate_ApiKeyPrincipalUsesTheAuthenticatedAvatarClaim()
+    public async Task Allocate_ApiKeyPrincipalUsesTheAuthenticatedUserClaim()
     {
         var manager = new Mock<IAllocationManager>();
         var apiKeyId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         Guid? capturedCaller = null;
         manager.Setup(candidate => candidate.AllocateAsync(
                 It.IsAny<Guid>(),
@@ -59,13 +59,13 @@ public sealed class AllocationControllerTests
             manager.Object,
             authMethod: "ApiKey",
             new Claim("ApiKeyId", apiKeyId.ToString()),
-            new Claim("AvatarId", avatarId.ToString()),
+            new Claim("UserId", userId.ToString()),
             new Claim("scope", AzoaScopes.NftMint));
 
         var result = await controller.Allocate(Guid.NewGuid(), new AllocationRequest());
 
         result.Result.Should().BeOfType<OkObjectResult>();
-        capturedCaller.Should().Be(avatarId);
+        capturedCaller.Should().Be(userId);
     }
 
     private static AllocationController CreateController(

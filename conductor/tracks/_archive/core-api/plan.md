@@ -5,7 +5,7 @@
 1. [ ] Create `Models/Requests/AZOARequest.cs`
 2. [ ] Create `Models/Responses/AZOAResult.cs` and `AZOAResponse.cs`
 3. [ ] Create `Interfaces/IAZOAStorageProvider.cs`
-4. [ ] Create `Interfaces/IAvatar.cs`
+4. [ ] Create `Interfaces/IUser.cs`
 5. [ ] Create `Interfaces/ISTARODK.cs`
 6. [ ] Create `Core/ProviderContext.cs` with activation / failover / replication logic
 7. [ ] Create `Core/ProviderType.cs` enum

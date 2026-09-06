@@ -9,7 +9,7 @@ _Last reconciled: 2026-07-18 (operator/KYC/custody and fail-closed bridge stoppi
 ## Architecture
 
 **Manager → Store → SurrealDB:**
-Each business aggregate (Avatar, Wallet, Holon, NFT, etc.) has a manager exposing business logic and a corresponding SurrealDB store (`I*Store` interface + `Surreal*Store` implementation) handling persistence.
+Each business aggregate (User, Wallet, Holon, NFT, etc.) has a manager exposing business logic and a corresponding SurrealDB store (`I*Store` interface + `Surreal*Store` implementation) handling persistence.
 
 **Blockchain Providers:**
 Algorand and Solana plug into the `IBlockchainProvider` factory. The common interface is complete, but capability flags deliberately keep real bridge execution unavailable until a provider implements and passes review for the entire lock/mint/burn/release lifecycle and production custody. Adding a chain requires an implementation, registration, and conformance review; registration alone does not make it launchable.
@@ -31,29 +31,29 @@ envelope, so provider or policy rotation requires re-verification. See
 
 ### ApiKeyController
 - `POST /api/apikey` — Create an API key
-- `GET /api/apikey` — List all API keys for authenticated avatar
+- `GET /api/apikey` — List all API keys for authenticated user
 - `POST /api/apikey/{id}/revoke` — Revoke an API key
 - `DELETE /api/apikey/{id}` — Permanently delete an API key
 
-### AvatarController
-- `POST /api/avatar/register` — Register a new avatar (anonymous)
-- `POST /api/avatar/login` — Login (anonymous)
-- `GET /api/avatar/{id}` — Get avatar by ID
-- `GET /api/avatar` — Get all avatars
-- `PUT /api/avatar/{id}` — Update avatar
-- `DELETE /api/avatar/{id}` — Delete avatar
+### UserController
+- `POST /api/user/register` — Register a new user (anonymous)
+- `POST /api/user/login` — Login (anonymous)
+- `GET /api/user/{id}` — Get user by ID
+- `GET /api/user` — Get all users
+- `PUT /api/user/{id}` — Update user
+- `DELETE /api/user/{id}` — Delete user
 
-### AvatarNFTController
-- `POST /api/avatarnft` — Mint an avatar NFT
-- `GET /api/avatarnft/{id}` — Get avatar NFT by ID
-- `GET /api/avatarnft/{chainType}/{contractAddress}/{tokenId}` — Get by token
-- `GET /api/avatarnft/avatar/{avatarId}` — List avatar NFTs
-- `POST /api/avatarnft/{id}/transfer` — Transfer NFT
-- `POST /api/avatarnft/{id}/burn` — Burn NFT
+### UserNFTController
+- `POST /api/usernft` — Mint an user NFT
+- `GET /api/usernft/{id}` — Get user NFT by ID
+- `GET /api/usernft/{chainType}/{contractAddress}/{tokenId}` — Get by token
+- `GET /api/usernft/user/{userId}` — List user NFTs
+- `POST /api/usernft/{id}/transfer` — Transfer NFT
+- `POST /api/usernft/{id}/burn` — Burn NFT
 
 ### BlockchainOperationController
 - `GET /api/blockchainoperation/{id}` — Get operation by ID
-- `GET /api/blockchainoperation/avatar/{avatarId}` — List operations by avatar
+- `GET /api/blockchainoperation/user/{userId}` — List operations by user
 
 ### BridgeController
 - `GET /api/bridge/routes` — List available bridge routes
@@ -81,55 +81,55 @@ envelope, so provider or policy rotation requires re-verification. See
 ### NftController
 - `GET /api/nft/{id}` — Get NFT by ID
 
-### QuestController
+### ActionController
 
-30 endpoints total. Per ADR §2.2, `activate`/`complete`/`fail`/`execution-state` are exposed on `QuestRun`, not `Quest`.
+30 endpoints total. Per ADR §2.2, `activate`/`complete`/`fail`/`execution-state` are exposed on `ActionRun`, not `ActionDefinition`.
 
-**Quest CRUD:**
-- `POST /api/quest` — Create quest
-- `GET /api/quest/{id}` — Get quest by ID
-- `GET /api/quest/avatar/{avatarId}` — List quests by avatar
-- `PUT /api/quest/{id}` — Update quest
-- `DELETE /api/quest/{id}` — Delete quest
-- `POST /api/quest/{id}/validate` — Validate quest DAG
+**ActionDefinition CRUD:**
+- `POST /api/action` — Create action
+- `GET /api/action/{id}` — Get action by ID
+- `GET /api/action/user/{userId}` — List actions by user
+- `PUT /api/action/{id}` — Update action
+- `DELETE /api/action/{id}` — Delete action
+- `POST /api/action/{id}/validate` — Validate action DAG
 
 **Execution:**
-- `POST /api/quest/{id}/execute` — Execute quest (returns QuestRun)
-- `POST /api/quest/{id}/nodes/{nodeId}/execute` — Execute single node
-- `POST /api/quest/runs/{runId}/fork` — Fork a run at a node
-- `POST /api/quest/runs/{runId}/mark-failed` — Mark run as failed
+- `POST /api/action/{id}/execute` — Execute action (returns ActionRun)
+- `POST /api/action/{id}/nodes/{nodeId}/execute` — Execute single node
+- `POST /api/action/runs/{runId}/fork` — Fork a run at a node
+- `POST /api/action/runs/{runId}/mark-failed` — Mark run as failed
 
 **Templates:**
-- `POST /api/quest/templates` — Create quest template
-- `GET /api/quest/templates/{id}` — Get quest template by ID
-- `GET /api/quest/templates` — List quest templates
-- `POST /api/quest/templates/{id}/instantiate` — Instantiate quest from template
+- `POST /api/action/templates` — Create action template
+- `GET /api/action/templates/{id}` — Get action template by ID
+- `GET /api/action/templates` — List action templates
+- `POST /api/action/templates/{id}/instantiate` — Instantiate action from template
 
 **Node Templates:**
-- `POST /api/quest/node-templates` — Create node template
-- `GET /api/quest/node-templates` — List node templates
+- `POST /api/action/node-templates` — Create node template
+- `GET /api/action/node-templates` — List node templates
 
 **Nodes sub-resource:**
-- `GET /api/quest/{questId}/nodes` — List nodes
-- `POST /api/quest/{questId}/nodes` — Add node
-- `PUT /api/quest/{questId}/nodes/{nodeId}` — Update node
-- `DELETE /api/quest/{questId}/nodes/{nodeId}` — Delete node
+- `GET /api/action/{actionId}/nodes` — List nodes
+- `POST /api/action/{actionId}/nodes` — Add node
+- `PUT /api/action/{actionId}/nodes/{nodeId}` — Update node
+- `DELETE /api/action/{actionId}/nodes/{nodeId}` — Delete node
 
 **Edges sub-resource:**
-- `POST /api/quest/{questId}/edges` — Add edge
-- `DELETE /api/quest/{questId}/edges/{edgeId}` — Remove edge
-- `GET /api/quest/{questId}/topological-order` — Get topological order
+- `POST /api/action/{actionId}/edges` — Add edge
+- `DELETE /api/action/{actionId}/edges/{edgeId}` — Remove edge
+- `GET /api/action/{actionId}/topological-order` — Get topological order
 
 **Dependencies sub-resource:**
-- `POST /api/quest/{questId}/dependencies` — Add dependency
-- `DELETE /api/quest/{questId}/dependencies/{depId}` — Remove dependency
-- `GET /api/quest/{questId}/dependency-status` — Check dependency status
+- `POST /api/action/{actionId}/dependencies` — Add dependency
+- `DELETE /api/action/{actionId}/dependencies/{depId}` — Remove dependency
+- `GET /api/action/{actionId}/dependency-status` — Check dependency status
 
-**QuestRun read surface:**
-- `GET /api/quest/runs/{runId}` — Get run by ID
-- `GET /api/quest/{questId}/runs` — List runs by quest
-- `GET /api/quest/runs/{runId}/execution-state` — Get execution state (per ADR §2.2)
-- `POST /api/quest/runs/{runId}/complete` — Mark run completed (per ADR §2.2)
+**ActionRun read surface:**
+- `GET /api/action/runs/{runId}` — Get run by ID
+- `GET /api/action/{actionId}/runs` — List runs by action
+- `GET /api/action/runs/{runId}/execution-state` — Get execution state (per ADR §2.2)
+- `POST /api/action/runs/{runId}/complete` — Mark run completed (per ADR §2.2)
 
 ### SearchController
 - `POST /api/search` — Full-text search
@@ -162,12 +162,12 @@ envelope, so provider or policy rotation requires re-verification. See
 
 | Manager | Public Methods | Role |
 |---|---|---|
-| **QuestManager** | 16 | Quest DAG orchestration, execution, templates |
+| **ActionManager** | 16 | ActionDefinition DAG orchestration, execution, templates |
 | **HolonManager** | 15 | Holon CRUD, asset queries, portfolio aggregation |
 | **DappCompositionManager** | 14 | DApp series + composition queries |
 | **WalletManager** | 11 | Wallet CRUD, balance federation, portfolio, faucet |
-| **AvatarManager** | 6 | Avatar lifecycle (register, login, update, delete) |
-| **NftManager** | 6 | NFT queries, avatar NFT bindings |
+| **UserManager** | 6 | User lifecycle (register, login, update, delete) |
+| **NftManager** | 6 | NFT queries, user NFT bindings |
 | **STARManager** | 6 | STARODK CRUD, dapp generation, deployment |
 | **SwapManager** | 4 | DEX dispatcher (thin facade to adapters) |
 | **BlockchainOperationManager** | 4 | Blockchain operation CRUD + status queries |
@@ -177,7 +177,7 @@ envelope, so provider or policy rotation requires re-verification. See
 
 The SDK provides a typed `AzoaApiClient` wrapping all 15 controllers. All amounts are strings for arbitrary precision. Notable method families:
 
-**Avatar:** `login`, `getAvatar`, `getAllAvatars`, `deleteAvatar`
+**User:** `login`, `getUser`, `getAllUsers`, `deleteUser`
 
 **Wallet:** `getWallet`, `listWallets`, `createWallet`, `updateWallet`, `deleteWallet`, `setDefaultWallet`, `getWalletPortfolio`, `generateWallet`, `connectWallet`, `exportWallet`
 
@@ -187,21 +187,21 @@ The SDK provides a typed `AzoaApiClient` wrapping all 15 controllers. All amount
 
 **Bridge:** `getBridgeRoutes`, `initiateBridge`, `getBridgeStatus`, `completeBridge`, `getBridgeHistory`, `fetchVAA`, `redeemBridge`, `reverseBridge`
 
-**Quest:** `createQuest`, `getQuest`, `listQuestsByAvatar`, `updateQuest`, `deleteQuest`, `executeQuest`, `executeQuestNode`, `createQuestTemplate`, `getQuestTemplate`, `listQuestTemplates`, `instantiateQuestTemplate`
+**ActionDefinition:** `createAction`, `getAction`, `listActionsByUser`, `updateAction`, `deleteAction`, `executeAction`, `executeActionNode`, `createActionTemplate`, `getActionTemplate`, `listActionTemplates`, `instantiateActionTemplate`
 
 **STARODK:** `getSTARODK`, `listSTARODK`, `createSTARODK`, `deleteSTARODK`, `generateSTARDapp`, `deploySTARODK`
 
-**AvatarNFT:** `mintAvatarNFT`, `getAvatarNFT`, `getAvatarNFTByToken`, `listAvatarNFTs`, `transferAvatarNFT`, `burnAvatarNFT`, `bindHolonToNFT`, `listNFTHolonBindings`, `updateHolonBinding`, `removeHolonBinding`, `bindWalletToNFT`, `listNFTWalletBindings`, `updateWalletBinding`, `removeWalletBinding`
+**UserNFT:** `mintUserNFT`, `getUserNFT`, `getUserNFTByToken`, `listUserNFTs`, `transferUserNFT`, `burnUserNFT`, `bindHolonToNFT`, `listNFTHolonBindings`, `updateHolonBinding`, `removeHolonBinding`, `bindWalletToNFT`, `listNFTWalletBindings`, `updateWalletBinding`, `removeWalletBinding`
 
 **Search:** `search`, `getSearchFacets`
 
-**BlockchainOperation:** `getBlockchainOperation`, `getBlockchainOperationsByAvatar`
+**BlockchainOperation:** `getBlockchainOperation`, `getBlockchainOperationsByUser`
 
 **ApiKey:** `createApiKey`, `listApiKeys`, `revokeApiKey`, `deleteApiKey`
 
 **Verification:** `verifyNFTOwnership`, `verifyHolonAccess`, `verifyWalletAccess`
 
-**Other:** `validateQuestDag`
+**Other:** `validateActionDag`
 
 ## Blockchain Providers
 
@@ -266,7 +266,7 @@ Implements `IBlockchainProvider` fully:
 
 ## MCP Surface
 
-The `/mcp` endpoint exposes 5 read-only tools + HNSW vector search via `ModelContextProtocol.AspNetCore`. Avatar-scoped auth required. (See `mcp-surface` conductor track.)
+The `/mcp` endpoint exposes 5 read-only tools + HNSW vector search via `ModelContextProtocol.AspNetCore`. User-scoped auth required. (See `mcp-surface` conductor track.)
 
 ## Auth & Safety
 
@@ -285,7 +285,7 @@ Spine for replay safety on key endpoints. Client can supply `Idempotency-Key` he
 - `Secp256k1VaaSignatureVerifier` — Wormhole VAA verification
 - `ApiKeyAuthenticationHandler` — SHA-256 hashed key storage + per-request validation
 - `assertUuid` guards in SDK — prevents path traversal on all URL-interpolated IDs
-- STARODK upsert IDOR-resistance — STARODK upsert routes scope the lookup by route id + authenticated avatar identity; caller-supplied `model.AvatarId` on the body is ignored (closes IDOR surface caught by self-audit-one-fix)
+- STARODK upsert IDOR-resistance — STARODK upsert routes scope the lookup by route id + authenticated user identity; caller-supplied `model.UserId` on the body is ignored (closes IDOR surface caught by self-audit-one-fix)
 
 See `docs/RESIDUAL-RISK-RUNBOOK.md` for full pre-launch gates.
 
@@ -299,4 +299,4 @@ Old documentation mentioning "9 controllers / 7 managers / EF+InMemory" is obsol
 
 ## Storage Duality Status
 
-Fully migrated to SurrealDB. All operational stores (`Avatar`, `Wallet`, `Holon`, `NFT`, `Quest`, `Bridge`, `BlockchainOperation`, `STAR`, `ApiKey`, `Idempotency`, `Saga`) use Surreal. Only `DappSeriesStore` remains InMemory (intentional, pending `dapp-composition` track close-out).
+Fully migrated to SurrealDB. All operational stores (`User`, `Wallet`, `Holon`, `NFT`, `ActionDefinition`, `Bridge`, `BlockchainOperation`, `STAR`, `ApiKey`, `Idempotency`, `Saga`) use Surreal. Only `DappSeriesStore` remains InMemory (intentional, pending `dapp-composition` track close-out).
