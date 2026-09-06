@@ -969,10 +969,32 @@ section stays as the operational summary.*
   **already drifted before this work** (ArdaNova's copy still said `oasis-sleek/`),
   so the file's own sync invariant was being violated silently.
 
-⛔ **BLOCKING: `azoa-sdk@0.3.0` is unpublished.** ArdaNova now pins `^0.3.0` and
-is green only because the local build was copied into its `node_modules`.
-**Publish before ArdaNova CI can pass**, and before AZOA's own cutover deploys —
-otherwise ArdaNova's client keeps calling the old routes and 404s.
+⛔ **STILL BLOCKING: `azoa-sdk@0.3.0` is unpublished, and this machine cannot
+publish it.** `~/.npmrc` holds a literal `_authToken` for `registry.npmjs.org`
+that returns **401 on `npm whoami`** — expired or revoked. Registry *reads* work
+(`npm view azoa-sdk version` → `0.2.2`); writes do not. `npm login` needs an
+interactive TTY, and this session has no browser tool and no authorized mail
+connector, so the token cannot be renewed from here. **`npm login` in a terminal,
+or a fresh `NPM_TOKEN`, is the only unblock.**
+
+✅ **Interim, both consumers build from SDK source via symlink — not from the
+registry.** This is deliberate and was authorized as a testing measure:
+
+| Consumer | Mechanism | Manifest |
+|---|---|---|
+| AZOA `frontend/` | `"azoa-sdk": "file:../sdk/azoa-wallet"` → npm links it; lockfile records `"link": true` | **changed** — correct permanently for a monorepo sibling |
+| ArdaNova `ardanova-client/` | `npm link azoa-sdk` (global link, no manifest edit) | **unchanged**, still `^0.3.0` — honest about what CI needs |
+
+⚠ **Two consequences to hold onto:**
+1. **ArdaNova's link is machine-local and invisible to git.** A fresh clone, a
+   different machine, or CI still resolves `^0.3.0` from the registry and fails
+   until the publish lands. Green locally ≠ green in CI here.
+2. **Never re-copy the SDK into a consumer's `node_modules`.** A *copy* is what
+   silently went 7 weeks stale and hid two `bridge/page.tsx` defects; a *link*
+   cannot drift. If a gate needs a refresh, re-link — do not `cp -r`.
+
+Verified against the linked source: AZOA frontend tsc 0 / 65 tests / 42 routes
+built; ArdaNova client tsc 0 / 210 tests across 33 files.
 
 **Still owed on B (track phases 6–7):**
 
