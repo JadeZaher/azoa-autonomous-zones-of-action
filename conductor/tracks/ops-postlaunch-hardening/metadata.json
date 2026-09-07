@@ -1,6 +1,30 @@
 {
   "id": "ops-postlaunch-hardening",
+  "description": "Post-launch ops maturity: distributed rate limiting, reconciliation tri-state, idempotency orphan settlement, health-check rewire, low-balance alerting, god-object splits, rotation volume wiring, and the ActionAccessRequest status-CAS primitive.",
+  "type": "tech-debt",
+  "created_at": "2026-07-06T00:00:00Z",
   "status": "pending",
-  "created": "2026-07-06",
-  "description": "Post-launch ops maturity: distributed rate limiting, reconciliation tri-state, idempotency orphan settlement, health-check rewire, low-balance alerting, admin UI gaps, god-object splits, rotation volume wiring."
+  "horizon": "post-launch",
+  "phase": "Backlog track, phases optional; items land incrementally and none block alpha.",
+  "reconciled": {
+    "verified_at_commit": "b2576f4",
+    "verified_on": "2026-09-07",
+    "satisfied_without_being_worked": {
+      "6_admin_console_gaps": "frontend/src/app/(dashboard)/admin/sagas/page.tsx and admin/key-rotation/page.tsx both exist (plus admin/roles). The item was inherited from the frontend-demo-harness G5 audit and was never re-checked after the pages were built.",
+      "9_actor_derivation": "Already switched to run.UserId under the C1 authorization-inversion fix, at Managers/ActionManager.cs:795 and :917 and Services/Actions/Workflow/ActionNodeStepHandler.cs:211; the invariant is documented at Models/Actions/ActionNodeExecutionContext.cs:69."
+    },
+    "added": {
+      "10_action_access_request_cas": "Forwarded here by action-invitations-approval on shipping - three concurrency findings that all want a status compare-and-set store path modelled on Core/Surreal/SurrealTransientConflict.cs."
+    },
+    "still_open": [1, 2, 3, 4, 5, 7, 8, 10]
+  },
+  "blocks": [],
+  "depends_on": [
+    "final-hardening-cutover"
+  ],
+  "related": [
+    "action-invitations-approval",
+    "chain-value-routes",
+    "integration-test-isolation-debt"
+  ]
 }

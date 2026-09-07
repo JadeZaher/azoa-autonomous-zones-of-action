@@ -2,7 +2,7 @@
 type: spec
 track: action-invitations-approval
 created: 2026-07-07
-status: pending
+status: shipped
 horizon: post-launch
 depends_on: [marketplace-guard-hardening]
 ---

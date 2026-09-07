@@ -122,8 +122,10 @@ Pre-launch (Alpha Gate). The core platform features have been shipped and harden
 - **Credential revocation (D19)** — inert. The route authorizes the *issuer*, but the only mint path makes the issuer the holder, so the check is vacuous and every real revoke fails its holder-address precondition first. Corrective track: `conductor/tracks/credential-third-party-issuance_20260906`.
 
 Both failed the same way, and it is worth naming the pattern: *a control is not wired
-until the thing that reads its result is wired too.* See `PROVIDERS.md` §"Phase 5
-primitives that are NOT enabled".
+until the thing that reads its result is wired too.* The refusal is now enforced in code
+(`Services/Actions/NotEnabledActionNodeTypes.cs`) at publish and at both dispatch seams,
+rather than asserted in prose. See `PROVIDERS.md` §"Phase 5 primitives that are NOT
+enabled".
 
 The repository includes unit, integration, schema-equivalence, and release-contract suites. All real-value bridge routes are disabled by default (`RealValueEnabled=false`) and remain non-launchable: no provider currently implements the complete reviewed lock/mint/burn/release plus production-custody lifecycle. Simulated routes remain available for development. See `conductor/tracks.md` for the full roadmap.
 
@@ -136,7 +138,7 @@ A quick orientation for contributors:
 - **SurrealDB** — the sole data engine, via the `SurrealForge.*` packages.
   Real-world state (chain confirmations, settlement callbacks) is the source of
   truth; balances are read, never stored.
-- **@azoa/sdk** — TypeScript SDK (`AzoaClient` facade) with pluggable
+- **azoa-sdk** — TypeScript SDK (`AzoaClient` facade) with pluggable
   `ChainProvider` and `DexAdapter` points.
 - **Next.js 16 frontend** — reference UI, including a visual action builder.
 

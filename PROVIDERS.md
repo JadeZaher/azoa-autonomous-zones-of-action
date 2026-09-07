@@ -424,6 +424,18 @@ failed the same way: a control was wired on one path and the thing that consumes
 result was wired to a different, unprotected one. Each has a design track dated
 2026-09-06 that has not been implemented.
 
+**"Not enabled" is now a control, not a claim.** `Services/Actions/NotEnabledActionNodeTypes.cs`
+holds the blocked set — `GovernanceProposalCreate`, `GovernanceVote`, `GovernanceTally`,
+`CredentialRevoke` — and refuses at **publish plus both dispatch seams**, with one shared
+refusal string. Before `7b28a16` this was frontend copy and prose only: `Program.cs`
+assembly-scans and registers every `IActionNodeHandler`, so a published action reaching
+`GovernanceVote` *would* have cast a ballot and `CredentialRevoke` *would* have attempted
+an Algorand clawback. Remove a member from that set only when its track closes.
+
+⚠ The blocked set covers **action node types**, not the REST surface.
+`POST /api/credential/{assetId}/revoke` is still reachable — it is inert for the reasons
+below, not gated by this control.
+
 ### Governance vote / tally (D20) — live Sybil hole, do not enable
 
 `GovernanceVoteNodeHandler` claims correctly through `IPersonUniquenessGate`.

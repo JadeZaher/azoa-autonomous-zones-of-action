@@ -12,7 +12,13 @@ resource: ./metadata.json
 ## Why this track exists
 
 The D20 governance primitive shipped in `a59bd85` and **has a live Sybil hole**.
-It is not enabled and must not be enabled until this track closes.
+⚠ **Correction (2026-09-07):** this spec originally said the primitive "is not
+enabled". That was false when written — every handler was assembly-scanned into
+DI, the config registry accepted its config, and both dispatch seams would have
+run it. "Not enabled" was a claim in prose, not a control in code, which is the
+very defect class this track exists to correct. A real gate now exists
+(`Services/Actions/NotEnabledActionNodeTypes`), refusing at publish and at both
+dispatch seams. It lifts when this track closes.
 
 `GovernanceVoteNodeHandler` claims correctly through `IPersonUniquenessGate`.
 `GovernanceTallyNodeHandler` then **counts raw child holons** and never reads the

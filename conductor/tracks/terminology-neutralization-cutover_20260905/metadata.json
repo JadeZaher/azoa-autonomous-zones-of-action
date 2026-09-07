@@ -2,7 +2,7 @@
   "id": "terminology-neutralization-cutover_20260905",
   "title": "Terminology neutralization cutover",
   "type": "feature",
-  "status": "in-flight",
+  "status": "in_progress",
   "created": "2026-09-05",
   "decisions": [
     "D28",
@@ -177,5 +177,6 @@
     "azoa-sdk@0.3.0 is UNPUBLISHED; ArdaNova pins ^0.3.0 and is green only via a local node_modules copy",
     "D29/D31 deployment reconciliation not yet run",
     "strands 2 and 3 (vocabulary prose rewrites) not started"
-  ]
+  ],
+  "status_note": "Normalized from 'in-flight' to the canonical four-value vocabulary adopted in conductor/tracks.md on 2026-09-07. This track was the last outlier; it was skipped by the reconciliation lane because its directory was excluded as live-cutover territory."
 }

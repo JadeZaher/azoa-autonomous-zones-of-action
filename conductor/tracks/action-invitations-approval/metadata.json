@@ -1,0 +1,66 @@
+{
+  "id": "action-invitations-approval",
+  "description": "Invite-gated actions: a RunAccess (Open | InviteOnly) run-authorization dimension orthogonal to IsPublic (discoverability), plus an ActionAccessRequest request-to-approval state machine, owner approval queue, and direct invite/revoke.",
+  "type": "feature",
+  "created_at": "2026-07-07T00:00:00Z",
+  "status": "shipped",
+  "horizon": "post-launch",
+  "phase": "Shipped across backend, SDK and frontend; three concurrency edges were reviewed, deliberately deferred, and forwarded to ops-postlaunch-hardening item 10.",
+  "shipped_evidence": {
+    "verified_at_commit": "b2576f4",
+    "verified_on": "2026-09-07",
+    "note": "Status was filed `pending` while the implementation was complete in all three layers; the spec body itself already described 'the shipped implementation' and its post-ship review follow-ups. Corrected on the evidence below.",
+    "model": [
+      "Models/Actions/ActionEnums.cs - ActionRunAccess + ActionAccessRequestStatus",
+      "Models/Actions/ActionDefinition.cs - RunAccess + InvitedUserIds",
+      "Models/Actions/ActionAccessRequest.cs",
+      "Persistence/SurrealDb/Models/ActionDefinition.cs + ActionAccessRequest.cs"
+    ],
+    "authorization_chokepoint": [
+      "Managers/ActionManager.cs - invite gate in LoadStartableActionAsync and ForkAsync",
+      "Interfaces/Stores/IActionAccessRequestStore.cs + Providers/Stores/Surreal/SurrealActionAccessRequestStore.cs (DI registered in Program.cs)"
+    ],
+    "routes": [
+      "Controllers/ActionController.cs:570 PUT {id}/run-access",
+      "Controllers/ActionController.cs:584 POST {id}/invite",
+      "Controllers/ActionController.cs:598 DELETE {id}/invite/{userId}",
+      "Controllers/ActionController.cs:612 POST {id}/access-requests",
+      "Controllers/ActionController.cs:625 GET {id}/access-requests",
+      "Controllers/ActionController.cs:638 POST access-requests/{requestId}/decision",
+      "Controllers/ActionController.cs:652 POST access-requests/{requestId}/withdraw",
+      "Controllers/ActionController.cs:665 GET access-requests/mine"
+    ],
+    "sdk": [
+      "sdk/azoa-wallet/src/api/api-version.ts:159-166 - five ACTION_* path constants",
+      "sdk/azoa-wallet/src/api/client.ts:2011,2034 - setRunAccess / requestActionAccess / decideAccessRequest and siblings"
+    ],
+    "frontend": [
+      "frontend/src/components/action-access/access-badge.tsx",
+      "frontend/src/components/action-access/marketplace-access-action.tsx",
+      "frontend/src/components/action-access/owner-access-controls.tsx",
+      "frontend/src/app/(dashboard)/actions/page.tsx"
+    ],
+    "tests": [
+      "tests/AZOA.WebAPI.Tests/Actions/ActionInvitationsTests.cs",
+      "tests/AZOA.WebAPI.Tests/Actions/ActionAccessRequestStateMachineTests.cs"
+    ]
+  },
+  "deferred_follow_ups": {
+    "forwarded_to": "ops-postlaunch-hardening",
+    "item": 10,
+    "reason": "All three want a status compare-and-set store primitive (mirror Core/Surreal/SurrealTransientConflict.cs), which is an ops-track concern rather than a bolt-on here.",
+    "items": [
+      "Approve is not atomic across the action and request stores.",
+      "Terminal-state guard is read-check-write, not CAS.",
+      "The <=1-Pending invariant is a manager read-then-create, not a DB constraint."
+    ]
+  },
+  "blocks": [],
+  "depends_on": [
+    "marketplace-guard-hardening"
+  ],
+  "related": [
+    "user-dapp-rbac",
+    "ops-postlaunch-hardening"
+  ]
+}

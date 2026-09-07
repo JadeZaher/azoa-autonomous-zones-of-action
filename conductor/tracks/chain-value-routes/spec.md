@@ -38,6 +38,19 @@ Sources: `_archive/final-hardening-cutover/{CLOSEOUT.md,CLOSEOUT-PHASE-H.md,spec
 7. **Metaplex dormant methods** — convert-or-delete
    `SolanaProvider.{CreateMetadataAccountAsync,UpdateMetadataAsync}` (no caller).
 
+## Status reconciliation (2026-09-07)
+
+The Scope list above is the ORIGINAL intent and is preserved as written. Two of its
+seven items have since closed and one partly closed; `plan.md` carries the live
+per-item state with file:line evidence read at commit `b2576f4`. In short:
+
+- **Item 3 (real ETH secp256k1 keygen) is SHIPPED** — `Services/Signing/WalletKeyService.cs:158-170`,
+  whose comment cites this track as "chain-value-routes H1".
+- **Item 6 (soulbound clawback-revoke) landed but is inert**, and its remaining
+  defect now belongs to `credential-third-party-issuance_20260906`.
+- **Item 7 (Metaplex)** was converted to fail-closed rather than deleted; the
+  implement-or-delete decision is still open.
+
 ## Acceptance
 
 - Each route flips `RealValueEnabled=true` only behind its own devnet/testnet

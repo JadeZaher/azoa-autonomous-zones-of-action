@@ -42,8 +42,19 @@ reference consumer**, used only as a concrete example.
 > typically when that consumer is also the node operator.
 
 ### Boundary rules (non-negotiable)
-1. **No brand leak into AZOA.** No AZOA source may contain the string `ArdaNova`.
-   AZOA knows only "a consumer," "a node operator," "a user." (H5 grep → CI.)
+1. **No brand leak into AZOA's mechanisms.** AZOA's *identifiers, config, node
+   types and economic logic* know only "a consumer," "a node operator," "a user."
+   ⚠ **Corrected 2026-09-07 — the previous wording was false in both halves.** It
+   read "no AZOA source may contain the string `ArdaNova` … (H5 grep → CI)". No such
+   CI grep exists, and AZOA source contains 15 occurrences — so the rule asserted an
+   enforcement that was absent and a state that was untrue. What is actually in
+   force, and IS tested (`tests/…/BrandLeakGuardTests`), is narrower: handler,
+   predicate and node-config CODE must contain no tenant economic brand or
+   instrument token (`ArdaNova`, `project-token`, `equity`, `vesting`). Naming the
+   canonical example consumer in PROSE to explain intent is explicitly permitted by
+   that guard and accounts for 14 of the 15. The 15th is one sanctioned wire alias,
+   `[JsonPropertyName("ardanovaUserId")]` in `TenantCustodialAccountResponses.cs`,
+   kept for the first integration's payload compatibility.
 2. **AZOA owns blockchain primitives + key custody only.** All domain economics —
    token valuation, treasury splits, equity math, funding-gate *valuation*, scrum
    state, the investment/escrow records of truth — stay in the consumer.
@@ -314,6 +325,14 @@ is **feature-flagged** so simulated/legacy paths coexist during migration.
 ## 10. Track decomposition (Phase-2 — each repo authors its own)
 
 ### AZOA (`azoa/conductor/tracks/`)
+
+⚠ **Corrected 2026-09-07 — this was a Phase-2 PROPOSAL, not a record.** None of the
+five slugs below was ever created; they exist in neither `conductor/tracks/` nor
+`conductor/tracks/_archive/`. The work itself mostly landed under different track
+names (e.g. the fungible-mint endpoint under `_archive/fungible-token-node`), so
+reading this list as a status board — as a sibling repo's catalog did — produces
+confident, wrong claims about what AZOA has open. Treat it as the original
+decomposition intent and consult `conductor/tracks.md` for actual status.
 - `azoa-node-integration-contract` — this doc + contract/seam tests; neutral "consumer/operator/user" framing; the publish-vs-run distinction made explicit in API docs.
 - `action-reconcile-retry-wiring` — close **P7** (§7). The double-mint blocker. Highest priority.
 - `scrum-lifecycle-action-presets` — the create→fund→work→tasks definition(s) + public templates a user can instantiate and self-run (§5).

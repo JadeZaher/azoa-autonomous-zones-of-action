@@ -2,7 +2,7 @@
 type: spec
 track: user-dapp-rbac
 created: 2026-07-10
-status: in_progress
+status: shipped
 horizon: alpha
 depends_on:
   - user-sovereign-identity

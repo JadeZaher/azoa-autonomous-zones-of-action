@@ -258,6 +258,10 @@ run; repeat invocations are no-ops when the ledger matches the on-disk files.
 | "What's the right C# pattern for a new SurrealDB entity?" | [Persistence/SurrealDb/CONVENTION.md](Persistence/SurrealDb/CONVENTION.md) |
 | "What does the API surface look like?" | [PROVIDERS.md](PROVIDERS.md) |
 | "What invariants does the bridge enforce?" | [docs/RESIDUAL-RISK-RUNBOOK.md](docs/RESIDUAL-RISK-RUNBOOK.md) |
+| "How do I self-host a node?" | [docs/NODE-HOST.md](docs/NODE-HOST.md) |
+| "How do I build a dApp on someone else's node?" | [docs/DAPP-DEVELOPER-GUIDE.md](docs/DAPP-DEVELOPER-GUIDE.md) |
+| "Does the SDK cover this endpoint?" | [API_SYNC.md](API_SYNC.md) |
+| "Is governance / credential revocation usable yet?" | **No** — [PROVIDERS.md](PROVIDERS.md) §"Phase 5 primitives that are NOT enabled" |
 | "Which track is which?" | [conductor/tracks.md](conductor/tracks.md) |
 | "Historical RUNBOOK status snapshots" | [conductor/retros/runbook-status-2026-06-12.md](conductor/retros/runbook-status-2026-06-12.md) |
 
@@ -266,8 +270,8 @@ run; repeat invocations are no-ops when the ledger matches the on-disk files.
 ## 5. Doc-drift audit corrections (final-hardening-cutover Phase H, H8)
 
 Two independent fresh-eyes audits (2026-07-05) were misled by stale operator
-docs into flagging items that were, in fact, already resolved. Recorded here so
-neither claim resurfaces:
+docs into flagging items that were, in fact, already resolved. Items 3–4 were
+added by the 2026-09-07 doc-accuracy pass. Recorded here so no claim resurfaces:
 
 1. **Sagas default is `Enabled=true`, not `false`.** `docs/GO-TO-PROD.md` (dated
    2026-05-18) and its "no consumer until durable-saga Phase 2" premise are
@@ -279,6 +283,21 @@ neither claim resurfaces:
    sync (`SURREAL_SYNC_DATA: "true"`) + `SurrealRuntime__G1DurabilityAcknowledged=true`
    were re-verified against the 3.1.4 pin during `final-hardening-cutover`; the
    gate is not stale or unverified.
+
+3. **`scripts/passoff.ps1` and `scripts/passoff-architecture.ps1` no longer
+   exist** (recorded 2026-09-07). Older docs name them as the code sign-off
+   gate. They are gone from the tree; the gate is `.github/workflows/ci.yml`.
+   Every surviving mention is a record of a gate that ran at the time, not an
+   instruction — the three docs that cite them now say so in their banners.
+4. **Two Phase 5 primitives are committed but NOT enabled** (recorded
+   2026-09-07). Governance vote/tally (D20) has a live Sybil hole — the tally
+   counts raw child holons and never reads the uniqueness claim ledger, so
+   ballots posted straight at `POST /api/holon` are counted. Credential
+   revocation (D19) is inert — the only mint path makes the issuer the holder,
+   so its issuer-authorization check is vacuous. Neither may be described as
+   shipped. Correctives:
+   `conductor/tracks/governance-vote-of-record_20260906` and
+   `conductor/tracks/credential-third-party-issuance_20260906`.
 
 `docs/GO-TO-PROD.md` and `docs/RESIDUAL-RISK-RUNBOOK.md` now carry deprecation
 banners pointing to `docs/NODE-HOST.md` as the authoritative operator guide;

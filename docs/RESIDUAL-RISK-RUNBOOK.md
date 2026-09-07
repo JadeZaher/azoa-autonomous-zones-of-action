@@ -11,6 +11,10 @@
 > operator procedure. This file remains for its still-valid exactly-once
 > *reasoning* (idempotency claim → replay ledger → atomic transition → terminal
 > write) — the pattern is unchanged, only the storage engine underneath it.
+> **Also retired: `scripts/passoff.ps1` / `scripts/passoff-architecture.ps1`.**
+> They are gone from the tree. Every mention below records a gate that ran at
+> the time; none is an instruction. The current code gate is
+> `.github/workflows/ci.yml`.
 
 **Audience:** Operators/SREs running the AZOA cross-chain bridge API pre-launch.  
 **Scope:** Stuck/failed bridge transactions, idempotency record interpretation, reconciliation.  
@@ -35,7 +39,7 @@
 - `ReplayedVaa_IsRejected_NoSecondMint` (unit test, SQLite): a redeem that completes successfully marks the VAA digest consumed. A second redeem of the same VAA fails on the unique constraint of `ConsumedVaas.Digest`, never reaches the on-chain call.
 
 ### Server-Side Broadcast Idempotency
-**Mechanism:** `BlockchainOperationManager.ExecuteAsync` + `AlgorandFaucet.DispenseAsync` (`Managers/BlockchainOperationManager.cs`, `Core/AlgorandFaucet.cs:33–79`)
+**Mechanism:** `BlockchainOperationManager.ExecuteAsync` + `AlgorandFaucet.DispenseAsync` (`Managers/BlockchainOperationManager.cs`, `Providers/Blockchain/Algorand/AlgorandFaucet.cs`)
 
 **Safety:**
 - Idempotency key is deterministic and content-addressed: `OperationIdGenerator.Generate(chain, operationType, walletAddress, params)` (`Core/OperationIdGenerator.cs`). No `DateTime.Ticks` — identical params always yield identical keys.
@@ -417,16 +421,26 @@ WHERE BridgeTransactionId = '<bridge_id>';
 - Configured in `appsettings.json`: `Reconciliation:IntervalSeconds` (default 300 = 5 minutes).
 - Hosted service `ReconciliationHostedService` runs in the background, calling `ReconciliationService.ReconcileBridgeAsync` and `ReconcileOperationsAsync` on each tick.
 
-**Manual trigger (if an API endpoint is exposed):**
-```bash
-# Trigger full bridge reconciliation sweep
-curl -X POST https://your-api.com/api/reconciliation/bridges \
-  -H "Authorization: Bearer <jwt>" \
-  -H "Content-Type: application/json"
+**Manual trigger.** ⚠ Corrected 2026-09-07: **neither endpoint below ever existed.**
+There is no `/api/reconciliation/*` controller and no `POST /api/bridge/{id}/reconcile`.
+Bridge reconciliation is reachable only through the background
+`ReconciliationHostedService` tick — to force one, restart the API or shorten
+`Reconciliation:IntervalSeconds`.
 
-# Reconcile a specific bridge transaction (if endpoint exists)
-curl -X POST https://your-api.com/api/bridge/<bridge_id>/reconcile \
+The reconcile routes that DO exist are on other aggregates and will not sweep a bridge:
+
+```bash
+# Reconcile one durable action run against chain truth
+curl -X POST https://your-api.com/api/action/runs/<run_id>/reconcile \
   -H "Authorization: Bearer <jwt>"
+
+# Sweep every reconcilable action run
+curl -X POST https://your-api.com/api/action/runs/reconcile-sweep \
+  -H "Authorization: Bearer <jwt>"
+
+# Observation-only allocation receipt reconciliation
+curl -X POST https://your-api.com/api/allocation/receipt/reconcile \
+  -H "X-Api-Key: <key>" -H "Content-Type: application/json"
 ```
 
 **Check reconciliation logs:**
@@ -602,7 +616,7 @@ SELECT Id, ErrorMessage FROM BridgeTransactions WHERE Status = 'Failed' AND Erro
 
 | Task | Status | Owner | Notes |
 |------|--------|-------|-------|
-| ✓ Idempotency store (IIdempotencyStore impl) | DONE | Wave 1 | `Core/Idempotency/IdempotencyStore.cs` |
+| ✓ Idempotency store (IIdempotencyStore impl) | DONE | Wave 1 | `Core/Idempotency/SurrealIdempotencyStore.cs` (interface `Interfaces/IIdempotencyStore.cs`) |
 | ✓ Consumed-VAA ledger (ConsumedVaaRecord + unique digest) | DONE | Wave 1 | `Models/ConsumedVaaRecord.cs`, unique on Digest |
 | ✓ Atomic bridge state transitions (WHERE Status=expected) | DONE | Wave 1 | `RedeemWithVAAAsync`, `ExecuteUpdateAsync` |
 | ✓ Bridge integration tests (concurrent redeem, replay rejection) | DONE | Wave 1 | Unit tests passing (SQLite, real constraints) |

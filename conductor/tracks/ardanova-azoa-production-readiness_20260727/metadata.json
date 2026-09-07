@@ -22,5 +22,11 @@
     "surreal-runtime-least-privilege",
     "node-operator-governance",
     "fiat-stripe-bridge"
-  ]
+  ],
+  "reconciled": {
+    "verified_at_commit": "b2576f4",
+    "verified_on": "2026-09-07",
+    "note": "Same defect as provider-boundary-conformance_20260727: metadata and spec said `pending`, tracks.md said 'In flight'. plan.md has 0 of 48 boxes ticked. Compounding it, this track depends_on five other tracks, three of which are themselves in_progress - it cannot start, and listing it as in flight hid that.",
+    "plan_progress": "0/48 complete"
+  }
 }

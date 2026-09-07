@@ -60,7 +60,7 @@ graph TD
 ```
 
 ### Core Layers
-1. **Identity (Self-Sovereign Auth)**: Users own their users, authenticating via cryptographic challenge-signatures from external wallets (ED25519/Secp256k1). Access is managed through explicit, revocable `ConsentGrant` scopes rather than hard-coded tenant roles.
+1. **Identity (Self-Sovereign Auth)**: Users own their identities, authenticating via cryptographic challenge-signatures from external wallets (ED25519/Secp256k1). Access is managed through explicit, revocable `ConsentGrant` scopes rather than hard-coded tenant roles.
 2. **Actions (Durable Workflows)**: Structured, idempotent state machines represented as Directed Acyclic Graphs (DAGs). Execution is managed stepwise by a background saga engine that reconciles against real-world chains before advancing.
 3. **Dapps (STAR Composition)**: A composition layer allowing developers to bundle, sequence, and configure actions into unified `DappSeries` deployments.
 4. **Bridges & Adapters**: Standardized interfaces (`IBlockchainProvider`, `DexAdapter`) connecting actions to decentralized finance (DeFi) rails like Algorand, Solana, and Wormhole.
@@ -70,7 +70,7 @@ graph TD
 ## 2. Core Subsystem Workflows
 
 ### 2.1 Identity, Authentication, and Revocable Consent
-AZOA avoids custodial identity. End-user users are self-sovereign; tenants can only act on behalf of a user if a valid `ConsentGrant` is present.
+AZOA avoids custodial identity. End-user identities are self-sovereign; tenants can only act on behalf of a user if a valid `ConsentGrant` is present.
 
 ```mermaid
 sequenceDiagram
@@ -173,7 +173,7 @@ sequenceDiagram
 
 ## 3. Database Conventions (SurrealDB)
 
-AZOA uses **SurrealDB** as its sole data engine, operating with RockDB-backed G1 durability (RocksDB syncs its WAL per commit). Persistence logic is managed through the C#-first package suite `SurrealForge`.
+AZOA uses **SurrealDB** as its sole data engine, operating with RocksDB-backed G1 durability (RocksDB syncs its WAL per commit). Persistence logic is managed through the C#-first package suite `SurrealForge`.
 
 ### 3.1 C#-First Schema Definition
 We define the database schema directly inside C# POCOs under `Persistence/SurrealDb/Models/`. Hand-authoring `.surql` schema files is strictly prohibited.
@@ -236,7 +236,7 @@ graph TD
     Context -->|No| Typed
 ```
 
-- **Record Lookup Requirement**: When performing record lookups by string/Guid, always use `SELECT * FROM type::record($_t, $_id)` or the `SelectById(table, id)` helper. Thing vs string equality comparisons fail silently in SurrealDB 1.5.x.
+- **Record Lookup Requirement**: When performing record lookups by string/Guid, always use `SELECT * FROM type::record($_t, $_id)` or the `SelectById(table, id)` helper. Thing vs string equality comparisons fail silently. (The tree runs SurrealDB 3.1.4 — see `docker-compose.dev.yml`; the guidance predates the 3.x cutover but the record-lookup rule is unchanged.)
 
 ---
 
@@ -250,7 +250,7 @@ AZOA organizes files strictly by role rather than domain:
 - `/Services/<domain>`: Emitters, adapters, blockchain network clients, and background workers.
 - `/Core`: Primitives (enums, values, system-wide constants, exceptions, custom auth handlers).
 - `/Persistence`: Database models, generated schemas, and SurrealDB setups.
-- `/Providers`: Store implementations, blockchain providers (`Algorand`, `Solana`), and DEX adapters.
+- `/Providers`: Store implementations, blockchain providers (`Algorand`, `Solana`, `Ethereum`, `Simulated`), the value-rail factory, and DEX adapters.
 - `/Helpers`: Reusable static utility classes.
 - `/Interfaces`: Pure interface definitions.
 

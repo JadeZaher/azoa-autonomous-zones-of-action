@@ -37,15 +37,41 @@ status: in_progress
 
 ## Phase 3 - hosted KYC providers
 
-11. [ ] Add a durable hosted-attempt admission and external-outcome CAS protocol
+> **Reconciled 2026-09-07 @ `b2576f4`: the AZOA half of Phase 3 shipped and was
+> never ticked.** Phases 0-2 are largely ArdaNova-repo work and are unchanged;
+> Phase 3 is the one phase whose deliverables live in THIS repo, which is why it
+> could ship here without anyone updating this plan.
+
+11. [x] Add a durable hosted-attempt admission and external-outcome CAS protocol
     to the AZOA provider boundary before enabling any hosted adapter.
-12. [ ] Add Identomat begin/result/callback support with a configured API key,
+    — `Persistence/SurrealDb/Models/HostedSession.cs`. Deliberately provider- and
+    flow-agnostic (`flow_kind` discriminates KYC from a future fiat-in checkout);
+    `admission_key` is claimed BEFORE the external create call so a crash between
+    claim and create cannot mint two provider sessions, and `state_version` is a
+    real CAS token — a redelivered callback loses the conditional UPDATE instead of
+    producing a second terminal write. Flow in `Services/HostedSessions/`; KYC
+    resumption in `Services/Kyc/KycHostedSessionOutcomeHandler.cs`, which refuses a
+    non-terminal outcome as defence in depth (`:61`).
+12. [x] Add Identomat begin/result/callback support with a configured API key,
     configuration ID, callback key, server-side result fetch, and minimal outcome
-    persistence.
-13. [ ] Evaluate Stripe Identity only through a separate boundary decision; do
+    persistence. — `Providers/Kyc/IdentomatKycProviderService.cs`,
+    `Providers/Kyc/IdentomatHttpTransport.cs`, `Models/Kyc/IdentomatWireModels.cs`,
+    `Controllers/KycCallbackController.cs`, `Settings/KycSettings.cs`, registered via
+    `Services/Kyc/KycRegisteredAdapters.cs` + `Services/Kyc/KycProviderRegistry.cs`.
+    Rate/quota guards: `Services/Kyc/IdentomatRateBudget.cs`,
+    `Services/Kyc/KycTenantQuota.cs`.
+13. [x] Evaluate Stripe Identity only through a separate boundary decision; do
     not reuse Payments credentials or enable a Stripe key in AZOA implicitly.
-14. [ ] Enforce provider configuration and simulation rejection at startup for
-    Production and Mainnet.
+    — decided and recorded as **D3 (deferred behind a separate boundary decision)**
+    in `DECISIONS.md`. No Stripe Identity adapter exists in AZOA, which is the
+    intended outcome; the item asked for a decision, not an implementation.
+14. [x] Enforce provider configuration and simulation rejection at startup for
+    Production and Mainnet. — `Services/Kyc/KycRuntimeSafety.GuardStartup`. It
+    refuses to start when `Kyc:Provider` is `manual`/`mock`, or
+    `Kyc:AdminOverride:Enabled` is set, in a non-permitted environment, in
+    Production, or when `Blockchain:DefaultNetwork=Mainnet`. The manual simulator is
+    separately gated on Development + `Blockchain:Mode=Simulated` + real-value
+    bridging disabled (`IsManualSimulationAllowed`).
 
 ## Verification and activation
 

@@ -2,7 +2,7 @@
 
 > ⚠️ **DEPRECATED — dated 2026-05-18, predates the SurrealDB cutover and the
 > Phase-A saga-default flip.** `docs/NODE-HOST.md` is the authoritative
-> operator guide for current data-engine setup and production readiness. Two
+> operator guide for current data-engine setup and production readiness. Three
 > corrections this doc gets wrong as written:
 > 1. **`Sagas:Enabled=true` is the deliberate default**, with a boot guard,
 >    not `Enabled=false` (gate 7 and the §2/§4 references below describe the
@@ -10,6 +10,10 @@
 >    runs by default; see [[durable-actions-inert-sagas-disabled]]).
 > 2. **The G1 durability gate is live and green on SurrealDB 3.1.4** —
 >    re-verified during `final-hardening-cutover`.
+> 3. **`scripts/passoff.ps1` and `scripts/passoff-architecture.ps1` no longer
+>    exist.** Every reference to them below is a record of a gate that ran at
+>    the time, not an instruction. The current code gate is
+>    `.github/workflows/ci.yml`.
 > These corrections exist because two independent auditors were misled by this
 > stale doc. Read [NODE-HOST.md](NODE-HOST.md) instead for anything
 > operational; this file is retained for historical safety-gate reasoning only.

@@ -16,5 +16,19 @@
   "related": [
     "federation-v2",
     "node-operator-governance"
-  ]
+  ],
+  "reconciled": {
+    "verified_at_commit": "b2576f4",
+    "verified_on": "2026-09-07",
+    "note": "metadata said in_progress and was right; tracks.md filed the row under Pending. plan.md has 7 of 8 boxes ticked and the implementation is present, so the catalog row moved to In flight.",
+    "plan_progress": "7/8 complete; only the CI provenance/freshness + deployed-consumer proof remains",
+    "code_evidence": [
+      "Services/Conformance/NodeConformanceManifestService.cs",
+      "Services/Conformance/NodeConformanceCanonicalizer.cs",
+      "Services/Conformance/NodeConformanceVerifier.cs",
+      "Services/Conformance/ProtectedFileNodeIdentityKeyService.cs",
+      "Services/Conformance/TrxNodeConformanceEvidenceSource.cs",
+      "Extensions/NodeConformanceEndpointExtensions.cs (well-known HTTPS endpoint)"
+    ]
+  }
 }

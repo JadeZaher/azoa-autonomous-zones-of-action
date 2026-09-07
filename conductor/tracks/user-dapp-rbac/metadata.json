@@ -1,15 +1,34 @@
 {
   "id": "user-dapp-rbac",
-  "description": "In-flight alpha track: explicit user-level RBAC for DApp economies. Ordinary users can use/run DApps; DApp developers can author with dapp:develop; DApp managers can manage DApp lifecycle/membership with dapp:manage; platform operators remain JWT-only operator:admin. Tightens DApp policies so logged-in JWT users are not implicitly DApp authors and API-key DApp scopes remain bounded by the owning user's current role.",
+  "description": "Explicit user-level RBAC for DApp economies: ordinary users can use/run DApps; DApp developers can author with dapp:develop; DApp managers can manage DApp lifecycle/membership with dapp:manage; platform operators remain JWT-only operator:admin. Tightens DApp policies so logged-in JWT users are not implicitly DApp authors and API-key DApp scopes remain bounded by the owning user's current role.",
   "type": "feature",
   "created_at": "2026-07-10T00:00:00Z",
-  "status": "in_progress",
+  "status": "shipped",
   "horizon": "alpha",
-  "phase": "implementation swarm started",
+  "phase": "All six acceptance criteria are satisfied in code and covered by tests; the three spec follow-ons (per-DApp membership table, role-management UI, federation projection) were always out of scope for this track.",
+  "shipped_evidence": {
+    "verified_at_commit": "b2576f4",
+    "verified_on": "2026-09-07",
+    "note": "Status was still `in_progress` with phase 'implementation swarm started' long after the swarm landed. Corrected on the evidence below; the track had no plan.md, which is why nothing recorded the finish.",
+    "ac1_role_assignments": "Models/Requests/UserRoleAssignmentModel.cs, Core/AzoaDappRoles.cs (dapp:user / dapp:developer / dapp:manager), PUT /user/{id}/dapp-role at Controllers/UserController.cs:124",
+    "ac2_ac3_scope_binding": "Program.cs:604-651 - the DappDevelop and DappManage policies require BOTH the scope claim and the owning user's live role (HasDappDeveloperRole / HasDappManagerRole), so a stale API-key scope cannot outlive a revoked role",
+    "ac4_endpoint_gating": "Controllers/DappSeriesController.cs:42,54,66,90,102,113,125 gated on DappDevelop; Controllers/DappCompositionController.cs:27,68,79 (compose/generate/deploy) gated on DappManage",
+    "ac5_discovery": "Core/AzoaScopes.cs:153 ApiKeyForbiddenScopes and :198 SelfIssuableScopes drive scope discovery/issuance; operator:admin is forbidden to API keys",
+    "ac6_tests": [
+      "tests/AZOA.WebAPI.Tests/Controllers/DappCompositionAuthorizationTests.cs",
+      "tests/AZOA.WebAPI.IntegrationTests/Controllers/ApiKeyScopeRbacIntegrationTests.cs",
+      "tests/AZOA.WebAPI.IntegrationTests/Controllers/DappSeriesControllerIntegrationTests.cs"
+    ]
+  },
   "blocks": [],
   "depends_on": [
     "user-sovereign-identity",
     "tenant-consent-delegation",
     "dapp-composition"
+  ],
+  "related": [
+    "node-operator-governance",
+    "action-invitations-approval",
+    "federation-v2"
   ]
 }

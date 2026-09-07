@@ -182,10 +182,11 @@ Guardian set simply rejects every VAA.
 
 - **`RESIDUAL-RISK-RUNBOOK.md` §4** — this document IS the ops procedure for the
   "real testnet/mainnet Guardian sets" gate (gate item *a*).
-- **`scripts/passoff.ps1`** — the **code** sign-off gate (build + full unit
-  suite + safety-critical test assertions). It passes the code gate and prints
-  "OPS SIGN-OFF REQUIRED" for the ops/config gates including this one; it does
-  NOT and cannot verify the real Guardian-set values — that is this checklist.
+- **`.github/workflows/ci.yml`** — the **code** sign-off gate (build + unit
+  suite + integration, schema-equivalence and SDK jobs). It supersedes the
+  retired `scripts/passoff.ps1`, which no longer exists in the tree. Like that
+  script, CI does NOT and cannot verify the real Guardian-set values — that is
+  this checklist, and it stays a human ops sign-off.
 - **`Services/Wormhole/Secp256k1VaaSignatureVerifier.cs`** — the implementation
   consuming `Blockchain:Wormhole:GuardianSets` (config-driven, fail-closed).
 - **`Core/Blockchain/Wormhole/WormholeConfig.cs`** — `GuardianSets` binding
