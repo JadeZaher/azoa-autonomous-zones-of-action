@@ -1111,14 +1111,37 @@ review of every new Tier-2 node.
 > Their verdicts are in the §2 review ledger; their lessons in §8; their
 > step-by-step instructions were pruned 2026-09-04.
 
+**D51 — STAR/STARODK becomes ActionGraphBundle; no forward migration.**
+Shipped `10f4c16` (126 files, 21 file renames so each filename matches the type
+it declares). `star_odk` was a real SurrealDB table with `record<star_odk>` FKs on
+three SCHEMAFULL tables (`ecosystem` REQUIRED, `ecosystem_node` discriminator,
+`dapp_series`), so the rename looked like the avatar/quest case that forced
+wipe-and-reseed. It is not: the live node holds **0 rows** in `star_odk`,
+`ecosystem` and `dapp_series`, so regenerating the goldens is sufficient and the
+table rename rides the D31 wipe already scheduled. Re-verify the row counts if
+D31 slips past a seeding run.
+
+⚠ **Sixth instance of the recurring class, and the first where the *guard itself*
+was the claim.** `AttributePocoByteEquivalenceTests` auto-authored a golden on a
+MISSING file, so a table rename made it write the new golden and pass 60/60 while
+three tables still carried `record<star_odk>` and the node-type enum still read
+`"StarGenerate"`. A drift guard that creates what it fails to find cannot detect a
+rename — the exact drift it exists to catch. A missing golden is now RED; only
+`AZOA_REGENERATE_GOLDENS=1` or a zero-byte file authors. Proven by hiding
+`ecosystem.surql` and watching the suite fail. Corollary for §6: **when a guard
+has a self-healing path, ask what it heals *over*.**
+
+Two traps the proof phase caught before any edit: `StarTable` lowercases to
+"startable" and would have collided with the `LoadStartableActionAsync` family;
+the lucide-react `<Star>` icon is an unrelated third-party symbol. Both intact.
 ### ▶ RESUME HERE (state as of 2026-09-07)
 
-**Branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, 11 commits ahead of
+**Branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, 20 commits ahead of
 `9f4e026`, none pushed.** ArdaNova at `03ab6d2`, Taawun at `94ab2e4` (its first
 CI ever). All three repos clean apart from ArdaNova's ~81 uncommitted
 security-hardening files, which are deliberately untouched.
 
-**Gates:** build 0 errors / 23 warnings · backend **2670 passed, 1 skipped, 0
+**Gates:** build 0 errors / 23 warnings · backend **2688 passed, 1 skipped, 0
 failed** · SDK tsc 0 + **204** · frontend tsc 0 + **78 across 13 files** + build
 **43 routes**.
 
