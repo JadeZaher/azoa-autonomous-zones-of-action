@@ -32,5 +32,7 @@
       "tests/AZOA.WebAPI.Tests/Governance/**"
     ]
   },
-  "acceptance_headline": "a vote holon created directly via the holon API is NOT counted"
+  "acceptance_headline": "a vote holon created directly via the holon API is NOT counted",
+  "enforcement_gate": "Enforcement now exists: Services/Actions/NotEnabledActionNodeTypes refuses GovernanceProposalCreate/Vote/Tally at publish and at BOTH dispatch seams. Remove those three members from that set as the final step of this track, and not before - the gate is what makes 'not enabled' true.",
+  "gate_added_commit": "7b28a16"
 }

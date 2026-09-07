@@ -891,24 +891,16 @@ review of every new Tier-2 node.
 > Their verdicts are in the §2 review ledger; their lessons in §8; their
 > step-by-step instructions were pruned 2026-09-04.
 
-### ▶ RESUME HERE (state as of 2026-09-06)
+### ▶ RESUME HERE (state as of 2026-09-07)
 
-**Branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, 7 commits ahead of
-`9f4e026`, none pushed.**
+**Branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, 11 commits ahead of
+`9f4e026`, none pushed.** ArdaNova at `03ab6d2`, Taawun at `94ab2e4` (its first
+CI ever). All three repos clean apart from ArdaNova's ~81 uncommitted
+security-hardening files, which are deliberately untouched.
 
-```
-a59bd85 feat: wire the D3/D23 uniqueness gate and land four Phase 5 primitives
-a562492 docs: record the interim SDK linking arrangement and why publish is blocked
-ce394ad fix(frontend): point the Turbopack root at the repo, not frontend/
-2333d24 fix(frontend): build the SDK from source instead of a stale registry pin
-d8ff8e8 docs: correct an inverted claim about what the deploy actually applies
-c089268 fix: repair article agreement and doubled words left by the rename
-836f549 refactor!: neutralize platform terminology (Avatar->User, Quest->Action)
-```
-ArdaNova carries `f2e4bc5` (its cutover); Taawun needed no change.
-
-**Gates, all at baseline:** build 0 errors / 23 warnings · backend **2657 passed,
-1 skipped, 0 failed** · SDK tsc 0 + 191 · frontend tsc 0 + 65 + 42 routes.
+**Gates:** build 0 errors / 23 warnings · backend **2670 passed, 1 skipped, 0
+failed** · SDK tsc 0 + **204** · frontend tsc 0 + **78 across 13 files** + build
+**43 routes**.
 
 **Re-entry:**
 ```
@@ -916,26 +908,51 @@ python scripts/d28_rename.py verify     # expect: 0 files left to change
 dotnet build azoa.sln --no-incremental  # expect: 0 errors, 23 warnings
 ```
 
-⚠ **Green is not done.** Two Phase 5 primitives shipped with known open defects
-and are now **gated by a real control** (`Services/Actions/NotEnabledActionNodeTypes`)
-— see the track's Phase 5b section. Both are the same
-recurring shape: *a control exists, is invoked on one path, and the consumer of
-its result never checks it.* Third instance in the §2 ledger.
+#### The one lesson this session kept re-teaching
 
-**Immediately next:** the two design tracks written for exactly those two
-primitives —
-[`governance-vote-of-record_20260906`](tracks/governance-vote-of-record_20260906/spec.md)
-(D39/D40/D42) and
-[`credential-third-party-issuance_20260906`](tracks/credential-third-party-issuance_20260906/spec.md)
-(D41). Governance first: it has a live Sybil hole and blocks Phase 5 closure,
-while revocation is inert and therefore harmless where it sits.
+**A claim in prose is not a control in code.** It recurred five times, twice by
+my own hand:
+1. The AML decision was inert — `ScreenAsync` had zero production callers.
+2. `GetByGlobalPersonKeyAsync` sat with zero callers; D3's uniqueness opt-in was
+   designed and never wired. **Now fixed** — `IPersonUniquenessGate`.
+3. Governance's tally reads raw holons, so the gate protects the write path while
+   the *consumer* of its result reads an unprotected one. **Open** — track P1.
+4. "Not enabled" was asserted in the runbook, both track specs and a builder
+   badge while every handler was registered and dispatchable. **Now fixed** —
+   `Services/Actions/NotEnabledActionNodeTypes` refuses at publish and at BOTH
+   dispatch seams, with 13 tests including two that fail if a seam stops
+   consulting it.
+5. The integration contract's boundary rule 1 asserted a CI-enforced no-brand-leak
+   rule that was enforced nowhere and violated 15 times. **Now corrected.**
 
-**Blocked on the operator, not on work:**
-- ⛔ **`npm publish` — `~/.npmrc`'s token 401s.** Needs `npm login` or a fresh
-  `NPM_TOKEN`. Both consumers are symlinked to SDK source as an interim; ArdaNova's
-  link is machine-local and invisible to git, so its CI stays red.
+When writing "X is gated/disabled/enforced", grep for the enforcement first.
+
+#### Next: the two design tracks are ready to implement
+
+- **P1 [`governance-vote-of-record_20260906`](tracks/governance-vote-of-record_20260906/spec.md)**
+  — D39/D40/D42. Live Sybil hole; blocks Phase 5 closure.
+- **P2 [`credential-third-party-issuance_20260906`](tracks/credential-third-party-issuance_20260906/spec.md)**
+  — D41. Inert, not dangerous. ⚠ Has ONE open question that does not follow from
+  D41 and must be answered first: **who may issue a credential to another user**
+  (role-gated, recipient-consent-gated, or open)? Open issuance lets a griefer
+  spam credentials onto an identity.
+
+Both plans open by writing the attack test and requiring it to FAIL on current
+code, because every defect they correct came from a guard nobody wrote.
+
+#### Blocked on the operator, not on work
+
+- ⛔ **`npm publish`** — `~/.npmrc`'s token 401s on `whoami` (expired/revoked).
+  Registry reads work; writes do not. `npm login` needs a TTY, and this session
+  has no browser tool and no authorized mail connector. **Interim:** both
+  consumers build from SDK source by symlink — AZOA's frontend via
+  `file:../sdk/azoa-wallet` (permanent and correct for a monorepo sibling),
+  ArdaNova via `npm link` (manifest left honest at `^0.3.0`). ⚠ ArdaNova's link is
+  machine-local and invisible to git, so its CI stays red until the publish lands.
+  ⚠ **Never re-copy the SDK into a consumer's `node_modules`** — a copy is what
+  went 7 weeks stale and hid two `bridge/page.tsx` defects; a link cannot drift.
 - ArdaNova's leaked DB credential in history (`85ba62e`, `61cc743`) — owner
-  deferred it explicitly; not true production yet.
+  deferred explicitly; not true production yet.
 
 ---
 

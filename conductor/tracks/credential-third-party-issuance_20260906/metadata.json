@@ -30,5 +30,7 @@
       "tests/AZOA.WebAPI.Tests/Providers/Stores/Surreal/**"
     ]
   },
-  "acceptance_headline": "issuer != holder on a real mint, and no path reports success without a confirmed broadcast"
+  "acceptance_headline": "issuer != holder on a real mint, and no path reports success without a confirmed broadcast",
+  "enforcement_gate": "Enforcement now exists: Services/Actions/NotEnabledActionNodeTypes refuses CredentialRevoke at publish and at BOTH dispatch seams. Remove that member as the final step of this track. Also: the ONE open question (who may issue a credential to another user) must be answered before Phase 1 - it does not follow from D41.",
+  "gate_added_commit": "7b28a16"
 }
