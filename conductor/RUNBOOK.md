@@ -781,6 +781,86 @@ economics** (must stay in ArdaNova, with AZOA receiving the already-computed
 mint quantity)? The sidecar treated it as the former. Decide before the port
 fixes it in place.
 
+### Settled 2026-09-07 (owner gate on the production-readiness review) — these re-sequence the waves
+
+**D44 — The economy is token-native and chain-first. Fiat is only the on-ramp and
+off-ramp for the platform token.** In the owner's words: *"fiat is there for
+people to buy the ArdaNova platform token to use to buy and fund the projects;
+people cash out with project tokens and get project tokens they can trade for the
+platform token which they can sell for fiat."* So:
+- **IN:** fiat → ARDA (platform token) → spend ARDA to fund a project → receive
+  **project tokens**, which are real per-project ASAs (D47).
+- **OUT:** project tokens → trade for ARDA → sell ARDA for fiat.
+- Sponsorship is **not** a Stripe checkout for a project. It is spend-ARDA,
+  receive-project-ASA, **on chain**. Fiat never touches a project directly.
+*Consequences, each of which reverses a review recommendation:*
+- The review's **fiat-first ordering is REJECTED**. Its waves put sponsorship (W3)
+  before custody (W8) and the chain anchor (W9) on the theory that fiat could carry
+  value while KMS was procured. Under D44 nothing of value moves without the chain,
+  so **custody, ARDA genesis, per-project ASA issuance, and an ARDA↔project-token
+  exchange are on the CRITICAL PATH for the first sponsorship.** The waves are
+  being re-sequenced chain-first.
+- Decisions-to-ratify **#2** (ArdaNova talks to Stripe directly) and **#8** (ARDA is
+  internal-only, never shown to users) are **REJECTED**. ARDA is the user-facing
+  currency people buy, hold and spend.
+- ⚠ **ARDA has no genesis** — the review found circulating supply is always 0 and
+  every USD conversion preview fails. Under D44 that is no longer a cosmetic
+  defect; it is the first thing on the critical path.
+- ⚠ **The ARDA↔project-token exchange mechanism is undesigned.** The review found
+  Tinyman/AMM swaps are off ArdaNova's user path and `ExchangeService` is
+  treasury-rate. D44 requires *some* exchange for cash-out. Treasury-rate vs AMM is
+  an open design question the re-sequenced W0 must surface.
+
+**D45 — D43 stands as stated: AZOA owns the Stripe rail.** The review's
+alternative (ArdaNova owns Stripe in+out, AZOA as a later anchor) was put to the
+owner with its evidence and **rejected**. Under D44 the rail's job is precisely
+scoped: **fiat→ARDA on-ramp and ARDA→fiat off-ramp** — not project checkout.
+ArdaNova's `StripeCheckoutGateway`/`StripeWebhookController` migrate to call the
+AZOA `Fiat.USD` rail; contract line 75 (webhook verification → Consumer) moves to
+AZOA; the sidecar retires. *Accepted cost:* thesis moments wait on the port rather
+than shipping on ArdaNova's existing Stripe.
+
+**D46 — KYC is uniform: full document KYC AND a provisioned custodial wallet
+before any value action, sponsor and recipient alike.** The review's tiering
+(AML-only for small sponsors, full KYC for recipients) was **rejected**. This is
+consistent with D44 — every value action is on chain, so every actor needs a
+wallet — and the friction is accepted as policy. *What the thesis promise now
+means, precisely:* the **wallet stays invisible** (custodial, tenant-provisioned,
+never a seed phrase or address on a user screen) but **KYC does not**. "Never has
+to know a chain exists" holds; "never does an identity check" does not.
+
+**D47 — A stake is a real per-project ASA from day one.** The review's
+ledger-first option (units in ArdaNova's `TokenBalance`, one ASA per project
+later) was **rejected**. *Consequences:*
+- **`AllocationKind.Mint`-per-reward is REJECTED** on both callers. A sponsor with
+  12 pledges must hold 12 units of ONE project asset, not 12 unrelated assets that
+  cannot be summed, swapped or paid out. Shape: **one ASA per project minted into a
+  platform reserve; funding and rewards are `IssueUnits` from that reserve.**
+- The three coexisting representations (`equityReward`, `awardAmount`,
+  `TokenAllocation`) collapse to one, and it is on chain.
+- Requires custody, holder opt-in, a **HOLD** primitive (D14 — still absent on
+  every path) and a reserve wallet **before the first sponsor**. All critical path.
+
+**D48 — Custody is self-hosted; ArdaNova (the same owner) is the operator and
+custodian of record.** Contract §11.1 ("ArdaNova owns no KMS") and §2 are amended
+to say so in both copies. ⚠ **STATED ASSUMPTION, not the owner's words:** the
+posture is the **capped pilot** — a sign-only key handle (env-backed provider
+allowed per D36), envelope-encrypted DEKs, per-user and total-float caps enforced
+in `AllocationManager`, a HOLD on a platform holding wallet — with a vendor
+KMS/HSM required **before uncapped mainnet**. *Why inferred:* the owner said
+"self host" and chose real ASAs from day one; a vendor-HSM-first reading would
+stall the entire economy on procurement, which contradicts day-one ASAs.
+*Reversal cost if wrong:* the custody wave gains a procurement gate and every wave
+behind it waits. **D27 is reconciled with D36 by this reading:** D36's env-backed
+seam is the pilot; D27's vendor HSM is the uncapped-mainnet gate.
+
+*Not asked this round — taken as assumptions from the review's recommendations,
+each reversible at its wave:* **Q5** hold window on stake until the Stripe
+reversal window elapses, clawback only as the exceptional fraud/dispute path,
+disclosed in user terms. **Q6** governance franchise decided before any adapter
+is written; AZOA governance stays gated meanwhile. **Q7** the orphaned posts stack
+is kept as a project-scoped "field notes" stream and hardened, not deleted.
+
 **D30 — One commit on a branch off `main`.** The owner chose a single commit over
 themed ones. **Consequence accepted knowingly:** this work is **not bisectable** —
 a regression traced into it lands on one ~8,900-line commit covering seven
