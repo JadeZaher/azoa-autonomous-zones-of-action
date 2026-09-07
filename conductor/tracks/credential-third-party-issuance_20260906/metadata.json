@@ -1,0 +1,34 @@
+{
+  "type": "feature",
+  "status": "pending",
+  "created": "2026-09-06",
+  "repos": {
+    "azoa": "c:/Users/atooz/Programming/Projects/oasis-sleek"
+  },
+  "blocked_by": [],
+  "supersedes_defects_in_commit": "a59bd85",
+  "id": "credential-third-party-issuance_20260906",
+  "title": "Credential third-party issuance",
+  "decisions": [
+    "D19",
+    "D41"
+  ],
+  "priority": 2,
+  "why_second": "the rail is inert, not dangerous - it refuses every revoke rather than performing a wrong one",
+  "open_question": "who may issue a credential to another user: a role, a recipient consent grant, or open? Griefing risk if open.",
+  "requires_security_review": true,
+  "partitions": {
+    "confidence": "planned",
+    "computed_at_commit": "a59bd85",
+    "owns": [
+      "Managers/CredentialManager.cs",
+      "Controllers/CredentialController.cs",
+      "Providers/Stores/Surreal/SurrealNftStore.cs",
+      "Services/Users/UserNFTService.cs",
+      "Providers/Blockchain/Algorand/AlgorandProvider.cs",
+      "Services/Reconciliation/ReconciliationService.cs",
+      "tests/AZOA.WebAPI.Tests/Providers/Stores/Surreal/**"
+    ]
+  },
+  "acceptance_headline": "issuer != holder on a real mint, and no path reports success without a confirmed broadcast"
+}

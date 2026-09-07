@@ -664,6 +664,41 @@ this codebase has shipped **fabricated-success bugs on exactly these paths**
 three times (§2, §8). Its brief must forbid reporting success without a real
 broadcast confirmation, and it earns an adversarial review its siblings do not.
 
+### Settled 2026-09-06 (Phase 5 design gate) — these drive the two design tracks
+
+**D39 — The uniqueness claim IS the vote of record.** Governance tallies from
+`person_operation_claim`, never from holons. The claim table already stores
+exactly one row per person per operation, written atomically inside a single
+statement, so a forged vote holon counts for nothing **by construction** — the
+tally never reads holons at all. This replaces the shipped-but-broken tally,
+which counted raw child holons and let one verified user `POST /api/holon` 500
+ballots that all counted. *Chosen over a claim-joined holon tally because that
+one stays safe only while nobody drops the join; this one has no join to drop.*
+
+**D40 — Votes are mutable until close, last write wins.** Real deliberation
+changes minds. This is normally the expensive option — it needs an ordering rule
+the tally must trust, and the shipped code's ordering key was read from
+**attacker-controlled holon metadata**. Under D39 it costs nothing: there is
+exactly **one claim row per person**, so a change is an in-place update of that
+row's option with a **server-set** timestamp. There is no "which ballot is
+latest" question, so the ordering attack does not merely get defended — it
+**ceases to exist**. After close the row is frozen.
+
+**D41 — Soulbound credentials are issued by a third party to a recipient.**
+D19 authorizes revocation to the credential's **issuer**, but the only production
+mint path stamps issuer = minting caller = holder, making that check **vacuous**
+and the whole rail inert. The mint API must take a recipient distinct from the
+caller. This is what ArdaNova's BRONZE→DIAMOND tiers actually need — an
+organization issues to a member and can later demote — and it is the premise D19
+was written against. *Consequence to accept:* this is a real API change to the
+soulbound mint path, not a patch to the revoke path.
+
+**D42 — The tally stays off-chain and Tier-1.** No chain capability, no custody
+exposure, no per-proposal fee — and it can therefore ship while Phase 3 custody
+is still gated. The tally hash is still computed and stored, so anchoring later
+is an added step rather than a redesign. D20's conditional ("anchor only if
+publicly verifiable voting is actually required") resolves to: not yet.
+
 **D30 — One commit on a branch off `main`.** The owner chose a single commit over
 themed ones. **Consequence accepted knowingly:** this work is **not bisectable** —
 a regression traced into it lands on one ~8,900-line commit covering seven
@@ -858,21 +893,48 @@ review of every new Tier-2 node.
 
 ### ▶ RESUME HERE (state as of 2026-09-06)
 
-**Working tree is dirty and uncommitted by design** — D30 wants one commit.
-327 renames + ~695 modified files across AZOA. Branch
-`feat/kyc-aml-providers-value-rail`, base commit `9f4e026`.
+**Branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, 7 commits ahead of
+`9f4e026`, none pushed.**
 
-**Immediately next:** track phase 5 — the consumer cutover. Both repos are
-located (paths in step B); both have their own uncommitted work that must be
-pulled in before editing. After that: strands 2/3, then step C.
+```
+a59bd85 feat: wire the D3/D23 uniqueness gate and land four Phase 5 primitives
+a562492 docs: record the interim SDK linking arrangement and why publish is blocked
+ce394ad fix(frontend): point the Turbopack root at the repo, not frontend/
+2333d24 fix(frontend): build the SDK from source instead of a stale registry pin
+d8ff8e8 docs: correct an inverted claim about what the deploy actually applies
+c089268 fix: repair article agreement and doubled words left by the rename
+836f549 refactor!: neutralize platform terminology (Avatar->User, Quest->Action)
+```
+ArdaNova carries `f2e4bc5` (its cutover); Taawun needed no change.
 
-**Re-entry commands:**
+**Gates, all at baseline:** build 0 errors / 23 warnings · backend **2657 passed,
+1 skipped, 0 failed** · SDK tsc 0 + 191 · frontend tsc 0 + 65 + 42 routes.
+
+**Re-entry:**
 ```
-python scripts/d28_rename.py verify        # must report 0 files left to change
-git status --short | grep -c '^R'          # expect 327
+python scripts/d28_rename.py verify     # expect: 0 files left to change
+dotnet build azoa.sln --no-incremental  # expect: 0 errors, 23 warnings
 ```
-If `verify` reports anything other than zero, something regressed — read the
-track's plan before touching code.
+
+⚠ **Green is not done.** Two Phase 5 primitives shipped with known open defects
+and **must not be enabled** — see the track's Phase 5b section. Both are the same
+recurring shape: *a control exists, is invoked on one path, and the consumer of
+its result never checks it.* Third instance in the §2 ledger.
+
+**Immediately next:** the two design tracks written for exactly those two
+primitives —
+[`governance-vote-of-record_20260906`](tracks/governance-vote-of-record_20260906/spec.md)
+(D39/D40/D42) and
+[`credential-third-party-issuance_20260906`](tracks/credential-third-party-issuance_20260906/spec.md)
+(D41). Governance first: it has a live Sybil hole and blocks Phase 5 closure,
+while revocation is inert and therefore harmless where it sits.
+
+**Blocked on the operator, not on work:**
+- ⛔ **`npm publish` — `~/.npmrc`'s token 401s.** Needs `npm login` or a fresh
+  `NPM_TOKEN`. Both consumers are symlinked to SDK source as an interim; ArdaNova's
+  link is machine-local and invisible to git, so its CI stays red.
+- ArdaNova's leaked DB credential in history (`85ba62e`, `61cc743`) — owner
+  deferred it explicitly; not true production yet.
 
 ---
 

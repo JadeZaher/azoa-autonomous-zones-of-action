@@ -1,0 +1,36 @@
+{
+  "type": "feature",
+  "status": "pending",
+  "created": "2026-09-06",
+  "repos": {
+    "azoa": "c:/Users/atooz/Programming/Projects/oasis-sleek"
+  },
+  "blocked_by": [],
+  "supersedes_defects_in_commit": "a59bd85",
+  "id": "governance-vote-of-record_20260906",
+  "title": "Governance vote of record",
+  "decisions": [
+    "D20",
+    "D39",
+    "D40",
+    "D42",
+    "D3",
+    "D23"
+  ],
+  "priority": 1,
+  "why_first": "live Sybil hole; blocks Phase 5 closure. Revocation is inert and therefore harmless where it sits.",
+  "defect_class": "a control exists, is invoked on one path, and the consumer of its result never checks it - third instance in the review ledger",
+  "partitions": {
+    "confidence": "planned",
+    "computed_at_commit": "a59bd85",
+    "owns": [
+      "Services/Actions/Handlers/Governance*.cs",
+      "Services/Governance/**",
+      "Services/Kyc/PersonUniquenessGate.cs",
+      "Interfaces/Managers/IPersonUniquenessGate.cs",
+      "Persistence/SurrealDb/Models/PersonOperationClaim.cs",
+      "tests/AZOA.WebAPI.Tests/Governance/**"
+    ]
+  },
+  "acceptance_headline": "a vote holon created directly via the holon API is NOT counted"
+}
