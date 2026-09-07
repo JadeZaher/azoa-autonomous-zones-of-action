@@ -875,6 +875,50 @@ disclosed in user terms. **Q6** governance franchise decided before any adapter
 is written; AZOA governance stays gated meanwhile. **Q7** the orphaned posts stack
 is kept as a project-scoped "field notes" stream and hardened, not deleted.
 
+**D49 — ARDA genesis is an Algorand ASA, minted through the primitive that already
+exists; devnet faucet is the test path.** Owner's direction: use Algorand on
+ArdaNova to facilitate genesis, with the devnet faucet for testing.
+*Verified against source before recording — this needs no new chain integration:*
+- The mint path exists end to end: `ActionNodeType.FungibleTokenCreate` →
+  `Managers/FungibleTokenManager.cs:147` → `IAlgorandASAModule.CreateASAAsync`
+  with real total and decimals (`Interfaces/IBlockchainProviderModule.cs:20-34`).
+- The faucet exists and is Algorand-only among the enabled providers:
+  `AlgorandProvider.cs:142 SupportsFaucet => true` (Solana also true; Ethereum
+  false). It is guarded to dev/test networks by the interface contract
+  (`IBlockchainProvider.cs:36-48`), which is exactly the intended use.
+- So **ARDA genesis is a configuration and operations task, not a build**: decide
+  total supply, decimals, and which account holds the reserve, then mint on devnet
+  through the existing node and promote the same definition to mainnet.
+⚠ *Still open and NOT decided by this:* the **on-ramp price** — how many ARDA one
+US cent buys. The retired sidecar treated its `TOKENS_PER_CENT` schedule as an
+operator-configured rail parameter; D7/D16 say AZOA never computes economics. Under
+D48 the node operator sets compliance policy, which makes an operator-set ARDA
+price defensible as a **rail parameter** — but it is the owner's call and it is the
+last unanswered piece of the on-ramp.
+
+**D50 — The ARDA↔project-token exchange is an Action DAG plus a STAR, built on
+AZOA's existing primitives.** Owner's direction, and it is a deliberate rejection
+of the AMM path the review assumed.
+*What this composes from, verified:*
+- `STARODK` (`Models/STARODK.cs`) is the deployable unit: it carries a
+  `TargetChain`, `GeneratedCode`, `DeploymentConfig` and `BoundHolonIds`, with
+  `/generate` and `/deploy` routes already on `STARODKController`.
+- The Action DAG supplies the orchestration and the value nodes it needs already
+  exist in some form (`Swap`, `Grant`, `Transfer`, `FungibleTokenCreate`).
+- **This retires Tinyman from ArdaNova's user path**, which the review wanted
+  anyway: it found the AMM off the user path and carrying a decimals defect on a
+  money path. Exchange is platform-operated, not an external DEX.
+⚠ *Consequences to hold onto:*
+- The existing `Swap` node delegates to DEX adapters. The ARDA↔project-token
+  exchange is **not** that node; it is a new composition. Do not wire it through
+  `ISwapManager` without deciding to.
+- Rate policy is still ArdaNova's under D7/D16 — AZOA moves already-decided
+  amounts. A treasury-rate exchange means **ArdaNova computes the rate** and the
+  STAR/DAG executes the move.
+- A STAR is deployable code with a `PrivateKeyHash` and a deploy route. Whatever
+  it does with value runs under the operator's node and the D48 custody posture,
+  so it inherits the HOLD requirement rather than escaping it.
+
 **D30 — One commit on a branch off `main`.** The owner chose a single commit over
 themed ones. **Consequence accepted knowingly:** this work is **not bisectable** —
 a regression traced into it lands on one ~8,900-line commit covering seven
