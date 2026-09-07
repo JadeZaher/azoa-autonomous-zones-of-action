@@ -37,6 +37,9 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 {
     private const string TableName = "operation_log";
 
+    /// <summary>Hard cap on one <see cref="QueryAsync"/> page, so no caller can ask for the whole log.</summary>
+    public const int MaxQueryPageSize = 500;
+
     private readonly ISurrealExecutor _executor;
 
     public SurrealBlockchainOperationStore(ISurrealExecutor executor)
@@ -153,6 +156,67 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         {
             return new AZOAResult<IEnumerable<IBlockchainOperation>>()
                 .CaptureException(ex, $"SurrealBlockchainOperationStore.GetByUserAsync failed: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Built to ride <c>operation_log_user_created</c>: equality on <c>user_id</c>, a range on
+    /// <c>created_date</c>, ordered on the same column. The two range bounds bind to distinct
+    /// lowercase parameter names — one name per bound, because two bounds on one column sharing
+    /// a parameter would silently overwrite each other, and a mixed-case name is case-folded in
+    /// the query text but not in the RPC vars, which matches nothing without raising an error.
+    /// The tie-break on <c>id</c> keeps paging stable when several rows share a timestamp;
+    /// without it a row can be shown twice or skipped across page boundaries.
+    /// </remarks>
+    public async Task<AZOAResult<IReadOnlyList<IBlockchainOperation>>> QueryAsync(
+        BlockchainOperationQuery query,
+        CancellationToken ct = default)
+    {
+        if (query is null)
+            return AZOAResult<IReadOnlyList<IBlockchainOperation>>.FailureWithCode(
+                "A query is required.", AzoaErrorCodes.InvalidRequest);
+
+        if (query.Skip < 0 || query.Take <= 0 || query.Take > MaxQueryPageSize)
+            return AZOAResult<IReadOnlyList<IBlockchainOperation>>.FailureWithCode(
+                $"Skip must be non-negative and Take must be between 1 and {MaxQueryPageSize}.",
+                AzoaErrorCodes.InvalidRequest);
+
+        if (query.From.HasValue && query.To.HasValue && query.From.Value > query.To.Value)
+            return AZOAResult<IReadOnlyList<IBlockchainOperation>>.FailureWithCode(
+                "The start of the window cannot be after its end.", AzoaErrorCodes.InvalidRequest);
+
+        try
+        {
+            var userLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(query.UserId));
+
+            var q = SurrealQuery
+                .SelectAll(TableName)
+                .Where("user_id = $user_id", new { user_id = SurrealRecordParam.OfLink(userLink) });
+
+            if (query.From.HasValue)
+                q = q.Where("created_date >= $created_from").WithParam("created_from", query.From.Value);
+
+            if (query.To.HasValue)
+                q = q.Where("created_date < $created_to").WithParam("created_to", query.To.Value);
+
+            // LIMIT precedes START in the SurrealQL grammar; the builder appends in call order.
+            q = q.OrderBy("created_date", OrderDirection.Desc)
+                 .OrderBy("id", OrderDirection.Desc)
+                 .Limit(query.Take)
+                 .Start(query.Skip);
+
+            var rows = await _executor.QueryAsync<OperationLog>(q, ct);
+            var results = rows.Select(r => (IBlockchainOperation)ToDomain(r)).ToList();
+
+            return AZOAResult<IReadOnlyList<IBlockchainOperation>>.Success(results);
+        }
+        catch (Exception ex)
+        {
+            var failure = new AZOAResult<IReadOnlyList<IBlockchainOperation>>()
+                .CaptureException(ex, "Operation history is temporarily unavailable.");
+            failure.Code = AzoaErrorCodes.DependencyUnavailable;
+            return failure;
         }
     }
 

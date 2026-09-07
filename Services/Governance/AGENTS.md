@@ -136,3 +136,51 @@ checkpoint, and stays unavailable until `NodeTransparencyHistory:Enabled` plus
 the configured dedicated `NodeConformance` identity are present. Do not use it
 to activate egress fees, federation, or value settlement. Transparency routes
 remain globally rate-limited but permanently outside any paid-egress policy.
+
+
+## consumer-governance
+
+Not the node-operator lane above: `ConsumerGovernanceHolonTypes`,
+`GovernanceTallyHash`, and `GovernanceBallotRoll` describe what a TENANT'S
+MEMBERS vote on. A proposal is a Holon; a ballot is a child Holon; D20 adds no
+tables.
+
+**A proposal is published, a ballot never is.** `HolonManager.CanRead` is
+owner-or-public, so a proposal only its author can read is a proposal only its
+author can vote on -- the primitive is inert. `GovernanceProposalCreate`
+therefore writes the proposal with `IsPublic = true`, and `IsPublic` is reachable
+from `HolonCreateModel`/`HolonUpdateModel` ONLY for the asset types on
+`HolonManager.PublishableAssetTypes` (today: `GovernanceProposal`). That
+allow-list is the whole point: a free `isPublic: true` on `POST /api/holon` is
+the cross-tenant read leak this repo has already shipped three times. A ballot is
+deliberately NOT publishable, because a public ballot carries `Holon.UserId`
+beside the choice and reconstitutes the person-to-choice correlation D20 exists
+to prevent. Publishing is refused with an error, never silently downgraded to a
+private write.
+
+**A ballot counts only when a live uniqueness claim backs it.** Ballots are
+ordinary child holons and `POST /api/holon` writes them, so counting child
+holons counts forgeries: one verified user can mint five hundred
+`GovernanceVote` children without ever reaching `GovernanceVoteNodeHandler`.
+`GovernanceBallotRoll` is the join that makes "one member, one vote" real -- for
+each ballot's owner it resolves the person behind them
+(`IKycIdentityStore.GetByUserAsync`) and looks up the node-operator-only
+`person_operation_claim` row for THIS proposal's uniqueness domain. A ballot
+counts iff a live, unreleased claim on that domain is held by that ballot's
+owner, and each claim is spent at most once (earliest `castAt` wins, so a
+re-tally is stable). Two users of one human share a person key and therefore one
+claim row: exactly one of their ballots counts.
+
+The domain comes from the PROPOSAL, in both the vote and the tally: the declared
+`uniquenessOperationKey` must equal `UniquenessOperationKeyFor(proposalId)`, and
+the scope is parsed with the strict spelled-name parser. The scope value itself
+is `KycPersonKeyDeriver.ScopeValue`, the same one the gate claims through, so a
+Tenant-scoped proposal counts its own tenant's claims and nobody else's.
+
+`GovernanceBallotRoll` is also the one place allowed an UNSCOPED holon read.
+Ballots are private and each is owned by its own voter, so the consumer-scoped
+owner-or-public read shows a tally runner only their own ballot and certifies a
+count of one (that was the defect). The read is unscoped and the return type is
+`GovernanceBallotCount` -- a total and per-option counts -- so identities cannot
+leave. Store faults fail the whole tally: a skipped ballot would publish a wrong
+count under a correct-looking `tallyHash`.

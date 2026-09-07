@@ -69,6 +69,19 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             Refund,
             // fungible-token-node track.
             FungibleTokenCreate,
+            // final-hardening D1 fractionalization rails.
+            Bridge,
+            Back,
+            // Phase 5 D19 verifiable-credential rail (Tier-2).
+            CredentialRevoke,
+            // Phase 5 D20 governance rails (Tier-1).
+            GovernanceProposalCreate,
+            GovernanceVote,
+            GovernanceTally,
+            // Phase 5 D21 credit rails (Tier-1).
+            LoanOpen,
+            LoanRepaymentRecord,
+            LoanBalance,
         }
 
         [Id]
@@ -96,7 +109,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
                 "Search", "UserNFTGetComposite", "BlockchainExecute",
                 "Condition", "ComposeOutputs",
                 "GateCheck", "Emit", "Swap", "Grant", "Transfer", "Refund",
-                "FungibleTokenCreate")]
+                "FungibleTokenCreate", "Bridge", "Back",
+                "CredentialRevoke",
+                "GovernanceProposalCreate", "GovernanceVote", "GovernanceTally",
+                "LoanOpen", "LoanRepaymentRecord", "LoanBalance")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public ActionNodeTypeKind NodeType { get; set; }
 

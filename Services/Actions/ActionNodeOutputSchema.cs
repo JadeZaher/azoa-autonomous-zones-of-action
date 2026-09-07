@@ -177,6 +177,25 @@ public static class ActionNodeOutputSchema
             // Both write the flat BridgeTransactionResult shape (NOT the AZOAResult wrapper).
             [ActionNodeType.Bridge] = BridgeTransactionShape,
             [ActionNodeType.Back] = BridgeTransactionShape,
+
+            // ── Phase 5 D19 credential rail — serializes CredentialRevokeResult
+            //    DIRECTLY (r.Result, not the AZOAResult wrapper). ──
+            [ActionNodeType.CredentialRevoke] = CredentialRevokeShape,
+
+            // ── Phase 5 D20 governance rails — each handler serializes a
+            //    fixed-key Dictionary<string, object?>, so the keys are the
+            //    literal camelCase names the handler writes (NOT PascalCase:
+            //    dictionary keys bypass property naming entirely). ──
+            [ActionNodeType.GovernanceProposalCreate] = GovernanceProposalCreateShape,
+            [ActionNodeType.GovernanceVote] = GovernanceVoteShape,
+            [ActionNodeType.GovernanceTally] = GovernanceTallyShape,
+
+            // ── Phase 5 D21 credit rails — all three serialize the same
+            //    LoanBalanceProjectionResult, whose [JsonPropertyName] attributes
+            //    pin camelCase names regardless of ActionNodeJson.Options. ──
+            [ActionNodeType.LoanOpen] = LoanBalanceProjectionShape,
+            [ActionNodeType.LoanRepaymentRecord] = LoanBalanceProjectionShape,
+            [ActionNodeType.LoanBalance] = LoanBalanceProjectionShape,
         };
 
     /// <summary>
@@ -208,6 +227,77 @@ public static class ActionNodeOutputSchema
         ("VaaSignatureCount", OutputFieldType.Number),
         ("RedemptionTxHash", OutputFieldType.String),
         ("Network", OutputFieldType.Number));           // ChainNetwork enum → int
+
+    /// <summary>
+    /// The flat <c>CredentialRevokeResult</c> shape (D19) — the handler serializes
+    /// <c>r.Result</c> directly, so this is the whole top-level object. PascalCase
+    /// because the DTO carries no <c>[JsonPropertyName]</c>. <c>IsConfirmed</c> is a
+    /// computed get-only property and IS serialized, so it must be declared here or
+    /// the closed-shape check sees an undeclared field.
+    /// </summary>
+    private static NodeOutputShape CredentialRevokeShape => NodeOutputShape.Of(
+        ("AssetId", OutputFieldType.String),
+        ("CredentialId", OutputFieldType.String),        // Guid → JSON string
+        ("IssuerUserId", OutputFieldType.String),        // Guid → JSON string
+        ("HolderUserId", OutputFieldType.String),        // Guid → JSON string
+        ("HolderAddress", OutputFieldType.String),
+        ("RecipientAddress", OutputFieldType.String),
+        ("ChainType", OutputFieldType.String),
+        ("Status", OutputFieldType.String),              // OperationStatus constant
+        ("IsConfirmed", OutputFieldType.Boolean),
+        ("TxHash", OutputFieldType.String),
+        ("OperationId", OutputFieldType.String),         // Guid → JSON string
+        ("Replayed", OutputFieldType.Boolean));
+
+    /// <summary>
+    /// GovernanceProposalCreate output (D20): the literal dictionary the handler
+    /// builds. <c>options</c> is the declared option list; <c>opensAt</c>/<c>closesAt</c>
+    /// are read back out of proposal metadata and may serialize null (a null is
+    /// type-compatible with any declared field).
+    /// </summary>
+    private static NodeOutputShape GovernanceProposalCreateShape => NodeOutputShape.Of(
+        ("proposalId", OutputFieldType.String),
+        ("status", OutputFieldType.String),
+        ("options", OutputFieldType.Array),
+        ("opensAt", OutputFieldType.String),
+        ("closesAt", OutputFieldType.String),
+        ("uniquenessOperationKey", OutputFieldType.String),
+        ("uniquenessScope", OutputFieldType.String),
+        ("createdAt", OutputFieldType.String));
+
+    /// <summary>GovernanceVote output (D20): the ballot receipt, one holon id per key.</summary>
+    private static NodeOutputShape GovernanceVoteShape => NodeOutputShape.Of(
+        ("proposalId", OutputFieldType.String),
+        ("voteId", OutputFieldType.String),
+        ("option", OutputFieldType.String),
+        ("castAt", OutputFieldType.String));
+
+    /// <summary>
+    /// GovernanceTally output (D20). <c>counts</c> is an option→int map with
+    /// tenant-declared keys, hence Object rather than a declared field set;
+    /// <c>tallyHash</c> is the recomputable digest over the counted ballots.
+    /// </summary>
+    private static NodeOutputShape GovernanceTallyShape => NodeOutputShape.Of(
+        ("proposalId", OutputFieldType.String),
+        ("totalVotes", OutputFieldType.Number),
+        ("counts", OutputFieldType.Object),
+        ("tallyHash", OutputFieldType.String),
+        ("tallyAt", OutputFieldType.String),
+        ("closesAt", OutputFieldType.String));
+
+    /// <summary>
+    /// The flat <c>LoanBalanceProjectionResult</c> shape (D21), written by LoanOpen,
+    /// LoanRepaymentRecord and LoanBalance alike. Every money field is a base-unit
+    /// decimal STRING — never a JSON number — so no consumer can round a balance.
+    /// </summary>
+    private static NodeOutputShape LoanBalanceProjectionShape => NodeOutputShape.Of(
+        ("loanId", OutputFieldType.String),
+        ("principal", OutputFieldType.String),
+        ("totalRepaid", OutputFieldType.String),
+        ("totalWrittenOff", OutputFieldType.String),
+        ("outstanding", OutputFieldType.String),
+        ("status", OutputFieldType.String),
+        ("entryCount", OutputFieldType.Number));
 
     /// <summary>
     /// The declared output shape for <paramref name="nodeType"/>. Throws

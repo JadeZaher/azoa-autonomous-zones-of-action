@@ -133,6 +133,46 @@ correct: against the real renamed build, `tsc` exits 0 and all 210 tests pass;
 against the stale 0.1.0 the only failures are 5 "no exported member" errors
 naming exactly the renamed symbols.
 
+## Phase 5b — D3/D23 uniqueness gate + Phase 5 primitives ⚠ LANDED BUT NOT PRODUCTION-READY
+
+**Green, and that is not the same as done.** Build 0 errors / 23 warnings
+(baseline), backend **2657 passed / 1 skipped / 0 failed** (~226 new tests), SDK
+and frontend unchanged. Two adversarial rounds ran; **the second round found 24
+NEW defects on top of 6 originals still open.** Tests pass because the remaining
+defects are logic and wiring the suite does not cover.
+
+**Shipped and believed sound:**
+- **`IPersonUniquenessGate`** (D3/D23) — the per-operation opt-in that had been
+  designed and never wired. `GetByGlobalPersonKeyAsync` had **zero production
+  callers**; the gate now resolves an acting user → person key → an atomic claim
+  in a new `person_operation_claim` table, per-tenant by default with global as
+  an explicit opt-in. Denials are shaped to be indistinguishable from ordinary
+  ineligibility (§4 assumption 1). The claim is decided **inside one statement**
+  and read back, following the `BindUserAsync` precedent — a preceding read would
+  let two concurrent claims both pass.
+- **Loan tracker (D21)** — principal-only; the no-interest constraint holds.
+- **Analytics (D16)** — reads the existing value stamp honestly.
+
+**⛔ NOT production-ready — do not enable these two:**
+
+*Governance (D20)* — the vote handler claims correctly, but the **tally counts
+raw child holons**, so a ballot created by any other path is counted without ever
+claiming. One verified user can `POST /api/holon` 500 vote holons and all 500
+count. Further open: the ballot ordering key is read from attacker-controlled
+metadata, and `HolonManager.UpdateAsync` lets a voter rewrite their own cast
+ballot's option.
+
+*Credential revocation (D19)* — **the rail is still effectively inert.** No
+production path writes `current_owner` on a soulbound row, so every real revoke
+dies at the holder precondition; the "issuer, never the holder" check is
+**vacuous** because the only mint path stamps issuer = holder; and a revoke
+confirmed via reconciliation never re-points ownership.
+
+**The lesson to carry:** both failures are the same shape — *a control exists and
+is invoked on one path, while the consumer of its output never checks it.* That
+is the third distinct instance of this class in the §2 ledger. A gate is not
+wired until the thing that READS its result is wired too.
+
 ## Phase 6 — strands 2 and 3 ⬜ NOT STARTED
 
 `scripts/d28_rename.py report-vocab` locates every site. These are **sentence

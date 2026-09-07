@@ -12,6 +12,7 @@ graph LR
     user["user: Node (external)"]:::externalNode
 
     %% Edges (outbound from this slice)
+    nft_ownership -- "issuer_user_id [N:0..1]" --> user
     nft_ownership -- "user_id [N:1]" --> user
     swap_state -- "user_id [N:1]" --> user
     wallet -- "user_id [N:1]" --> user

@@ -340,7 +340,11 @@ public class Tier2ChainNodeHandlerTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("clawback primitive");
-        result.Message.Should().Contain("deferred (H2");
+        // The H2 deferral ENDED: D19 shipped the clawback primitive. What must still
+        // hold is that Refund is not the door to it - reversal is the credential
+        // ISSUER's operation via CredentialRevoke, never the run actor's via Refund.
+        result.Message.Should().Contain("CredentialRevoke");
+        result.Message.Should().Contain("ISSUER");
         mgr.Verify(m => m.TransferAsync(It.IsAny<Guid>(), It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Never);
     }
 }

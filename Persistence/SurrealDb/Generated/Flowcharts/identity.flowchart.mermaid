@@ -26,6 +26,7 @@ graph LR
     node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
     node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
     oauth_exchange_code["oauth_exchange_code: Node"]:::nodeClass
+    person_operation_claim["person_operation_claim: Node"]:::nodeClass
     star_odk["star_odk: Node"]:::nodeClass
     tenant_kyc_provider_selection["tenant_kyc_provider_selection: Node"]:::nodeClass
     user["user: Node"]:::nodeClass
@@ -66,6 +67,7 @@ graph LR
     node_treasury_destination -- "updated_by_user_id [N:0..1]" --> user
     oauth_exchange_code -- "tenant_id [N:0..1]" --> user
     oauth_exchange_code -- "user_id [N:1]" --> user
+    person_operation_claim -- "tenant_id [N:0..1]" --> user
     star_odk -- "user_id [N:0..1]" --> user
     tenant_kyc_provider_selection -- "tenant_id [N:1]" --> user
     tenant_kyc_provider_selection -- "updated_by_user_id [N:1]" --> user

@@ -430,3 +430,298 @@ card, not a wallet, and lives in its own store. When that store exists it implem
 **Fails closed, without exception.** A lookup error, a directory that throws, an unnamed
 rail, and an empty result are all "no capability". A transient database fault must never be
 the reason value moves.
+
+## §loan-tracker — the principal-only loan primitive (D21)
+
+`LoanOpen` / `LoanRepaymentRecord` / `LoanBalance` are **Tier-1**. D21 calls the loan
+"a tracker, not a new value primitive": a Holon carrying a disbursement and a repayment
+ledger, whose balance is a pure projection. Nothing in this lane signs, broadcasts, or
+touches a wallet, so none of the three overrides `RequiresChainCapability`.
+
+**Money movement is not this lane's job.** A tenant composes the existing Tier-2
+`Grant`/`Transfer` for the actual disbursement and `Transfer` for the actual repayment,
+then records the fact with `LoanOpen`/`LoanRepaymentRecord`. There is deliberately no
+`LoanDisburse` node that moves value — that would re-create the value primitive D21
+refuses. The `reference` on each config is where the tenant ties the record back to the
+tx that really moved.
+
+**Shape.** The loan is a Holon with `AssetType = "LoanTracker"`; each ledger row is a
+CHILD Holon with `AssetType = "LoanLedgerEntry"` and `entryKind` in
+{`Disbursement`, `Repayment`, `WriteOff`}. Vocabulary, metadata keys and the opt-in
+`holon_type_registry` seeds live in `Services/Lending/LoanHolonTypes.cs`; no new table
+exists or is needed.
+
+**No interest, anywhere.** No `interest`, `apr`, `rate`, `accrual`, `compound`, `term`,
+or penalty-bearing `dueDate` field may appear on any config, metadata key, projection
+output or DTO in this lane — D21: "no interest-accrual node may ever exist — the absence
+is the feature", and reversing it (§4 assumption 5) "requires scholar review, not just
+code". The absence is enforced, not aspirational:
+`tests/AZOA.WebAPI.Tests/Lending/NoInterestPrimitiveGuardTests.cs` reflects over every
+type, member, parameter, persisted metadata key and output key in the lane, plus the
+`Loan*` members of `ActionNodeType`, and fails on any of those substrings. The scan is
+scoped to the lane on purpose: an enum-wide "rate" search would trip over `StarGenerate`.
+
+**Partial repayment and write-off are ordinary states.** A repayment below the
+outstanding balance returns `Ok` and leaves the status `Open`; a write-off returns `Ok`
+and moves it to `WrittenOff`. Neither is a `Fail`. **Over-repayment is the one genuine
+error** — it means the ledger disagrees with the value that actually moved, so the row is
+refused rather than clamped. Independently, the projection floors `outstanding` at zero,
+so even a bad row already in the store cannot express a negative debt.
+
+**Amounts.** Every amount is a `RailAmount` persisted as a base-unit decimal STRING in
+holon metadata (`Persistence/SurrealDb/Models/AGENTS.md` §amount-columns; D13 — `ulong`
+overflows at ~18.4 ETH in wei), written and read through `RailAmount.ToBaseUnitString()`
+and `RailAmount.TryParse` via `LoanAmountMetadata`. This lane TIGHTENS the "absent reads
+as zero" half of that rule: an absent or unparseable amount throws
+`LoanLedgerFormatException`, which the handlers turn into a `Fail`. A ledger entry that
+cannot say how much it moved must never read as having moved nothing.
+
+**Projection.** `LoanBalanceProjection` is the ONLY place a balance is computed — a pure
+fold, no IO — so a gate reading `LoanBalance` output and a `LoanRepaymentRecord` checking
+headroom can never disagree. `outstanding = principal − Σ repayments − Σ write-offs`, in
+`BigInteger`, floored at zero. Disbursement rows are recorded facts, not additions: the
+tracker's own `principal` is authoritative. Every entry must carry the tracker's unit — a
+mixed-unit ledger (an ALGO repayment against a USDC principal) throws rather than
+summing. Output is
+`{ loanId, principal, totalRepaid, totalWrittenOff, outstanding, status, entryCount }`,
+every amount a string. These keys are camelCase, pinned with `[JsonPropertyName]` — the
+one deliberate exception to §output-schema's PascalCase observation, so the catalog entry
+for these three types must use these names.
+
+**Reads are runner-scoped and owner-strict** (same posture as D20 / §acting-user):
+`LoanLedgerReader` resolves the tracker with `context.ActingUserId` and then requires
+`loan.UserId == ActingUserId`, so a PUBLIC tracker owned by someone else is still
+refused. Missing, unreadable, foreign-owned and wrong-typed all return the SAME message,
+so a caller cannot probe for another user's loans. A ledger row the runner may not read
+aborts the whole projection rather than dropping silently out of the sum — a dropped
+repayment understates the debt.
+
+**Two deliberate non-atomic seams.**
+- `LoanOpen` writes the tracker and then its disbursement row. If the second write fails
+  the node fails with the tracker id in the message: a tracker with no disbursement row
+  would project a principal nobody received, so it must be reconciled, not ignored.
+- `LoanRepaymentRecord` mirrors the DERIVED status onto the tracker (for
+  `holon.<id>.status` gate predicates) as a BEST-EFFORT write. A failed mirror comes back
+  as a note on a successful result, because failing the node after the ledger row landed
+  would invite a retry that records the repayment twice. The rows are the truth; the
+  status field is a mirror. The `reference` field is the replay key that makes such a
+  retry safe: the same reference on the same tracker records once.
+
+## §governance: consumer proposals, ballots and tallies (D20)
+
+Three node types, `GovernanceProposalCreate` / `GovernanceVote` / `GovernanceTally`,
+all **Tier-1**: none overrides `RequiresChainCapability`, none touches custody. That
+is deliberate — D20 says the tally "runs in a pure-DB (Tier-1) node, needing no
+chain capability and no custody", which is exactly what lets governance ship in
+parallel with the KMS/custody workstream.
+
+**No new tables.** A proposal is a Holon (`AssetType = "GovernanceProposal"`); a
+ballot is a child Holon (`AssetType = "GovernanceVote"`, `ParentHolonId = proposalId`,
+`UserId = the runner`). `Services/Governance/ConsumerGovernanceHolonTypes.cs` owns
+both names, both metadata vocabularies, and the two `holon_type_registry` seed rows a
+tenant registers to make a malformed ballot fail at write time instead of tally time.
+Not to be confused with the operator-side `NodeGovernance*` files in the same folder:
+those govern what this NODE will run, these describe what a tenant's MEMBERS vote on.
+(`NodeGovernanceController` is likewise a different thing from anything here.)
+
+### The uniqueness consultation is the primitive
+
+`GovernanceVoteNodeHandler` injects `IPersonUniquenessGate` and calls `TryClaimAsync`
+BEFORE the ballot holon is created. Without it, one human holding N verified users
+votes N times — D3 names one-vote governance as exactly the case that needs
+one-human-one-claim, and verified users are cheap to multiply. Three rules hold it
+together:
+
+1. **The uniqueness domain comes from the PROPOSAL, never from the vote node's
+   config.** Scope is read from the proposal's `uniquenessScope` metadata; the
+   operation key is `governance:proposal:{proposalHolonId}`, derived by
+   `ConsumerGovernanceHolonTypes.UniquenessOperationKeyFor` and cross-checked against
+   the key the proposal recorded. `GovernanceVoteNodeConfig` deliberately has no scope
+   field: if each voter chose their own domain, nobody would ever collide and the gate
+   would be decorative. A missing/unparsable scope, or a key that is not the derived
+   one, fails CLOSED.
+2. **A failed ballot write releases the claim.** `ReleaseAsync` runs on the create
+   failure path; a held claim with no ballot behind it disenfranchises that human for
+   the rest of the proposal.
+3. **The claim is spent last.** Option validity, the voting window, and the
+   one-ballot-per-user check all run first, so a rejected ballot costs no claim.
+
+Numeric scope strings are rejected (`TryParseScope`): `"1"` is
+`PersonUniquenessScope.Global` by ordinal, and a tenant ballot must never become a
+node-global one without someone spelling it out.
+
+### A ballot never carries a person key
+
+Vote metadata is built from the CLOSED
+`ConsumerGovernanceHolonTypes.AllowedVoteMetadataKeys` set — `option` and `castAt`,
+nothing else — and re-checked against it before the write. A vote child is
+consumer-readable through `HolonQuery`; a person key, a global person key, or any KYC
+field on it instantly reconstitutes the D2 person-to-choice correlation. The person
+key lives ONLY in `person_operation_claim`, which is node-operator-only. This is the
+single highest-risk mistake in this lane, so it is asserted by name in
+`GovernanceNodeHandlerTests.Vote_BallotCarriesOnlyOptionAndCastAt_NeverAPersonKey`.
+
+### Tally, and why there is no anchor node
+
+`GovernanceTally` reads `GetChildrenAsync(proposalId, ActingUserId)`, groups by
+`metadata.option`, and emits
+`{ proposalId, totalVotes, counts, tallyHash, tallyAt, closesAt }`. Every declared
+option appears, including the ones nobody chose, so a zero cannot silently change the
+preimage. `Services/Governance/GovernanceTallyHash.cs` is the ONE canonical preimage:
+domain tag, proposal id, close time, total, then options sorted ordinal-ascending and
+written LENGTH-PREFIXED (`{charCount}:{option}={count}`) so an option that embeds the
+separators cannot forge a colliding tally. It contains NO VOTER IDENTITIES — that is
+the whole reason a co-op tallies off chain rather than putting ballots on one, where
+every member's choice would be permanently public.
+
+**Anchoring is a composition, not a node.** A tenant that genuinely needs public
+verifiability wires `GovernanceTally -> BlockchainExecute` with `$from` bound to
+`tallyHash`, one transaction per proposal. Do not grow a fourth governance node type
+for it: the chain surface stays where it is and governance stays free of custody.
+
+### Read scoping (and the electorate limitation)
+
+Proposal reads go through `HolonManager.GetAsync(id, context.ActingUserId)`, whose
+owner-or-public rule already answers `"Holon not found."` for anything the runner may
+not read. Both handlers then collapse missing, unreadable, and wrong-asset-type onto
+ONE sentence (`GovernanceVoteNodeHandler.ProposalUnreadable`) so a vote node cannot be
+used as a proposal-existence oracle across users.
+
+This is the one place governance deviates from `§gate-predicate`'s owner-STRICT holon
+rule, and the deviation is deliberate: a ballot you own is not an election. GateCheck
+additionally rejects a holon owned by anyone else; a proposal must be readable by its
+electorate, so `GovernanceVote`/`GovernanceTally` accept the manager's owner-or-public
+answer and add no stricter check.
+
+**Known limitation.** `IHolon.IsPublic` is not settable through `HolonCreateModel` or
+`HolonUpdateModel` today, and `HolonManager.CanRead` scopes both `GetAsync` and
+`GetChildrenAsync` to owner-or-public. Until a create/update path can mark a proposal
+(and its ballots) public, a cross-user electorate cannot be assembled through the
+manager: the tally sees only ballots the tallier can read. The nodes are correct as
+written and need no change when that path lands — but do not describe D20 as
+supporting a multi-user co-op vote end to end before it does.
+
+### Where the configs live (temporary)
+
+`GovernanceProposalCreateNodeConfig`, `GovernanceVoteNodeConfig` and
+`GovernanceTallyNodeConfig` are declared alongside their handlers rather than in
+`Models/Actions/NodeConfigs.cs`, because the D20 lane does not own that file. Two
+central-file entries are therefore still OWED and are the only reason a governance
+node cannot be published yet:
+
+- `ActionNodeConfigRegistry._map` — one entry per type (missing entries throw
+  `NotSupportedException`, caught by the registry exhaustiveness test);
+- `ActionNodeOutputSchema` — one shape per type, plus the matching bucket in
+  `ActionNodeOutputSchemaGoldenTests`.
+
+Move the three DTOs into `NodeConfigs.cs` (names unchanged) when those land.
+
+## §credential-revoke — soulbound revocation is the issuer's power (D19)
+
+`CredentialRevokeNodeHandler` + `CredentialManager` + `AlgorandProvider.ClawbackAssetAsync`.
+This is the only primitive in the codebase that moves value OUT of an account that did
+not sign the transaction, so read the three rules below before touching any of them.
+
+### 1. Authorization is the ISSUER, never the holder
+
+Revocation is authorized against `nft_ownership.issuer_user_id` — the party that MINTED
+the credential — compared with the run's acting user (node path) or the authenticated
+caller (REST path). It is deliberately NOT derived from:
+
+- `current_owner` / `NftOwnership.UserId` — that is the HOLDER. Authorizing on it is the
+  exact inversion D19 exists to prevent: the person the credential is being taken from
+  would be the person entitled to take it.
+- the mint's `operation_log.user_id` — a mint proxied through a tenant credential stamps
+  the tenant, not the issuing organisation.
+
+`issuer_user_id` is nullable and **every row minted before D19 has none**, so a revoke of
+such a row FAILS CLOSED with an explicit message rather than guessing. It is written only
+through `ICredentialIssuerStore.SetIssuerUserIdAsync` — never through the ordinary
+`IUserNFT` upsert, which cannot see the column (see §issuer-column below).
+
+### 2. Nothing is assumed about the chain; four things are proven
+
+`ClawbackAssetAsync` refuses rather than attempts, before a byte is signed:
+
+1. the ASA exists on the active network;
+2. its on-chain `clawback` address is **exactly** (ordinal) the account that will sign —
+   the platform address `CreateSoulboundAsaAsync` stamps at mint;
+3. the holder actually holds at least the units being revoked — deliberately WITHOUT
+   requiring an unfrozen holding, because soulbound credentials are minted
+   `defaultFrozen: true` and clawback is precisely the operation Algorand still permits
+   on a frozen holding (`RequireOptedInAsync` would wrongly reject every revoke);
+4. the destination is opted in and can receive it.
+
+**Known limitation — a frozen destination.** Soulbound ASAs are minted
+`defaultFrozen: true`, so an issuer wallet that opted in AFTER creation holds a FROZEN
+position and proof 4 refuses the revoke ("the revocation destination ... is frozen").
+That refusal is correct — the chain would reject the transfer — and the resolution is
+operational (the platform is the freeze admin; unfreeze the destination, or revoke to an
+account whose holding is not frozen), not a relaxation of the proof. Do not weaken proof
+4 to make a demo pass.
+
+The transaction is an `AssetClawbackTransaction`, **not** an `AssetTransferTransaction`:
+in the Algorand2 SDK only the clawback type declares `AssetSender`. `Sender` is the
+clawback authority (who signs); `AssetSender` is the account the units leave. Swapping
+them signs a harmless self-transfer that reports success while revoking nothing.
+
+### 3. A pending transaction is not a revocation
+
+`BuildSignSubmitAsync` returns a SUCCESS result carrying
+`OperationStatus.PendingConfirmationMarker` when a transaction was broadcast but did not
+confirm in the poll window. `CredentialManager` maps that to
+`OperationStatus.PendingConfirmation` + the tx hash, leaves the idempotency claim
+`InProgress` (a duplicate replays "in progress" rather than re-broadcasting a second,
+irreversible clawback), and the node handler reports it as a node FAILURE with the tx
+hash attached so reconcile-before-retry verifies chain truth. A "success" with no tx id
+is recorded `Unknown` and refused. Only a confirmed clawback is `Completed`.
+
+### Tier and rail
+
+`RequiresChainCapability => true` and `ResolveSettlementRailId(node) => cfg.ChainType`.
+Both are load-bearing: the pre-execution gate (§rail-capability) is what stops a runner
+with no destination on that rail reaching a signing path, and it is only consulted for
+handlers that declare the flag. Both dispatch seams call the gate, so the flag is the
+whole enforcement.
+
+### The operation record
+
+Written as an ordinary `CredentialRevoke` operation row (amount `RailAmount.OfChainAsset(1)`,
+`AssetType = "Credential"`) so it lands in D16 analytics with every other value move. It
+reads back UNPRICED, like every other row — only `UnpricedValueRateSource` exists — and
+that is correct; do not special-case it.
+
+It is persisted through `IBlockchainOperationStore` rather than
+`IBlockchainOperationManager.ExecuteAsync`, because that method is the **executor**: it
+removes `Parameters["TxHash"]` on entry and, having no `CredentialRevoke` case, would
+record the row `Unknown` with the tx hash discarded — deleting the one piece of evidence
+reconciliation needs. Adding a `case "CredentialRevoke"` there (plus a
+`TryResolveStampableAmount` entry) would let the row move onto the ordinary path; until
+then the store write is the honest one.
+
+### §issuer-column — why the issuer bypasses the IUserNFT mapping
+
+`SurrealNftStore` maps `IUserNFT` ↔ `NftOwnership` field-by-field, but `IUserNFT` has no
+issuer property and its only writable carrier — the caller-supplied `Attributes` bag —
+would let a holder name themselves issuer and revoke their own credential. So the column
+is read and written through a second, narrow face on the same store,
+`ICredentialIssuerStore` (`FindCurrentByAssetIdAsync` / `SetIssuerUserIdAsync`).
+`ToNftPoco` leaves `IssuerUserId` null on purpose: `SurrealWriter` omits null `option<>`
+fields from the SET, so an ordinary transfer or metadata edit PRESERVES the recorded
+issuer instead of wiping the authorization anchor. This is the one field on that table
+that is not §set-omits-null.
+
+### Where the config lives (temporary)
+
+`CredentialRevokeNodeConfig` is declared alongside its handler rather than in
+`Models/Actions/NodeConfigs.cs`, because the D19 lane does not own that file — same
+situation as the D20 governance configs above. The same two central-file entries are
+OWED and are the only reason a `CredentialRevoke` node cannot be published yet:
+`ActionNodeConfigRegistry._map` and `ActionNodeOutputSchema` (+ its golden bucket).
+
+### Refund is not a back door
+
+`RefundNodeHandler` still refuses soulbound assets, and now for the accurate reason: a
+Refund reverses a debit for the RUN ACTOR, while a clawback is exercised by the ISSUER
+against a holder who did not consent. Routing soulbound reversals through Refund would
+hand every marketplace runner an issuer's power over an asset they merely received.

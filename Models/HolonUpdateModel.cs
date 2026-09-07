@@ -12,4 +12,11 @@ public class HolonUpdateModel
     public Dictionary<string, string>? Metadata { get; set; }
     public List<Guid>? PeerHolonIds { get; set; }
     public bool? IsActive { get; set; }
+
+    /// <summary>
+    /// Publishes or unpublishes the holon. Publishing is accepted ONLY for the asset
+    /// types on <c>HolonManager.PublishableAssetTypes</c>; unpublishing is always
+    /// allowed. See Services/Governance/AGENTS.md #consumer-governance.
+    /// </summary>
+    public bool? IsPublic { get; set; }
 }

@@ -1175,7 +1175,11 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     /// PARAMETERIZED — the caller supplies name/unitName/url/metadata and the
     /// platform admin address; this method hardcodes NO brand, label, or URL. The
     /// credential domain semantics stay in the caller; AZOA provides the on-chain
-    /// soulbound primitive only. (Clawback-revoke is deferred per D4 → H2.)
+    /// soulbound primitive only.
+    /// <para>Revocation is live: <see cref="ClawbackAssetAsync"/> exercises the clawback
+    /// authority stamped below (D19). Mint and revoke are two halves of one primitive —
+    /// changing <c>clawbackAddress</c> here without changing the signer the revoke path
+    /// resolves would silently make every credential unrevocable.</para>
     /// </summary>
     public async Task<AZOAResult<string>> CreateSoulboundAsaAsync(
         string name, string unitName, string platformAddress,
@@ -1186,7 +1190,8 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
 
         // total=1, decimals=0, defaultFrozen=true ⇒ non-divisible, non-transferable
         // until the freeze admin (platform) explicitly unfreezes. Platform holds all
-        // four admin roles so revoke (clawback+destroy) is a pure follow-up (H2).
+        // four admin roles, which is what makes ClawbackAssetAsync (D19) able to
+        // revoke this credential later without the holder's signature.
         var assetParams = BuildAssetParams(
             name, unitName, total: 1, decimals: 0, defaultFrozen: true,
             managerAddress: platformAddress, reserveAddress: platformAddress,
@@ -1234,6 +1239,193 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         return balanceResult.IsError
             ? Error<string>($"Asset holding fetch failed: {balanceResult.Message}")
             : Ok(balanceResult.Result ?? "0", balanceResult.Message);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The only path here that moves value out of an account which did not sign, so
+    /// every precondition is PROVEN against the node before a byte is signed. It is
+    /// built as an <c>AssetClawbackTransaction</c> (not an <c>AssetTransferTransaction</c>
+    /// — in this SDK only the clawback type declares <c>AssetSender</c>), signed by the
+    /// asset's clawback authority.
+    /// </remarks>
+    public async Task<AZOAResult<string>> ClawbackAssetAsync(
+        string assetId,
+        string holderAddress,
+        string recipientAddress,
+        RailAmount amount,
+        SigningContext signingContext,
+        string? clawbackAddress = null,
+        CancellationToken ct = default)
+    {
+        var opLabel = $"revoke ASA {assetId} from {holderAddress}";
+
+        if (string.IsNullOrWhiteSpace(assetId) || !ulong.TryParse(assetId, out var assetIndex))
+            return Error<string>("A numeric asset ID is required to revoke a credential");
+        if (string.IsNullOrWhiteSpace(holderAddress) || !ValidateAddressFormat(holderAddress))
+            return Error<string>("A valid holder address is required to revoke a credential");
+        if (string.IsNullOrWhiteSpace(recipientAddress) || !ValidateAddressFormat(recipientAddress))
+            return Error<string>("A valid destination address is required to revoke a credential");
+
+        // ASA amounts are ulong on chain; refuse rather than wrap (D13/D15 edge).
+        if (NarrowToChainBaseUnits<string>(amount, opLabel, out var baseUnits) is { } refusal)
+            return refusal;
+        if (baseUnits == 0)
+            return Error<string>("Revocation amount must be positive");
+
+        // The signer is the clawback authority. Null ⇒ the configured platform account,
+        // which is what CreateSoulboundAsaAsync stamps as the clawback address. A missing
+        // platform address fails CLOSED: we never guess at who may claw an asset back.
+        var signerAddress = string.IsNullOrWhiteSpace(clawbackAddress)
+            ? ResolvePlatformAddress()
+            : clawbackAddress.Trim();
+        if (string.IsNullOrWhiteSpace(signerAddress) || !ValidateAddressFormat(signerAddress))
+            return Error<string>(
+                $"Cannot {opLabel}: no clawback authority address could be resolved "
+                + "(no platform address is configured). Refusing to attempt a revocation "
+                + "whose signing authority is unknown.");
+
+        // Proof 1 — the asset exists AND its on-chain clawback address is EXACTLY the
+        // account about to sign. Without this the node would reject the transaction and
+        // a caller could be told a credential was revoked when nothing was authorised.
+        if (await RequireClawbackAuthorityAsync(signerAddress!, assetIndex, ct) is { } notAuthority)
+            return notAuthority;
+
+        // Proof 2 — the holder actually holds the units. Note this deliberately does NOT
+        // require an unfrozen holding: soulbound ASAs are minted defaultFrozen, and
+        // clawback is precisely the operation Algorand still permits on a frozen holding.
+        if (await RequireClawbackableHoldingAsync(holderAddress, assetIndex, baseUnits, ct) is { } noHolding)
+            return noHolding;
+
+        // Proof 3 — the destination can actually receive it, PROVEN against the node.
+        // Deliberately NOT RequireOptedInAsync: that proof refuses a FROZEN holding, which
+        // is the transfer precondition, not the clawback one. Every soulbound credential is
+        // minted defaultFrozen (see CreateSoulboundAsaAsync), so the issuer's own holding is
+        // frozen too and the transfer-shaped proof made every revocation refuse itself.
+        // Clawback is exactly the movement Algorand still permits on a frozen holding — at
+        // both ends — so the frozen check is dropped and ONLY the frozen check: opt-in is
+        // still proven from Algod, never assumed.
+        if (await RequireClawbackDestinationAsync(recipientAddress, assetIndex, ct) is { } noDestination)
+            return noDestination;
+
+        var assetSender = new Address(holderAddress);
+        var receiver = new Address(recipientAddress);
+
+        return await BuildSignSubmitAsync(
+            signerAddress!,
+            (paramsInfo, sender) => new AssetClawbackTransaction
+            {
+                // Sender = the clawback authority (who signs); AssetSender = the account
+                // the units actually leave. Swapping these would sign a plain self-transfer.
+                Sender = sender,
+                XferAsset = assetIndex,
+                AssetSender = assetSender,
+                AssetReceiver = receiver,
+                AssetAmount = baseUnits,
+            },
+            opLabel: opLabel,
+            signingContext: signingContext,
+            ct: ct);
+    }
+
+    /// <summary>
+    /// Proves <paramref name="signerAddress"/> is the ASA's registered clawback address.
+    /// Returns null when proven; a refusal otherwise. Compared with
+    /// <see cref="StringComparison.Ordinal"/> — Algorand addresses are case-sensitive
+    /// base32 and a loose comparison here would be an authority bypass.
+    /// </summary>
+    private async Task<AZOAResult<string>?> RequireClawbackAuthorityAsync(
+        string signerAddress, ulong assetIndex, CancellationToken ct)
+    {
+        AlgodAssetResponse? asset;
+        try
+        {
+            asset = await ExecuteWithRetryAsync(
+                async () => await AlgodHttpClient.GetFromJsonAsync<AlgodAssetResponse>(
+                    $"/v2/assets/{assetIndex}", cancellationToken: ct),
+                ct: ct,
+                safety: RetrySafety.Idempotent);
+        }
+        catch (Exception ex)
+        {
+            return Error<string>(
+                $"Cannot revoke ASA {assetIndex}: its on-chain parameters could not be read "
+                + $"({ex.Message}). Refusing to claw back an asset whose clawback authority is unproven.", ex);
+        }
+
+        if (asset?.Params is not { } assetParams)
+            return Error<string>(
+                $"Cannot revoke ASA {assetIndex}: the asset was not found on {ActiveNetwork}. "
+                + "Refusing to report a revocation of a credential that does not exist.");
+
+        if (string.IsNullOrWhiteSpace(assetParams.Clawback))
+            return Error<string>(
+                $"Cannot revoke ASA {assetIndex}: it has no clawback address, so the asset is "
+                + "permanently non-revocable on chain. Refusing to attempt a revocation that cannot land.");
+
+        if (!string.Equals(assetParams.Clawback, signerAddress, StringComparison.Ordinal))
+            return Error<string>(
+                $"Cannot revoke ASA {assetIndex}: its clawback authority is {assetParams.Clawback}, "
+                + $"not {signerAddress}. Only the clawback account may move an asset it does not hold — "
+                + "refusing to attempt a revocation that is not ours to make.");
+
+        return null;
+    }
+
+    /// <summary>
+    /// Proves the holder is opted in and holds at least <paramref name="requiredUnits"/>.
+    /// Frozen is explicitly ALLOWED: clawback is the operation that still works on a
+    /// frozen holding, and every soulbound credential is minted frozen. Returns null when proven.
+    /// </summary>
+    private async Task<AZOAResult<string>?> RequireClawbackableHoldingAsync(
+        string holderAddress, ulong assetIndex, ulong requiredUnits, CancellationToken ct)
+    {
+        var holding = await ReadAssetHoldingAsync(holderAddress, assetIndex, ct);
+        if (holding.IsError)
+            return Error<string>(
+                $"Cannot prove the holder {holderAddress} holds ASA {assetIndex} "
+                + $"({holding.Message}). Refusing to claw back a credential whose holding is unproven.");
+
+        if (holding.Result is null)
+            return Error<string>(
+                $"The holder {holderAddress} does not hold ASA {assetIndex} (no opt-in). "
+                + "The credential is not where the record says it is — refusing to submit a "
+                + "revocation that cannot land, and refusing to report one that did not happen.");
+
+        if (holding.Result.Amount < requiredUnits)
+            return Error<string>(
+                $"The holder {holderAddress} holds {holding.Result.Amount} of ASA {assetIndex}, "
+                + $"fewer than the {requiredUnits} unit(s) being revoked. Refusing to submit a "
+                + "revocation the chain would reject.");
+
+        return null;
+    }
+
+    /// <summary>
+    /// Proves the clawback DESTINATION can receive the asset: opted in, read from Algod.
+    /// Frozen is explicitly allowed — a clawback lands in a frozen holding, and every
+    /// soulbound credential is minted defaultFrozen, so the issuer account this returns
+    /// the credential to is frozen by construction. Opt-in is still PROVEN and never
+    /// assumed: the chain rejects an asset movement into an account that has not opted in,
+    /// and only that account can sign its own opt-in. Returns null when proven.
+    /// </summary>
+    private async Task<AZOAResult<string>?> RequireClawbackDestinationAsync(
+        string destinationAddress, ulong assetIndex, CancellationToken ct)
+    {
+        var holding = await ReadAssetHoldingAsync(destinationAddress, assetIndex, ct);
+        if (holding.IsError)
+            return Error<string>(
+                $"Cannot prove the revocation destination {destinationAddress} is opted into ASA "
+                + $"{assetIndex} ({holding.Message}). Refusing to submit a clawback the chain may reject.");
+
+        if (holding.Result is null)
+            return Error<string>(
+                $"The revocation destination {destinationAddress} has not opted into ASA {assetIndex}. "
+                + "Algorand rejects an asset movement into an account that has not opted in, and the "
+                + "account must sign its own opt-in — the platform cannot do it on its behalf. Refusing "
+                + "to submit a clawback that cannot land.");
+
+        return null;
     }
 
     // ─── Build → sign → submit → confirm orchestration (signing-core-keystone) ───
@@ -2090,6 +2282,9 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         public ulong Total { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("manager")]
         public string? Manager { get; set; }
+        /// <summary>The clawback authority — the only account that may move this asset out of another's holding (D19).</summary>
+        [System.Text.Json.Serialization.JsonPropertyName("clawback")]
+        public string? Clawback { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("decimals")]
         public int Decimals { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("default-frozen")]

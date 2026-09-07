@@ -67,6 +67,10 @@ DEFINE INDEX IF NOT EXISTS kyc_identity_global_person
     ON TABLE kyc_identity
     FIELDS global_person_key;
 
+DEFINE INDEX IF NOT EXISTS kyc_identity_scope_users
+    ON TABLE kyc_identity
+    FIELDS tenant_scope, user_ids;
+
 DEFINE INDEX IF NOT EXISTS kyc_identity_retention
     ON TABLE kyc_identity
     FIELDS retention_expires_at;

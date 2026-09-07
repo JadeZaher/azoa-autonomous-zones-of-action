@@ -85,7 +85,24 @@ public enum ActionNodeType
     // from run context; idempotency seeded {runId}:{nodeId}. No value/peg math in
     // the node — peg stays tenant-side (Emit). See Services/Actions/AGENTS.md §fractionalization.
     Bridge, // lock/bridge an asset cross-chain (InitiateBridgeAsync)
-    Back    // reverse/release the bridged asset back (ReverseBridgeAsync)
+    Back,   // reverse/release the bridged asset back (ReverseBridgeAsync)
+
+    // Verifiable-credential rails (Phase 5 D19). Tier-2 (RequiresChainCapability == true):
+    // revocation is published on-chain, so the run context must be chain-capable.
+    CredentialRevoke,
+
+    // Governance rails (Phase 5 D20). Tier-1 (chain-free) -- proposal, ballot and tally are
+    // holon writes. GovernanceVote is the consumer of the person-uniqueness gate
+    // (PersonUniquenessRequirement / KycIneligibilityCause.PersonAlreadyClaimedOperation).
+    GovernanceProposalCreate,
+    GovernanceVote,
+    GovernanceTally,
+
+    // Credit rails (Phase 5 D21). Tier-1 (chain-free): the loan ledger is holonic and every
+    // amount is a RailAmount; settlement of that amount is handed to the tenant via Emit.
+    LoanOpen,
+    LoanRepaymentRecord,
+    LoanBalance
 }
 
 /// <summary>

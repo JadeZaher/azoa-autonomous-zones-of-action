@@ -928,6 +928,12 @@ builder.Services.AddScoped<IActionStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionStore>();
 builder.Services.AddScoped<INftStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftStore>();
+// D19 credential revocation reads the issuer / soulbound / holder-address columns
+// of the SAME nft_ownership rows, through a narrower interface the same Surreal
+// store implements. Bound explicitly rather than cast off INftStore so re-binding
+// one seam can never silently change the other.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ICredentialIssuerStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftStore>();
 builder.Services.AddScoped<IBridgeStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealBridgeStore>();
 // surrealdb-migration CLOSEOUT Stream C2 (pre-D gap closure): ApiKey + Action
@@ -1175,8 +1181,15 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKycIdentityStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealKycIdentityStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKycScreeningStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealKycScreeningStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IPersonOperationClaimStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealPersonOperationClaimStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.IKycIdentityBindingService,
     AZOA.WebAPI.Services.Kyc.KycIdentityBindingService>();
+// D3/D23 per-operation one-human-one-claim gate. An operation opts in by declaring
+// a PersonUniquenessRequirement; without this registration the seam is inert and a
+// declaring operation would fail to resolve its gate at all.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IPersonUniquenessGate,
+    AZOA.WebAPI.Services.Kyc.PersonUniquenessGate>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.IKycIdentityErasureService,
     AZOA.WebAPI.Services.Kyc.KycIdentityErasureService>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.IHostedSessionOutcomeHandler,
@@ -1253,6 +1266,17 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationReceiptMan
 // fungible-token-node: idempotent, KYC-gated fungible-token (ASA) launch seam.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleTokenManager,
     AZOA.WebAPI.Managers.FungibleTokenManager>();
+// D19 soulbound-credential revocation (Algorand AssetClawback). Backs both
+// CredentialController and CredentialRevokeNodeHandler -- and the handler set is
+// constructed EAGERLY (ActionNodeHandlerRegistry takes IEnumerable<IActionNodeHandler>
+// and the scan in the "Action node handlers" block registers every one of them), so a
+// missing registration here is a startup crash for the whole app, not a lazy 500.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ICredentialManager,
+    AZOA.WebAPI.Managers.CredentialManager>();
+// D16 analytics read surface -- a read-only projection over the blockchain-operation
+// log that backs AnalyticsController. No writes, no chain reach.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAnalyticsReadService,
+    AZOA.WebAPI.Services.Analytics.AnalyticsReadService>();
 // Bind Jupiter DEX configuration
 builder.Services.Configure<JupiterConfig>(
     builder.Configuration.GetSection(JupiterConfig.SectionName));

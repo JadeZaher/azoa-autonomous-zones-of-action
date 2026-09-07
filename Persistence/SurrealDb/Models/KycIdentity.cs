@@ -23,6 +23,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         Fields = new[] { "tenant_scope", "person_key" },
         Unique = true)]
     [Index("kyc_identity_global_person", Fields = new[] { "global_person_key" })]
+    [Index("kyc_identity_scope_users", Fields = new[] { "tenant_scope", "user_ids" })]
     [Index("kyc_identity_retention", Fields = new[] { "retention_expires_at" })]
     public partial class KycIdentity : ISurrealRecord
     {

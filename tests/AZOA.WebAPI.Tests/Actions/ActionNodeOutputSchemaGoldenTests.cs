@@ -4,6 +4,7 @@ using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Actions;
+using AZOA.WebAPI.Services.Lending;
 using FluentAssertions;
 using Xunit;
 
@@ -78,6 +79,25 @@ public class ActionNodeOutputSchemaGoldenTests
         ActionNodeType.Bridge, ActionNodeType.Back,
     };
 
+    /// <summary>Flat known entries (Phase 5): the handler serializes a domain DTO or a
+    /// fixed-key dictionary DIRECTLY -- no AZOAResult wrapper, no dynamic keys. Each
+    /// value here reproduces exactly what the handler writes, so the closed-shape check
+    /// catches a schema entry that drifted from the handler in either direction.</summary>
+    private static readonly Dictionary<ActionNodeType, Func<string>> FlatKnown = new()
+    {
+        // CredentialRevokeNodeHandler serializes r.Result, a CredentialRevokeResult
+        // (compile-time ref, so a property rename breaks this test).
+        [ActionNodeType.CredentialRevoke] = () => Serialize(RepresentativeCredentialRevoke()),
+        // The three governance handlers each build a literal Dictionary<string, object?>.
+        [ActionNodeType.GovernanceProposalCreate] = () => Serialize(RepresentativeProposalCreated()),
+        [ActionNodeType.GovernanceVote] = () => Serialize(RepresentativeVoteCast()),
+        [ActionNodeType.GovernanceTally] = () => Serialize(RepresentativeTally()),
+        // All three loan handlers serialize the same LoanBalanceProjectionResult.
+        [ActionNodeType.LoanOpen] = () => Serialize(RepresentativeLoanProjection()),
+        [ActionNodeType.LoanRepaymentRecord] = () => Serialize(RepresentativeLoanProjection()),
+        [ActionNodeType.LoanBalance] = () => Serialize(RepresentativeLoanProjection()),
+    };
+
     /// <summary>Open / anonymous / dynamic-key entries — EXCLUDED from field checks.
     /// Condition passes node config verbatim; ComposeOutputs emits a dynamic
     /// {nodeName: outputJson} map; Emit serializes the tenant payload directly.</summary>
@@ -109,6 +129,7 @@ public class ActionNodeOutputSchemaGoldenTests
             var buckets =
                 (WrappedResultKinds.ContainsKey(type) ? 1 : 0) +
                 (FlatBridgeShape.Contains(type) ? 1 : 0) +
+                (FlatKnown.ContainsKey(type) ? 1 : 0) +
                 (OpenOrDynamic.Contains(type) ? 1 : 0) +
                 (type == ActionNodeType.GateCheck ? 1 : 0);
             buckets.Should().Be(1,
@@ -167,6 +188,18 @@ public class ActionNodeOutputSchemaGoldenTests
 
     public static IEnumerable<object[]> FlatTypes() =>
         FlatBridgeShape.Select(t => new object[] { t });
+
+    // -- 4b. Phase 5 flat shapes match the DTO / dictionary the handler writes --
+
+    [Theory]
+    [MemberData(nameof(FlatKnownTypes))]
+    public void FlatKnownShape_MatchesSerializedHandlerOutput(ActionNodeType type)
+    {
+        AssertShape(type, FlatKnown[type](), closed: true);
+    }
+
+    public static IEnumerable<object[]> FlatKnownTypes() =>
+        FlatKnown.Keys.Select(t => new object[] { t });
 
     [Fact]
     public void FlatBridgeOutput_DoesNotSerializeServerIdempotencyKey()
@@ -305,5 +338,71 @@ public class ActionNodeOutputSchemaGoldenTests
         RedemptionTxHash = "redeem-tx",
         IdempotencyKey = "idem",
         Network = ChainNetwork.Devnet,
+    };
+
+    /// <summary>A fully-populated <see cref="CredentialRevokeResult"/> -- the exact DTO
+    /// CredentialRevokeNodeHandler serializes on its success path. <c>IsConfirmed</c> is a
+    /// computed get-only property and IS serialized, so the schema must declare it.</summary>
+    private static CredentialRevokeResult RepresentativeCredentialRevoke() => new()
+    {
+        AssetId = "12345",
+        CredentialId = Guid.NewGuid(),
+        IssuerUserId = Guid.NewGuid(),
+        HolderUserId = Guid.NewGuid(),
+        HolderAddress = "HOLDER-ADDR",
+        RecipientAddress = "ISSUER-ADDR",
+        ChainType = "Algorand",
+        Status = AZOA.WebAPI.Models.OperationStatus.Completed,
+        TxHash = "clawback-tx",
+        OperationId = Guid.NewGuid(),
+        Replayed = false,
+    };
+
+    /// <summary>The literal dictionary GovernanceProposalCreateNodeHandler writes.</summary>
+    private static Dictionary<string, object?> RepresentativeProposalCreated() => new()
+    {
+        ["proposalId"] = Guid.NewGuid().ToString(),
+        ["status"] = "Open",
+        ["options"] = new List<string> { "yes", "no" },
+        ["opensAt"] = "2026-01-01T00:00:00.0000000Z",
+        ["closesAt"] = "2026-01-08T00:00:00.0000000Z",
+        ["uniquenessOperationKey"] = "governance:proposal:vote",
+        ["uniquenessScope"] = Guid.NewGuid().ToString(),
+        ["createdAt"] = "2026-01-01T00:00:00.0000000Z",
+    };
+
+    /// <summary>The literal dictionary GovernanceVoteNodeHandler writes.</summary>
+    private static Dictionary<string, object?> RepresentativeVoteCast() => new()
+    {
+        ["proposalId"] = Guid.NewGuid().ToString(),
+        ["voteId"] = Guid.NewGuid().ToString(),
+        ["option"] = "yes",
+        ["castAt"] = "2026-01-02T00:00:00.0000000Z",
+    };
+
+    /// <summary>The literal dictionary GovernanceTallyNodeHandler writes. <c>counts</c>
+    /// carries tenant-declared option keys, hence a declared Object rather than fields.</summary>
+    private static Dictionary<string, object?> RepresentativeTally() => new()
+    {
+        ["proposalId"] = Guid.NewGuid().ToString(),
+        ["totalVotes"] = 3,
+        ["counts"] = new Dictionary<string, int> { ["yes"] = 2, ["no"] = 1 },
+        ["tallyHash"] = "0123456789abcdef",
+        ["tallyAt"] = "2026-01-09T00:00:00.0000000Z",
+        ["closesAt"] = "2026-01-08T00:00:00.0000000Z",
+    };
+
+    /// <summary>The <see cref="LoanBalanceProjectionResult"/> all three loan handlers
+    /// serialize. Its [JsonPropertyName] attributes pin the camelCase wire names, so a
+    /// rename on the DTO breaks this test rather than silently breaking $from bindings.</summary>
+    private static LoanBalanceProjectionResult RepresentativeLoanProjection() => new()
+    {
+        LoanId = Guid.NewGuid().ToString(),
+        Principal = "1000",
+        TotalRepaid = "250",
+        TotalWrittenOff = "0",
+        Outstanding = "750",
+        Status = "Open",
+        EntryCount = 2,
     };
 }

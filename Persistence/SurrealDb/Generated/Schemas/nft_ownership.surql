@@ -3,6 +3,7 @@
 -- Aggregate: UserNFT (Models/UserNFT.cs)
 -- Guardrail: G6 SCHEMAFULL
 -- Note: is_current distinguishes live ownership from historical transfer rows. Adapter enforces the (chain, contract, token_id, is_current=true) singleton invariant.
+-- Note: issuer_user_id (D19) is the authorization anchor for credential revocation: only the ISSUER may claw a soulbound credential back. It is nullable because every row minted before D19 has no recorded issuer, and a revoke of such a row must fail closed rather than infer one from current_owner (that is the holder) or from an operation log (a tenant-proxied mint stamps the wrong party).
 -- Note: B3 review: nft_chain_contract_token_current is intentionally NOT UNIQUE because is_current=false rows accumulate as transfer history; uniqueness of the (chain, contract, token_id, is_current=true) tuple is enforced by the adapter setting is_current=false on the prior row before inserting the new one (SurrealDB does not support partial UNIQUE INDEXes).
 -- ============================================================
 
@@ -41,6 +42,9 @@ DEFINE FIELD IF NOT EXISTS is_transferable ON TABLE nft_ownership TYPE bool
 DEFINE FIELD IF NOT EXISTS is_current ON TABLE nft_ownership TYPE bool
     DEFAULT true;
 DEFINE FIELD IF NOT EXISTS current_owner ON TABLE nft_ownership TYPE option<string>;
+
+-- Credential issuer (D19) — the party that MINTED this asset, NOT current_owner
+DEFINE FIELD IF NOT EXISTS issuer_user_id ON TABLE nft_ownership TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS is_active ON TABLE nft_ownership TYPE bool
     DEFAULT true;
 DEFINE FIELD IF NOT EXISTS minted_date ON TABLE nft_ownership TYPE datetime

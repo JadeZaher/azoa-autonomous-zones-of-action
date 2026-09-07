@@ -38,6 +38,40 @@ public interface IAlgorandASAModule : IBlockchainProviderModule
 
     Task<AZOAResult<bool>> OptInAsync(string assetId, string walletAddress, CancellationToken ct = default);
     Task<AZOAResult<string>> GetAssetHoldingAsync(string assetId, string address, CancellationToken ct = default);
+
+    /// <summary>
+    /// D19 soulbound revocation: moves <paramref name="amount"/> of an ASA OUT of
+    /// <paramref name="holderAddress"/> without the holder's signature, using the
+    /// asset's clawback authority. This is the only primitive in the codebase that
+    /// takes value from an account that did not authorize the transaction, so the
+    /// implementation must PROVE, against the node and before signing, that (a) the
+    /// asset exists, (b) its on-chain clawback address is exactly the account that
+    /// will sign, (c) the holder actually holds at least that amount, and (d) the
+    /// destination can receive it. Anything unproven is a refusal, not an attempt.
+    /// </summary>
+    /// <param name="assetId">Numeric ASA id of the credential.</param>
+    /// <param name="holderAddress">Account the asset is taken FROM (the ASA's <c>AssetSender</c>).</param>
+    /// <param name="recipientAddress">Account the asset is returned TO (normally the issuer).</param>
+    /// <param name="amount">Units to claw back, in ASA base units.</param>
+    /// <param name="signingContext">Signing context for the clawback authority (platform for soulbound mints).</param>
+    /// <param name="clawbackAddress">
+    /// The clawback authority that signs. Null resolves the configured platform address —
+    /// the address <c>CreateSoulboundAsaAsync</c> stamps on every soulbound mint.
+    /// </param>
+    /// <returns>
+    /// The confirmed transaction id. A broadcast that did not confirm within the poll
+    /// window returns a SUCCESS result whose message carries
+    /// <c>OperationStatus.PendingConfirmationMarker</c> — callers must treat that as
+    /// "submitted, outcome unknown", never as a completed revocation.
+    /// </returns>
+    Task<AZOAResult<string>> ClawbackAssetAsync(
+        string assetId,
+        string holderAddress,
+        string recipientAddress,
+        AZOA.WebAPI.Core.RailAmount amount,
+        AZOA.WebAPI.Core.SigningContext signingContext,
+        string? clawbackAddress = null,
+        CancellationToken ct = default);
 }
 
 public interface ISolanaMetaplexModule : IBlockchainProviderModule

@@ -633,6 +633,17 @@ public sealed class KycIdentityBindingTests
             return Task.FromResult(new AZOAResult<KycIdentity> { Result = found });
         }
 
+        public Task<AZOAResult<KycIdentity?>> GetByUserAsync(
+            string tenantScope,
+            string userId,
+            CancellationToken ct = default)
+        {
+            var found = _rows.Values.FirstOrDefault(row =>
+                row.TenantScope == tenantScope
+                && (row.UserIds ?? []).Contains(userId, StringComparer.Ordinal));
+            return Task.FromResult(new AZOAResult<KycIdentity?> { Result = found });
+        }
+
         public Task<AZOAResult<IReadOnlyList<KycIdentity>>> GetByGlobalPersonKeyAsync(
             string globalPersonKey,
             CancellationToken ct = default)

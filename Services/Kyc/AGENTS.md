@@ -80,10 +80,11 @@ not as a preceding read, so two concurrent binds for one person key cannot both 
 The refusal is per uniqueness SCOPE: a second tenant verifying the same human is
 legitimate, and refusing it would itself disclose that the human exists elsewhere.
 
-`EvaluateEligibilityAsync` is the per-operation opt-in surface for asking the same
-question ahead of a person-scoped benefit. **No production operation opts in yet** —
-it is reachable only from tests. That is a gap, not a design: state it plainly rather
-than reading its existence as coverage.
+`EvaluateEligibilityAsync` answers the BIND-TIME question — one person, one user per
+scope, asked when a verification lands. It is not the per-operation surface; that is
+`IPersonUniquenessGate` (§person-uniqueness), which D3 adds on top. Do not merge the
+two: D1 explicitly permits one human to hold many verified users, and collapsing
+bind-time uniqueness into per-operation uniqueness would refuse the legitimate case.
 
 **Every consumer-visible denial is the same sentence.** `KycEligibilityDecision`
 carries a single `Message` for all refusals and keeps the discriminating
@@ -91,6 +92,87 @@ carries a single `Message` for all refusals and keeps the discriminating
 a tenant that its subject exists elsewhere on the node, which is precisely the
 cross-tenant fact the per-tenant salting exists to hide. The operator-side cause
 survives for support and audit; it must never reach a response body.
+
+## §person-uniqueness
+
+`IPersonUniquenessGate` (`Interfaces/Managers/IPersonUniquenessGate.cs`,
+implemented by `Services/Kyc/PersonUniquenessGate.cs`) is the D3 per-operation
+one-human-one-claim gate. **Presence of a `PersonUniquenessRequirement` IS the
+opt-in.** An operation that declares none gets no check at all, which is the
+default for all 43 existing node types — a uniqueness gate applied to everything
+would refuse ordinary repeat work.
+
+**Per-tenant is the default and it cannot be reached by forgetting.**
+`PersonUniquenessScope.Tenant = 0`, so a default-constructed record, an omitted
+JSON field, and a null-coalesced value all land there. `Global` requires an
+explicit `"scope": "Global"` and is logged at Warning on every resolution, so an
+operator can audit each cross-tenant question the node was ever asked. D23's
+accepted residual risk is the inverse — an operator who FORGETS to opt a
+Sybil-sensitive operation into `Global` gets no cross-tenant protection. That is
+a decided trade; do not "fix" it by defaulting to `Global`.
+
+**Four steps, always all four.** Canonicalize the operation key ->
+`KycPersonKeyDeriver.ScopeValue(tenantId)` (the ONE canonical scope rule, reused
+rather than re-derived) -> `IKycIdentityStore.GetByUserAsync` -> claim. Step three
+is the reverse lookup the store previously lacked: it could go person key -> row
+but not user -> row, so nothing could resolve an authenticated user to a person
+key. Step four picks the key by scope — `person_key` for `Tenant`,
+`global_person_key` for `Global`. That branch is the FIRST production wiring of
+`global_person_key`; `GetByGlobalPersonKeyAsync` stays node-operator support and
+audit only, because the gate needs a claim ledger, not a person -> users fan-out.
+
+**The refusal lives at the WRITE, exactly as it does for the binding.**
+`IPersonOperationClaimStore.TryClaimAsync` decides the winner inside one
+conditional statement on the deterministic record id, and the gate decides refusal
+by comparing the returned `user_id` to its own. A preceding "is it free?" read is
+passed by BOTH concurrent claimants and makes the gate a tautology. The SurrealQL
+`SET` ordering is load-bearing — see the comment in
+`SurrealPersonOperationClaimStore`.
+
+**One sentence, always.** Every refusal — no identity in scope, identity erased,
+person already claimed through another user, unconfigured root secret, unusable
+operation key, unreachable store — returns
+`Success(KycEligibilityDecision.Ineligible(cause))` with
+`KycIdentityBindingService.IneligibleMessage`. Three constraints keep that honest:
+
+- **`IsError` is never a refusal.** An error result travels a different controller
+  path (4xx/5xx vs a 200 carrying `IsEligible=false`), and that status-code
+  difference is a perfectly usable oracle. `IsError` is reserved for programming
+  errors — a null requirement, an empty user id — which cannot depend on whether
+  the subject exists elsewhere.
+- **Unavailability is a DENIAL, not an outage signal.** A 503 that appears only for
+  already-claimed people is the leak wearing a hat. This deliberately diverges from
+  `BindAsync`, which may surface `DependencyUnavailable` because binding happens
+  before any person-scoped question is being asked about a specific third party.
+- **Timing.** The gate does not return early when the identity lookup comes back
+  null; it performs the claim round trip against a sentinel key derived from the
+  user id (prefixed `!`, which unpadded-base64url person keys can never contain),
+  so "no identity" and "already claimed" cost the same two round trips. Stated
+  honestly: this narrows the channel to sub-round-trip noise, it does not close it.
+
+**The caller must not re-widen it.** A consumer of this gate has to fail with a
+byte-identical message whether the refusal came from here, from a closed proposal,
+from an unknown option, or from a resource the runner cannot read. A node whose
+failure text is "already voted" for one cause and "proposal closed" for another has
+rebuilt the oracle one layer up. Telling a tenant "you already voted" reveals
+nothing cross-tenant and would be better UX — it is still not allowed, because the
+moment the message varies by cause the caller must correctly re-derive which scope
+it was in to know whether varying is safe, and that conditional is the bug.
+
+**Compensation is mandatory.** A caller that wins a claim and then fails its side
+effect MUST call `ReleaseAsync`, or the person is permanently locked out by a claim
+that bought them nothing. `ReleaseAsync` is scoped to the holder, so a release by a
+non-holder returns `Success(false)` instead of freeing someone else's claim.
+
+**Mandated consumer.** D20's governance vote node is the operation this seam exists
+for; the REST twin, if a lane ships one, uses the same requirement object and the
+same status code as ordinary ineligibility. D19 (revocation, issuer-authorized),
+D21 (per-loan, not per-person) and D16 (a read surface) are deliberately NOT call
+sites — wiring the gate into them is scope creep against D3's "operations that
+GENUINELY need one-human-one-claim". **Until the governance lane lands, the gate is
+reachable only from `PersonUniquenessGateTests`.** State that plainly rather than
+reading the seam's existence as coverage: this repo's most-repeated defect is an
+adapter that exists while nothing consults it.
 
 ## §aml-screening
 

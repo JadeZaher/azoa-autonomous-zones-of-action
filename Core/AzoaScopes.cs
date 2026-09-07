@@ -79,6 +79,14 @@ public static class AzoaScopes
     /// <summary>Tenant may drive a fungible-token (ASA) create that signs.</summary>
     public const string TokenCreateSign = "token:create:sign";
 
+    /// <summary>
+    /// D19: may revoke a soulbound credential — an on-chain ASA clawback signed by the
+    /// asset's clawback authority. Held by the credential's ISSUER, never its holder;
+    /// the issuer check itself lives in <c>CredentialManager</c>, and this scope only
+    /// decides whether a scoped credential may reach the revoke path at all.
+    /// </summary>
+    public const string CredentialRevokeSign = "credential:revoke:sign";
+
     // ── tenant-consent-delegation: non-value participation scopes ──────────────
 
     /// <summary>Tenant may execute actions for the user (non-value; safe in a
@@ -94,6 +102,10 @@ public static class AzoaScopes
         new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
         {
             SwapSign, TransferSign, GrantSign, TokenCreateSign,
+            // A revoke moves a real asset off a user's account with the platform's
+            // clawback key. Like TokenCreateSign it is platform-SIGNED but may be
+            // tenant-DRIVEN, so it must never arrive through a no-UX Participation grant.
+            CredentialRevokeSign,
         };
 
     // ── security-review S6: scope ↔ operation-type consistency ─────────────────
@@ -120,6 +132,11 @@ public static class AzoaScopes
             ["Swap"]                  = Set(SwapSign),
             ["Exchange"]              = Set(SwapSign),
             ["fungible_token_create"] = Set(TokenCreateSign),
+            // D19 soulbound revocation. Deliberately its OWN scope rather than reusing
+            // TransferSign: a clawback moves an asset the signer does not hold, so a
+            // user who consented to "sign my transfers" must not thereby consent to
+            // having a credential taken from them.
+            ["CredentialRevoke"]      = Set(CredentialRevokeSign),
         };
 
     private static System.Collections.Generic.IReadOnlySet<string> Set(params string[] scopes)
@@ -169,7 +186,8 @@ public static class AzoaScopes
     ///   • <see cref="DappDevelop"/> and <see cref="DappManage"/> — role-bound dApp capabilities.
     ///   • The value/participation signing scopes that are ALREADY intended to be
     ///     key-carried by a tenant/child credential: wallet:manage, nft:mint,
-    ///     action:execute, swap:sign, transfer:sign, grant:sign, token:create:sign.
+    ///     action:execute, swap:sign, transfer:sign, grant:sign, token:create:sign,
+    ///     credential:revoke:sign.
     ///   • EXCLUDES <see cref="Operator"/> — admin authority never originates from a key
     ///     (also stripped at claim-emit time; see <see cref="ApiKeyForbiddenScopes"/>).
     ///   • EXCLUDES <see cref="TenantProvision"/> — closing a prior gap where it was
@@ -191,6 +209,7 @@ public static class AzoaScopes
             TransferSign,
             GrantSign,
             TokenCreateSign,
+            CredentialRevokeSign,
         };
 
     private static readonly System.Collections.Generic.IReadOnlySet<string> RoleBoundDappScopes =
@@ -225,6 +244,7 @@ public static class AzoaScopes
             [TransferSign]    = "Sign a value transfer with the user's key.",
             [GrantSign]       = "Sign a grant/mint-to-actor.",
             [TokenCreateSign] = "Sign a fungible-token (ASA) create.",
+            [CredentialRevokeSign] = "Revoke a soulbound credential you issued (on-chain clawback).",
         };
 
     /// <summary>

@@ -33,6 +33,10 @@ public class ChainCapabilityFlagInvariantTests
     /// <para><c>FungibleTokenCreate</c> joined this set with the fungible-token-node
     /// track (it launches an on-chain ASA via the platform key); the chain-capability
     /// gate in <c>ActionNodeStepHandler</c> enforces it the same as the others.</para>
+    /// <para><c>CredentialRevoke</c> joined with Phase 5 D19: it signs an Algorand
+    /// <c>AssetClawback</c> with the platform clawback key. The six sibling Phase 5
+    /// types (three governance, three loan) are pure holon reads/writes with no chain
+    /// reach at all, so they stay Tier-1 and must NOT appear here.</para>
     /// </summary>
     private static readonly ActionNodeType[] Tier2 =
     {
@@ -45,6 +49,11 @@ public class ChainCapabilityFlagInvariantTests
         // cross-chain bridge (an on-chain lock/burn), so both are Tier-2.
         ActionNodeType.Bridge,
         ActionNodeType.Back,
+        // Phase 5 D19 credential rail: an on-chain ASA clawback signed by the
+        // platform key. Its Tier-1 Phase 5 siblings (GovernanceProposalCreate,
+        // GovernanceVote, GovernanceTally, LoanOpen, LoanRepaymentRecord,
+        // LoanBalance) are deliberately absent.
+        ActionNodeType.CredentialRevoke,
     };
 
     /// <summary>
@@ -71,8 +80,9 @@ public class ChainCapabilityFlagInvariantTests
         handler.RequiresChainCapability.Should().Be(
             isTier2,
             $"{handlerType.Name} ({handler.NodeType}) must report RequiresChainCapability == " +
-            $"{isTier2}: Tier-2 chain actions (Swap/Grant/Transfer/Refund/FungibleTokenCreate) " +
-            "require the capability; every other (Tier-1) handler must be chain-free.");
+            $"{isTier2}: Tier-2 chain actions (the Tier2 set above — Swap/Grant/Transfer/" +
+            "Refund/FungibleTokenCreate/Bridge/Back/CredentialRevoke) require the " +
+            "capability; every other (Tier-1) handler must be chain-free.");
     }
 
     [Fact]
@@ -92,7 +102,7 @@ public class ChainCapabilityFlagInvariantTests
 
         // Every capability-requiring handler is exactly one of the four Tier-2 types.
         tier2Found.Should().BeEquivalentTo(Tier2,
-            "exactly the four Tier-2 chain actions may require a chain capability");
+            "exactly the declared Tier-2 chain actions may require a chain capability");
 
         // No Tier-1 handler leaked a chain-capability requirement.
         tier1Found.Should().NotContain(Tier2,
@@ -111,8 +121,14 @@ public class ChainCapabilityFlagInvariantTests
 
     /// <summary>
     /// Instantiates a handler by filling every constructor parameter with a Moq
-    /// mock (all handler ctor deps are interfaces). The tier flag and node type
-    /// are pure declarations, so the mocked collaborators are never invoked.
+    /// mock (handler ctor deps are interfaces). The tier flag and node type are pure
+    /// declarations, so the mocked collaborators are never invoked.
+    /// <para>An OPTIONAL parameter gets its compiler-recorded default instead — the
+    /// governance handlers take <c>TimeProvider? clock = null</c>, an abstract class
+    /// that cannot be mocked or Activator-constructed. This mirrors what
+    /// Microsoft.Extensions.DependencyInjection itself does when no service is
+    /// registered for an optional parameter, so the instance under test matches the
+    /// one the container builds at startup.</para>
     /// </summary>
     private static IActionNodeHandler Instantiate(Type handlerType)
     {
@@ -121,7 +137,7 @@ public class ChainCapabilityFlagInvariantTests
             .First();
 
         var args = ctor.GetParameters()
-            .Select(p => MockFor(p.ParameterType))
+            .Select(p => p.HasDefaultValue ? p.DefaultValue : MockFor(p.ParameterType))
             .ToArray();
 
         return (IActionNodeHandler)ctor.Invoke(args);

@@ -8,7 +8,7 @@ graph LR
     %%   action_templates: action_node_template, action_template
     %%   bridge: action_webhook_event, bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, node_fee_atomic_group, node_fee_settlement, operation_log, saga_steps, webhook_registration
     %%   dapp_composition: dapp_series, dapp_series_action, ecosystem, ecosystem_node
-    %%   identity: admin_bootstrap_state, api_key, consent_audit, consent_grant, holon, holon_type_registry, hosted_session, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, oauth_exchange_code, star_odk, tenant_kyc_provider_selection, user, user_external_login, wallet_auth_challenge, wallet_auth_claim_token
+    %%   identity: admin_bootstrap_state, api_key, consent_audit, consent_grant, holon, holon_type_registry, hosted_session, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, oauth_exchange_code, person_operation_claim, star_odk, tenant_kyc_provider_selection, user, user_external_login, wallet_auth_challenge, wallet_auth_claim_token
     %%   wallet_nft: nft_ownership, swap_state, wallet
     %% 
     %% Enums:
@@ -17,9 +17,9 @@ graph LR
     %%   action_access_request.status: Pending, Approved, Rejected, Withdrawn  (ActionAccessRequest.ActionAccessRequestStatusKind)
     %%   action_dependency.dependency_type: Required, Optional  (ActionDependency.ActionDependencyTypeKind)
     %%   action_edge.edge_type: Control, Conditional, OnFailure  (ActionEdge.ActionEdgeTypeKind)
-    %%   action_node.node_type: HolonCreate, HolonUpdate, HolonDelete, HolonGet, HolonQuery, HolonInteract, HolonGetChildren, HolonGetPeers, HolonGetAncestors, HolonGetDescendants, HolonPropagate, HolonCompose, HolonClone, HolonMoveSubtree, NftMint, NftTransfer, NftBurn, NftGet, NftQuery, NftGetMetadata, WalletCreate, WalletUpdate, WalletDelete, WalletGet, WalletQuery, WalletSetDefault, WalletGetPortfolio, StarGenerate, StarDeploy, Search, UserNFTGetComposite, BlockchainExecute, Condition, ComposeOutputs, GateCheck, Emit, Swap, Grant, Transfer, Refund, FungibleTokenCreate  (ActionNode.ActionNodeTypeKind)
+    %%   action_node.node_type: HolonCreate, HolonUpdate, HolonDelete, HolonGet, HolonQuery, HolonInteract, HolonGetChildren, HolonGetPeers, HolonGetAncestors, HolonGetDescendants, HolonPropagate, HolonCompose, HolonClone, HolonMoveSubtree, NftMint, NftTransfer, NftBurn, NftGet, NftQuery, NftGetMetadata, WalletCreate, WalletUpdate, WalletDelete, WalletGet, WalletQuery, WalletSetDefault, WalletGetPortfolio, StarGenerate, StarDeploy, Search, UserNFTGetComposite, BlockchainExecute, Condition, ComposeOutputs, GateCheck, Emit, Swap, Grant, Transfer, Refund, FungibleTokenCreate, Bridge, Back, CredentialRevoke, GovernanceProposalCreate, GovernanceVote, GovernanceTally, LoanOpen, LoanRepaymentRecord, LoanBalance  (ActionNode.ActionNodeTypeKind)
     %%   action_node_execution.state: Pending, Running, Succeeded, Failed, Skipped, Cancelled  (ActionNodeExecution.ActionNodeState)
-    %%   action_node_template.node_type: HolonCreate, HolonUpdate, HolonDelete, HolonGet, HolonQuery, HolonInteract, HolonGetChildren, HolonGetPeers, HolonGetAncestors, HolonGetDescendants, HolonPropagate, HolonCompose, HolonClone, HolonMoveSubtree, NftMint, NftTransfer, NftBurn, NftGet, NftQuery, NftGetMetadata, WalletCreate, WalletUpdate, WalletDelete, WalletGet, WalletQuery, WalletSetDefault, WalletGetPortfolio, StarGenerate, StarDeploy, Search, UserNFTGetComposite, BlockchainExecute, Condition, ComposeOutputs, GateCheck, Emit, Swap, Grant, Transfer, Refund, FungibleTokenCreate  (ActionNodeTemplate.NodeTypeKind)
+    %%   action_node_template.node_type: HolonCreate, HolonUpdate, HolonDelete, HolonGet, HolonQuery, HolonInteract, HolonGetChildren, HolonGetPeers, HolonGetAncestors, HolonGetDescendants, HolonPropagate, HolonCompose, HolonClone, HolonMoveSubtree, NftMint, NftTransfer, NftBurn, NftGet, NftQuery, NftGetMetadata, WalletCreate, WalletUpdate, WalletDelete, WalletGet, WalletQuery, WalletSetDefault, WalletGetPortfolio, StarGenerate, StarDeploy, Search, UserNFTGetComposite, BlockchainExecute, Condition, ComposeOutputs, GateCheck, Emit, Swap, Grant, Transfer, Refund, FungibleTokenCreate, Bridge, Back, CredentialRevoke, GovernanceProposalCreate, GovernanceVote, GovernanceTally, LoanOpen, LoanRepaymentRecord, LoanBalance  (ActionNodeTemplate.NodeTypeKind)
     %%   action_run.status: Pending, Running, Succeeded, Failed, Forked, Cancelled, Suspended, AwaitingSignal, AwaitingTimer, AwaitingReconciliation  (ActionRun.ActionRunStatusKind)
     %%   action_webhook_event.status: Pending, Delivered, DeadLettered  (ActionWebhookEvent.DeliveryStatus)
     %%   bridge_tx.mode: Trusted, Wormhole  (BridgeTx.ModeKind)
@@ -117,6 +117,7 @@ graph LR
         node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
         node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
         oauth_exchange_code["oauth_exchange_code: Node"]:::nodeClass
+        person_operation_claim["person_operation_claim: Node"]:::nodeClass
         star_odk["star_odk: Node"]:::nodeClass
         tenant_kyc_provider_selection["tenant_kyc_provider_selection: Node"]:::nodeClass
         user["user: Node"]:::nodeClass
@@ -199,6 +200,7 @@ graph LR
     kyc_screening_result -- "tenant_id [N:0..1]" --> user
     kyc_submission -- "tenant_id [N:0..1]" --> user
     kyc_submission -- "user_id [N:0..1]" --> user
+    nft_ownership -- "issuer_user_id [N:0..1]" --> user
     nft_ownership -- "user_id [N:1]" --> user
     node_fee_atomic_group -- "settlement_id [N:1]" --> node_fee_settlement
     node_fee_audit -- "actor_user_id [N:1]" --> user
@@ -219,6 +221,7 @@ graph LR
     operation_log -- "initiator_user_id [N:0..1]" --> user
     operation_log -- "user_id [N:0..1]" --> user
     operation_log -- "wallet_id [N:0..1]" --> wallet
+    person_operation_claim -- "tenant_id [N:0..1]" --> user
     star_odk -- "user_id [N:0..1]" --> user
     swap_state -- "user_id [N:1]" --> user
     tenant_kyc_provider_selection -- "tenant_id [N:1]" --> user

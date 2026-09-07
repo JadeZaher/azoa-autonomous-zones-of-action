@@ -76,6 +76,21 @@ public static class ActionNodeConfigRegistry
             // Fractionalization rails (final-hardening D1) — route through the real bridge.
             [ActionNodeType.Bridge]               = typeof(BridgeNodeConfig),
             [ActionNodeType.Back]                 = typeof(BackNodeConfig),
+
+            // Phase 5 D19 verifiable-credential rail (Tier-2, reaches an ASA clawback).
+            [ActionNodeType.CredentialRevoke]     = typeof(CredentialRevokeNodeConfig),
+
+            // Phase 5 D20 governance rails (Tier-1, pure holon state).
+            // These three config records are declared beside their handlers, so they
+            // live in the Handlers namespace rather than Models/Actions/NodeConfigs.cs.
+            [ActionNodeType.GovernanceProposalCreate] = typeof(Handlers.GovernanceProposalCreateNodeConfig),
+            [ActionNodeType.GovernanceVote]           = typeof(Handlers.GovernanceVoteNodeConfig),
+            [ActionNodeType.GovernanceTally]          = typeof(Handlers.GovernanceTallyNodeConfig),
+
+            // Phase 5 D21 credit rails (Tier-1, pure holon state).
+            [ActionNodeType.LoanOpen]             = typeof(LoanOpenNodeConfig),
+            [ActionNodeType.LoanRepaymentRecord]  = typeof(LoanRepaymentRecordNodeConfig),
+            [ActionNodeType.LoanBalance]          = typeof(LoanBalanceNodeConfig),
         };
 
     /// <summary>

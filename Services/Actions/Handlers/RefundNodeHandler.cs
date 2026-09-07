@@ -23,16 +23,26 @@ namespace AZOA.WebAPI.Services.Actions.Handlers;
 /// See Services/Actions/AGENTS.md §refund-linkage.
 /// </para>
 /// <para>
-/// Soulbound assets fail closed: a true clawback of a non-transferable asset
-/// needs a clawback primitive (deferred to H2 / signing D7), so the reversal is
-/// refused with a clear message rather than silently no-op'd.
+/// Soulbound assets still fail closed here, but no longer for want of a primitive:
+/// the clawback primitive exists (D19, <c>ActionNodeType.CredentialRevoke</c>). A
+/// Refund is the WRONG authority for it — a refund reverses a debit for the run
+/// actor, while a clawback is exercised by the credential's ISSUER against a holder
+/// who did not consent. Letting Refund reach the clawback path would hand every
+/// runner an issuer's power over an asset they merely received. Route soulbound
+/// reversals through a CredentialRevoke node instead.
 /// </para>
 /// Requires a chain capability.
 /// </summary>
 public sealed class RefundNodeHandler : IActionNodeHandler
 {
+    /// <summary>
+    /// Refusal message for a soulbound reversal. The behaviour is unchanged (fail
+    /// closed); only the reason is now accurate — the clawback primitive shipped with
+    /// D19, and a Refund is simply not authorised to use it.
+    /// </summary>
     private const string ClawbackDeferredMessage =
-        "soulbound reversal requires clawback primitive — deferred (H2 / signing D7)";
+        "soulbound reversal is not a Refund — the clawback primitive shipped with D19 and is " +
+        "exercised by the credential's ISSUER (use a CredentialRevoke node), not by the run actor";
 
     private readonly INftManager _nftManager;
 

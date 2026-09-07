@@ -66,6 +66,44 @@ not a config change — `person_key_version` exists to make such a rotation audi
 carry the same node-operator-only exclusion. `hosted_session` is the generic
 (non-KYC) durable admission record; see `Services/HostedSessions/AGENTS.md`.
 
+## §person-operation-claim
+
+`person_operation_claim` is the D3 per-operation Sybil ledger: one row per
+`(uniqueness_scope, operation_key, person_key)` triple, unique on exactly that.
+It is **node-operator-only** and carries the same structural exclusion as
+`kyc_identity` — absent from `SearchableEntityType`, from `HolonQueryRequest`
+(which exposes no table selector at all), and from the MCP `user_scoped_query`
+allow-list. `PersonUniquenessGateTests` asserts all three for BOTH tables,
+because a perfect denial message is worthless if a consumer can list the table
+and read a person key it did not create.
+
+**It stores a person KEY and nothing else about the human.** No first/last name,
+birthday, citizenship, or document field may ever be added: one joinable
+attribute here re-identifies the whole pseudonymous claim trail.
+
+`uniqueness_scope` is a tenant `Guid('N')` by default and the node-global
+sentinel only on an explicit per-operation opt-in, mirroring `kyc_identity`'s
+`tenant_scope`. The scope also chooses which key is stored — `person_key` for a
+tenant claim, `global_person_key` for a node-global one — so the two domains can
+never collide inside one row.
+
+`Id` is a deterministic length-prefixed SHA-256 over the triple, so an upsert
+converges on one row and the record id and the unique index always agree. The
+length prefixes matter: a bare concatenation lets `("a","bc")` and `("ab","c")`
+collide, which here would silently merge two operations' uniqueness domains.
+The recipe mirrors `KycPersonKeyDeriver.RecordId` but is implemented locally so a
+persistence POCO takes no dependency on a service.
+
+`released_at` is the compensation stamp. A released claim no longer blocks, so a
+runner whose side effect failed is not locked out by a claim that bought nothing;
+the row survives as the audit trail of the attempt. The non-unique
+`(uniqueness_scope, operation_key)` index exists for operator audit only.
+
+`kyc_identity` gains `kyc_identity_scope_users` on `(tenant_scope, user_ids)` for
+the same feature: SurrealDB indexes array fields elementwise, so that index serves
+the `$user INSIDE user_ids` reverse lookup the gate needs to turn an acting user
+into a person key.
+
 ## node-operator-governance
 
 `NodeGovernanceParameters` is a singleton local policy row keyed by `local`.

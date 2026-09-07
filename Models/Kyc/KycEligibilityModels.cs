@@ -20,7 +20,22 @@ public enum KycIneligibilityCause
     PersonAlreadyBoundToAnotherUser,
 
     /// <summary>The binding exists but its personal fields were erased.</summary>
-    IdentityErased
+    IdentityErased,
+
+    /// <summary>
+    /// D3: this person already holds the per-operation claim, through this or
+    /// another user. Operator-only — telling a consumer would reveal that its
+    /// subject acted under a different user or tenant.
+    /// </summary>
+    PersonAlreadyClaimedOperation,
+
+    /// <summary>
+    /// The uniqueness check could not be answered: unconfigured key material, an
+    /// unusable operation key, or an unreachable store. Unavailability is a
+    /// DENIAL, not an outage signal — a 503 that appears only for already-claimed
+    /// people is the leak wearing a hat.
+    /// </summary>
+    UniquenessUnavailable
 }
 
 /// <summary>

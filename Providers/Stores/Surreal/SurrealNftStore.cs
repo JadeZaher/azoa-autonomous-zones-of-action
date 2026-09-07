@@ -4,6 +4,7 @@ using SurrealForge.Client;
 using SurrealForge.Client.Json;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
@@ -25,7 +26,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// UserNFT composite lookup: (ChainType, ContractAddress, TokenId) with
 /// <c>is_current = true</c> to select live ownership rows only.
 /// </summary>
-public sealed class SurrealNftStore : INftStore
+public sealed class SurrealNftStore : INftStore, ICredentialIssuerStore
 {
     private const string HolonBindingTable  = "holon_nft_binding";
     private const string WalletBindingTable = "wallet_nft_binding";
@@ -61,6 +62,38 @@ public sealed class SurrealNftStore : INftStore
 
             var saved  = resp.GetValues<GeneratedNft>(0).FirstOrDefault();
             var result = saved is not null ? FromPoco(saved) : userNFT;
+
+            // The issuance path, made real. issuer_user_id is the ONLY column the
+            // revocation authorization decision turns on, and ToNftPoco deliberately
+            // never writes it -- so without this call every soulbound credential is
+            // minted with a null issuer and the whole revocation rail is inert: every
+            // revoke dies at "no recorded issuer". This is its one production writer.
+            //
+            // Why userNFT.UserId is the ISSUER and not the D19-forbidden "issuer inferred
+            // from the holder": a soulbound row never changes hands. UserNFTService
+            // refuses to transfer one, so user_id stays the minting party for the row's
+            // whole life. The only writer that ever re-points it is
+            // RecordCredentialRevokedAsync below, and by the time that runs the issuer is
+            // already recorded, so the write-once guard inside SetIssuerUserIdAsync
+            // rejects any attempt to re-stamp from it. The forbidden inference is reading
+            // an issuer off current_owner at REVOKE time for an arbitrary row; that is
+            // still never done, and a row that reaches revoke with no issuer still fails
+            // closed.
+            if (userNFT.IsSoulbound && userNFT.UserId != Guid.Empty)
+            {
+                var stamped = await SetIssuerUserIdAsync(userNFT.Id, userNFT.UserId, ct);
+                if (stamped.IsError)
+                    return new AZOAResult<IUserNFT>
+                    {
+                        IsError = true,
+                        Result  = result,
+                        Message =
+                            $"Soulbound credential {userNFT.Id} was written but its issuer could not be "
+                          + $"recorded ({stamped.Message}). A credential with no recorded issuer is "
+                          + "permanently unrevocable, so the mint is reported as failed rather than "
+                          + "quietly issuing one nobody can ever revoke."
+                    };
+            }
 
             return new AZOAResult<IUserNFT> { Result = result, Message = "Saved." };
         }
@@ -371,6 +404,186 @@ public sealed class SurrealNftStore : INftStore
 
 
 
+    // ── ICredentialIssuerStore — the D19 issuer column ────────────────────────
+    // The issuer is read and written HERE rather than through the IUserNFT mapping
+    // below because IUserNFT carries no issuer property, and the only alternative
+    // carrier on that model — the caller-writable Attributes bag — would let a
+    // holder name themselves issuer and revoke their own credential. The column is
+    // the durable home; these two methods are its whole surface.
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<CredentialOwnershipRecord?>> FindCurrentByAssetIdAsync(
+        string chainType, string assetId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(chainType) || string.IsNullOrWhiteSpace(assetId))
+            return new AZOAResult<CredentialOwnershipRecord?>
+            {
+                IsError = true,
+                Message = "A chain type and asset id are required to look up a credential."
+            };
+
+        try
+        {
+            // Live ownership only: is_current = false rows are transfer history and
+            // must never authorize a revocation of the asset's present holder.
+            var q = SurrealQuery<GeneratedNft>.From()
+                .Where(n => n.ChainType == chainType)
+                .Where(n => n.TokenId   == assetId)
+                .Where(n => n.IsCurrent == true)
+                .Limit(1);
+
+            var rows = await _executor.QueryAsync<GeneratedNft>(q, ct);
+            var row  = rows.Count > 0 ? rows[0] : null;
+
+            return new AZOAResult<CredentialOwnershipRecord?>
+            {
+                Message = row is null ? "Credential not found." : "Success",
+                Result  = row is null ? null : ToCredentialRecord(row)
+            };
+        }
+        catch (Exception ex)
+        {
+            return new AZOAResult<CredentialOwnershipRecord?>().CaptureException(ex,
+                $"SurrealNftStore.FindCurrentByAssetIdAsync failed: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<bool>> SetIssuerUserIdAsync(
+        Guid credentialId, Guid issuerUserId, CancellationToken ct = default)
+    {
+        if (credentialId == Guid.Empty || issuerUserId == Guid.Empty)
+            return new AZOAResult<bool>
+            {
+                IsError = true,
+                Result = false,
+                Message = "A credential id and a non-empty issuer id are required."
+            };
+
+        try
+        {
+            // Targeted single-column UPDATE rather than a full-row upsert: the mint
+            // path stamps the issuer without having to round-trip (and therefore
+            // risk rewriting) every other column on the row.
+            //
+            // WHERE issuer_user_id IS NONE makes the column write-ONCE in the database
+            // itself, not merely by convention in the caller. The issuer decides who may
+            // claw a credential back, so a later write that re-pointed it -- from an
+            // ownership change, a metadata edit, or a racing request -- would hand the
+            // revocation authority to a different party.
+            var query = SurrealQuery
+                .Of("UPDATE type::record($_t, $_id) SET issuer_user_id = $_issuer WHERE issuer_user_id IS NONE RETURN AFTER")
+                .WithParam("_t", GeneratedNft.SchemaNameConst)
+                .WithParam("_id", SurrealId.ToSurrealId(credentialId))
+                .WithParam("_issuer", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(issuerUserId)));
+
+            var resp = await _executor.ExecuteAsync(query, ct);
+            resp.EnsureAllOk();
+
+            if (resp.GetValues<GeneratedNft>(0).FirstOrDefault() is not null)
+                return new AZOAResult<bool> { Result = true, Message = "Issuer recorded." };
+
+            // Zero rows matched: either the row does not exist, or it already carries an
+            // issuer. Read it to say WHICH -- re-stamping a DIFFERENT issuer is refused,
+            // but re-stamping the same one is the idempotent retry of a mint and must
+            // not fail it.
+            var existing = await _executor.QuerySingleAsync<GeneratedNft>(
+                SurrealQuery.SelectById(GeneratedNft.SchemaNameConst, SurrealId.ToSurrealId(credentialId)), ct);
+            if (existing is null)
+                return new AZOAResult<bool> { IsError = true, Result = false, Message = "Credential not found." };
+
+            return ParseUserLink(existing.IssuerUserId) == issuerUserId
+                ? new AZOAResult<bool> { Result = true, Message = "Issuer already recorded." }
+                : new AZOAResult<bool>
+                  {
+                      IsError = true,
+                      Result  = false,
+                      Message =
+                          $"Credential {credentialId} already records a different issuer. Refusing to "
+                        + "re-point the anchor that decides who may revoke it."
+                  };
+        }
+        catch (Exception ex)
+        {
+            return new AZOAResult<bool>().CaptureException(ex,
+                $"SurrealNftStore.SetIssuerUserIdAsync failed: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<bool>> RecordCredentialRevokedAsync(
+        Guid credentialId, Guid issuerUserId, string issuerAddress, CancellationToken ct = default)
+    {
+        if (credentialId == Guid.Empty || issuerUserId == Guid.Empty || string.IsNullOrWhiteSpace(issuerAddress))
+            return new AZOAResult<bool>
+            {
+                IsError = true,
+                Result  = false,
+                Message = "A credential id, an issuer, and the issuer's address are required to record a revocation."
+            };
+
+        try
+        {
+            // The SAME live row, re-pointed at the issuer -- NOT a new row and NOT
+            // is_current = false. A confirmed clawback MOVED the asset, it did not
+            // destroy it, so the (chain, contract, token_id, is_current = true) singleton
+            // must keep naming exactly one row or every credential read surface loses the
+            // asset entirely. issuer_user_id is untouched: the party that issued a
+            // credential does not change by taking it back.
+            var query = SurrealQuery
+                .Of("UPDATE type::record($_t, $_id) SET user_id = $_issuer, current_owner = type::string($_owner), last_transfer_date = time::now() RETURN AFTER")
+                .WithParam("_t", GeneratedNft.SchemaNameConst)
+                .WithParam("_id", SurrealId.ToSurrealId(credentialId))
+                .WithParam("_issuer", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(issuerUserId)))
+                .WithParam("_owner", issuerAddress.Trim());
+
+            var resp = await _executor.ExecuteAsync(query, ct);
+            resp.EnsureAllOk();
+
+            var saved = resp.GetValues<GeneratedNft>(0).FirstOrDefault();
+            return saved is null
+                ? new AZOAResult<bool> { IsError = true, Result = false, Message = "Credential not found." }
+                : new AZOAResult<bool> { Result = true, Message = "Ownership returned to the issuer." };
+        }
+        catch (Exception ex)
+        {
+            return new AZOAResult<bool>().CaptureException(ex,
+                $"SurrealNftStore.RecordCredentialRevokedAsync failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Projects the ownership POCO onto the credential view, issuer included.</summary>
+    private static CredentialOwnershipRecord ToCredentialRecord(GeneratedNft p) => new()
+    {
+        Id            = SurrealId.FromSurrealId(p.Id),
+        HolderUserId  = SurrealId.FromSurrealId(SurrealLink.FromLink(p.UserId)!),
+        HolderAddress = p.CurrentOwner,
+        IssuerUserId  = ParseUserLink(p.IssuerUserId),
+        IsSoulbound   = p.IsSoulbound,
+        ChainType     = p.ChainType,
+        TokenId       = p.TokenId,
+    };
+
+    /// <summary>
+    /// Reads an optional <c>user</c> record link as a Guid. Anything unreadable comes
+    /// back null so the caller fails closed rather than authorizing on a guess.
+    /// </summary>
+    private static Guid? ParseUserLink(string? link)
+    {
+        if (string.IsNullOrWhiteSpace(link)) return null;
+        var bare = SurrealLink.FromLink(link);
+        if (string.IsNullOrWhiteSpace(bare)) return null;
+        try
+        {
+            var id = SurrealId.FromSurrealId(bare);
+            return id == Guid.Empty ? null : id;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ── UserNFT mapping ─────────────────────────────────────────────────────
 
     private static GeneratedNft ToNftPoco(IUserNFT n)
@@ -398,6 +611,12 @@ public sealed class SurrealNftStore : INftStore
             IsTransferable    = n.IsTransferable,
             IsCurrent         = true,
             CurrentOwner      = n.CurrentOwner,
+            // IssuerUserId (D19) is deliberately LEFT NULL here and is NOT the
+            // §set-omits-null case above: SurrealWriter omits null option<> fields
+            // from the SET, so an ordinary UserNFT upsert (a transfer, a metadata
+            // edit) preserves whatever issuer the row already carries instead of
+            // wiping the authorization anchor. It is written only through
+            // ICredentialIssuerStore.SetIssuerUserIdAsync.
             IsActive          = n.IsActive,
             MintedDate        = new DateTimeOffset(
                                     DateTime.SpecifyKind(n.MintedDate, DateTimeKind.Utc)),
@@ -440,6 +659,10 @@ public sealed class SurrealNftStore : INftStore
             RoyaltyRecipient    = p.RoyaltyRecipient,
             IsSoulbound         = p.IsSoulbound,
             IsTransferable      = p.IsTransferable,
+            // IssuerUserId is not projected onto UserNFT: IUserNFT has no issuer
+            // property, and its only writable carrier (Attributes) is caller-supplied,
+            // which would make the revoke authorization forgeable by the holder. Read
+            // it through ICredentialIssuerStore.FindCurrentByAssetIdAsync instead.
             CurrentOwner        = p.CurrentOwner,
             IsActive            = p.IsActive,
             MintedDate          = p.MintedDate.UtcDateTime,

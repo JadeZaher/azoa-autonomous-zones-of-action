@@ -636,6 +636,13 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// two different assets and Deploy/Call move none, so they carry no single amount to
     /// price and are left unstamped rather than stamped with a half-truth.
     /// </summary>
+    /// <remarks>
+    /// Burn and Transfer read their quantity from the <c>Amount</c> parameter, and this path
+    /// takes NO fallback: the execution paths may default a missing amount (a transfer of one
+    /// asset), but a value stamp computed against a defaulted quantity is a fabricated figure
+    /// on a financial record. D16 is explicit that an absent value must read back as unpriced,
+    /// never as a real number, so an unreadable amount refuses the stamp instead.
+    /// </remarks>
     private static bool TryResolveStampableAmount(IBlockchainOperation operation, out RailAmount amount)
     {
         switch (operation.OperationType)
@@ -644,16 +651,24 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 amount = mint.Amount;
                 return true;
             case "Burn":
-                amount = ReadRailAmount(operation, fallback: 0);
-                return true;
             case "Transfer":
-                amount = ReadRailAmount(operation, fallback: 1);
-                return true;
+                return TryReadRailAmount(operation, out amount);
             default:
                 amount = RailAmount.Zero;
                 return false;
         }
     }
+
+    /// <summary>
+    /// The op's <c>Amount</c> parameter as a <see cref="RailAmount"/>, or <c>false</c> when it
+    /// is absent or unparseable. The refusing twin of <see cref="ReadRailAmount"/>, for the
+    /// value-stamp path where a defaulted count would become a real-looking fiat figure.
+    /// </summary>
+    private static bool TryReadRailAmount(IBlockchainOperation operation, out RailAmount amount) =>
+        RailAmount.TryParse(
+            operation.Parameters.GetValueOrDefault("Amount", string.Empty),
+            ValueDimension.NativeChainAsset,
+            out amount);
 
     /// <summary>
     /// Reads the value amount from the op's <c>Amount</c> parameter — a canonical

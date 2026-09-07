@@ -10,7 +10,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- ActionNode.ActionNodeTypeKind
-DEFINE PARAM IF NOT EXISTS $action_node_node_type VALUE ["HolonCreate", "HolonUpdate", "HolonDelete", "HolonGet", "HolonQuery", "HolonInteract", "HolonGetChildren", "HolonGetPeers", "HolonGetAncestors", "HolonGetDescendants", "HolonPropagate", "HolonCompose", "HolonClone", "HolonMoveSubtree", "NftMint", "NftTransfer", "NftBurn", "NftGet", "NftQuery", "NftGetMetadata", "WalletCreate", "WalletUpdate", "WalletDelete", "WalletGet", "WalletQuery", "WalletSetDefault", "WalletGetPortfolio", "StarGenerate", "StarDeploy", "Search", "UserNFTGetComposite", "BlockchainExecute", "Condition", "ComposeOutputs", "GateCheck", "Emit", "Swap", "Grant", "Transfer", "Refund", "FungibleTokenCreate"];
+DEFINE PARAM IF NOT EXISTS $action_node_node_type VALUE ["HolonCreate", "HolonUpdate", "HolonDelete", "HolonGet", "HolonQuery", "HolonInteract", "HolonGetChildren", "HolonGetPeers", "HolonGetAncestors", "HolonGetDescendants", "HolonPropagate", "HolonCompose", "HolonClone", "HolonMoveSubtree", "NftMint", "NftTransfer", "NftBurn", "NftGet", "NftQuery", "NftGetMetadata", "WalletCreate", "WalletUpdate", "WalletDelete", "WalletGet", "WalletQuery", "WalletSetDefault", "WalletGetPortfolio", "StarGenerate", "StarDeploy", "Search", "UserNFTGetComposite", "BlockchainExecute", "Condition", "ComposeOutputs", "GateCheck", "Emit", "Swap", "Grant", "Transfer", "Refund", "FungibleTokenCreate", "Bridge", "Back", "CredentialRevoke", "GovernanceProposalCreate", "GovernanceVote", "GovernanceTally", "LoanOpen", "LoanRepaymentRecord", "LoanBalance"];
 
 DEFINE TABLE IF NOT EXISTS action_node SCHEMAFULL;
 

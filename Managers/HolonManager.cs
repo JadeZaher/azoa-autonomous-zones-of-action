@@ -38,6 +38,31 @@ public class HolonManager : IHolonManager
     private static bool CanRead(IHolon holon, Guid? callerUserId) =>
         callerUserId.HasValue && holon.UserId == callerUserId.Value || holon.IsPublic;
 
+    // Publication allow-list. IsPublic is what CanRead above reads, so it makes a
+    // holon readable by EVERY caller on the node; this repo has leaked cross-tenant
+    // through generic read surfaces three times, so the flag is deliberately NOT a
+    // free consumer toggle. A type earns a place here only when the artefact is
+    // meaningless unless published: a governance proposal is the notice its
+    // electorate votes on, and an unpublished one cannot be voted on at all (D20).
+    //
+    // GovernanceVote is deliberately ABSENT. A public ballot carries Holon.UserId
+    // and would reconstitute the person-to-choice correlation the whole D20 design
+    // exists to prevent; the tally reads ballots through the privileged
+    // GovernanceBallotRoll and emits counts only. See
+    // Services/Governance/AGENTS.md #consumer-governance.
+    internal static readonly IReadOnlySet<string> PublishableAssetTypes =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            ConsumerGovernanceHolonTypes.ProposalAssetType,
+        };
+
+    // Refusal, never a silent drop: a caller that asked for a public holon and got a
+    // private one back would believe its audience can read it.
+    private static string? PublicationError(IHolon holon) =>
+        holon.IsPublic && (holon.AssetType is null || !PublishableAssetTypes.Contains(holon.AssetType))
+            ? $"Holon AssetType '{holon.AssetType ?? "(none)"}' may not be published."
+            : null;
+
     public async Task<AZOAResult<IHolon>> GetAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
     {
         var result = await _holonStore.GetByIdAsync(id, default);
@@ -81,8 +106,13 @@ public class HolonManager : IHolonManager
             AssetType = model.AssetType,
             TokenId = model.TokenId,
             Metadata = model.Metadata,
-            PeerHolonIds = model.PeerHolonIds
+            PeerHolonIds = model.PeerHolonIds,
+            IsPublic = model.IsPublic
         };
+
+        var publicationError = PublicationError(holon);
+        if (publicationError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = publicationError };
 
         // FR-6 / AC-6a: guard self-parent on create (descendant check is
         // vacuous for a brand-new holon, but self-parent is still a cycle).
@@ -136,7 +166,15 @@ public class HolonManager : IHolonManager
         }
         if (model.PeerHolonIds != null) holon.PeerHolonIds = model.PeerHolonIds;
         if (model.IsActive.HasValue) holon.IsActive = model.IsActive.Value;
+        if (model.IsPublic.HasValue) holon.IsPublic = model.IsPublic.Value;
         holon.ModifiedDate = DateTime.UtcNow;
+
+        // Checked against the POST-MERGE state: publishing as a proposal and then
+        // renaming the AssetType would otherwise leave a published holon of an
+        // unpublishable type.
+        var publicationError = PublicationError(holon);
+        if (publicationError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = publicationError };
 
         // F5 opt-in AssetType validation against the post-merge type + metadata.
         var governanceError = await EnsureGovernedAssetTypeAllowedAsync(holon.AssetType, "holon:update");

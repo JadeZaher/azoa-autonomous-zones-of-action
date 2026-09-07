@@ -149,6 +149,38 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
         }
     }
 
+    public async Task<AZOAResult<KycIdentity?>> GetByUserAsync(
+        string tenantScope,
+        string userId,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            // user_ids is an array; SurrealDB indexes array fields elementwise, so
+            // kyc_identity_scope_users serves this INSIDE predicate directly.
+            var query = SurrealQuery
+                .Of("SELECT * FROM type::table($_t) WHERE tenant_scope = $_scope AND $_user_id INSIDE user_ids LIMIT 1")
+                .WithParam("_t", KycIdentity.SchemaNameConst)
+                .WithParam("_scope", tenantScope)
+                .WithParam("_user_id", userId);
+
+            var row = await _executor.QuerySingleAsync<KycIdentity>(query, ct);
+            return new AZOAResult<KycIdentity?>
+            {
+                Message = row is null ? "No identity binding found." : "Success",
+                Result = row is null ? null : FromStorage(row),
+            };
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return StoreFailure<KycIdentity?>(exception, nameof(GetByUserAsync), tenantScope);
+        }
+    }
+
     public async Task<AZOAResult<IReadOnlyList<KycIdentity>>> GetByGlobalPersonKeyAsync(
         string globalPersonKey,
         CancellationToken ct = default)
