@@ -144,7 +144,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
 
         var wallet = walletResult.Result;
 
-        // 2. IDOR guard — caller-supplied user identity is the authority (STARODK
+        // 2. IDOR guard — caller-supplied user identity is the authority (ActionGraphBundle
         //    precedent). Returns BEFORE any decrypt (mirror :313-314).
         if (wallet.UserId != userId)
         {

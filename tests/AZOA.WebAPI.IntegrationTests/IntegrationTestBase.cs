@@ -406,18 +406,18 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
             $"Wallet seed failed: {await response.Content.ReadAsStringAsync()}");
     }
 
-    protected async Task<STARODK> SeedSTARODKAsync(Action<STARODKBuilder>? configure = null)
+    protected async Task<ActionGraphBundle> SeedActionGraphBundleAsync(Action<ActionGraphBundleBuilder>? configure = null)
     {
-        var builder = new STARODKBuilder();
+        var builder = new ActionGraphBundleBuilder();
         configure?.Invoke(builder);
 
         var model = builder.BuildCreateModel();
-        var response = await Client.PostAsJsonAsync("api/starodk", model, JsonOptions);
-        await EnsureSeedSucceededAsync(response, "STARODK");
+        var response = await Client.PostAsJsonAsync("api/actiongraphbundle", model, JsonOptions);
+        await EnsureSeedSucceededAsync(response, "ActionGraphBundle");
 
-        var result = await response.Content.ReadFromJsonAsync<AZOAResult<STARODK>>(JsonOptions);
+        var result = await response.Content.ReadFromJsonAsync<AZOAResult<ActionGraphBundle>>(JsonOptions);
         return result?.Result ?? throw new InvalidOperationException(
-            $"STARODK seed failed: {await response.Content.ReadAsStringAsync()}");
+            $"ActionGraphBundle seed failed: {await response.Content.ReadAsStringAsync()}");
     }
 
     protected async Task<BlockchainOperation> SeedBlockchainOperationAsync(

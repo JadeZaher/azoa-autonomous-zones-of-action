@@ -14,13 +14,13 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealTable("dapp_series",
         Aggregate = "DappSeries (dapp-composition track -- new entity, no hand-written model)",
         Guardrail = "G6 SCHEMAFULL; greenfield entity introduced by the dapp-composition track. Owns the composed-action-series shape.")]
-    [SurrealNote("A DappSeries is a linked series of action DAGs that compose into a deployable dApp contract via STAR generation. Status transitions: Draft -> Building -> Ready -> Deployed -> Archived. The action entries are stored separately in dapp_series_action (table 220) keyed by dapp_series_id; they are queried + reordered independently of the parent.")]
+    [SurrealNote("A DappSeries is a linked series of action DAGs that compose into a deployable dApp contract via action graph bundle generation. Status transitions: Draft -> Building -> Ready -> Deployed -> Archived. The action entries are stored separately in dapp_series_action (table 220) keyed by dapp_series_id; they are queried + reordered independently of the parent.")]
     [SurrealNote("shared_config is a string->string map for cross-action deployment settings (e.g. chain, provider RPC URL). It is overlaid with each DappSeriesAction's input mappings to produce the per-action runtime config at execution time.")]
-    [SurrealNote("manifest stores the composed DappManifest as JSON-on-row (string-encoded). DappManifest is a transient artifact produced by ComposeAsync -- it is NOT a separate aggregate root because it is always read whole alongside its parent series. star_odk_id is populated by GenerateAsync after the STARODK record is created via ISTARManager.CreateOrUpdateAsync.")]
+    [SurrealNote("manifest stores the composed DappManifest as JSON-on-row (string-encoded). DappManifest is a transient artifact produced by ComposeAsync -- it is NOT a separate aggregate root because it is always read whole alongside its parent series. action_graph_bundle_id is populated by GenerateAsync after the ActionGraphBundle record is created via IActionGraphBundleManager.CreateOrUpdateAsync.")]
     [Slice("dapp_composition")]
     [Index("dapp_series_by_user", Fields = new[] { "user_id" })]
     [Index("dapp_series_by_status", Fields = new[] { "status" })]
-    [Index("dapp_series_by_star_odk", Fields = new[] { "star_odk_id" })]
+    [Index("dapp_series_by_action_graph_bundle", Fields = new[] { "action_graph_bundle_id" })]
     public partial class DappSeries : ISurrealRecord
     {
         public const string SchemaNameConst = "dapp_series";
@@ -60,9 +60,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Shared deployment config across all actions in the series (string->string map)")]
         public JsonElement SharedConfig { get; set; }
 
-        [FieldGroup("Linked STARODK.Id, populated by GenerateAsync (null until generation)")]
-        [References(typeof(StarOdk), Optional = true)]
-        public string? StarOdkId { get; set; }
+        [FieldGroup("Linked ActionGraphBundle.Id, populated by GenerateAsync (null until generation)")]
+        [References(typeof(ActionGraphBundle), Optional = true)]
+        public string? ActionGraphBundleId { get; set; }
 
         [FieldGroup("Deployment target chain (e.g. algorand-mainnet) -- nullable until set")]
         public string? TargetChain { get; set; }

@@ -8,7 +8,7 @@ This document covers two related asks:
 
 1. A **logout flow** for the Azoa frontend (and users in general).
 2. **API keys that let a user develop their own dApps** — a key grants
-   edit rights to *that user's own* resources (holons, actions, STAR-ODK),
+   edit rights to *that user's own* resources (holons, actions, action graph bundles),
    never platform admin and never another user's resources.
 
 It also folds in **4 access-control gaps** an authorization audit surfaced,
@@ -50,7 +50,7 @@ because two of them sit directly in the API-key blast radius.
 
 ### dApp concept
 - **No OAuth client / app-registration entity exists.** `DappSeries`
-  (`Persistence/SurrealDb/Models/DappSeries.cs:50`) is the "STAR-ODK + action series"
+  (`Persistence/SurrealDb/Models/DappSeries.cs:50`) is the "action graph bundle + action series"
   aggregate, **user-owned**, and is the natural "dApp" boundary.
 - **Tenant/ConsentGrant is a two-party delegation primitive** ("custodian acts on
   another user's resources with consent"); a tenant has **zero standing authority**

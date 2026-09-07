@@ -421,25 +421,25 @@ Two callers:
   neither the publish/unpublish/status-transition methods nor `TryConfirmActionStateAsync`
   — those are the F6 seams.
 
-## §ecosystem-tree — STARManager ecosystem tree + tree-walking codegen (D2)
+## §ecosystem-tree — ActionGraphBundleManager ecosystem tree + tree-walking codegen (D2)
 
 **final-hardening-cutover Phase D / D2** (absorbs `star-odk-ecosystem-tree`). A
-STARODK owns an **Ecosystem**: a TREE of `EcosystemNode`s, each attaching a
-`DappSeries` (or a nested STARODK) as a composable dApp. Storage POCOs:
+ActionGraphBundle owns an **Ecosystem**: a TREE of `EcosystemNode`s, each attaching a
+`DappSeries` (or a nested ActionGraphBundle) as a composable dApp. Storage POCOs:
 `Persistence/SurrealDb/Models/{Ecosystem,EcosystemNode}.cs`; store
 `IEcosystemStore` / `SurrealEcosystemStore`. Domain shapes (Guid-typed) live in
 `Models/Ecosystem/EcosystemModels.cs`.
 
-**Tree modelling.** `Ecosystem` is the root record (one per STARODK, keyed by
-`star_odk_id`). `EcosystemNode.parent_node_id` self-references to form the tree;
+**Tree modelling.** `Ecosystem` is the root record (one per ActionGraphBundle, keyed by
+`action_graph_bundle_id`). `EcosystemNode.parent_node_id` self-references to form the tree;
 `parent_node_id == null` means the node hangs directly off the ecosystem root.
 `ref_kind` + `ref_id` name the attached entity — `ref_id` is a **polymorphic**
-Guid('N') hex (a DappSeries.Id OR a STARODK.Id), NOT a typed `record<>` FK,
+Guid('N') hex (a DappSeries.Id OR an ActionGraphBundle.Id), NOT a typed `record<>` FK,
 because SurrealDB `record<>` columns are single-table.
 
-**IDOR.** `AddDappSeriesAsync` / `GetEcosystemAsync` scope by route STARODK id +
-authenticated `userId` (STARODK precedent, `§`-less: same `IsOwnedBy` guard as
-`CreateOrUpdateAsync`). The attached DappSeries/STARODK is **re-validated** to be
+**IDOR.** `AddDappSeriesAsync` / `GetEcosystemAsync` scope by route ActionGraphBundle id +
+authenticated `userId` (ActionGraphBundle precedent, `§`-less: same `IsOwnedBy` guard as
+`CreateOrUpdateAsync`). The attached DappSeries/ActionGraphBundle is **re-validated** to be
 owned by the same user (`ValidateRefOwnershipAsync`) — a caller cannot attach
 another user's series. No owner id is ever read from the request body.
 
@@ -451,7 +451,7 @@ sets `cycleError` and the operation fails. `AddDappSeriesAsync` also rejects a
 
 **Tree-walking codegen.** `GenerateEcosystemCode` composes the single-dApp
 descriptor (`GenerateDappCode` shape) across the whole tree depth-first
-(`WalkNode`) into one composed JSON artifact stored on the owning STARODK's
+(`WalkNode`) into one composed JSON artifact stored on the owning ActionGraphBundle's
 `GeneratedCode`. It regenerates on every attach. **Value caveat:** the descriptor
 records the target chain but does NOT itself move value; real cross-chain value in
 the composed tree flows through the Phase-B bridge — **Algorand real, Solana

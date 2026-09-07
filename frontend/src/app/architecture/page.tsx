@@ -125,11 +125,11 @@ export default function Architecture() {
 
       <section className="az-arch-section">
         <div className="az-arch-grid">
-          <div className="az-kicker">05 — STAR</div>
+          <div className="az-kicker">05 — BUNDLES</div>
           <div className="az-arch-body">
             <h2 className="az-arch-h2">From primitive to product.</h2>
             <p>
-              STAR generates and deploys whole applications on top of the identity and action layers. A new marketplace, a co-op ledger, a game economy — scaffolded from the primitives instead of rebuilt from scratch. New chains, new exchanges, new settlement partners, and new step types all plug in through the same open interfaces.
+              An action graph bundle generates and deploys whole applications on top of the identity and action layers. A new marketplace, a co-op ledger, a game economy — scaffolded from the primitives instead of rebuilt from scratch. New chains, new exchanges, new settlement partners, and new step types all plug in through the same open interfaces.
             </p>
           </div>
         </div>

@@ -99,34 +99,34 @@
 {"id":"qa_holon_cleanup_user","description":"Delete QA holon user","method":"DELETE","path":"/api/user/{{qaHUser.userId}}","headers":{"Authorization":"Bearer {{qaHAuth.token}}"},"expectedStatus":200}
 
 
-# ─── STAR ODK EDGE CASES ───────────────────────────────────────
-{"id":"qa_star_seed","description":"Seed user for QA STAR tests","method":"POST","path":"/api/user/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qastar","email":"{{suitePrefix}}_qastar@test.azoa","password":"TestPass123!","firstName":"Star","lastName":"QA"},"expectedStatus":200,"extract":{"userId":"result.id"},"saveAs":"qaSUser"}
-{"id":"qa_star_login","description":"Login seeded user","method":"POST","path":"/api/user/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qastar@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaSAuth"}
+# ─── action graph bundle EDGE CASES ───────────────────────────────────────
+{"id":"qa_bundle_seed","description":"Seed user for QA action graph bundle tests","method":"POST","path":"/api/user/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qabundle","email":"{{suitePrefix}}_qabundle@test.azoa","password":"TestPass123!","firstName":"ActionGraphBundle","lastName":"QA"},"expectedStatus":200,"extract":{"userId":"result.id"},"saveAs":"qaSUser"}
+{"id":"qa_bundle_login","description":"Login seeded user","method":"POST","path":"/api/user/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qabundle@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaSAuth"}
 
 # Boundary: create ODK with empty name
-{"id":"qa_star_empty_name","description":"Create STAR ODK with empty name should fail","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaSAuth.token}}"},"body":{"name":"","description":"No name","userId":"{{qaSUser.userId}}"},"expectedStatus":400}
+{"id":"qa_bundle_empty_name","description":"Create action graph bundle with empty name should fail","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaSAuth.token}}"},"body":{"name":"","description":"No name","userId":"{{qaSUser.userId}}"},"expectedStatus":400}
 
 # Boundary: create ODK with minimal fields
-{"id":"qa_star_minimal","description":"Create STAR ODK with minimal fields","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaSAuth.token}}"},"body":{"name":"MinimalODK","description":"Minimal","userId":"{{qaSUser.userId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"qaOdk1"}
+{"id":"qa_bundle_minimal","description":"Create action graph bundle with minimal fields","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaSAuth.token}}"},"body":{"name":"MinimalODK","description":"Minimal","userId":"{{qaSUser.userId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"qaOdk1"}
 
 # Boundary: create ODK without userId
-{"id":"qa_star_no_user","description":"Create STAR ODK without userId","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaSAuth.token}}"},"body":{"name":"NoUserODK","description":"No user link"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"qaOdk2"}
+{"id":"qa_bundle_no_user","description":"Create action graph bundle without userId","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaSAuth.token}}"},"body":{"name":"NoUserODK","description":"No user link"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"qaOdk2"}
 
 # Boundary: get ODK with random GUID
-{"id":"qa_star_get_random","description":"Get STAR ODK with random GUID should 404","method":"GET","path":"/api/starodk/44444444-4444-4444-4444-444444444444","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":404}
+{"id":"qa_bundle_get_random","description":"Get action graph bundle with random GUID should 404","method":"GET","path":"/api/actiongraphbundle/44444444-4444-4444-4444-444444444444","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":404}
 
 # Boundary: generate with empty targetChain
-{"id":"qa_star_gen_empty_chain","description":"Generate dApp with empty targetChain should fail","method":"POST","path":"/api/starodk/{{qaOdk1.odkId}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaSAuth.token}}"},"body":{"targetChain":"","boundHolonIds":[],"config":{}},"expectedStatus":400}
+{"id":"qa_bundle_gen_empty_chain","description":"Generate dApp with empty targetChain should fail","method":"POST","path":"/api/actiongraphbundle/{{qaOdk1.odkId}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaSAuth.token}}"},"body":{"targetChain":"","boundHolonIds":[],"config":{}},"expectedStatus":400}
 
 # Boundary: deploy non-existent ODK
-{"id":"qa_star_deploy_random","description":"Deploy random ODK should 404","method":"POST","path":"/api/starodk/55555555-5555-5555-5555-555555555555/deploy","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":404}
+{"id":"qa_bundle_deploy_random","description":"Deploy random ODK should 404","method":"POST","path":"/api/actiongraphbundle/55555555-5555-5555-5555-555555555555/deploy","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":404}
 
 # Boundary: delete ODK then get
-{"id":"qa_star_delete","description":"Delete ODK","method":"DELETE","path":"/api/starodk/{{qaOdk2.odkId}}","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":200}
-{"id":"qa_star_get_deleted","description":"Get deleted ODK should 404","method":"GET","path":"/api/starodk/{{qaOdk2.odkId}}","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":404}
+{"id":"qa_bundle_delete","description":"Delete ODK","method":"DELETE","path":"/api/actiongraphbundle/{{qaOdk2.odkId}}","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":200}
+{"id":"qa_bundle_get_deleted","description":"Get deleted ODK should 404","method":"GET","path":"/api/actiongraphbundle/{{qaOdk2.odkId}}","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":404}
 
 # Cleanup
-{"id":"qa_star_cleanup_user","description":"Delete QA STAR user","method":"DELETE","path":"/api/user/{{qaSUser.userId}}","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":200}
+{"id":"qa_bundle_cleanup_user","description":"Delete QA action graph bundle user","method":"DELETE","path":"/api/user/{{qaSUser.userId}}","headers":{"Authorization":"Bearer {{qaSAuth.token}}"},"expectedStatus":200}
 
 
 # ─── BLOCKCHAIN OPERATION EDGE CASES ───────────────────────────
@@ -203,23 +203,23 @@
 {"id":"qa_holon2_cleanup_user","description":"Delete extended holon user","method":"DELETE","path":"/api/user/{{qaH2User.userId}}","headers":{"Authorization":"Bearer {{qaH2Auth.token}}"},"expectedStatus":200}
 
 
-# ─── EXTENDED STAR ODK EDGE CASES ──────────────────────────────
-{"id":"qa_star2_seed","description":"Seed user for extended STAR QA","method":"POST","path":"/api/user/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qastar2","email":"{{suitePrefix}}_qastar2@test.azoa","password":"TestPass123!","firstName":"Star2","lastName":"QA"},"expectedStatus":200,"extract":{"userId":"result.id"},"saveAs":"qaS2User"}
-{"id":"qa_star2_login","description":"Login extended STAR user","method":"POST","path":"/api/user/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qastar2@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaS2Auth"}
+# ─── EXTENDED action graph bundle EDGE CASES ──────────────────────────────
+{"id":"qa_bundle2_seed","description":"Seed user for extended action graph bundle QA","method":"POST","path":"/api/user/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_qabundle2","email":"{{suitePrefix}}_qabundle2@test.azoa","password":"TestPass123!","firstName":"ActionGraphBundle2","lastName":"QA"},"expectedStatus":200,"extract":{"userId":"result.id"},"saveAs":"qaS2User"}
+{"id":"qa_bundle2_login","description":"Login extended action graph bundle user","method":"POST","path":"/api/user/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_qabundle2@test.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"qaS2Auth"}
 
 # Boundary: CreateOrUpdate update path (same name should update)
-{"id":"qa_star_create_update","description":"Create STAR ODK then update via same name","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaS2Auth.token}}"},"body":{"name":"UpdateableODK","description":"First version","userId":"{{qaS2User.userId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"qaOdkUpdate"}
-{"id":"qa_star_update_via_create","description":"CreateOrUpdate with same name updates","method":"POST","path":"/api/starodk","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaS2Auth.token}}"},"body":{"name":"UpdateableODK","description":"Second version","userId":"{{qaS2User.userId}}"},"expectedStatus":200}
+{"id":"qa_bundle_create_update","description":"Create action graph bundle then update via same name","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaS2Auth.token}}"},"body":{"name":"UpdateableODK","description":"First version","userId":"{{qaS2User.userId}}"},"expectedStatus":200,"extract":{"odkId":"result.id"},"saveAs":"qaOdkUpdate"}
+{"id":"qa_bundle_update_via_create","description":"CreateOrUpdate with same name updates","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaS2Auth.token}}"},"body":{"name":"UpdateableODK","description":"Second version","userId":"{{qaS2User.userId}}"},"expectedStatus":200}
 
 # Boundary: generate with empty boundHolonIds
-{"id":"qa_star_gen_empty_bounds","description":"Generate with empty boundHolonIds","method":"POST","path":"/api/starodk/{{qaOdkUpdate.odkId}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaS2Auth.token}}"},"body":{"targetChain":"Ethereum","boundHolonIds":[],"config":{}},"expectedStatus":200}
+{"id":"qa_bundle_gen_empty_bounds","description":"Generate with empty boundHolonIds","method":"POST","path":"/api/actiongraphbundle/{{qaOdkUpdate.odkId}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaS2Auth.token}}"},"body":{"targetChain":"Ethereum","boundHolonIds":[],"config":{}},"expectedStatus":200}
 
 # Boundary: generate with large config
-{"id":"qa_star_gen_large_config","description":"Generate with many config keys","method":"POST","path":"/api/starodk/{{qaOdkUpdate.odkId}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaS2Auth.token}}"},"body":{"targetChain":"Solana","boundHolonIds":[],"config":{"key1":"value1","key2":"value2","key3":"value3","key4":"value4","key5":"value5","theme":"dark","enableLogs":"true","rpcUrl":"https://rpc.example.com"}},"expectedStatus":200}
+{"id":"qa_bundle_gen_large_config","description":"Generate with many config keys","method":"POST","path":"/api/actiongraphbundle/{{qaOdkUpdate.odkId}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{qaS2Auth.token}}"},"body":{"targetChain":"Solana","boundHolonIds":[],"config":{"key1":"value1","key2":"value2","key3":"value3","key4":"value4","key5":"value5","theme":"dark","enableLogs":"true","rpcUrl":"https://rpc.example.com"}},"expectedStatus":200}
 
 # Cleanup
-{"id":"qa_star2_cleanup_odk","description":"Delete extended STAR ODK","method":"DELETE","path":"/api/starodk/{{qaOdkUpdate.odkId}}","headers":{"Authorization":"Bearer {{qaS2Auth.token}}"},"expectedStatus":200}
-{"id":"qa_star2_cleanup_user","description":"Delete extended STAR user","method":"DELETE","path":"/api/user/{{qaS2User.userId}}","headers":{"Authorization":"Bearer {{qaS2Auth.token}}"},"expectedStatus":200}
+{"id":"qa_bundle2_cleanup_odk","description":"Delete extended action graph bundle","method":"DELETE","path":"/api/actiongraphbundle/{{qaOdkUpdate.odkId}}","headers":{"Authorization":"Bearer {{qaS2Auth.token}}"},"expectedStatus":200}
+{"id":"qa_bundle2_cleanup_user","description":"Delete extended action graph bundle user","method":"DELETE","path":"/api/user/{{qaS2User.userId}}","headers":{"Authorization":"Bearer {{qaS2Auth.token}}"},"expectedStatus":200}
 
 
 # ─── EXTENDED BLOCKCHAIN OPERATION EDGE CASES ──────────────────

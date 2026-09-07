@@ -26,7 +26,7 @@ const ENTITY_TYPES = [
   { label: 'Holon', value: 'Holon', flag: 2 },
   { label: 'Wallet', value: 'Wallet', flag: 4 },
   { label: 'Blockchain Operation', value: 'BlockchainOperation', flag: 8 },
-  { label: 'STAR ODK', value: 'STARODK', flag: 16 },
+  { label: 'Action Graph Bundle', value: 'ActionGraphBundle', flag: 16 },
 ] as const
 
 const SORT_FIELDS = ['CreatedDate', 'Name']
@@ -57,7 +57,7 @@ function entityTypeBadgeClass(type: string) {
     case 'holon': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
     case 'wallet': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
     case 'blockchainoperation': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-    case 'starodk': return 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300'
+    case 'actiongraphbundle': return 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300'
     default: return 'bg-muted text-muted-foreground'
   }
 }
@@ -91,9 +91,9 @@ export default function SearchPage() {
     })
   }
 
-  // .NET SearchableEntityType is a flags enum: User=1, Holon=2, Wallet=4, BlockchainOperation=8, STARODK=16, All=31
+  // .NET SearchableEntityType is a flags enum: User=1, Holon=2, Wallet=4, BlockchainOperation=8, ActionGraphBundle=16, All=31
   const entityTypeFlags: Record<string, number> = {
-    User: 1, Holon: 2, Wallet: 4, BlockchainOperation: 8, STARODK: 16,
+    User: 1, Holon: 2, Wallet: 4, BlockchainOperation: 8, ActionGraphBundle: 16,
   }
   const buildEntityTypes = (): number | undefined => {
     if (selectedTypes.size === 0) return undefined

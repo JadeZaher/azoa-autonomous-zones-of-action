@@ -205,7 +205,7 @@ public class TenantController : ControllerBase
     /// <summary>
     /// The tenant id is the authenticated key's owner user id — ALWAYS from the
     /// claim, never from a request body. Mirrors
-    /// <c>STARODKController.GetUserIdFromClaims</c>.
+    /// <c>ActionGraphBundleController.GetUserIdFromClaims</c>.
     /// </summary>
     private Guid? GetTenantIdFromClaims()
     {

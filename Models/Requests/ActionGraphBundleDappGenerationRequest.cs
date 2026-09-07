@@ -1,6 +1,6 @@
 namespace AZOA.WebAPI.Models.Requests;
 
-public class STARDappGenerationRequest
+public class ActionGraphBundleDappGenerationRequest
 {
     public string TargetChain { get; set; } = string.Empty;
     public List<Guid> BoundHolonIds { get; set; } = new();

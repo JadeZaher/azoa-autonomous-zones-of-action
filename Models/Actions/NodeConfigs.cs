@@ -71,10 +71,10 @@ public class WalletSetDefaultNodeConfig
     public Guid WalletId { get; set; }
 }
 
-public class StarGenerateNodeConfig
+public class ActionGraphBundleGenerateNodeConfig
 {
-    public Guid StarId { get; set; }
-    public STARDappGenerationRequest Request { get; set; } = new();
+    public Guid ActionGraphBundleId { get; set; }
+    public ActionGraphBundleDappGenerationRequest Request { get; set; } = new();
 }
 
 /// <summary>

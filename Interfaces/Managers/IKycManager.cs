@@ -8,8 +8,8 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 /// <summary>
 /// Discriminator the controller uses to translate a manager auth failure into
 /// the right HTTP status without parsing a free-text <c>Message</c>. Carried via
-/// the <see cref="AZOAResult{T}.Message"/> prefix — the same pattern STARODK
-/// uses (<see cref="STARODKAuthorizationError"/>).
+/// the <see cref="AZOAResult{T}.Message"/> prefix — the same pattern ActionGraphBundle
+/// uses (<see cref="ActionGraphBundleAuthorizationError"/>).
 /// </summary>
 public static class KycAuthorizationError
 {

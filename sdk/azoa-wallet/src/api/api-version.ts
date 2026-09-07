@@ -25,7 +25,7 @@ export type ApiController =
   | "bridge"
   | "search"
   | "blockchainoperation"
-  | "starodk"
+  | "actiongraphbundle"
   | "action"
   | "apikey"
   | "dappseries"

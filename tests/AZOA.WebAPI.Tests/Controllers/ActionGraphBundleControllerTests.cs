@@ -12,17 +12,17 @@ using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Tests.Controllers;
 
-public class STARODKControllerTests
+public class ActionGraphBundleControllerTests
 {
     private static readonly Guid AuthenticatedUserId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
-    private readonly Mock<ISTARManager> _manager;
-    private readonly STARODKController _controller;
+    private readonly Mock<IActionGraphBundleManager> _manager;
+    private readonly ActionGraphBundleController _controller;
 
-    public STARODKControllerTests()
+    public ActionGraphBundleControllerTests()
     {
-        _manager = new Mock<ISTARManager>();
-        _controller = new STARODKController(_manager.Object);
+        _manager = new Mock<IActionGraphBundleManager>();
+        _controller = new ActionGraphBundleController(_manager.Object);
         // Inject a ClaimsPrincipal so GetUserIdFromClaims() resolves.
         _controller.ControllerContext = new ControllerContext
         {
@@ -41,7 +41,7 @@ public class STARODKControllerTests
     {
         var id = Guid.NewGuid();
         _manager.Setup(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
 
         var result = await _controller.Get(id, null);
 
@@ -53,7 +53,7 @@ public class STARODKControllerTests
     {
         var id = Guid.NewGuid();
         _manager.Setup(m => m.GetAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Result = null });
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true, Result = null });
 
         var result = await _controller.Get(id, null);
 
@@ -64,7 +64,7 @@ public class STARODKControllerTests
     public async Task GetAll_ReturnsOk()
     {
         _manager.Setup(m => m.GetAllAsync(It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = Array.Empty<ISTARODK>() });
+                .ReturnsAsync(new AZOAResult<IEnumerable<IActionGraphBundle>> { Result = Array.Empty<IActionGraphBundle>() });
 
         var result = await _controller.GetAll(null);
 
@@ -74,9 +74,9 @@ public class STARODKControllerTests
     [Fact]
     public async Task CreateOrUpdate_Success_ReturnsOk()
     {
-        var model = new STARODKCreateModel { Name = "Test" };
+        var model = new ActionGraphBundleCreateModel { Name = "Test" };
         _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, null, It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
 
         var result = await _controller.CreateOrUpdate(model, null);
 
@@ -86,9 +86,9 @@ public class STARODKControllerTests
     [Fact]
     public async Task CreateOrUpdate_Error_ReturnsBadRequest()
     {
-        var model = new STARODKCreateModel();
+        var model = new ActionGraphBundleCreateModel();
         _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, null, It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Message = "boom" });
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true, Message = "boom" });
 
         var result = await _controller.CreateOrUpdate(model, null);
 
@@ -101,7 +101,7 @@ public class STARODKControllerTests
         // Wipe the principal -- simulate a request where no user claim is present.
         _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity());
 
-        var result = await _controller.CreateOrUpdate(new STARODKCreateModel(), null);
+        var result = await _controller.CreateOrUpdate(new ActionGraphBundleCreateModel(), null);
 
         result.Result.Should().BeOfType<UnauthorizedResult>();
     }
@@ -134,10 +134,10 @@ public class STARODKControllerTests
     public async Task Generate_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<STARDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
+        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
 
-        var result = await _controller.Generate(id, new STARDappGenerationRequest(), null);
+        var result = await _controller.Generate(id, new ActionGraphBundleDappGenerationRequest(), null);
 
         result.Result.Should().BeOfType<OkObjectResult>();
     }
@@ -146,10 +146,10 @@ public class STARODKControllerTests
     public async Task Generate_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<STARDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true });
+        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true });
 
-        var result = await _controller.Generate(id, new STARDappGenerationRequest(), null);
+        var result = await _controller.Generate(id, new ActionGraphBundleDappGenerationRequest(), null);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
     }
@@ -159,7 +159,7 @@ public class STARODKControllerTests
     {
         var id = Guid.NewGuid();
         _manager.Setup(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
 
         var result = await _controller.Deploy(id, null);
 
@@ -171,7 +171,7 @@ public class STARODKControllerTests
     {
         var id = Guid.NewGuid();
         _manager.Setup(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true });
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true });
 
         var result = await _controller.Deploy(id, null);
 
@@ -182,9 +182,9 @@ public class STARODKControllerTests
     public async Task Update_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        var model = new STARODKCreateModel { Name = "Updated" };
+        var model = new ActionGraphBundleCreateModel { Name = "Updated" };
         _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, id, It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
 
         var result = await _controller.Update(id, model, null);
 
@@ -195,9 +195,9 @@ public class STARODKControllerTests
     public async Task Update_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        var model = new STARODKCreateModel();
+        var model = new ActionGraphBundleCreateModel();
         _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, id, It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Message = "boom" });
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true, Message = "boom" });
 
         var result = await _controller.Update(id, model, null);
 
@@ -207,14 +207,14 @@ public class STARODKControllerTests
     [Fact]
     public async Task Update_ForbiddenMarker_Returns403()
     {
-        // Controller translates the STARODK_FORBIDDEN: prefix to 403 Forbidden.
+        // Controller translates the ActionGraphBundle_FORBIDDEN: prefix to 403 Forbidden.
         var id = Guid.NewGuid();
-        var model = new STARODKCreateModel { Name = "X" };
+        var model = new ActionGraphBundleCreateModel { Name = "X" };
         _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, id, It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK>
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle>
                 {
                     IsError = true,
-                    Message = STARODKAuthorizationError.Forbidden + "owned by another user"
+                    Message = ActionGraphBundleAuthorizationError.Forbidden + "owned by another user"
                 });
 
         var result = await _controller.Update(id, model, null);
@@ -227,12 +227,12 @@ public class STARODKControllerTests
     public async Task Update_NotFoundMarker_Returns404()
     {
         var id = Guid.NewGuid();
-        var model = new STARODKCreateModel { Name = "X" };
+        var model = new ActionGraphBundleCreateModel { Name = "X" };
         _manager.Setup(m => m.CreateOrUpdateAsync(model, AuthenticatedUserId, id, It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<ISTARODK>
+                .ReturnsAsync(new AZOAResult<IActionGraphBundle>
                 {
                     IsError = true,
-                    Message = STARODKAuthorizationError.NotFound + "no such record"
+                    Message = ActionGraphBundleAuthorizationError.NotFound + "no such record"
                 });
 
         var result = await _controller.Update(id, model, null);
@@ -245,7 +245,7 @@ public class STARODKControllerTests
     {
         _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity());
 
-        var result = await _controller.Update(Guid.NewGuid(), new STARODKCreateModel(), null);
+        var result = await _controller.Update(Guid.NewGuid(), new ActionGraphBundleCreateModel(), null);
 
         result.Result.Should().BeOfType<UnauthorizedResult>();
     }

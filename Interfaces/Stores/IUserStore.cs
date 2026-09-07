@@ -36,7 +36,7 @@ public interface IUserStore
     /// scoped to that tenant (<c>owner_tenant_id = tenant AND external_user_id =
     /// externalUserId</c>). Returns <c>Result == null</c> with no error when no
     /// match exists — the manager interprets that as "create new" (idempotency),
-    /// mirroring <see cref="ISTARStore.GetByNameAndUserAsync"/>.
+    /// mirroring <see cref="IActionGraphBundleStore.GetByNameAndUserAsync"/>.
     /// </summary>
     Task<AZOAResult<IUser>> GetByTenantAndExternalUserAsync(Guid tenantId, string externalUserId, CancellationToken ct = default);
 

@@ -136,9 +136,9 @@ public static class ActionNodeOutputSchema
             // Result = PortfolioResult
             [ActionNodeType.WalletGetPortfolio] = WrappedObject(),
 
-            // ── STAR operations (serialize whole AZOAResult<ISTARODK>) ──
-            [ActionNodeType.StarGenerate] = WrappedObject(),
-            [ActionNodeType.StarDeploy] = WrappedObject(),
+            // ── Action graph bundle operations (serialize whole AZOAResult<IActionGraphBundle>) ──
+            [ActionNodeType.ActionGraphBundleGenerate] = WrappedObject(),
+            [ActionNodeType.ActionGraphBundleDeploy] = WrappedObject(),
 
             // ── Search (serialize whole AZOAResult<SearchResult>) ──
             [ActionNodeType.Search] = WrappedObject(),

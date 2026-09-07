@@ -180,7 +180,7 @@ public class HolonBuilder
         };
 }
 
-public class STARODKBuilder
+public class ActionGraphBundleBuilder
 {
     private Guid _id = Guid.NewGuid();
     private string _name = "TestODK";
@@ -193,18 +193,18 @@ public class STARODKBuilder
     private string? _deploymentConfig;
     private bool _isActive = true;
 
-    public STARODKBuilder WithId(Guid id) { _id = id; return this; }
-    public STARODKBuilder WithName(string name) { _name = name; return this; }
-    public STARODKBuilder WithDescription(string description) { _description = description; return this; }
-    public STARODKBuilder ForUser(Guid userId) { _userId = userId; return this; }
-    public STARODKBuilder WithPublicKey(string key) { _publicKey = key; return this; }
-    public STARODKBuilder BoundTo(params Guid[] holonIds) { _boundHolonIds.AddRange(holonIds); return this; }
-    public STARODKBuilder Targeting(string chain) { _targetChain = chain; return this; }
-    public STARODKBuilder WithGeneratedCode(string code) { _generatedCode = code; return this; }
-    public STARODKBuilder WithDeploymentConfig(string config) { _deploymentConfig = config; return this; }
-    public STARODKBuilder Inactive() { _isActive = false; return this; }
+    public ActionGraphBundleBuilder WithId(Guid id) { _id = id; return this; }
+    public ActionGraphBundleBuilder WithName(string name) { _name = name; return this; }
+    public ActionGraphBundleBuilder WithDescription(string description) { _description = description; return this; }
+    public ActionGraphBundleBuilder ForUser(Guid userId) { _userId = userId; return this; }
+    public ActionGraphBundleBuilder WithPublicKey(string key) { _publicKey = key; return this; }
+    public ActionGraphBundleBuilder BoundTo(params Guid[] holonIds) { _boundHolonIds.AddRange(holonIds); return this; }
+    public ActionGraphBundleBuilder Targeting(string chain) { _targetChain = chain; return this; }
+    public ActionGraphBundleBuilder WithGeneratedCode(string code) { _generatedCode = code; return this; }
+    public ActionGraphBundleBuilder WithDeploymentConfig(string config) { _deploymentConfig = config; return this; }
+    public ActionGraphBundleBuilder Inactive() { _isActive = false; return this; }
 
-    public STARODK Build() =>
+    public ActionGraphBundle Build() =>
         new()
         {
             Id = _id,
@@ -219,7 +219,7 @@ public class STARODKBuilder
             IsActive = _isActive
         };
 
-    public STARODKCreateModel BuildCreateModel() =>
+    public ActionGraphBundleCreateModel BuildCreateModel() =>
         new()
         {
             Name = _name,
@@ -228,7 +228,7 @@ public class STARODKBuilder
             UserId = _userId
         };
 
-    public STARDappGenerationRequest BuildGenerationRequest() =>
+    public ActionGraphBundleDappGenerationRequest BuildGenerationRequest() =>
         new()
         {
             TargetChain = _targetChain ?? "Algorand",

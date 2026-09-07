@@ -77,6 +77,6 @@ Simple dot-notation supported: `result.id`, `result.0.name`, `data.items.2.token
 | `UserController.jsonl` | User register/login/CRUD/wallets | 11 |
 | `HolonController.jsonl` | Holon CRUD/interact lifecycle | 9 |
 | `BlockchainOperationController.jsonl` | Operation query by user | 6 |
-| `STARODKController.jsonl` | ODK create/get/generate/deploy/delete | 8 |
+| `ActionGraphBundleController.jsonl` | ODK create/get/generate/deploy/delete | 8 |
 
 Add new `.jsonl` files to `live-tests/` — they are picked up automatically.

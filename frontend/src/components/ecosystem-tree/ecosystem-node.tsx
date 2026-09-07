@@ -13,10 +13,10 @@ export interface EcosystemNodeData {
   [key: string]: unknown
 }
 
-/** DappSeries nodes are amber (STAR family); nested STARODK nodes are indigo. */
+/** DappSeries nodes are amber (bundle family); nested ActionGraphBundle nodes are indigo. */
 const KIND_COLOR: Record<string, { border: string; dot: string }> = {
   DappSeries: { border: 'border-l-amber-500', dot: 'bg-amber-500' },
-  StarOdk: { border: 'border-l-indigo-500', dot: 'bg-indigo-500' },
+  ActionGraphBundle: { border: 'border-l-indigo-500', dot: 'bg-indigo-500' },
 }
 
 /**

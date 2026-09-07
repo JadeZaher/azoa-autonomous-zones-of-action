@@ -31,7 +31,7 @@ public class NoInterestPrimitiveGuardTests
     /// <summary>
     /// Time-value vocabulary forbidden anywhere in this lane. Matched as case-insensitive
     /// substrings, which is why the scan is scoped to the lane's own surface: the wider
-    /// enum contains innocent members such as <c>StarGenerate</c> that contain "rate".
+    /// enum contains innocent members such as <c>ActionGraphBundleGenerate</c> that contain "rate".
     /// </summary>
     private static readonly string[] ForbiddenInLane =
     {

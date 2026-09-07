@@ -36,14 +36,14 @@ public partial class DappSeries
     }
 
     /// <summary>
-    /// Caller-friendly Guid view of <c>star_odk_id</c>. Null when the series
+    /// Caller-friendly Guid view of <c>action_graph_bundle_id</c>. Null when the series
     /// has not yet been generated.
     /// </summary>
     [NotMapped]
-    public Guid? StarOdkIdGuid
+    public Guid? ActionGraphBundleIdGuid
     {
-        get => string.IsNullOrEmpty(StarOdkId) ? null : Guid.ParseExact(StarOdkId, "N");
-        set => StarOdkId = value?.ToString("N");
+        get => string.IsNullOrEmpty(ActionGraphBundleId) ? null : Guid.ParseExact(ActionGraphBundleId, "N");
+        set => ActionGraphBundleId = value?.ToString("N");
     }
 
     /// <summary>

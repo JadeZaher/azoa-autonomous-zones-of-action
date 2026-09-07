@@ -49,9 +49,9 @@ public static class ActionNodeConfigRegistry
             [ActionNodeType.WalletSetDefault]     = typeof(WalletSetDefaultNodeConfig),
             [ActionNodeType.WalletGetPortfolio]   = typeof(IdConfig),
 
-            // STAR ops
-            [ActionNodeType.StarGenerate]         = typeof(StarGenerateNodeConfig),
-            [ActionNodeType.StarDeploy]           = typeof(IdConfig),
+            // Action graph bundle ops
+            [ActionNodeType.ActionGraphBundleGenerate]         = typeof(ActionGraphBundleGenerateNodeConfig),
+            [ActionNodeType.ActionGraphBundleDeploy]           = typeof(IdConfig),
 
             // Search / User NFT / Blockchain
             [ActionNodeType.Search]               = null,

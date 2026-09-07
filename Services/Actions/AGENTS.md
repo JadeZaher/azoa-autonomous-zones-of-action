@@ -514,7 +514,7 @@ code". The absence is enforced, not aspirational:
 `tests/AZOA.WebAPI.Tests/Lending/NoInterestPrimitiveGuardTests.cs` reflects over every
 type, member, parameter, persisted metadata key and output key in the lane, plus the
 `Loan*` members of `ActionNodeType`, and fails on any of those substrings. The scan is
-scoped to the lane on purpose: an enum-wide "rate" search would trip over `StarGenerate`.
+scoped to the lane on purpose: an enum-wide "rate" search would trip over `ActionGraphBundleGenerate`.
 
 **Partial repayment and write-off are ordinary states.** A repayment below the
 outstanding balance returns `Ok` and leaves the status `Open`; a write-off returns `Ok`

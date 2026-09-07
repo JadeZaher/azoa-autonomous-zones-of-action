@@ -15,7 +15,7 @@ It is built from three composable layers:
   (gates, transfers, swaps, grants, external calls) that survives restarts,
   reconciles against real-world truth before acting again, and never
   double-spends.
-- **Dapps (STAR)** — a generator that scaffolds and deploys applications on top
+- **Dapps (action graph bundles)** — a generator that scaffolds and deploys applications on top
   of the identity and action layers, so a new product doesn't rebuild the
   plumbing.
 
@@ -133,7 +133,7 @@ The repository includes unit, integration, schema-equivalence, and release-contr
 
 A quick orientation for contributors:
 
-- **.NET 10 WebAPI** — the AZOA protocol: identity, actions, holons, swaps, STAR,
+- **.NET 10 WebAPI** — the AZOA protocol: identity, actions, holons, swaps, action graph bundles,
   bridges. Dual auth (JWT + `X-Api-Key`).
 - **SurrealDB** — the sole data engine, via the `SurrealForge.*` packages.
   Real-world state (chain confirmations, settlement callbacks) is the source of
@@ -145,7 +145,7 @@ A quick orientation for contributors:
 ### Repo layout
 
 - `Controllers/`, `Managers/` — HTTP surface and business logic (identity,
-  actions, holons, swaps, STAR, bridge, …)
+  actions, holons, swaps, bundles, bridge, …)
 - `Core/` — primitives, base classes, auth handlers
 - `Providers/Blockchain/` — chain providers (Algorand, Solana, Ethereum, Simulated),
   the value-rail factory, and per-chain transaction signers

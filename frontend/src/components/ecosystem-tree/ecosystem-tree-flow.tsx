@@ -41,7 +41,7 @@ export interface EcosystemTree {
 
 const KIND_HEX: Record<string, string> = {
   DappSeries: '#f59e0b',
-  StarOdk: '#6366f1',
+  ActionGraphBundle: '#6366f1',
 }
 
 /** Flattens the recursive tree into React Flow nodes + parent→child edges. */
@@ -86,7 +86,7 @@ function flatten(roots: EcosystemTreeNode[]): {
 }
 
 /**
- * Read-only React Flow render of a STARODK ecosystem tree. Auto-lays-out with
+ * Read-only React Flow render of an ActionGraphBundle ecosystem tree. Auto-lays-out with
  * the action-builder's longest-path layering, so nesting depth reads top→bottom.
  */
 export function EcosystemTreeFlow({ tree }: { tree: EcosystemTree }) {

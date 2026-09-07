@@ -63,7 +63,7 @@ prefix rather than enumerated.
 | NodeOperatorController | `api/operator` | 9 |
 | NodeOperatorSessionController | `api/operator/session` | 2 |
 | NodeTransparencyController | `api/node-transparency` | 5 |
-| STARODKController | `api/starodk` | 9 |
+| ActionGraphBundleController | `api/actiongraphbundle` | 9 |
 | SagaOperatorController | `api/admin/sagas` | 3 |
 | SearchController | `api/search` | 2 |
 | SwapController | `api/swap` | 2 |
@@ -218,16 +218,16 @@ wire surface is unaffected by the C# suffix — do not add `-definition` to a ro
 ### SearchController
 - `POST /api/search` — Full-text search
 
-### STARODKController
-- `GET /api/starodk/{id}` — Get STARODK by ID
-- `GET /api/starodk` — List STARODK
-- `POST /api/starodk` — Create or update STARODK
-- `PUT /api/starodk/{id}` — Update STARODK (IDOR-resistant; see Auth & Safety)
-- `DELETE /api/starodk/{id}` — Delete STARODK
-- `POST /api/starodk/{id}/generate` — Generate the dapp (**not** `/generate-dapp`)
-- `POST /api/starodk/{id}/deploy` — Deploy
-- `GET /api/starodk/{id}/ecosystem` — Read the ecosystem tree
-- `POST /api/starodk/{id}/ecosystem/dapp-series` — Attach a series to the tree
+### ActionGraphBundleController
+- `GET /api/actiongraphbundle/{id}` — Get an action graph bundle by ID
+- `GET /api/actiongraphbundle` — List action graph bundles
+- `POST /api/actiongraphbundle` — Create or update an action graph bundle
+- `PUT /api/actiongraphbundle/{id}` — Update an action graph bundle (IDOR-resistant; see Auth & Safety)
+- `DELETE /api/actiongraphbundle/{id}` — Delete an action graph bundle
+- `POST /api/actiongraphbundle/{id}/generate` — Generate the dapp (**not** `/generate-dapp`)
+- `POST /api/actiongraphbundle/{id}/deploy` — Deploy
+- `GET /api/actiongraphbundle/{id}/ecosystem` — Read the ecosystem tree
+- `POST /api/actiongraphbundle/{id}/ecosystem/dapp-series` — Attach a series to the tree
 
 ### SwapController
 - `GET /api/swap/quote` — Get swap quote (query params: chain, tokenIn, tokenOut, amount, slippage)
@@ -255,7 +255,7 @@ tracked here — they went stale every track; read the interface in `Interfaces/
 | Group | Managers |
 |---|---|
 | Core domain | `ActionManager`, `HolonManager`, `HolonTypeRegistryManager`, `NftManager`, `UserManager`, `WalletManager`, `SearchManager`, `BlockchainOperationManager`, `SwapManager` |
-| Dapp / STAR | `DappCompositionManager`, `STARManager` |
+| Dapp / action graph bundle | `DappCompositionManager`, `ActionGraphBundleManager` |
 | Identity & consent | `ConsentManager`, `WalletAuthManager`, `TenantManager`, `TenantCustodialAccountManager` |
 | KYC control plane | `KycManager`, `KycControlPlaneManager` |
 | Value rail | `AllocationManager`, `AllocationReceiptManager`, `FungibleTokenManager`, `CredentialManager` |
@@ -287,7 +287,7 @@ Notable method families:
 
 **Action:** `createAction`, `getAction`, `listActionsByUser`, `updateAction`, `deleteAction`, `executeAction`, `executeActionNode`, `createActionTemplate`, `getActionTemplate`, `listActionTemplates`, `instantiateActionTemplate`
 
-**STARODK:** `getSTARODK`, `listSTARODK`, `createSTARODK`, `deleteSTARODK`, `generateSTARDapp`, `deploySTARODK`
+**ActionGraphBundle:** `getActionGraphBundle`, `listActionGraphBundle`, `createActionGraphBundle`, `deleteActionGraphBundle`, `generateActionGraphBundleDapp`, `deployActionGraphBundle`
 
 **UserNFT:** `mintUserNFT`, `getUserNFT`, `getUserNFTByToken`, `listUserNFTs`, `transferUserNFT`, `burnUserNFT`, `bindHolonToNFT`, `listNFTHolonBindings`, `updateHolonBinding`, `removeHolonBinding`, `bindWalletToNFT`, `listNFTWalletBindings`, `updateWalletBinding`, `removeWalletBinding`
 
@@ -413,7 +413,7 @@ Spine for replay safety on key endpoints. Client can supply `Idempotency-Key` he
 - `Secp256k1VaaSignatureVerifier` — Wormhole VAA verification
 - `ApiKeyAuthenticationHandler` — SHA-256 hashed key storage + per-request validation
 - `assertUuid` guards in SDK — prevents path traversal on all URL-interpolated IDs
-- STARODK upsert IDOR-resistance — STARODK upsert routes scope the lookup by route id + authenticated user identity; caller-supplied `model.UserId` on the body is ignored (closes IDOR surface caught by self-audit-one-fix)
+- Action graph bundle upsert IDOR-resistance — bundle upsert routes scope the lookup by route id + authenticated user identity; caller-supplied `model.UserId` on the body is ignored (closes IDOR surface caught by self-audit-one-fix)
 
 See `docs/RESIDUAL-RISK-RUNBOOK.md` for full pre-launch gates.
 
@@ -478,4 +478,4 @@ Old documentation mentioning "9 controllers / 7 managers / EF+InMemory" is obsol
 
 ## Storage Duality Status
 
-Fully migrated to SurrealDB. All operational stores (`User`, `Wallet`, `Holon`, `NFT`, `ActionDefinition`, `Bridge`, `BlockchainOperation`, `STAR`, `ApiKey`, `Idempotency`, `Saga`) use Surreal. Only `DappSeriesStore` remains InMemory (intentional, pending `dapp-composition` track close-out).
+Fully migrated to SurrealDB. All operational stores (`User`, `Wallet`, `Holon`, `NFT`, `ActionDefinition`, `Bridge`, `BlockchainOperation`, `ActionGraphBundle`, `ApiKey`, `Idempotency`, `Saga`) use Surreal. Only `DappSeriesStore` remains InMemory (intentional, pending `dapp-composition` track close-out).

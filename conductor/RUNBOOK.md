@@ -896,13 +896,13 @@ D48 the node operator sets compliance policy, which makes an operator-set ARDA
 price defensible as a **rail parameter** — but it is the owner's call and it is the
 last unanswered piece of the on-ramp.
 
-**D50 — The ARDA↔project-token exchange is an Action DAG plus a STAR, built on
+**D50 — The ARDA↔project-token exchange is an Action DAG plus an Action Graph Bundle, built on
 AZOA's existing primitives.** Owner's direction, and it is a deliberate rejection
 of the AMM path the review assumed.
 *What this composes from, verified:*
-- `STARODK` (`Models/STARODK.cs`) is the deployable unit: it carries a
+- `ActionGraphBundle` (`Models/ActionGraphBundle.cs`) is the deployable unit: it carries a
   `TargetChain`, `GeneratedCode`, `DeploymentConfig` and `BoundHolonIds`, with
-  `/generate` and `/deploy` routes already on `STARODKController`.
+  `/generate` and `/deploy` routes already on `ActionGraphBundleController`.
 - The Action DAG supplies the orchestration and the value nodes it needs already
   exist in some form (`Swap`, `Grant`, `Transfer`, `FungibleTokenCreate`).
 - **This retires Tinyman from ArdaNova's user path**, which the review wanted
@@ -914,8 +914,8 @@ of the AMM path the review assumed.
   `ISwapManager` without deciding to.
 - Rate policy is still ArdaNova's under D7/D16 — AZOA moves already-decided
   amounts. A treasury-rate exchange means **ArdaNova computes the rate** and the
-  STAR/DAG executes the move.
-- A STAR is deployable code with a `PrivateKeyHash` and a deploy route. Whatever
+  Action Graph Bundle executes the move.
+- An Action Graph Bundle is deployable code with a `PrivateKeyHash` and a deploy route. Whatever
   it does with value runs under the operator's node and the D48 custody posture,
   so it inherits the HOLD requirement rather than escaping it.
 

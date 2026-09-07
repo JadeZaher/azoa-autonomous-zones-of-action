@@ -33,9 +33,9 @@ graph TD
     end
     WorkflowLayer:::layerFill
 
-    subgraph CompositionLayer["STAR Dapp Layer"]
+    subgraph CompositionLayer["Action Graph Bundle Dapp Layer"]
         DappSeries["DappSeries Scaffolder"]
-        EcoTree["STAR-ODK Ecosystem Tree"]
+        EcoTree["Action Graph Bundle Ecosystem Tree"]
     end
     CompositionLayer:::layerFill
 
@@ -62,7 +62,7 @@ graph TD
 ### Core Layers
 1. **Identity (Self-Sovereign Auth)**: Users own their identities, authenticating via cryptographic challenge-signatures from external wallets (ED25519/Secp256k1). Access is managed through explicit, revocable `ConsentGrant` scopes rather than hard-coded tenant roles.
 2. **Actions (Durable Workflows)**: Structured, idempotent state machines represented as Directed Acyclic Graphs (DAGs). Execution is managed stepwise by a background saga engine that reconciles against real-world chains before advancing.
-3. **Dapps (STAR Composition)**: A composition layer allowing developers to bundle, sequence, and configure actions into unified `DappSeries` deployments.
+3. **Dapps (action graph bundle composition)**: A composition layer allowing developers to bundle, sequence, and configure actions into unified `DappSeries` deployments.
 4. **Bridges & Adapters**: Standardized interfaces (`IBlockchainProvider`, `DexAdapter`) connecting actions to decentralized finance (DeFi) rails like Algorand, Solana, and Wormhole.
 
 ---

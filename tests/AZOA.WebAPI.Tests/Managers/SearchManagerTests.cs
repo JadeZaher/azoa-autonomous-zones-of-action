@@ -16,7 +16,7 @@ public class SearchManagerTests
     private readonly Mock<IHolonStore> _holonStore;
     private readonly Mock<IWalletStore> _walletStore;
     private readonly Mock<IBlockchainOperationStore> _blockchainOperationStore;
-    private readonly Mock<ISTARStore> _starStore;
+    private readonly Mock<IActionGraphBundleStore> _bundleStore;
     private readonly SearchManager _manager;
 
     public SearchManagerTests()
@@ -25,13 +25,13 @@ public class SearchManagerTests
         _holonStore = new Mock<IHolonStore>();
         _walletStore = new Mock<IWalletStore>();
         _blockchainOperationStore = new Mock<IBlockchainOperationStore>();
-        _starStore = new Mock<ISTARStore>();
+        _bundleStore = new Mock<IActionGraphBundleStore>();
         _manager = new SearchManager(
             _userStore.Object,
             _holonStore.Object,
             _walletStore.Object,
             _blockchainOperationStore.Object,
-            _starStore.Object);
+            _bundleStore.Object);
     }
 
     [Fact]
@@ -44,8 +44,8 @@ public class SearchManagerTests
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon>() });
         _walletStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet>() });
-        _starStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
+        _bundleStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IActionGraphBundle>> { Result = new List<IActionGraphBundle>() });
 
         var result = await _manager.SearchAsync(new SearchRequest { Query = "neo", EntityTypes = SearchableEntityType.User }, callerUserId: null);
 
@@ -67,8 +67,8 @@ public class SearchManagerTests
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { holon } });
         _walletStore.Setup(p => p.GetByUserAsync(owner, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet>() });
-        _starStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
+        _bundleStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IActionGraphBundle>> { Result = new List<IActionGraphBundle>() });
 
         var result = await _manager.SearchAsync(new SearchRequest { Query = "world", EntityTypes = SearchableEntityType.Holon }, callerUserId: owner);
 
@@ -87,8 +87,8 @@ public class SearchManagerTests
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon>() });
         _walletStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet>() });
-        _starStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
+        _bundleStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IActionGraphBundle>> { Result = new List<IActionGraphBundle>() });
 
         var result = await _manager.SearchAsync(new SearchRequest { Query = "NEO", EntityTypes = SearchableEntityType.User }, callerUserId: null);
 
@@ -112,8 +112,8 @@ public class SearchManagerTests
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon>() });
         _walletStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet>() });
-        _starStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
+        _bundleStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IActionGraphBundle>> { Result = new List<IActionGraphBundle>() });
 
         var result = await _manager.SearchAsync(new SearchRequest { Query = "user", EntityTypes = SearchableEntityType.User, Page = 1, PageSize = 3 }, callerUserId: null);
 
@@ -138,8 +138,8 @@ public class SearchManagerTests
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon>() });
         _walletStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet>() });
-        _starStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
+        _bundleStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IActionGraphBundle>> { Result = new List<IActionGraphBundle>() });
 
         var result = await _manager.SearchAsync(new SearchRequest { Query = "", EntityTypes = SearchableEntityType.User }, callerUserId: null);
 
@@ -158,8 +158,8 @@ public class SearchManagerTests
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { nftHolon, docHolon } });
         _walletStore.Setup(p => p.GetByUserAsync(owner, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet>() });
-        _starStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
+        _bundleStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IActionGraphBundle>> { Result = new List<IActionGraphBundle>() });
 
         var result = await _manager.SearchAsync(new SearchRequest { Query = "", EntityTypes = SearchableEntityType.Holon, AssetType = "NFT" }, callerUserId: owner);
 
@@ -169,7 +169,7 @@ public class SearchManagerTests
     [Fact]
     public async Task GetFacetsAsync_ReturnsCallerScopedEntityCounts()
     {
-        // Facet counts are caller-scoped: Holon/STARODK = owner-or-public, Wallet = caller's own.
+        // Facet counts are caller-scoped: Holon/ActionGraphBundle = owner-or-public, Wallet = caller's own.
         var owner = Guid.NewGuid();
         _userStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new List<IUser> { new User() } });
@@ -177,8 +177,8 @@ public class SearchManagerTests
             .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new List<IHolon> { new Holon { UserId = owner }, new Holon { UserId = owner } } });
         _walletStore.Setup(p => p.GetByUserAsync(owner, default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new List<IWallet> { new Wallet() } });
-        _starStore.Setup(p => p.GetAllAsync(default))
-            .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>> { Result = new List<ISTARODK>() });
+        _bundleStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IActionGraphBundle>> { Result = new List<IActionGraphBundle>() });
 
         var result = await _manager.GetFacetsAsync(callerUserId: owner);
 

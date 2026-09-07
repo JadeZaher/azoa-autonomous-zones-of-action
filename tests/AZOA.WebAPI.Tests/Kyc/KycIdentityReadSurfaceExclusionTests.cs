@@ -78,7 +78,7 @@ public sealed class KycIdentityReadSurfaceExclusionTests
         var members = Enum.GetNames<SearchableEntityType>();
 
         members.Should().BeEquivalentTo(
-            "None", "User", "Holon", "Wallet", "BlockchainOperation", "STARODK", "All");
+            "None", "User", "Holon", "Wallet", "BlockchainOperation", "ActionGraphBundle", "All");
         members.Should().NotContain(name =>
             name.Contains("Identity", StringComparison.OrdinalIgnoreCase)
             || name.Contains("Kyc", StringComparison.OrdinalIgnoreCase)

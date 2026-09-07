@@ -2,9 +2,9 @@
 -- Table: dapp_series
 -- Aggregate: DappSeries (dapp-composition track -- new entity, no hand-written model)
 -- Guardrail: G6 SCHEMAFULL; greenfield entity introduced by the dapp-composition track. Owns the composed-action-series shape.
--- Note: A DappSeries is a linked series of action DAGs that compose into a deployable dApp contract via STAR generation. Status transitions: Draft -> Building -> Ready -> Deployed -> Archived. The action entries are stored separately in dapp_series_action (table 220) keyed by dapp_series_id; they are queried + reordered independently of the parent.
+-- Note: A DappSeries is a linked series of action DAGs that compose into a deployable dApp contract via action graph bundle generation. Status transitions: Draft -> Building -> Ready -> Deployed -> Archived. The action entries are stored separately in dapp_series_action (table 220) keyed by dapp_series_id; they are queried + reordered independently of the parent.
 -- Note: shared_config is a string->string map for cross-action deployment settings (e.g. chain, provider RPC URL). It is overlaid with each DappSeriesAction's input mappings to produce the per-action runtime config at execution time.
--- Note: manifest stores the composed DappManifest as JSON-on-row (string-encoded). DappManifest is a transient artifact produced by ComposeAsync -- it is NOT a separate aggregate root because it is always read whole alongside its parent series. star_odk_id is populated by GenerateAsync after the STARODK record is created via ISTARManager.CreateOrUpdateAsync.
+-- Note: manifest stores the composed DappManifest as JSON-on-row (string-encoded). DappManifest is a transient artifact produced by ComposeAsync -- it is NOT a separate aggregate root because it is always read whole alongside its parent series. action_graph_bundle_id is populated by GenerateAsync after the ActionGraphBundle record is created via IActionGraphBundleManager.CreateOrUpdateAsync.
 -- ============================================================
 
 -- ── Enums ─────────────────────────────────────────────────
@@ -36,8 +36,8 @@ DEFINE FIELD IF NOT EXISTS status ON TABLE dapp_series TYPE string
 -- Shared deployment config across all actions in the series (string->string map)
 DEFINE FIELD IF NOT EXISTS shared_config ON TABLE dapp_series TYPE object;
 
--- Linked STARODK.Id, populated by GenerateAsync (null until generation)
-DEFINE FIELD IF NOT EXISTS star_odk_id ON TABLE dapp_series TYPE option<record<star_odk>>;
+-- Linked ActionGraphBundle.Id, populated by GenerateAsync (null until generation)
+DEFINE FIELD IF NOT EXISTS action_graph_bundle_id ON TABLE dapp_series TYPE option<record<action_graph_bundle>>;
 
 -- Deployment target chain (e.g. algorand-mainnet) -- nullable until set
 DEFINE FIELD IF NOT EXISTS target_chain ON TABLE dapp_series TYPE option<string>;
@@ -62,6 +62,6 @@ DEFINE INDEX IF NOT EXISTS dapp_series_by_status
     ON TABLE dapp_series
     FIELDS status;
 
-DEFINE INDEX IF NOT EXISTS dapp_series_by_star_odk
+DEFINE INDEX IF NOT EXISTS dapp_series_by_action_graph_bundle
     ON TABLE dapp_series
-    FIELDS star_odk_id;
+    FIELDS action_graph_bundle_id;

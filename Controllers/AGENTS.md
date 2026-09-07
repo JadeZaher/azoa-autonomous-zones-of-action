@@ -63,7 +63,7 @@ principals never have — hence this second, per-endpoint enforcement.
 | `POST /swap/execute` | `ExecuteSwap` | `swap:sign` (`AzoaScopes.SwapSign`) |
 
 Read-only endpoints (`/nft` GET/query, `/wallet` get/list/query/portfolio,
-`/swap/quote`) carry no signing-scope check, but the holon/star/nft read endpoints
+`/swap/quote`) carry no signing-scope check, but the holon/action-graph-bundle/nft read endpoints
 ARE owner-or-public scoped — see §cross-tenant-read-scope. `POST /wallet/{id}/export`
 is a recent first-party recovery action and never accepts an API key or tenant
 principal.
@@ -97,14 +97,14 @@ correct `AZOAResult<T>` envelope type for that action's return type.
 
 In the multi-tenant "many dApp-devs on one SurrealDB namespace" deployment, two
 mutually-distrusting authenticated users share one namespace and isolation is
-APP-LAYER only. Holon / STARODK / NFT reads were previously unscoped — any tenant
+APP-LAYER only. Holon / ActionGraphBundle / NFT reads were previously unscoped — any tenant
 could enumerate or fetch-by-id ANY other tenant's rows. They are now **owner-or-
 public** scoped.
 
 ### The policy
 
 A row is readable iff `row.UserId == callerUserId || row.IsPublic`
-(`IsPublic` defaults to false — a domain visibility opt-in on `IHolon`/`ISTARODK`;
+(`IsPublic` defaults to false — a domain visibility opt-in on `IHolon`/`IActionGraphBundle`;
 an NFT is a Holon with `AssetType=="NFT"`, so it uses the underlying holon's
 `IsPublic`). A **null** `callerUserId` fails closed (public-only) — mirrors
 `SearchManager`.
@@ -118,7 +118,7 @@ an NFT is a Holon with `AssetType=="NFT"`, so it uses the underlying holon's
 ### Where it lives
 
 The scope predicate lives in the MANAGER (`HolonManager.CanRead`,
-`STARManager.CanRead`, `NftManager.CanRead`); controllers thread the authenticated
+`ActionGraphBundleManager.CanRead`, `NftManager.CanRead`); controllers thread the authenticated
 `GetUserIdFromClaims()` into the read methods as `Guid? callerUserId`
 (added as a new parameter mirroring `SearchManager.SearchAsync(callerUserId)`).
 Action node handlers pass `context.ActingUserId` (the RUNNER — consistent with the
@@ -128,7 +128,7 @@ may name only the runner's OWN holons, never a public one owned by someone else)
 
 ### What is NOT touched
 
-- Write/mutation paths — already IDOR-guarded (`IsOwnedBy` / `STARODKAuthorizationError`
+- Write/mutation paths — already IDOR-guarded (`IsOwnedBy` / `ActionGraphBundleAuthorizationError`
   prefixes / per-endpoint `HasSigningScope`). Only reads gained the scope.
 - Internal cycle-detection (`HolonManager.EnsureNotDescendantAsync`) uses an
   UNFILTERED subtree walk (`CollectDescendantsAsync`) — a cycle can run through a

@@ -116,12 +116,12 @@ export const ACTION_PRESETS: ActionPreset[] = [
     ],
   },
   {
-    id: 'star-onboarding',
-    name: 'STAR Onboarding',
-    description: 'Generate a STAR dapp, deploy it, then create a root holon for it.',
+    id: 'action-graph-bundle-onboarding',
+    name: 'Action Graph Bundle Onboarding',
+    description: 'Generate an action graph bundle dapp, deploy it, then create a root holon for it.',
     nodes: [
-      { key: 'gen', nodeType: 'StarGenerate', label: 'Generate STAR', isEntry: true },
-      { key: 'deploy', nodeType: 'StarDeploy', label: 'Deploy STAR' },
+      { key: 'gen', nodeType: 'ActionGraphBundleGenerate', label: 'Generate bundle', isEntry: true },
+      { key: 'deploy', nodeType: 'ActionGraphBundleDeploy', label: 'Deploy bundle' },
       { key: 'root', nodeType: 'HolonCreate', label: 'Create Root Holon', isTerminal: true },
     ],
     edges: [

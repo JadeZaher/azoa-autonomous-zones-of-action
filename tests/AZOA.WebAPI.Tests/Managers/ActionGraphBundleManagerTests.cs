@@ -10,30 +10,30 @@ using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Tests.Managers;
 
-public class STARManagerTests
+public class ActionGraphBundleManagerTests
 {
-    private readonly Mock<ISTARStore> _store;
+    private readonly Mock<IActionGraphBundleStore> _store;
     private readonly Mock<IEcosystemStore> _ecosystemStore;
     private readonly Mock<IDappSeriesStore> _dappSeriesStore;
-    private readonly STARManager _manager;
+    private readonly ActionGraphBundleManager _manager;
 
-    public STARManagerTests()
+    public ActionGraphBundleManagerTests()
     {
-        _store = new Mock<ISTARStore>();
+        _store = new Mock<IActionGraphBundleStore>();
         _ecosystemStore = new Mock<IEcosystemStore>();
         _dappSeriesStore = new Mock<IDappSeriesStore>();
-        _manager = new STARManager(_store.Object, _ecosystemStore.Object, _dappSeriesStore.Object);
+        _manager = new ActionGraphBundleManager(_store.Object, _ecosystemStore.Object, _dappSeriesStore.Object);
     }
 
     [Fact]
     public async Task GetAsync_Existing_ReturnsODK()
     {
         var owner = Guid.NewGuid();
-        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
+        var odk = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
         _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = odk });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = odk });
 
-        // Owner-or-public read scope: owner reads their own STAR ODK.
+        // Owner-or-public read scope: owner reads their own action graph bundle.
         var result = await _manager.GetAsync(odk.Id, owner);
 
         result.Result.Should().NotBeNull();
@@ -44,7 +44,7 @@ public class STARManagerTests
     public async Task GetAsync_NonExisting_ReturnsError()
     {
         _store.Setup(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Message = "Not found" });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true, Message = "Not found" });
 
         var result = await _manager.GetAsync(Guid.NewGuid());
 
@@ -56,9 +56,9 @@ public class STARManagerTests
     {
         var owner = Guid.NewGuid();
         _store.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<IEnumerable<ISTARODK>>
+                 .ReturnsAsync(new AZOAResult<IEnumerable<IActionGraphBundle>>
                  {
-                     Result = new[] { new STARODK { Name = "A", UserId = owner }, new STARODK { Name = "B", UserId = owner } }
+                     Result = new[] { new ActionGraphBundle { Name = "A", UserId = owner }, new ActionGraphBundle { Name = "B", UserId = owner } }
                  });
 
         var result = await _manager.GetAllAsync(owner);
@@ -71,11 +71,11 @@ public class STARManagerTests
     {
         var userId = Guid.NewGuid();
         _store.Setup(p => p.GetByNameAndUserAsync("Genesis", userId, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = null });
-        _store.Setup(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((ISTARODK s, CancellationToken _) => new AZOAResult<ISTARODK> { Result = s });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = null });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IActionGraphBundle s, CancellationToken _) => new AZOAResult<IActionGraphBundle> { Result = s });
 
-        var model = new STARODKCreateModel { Name = "Genesis", Description = "Desc" };
+        var model = new ActionGraphBundleCreateModel { Name = "Genesis", Description = "Desc" };
         var result = await _manager.CreateOrUpdateAsync(model, userId);
 
         result.IsError.Should().BeFalse();
@@ -88,13 +88,13 @@ public class STARManagerTests
     public async Task CreateOrUpdateAsync_Existing_OwnedByCaller_ShouldUpdate()
     {
         var userId = Guid.NewGuid();
-        var existing = new STARODK { Id = Guid.NewGuid(), Name = "Existing", Description = "Old", UserId = userId };
+        var existing = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Existing", Description = "Old", UserId = userId };
         _store.Setup(p => p.GetByNameAndUserAsync("Existing", userId, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = existing });
-        _store.Setup(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((ISTARODK s, CancellationToken _) => new AZOAResult<ISTARODK> { Result = s });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = existing });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IActionGraphBundle s, CancellationToken _) => new AZOAResult<IActionGraphBundle> { Result = s });
 
-        var model = new STARODKCreateModel { Name = "Existing", Description = "New" };
+        var model = new ActionGraphBundleCreateModel { Name = "Existing", Description = "New" };
         var result = await _manager.CreateOrUpdateAsync(model, userId);
 
         result.IsError.Should().BeFalse();
@@ -108,11 +108,11 @@ public class STARManagerTests
         // A's record via the name lookup -- the store query is scoped by userId.
         var userB = Guid.NewGuid();
         _store.Setup(p => p.GetByNameAndUserAsync("Shared", userB, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = null });
-        _store.Setup(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((ISTARODK s, CancellationToken _) => new AZOAResult<ISTARODK> { Result = s });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = null });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IActionGraphBundle s, CancellationToken _) => new AZOAResult<IActionGraphBundle> { Result = s });
 
-        var model = new STARODKCreateModel { Name = "Shared", Description = "B's" };
+        var model = new ActionGraphBundleCreateModel { Name = "Shared", Description = "B's" };
         var result = await _manager.CreateOrUpdateAsync(model, userB);
 
         result.IsError.Should().BeFalse();
@@ -127,30 +127,30 @@ public class STARManagerTests
         // PUT IDOR closure: route id resolves to a record owned by a different user -> Forbidden.
         var ownerUser = Guid.NewGuid();
         var attackerUser = Guid.NewGuid();
-        var existing = new STARODK { Id = Guid.NewGuid(), Name = "Owned", UserId = ownerUser };
+        var existing = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Owned", UserId = ownerUser };
         _store.Setup(p => p.GetByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = existing });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = existing });
 
-        var model = new STARODKCreateModel { Name = "Hijacked" };
+        var model = new ActionGraphBundleCreateModel { Name = "Hijacked" };
         var result = await _manager.CreateOrUpdateAsync(model, attackerUser, routeId: existing.Id);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().StartWith(STARODKAuthorizationError.Forbidden);
+        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.Forbidden);
         // Crucially -- no upsert was performed.
-        _store.Verify(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task CreateOrUpdateAsync_PUT_OwnRecord_Updates()
     {
         var userId = Guid.NewGuid();
-        var existing = new STARODK { Id = Guid.NewGuid(), Name = "Owned", UserId = userId, Description = "Old" };
+        var existing = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Owned", UserId = userId, Description = "Old" };
         _store.Setup(p => p.GetByIdAsync(existing.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = existing });
-        _store.Setup(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((ISTARODK s, CancellationToken _) => new AZOAResult<ISTARODK> { Result = s });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = existing });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IActionGraphBundle s, CancellationToken _) => new AZOAResult<IActionGraphBundle> { Result = s });
 
-        var model = new STARODKCreateModel { Name = "Owned", Description = "New" };
+        var model = new ActionGraphBundleCreateModel { Name = "Owned", Description = "New" };
         var result = await _manager.CreateOrUpdateAsync(model, userId, routeId: existing.Id);
 
         result.IsError.Should().BeFalse();
@@ -163,13 +163,13 @@ public class STARManagerTests
     {
         var userId = Guid.NewGuid();
         _store.Setup(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Result = null, Message = "Not found." });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true, Result = null, Message = "Not found." });
 
-        var model = new STARODKCreateModel { Name = "X" };
+        var model = new ActionGraphBundleCreateModel { Name = "X" };
         var result = await _manager.CreateOrUpdateAsync(model, userId, routeId: Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().StartWith(STARODKAuthorizationError.NotFound);
+        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.NotFound);
     }
 
     [Fact]
@@ -180,11 +180,11 @@ public class STARManagerTests
         var authenticated = Guid.NewGuid();
         var forged        = Guid.NewGuid();
         _store.Setup(p => p.GetByNameAndUserAsync(It.IsAny<string>(), authenticated, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = null });
-        _store.Setup(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((ISTARODK s, CancellationToken _) => new AZOAResult<ISTARODK> { Result = s });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = null });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IActionGraphBundle s, CancellationToken _) => new AZOAResult<IActionGraphBundle> { Result = s });
 
-        var model = new STARODKCreateModel { Name = "Foo", UserId = forged };
+        var model = new ActionGraphBundleCreateModel { Name = "Foo", UserId = forged };
         var result = await _manager.CreateOrUpdateAsync(model, authenticated);
 
         result.Result!.UserId.Should().Be(authenticated);
@@ -205,13 +205,13 @@ public class STARManagerTests
     public async Task GenerateAsync_ShouldSetGeneratedCode()
     {
         var owner = Guid.NewGuid();
-        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
+        var odk = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
         _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = odk });
-        _store.Setup(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((ISTARODK s, CancellationToken _) => new AZOAResult<ISTARODK> { Result = s });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = odk });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IActionGraphBundle s, CancellationToken _) => new AZOAResult<IActionGraphBundle> { Result = s });
 
-        var request = new STARDappGenerationRequest { TargetChain = "Solana", BoundHolonIds = new List<Guid> { Guid.NewGuid() } };
+        var request = new ActionGraphBundleDappGenerationRequest { TargetChain = "Solana", BoundHolonIds = new List<Guid> { Guid.NewGuid() } };
         var result = await _manager.GenerateAsync(odk.Id, request, owner);
 
         result.IsError.Should().BeFalse();
@@ -223,9 +223,9 @@ public class STARManagerTests
     public async Task GenerateAsync_NonExisting_ShouldReturnError()
     {
         _store.Setup(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Message = "Not found" });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true, Message = "Not found" });
 
-        var result = await _manager.GenerateAsync(Guid.NewGuid(), new STARDappGenerationRequest());
+        var result = await _manager.GenerateAsync(Guid.NewGuid(), new ActionGraphBundleDappGenerationRequest());
 
         result.IsError.Should().BeTrue();
     }
@@ -234,11 +234,11 @@ public class STARManagerTests
     public async Task DeployAsync_ShouldSetDeploymentConfig()
     {
         var owner = Guid.NewGuid();
-        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test", GeneratedCode = "code", TargetChain = "Algorand", UserId = owner };
+        var odk = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", GeneratedCode = "code", TargetChain = "Algorand", UserId = owner };
         _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = odk });
-        _store.Setup(p => p.UpsertAsync(It.IsAny<ISTARODK>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((ISTARODK s, CancellationToken _) => new AZOAResult<ISTARODK> { Result = s });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = odk });
+        _store.Setup(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IActionGraphBundle s, CancellationToken _) => new AZOAResult<IActionGraphBundle> { Result = s });
 
         var result = await _manager.DeployAsync(odk.Id, owner);
 
@@ -250,9 +250,9 @@ public class STARManagerTests
     public async Task DeployAsync_WithoutGeneration_ShouldReturnError()
     {
         var owner = Guid.NewGuid();
-        var odk = new STARODK { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
+        var odk = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
         _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { Result = odk });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = odk });
 
         var result = await _manager.DeployAsync(odk.Id, owner);
 
@@ -264,7 +264,7 @@ public class STARManagerTests
     public async Task DeployAsync_NonExisting_ShouldReturnError()
     {
         _store.Setup(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<ISTARODK> { IsError = true, Message = "Not found" });
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true, Message = "Not found" });
 
         var result = await _manager.DeployAsync(Guid.NewGuid());
 

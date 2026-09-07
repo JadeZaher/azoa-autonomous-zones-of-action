@@ -216,7 +216,7 @@ public sealed class SurrealUserStore : IUserStore
         {
             // Owner-scoped resolve. A miss returns Result == null with NO error so
             // the manager treats it as "create new" (idempotency), mirroring
-            // ISTARStore.GetByNameAndUserAsync.
+            // IActionGraphBundleStore.GetByNameAndUserAsync.
             var q = SurrealQuery
                 .Of("SELECT * FROM user WHERE owner_tenant_id = $_tenant AND external_user_id = $_ext LIMIT 1")
                 .WithParam("_tenant", SurrealRecordParam.Of(UserTable, SurrealId.ToSurrealId(tenantId)))

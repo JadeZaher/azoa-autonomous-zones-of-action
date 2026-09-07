@@ -9,7 +9,7 @@ using AZOA.WebAPI.Models.Responses;
 namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
-/// Composition + STAR generation/deployment endpoints for the
+/// Composition + action graph bundle generation/deployment endpoints for the
 /// <c>dapp-composition</c> aggregate. Series CRUD + action management live on
 /// <see cref="DappSeriesController"/>; this controller is the pipeline:
 /// validate -> compose -> generate -> deploy.
@@ -66,10 +66,10 @@ public class DappCompositionController : ControllerBase
 
     [HttpPost("generate")]
     [Authorize(Policy = "DappManage")]
-    public async Task<ActionResult<AZOAResult<ISTARODK>>> Generate(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Generate(Guid id, CancellationToken ct)
     {
         var userId = GetUserIdFromClaims();
-        if (userId is null) return Unauthorized(Fail<ISTARODK>("Invalid token."));
+        if (userId is null) return Unauthorized(Fail<IActionGraphBundle>("Invalid token."));
         var result = await _manager.GenerateAsync(id, userId.Value, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
@@ -77,11 +77,11 @@ public class DappCompositionController : ControllerBase
 
     [HttpPost("deploy")]
     [Authorize(Policy = "DappManage")]
-    public async Task<ActionResult<AZOAResult<ISTARODK>>> Deploy(
+    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Deploy(
         Guid id, [FromQuery] string? targetOverride, CancellationToken ct)
     {
         var userId = GetUserIdFromClaims();
-        if (userId is null) return Unauthorized(Fail<ISTARODK>("Invalid token."));
+        if (userId is null) return Unauthorized(Fail<IActionGraphBundle>("Invalid token."));
         var result = await _manager.DeployAsync(id, userId.Value, targetOverride, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);

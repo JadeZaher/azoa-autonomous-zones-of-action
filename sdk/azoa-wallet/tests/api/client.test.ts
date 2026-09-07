@@ -322,7 +322,7 @@ describe("AzoaApiClient", () => {
     });
   });
 
-  // updateSTARODK now uses PUT /api/starodk/{id} (finding 7 override) —
+  // updateActionGraphBundle now uses PUT /api/actiongraphbundle/{id} (finding 7 override) —
   // assertions live in tests/api/self-audit-one-fix.test.ts.
 
   describe("getSwapQuote (Phase 2 prereq)", () => {

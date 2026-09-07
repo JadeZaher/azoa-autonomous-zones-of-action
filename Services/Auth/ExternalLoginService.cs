@@ -115,7 +115,7 @@ public sealed class ExternalLoginService : IExternalLoginService
 
         // The user id is the AUTHENTICATED caller's, threaded from the JWT through a
         // single-use LINK code — never read from the request body. Same rule as the
-        // STARODK upsert IDOR precedent: a caller-supplied identity never widens the
+        // ActionGraphBundle upsert IDOR precedent: a caller-supplied identity never widens the
         // authenticated one.
         var owner = await _userStore.GetByIdAsync(userId, ct);
         if (owner.IsError || owner.Result is null)

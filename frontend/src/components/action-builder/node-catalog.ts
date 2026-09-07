@@ -11,7 +11,7 @@ export type NodeCategory =
   | 'Holon'
   | 'NFT'
   | 'Wallet'
-  | 'STAR'
+  | 'ActionGraphBundle'
   | 'Search'
   | 'User'
   | 'Blockchain'
@@ -75,9 +75,9 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   { type: 'WalletSetDefault', category: 'Wallet', label: 'Set Default', description: 'Set the default wallet', defaultConfig: J({ id: '' }) },
   { type: 'WalletGetPortfolio', category: 'Wallet', label: 'Get Portfolio', description: 'Aggregate wallet portfolio', defaultConfig: J({ id: '' }) },
 
-  // ─── STAR ───
-  { type: 'StarGenerate', category: 'STAR', label: 'Generate STAR', description: 'Generate a STAR dapp', defaultConfig: J({ name: '' }) },
-  { type: 'StarDeploy', category: 'STAR', label: 'Deploy STAR', description: 'Deploy a STAR dapp', defaultConfig: J({ id: '' }) },
+  // ─── Action graph bundle ───
+  { type: 'ActionGraphBundleGenerate', category: 'ActionGraphBundle', label: 'Generate bundle', description: 'Generate an action graph bundle dapp', defaultConfig: J({ name: '' }) },
+  { type: 'ActionGraphBundleDeploy', category: 'ActionGraphBundle', label: 'Deploy bundle', description: 'Deploy an action graph bundle dapp', defaultConfig: J({ id: '' }) },
 
   // ─── Search ───
   { type: 'Search', category: 'Search', label: 'Search', description: 'Run a search query', defaultConfig: J({ query: '' }) },
@@ -134,7 +134,7 @@ export const NODE_CATALOG_BY_TYPE: Record<string, NodeTypeMeta> = Object.fromEnt
 )
 
 export const CATEGORY_ORDER: NodeCategory[] = [
-  'Holon', 'NFT', 'Wallet', 'STAR', 'Search', 'User', 'Blockchain', 'Control', 'Economic', 'Governance', 'Lending',
+  'Holon', 'NFT', 'Wallet', 'ActionGraphBundle', 'Search', 'User', 'Blockchain', 'Control', 'Economic', 'Governance', 'Lending',
 ]
 
 /** Tailwind classes for the colored left-border / accent per category. */
@@ -142,7 +142,7 @@ export const CATEGORY_COLOR: Record<NodeCategory, { border: string; badge: strin
   Holon: { border: 'border-l-blue-500', badge: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300', dot: 'bg-blue-500' },
   NFT: { border: 'border-l-purple-500', badge: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300', dot: 'bg-purple-500' },
   Wallet: { border: 'border-l-emerald-500', badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300', dot: 'bg-emerald-500' },
-  STAR: { border: 'border-l-amber-500', badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300', dot: 'bg-amber-500' },
+  ActionGraphBundle: { border: 'border-l-amber-500', badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300', dot: 'bg-amber-500' },
   Search: { border: 'border-l-cyan-500', badge: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300', dot: 'bg-cyan-500' },
   User: { border: 'border-l-pink-500', badge: 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300', dot: 'bg-pink-500' },
   Blockchain: { border: 'border-l-orange-500', badge: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300', dot: 'bg-orange-500' },

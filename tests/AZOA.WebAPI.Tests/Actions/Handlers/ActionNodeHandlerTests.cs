@@ -215,20 +215,20 @@ public class ActionNodeHandlerTests
         result.Message.Should().Be("nope");
     }
 
-    // ─── STAR group (ISTARManager) ───
+    // ─── action graph bundle group (IActionGraphBundleManager) ───
 
     [Fact]
-    public async Task StarDeployNodeHandler_InvokesDeploy_WithConfiguredId()
+    public async Task ActionGraphBundleDeployNodeHandler_InvokesDeploy_WithConfiguredId()
     {
         var id = Guid.NewGuid();
-        var mgr = new Mock<ISTARManager>();
+        var mgr = new Mock<IActionGraphBundleManager>();
         mgr.Setup(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
+           .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
 
-        var handler = new StarDeployNodeHandler(mgr.Object);
-        handler.NodeType.Should().Be(ActionNodeType.StarDeploy);
+        var handler = new ActionGraphBundleDeployNodeHandler(mgr.Object);
+        handler.NodeType.Should().Be(ActionNodeType.ActionGraphBundleDeploy);
 
-        var node = NodeWith(ActionNodeType.StarDeploy, JsonSerializer.Serialize(new IdConfig { Id = id }));
+        var node = NodeWith(ActionNodeType.ActionGraphBundleDeploy, JsonSerializer.Serialize(new IdConfig { Id = id }));
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
@@ -236,20 +236,20 @@ public class ActionNodeHandlerTests
     }
 
     [Fact]
-    public async Task StarGenerateNodeHandler_InvokesGenerate_WithConfiguredStarId()
+    public async Task ActionGraphBundleGenerateNodeHandler_InvokesGenerate_WithConfiguredActionGraphBundleId()
     {
-        var starId = Guid.NewGuid();
-        var mgr = new Mock<ISTARManager>();
-        mgr.Setup(m => m.GenerateAsync(starId, It.IsAny<STARDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<ISTARODK> { Result = new STARODK() });
+        var bundleId = Guid.NewGuid();
+        var mgr = new Mock<IActionGraphBundleManager>();
+        mgr.Setup(m => m.GenerateAsync(bundleId, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+           .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
 
-        var handler = new StarGenerateNodeHandler(mgr.Object);
-        var cfg = new StarGenerateNodeConfig { StarId = starId, Request = new STARDappGenerationRequest() };
-        var node = NodeWith(ActionNodeType.StarGenerate, JsonSerializer.Serialize(cfg));
+        var handler = new ActionGraphBundleGenerateNodeHandler(mgr.Object);
+        var cfg = new ActionGraphBundleGenerateNodeConfig { ActionGraphBundleId = bundleId, Request = new ActionGraphBundleDappGenerationRequest() };
+        var node = NodeWith(ActionNodeType.ActionGraphBundleGenerate, JsonSerializer.Serialize(cfg));
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.GenerateAsync(starId, It.IsAny<STARDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()), Times.Once);
+        mgr.Verify(m => m.GenerateAsync(bundleId, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()), Times.Once);
     }
 
     // ─── Search (ISearchManager) ───

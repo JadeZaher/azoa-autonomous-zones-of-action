@@ -11,15 +11,15 @@ graph LR
 
     %% Cross-slice targets (rendered as ghost nodes)
     action["action: Node (external)"]:::externalNode
-    star_odk["star_odk: Node (external)"]:::externalNode
+    action_graph_bundle["action_graph_bundle: Node (external)"]:::externalNode
     user["user: Node (external)"]:::externalNode
 
     %% Edges (outbound from this slice)
-    dapp_series -- "star_odk_id [N:0..1]" --> star_odk
+    dapp_series -- "action_graph_bundle_id [N:0..1]" --> action_graph_bundle
     dapp_series -- "user_id [N:1]" --> user
     dapp_series_action -- "action_id [N:1]" --> action
     dapp_series_action -- "dapp_series_id [N:1]" --> dapp_series
-    ecosystem -- "star_odk_id [N:1]" --> star_odk
+    ecosystem -- "action_graph_bundle_id [N:1]" --> action_graph_bundle
     ecosystem -- "user_id [N:1]" --> user
     ecosystem_node -- "ecosystem_id [N:1]" --> ecosystem
     ecosystem_node -- "parent_node_id [N:0..1]" --> ecosystem_node

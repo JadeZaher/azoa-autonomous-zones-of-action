@@ -22,10 +22,10 @@ namespace AZOA.WebAPI.IntegrationTests.Controllers;
 /// No SurrealDB container required — InMemoryDappSeriesStore handles all
 /// persistence for these tests.  Do NOT add SkipIfSurrealDbUnavailable guards.
 ///
-/// ISTARManager is NOT mocked here (Moq is not in the test project).
+/// IActionGraphBundleManager is NOT mocked here (Moq is not in the test project).
 /// The generate/deploy endpoints are expected to return BadRequest because
 /// the series is never in a Ready state; this naturally validates the
-/// full HTTP wiring without requiring a real STAR backend.
+/// full HTTP wiring without requiring a real action graph bundle backend.
 /// </summary>
 public class DappSeriesControllerIntegrationTests : IntegrationTestBase
 {

@@ -282,13 +282,13 @@ function buildTestCases(
       },
     },
 
-    // ── STAR ODK ──────────────────────────────────────────────────────────────
+    // ── Action graph bundles ──────────────────────────────────────────────────────────────
     {
-      name: 'List ODKs',
-      category: 'starodk',
+      name: 'List action graph bundles',
+      category: 'actiongraphbundle',
       fn: async () => {
-        const result = await azoa.api.request('GET', '/api/starodk')
-        if (isOk(result)) return { passed: true, detail: 'ODK list retrieved', raw: result.value }
+        const result = await azoa.api.request('GET', '/api/actiongraphbundle')
+        if (isOk(result)) return { passed: true, detail: 'Bundle list retrieved', raw: result.value }
         return { passed: false, detail: result.error.message, raw: result.error }
       },
     },
@@ -350,7 +350,7 @@ function buildTestCases(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const CATEGORIES = ['auth', 'blockchain', 'holons', 'wallets', 'nfts', 'bridge', 'search', 'starodk', 'dex'] as const
+const CATEGORIES = ['auth', 'blockchain', 'holons', 'wallets', 'nfts', 'bridge', 'search', 'actiongraphbundle', 'dex'] as const
 type Category = (typeof CATEGORIES)[number]
 
 function statusBadge(status: TestResult['status']) {

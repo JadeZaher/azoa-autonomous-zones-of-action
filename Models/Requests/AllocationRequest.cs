@@ -27,7 +27,7 @@ public enum AllocationKind
 /// IDOR note: this DTO intentionally does NOT carry an owner / target user id.
 /// The allocation target user is supplied out-of-band (route / contract
 /// parameter) and resolved from the authenticated principal; any owner id a
-/// caller might bolt on here would be ignored (STARODK precedent). The amount /
+/// caller might bolt on here would be ignored (ActionGraphBundle precedent). The amount /
 /// asset descriptor are the only economically meaningful fields.
 /// </summary>
 public class AllocationRequest

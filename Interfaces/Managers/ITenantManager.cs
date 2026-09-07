@@ -7,7 +7,7 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 /// Discriminator the controller uses to translate a manager auth failure into
 /// the right HTTP status without raw string-matching. Carried via the
 /// <see cref="AZOAResult{T}.Message"/> prefix — mirrors
-/// <see cref="STARODKAuthorizationError"/>.
+/// <see cref="ActionGraphBundleAuthorizationError"/>.
 ///
 /// SECURITY NOTE: a cross-tenant or unowned target is reported as
 /// <see cref="NotFound"/> (→ 404), NEVER <see cref="Forbidden"/>, so a prober

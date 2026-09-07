@@ -583,9 +583,9 @@ export interface BlockchainOperationResult {
   transactionReference: string | null;
 }
 
-// ─── STARODK types matching .NET DTOs ───
+// ─── ActionGraphBundle types matching .NET DTOs ───
 
-export interface STARODKResult {
+export interface ActionGraphBundleResult {
   id: string;
   name: string;
   description: string;
@@ -600,14 +600,14 @@ export interface STARODKResult {
   isActive: boolean;
 }
 
-export interface STARODKCreateParams {
+export interface ActionGraphBundleCreateParams {
   name: string;
   description: string;
   publicKey?: string;
   userId?: string;
 }
 
-export interface STARDappGenerationParams {
+export interface ActionGraphBundleDappGenerationParams {
   targetChain: string;
   boundHolonIds: string[];
   config?: Record<string, string>;
@@ -694,7 +694,7 @@ export type ActionNodeType =
   | "HolonCreate" | "HolonUpdate" | "HolonDelete" | "HolonQuery"
   | "NftMint" | "NftTransfer" | "NftBurn"
   | "WalletCreate" | "WalletTransfer" | "WalletBalance"
-  | "StarCreate" | "StarGenerate" | "StarDeploy"
+  | "ActionGraphBundleCreate" | "ActionGraphBundleGenerate" | "ActionGraphBundleDeploy"
   | "SearchQuery"
   | "UserNftMint" | "UserNftTransfer" | "UserNftVerify"
   | "BlockchainExecute"
@@ -1130,7 +1130,7 @@ export interface DappSeriesResult {
   status: DappSeriesStatus;
   /** Cross-action deployment settings (string→string map), serialized as JSON on the row. */
   sharedConfig?: unknown;
-  starOdkId?: string;
+  actionGraphBundleId?: string;
   targetChain?: string;
   /** Composed DappManifest as a JSON string (null until ComposeAsync runs). */
   manifest?: string;
@@ -1628,51 +1628,51 @@ export class AzoaApiClient {
     return this.request("GET", `/api/blockchainoperation/user/${userId}`);
   }
 
-  // ─── STARODK ───
+  // ─── ActionGraphBundle ───
 
-  async getSTARODK(id: string): Promise<Result<STARODKResult, SdkError>> {
-    assertUuid(id, "starodkId");
-    return this.request("GET", `/api/starodk/${id}`);
+  async getActionGraphBundle(id: string): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    assertUuid(id, "actiongraphbundleId");
+    return this.request("GET", `/api/actiongraphbundle/${id}`);
   }
 
-  async listSTARODK(): Promise<Result<STARODKResult[], SdkError>> {
-    return this.request("GET", "/api/starodk");
+  async listActionGraphBundle(): Promise<Result<ActionGraphBundleResult[], SdkError>> {
+    return this.request("GET", "/api/actiongraphbundle");
   }
 
   /**
-   * Create or update a STARODK record.
+   * Create or update an action graph bundle record.
    *
-   * Upsert by id — the backend's `POST /api/starodk` (STARODKController.CreateOrUpdate)
-   * is the same endpoint also used to update an existing record. See {@link updateSTARODK}
+   * Upsert by id — the backend's `POST /api/actiongraphbundle` (ActionGraphBundleController.CreateOrUpdate)
+   * is the same endpoint also used to update an existing record. See {@link updateActionGraphBundle}
    * for a semantically-explicit alias when the caller intends an update.
    */
-  async createSTARODK(params: STARODKCreateParams): Promise<Result<STARODKResult, SdkError>> {
-    return this.request("POST", "/api/starodk", params);
+  async createActionGraphBundle(params: ActionGraphBundleCreateParams): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    return this.request("POST", "/api/actiongraphbundle", params);
   }
 
   /**
-   * Update an existing STARODK record via PUT. Routes through the same
+   * Update an existing action graph bundle record via PUT. Routes through the same
    * `CreateOrUpdateAsync` upsert path as POST but uses the explicit-id route
-   * `PUT /api/starodk/{id}`, making update intent unambiguous.
+   * `PUT /api/actiongraphbundle/{id}`, making update intent unambiguous.
    */
-  async updateSTARODK(id: string, model: STARODKCreateParams): Promise<Result<STARODKResult, SdkError>> {
-    assertUuid(id, "starodkId");
-    return this.request("PUT", `/api/starodk/${id}`, model);
+  async updateActionGraphBundle(id: string, model: ActionGraphBundleCreateParams): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    assertUuid(id, "actiongraphbundleId");
+    return this.request("PUT", `/api/actiongraphbundle/${id}`, model);
   }
 
-  async deleteSTARODK(id: string): Promise<Result<{ message: string }, SdkError>> {
-    assertUuid(id, "starodkId");
-    return this.request("DELETE", `/api/starodk/${id}`);
+  async deleteActionGraphBundle(id: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(id, "actiongraphbundleId");
+    return this.request("DELETE", `/api/actiongraphbundle/${id}`);
   }
 
-  async generateSTARDapp(starodkId: string, params: STARDappGenerationParams): Promise<Result<STARODKResult, SdkError>> {
-    assertUuid(starodkId, "starodkId");
-    return this.request("POST", `/api/starodk/${starodkId}/generate`, params);
+  async generateActionGraphBundleDapp(actiongraphbundleId: string, params: ActionGraphBundleDappGenerationParams): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    assertUuid(actiongraphbundleId, "actiongraphbundleId");
+    return this.request("POST", `/api/actiongraphbundle/${actiongraphbundleId}/generate`, params);
   }
 
-  async deploySTARODK(starodkId: string): Promise<Result<STARODKResult, SdkError>> {
-    assertUuid(starodkId, "starodkId");
-    return this.request("POST", `/api/starodk/${starodkId}/deploy`);
+  async deployActionGraphBundle(actiongraphbundleId: string): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    assertUuid(actiongraphbundleId, "actiongraphbundleId");
+    return this.request("POST", `/api/actiongraphbundle/${actiongraphbundleId}/deploy`);
   }
 
   // ─── Holon AssetType registry (HolonTypeRegistryController, final-hardening F5) ───

@@ -105,7 +105,7 @@ negative amount would move value the wrong way. A net position is not a rail cal
 
 Both routes read the subject exclusively from the credential (`ClaimTypes.NameIdentifier` /
 `sub`). `AnalyticsQueryRequest` deliberately has no user-id field, so none can be smuggled in
-through model binding — the same shape as the STARODK owned-resource precedent. A
+through model binding — the same shape as the ActionGraphBundle owned-resource precedent. A
 node-operator cross-user view belongs behind the existing `NodeGovern` policy on its own
 route; it must never become an optional parameter on a self route, because then the safe call
 and the privileged call are one request apart.

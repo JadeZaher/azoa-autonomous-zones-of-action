@@ -150,7 +150,7 @@ Delete) and the wallet/NFT/blockchain-op controllers pass BOTH the route id AND
 the **authenticated** user id (`GetUserIdFromClaims()` → `TestAuthHandler`
 `DefaultUserId` = `a1111111-1111-1111-1111-111111111111`) to the manager,
 which scopes the operation to the authenticated user (the IDOR-resistant
-"owned-resource" pattern recorded in project memory, STARODK precedent).
+"owned-resource" pattern recorded in project memory, ActionGraphBundle precedent).
 
 The failing tests seed a resource owned by a **fresh random** user
 (`Guid.NewGuid()` or the register-generated id) and then act on it while
@@ -246,7 +246,7 @@ persists.
   confirm whether removal is wired. Do NOT paper over with a test change; this
   may be a real bug.
 - `HolonControllerIntegrationTests.{Mint,Exchange}` and
-  `STARODKControllerIntegrationTests.Deploy` → 400 from the chain-action path;
+  `ActionGraphBundleControllerIntegrationTests.Deploy` → 400 from the chain-action path;
   likely the chain-capability gate / wallet pre-conditions, and
   `UserNFTController.Mint` → 500. These should be re-checked with the
   now-surfaced body (the seed diagnostic does not cover non-seed POSTs; add the

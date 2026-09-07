@@ -88,10 +88,10 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
     private static readonly string HolonId2 = "29000000000000000000000000000002";
     private static readonly string HolonId3 = "29000000000000000000000000000003";
 
-    // star_odk rows
-    private static readonly string StarId1 = "3a000000000000000000000000000001";
-    private static readonly string StarId2 = "3a000000000000000000000000000002";
-    private static readonly string StarId3 = "3a000000000000000000000000000003";
+    // action_graph_bundle rows
+    private static readonly string ActionGraphBundleId1 = "3a000000000000000000000000000001";
+    private static readonly string ActionGraphBundleId2 = "3a000000000000000000000000000002";
+    private static readonly string ActionGraphBundleId3 = "3a000000000000000000000000000003";
 
     // api_key rows
     private static readonly string ApiKeyId1 = "4b000000000000000000000000000001";
@@ -563,13 +563,13 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                 });
         }
 
-        // ── star_odk ─────────────────────────────────────────────────────────
-        // Note: the table name is star_odk (not star) per Persistence/SurrealDb/Schemas/110_star.surql.
-        foreach (var (id, starName) in new[]
+        // ── action_graph_bundle ─────────────────────────────────────────────────────────
+        // Note: the table name is action_graph_bundle (not bundle) per Persistence/SurrealDb/Generated/Schemas/action_graph_bundle.surql.
+        foreach (var (id, bundleName) in new[]
         {
-            (StarId1, "G5 Star Alpha"),
-            (StarId2, "G5 Star Beta"),
-            (StarId3, "G5 Star Gamma"),
+            (ActionGraphBundleId1, "G5 ActionGraphBundle Alpha"),
+            (ActionGraphBundleId2, "G5 ActionGraphBundle Beta"),
+            (ActionGraphBundleId3, "G5 ActionGraphBundle Gamma"),
         })
         {
             await ExecuteSurrealSqlAsync(
@@ -577,15 +577,15 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                 "CREATE type::record($t, $id) CONTENT object::extend($body, { user_id: type::record('user', $userId), created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
-                    t = "star_odk",
+                    t = "action_graph_bundle",
                     id,
                     userId = UserId1,
                     ts,
                     body = new
                     {
                         id,
-                        name              = starName,
-                        description       = $"G5 test star {id[^2..]}",
+                        name              = bundleName,
+                        description       = $"G5 test bundle {id[^2..]}",
                         target_chain      = "Solana",
                         is_active         = true,
                     },
@@ -762,7 +762,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
 
     /// <summary>
     /// Lists all value tables covered by G5.
-    /// Note: star_odk is the SurrealDB table name for the star entity.
+    /// Note: action_graph_bundle is the SurrealDB table name for the bundle entity.
     /// </summary>
     private static string[] AllValueTables() =>
     [
@@ -775,7 +775,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         "saga_steps",
         "user",
         "holon",
-        "star_odk",
+        "action_graph_bundle",
         "api_key",
         "action_template",
         "action_node_template",

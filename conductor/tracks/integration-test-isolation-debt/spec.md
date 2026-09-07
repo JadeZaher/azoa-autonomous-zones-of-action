@@ -43,7 +43,7 @@ collect one complete filtered post-fix run before archive.
 5. **Bucket D — factory re-registration (2 tests)** — `TestScheme` collision from
    double `AddAuthentication().AddScheme()`; diagnose
    `Interact_ShouldRemovePeersAndMetadata` peer-removal wiring and the
-   `Holon.{Mint,Exchange}` / `STARODK.Deploy` 400s.
+   `Holon.{Mint,Exchange}` / `ActionGraphBundle.Deploy` 400s.
 
 ## Remaining scope
 

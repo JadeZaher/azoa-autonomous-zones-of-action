@@ -180,9 +180,9 @@ export const NODE_OUTPUT_SHAPE: Record<string, NodeOutputShapeMirror> = {
   WalletQuery: WRAPPED_ARRAY,
   WalletGetPortfolio: WRAPPED_OBJECT,
 
-  // ── STAR ──
-  StarGenerate: WRAPPED_OBJECT,
-  StarDeploy: WRAPPED_OBJECT,
+  // ── Action graph bundle ──
+  ActionGraphBundleGenerate: WRAPPED_OBJECT,
+  ActionGraphBundleDeploy: WRAPPED_OBJECT,
 
   // ── Search ──
   Search: WRAPPED_OBJECT,

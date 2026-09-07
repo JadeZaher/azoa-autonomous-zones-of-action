@@ -26,14 +26,14 @@ public class DappCompositionDuplicateActionTests
     private readonly Mock<IActionStore> _actionStore = new();
     private readonly Mock<IActionRunStore> _runStore = new();
     private readonly Mock<IHolonStore> _holonStore = new();
-    private readonly Mock<ISTARManager> _starManager = new();
+    private readonly Mock<IActionGraphBundleManager> _bundleManager = new();
     private readonly DappCompositionManager _manager;
     private readonly Guid _userId = Guid.NewGuid();
 
     public DappCompositionDuplicateActionTests()
     {
         _manager = new DappCompositionManager(
-            _seriesStore, _actionStore.Object, _runStore.Object, _holonStore.Object, _starManager.Object);
+            _seriesStore, _actionStore.Object, _runStore.Object, _holonStore.Object, _bundleManager.Object);
     }
 
     [Fact]

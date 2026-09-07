@@ -4,7 +4,7 @@ using AZOA.WebAPI.Models.Responses;
 namespace AZOA.WebAPI.Interfaces.Stores;
 
 /// <summary>
-/// Persistence boundary for the STARODK ecosystem tree (star-odk-ecosystem-tree
+/// Persistence boundary for the ActionGraphBundle ecosystem tree (star-odk-ecosystem-tree
 /// / final-hardening-cutover D2). Operates on the decorated POCOs
 /// <see cref="Ecosystem"/> + <see cref="EcosystemNode"/> — no hand-written
 /// domain model at the storage boundary; the manager maps to the Guid-typed
@@ -12,8 +12,8 @@ namespace AZOA.WebAPI.Interfaces.Stores;
 /// </summary>
 public interface IEcosystemStore
 {
-    /// <summary>Loads the ecosystem owned by <paramref name="starOdkId"/> (one per STARODK), or null.</summary>
-    Task<AZOAResult<Ecosystem>> GetByStarOdkAsync(Guid starOdkId, CancellationToken ct = default);
+    /// <summary>Loads the ecosystem owned by <paramref name="actionGraphBundleId"/> (one per ActionGraphBundle), or null.</summary>
+    Task<AZOAResult<Ecosystem>> GetByActionGraphBundleAsync(Guid actionGraphBundleId, CancellationToken ct = default);
 
     /// <summary>Loads an ecosystem by its own id.</summary>
     Task<AZOAResult<Ecosystem>> GetByIdAsync(Guid id, CancellationToken ct = default);

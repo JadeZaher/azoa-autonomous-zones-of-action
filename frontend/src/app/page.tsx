@@ -58,7 +58,7 @@ const PRIMITIVES = [
   { tag: 'ACTIONS', title: 'Durable graphs of action', body: 'They wait, resume, and reconcile against reality before acting. They never double-spend.' },
   { tag: 'HOLONS', title: 'Value as nested wholes', body: 'Tokens, credits, rights, things — anything that can be held, split, and moved.' },
   { tag: 'RAILS', title: 'Chains and fiat, one seam', body: "A step doesn't care where it settles. Blockchains and banks sit behind the same door." },
-  { tag: 'STAR', title: 'Whole apps, generated', body: 'New products are scaffolded on top of identity and actions. Nobody rebuilds the plumbing.' },
+  { tag: 'BUNDLES', title: 'Whole apps, generated', body: 'Action graph bundles scaffold new products on top of identity and actions. Nobody rebuilds the plumbing.' },
 ]
 
 const TRUST = [

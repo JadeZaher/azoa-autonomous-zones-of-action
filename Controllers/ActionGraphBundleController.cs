@@ -12,36 +12,36 @@ namespace AZOA.WebAPI.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class STARODKController : ControllerBase
+public class ActionGraphBundleController : ControllerBase
 {
-    private readonly ISTARManager _manager;
+    private readonly IActionGraphBundleManager _manager;
 
-    public STARODKController(ISTARManager manager)
+    public ActionGraphBundleController(IActionGraphBundleManager manager)
     {
         _manager = manager;
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<AZOAResult<ISTARODK>>> Get(Guid id, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
         // Owner-or-public read scope: a non-owner cannot read another tenant's private
-        // STAR ODK by id (manager returns "not found" rather than confirming it).
+        // action graph bundle by id (manager returns "not found" rather than confirming it).
         var result = await _manager.GetAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
 
     [HttpGet]
-    public async Task<ActionResult<AZOAResult<IEnumerable<ISTARODK>>>> GetAll([FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<IEnumerable<IActionGraphBundle>>>> GetAll([FromQuery] AZOARequest? request)
     {
         var result = await _manager.GetAllAsync(GetUserIdFromClaims(), request);
         return Ok(result);
     }
 
-    /// <summary>Creates a new STARODK owned by the authenticated user, or
+    /// <summary>Creates a new ActionGraphBundle owned by the authenticated user, or
     /// upserts an existing record they already own (by name).</summary>
     [HttpPost]
-    public async Task<ActionResult<AZOAResult<ISTARODK>>> CreateOrUpdate([FromBody] STARODKCreateModel model, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> CreateOrUpdate([FromBody] ActionGraphBundleCreateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
         if (userId == null) return Unauthorized();
@@ -50,10 +50,10 @@ public class STARODKController : ControllerBase
         return TranslateUpsertResult(result);
     }
 
-    /// <summary>Updates an existing STARODK by route id. Verifies the record is
+    /// <summary>Updates an existing ActionGraphBundle by route id. Verifies the record is
     /// owned by the authenticated user before writing — closes the PUT IDOR.</summary>
     [HttpPut("{id:guid}")]
-    public async Task<ActionResult<AZOAResult<ISTARODK>>> Update(Guid id, [FromBody] STARODKCreateModel model, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Update(Guid id, [FromBody] ActionGraphBundleCreateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
         if (userId == null) return Unauthorized();
@@ -70,11 +70,11 @@ public class STARODKController : ControllerBase
 
         var result = await _manager.DeleteAsync(id, userId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
-        return Ok(new AZOAResponse { Message = "STAR ODK deleted." });
+        return Ok(new AZOAResponse { Message = "action graph bundle deleted." });
     }
 
     [HttpPost("{id:guid}/generate")]
-    public async Task<ActionResult<AZOAResult<ISTARODK>>> Generate(Guid id, [FromBody] STARDappGenerationRequest request, [FromQuery] AZOARequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Generate(Guid id, [FromBody] ActionGraphBundleDappGenerationRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var userId = GetUserIdFromClaims();
         if (userId == null) return Unauthorized();
@@ -84,7 +84,7 @@ public class STARODKController : ControllerBase
     }
 
     [HttpPost("{id:guid}/deploy")]
-    public async Task<ActionResult<AZOAResult<ISTARODK>>> Deploy(Guid id, [FromQuery] AZOARequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Deploy(Guid id, [FromQuery] AZOARequest? providerRequest)
     {
         var userId = GetUserIdFromClaims();
         if (userId == null) return Unauthorized();
@@ -95,8 +95,8 @@ public class STARODKController : ControllerBase
 
     // ── Ecosystem tree (D2) ─────────────────────────────────────────────────
 
-    /// <summary>Attaches a DappSeries (or nested STARODK) as a node in this
-    /// STARODK's ecosystem tree and returns the recomposed tree. The owner is the
+    /// <summary>Attaches a DappSeries (or nested ActionGraphBundle) as a node in this
+    /// ActionGraphBundle's ecosystem tree and returns the recomposed tree. The owner is the
     /// authenticated user — no owner id is read from the body (IDOR-resistant).</summary>
     [HttpPost("{id:guid}/ecosystem/dapp-series")]
     public async Task<ActionResult<AZOAResult<EcosystemTree>>> AddDappSeries(Guid id, [FromBody] AddDappSeriesRequest request, [FromQuery] AZOARequest? providerRequest)
@@ -108,7 +108,7 @@ public class STARODKController : ControllerBase
         return TranslateTreeResult(result);
     }
 
-    /// <summary>Returns this STARODK's ecosystem assembled into a parent/children
+    /// <summary>Returns this ActionGraphBundle's ecosystem assembled into a parent/children
     /// tree. Ownership is verified against the authenticated user.</summary>
     [HttpGet("{id:guid}/ecosystem")]
     public async Task<ActionResult<AZOAResult<EcosystemTree>>> GetEcosystem(Guid id, [FromQuery] AZOARequest? providerRequest)
@@ -128,10 +128,10 @@ public class STARODKController : ControllerBase
     {
         if (!result.IsError) return Ok(result);
 
-        if (result.Message?.StartsWith(STARODKAuthorizationError.Forbidden, StringComparison.Ordinal) == true)
+        if (result.Message?.StartsWith(ActionGraphBundleAuthorizationError.Forbidden, StringComparison.Ordinal) == true)
             return StatusCode(StatusCodes.Status403Forbidden, result);
 
-        if (result.Message?.StartsWith(STARODKAuthorizationError.NotFound, StringComparison.Ordinal) == true)
+        if (result.Message?.StartsWith(ActionGraphBundleAuthorizationError.NotFound, StringComparison.Ordinal) == true)
             return NotFound(result);
 
         return BadRequest(result);
@@ -139,17 +139,17 @@ public class STARODKController : ControllerBase
 
     /// <summary>
     /// Translates a manager upsert result to the right HTTP status. The manager
-    /// flags authorisation failures with the <see cref="STARODKAuthorizationError"/>
+    /// flags authorisation failures with the <see cref="ActionGraphBundleAuthorizationError"/>
     /// prefixes so the controller can return 403/404 instead of 400 for them.
     /// </summary>
-    private ActionResult<AZOAResult<ISTARODK>> TranslateUpsertResult(AZOAResult<ISTARODK> result)
+    private ActionResult<AZOAResult<IActionGraphBundle>> TranslateUpsertResult(AZOAResult<IActionGraphBundle> result)
     {
         if (!result.IsError) return Ok(result);
 
-        if (result.Message?.StartsWith(STARODKAuthorizationError.Forbidden, StringComparison.Ordinal) == true)
+        if (result.Message?.StartsWith(ActionGraphBundleAuthorizationError.Forbidden, StringComparison.Ordinal) == true)
             return StatusCode(StatusCodes.Status403Forbidden, result);
 
-        if (result.Message?.StartsWith(STARODKAuthorizationError.NotFound, StringComparison.Ordinal) == true)
+        if (result.Message?.StartsWith(ActionGraphBundleAuthorizationError.NotFound, StringComparison.Ordinal) == true)
             return NotFound(result);
 
         return BadRequest(result);

@@ -51,9 +51,9 @@ public enum ActionNodeType
     WalletSetDefault,
     WalletGetPortfolio,
 
-    // STAR operations
-    StarGenerate,
-    StarDeploy,
+    // Action graph bundle operations
+    ActionGraphBundleGenerate,
+    ActionGraphBundleDeploy,
 
     // Search
     Search,

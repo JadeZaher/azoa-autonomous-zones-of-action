@@ -83,15 +83,15 @@ allocation receipt endpoint for allocation status.
 | | /api/blockchainoperation/user/{userId} | GET | `getBlockchainOperationsByUser` | client.ts | OK (safe projection) |
 | **Allocation receipt** | /api/allocation/receipt | GET | — | — | SDK gap (API-key caller surface; .NET SDK track) |
 | | /api/allocation/receipt/reconcile | POST | — | — | SDK gap (API-key caller surface; .NET SDK track) |
-| **STARODK** | /api/starodk/{id} | GET | `getSTARODK` | client.ts | OK |
-| | /api/starodk | GET | `listSTARODK` | client.ts | OK |
-| | /api/starodk | POST | `createSTARODK` | client.ts | OK |
-| | /api/starodk/{id} | PUT | `updateSTARODK` | client.ts | OK |
-| | /api/starodk/{id} | DELETE | `deleteSTARODK` | client.ts | OK |
-| | /api/starodk/{id}/generate | POST | `generateSTARDapp` | client.ts | OK |
-| | /api/starodk/{id}/ecosystem | GET | — | — | **SDK gap** |
-| | /api/starodk/{id}/ecosystem/dapp-series | POST | — | — | **SDK gap** |
-| | /api/starodk/{id}/deploy | POST | `deploySTARODK` | client.ts | OK |
+| **ActionGraphBundle** | /api/actiongraphbundle/{id} | GET | `getActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle | GET | `listActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle | POST | `createActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle/{id} | PUT | `updateActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle/{id} | DELETE | `deleteActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle/{id}/generate | POST | `generateActionGraphBundleDapp` | client.ts | OK |
+| | /api/actiongraphbundle/{id}/ecosystem | GET | — | — | **SDK gap** |
+| | /api/actiongraphbundle/{id}/ecosystem/dapp-series | POST | — | — | **SDK gap** |
+| | /api/actiongraphbundle/{id}/deploy | POST | `deployActionGraphBundle` | client.ts | OK |
 | **Action** | /api/action | POST | `createAction` | client.ts | OK |
 | | /api/action/{id} | GET | `getAction` | client.ts | OK |
 | | /api/action/user/{userId} | GET | `listActionsByUser` | client.ts | OK |
@@ -185,7 +185,7 @@ allocation receipt endpoint for allocation status.
 
 ~~1. **`GET /api/nft` (list all NFTs)**~~ — `listNfts()` added to SDK. Resolved.
 
-~~2. **`PUT /api/starodk/{id}` (update STARODK)**~~ — `updateSTARODK()` added to SDK. Resolved.
+~~2. **`PUT /api/actiongraphbundle/{id}` (update the bundle)**~~ — `updateActionGraphBundle()` added to SDK. Resolved.
 
 ~~3. **`GET /api/swap/quote`**~~ — `getSwapQuote()` added to SDK; backend endpoint is `GET /api/swap/quote`. Resolved.
 

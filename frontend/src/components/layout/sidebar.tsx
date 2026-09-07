@@ -69,7 +69,7 @@ const navGroups = [
       { href: '/search', label: 'Search', icon: Search },
       { href: '/holon-query', label: 'Holon Query', icon: Database },
       { href: '/actions', label: 'Actions', icon: Star },
-      { href: '/star-odk', label: 'Star ODK', icon: Star },
+      { href: '/action-graph-bundle', label: 'Action Graph Bundles', icon: Star },
       { href: '/api-keys', label: 'API Keys', icon: KeyRound },
       { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],

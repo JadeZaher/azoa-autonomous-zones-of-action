@@ -7,7 +7,7 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 
 /// <summary>
 /// Manager for the <c>dapp-composition</c> aggregate: composes an ordered
-/// series of action DAGs into a deployable dApp contract via STAR generation.
+/// series of action DAGs into a deployable dApp contract via action graph bundle generation.
 /// Operates on the source-gen'd <see cref="DappSeries"/> +
 /// <see cref="DappSeriesAction"/> POCOs throughout -- no hand-written
 /// persistence types.
@@ -54,13 +54,13 @@ public interface IDappCompositionManager
     /// </summary>
     Task<AZOAResult<CompositionValidationResult>> ValidateAsync(Guid seriesId, Guid userId, CancellationToken ct = default);
 
-    // ── Generation & Deployment (delegate to ISTARManager) ───────────────────
+    // ── Generation & Deployment (delegate to IActionGraphBundleManager) ───────────────────
 
     /// <summary>
     /// Idempotency-friendly: re-running on a series that already has a
-    /// <c>star_odk_id</c> updates the existing record rather than orphaning it.
+    /// <c>action_graph_bundle_id</c> updates the existing record rather than orphaning it.
     /// </summary>
-    Task<AZOAResult<ISTARODK>> GenerateAsync(Guid seriesId, Guid userId, CancellationToken ct = default);
+    Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid seriesId, Guid userId, CancellationToken ct = default);
 
-    Task<AZOAResult<ISTARODK>> DeployAsync(Guid seriesId, Guid userId, string? targetOverride = null, CancellationToken ct = default);
+    Task<AZOAResult<IActionGraphBundle>> DeployAsync(Guid seriesId, Guid userId, string? targetOverride = null, CancellationToken ct = default);
 }

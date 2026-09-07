@@ -1,7 +1,7 @@
 /**
  * Tests for self-audit-one-fix findings.
  * Covers: Jupiter (F1), listNfts (F6), getComposite path (F8),
- * getApiUrl (F4), getSwapQuote/executeSwap (F2), updateSTARODK PUT (F7).
+ * getApiUrl (F4), getSwapQuote/executeSwap (F2), updateActionGraphBundle PUT (F7).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -262,7 +262,7 @@ describe("Finding 2 — getSwapQuote() and executeSwap() on AzoaApiClient", () =
   });
 });
 
-describe("Finding 7 — updateSTARODK() uses PUT /api/starodk/{id}", () => {
+describe("Finding 7 — updateActionGraphBundle() uses PUT /api/actiongraphbundle/{id}", () => {
   let client: AzoaApiClient;
   const VALID_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 
@@ -271,25 +271,25 @@ describe("Finding 7 — updateSTARODK() uses PUT /api/starodk/{id}", () => {
     client = new AzoaApiClient(new ApiConfigBuilder().withToken("tok").build());
   });
 
-  it("issues PUT to /api/starodk/{id}", async () => {
+  it("issues PUT to /api/actiongraphbundle/{id}", async () => {
     mockFetch.mockReturnValueOnce(azoaResponse({ id: VALID_ID, name: "MyApp" }));
-    const result = await client.updateSTARODK(VALID_ID, { name: "MyApp", description: "desc" });
+    const result = await client.updateActionGraphBundle(VALID_ID, { name: "MyApp", description: "desc" });
     expect(isOk(result)).toBe(true);
     const [url, init] = mockFetch.mock.calls[0];
     expect(init.method).toBe("PUT");
-    expect(url).toBe(`http://localhost:5000/api/starodk/${VALID_ID}`);
+    expect(url).toBe(`http://localhost:5000/api/actiongraphbundle/${VALID_ID}`);
   });
 
   it("embeds the id in the URL path, not the body", async () => {
     mockFetch.mockReturnValueOnce(azoaResponse({ id: VALID_ID, name: "MyApp" }));
-    await client.updateSTARODK(VALID_ID, { name: "MyApp", description: "desc" });
+    await client.updateActionGraphBundle(VALID_ID, { name: "MyApp", description: "desc" });
     const [url] = mockFetch.mock.calls[0];
-    expect(url).toContain(`/api/starodk/${VALID_ID}`);
+    expect(url).toContain(`/api/actiongraphbundle/${VALID_ID}`);
   });
 
   it("throws before sending a request when id is not a UUID", async () => {
-    await expect(client.updateSTARODK("not-a-uuid", { name: "MyApp", description: "desc" })).rejects.toThrow(
-      "Invalid starodkId"
+    await expect(client.updateActionGraphBundle("not-a-uuid", { name: "MyApp", description: "desc" })).rejects.toThrow(
+      "Invalid actiongraphbundleId"
     );
     expect(mockFetch).not.toHaveBeenCalled();
   });

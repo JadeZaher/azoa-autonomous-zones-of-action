@@ -11,12 +11,12 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("ecosystem",
         Aggregate = "Ecosystem (star-odk-ecosystem-tree / final-hardening-cutover D2 -- new entity)",
-        Guardrail = "G6 SCHEMAFULL; greenfield entity. An Ecosystem is the ROOT of a tree of EcosystemNodes; each node references a DappSeries or a STARODK. Owned by a STARODK + user.")]
-    [SurrealNote("An Ecosystem is a tree whose nodes (ecosystem_node table) each attach a DappSeries (or another STARODK) as a composable dApp. The tree is walked by ISTARManager.GetEcosystemAsync/codegen to produce the composed multi-dApp GeneratedCode on the owning STARODK. Cycle safety is enforced app-side (mirrors the holon parent-cycle guard) -- SurrealDB does not enforce acyclicity.")]
-    [SurrealNote("star_odk_id is the owning STARODK; user_id is the authoritative owner (IDOR-scoped, never trusts caller-supplied owner ids). A STARODK owns at most one ecosystem in practice but the schema does not enforce that.")]
+        Guardrail = "G6 SCHEMAFULL; greenfield entity. An Ecosystem is the ROOT of a tree of EcosystemNodes; each node references a DappSeries or an ActionGraphBundle. Owned by an ActionGraphBundle + user.")]
+    [SurrealNote("An Ecosystem is a tree whose nodes (ecosystem_node table) each attach a DappSeries (or another ActionGraphBundle) as a composable dApp. The tree is walked by IActionGraphBundleManager.GetEcosystemAsync/codegen to produce the composed multi-dApp GeneratedCode on the owning ActionGraphBundle. Cycle safety is enforced app-side (mirrors the holon parent-cycle guard) -- SurrealDB does not enforce acyclicity.")]
+    [SurrealNote("action_graph_bundle_id is the owning ActionGraphBundle; user_id is the authoritative owner (IDOR-scoped, never trusts caller-supplied owner ids). An ActionGraphBundle owns at most one ecosystem in practice but the schema does not enforce that.")]
     [Slice("dapp_composition")]
     [Index("ecosystem_by_user", Fields = new[] { "user_id" })]
-    [Index("ecosystem_by_star_odk", Fields = new[] { "star_odk_id" })]
+    [Index("ecosystem_by_action_graph_bundle", Fields = new[] { "action_graph_bundle_id" })]
     public partial class Ecosystem : ISurrealRecord
     {
         public const string SchemaNameConst = "ecosystem";
@@ -34,9 +34,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Optional description")]
         public string? Description { get; set; }
 
-        [FieldGroup("Owning STARODK")]
-        [References(typeof(StarOdk))]
-        public string StarOdkId { get; set; } = string.Empty;
+        [FieldGroup("Owning ActionGraphBundle")]
+        [References(typeof(ActionGraphBundle))]
+        public string ActionGraphBundleId { get; set; } = string.Empty;
 
         [FieldGroup("Owner user (Guid('N') hex) -- authoritative, IDOR-scoped")]
         [References(typeof(User))]

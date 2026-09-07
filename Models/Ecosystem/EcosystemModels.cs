@@ -4,7 +4,7 @@ namespace AZOA.WebAPI.Models.Ecosystem;
 public enum EcosystemRefKind
 {
     DappSeries,
-    StarOdk,
+    ActionGraphBundle,
 }
 
 /// <summary>Domain view of an ecosystem (the tree root record), Guid-typed.</summary>
@@ -13,7 +13,7 @@ public class EcosystemModel
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public Guid StarOdkId { get; set; }
+    public Guid ActionGraphBundleId { get; set; }
     public Guid UserId { get; set; }
     public string? TargetChain { get; set; }
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;

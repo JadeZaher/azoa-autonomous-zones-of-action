@@ -3,9 +3,9 @@ using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Validators;
 
-public class STARDappGenerationRequestValidator : AbstractValidator<STARDappGenerationRequest>
+public class ActionGraphBundleDappGenerationRequestValidator : AbstractValidator<ActionGraphBundleDappGenerationRequest>
 {
-    public STARDappGenerationRequestValidator()
+    public ActionGraphBundleDappGenerationRequestValidator()
     {
         RuleFor(x => x.TargetChain)
             .NotEmpty().WithMessage("TargetChain is required.")

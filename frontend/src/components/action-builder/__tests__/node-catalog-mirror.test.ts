@@ -21,8 +21,8 @@ const BACKEND_ACTION_NODE_TYPES = [
   'NftMint', 'NftTransfer', 'NftBurn', 'NftGet', 'NftQuery', 'NftGetMetadata',
   // Wallet operations
   'WalletCreate', 'WalletUpdate', 'WalletDelete', 'WalletGet', 'WalletQuery', 'WalletSetDefault', 'WalletGetPortfolio',
-  // STAR operations
-  'StarGenerate', 'StarDeploy',
+  // Action graph bundle operations
+  'ActionGraphBundleGenerate', 'ActionGraphBundleDeploy',
   // Search
   'Search',
   // User NFT

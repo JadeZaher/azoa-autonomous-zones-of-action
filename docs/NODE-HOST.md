@@ -15,7 +15,7 @@ engine** — this guide supersedes the Postgres/EF sections in `GO-TO-PROD.md` a
 An AZOA node is two cooperating processes:
 
 - **The WebAPI** — the .NET 10 ASP.NET Core host (`AZOA.WebAPI.dll`). It serves the
-  AZOA protocol (identity, actions, holons, swaps, STAR, bridge) over HTTP with
+  AZOA protocol (identity, actions, holons, swaps, action graph bundles, bridge) over HTTP with
   dual auth (JWT + `X-Api-Key`).
 - **A SurrealDB instance it owns** — the sole data engine. The node reads and
   writes durable state (actions, idempotency claims, VAA replay ledger, bridge

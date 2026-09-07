@@ -42,10 +42,10 @@ export type {
   NftHolding,
   // BlockchainOperation types
   BlockchainOperationResult,
-  // STARODK types
-  STARODKResult,
-  STARODKCreateParams,
-  STARDappGenerationParams,
+  // ActionGraphBundle types
+  ActionGraphBundleResult,
+  ActionGraphBundleCreateParams,
+  ActionGraphBundleDappGenerationParams,
   // UserNFT types
   UserNFTResult,
   UserNFTMintParams,

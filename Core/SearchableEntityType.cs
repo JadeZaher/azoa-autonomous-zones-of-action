@@ -8,6 +8,6 @@ public enum SearchableEntityType
     Holon = 2,
     Wallet = 4,
     BlockchainOperation = 8,
-    STARODK = 16,
-    All = User | Holon | Wallet | BlockchainOperation | STARODK
+    ActionGraphBundle = 16,
+    All = User | Holon | Wallet | BlockchainOperation | ActionGraphBundle
 }

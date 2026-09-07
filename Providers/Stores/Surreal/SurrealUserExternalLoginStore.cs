@@ -215,7 +215,7 @@ public sealed class SurrealUserExternalLoginStore : IUserExternalLoginStore
         try
         {
             // Filtered by the OWNING user as well as the scope: an unlink can only
-            // ever remove the caller's own binding (the STARODK IDOR precedent —
+            // ever remove the caller's own binding (the ActionGraphBundle IDOR precedent —
             // route/body identity never widens the authenticated identity).
             //
             // DELETE removes this row and nothing else. There is no cascade to user:

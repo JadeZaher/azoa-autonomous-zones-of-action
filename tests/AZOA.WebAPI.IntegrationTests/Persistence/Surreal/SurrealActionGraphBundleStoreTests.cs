@@ -8,7 +8,7 @@ using AZOA.WebAPI.Providers.Stores.Surreal;
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 
 /// <summary>
-/// Store-layer integration tests for <see cref="SurrealStarStore"/>.
+/// Store-layer integration tests for <see cref="SurrealActionGraphBundleStore"/>.
 ///
 /// Each test creates an isolated SurrealDB namespace (test_{guid}) against
 /// the test container on port 8442. Tests skip gracefully via <see cref="SkippableFact"/>
@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 /// test runner reports them as Skipped instead of Passed.
 ///
 /// Required coverage:
-///   1. Upsert → GetById round-trip (full STARODK, BoundHolonIds populated)
+///   1. Upsert → GetById round-trip (full ActionGraphBundle, BoundHolonIds populated)
 ///   2. GetById of non-existent id returns IsError=true
 ///   3. Upsert (update path) overwrites existing record
 ///   4. Delete removes the record
@@ -24,7 +24,7 @@ namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 ///   6. GetAll returns all inserted records
 ///   7. BoundHolonIds (empty list) + nullable fields (null and set) round-trip
 /// </summary>
-public sealed class SurrealStarStoreTests : IAsyncLifetime
+public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
 {
     // ── Connection config ─────────────────────────────────────────────────────
 
@@ -33,7 +33,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     // ── Per-instance state ────────────────────────────────────────────────────
 
     private readonly string _testNamespace = $"test{Guid.NewGuid():N}";
-    private SurrealStarStore _store = null!;
+    private SurrealActionGraphBundleStore _store = null!;
     private ISurrealConnection _connection = null!;
     private bool _surrealAvailable;
 
@@ -55,7 +55,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 
         _connection = new SurrealDbNetConnection(options);
         var executor = new DefaultSurrealExecutor(_connection);
-        _store = new SurrealStarStore(executor);
+        _store = new SurrealActionGraphBundleStore(executor);
 
         await BootstrapSchemaAsync();
     }
@@ -70,7 +70,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 
     // ── Tests ─────────────────────────────────────────────────────────────────
 
-    /// <summary>Test 1: Upsert creates a STAR ODK with BoundHolonIds; GetById retrieves it with matching fields.</summary>
+    /// <summary>Test 1: Upsert creates an action graph bundle with BoundHolonIds; GetById retrieves it with matching fields.</summary>
     [SkippableFact]
     public async Task Upsert_ThenGetById_RoundTrips()
     {
@@ -79,11 +79,11 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         var holonId1 = Guid.NewGuid();
         var holonId2 = Guid.NewGuid();
 
-        var odk = new STARODK
+        var odk = new ActionGraphBundle
         {
             Id               = Guid.NewGuid(),
-            Name             = "Test STAR",
-            Description      = "A test STAR ODK",
+            Name             = "Test action graph bundle",
+            Description      = "A test action graph bundle",
             PublicKey        = "pk_test_abc123",
             PrivateKeyHash   = "hash_test_xyz789",
             UserId         = Guid.NewGuid(),
@@ -108,8 +108,8 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         getResult.Message.Should().Be("Success");
         getResult.Result.Should().NotBeNull();
         getResult.Result!.Id.Should().Be(odk.Id);
-        getResult.Result.Name.Should().Be("Test STAR");
-        getResult.Result.Description.Should().Be("A test STAR ODK");
+        getResult.Result.Name.Should().Be("Test action graph bundle");
+        getResult.Result.Description.Should().Be("A test action graph bundle");
         getResult.Result.PublicKey.Should().Be("pk_test_abc123");
         getResult.Result.PrivateKeyHash.Should().Be("hash_test_xyz789");
         getResult.Result.UserId.Should().Be(odk.UserId);
@@ -133,7 +133,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         var result = await _store.GetByIdAsync(Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Be("STAR ODK not found.");
+        result.Message.Should().Be("action graph bundle not found.");
         result.Result.Should().BeNull();
     }
 
@@ -145,7 +145,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 
         var id = Guid.NewGuid();
 
-        var original = new STARODK
+        var original = new ActionGraphBundle
         {
             Id          = id,
             Name        = "Original Name",
@@ -156,7 +156,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         };
         await _store.UpsertAsync(original);
 
-        var updated = new STARODK
+        var updated = new ActionGraphBundle
         {
             Id          = id,
             Name        = "Updated Name",
@@ -186,7 +186,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var odk = new STARODK
+        var odk = new ActionGraphBundle
         {
             Id          = Guid.NewGuid(),
             Name        = "To Delete",
@@ -205,7 +205,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 
         var getResult = await _store.GetByIdAsync(odk.Id);
         getResult.IsError.Should().BeTrue();
-        getResult.Message.Should().Be("STAR ODK not found.");
+        getResult.Message.Should().Be("action graph bundle not found.");
     }
 
     /// <summary>Test 5: Delete of a non-existent id returns IsError=true, Result=false.</summary>
@@ -218,28 +218,28 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
 
         result.IsError.Should().BeTrue();
         result.Result.Should().BeFalse();
-        result.Message.Should().Be("STAR ODK not found.");
+        result.Message.Should().Be("action graph bundle not found.");
     }
 
-    /// <summary>Test 6: GetAll returns all inserted STAR ODK records.</summary>
+    /// <summary>Test 6: GetAll returns all inserted action graph bundle records.</summary>
     [SkippableFact]
-    public async Task GetAll_ReturnsAllInsertedStars()
+    public async Task GetAll_ReturnsAllInsertedActionGraphBundles()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var odk1 = new STARODK
+        var odk1 = new ActionGraphBundle
         {
             Id          = Guid.NewGuid(),
-            Name        = "Star One",
-            Description = "First star",
+            Name        = "ActionGraphBundle One",
+            Description = "First bundle",
             CreatedDate = DateTime.UtcNow,
             IsActive    = true
         };
-        var odk2 = new STARODK
+        var odk2 = new ActionGraphBundle
         {
             Id          = Guid.NewGuid(),
-            Name        = "Star Two",
-            Description = "Second star",
+            Name        = "ActionGraphBundle Two",
+            Description = "Second bundle",
             CreatedDate = DateTime.UtcNow,
             IsActive    = true
         };
@@ -268,10 +268,10 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         // Record with empty list and all nullables null.
-        var odkNulls = new STARODK
+        var odkNulls = new ActionGraphBundle
         {
             Id               = Guid.NewGuid(),
-            Name             = "Null Fields Star",
+            Name             = "Null Fields ActionGraphBundle",
             Description      = string.Empty,
             PublicKey        = null,
             PrivateKeyHash   = null,
@@ -299,10 +299,10 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         var userId = Guid.NewGuid();
         var holonId  = Guid.NewGuid();
 
-        var odkPopulated = new STARODK
+        var odkPopulated = new ActionGraphBundle
         {
             Id               = Guid.NewGuid(),
-            Name             = "Populated Fields Star",
+            Name             = "Populated Fields ActionGraphBundle",
             Description      = "desc",
             PublicKey        = "pub-key",
             PrivateKeyHash   = "priv-hash",
@@ -335,7 +335,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     /// <summary>
     /// Test 8: GetByNameAndUserAsync matches owner-scoped records (case-insensitive)
     /// and returns Result=null without IsError when no record is owned by the user.
-    /// This is the IDOR-safe lookup that <see cref="STARManager.CreateOrUpdateAsync"/>
+    /// This is the IDOR-safe lookup that <see cref="ActionGraphBundleManager.CreateOrUpdateAsync"/>
     /// uses on POST.
     /// </summary>
     [SkippableFact]
@@ -346,7 +346,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
         var userA = Guid.NewGuid();
         var userB = Guid.NewGuid();
 
-        var ownedByA = new STARODK
+        var ownedByA = new ActionGraphBundle
         {
             Id          = Guid.NewGuid(),
             Name        = "Shared Name",
@@ -355,7 +355,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
             CreatedDate = DateTime.UtcNow,
             IsActive    = true
         };
-        var ownedByB = new STARODK
+        var ownedByB = new ActionGraphBundle
         {
             Id          = Guid.NewGuid(),
             Name        = "Shared Name",
@@ -398,7 +398,7 @@ public sealed class SurrealStarStoreTests : IAsyncLifetime
     }
 
     private Task BootstrapSchemaAsync()
-        => SurrealTestSchema.BootstrapAsync(_testNamespace, "star_odk");
+        => SurrealTestSchema.BootstrapAsync(_testNamespace, "action_graph_bundle");
 
     private Task DropNamespaceAsync() => SurrealTestSchema.DropAsync(_testNamespace);
 }

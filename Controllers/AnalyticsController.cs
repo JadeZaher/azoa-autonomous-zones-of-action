@@ -61,7 +61,7 @@ public sealed class AnalyticsController : ControllerBase
 
     /// <summary>
     /// The subject comes only from the credential. There is no <c>userId</c> parameter on either
-    /// route — the repo's STARODK precedent: an owned-resource read never takes its owner from
+    /// route — the repo's ActionGraphBundle precedent: an owned-resource read never takes its owner from
     /// the caller. A node-operator cross-user view would be a separate <c>NodeGovern</c> route,
     /// never an optional parameter here.
     /// </summary>

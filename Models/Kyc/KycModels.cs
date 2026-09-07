@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 // AZOA-side KYC DTOs. Ownership is keyed to User (Guid) throughout — the
 // authenticated user is authoritative; any UserId on a request body is
-// ignored by the manager (IDOR defence-in-depth, the STARODK precedent).
+// ignored by the manager (IDOR defence-in-depth, the ActionGraphBundle precedent).
 
 #nullable enable
 

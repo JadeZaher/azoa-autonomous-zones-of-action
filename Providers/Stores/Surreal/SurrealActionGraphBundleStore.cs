@@ -14,45 +14,45 @@ using AZOA.WebAPI.Core.Surreal;
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <summary>
-/// SurrealDB-backed <see cref="ISTARStore"/>. Maps between the legacy
-/// <see cref="STARODK"/> domain model and an inline POCO via private
+/// SurrealDB-backed <see cref="IActionGraphBundleStore"/>. Maps between the legacy
+/// <see cref="ActionGraphBundle"/> domain model and an inline POCO via private
 /// ToPoco / FromPoco helpers.
 ///
 /// ID encoding: <c>Guid.ToString("N").ToLowerInvariant()</c> (32-char hex,
 /// no dashes). Dates are stored as DateTimeOffset with UTC kind applied.
 /// BoundHolonIds is serialised as a JSON array of "N"-formatted id strings.
 /// </summary>
-public sealed class SurrealStarStore : ISTARStore
+public sealed class SurrealActionGraphBundleStore : IActionGraphBundleStore
 {
     private readonly ISurrealExecutor _executor;
 
-    public SurrealStarStore(ISurrealExecutor executor)
+    public SurrealActionGraphBundleStore(ISurrealExecutor executor)
     {
         _executor = executor;
     }
 
-    // ── ISTARStore ────────────────────────────────────────────────────────────
+    // ── IActionGraphBundleStore ────────────────────────────────────────────────────────────
 
-    public async Task<AZOAResult<ISTARODK>> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<AZOAResult<IActionGraphBundle>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         try
         {
-            var q = SurrealQuery.SelectById(StarRecord.StarTable, SurrealId.ToSurrealId(id));
-            var row = await _executor.QuerySingleAsync<StarRecord>(q, ct);
-            return new AZOAResult<ISTARODK>
+            var q = SurrealQuery.SelectById(ActionGraphBundleRecord.ActionGraphBundleTable, SurrealId.ToSurrealId(id));
+            var row = await _executor.QuerySingleAsync<ActionGraphBundleRecord>(q, ct);
+            return new AZOAResult<IActionGraphBundle>
             {
                 IsError = row == null,
-                Message = row == null ? "STAR ODK not found." : "Success",
+                Message = row == null ? "action graph bundle not found." : "Success",
                 Result  = row == null ? null : FromPoco(row)
             };
         }
         catch (Exception ex)
         {
-            return new AZOAResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.GetByIdAsync failed: {ex.Message}");
+            return new AZOAResult<IActionGraphBundle>().CaptureException(ex, $"SurrealActionGraphBundleStore.GetByIdAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<AZOAResult<ISTARODK>> GetByNameAndUserAsync(string name, Guid userId, CancellationToken ct = default)
+    public async Task<AZOAResult<IActionGraphBundle>> GetByNameAndUserAsync(string name, Guid userId, CancellationToken ct = default)
     {
         try
         {
@@ -62,31 +62,31 @@ public sealed class SurrealStarStore : ISTARStore
             // to preserve the prior CreateOrUpdateAsync semantic.
             var q = SurrealQuery
                 .Of("SELECT * FROM type::table($_t) WHERE string::lowercase(name) = string::lowercase($_name) AND user_id = $_user LIMIT 1")
-                .WithParam("_t",      StarRecord.StarTable)
+                .WithParam("_t",      ActionGraphBundleRecord.ActionGraphBundleTable)
                 .WithParam("_name",   name)
                 .WithParam("_user", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(userId)));
 
-            var row = await _executor.QuerySingleAsync<StarRecord>(q, ct);
-            return new AZOAResult<ISTARODK>
+            var row = await _executor.QuerySingleAsync<ActionGraphBundleRecord>(q, ct);
+            return new AZOAResult<IActionGraphBundle>
             {
                 IsError = false,
-                Message = row == null ? "No matching STAR ODK." : "Success",
+                Message = row == null ? "No matching action graph bundle." : "Success",
                 Result  = row == null ? null : FromPoco(row)
             };
         }
         catch (Exception ex)
         {
-            return new AZOAResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.GetByNameAndUserAsync failed: {ex.Message}");
+            return new AZOAResult<IActionGraphBundle>().CaptureException(ex, $"SurrealActionGraphBundleStore.GetByNameAndUserAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<AZOAResult<IEnumerable<ISTARODK>>> GetAllAsync(CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<IActionGraphBundle>>> GetAllAsync(CancellationToken ct = default)
     {
         try
         {
-            var q = SurrealQuery.SelectAll(StarRecord.StarTable);
-            var rows = await _executor.QueryAsync<StarRecord>(q, ct);
-            return new AZOAResult<IEnumerable<ISTARODK>>
+            var q = SurrealQuery.SelectAll(ActionGraphBundleRecord.ActionGraphBundleTable);
+            var rows = await _executor.QueryAsync<ActionGraphBundleRecord>(q, ct);
+            return new AZOAResult<IEnumerable<IActionGraphBundle>>
             {
                 Result  = rows.Select(FromPoco).ToList(),
                 Message = "Success"
@@ -94,11 +94,11 @@ public sealed class SurrealStarStore : ISTARStore
         }
         catch (Exception ex)
         {
-            return new AZOAResult<IEnumerable<ISTARODK>>().CaptureException(ex, $"SurrealStarStore.GetAllAsync failed: {ex.Message}");
+            return new AZOAResult<IEnumerable<IActionGraphBundle>>().CaptureException(ex, $"SurrealActionGraphBundleStore.GetAllAsync failed: {ex.Message}");
         }
     }
 
-    public async Task<AZOAResult<ISTARODK>> UpsertAsync(ISTARODK odk, CancellationToken ct = default)
+    public async Task<AZOAResult<IActionGraphBundle>> UpsertAsync(IActionGraphBundle odk, CancellationToken ct = default)
     {
         try
         {
@@ -111,14 +111,14 @@ public sealed class SurrealStarStore : ISTARStore
             var resp = await _executor.ExecuteAsync(q, ct);
             resp.EnsureAllOk();
 
-            var saved  = resp.GetValues<StarRecord>(0).FirstOrDefault();
+            var saved  = resp.GetValues<ActionGraphBundleRecord>(0).FirstOrDefault();
             var result = saved is not null ? FromPoco(saved) : odk;
 
-            return new AZOAResult<ISTARODK> { Result = result, Message = "Saved." };
+            return new AZOAResult<IActionGraphBundle> { Result = result, Message = "Saved." };
         }
         catch (Exception ex)
         {
-            return new AZOAResult<ISTARODK>().CaptureException(ex, $"SurrealStarStore.UpsertAsync failed: {ex.Message}");
+            return new AZOAResult<IActionGraphBundle>().CaptureException(ex, $"SurrealActionGraphBundleStore.UpsertAsync failed: {ex.Message}");
         }
     }
 
@@ -127,19 +127,19 @@ public sealed class SurrealStarStore : ISTARStore
         try
         {
             // Check existence first (matches the prior EF read-before-update contract).
-            var checkQ   = SurrealQuery.SelectById(StarRecord.StarTable, SurrealId.ToSurrealId(id));
-            var existing = await _executor.QuerySingleAsync<StarRecord>(checkQ, ct);
+            var checkQ   = SurrealQuery.SelectById(ActionGraphBundleRecord.ActionGraphBundleTable, SurrealId.ToSurrealId(id));
+            var existing = await _executor.QuerySingleAsync<ActionGraphBundleRecord>(checkQ, ct);
             if (existing == null)
-                return new AZOAResult<bool> { IsError = true, Message = "STAR ODK not found.", Result = false };
+                return new AZOAResult<bool> { IsError = true, Message = "action graph bundle not found.", Result = false };
 
-            var q = SurrealQuery.DeleteById(StarRecord.StarTable, SurrealId.ToSurrealId(id));
+            var q = SurrealQuery.DeleteById(ActionGraphBundleRecord.ActionGraphBundleTable, SurrealId.ToSurrealId(id));
             await _executor.ExecuteAsync(q, ct);
 
             return new AZOAResult<bool> { Result = true, Message = "Deleted." };
         }
         catch (Exception ex)
         {
-            return new AZOAResult<bool>().CaptureException(ex, $"SurrealStarStore.DeleteAsync failed: {ex.Message}");
+            return new AZOAResult<bool>().CaptureException(ex, $"SurrealActionGraphBundleStore.DeleteAsync failed: {ex.Message}");
         }
     }
 
@@ -147,7 +147,7 @@ public sealed class SurrealStarStore : ISTARStore
 
 
 
-    private static StarRecord ToPoco(ISTARODK odk)
+    private static ActionGraphBundleRecord ToPoco(IActionGraphBundle odk)
     {
         // Serialize BoundHolonIds as a JSON array of "N"-formatted id strings.
         // ALWAYS serialize (empty → `[]`) so the SET-based upsert REPLACES the
@@ -155,7 +155,7 @@ public sealed class SurrealStarStore : ISTARStore
         var idStrings = odk.BoundHolonIds.Select(SurrealId.ToSurrealId).ToList();
         JsonElement? boundHolonIdsJson = JsonSerializer.SerializeToElement(idStrings, SurrealJsonOptions.Default);
 
-        return new StarRecord
+        return new ActionGraphBundleRecord
         {
             Id               = SurrealId.ToSurrealId(odk.Id),
             Name             = odk.Name,
@@ -178,7 +178,7 @@ public sealed class SurrealStarStore : ISTARStore
         };
     }
 
-    private static STARODK FromPoco(StarRecord p)
+    private static ActionGraphBundle FromPoco(ActionGraphBundleRecord p)
     {
         // Deserialize BoundHolonIds from the JSON array of "N"-formatted id strings.
         List<Guid> boundHolonIds = new();
@@ -194,7 +194,7 @@ public sealed class SurrealStarStore : ISTARStore
             catch { /* best-effort — return empty list on malformed data */ }
         }
 
-        return new STARODK
+        return new ActionGraphBundle
         {
             Id               = SurrealId.FromSurrealId(p.Id),
             Name             = p.Name,
@@ -215,11 +215,11 @@ public sealed class SurrealStarStore : ISTARStore
 
     // ── Inline SurrealDB record type ──────────────────────────────────────────
 
-    private sealed class StarRecord : SurrealForge.Client.ISurrealRecord
+    private sealed class ActionGraphBundleRecord : SurrealForge.Client.ISurrealRecord
     {
-        public const string StarTable = "star_odk";
+        public const string ActionGraphBundleTable = "action_graph_bundle";
 
-        public string SchemaName => StarTable;
+        public string SchemaName => ActionGraphBundleTable;
 
         [Id, Column(Type = "string")]
         [JsonPropertyName("id")]

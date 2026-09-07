@@ -2,9 +2,9 @@
 
 ## §ecosystem-tree — SurrealEcosystemStore (D2)
 
-`final-hardening-cutover` Phase D / D2. Backs `IEcosystemStore` (the STARODK
+`final-hardening-cutover` Phase D / D2. Backs `IEcosystemStore` (the ActionGraphBundle
 ecosystem tree — see `Managers/AGENTS.md §ecosystem-tree` for the feature). Two
-tables: `ecosystem` (root, one per STARODK) and `ecosystem_node` (tree nodes).
+tables: `ecosystem` (root, one per ActionGraphBundle) and `ecosystem_node` (tree nodes).
 
 - **Decorated-POCO interface, inline wire POCO storage.** The interface exposes
   the attributed `Persistence/SurrealDb/Models/{Ecosystem,EcosystemNode}` POCOs
@@ -15,7 +15,7 @@ tables: `ecosystem` (root, one per STARODK) and `ecosystem_node` (tree nodes).
   stripped by `SurrealLink.FromLink` on read. The manager works in bare Guid('N')
   hex throughout; the store owns the link (de)coding.
 - **`ref_id` is NOT a record-link.** `EcosystemNode.RefId` is a polymorphic
-  reference (DappSeries OR star_odk, discriminated by `ref_kind`), so it is stored
+  reference (DappSeries OR action_graph_bundle, discriminated by `ref_kind`), so it is stored
   as bare hex, never `table:hex`. SurrealDB `record<>` is single-table; ownership
   is validated app-side in the manager, not by a schema FK.
 - **Cascade delete.** `DeleteAsync(ecosystemId)` deletes child nodes first
@@ -245,7 +245,7 @@ null `option<>` fields. A mapping that only serializes a collection when
 non-empty (`X = list.Count > 0 ? ... : null`) therefore makes "empty the
 collection" a silent no-op: the null is dropped from the SET clause and the
 stale stored value survives. Found in Holon (Phase H), then confirmed by audit
-in Star (`bound_holon_ids`), Nft UserNFT (`attributes`), and
+in ActionGraphBundle (`bound_holon_ids`), Nft UserNFT (`attributes`), and
 BlockchainOperation (`parameters`) — all fixed 2026-07-06.
 
 Rules for any SET-upserted store mapping:

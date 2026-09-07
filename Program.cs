@@ -878,7 +878,7 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddSingleton<IProviderHealthMonitor, ProviderHealthMonitor>();
 
 // ─── Per-aggregate stores ───
-// surrealdb-migration wave-2 close-out (Stream A): User/Holon/STAR flip to
+// surrealdb-migration wave-2 close-out (Stream A): User/Holon/ActionGraphBundle flip to
 // SurrealDB now that their 090/100/110 .mermaid/.surql schemas + inline-POCO
 // adapters have landed. Only Action remains on EF, gated on
 // action-temporal-fork-model. Scoped lifetime in both cases.
@@ -904,9 +904,9 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IAdminBootstrapStateSto
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealAdminBootstrapStateStore>();
 builder.Services.AddScoped<IBlockchainOperationStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealBlockchainOperationStore>();
-builder.Services.AddScoped<ISTARStore,
-    AZOA.WebAPI.Providers.Stores.Surreal.SurrealStarStore>();
-// star-odk-ecosystem-tree (D2): tree of DappSeries/STARODK nodes owned by a STARODK.
+builder.Services.AddScoped<IActionGraphBundleStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionGraphBundleStore>();
+// star-odk-ecosystem-tree (D2): tree of DappSeries/ActionGraphBundle nodes owned by an ActionGraphBundle.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEcosystemStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealEcosystemStore>();
 // kyc-module: KYC submission/document persistence (SurrealDB).
@@ -1296,7 +1296,7 @@ builder.Services.AddScoped<IDexAdapter>(sp => sp.GetRequiredService<JupiterDexAd
 builder.Services.AddScoped<IDexAdapter, TinymanDexAdapter>();
 builder.Services.AddScoped<ISwapManager, SwapManager>();
 builder.Services.AddScoped<IBlockchainOperationManager, BlockchainOperationManager>();
-builder.Services.AddScoped<ISTARManager, STARManager>();
+builder.Services.AddScoped<IActionGraphBundleManager, ActionGraphBundleManager>();
 builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
 builder.Services.AddScoped<IUserNFTService, UserNFTService>();

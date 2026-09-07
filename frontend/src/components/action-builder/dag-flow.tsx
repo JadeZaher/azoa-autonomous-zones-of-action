@@ -23,7 +23,7 @@ const CATEGORY_HEX: Record<NodeCategory, string> = {
   Holon: '#3b82f6',
   NFT: '#a855f7',
   Wallet: '#10b981',
-  STAR: '#f59e0b',
+  ActionGraphBundle: '#f59e0b',
   Search: '#06b6d4',
   User: '#ec4899',
   Blockchain: '#f97316',

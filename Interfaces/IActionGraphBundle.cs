@@ -1,6 +1,6 @@
 namespace AZOA.WebAPI.Interfaces;
 
-public interface ISTARODK
+public interface IActionGraphBundle
 {
     Guid Id { get; set; }
     string Name { get; set; }
@@ -15,6 +15,6 @@ public interface ISTARODK
     DateTime CreatedDate { get; set; }
     DateTime? ModifiedDate { get; set; }
     bool IsActive { get; set; }
-    /// <summary>Owner opt-in: makes this STAR ODK dApp definition readable cross-user as a marketplace template.</summary>
+    /// <summary>Owner opt-in: makes this action graph bundle dApp definition readable cross-user as a marketplace template.</summary>
     bool IsPublic { get; set; }
 }

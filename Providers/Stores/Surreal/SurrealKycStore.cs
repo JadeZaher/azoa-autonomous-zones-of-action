@@ -25,7 +25,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// <see cref="KycDocument"/> POCOs directly: a private <c>ToStorage</c> swaps
 /// the in-memory bare-hex id fields for link form before write, and
 /// <c>FromStorage</c> reverses it after read. Mirrors
-/// <c>SurrealStarStore</c>'s ToPoco/FromPoco pattern.
+/// <c>SurrealActionGraphBundleStore</c>'s ToPoco/FromPoco pattern.
 /// </summary>
 public sealed class SurrealKycStore : IKycStore
 {

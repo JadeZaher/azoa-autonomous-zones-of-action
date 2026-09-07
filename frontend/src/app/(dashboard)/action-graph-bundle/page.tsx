@@ -30,7 +30,7 @@ import { azoa, isOk } from '@/lib/azoa'
 
 // ─── Types ───
 
-interface OdkItem {
+interface BundleItem {
   id: string
   name: string
   description?: string
@@ -41,15 +41,15 @@ interface OdkItem {
   [key: string]: unknown
 }
 
-// ─── ODK List Row ───
+// ─── Bundle List Row ───
 
-function OdkRow({
+function BundleRow({
   item,
   open,
   onToggle,
   onDeleted,
 }: {
-  item: OdkItem
+  item: BundleItem
   open: boolean
   onToggle: () => void
   onDeleted: () => void
@@ -83,16 +83,16 @@ function OdkRow({
       </button>
       {open && (
         <div className="border-t bg-background px-4 py-4">
-          <OdkDetail odk={item} onDeleted={onDeleted} />
+          <BundleDetail bundle={item} onDeleted={onDeleted} />
         </div>
       )}
     </div>
   )
 }
 
-// ─── Create ODK Dialog ───
+// ─── Create Bundle Dialog ───
 
-function CreateOdkDialog({ onCreated }: { onCreated: () => void }) {
+function CreateBundleDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     name: '',
@@ -116,7 +116,7 @@ function CreateOdkDialog({ onCreated }: { onCreated: () => void }) {
       if (form.publicKey) body.publicKey = form.publicKey
       if (form.userId) body.userId = form.userId
 
-      const result = await azoa.api.request('POST', '/api/starodk', body)
+      const result = await azoa.api.request('POST', '/api/actiongraphbundle', body)
       if (isOk(result)) {
         setOpen(false)
         setForm({ name: '', description: '', publicKey: '', userId: '' })
@@ -133,16 +133,16 @@ function CreateOdkDialog({ onCreated }: { onCreated: () => void }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm">Create ODK</Button>} />
+      <DialogTrigger render={<Button size="sm">Create bundle</Button>} />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create STAR ODK</DialogTitle>
+          <DialogTitle>Create action graph bundle</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div className="space-y-1.5">
             <Label>Name *</Label>
             <Input
-              placeholder="ODK name"
+              placeholder="Bundle name"
               value={form.name}
               onChange={(e) => set('name', e.target.value)}
             />
@@ -189,7 +189,7 @@ function CreateOdkDialog({ onCreated }: { onCreated: () => void }) {
 
 // ─── Generate dApp Dialog ───
 
-function GenerateDAppDialog({ odkId }: { odkId: string }) {
+function GenerateDAppDialog({ bundleId }: { bundleId: string }) {
   const [open, setOpen] = useState(false)
   const [targetChain, setTargetChain] = useState('')
   const [boundHolonIds, setBoundHolonIds] = useState('')
@@ -219,7 +219,7 @@ function GenerateDAppDialog({ odkId }: { odkId: string }) {
       }
       const result = await azoa.api.request<{ code?: string; generatedCode?: string }>(
         'POST',
-        `/api/starodk/${odkId}/generate`,
+        `/api/actiongraphbundle/${bundleId}/generate`,
         body
       )
       if (isOk(result)) {
@@ -302,9 +302,9 @@ function GenerateDAppDialog({ odkId }: { odkId: string }) {
 
 // ─── Ecosystem Tree Section ───
 
-/** Fetches + renders the STARODK ecosystem tree, with an inline attach form
+/** Fetches + renders the action graph bundle ecosystem tree, with an inline attach form
  * (interactive add). Read-only tree view via <EcosystemTreeFlow />. */
-function EcosystemSection({ odkId }: { odkId: string }) {
+function EcosystemSection({ bundleId }: { bundleId: string }) {
   const [tree, setTree] = useState<EcosystemTree | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -317,7 +317,7 @@ function EcosystemSection({ odkId }: { odkId: string }) {
     setLoading(true)
     setError(null)
     try {
-      const result = await azoa.api.request<EcosystemTree>('GET', `/api/starodk/${odkId}/ecosystem`)
+      const result = await azoa.api.request<EcosystemTree>('GET', `/api/actiongraphbundle/${bundleId}/ecosystem`)
       if (isOk(result)) setTree(result.value)
       else setError((result as { error: { message: string } }).error.message)
     } catch (e) {
@@ -330,7 +330,7 @@ function EcosystemSection({ odkId }: { odkId: string }) {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [odkId])
+  }, [bundleId])
 
   const handleAttach = async () => {
     if (!refId.trim()) return
@@ -342,7 +342,7 @@ function EcosystemSection({ odkId }: { odkId: string }) {
       if (label.trim()) body.label = label.trim()
       const result = await azoa.api.request<EcosystemTree>(
         'POST',
-        `/api/starodk/${odkId}/ecosystem/dapp-series`,
+        `/api/actiongraphbundle/${bundleId}/ecosystem/dapp-series`,
         body
       )
       if (isOk(result)) {
@@ -393,13 +393,13 @@ function EcosystemSection({ odkId }: { odkId: string }) {
   )
 }
 
-// ─── Selected ODK Detail ───
+// ─── Selected Bundle Detail ───
 
-function OdkDetail({
-  odk,
+function BundleDetail({
+  bundle,
   onDeleted,
 }: {
-  odk: OdkItem
+  bundle: BundleItem
   onDeleted: () => void
 }) {
   const [deployResult, setDeployResult] = useState<unknown>(null)
@@ -413,7 +413,7 @@ function OdkDetail({
     setError(null)
     setDeployResult(null)
     try {
-      const result = await azoa.api.request('POST', `/api/starodk/${odk.id}/deploy`)
+      const result = await azoa.api.request('POST', `/api/actiongraphbundle/${bundle.id}/deploy`)
       if (isOk(result)) {
         setDeployResult(result.value)
       } else {
@@ -430,7 +430,7 @@ function OdkDetail({
     setDeleteLoading(true)
     setError(null)
     try {
-      const result = await azoa.api.request('DELETE', `/api/starodk/${odk.id}`)
+      const result = await azoa.api.request('DELETE', `/api/actiongraphbundle/${bundle.id}`)
       if (isOk(result)) {
         onDeleted()
       } else {
@@ -448,7 +448,7 @@ function OdkDetail({
     <div className="space-y-4">
       {/* Action buttons row */}
       <div className="flex flex-wrap gap-2">
-        <GenerateDAppDialog odkId={odk.id} />
+        <GenerateDAppDialog bundleId={bundle.id} />
         <Button
           size="sm"
           variant="outline"
@@ -489,11 +489,11 @@ function OdkDetail({
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="rounded-md bg-muted p-3 text-xs">
-        <JsonViewer data={odk} />
+        <JsonViewer data={bundle} />
       </div>
 
       <Separator />
-      <EcosystemSection odkId={odk.id} />
+      <EcosystemSection bundleId={bundle.id} />
 
       {deployResult !== null && deployResult !== undefined && (
         <>
@@ -510,19 +510,19 @@ function OdkDetail({
 
 // ─── Page ───
 
-export default function StarOdkPage() {
-  const [odks, setOdks] = useState<OdkItem[]>([])
-  const [selected, setSelected] = useState<OdkItem | null>(null)
+export default function ActionGraphBundlePage() {
+  const [bundles, setBundles] = useState<BundleItem[]>([])
+  const [selected, setSelected] = useState<BundleItem | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const loadOdks = async () => {
+  const loadBundles = async () => {
     setLoading(true)
     setError(null)
     try {
-      const result = await azoa.api.request<OdkItem[]>('GET', '/api/starodk')
+      const result = await azoa.api.request<BundleItem[]>('GET', '/api/actiongraphbundle')
       if (isOk(result)) {
-        setOdks(result.value)
+        setBundles(result.value)
       } else {
         setError((result as { error: { message: string } }).error.message)
       }
@@ -534,18 +534,18 @@ export default function StarOdkPage() {
   }
 
   useEffect(() => {
-    loadOdks()
+    loadBundles()
   }, [])
 
   const handleDeleted = () => {
     setSelected(null)
-    loadOdks()
+    loadBundles()
   }
 
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">STAR ODK</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Action graph bundles</h1>
         <p className="text-sm text-muted-foreground">
           Manage on-chain development kits and generate dApp scaffolding
         </p>
@@ -553,19 +553,19 @@ export default function StarOdkPage() {
 
       {/* Action row on top */}
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" onClick={loadOdks} disabled={loading}>
+        <Button size="sm" variant="outline" onClick={loadBundles} disabled={loading}>
           {loading ? 'Refreshing...' : 'Refresh'}
         </Button>
-        <CreateOdkDialog onCreated={loadOdks} />
-        <span className="text-sm text-muted-foreground">{odks.length} ODKs</span>
+        <CreateBundleDialog onCreated={loadBundles} />
+        <span className="text-sm text-muted-foreground">{bundles.length} bundles</span>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {/* Full-width list with inline-expanding detail */}
       <div className="divide-y rounded-md border">
-        {odks.map((item) => (
-          <OdkRow
+        {bundles.map((item) => (
+          <BundleRow
             key={item.id}
             item={item}
             open={selected?.id === item.id}
@@ -573,9 +573,9 @@ export default function StarOdkPage() {
             onDeleted={handleDeleted}
           />
         ))}
-        {odks.length === 0 && !loading && (
+        {bundles.length === 0 && !loading && (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            No ODKs found. Create one above.
+            No bundles found. Create one above.
           </p>
         )}
       </div>

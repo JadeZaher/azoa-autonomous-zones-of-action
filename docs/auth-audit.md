@@ -36,13 +36,13 @@
 | HolonController | `MoveSubtree` | `POST /api/holon/{id:guid}/move` | Inherited `[Authorize]` (class) | MultiScheme |
 | **BlockchainOperationController** | `Get` | `GET /api/blockchainoperation/{id:guid}` | Inherited `[Authorize]` (class) | MultiScheme |
 | BlockchainOperationController | `GetByUser` | `GET /api/blockchainoperation/user/{userId:guid}` | Inherited `[Authorize]` (class) | MultiScheme |
-| **STARODKController** | `Get` | `GET /api/starodk/{id:guid}` | Inherited `[Authorize]` (class) | MultiScheme |
-| STARODKController | `GetAll` | `GET /api/starodk` | Inherited `[Authorize]` (class) | MultiScheme |
-| STARODKController | `CreateOrUpdate` | `POST /api/starodk` | Inherited `[Authorize]` (class) | MultiScheme |
-| STARODKController | `Update` | `PUT /api/starodk/{id}` | Inherited `[Authorize]` (class) | MultiScheme |
-| STARODKController | `Delete` | `DELETE /api/starodk/{id:guid}` | Inherited `[Authorize]` (class) | MultiScheme |
-| STARODKController | `Generate` | `POST /api/starodk/{id:guid}/generate` | Inherited `[Authorize]` (class) | MultiScheme |
-| STARODKController | `Deploy` | `POST /api/starodk/{id:guid}/deploy` | Inherited `[Authorize]` (class) | MultiScheme |
+| **ActionGraphBundleController** | `Get` | `GET /api/actiongraphbundle/{id:guid}` | Inherited `[Authorize]` (class) | MultiScheme |
+| ActionGraphBundleController | `GetAll` | `GET /api/actiongraphbundle` | Inherited `[Authorize]` (class) | MultiScheme |
+| ActionGraphBundleController | `CreateOrUpdate` | `POST /api/actiongraphbundle` | Inherited `[Authorize]` (class) | MultiScheme |
+| ActionGraphBundleController | `Update` | `PUT /api/actiongraphbundle/{id}` | Inherited `[Authorize]` (class) | MultiScheme |
+| ActionGraphBundleController | `Delete` | `DELETE /api/actiongraphbundle/{id:guid}` | Inherited `[Authorize]` (class) | MultiScheme |
+| ActionGraphBundleController | `Generate` | `POST /api/actiongraphbundle/{id:guid}/generate` | Inherited `[Authorize]` (class) | MultiScheme |
+| ActionGraphBundleController | `Deploy` | `POST /api/actiongraphbundle/{id:guid}/deploy` | Inherited `[Authorize]` (class) | MultiScheme |
 | **WalletController** | `Get` | `GET /api/wallet/{id:guid}` | Inherited `[Authorize]` (class) | MultiScheme |
 | WalletController | `Query` | `GET /api/wallet` | Inherited `[Authorize]` (class) | MultiScheme |
 | WalletController | `Create` | `POST /api/wallet` | Inherited `[Authorize]` (class) | MultiScheme |
@@ -370,61 +370,61 @@
 | get_op_very_long_query | GET | /api/blockchainoperation/user/{{bcMalUser.id}}?customProviderKeys=… | BlockchainOp.GetByUser | Y | 2xx |
 | cleanup_user | DELETE | /api/user/{{bcMalUser.id}} | User.Delete | Y | 200 |
 
-### STARODKController.jsonl (8 cases)
+### ActionGraphBundleController.jsonl (8 cases)
 
 | CaseId | Method | Path | Matched Action | Auth? | expectedStatus |
 |---|---|---|---|---|---|
 | seed_user | POST | /api/user/register | User.Register | N | 200 |
 | login_seed | POST | /api/user/login | User.Login | N | 200 |
-| create_odk | POST | /api/starodk | STARODK.CreateOrUpdate | Y | 200 |
-| get_odk | GET | /api/starodk/{{odk1.odkId}} | STARODK.Get | Y | 200 |
-| get_all_odks | GET | /api/starodk | STARODK.GetAll | Y | 200 |
-| generate_odk | POST | /api/starodk/{{odk1.odkId}}/generate | STARODK.Generate | Y | 200 |
-| delete_odk | DELETE | /api/starodk/{{odk1.odkId}} | STARODK.Delete | Y | 200 |
+| create_odk | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| get_odk | GET | /api/actiongraphbundle/{{odk1.odkId}} | ActionGraphBundle.Get | Y | 200 |
+| get_all_odks | GET | /api/actiongraphbundle | ActionGraphBundle.GetAll | Y | 200 |
+| generate_odk | POST | /api/actiongraphbundle/{{odk1.odkId}}/generate | ActionGraphBundle.Generate | Y | 200 |
+| delete_odk | DELETE | /api/actiongraphbundle/{{odk1.odkId}} | ActionGraphBundle.Delete | Y | 200 |
 | cleanup_user | DELETE | /api/user/{{suser.userId}} | User.Delete | Y | 200 |
 
-### STARODKController_QA.jsonl (26 cases)
+### ActionGraphBundleController_QA.jsonl (26 cases)
 
 | CaseId | Method | Path | Matched Action | Auth? | expectedStatus |
 |---|---|---|---|---|---|
 | seed_user | POST | /api/user/register | User.Register | N | 200 |
 | login_user | POST | /api/user/login | User.Login | N | 200 |
-| create_odk_basic | POST | /api/starodk | STARODK.CreateOrUpdate | Y | 200 |
-| create_odk_advanced | POST | /api/starodk | STARODK.CreateOrUpdate | Y | 200 |
-| create_odk_unicode | POST | /api/starodk | STARODK.CreateOrUpdate | Y | 200 |
-| get_odk_by_id | GET | /api/starodk/{{odkBasic.id}} | STARODK.Get | Y | 200 |
-| get_nonexistent_odk | GET | /api/starodk/00000000-…-000 | STARODK.Get | Y | 404 |
-| get_all_odks | GET | /api/starodk | STARODK.GetAll | Y | 200 |
-| generate_odk_algorand | POST | /api/starodk/{{odkBasic.id}}/generate | STARODK.Generate | Y | 200 |
-| generate_odk_solana | POST | /api/starodk/{{odkAdvanced.id}}/generate | STARODK.Generate | Y | 200 |
-| deploy_odk_basic | POST | /api/starodk/{{odkBasic.id}}/deploy | STARODK.Deploy | Y | 200 |
-| deploy_odk_advanced | POST | /api/starodk/{{odkAdvanced.id}}/deploy | STARODK.Deploy | Y | 200 |
-| update_odk_via_upsert | POST | /api/starodk | STARODK.CreateOrUpdate | Y | 200 |
-| get_odk_unauthorized | GET | /api/starodk/{{odkBasic.id}} | STARODK.Get | N | 401 |
-| create_odk_unauthorized | POST | /api/starodk | STARODK.CreateOrUpdate | N | 401 |
-| delete_odk_unauthorized | DELETE | /api/starodk/{{odkBasic.id}} | STARODK.Delete | N | 401 |
-| generate_odk_unauthorized | POST | /api/starodk/{{odkBasic.id}}/generate | STARODK.Generate | N | 401 |
-| create_fresh_odk | POST | /api/starodk | STARODK.CreateOrUpdate | Y | 200 |
-| deploy_before_generate | POST | /api/starodk/{{odkFresh.id}}/deploy | STARODK.Deploy | Y | 400 |
-| delete_odk_basic–verify_deleted_odk (×5) | DELETE/GET | /api/starodk/{id} | STARODK.Delete/Get | Y | 200/404 |
+| create_odk_basic | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| create_odk_advanced | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| create_odk_unicode | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| get_odk_by_id | GET | /api/actiongraphbundle/{{odkBasic.id}} | ActionGraphBundle.Get | Y | 200 |
+| get_nonexistent_odk | GET | /api/actiongraphbundle/00000000-…-000 | ActionGraphBundle.Get | Y | 404 |
+| get_all_odks | GET | /api/actiongraphbundle | ActionGraphBundle.GetAll | Y | 200 |
+| generate_odk_algorand | POST | /api/actiongraphbundle/{{odkBasic.id}}/generate | ActionGraphBundle.Generate | Y | 200 |
+| generate_odk_solana | POST | /api/actiongraphbundle/{{odkAdvanced.id}}/generate | ActionGraphBundle.Generate | Y | 200 |
+| deploy_odk_basic | POST | /api/actiongraphbundle/{{odkBasic.id}}/deploy | ActionGraphBundle.Deploy | Y | 200 |
+| deploy_odk_advanced | POST | /api/actiongraphbundle/{{odkAdvanced.id}}/deploy | ActionGraphBundle.Deploy | Y | 200 |
+| update_odk_via_upsert | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| get_odk_unauthorized | GET | /api/actiongraphbundle/{{odkBasic.id}} | ActionGraphBundle.Get | N | 401 |
+| create_odk_unauthorized | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | N | 401 |
+| delete_odk_unauthorized | DELETE | /api/actiongraphbundle/{{odkBasic.id}} | ActionGraphBundle.Delete | N | 401 |
+| generate_odk_unauthorized | POST | /api/actiongraphbundle/{{odkBasic.id}}/generate | ActionGraphBundle.Generate | N | 401 |
+| create_fresh_odk | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| deploy_before_generate | POST | /api/actiongraphbundle/{{odkFresh.id}}/deploy | ActionGraphBundle.Deploy | Y | 400 |
+| delete_odk_basic–verify_deleted_odk (×5) | DELETE/GET | /api/actiongraphbundle/{id} | ActionGraphBundle.Delete/Get | Y | 200/404 |
 | cleanup_user | DELETE | /api/user/{{starUser.id}} | User.Delete | Y | 200 |
 
-### STARODKController_Malicious.jsonl (38 cases)
+### ActionGraphBundleController_Malicious.jsonl (38 cases)
 
 | CaseId | Method | Path | Matched Action | Auth? | expectedStatus |
 |---|---|---|---|---|---|
 | seed_user | POST | /api/user/register | User.Register | N | 200 |
 | login_user | POST | /api/user/login | User.Login | N | 200 |
-| seed_odk | POST | /api/starodk | STARODK.CreateOrUpdate | Y | 200 |
-| sqli_odk_name–sqli_generate_config (×4) | POST | /api/starodk or /generate | STARODK.CreateOrUpdate/Generate | Y | 2xx or 200 |
-| xss_odk_name–xss_generate_config (×3) | POST | /api/starodk or /generate | STARODK.CreateOrUpdate/Generate | Y | 2xx or 200 |
-| get_odk_path_traversal–delete_invalid_odk (×6) | GET/POST/DELETE | /api/starodk/{bad-id} | (404) | Y | 404 |
-| oversized_odk_name–oversized_generation_config (×3) | POST | /api/starodk or /generate | STARODK.CreateOrUpdate/Generate | Y | 2xx or 200 |
-| null_odk_name–empty_body (×6) | POST | /api/starodk | STARODK.CreateOrUpdate | Y | 4xx |
-| generate_invalid_chain–deploy_before_generate (×6) | POST | /api/starodk/{id}/generate or /deploy | STARODK.Generate/Deploy | Y | 200 or 4xx or 400 |
-| get_odk_unauth–delete_odk_unauth (×5) | GET/POST/DELETE | /api/starodk/{id} | STARODK.* | N | 401 |
-| unicode_odk_name–zwc_odk_name (×3) | POST | /api/starodk | STARODK.CreateOrUpdate | Y | 2xx |
-| cleanup_target_odk | DELETE | /api/starodk/{{targetODK.id}} | STARODK.Delete | Y | 200 |
+| seed_odk | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| sqli_odk_name–sqli_generate_config (×4) | POST | /api/actiongraphbundle or /generate | ActionGraphBundle.CreateOrUpdate/Generate | Y | 2xx or 200 |
+| xss_odk_name–xss_generate_config (×3) | POST | /api/actiongraphbundle or /generate | ActionGraphBundle.CreateOrUpdate/Generate | Y | 2xx or 200 |
+| get_odk_path_traversal–delete_invalid_odk (×6) | GET/POST/DELETE | /api/actiongraphbundle/{bad-id} | (404) | Y | 404 |
+| oversized_odk_name–oversized_generation_config (×3) | POST | /api/actiongraphbundle or /generate | ActionGraphBundle.CreateOrUpdate/Generate | Y | 2xx or 200 |
+| null_odk_name–empty_body (×6) | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 4xx |
+| generate_invalid_chain–deploy_before_generate (×6) | POST | /api/actiongraphbundle/{id}/generate or /deploy | ActionGraphBundle.Generate/Deploy | Y | 200 or 4xx or 400 |
+| get_odk_unauth–delete_odk_unauth (×5) | GET/POST/DELETE | /api/actiongraphbundle/{id} | ActionGraphBundle.* | N | 401 |
+| unicode_odk_name–zwc_odk_name (×3) | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 2xx |
+| cleanup_target_odk | DELETE | /api/actiongraphbundle/{{targetODK.id}} | ActionGraphBundle.Delete | Y | 200 |
 | cleanup_user | DELETE | /api/user/{{starMalUser.id}} | User.Delete | Y | 200 |
 
 ### E2E-Flows.jsonl (96 cases across Flows 1–10)
@@ -434,13 +434,13 @@
 | Flow | Cases | Key paths | Auth? | expectedStatus |
 |---|---|---|---|---|
 | Flow 1 (e2e1_*) | 14 | /api/user/register+login, /api/holon (CRUD), /api/user/*/wallets (MISSING ROUTE) | Mix Y/N | 200 |
-| Flow 2 (e2e2_*) | 10 | /api/user/register+login, /api/holon, /api/starodk (create+gen+delete) | Mix Y/N | 200 |
+| Flow 2 (e2e2_*) | 10 | /api/user/register+login, /api/holon, /api/actiongraphbundle (create+gen+delete) | Mix Y/N | 200 |
 | Flow 3 (e2e3_*) | 11 | /api/user/register+login (×2), /api/holon (cross-user) | Mix Y/N | 200 or 404 |
 | Flow 4 (e2e4_*) | 9 | /api/user/*/wallets (MISSING ROUTE), /api/holon/mint, /api/blockchainoperation | Mix Y/N | 200 |
 | Flow 5 (e2e5_*) | 12 | /api/user/register+login, GET/PUT /api/user/{id} (×8) | Mix Y/N | 200 |
 | Flow 6 (e2e6_*) | 10 | /api/holon (create+interact×5+delete) | Mix Y/N | 200 |
-| Flow 7 (e2e7_*) | 11 | Token reuse across /api/user, /api/holon, /api/starodk, /api/blockchainoperation | Mix Y/N | 200 |
-| Flow 8 (e2e8_*) | 9 | /api/starodk (full deploy lifecycle) | Mix Y/N | 200 |
+| Flow 7 (e2e7_*) | 11 | Token reuse across /api/user, /api/holon, /api/actiongraphbundle, /api/blockchainoperation | Mix Y/N | 200 |
+| Flow 8 (e2e8_*) | 9 | /api/actiongraphbundle (full deploy lifecycle) | Mix Y/N | 200 |
 | Flow 9 (e2e9_*) | 12 | /api/holon/mint+exchange, /api/blockchainoperation (get ops) | Mix Y/N | 200 |
 | Flow 10 (e2e10_*) | 8 | /api/user/*/wallets (MISSING ROUTE ×3), multi-wallet management | Mix Y/N | 200 |
 
@@ -451,7 +451,7 @@
 | Flow | Cases | Key paths | Auth? | expectedStatus |
 |---|---|---|---|---|
 | Flow 1 (e2e1_*) | 19 | /api/user, /api/user/*/wallets (MISSING ROUTE), /api/holon/mint+exchange, /api/blockchainoperation | Mix Y/N | 200 |
-| Flow 2 (e2e2_*) | 14 | /api/holon ×2, /api/starodk (gen+deploy) | Mix Y/N | 200 |
+| Flow 2 (e2e2_*) | 14 | /api/holon ×2, /api/actiongraphbundle (gen+deploy) | Mix Y/N | 200 |
 | Flow 3 (e2e3_*) | 14 | /api/holon (×2 users, isolation test — 200 on get/update/delete, no ownership enforcement) | Mix Y/N | 200 |
 
 ### Blockchain_Devnet.jsonl (30 cases)
@@ -513,7 +513,7 @@
 | mal_wallet_sqli_label | POST | /api/user/{{malUser.userId}}/wallets | **MISSING ROUTE** | Y | 400 |
 | mal_user_cleanup | DELETE | /api/user/{{malUser.userId}} | User.Delete | Y | 200 |
 | mal_holon_seed–mal_holon_cleanup_user (×24) | POST/DELETE | /api/user, /api/holon | User/Holon | Mix Y/N | 200/400/404 |
-| mal_star_seed–mal_star_cleanup_user (×10) | POST/DELETE | /api/user, /api/starodk | User/STARODK | Mix Y/N | 200/400/404 |
+| mal_bundle_seed–mal_bundle_cleanup_user (×10) | POST/DELETE | /api/user, /api/actiongraphbundle | User/ActionGraphBundle | Mix Y/N | 200/400/404 |
 | mal_bc_seed–mal_bc_cleanup_user (×21) | POST/GET/DELETE | /api/user, /api/blockchainoperation | User/BlockchainOp | Mix Y/N | 200/400/401/404 |
 | mal_nosql_* (×3) | POST | /api/user/register or /login | Register/Login | N | 400 |
 | *(all remaining: cmd, ldap, mass-assign, deep-nest, ssrf, crlf, format-string, log-inject, proto-pollute, unicode, path, template, xml — ×20+)* | POST | /api/user/register or /api/holon | Register/Holon | Mix N/Y | 400 or 404 |
@@ -531,12 +531,12 @@
 | Wallet edge cases | 5 | /api/user/{{qaUser.userId}}/wallets | Y | 200 or 400 or 404 |
 | Holon seed/login | 2 | /api/user/register, /login | N | 200 |
 | Holon edge cases (create/get/update/interact/delete) | 14 | /api/holon | Y | 200 or 400 or 404 |
-| STAR seed/login | 2 | /api/user/register, /login | N | 200 |
-| STAR ODK edge cases | 10 | /api/starodk | Y | 200 or 400 or 404 |
+| Bundle seed/login | 2 | /api/user/register, /login | N | 200 |
+| Action graph bundle edge cases | 10 | /api/actiongraphbundle | Y | 200 or 400 or 404 |
 | Blockchain seed/login | 2 | /api/user/register, /login | N | 200 |
 | Blockchain edge cases | 4 | /api/blockchainoperation | Y | 200 or 404 |
 | Extended holon (seed/login + rich tests) | 17 | /api/holon (activate, peers, query combos, interact) | Y | 200 |
-| Extended STAR (seed/login + update/gen) | 8 | /api/starodk | Y | 200 |
+| Extended bundle (seed/login + update/gen) | 8 | /api/actiongraphbundle | Y | 200 |
 | Extended blockchain (seed/wallet/holon/mint/exchange edge) | 10 | /api/user/*/wallets (MISSING ROUTE), /api/holon, /api/blockchainoperation | Y | 200 or 400 |
 | Misc boundary (dup username, email case, IsActive, empty string, long name, wallet default) | 8 | /api/user/{id}, /api/user/*/wallets | Y | 200 or 400 or 404 |
 | Cleanup (×5) | 5 | /api/user/{id}, /api/holon/{id}, etc | Y | 200 |
@@ -640,15 +640,15 @@ These cases exist to verify rejection. E2 MUST NOT add `Authorization` headers t
 | BlockchainOperationController_Malicious.jsonl | `get_op_bearer_only` | GET /api/blockchainoperation/{id} with `Bearer ` only → 401 | Verifies empty token after `Bearer ` rejected |
 | BlockchainOperationController_Malicious.jsonl | `get_op_tampered_token` | GET /api/blockchainoperation/user/{id} with tampered JWT → 401 | Verifies signature validation rejects forged JWT |
 | BlockchainOperationController_Malicious.jsonl | `header_injection_op` | GET /api/blockchainoperation/user/{id} with CRLF-injected auth → 401 | Verifies CRLF injection in auth header rejected |
-| STARODKController_QA.jsonl | `get_odk_unauthorized` | GET /api/starodk/{id} with no auth → 401 | Verifies [Authorize] on STARODK.Get |
-| STARODKController_QA.jsonl | `create_odk_unauthorized` | POST /api/starodk with no auth → 401 | Verifies [Authorize] on STARODK.CreateOrUpdate |
-| STARODKController_QA.jsonl | `delete_odk_unauthorized` | DELETE /api/starodk/{id} with no auth → 401 | Verifies [Authorize] on STARODK.Delete |
-| STARODKController_QA.jsonl | `generate_odk_unauthorized` | POST /api/starodk/{id}/generate with no auth → 401 | Verifies [Authorize] on STARODK.Generate |
-| STARODKController_Malicious.jsonl | `get_odk_unauth` | GET /api/starodk/{id} with no auth → 401 | Auth bypass probe — attack surface verification |
-| STARODKController_Malicious.jsonl | `create_odk_unauth` | POST /api/starodk with no auth → 401 | Auth bypass probe |
-| STARODKController_Malicious.jsonl | `generate_odk_unauth` | POST /api/starodk/{id}/generate with no auth → 401 | Auth bypass probe |
-| STARODKController_Malicious.jsonl | `deploy_odk_unauth` | POST /api/starodk/{id}/deploy with no auth → 401 | Auth bypass probe |
-| STARODKController_Malicious.jsonl | `delete_odk_unauth` | DELETE /api/starodk/{id} with no auth → 401 | Auth bypass probe |
+| ActionGraphBundleController_QA.jsonl | `get_odk_unauthorized` | GET /api/actiongraphbundle/{id} with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.Get |
+| ActionGraphBundleController_QA.jsonl | `create_odk_unauthorized` | POST /api/actiongraphbundle with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.CreateOrUpdate |
+| ActionGraphBundleController_QA.jsonl | `delete_odk_unauthorized` | DELETE /api/actiongraphbundle/{id} with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.Delete |
+| ActionGraphBundleController_QA.jsonl | `generate_odk_unauthorized` | POST /api/actiongraphbundle/{id}/generate with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.Generate |
+| ActionGraphBundleController_Malicious.jsonl | `get_odk_unauth` | GET /api/actiongraphbundle/{id} with no auth → 401 | Auth bypass probe — attack surface verification |
+| ActionGraphBundleController_Malicious.jsonl | `create_odk_unauth` | POST /api/actiongraphbundle with no auth → 401 | Auth bypass probe |
+| ActionGraphBundleController_Malicious.jsonl | `generate_odk_unauth` | POST /api/actiongraphbundle/{id}/generate with no auth → 401 | Auth bypass probe |
+| ActionGraphBundleController_Malicious.jsonl | `deploy_odk_unauth` | POST /api/actiongraphbundle/{id}/deploy with no auth → 401 | Auth bypass probe |
+| ActionGraphBundleController_Malicious.jsonl | `delete_odk_unauth` | DELETE /api/actiongraphbundle/{id} with no auth → 401 | Auth bypass probe |
 | MaliciousPayloads.jsonl | `mal_auth_no_bearer` | GET /api/user/{id} with `Authorization: {{malAuth.token}}` (no Bearer prefix) → 401 | Verifies scheme prefix is required |
 | MaliciousPayloads.jsonl | `mal_auth_expired_format` | GET /api/user/{id} with valid-shaped-but-unsigned JWT → 401 | Verifies forged-signature rejection |
 | MaliciousPayloads.jsonl | `mal_auth_empty_token` | GET /api/user/{id} with `Bearer ` → 401 | Verifies empty token rejected |

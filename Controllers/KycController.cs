@@ -12,7 +12,7 @@ using AZOA.WebAPI.Models.Responses;
 namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
-/// User-scoped KYC endpoints. Mirrors <c>STARODKController</c>: the
+/// User-scoped KYC endpoints. Mirrors <c>ActionGraphBundleController</c>: the
 /// authenticated user (claim-sourced) is authoritative; any UserId on a
 /// request body is ignored, and there is no <c>{userId}</c> in any route (so
 /// a per-id status lookup IDOR cannot exist — the user comes from the token).

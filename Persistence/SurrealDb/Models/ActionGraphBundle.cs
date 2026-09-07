@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-// Hand-authored SurrealDB POCO for the star_odk table.
+// Hand-authored SurrealDB POCO for the action_graph_bundle table.
 
 #nullable enable
 
@@ -11,17 +11,17 @@ using SurrealForge.Client.Schema;
 
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
-    [SurrealTable("star_odk",
-        Aggregate = "STARODK (Models/STARODK.cs)",
+    [SurrealTable("action_graph_bundle",
+        Aggregate = "ActionGraphBundle (Models/ActionGraphBundle.cs)",
         Guardrail = "G6 SCHEMAFULL")]
     [SurrealNote("Generated code + deployment config can be large strings; SurrealDB has no per-field size limit but operators should monitor row size.")]
     [Slice("identity")]
-    [Index("star_user_id", Fields = new[] { "user_id" })]
-    [Index("star_target_chain", Fields = new[] { "target_chain" })]
-    [Index("star_is_active", Fields = new[] { "is_active" })]
-    public partial class StarOdk : ISurrealRecord
+    [Index("action_graph_bundle_user_id", Fields = new[] { "user_id" })]
+    [Index("action_graph_bundle_target_chain", Fields = new[] { "target_chain" })]
+    [Index("action_graph_bundle_is_active", Fields = new[] { "is_active" })]
+    public partial class ActionGraphBundle : ISurrealRecord
     {
-        public const string SchemaNameConst = "star_odk";
+        public const string SchemaNameConst = "action_graph_bundle";
         public string SchemaName => SchemaNameConst;
 
         [Id]

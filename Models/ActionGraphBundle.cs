@@ -2,7 +2,7 @@ using AZOA.WebAPI.Interfaces;
 
 namespace AZOA.WebAPI.Models;
 
-public class STARODK : ISTARODK
+public class ActionGraphBundle : IActionGraphBundle
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = string.Empty;

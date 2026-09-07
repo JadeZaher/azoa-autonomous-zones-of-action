@@ -1,6 +1,6 @@
 namespace AZOA.WebAPI.Models;
 
-public class STARODKCreateModel
+public class ActionGraphBundleCreateModel
 {
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;

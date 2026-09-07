@@ -127,11 +127,11 @@ Use this four-step flow any time you add or modify a persisted table.
 **Step 1 — Edit the POCO in `Persistence/SurrealDb/Models/<Name>.cs`**
 
 ```csharp
-[SurrealTable("star_odk", Schemafull = true)]
+[SurrealTable("action_graph_bundle", Schemafull = true)]
 [Slice("domain")]
-public partial class StarOdk : ISurrealRecord
+public partial class ActionGraphBundle : ISurrealRecord
 {
-    public const string SchemaNameConst = "star_odk";
+    public const string SchemaNameConst = "action_graph_bundle";
     public string SchemaName => SchemaNameConst;
 
     [Column(Order = 1, Type = "string")]
@@ -277,7 +277,7 @@ SurrealQL on the parent table's column.
 > `ForkedFrom`, `HnswHolonEmbedding`, `HnswActionEmbedding`, `Holon`,
 > `IdempotencyKeyStore`, `NftOwnership`, `OperationLog`, `ActionDefinition`,
 > `ActionDependency`, `ActionEdge`, `ActionNode`, `ActionNodeExecution`,
-> `ActionNodeTemplate`, `ActionRun`, `ActionTemplate`, `SagaSteps`, `StarOdk`,
+> `ActionNodeTemplate`, `ActionRun`, `ActionTemplate`, `SagaSteps`, `ActionGraphBundle`,
 > `SwapState`, `Wallet`) producing **26 `.surql` schema files** and
 > **6 slice flowcharts** (`bridge`, `dapp_composition`, `identity`,
 > `action`, `action_templates`, `wallet_nft`) plus the `domain.flowchart.mermaid`

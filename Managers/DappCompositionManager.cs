@@ -22,20 +22,20 @@ public sealed class DappCompositionManager : IDappCompositionManager
     private readonly IActionStore _actionStore;
     private readonly IActionRunStore _runStore;
     private readonly IHolonStore _holonStore;
-    private readonly ISTARManager _starManager;
+    private readonly IActionGraphBundleManager _bundleManager;
 
     public DappCompositionManager(
         IDappSeriesStore seriesStore,
         IActionStore actionStore,
         IActionRunStore runStore,
         IHolonStore holonStore,
-        ISTARManager starManager)
+        IActionGraphBundleManager bundleManager)
     {
         _seriesStore = seriesStore;
         _actionStore = actionStore;
         _runStore = runStore;
         _holonStore = holonStore;
-        _starManager = starManager;
+        _bundleManager = bundleManager;
     }
 
     // ── Series CRUD ──────────────────────────────────────────────────────────
@@ -298,69 +298,69 @@ public sealed class DappCompositionManager : IDappCompositionManager
 
     // ── Generation & Deployment ──────────────────────────────────────────────
 
-    public async Task<AZOAResult<ISTARODK>> GenerateAsync(Guid seriesId, Guid userId, CancellationToken ct = default)
+    public async Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid seriesId, Guid userId, CancellationToken ct = default)
     {
         var composeResult = await ComposeAsync(seriesId, userId, ct);
-        if (composeResult.IsError || composeResult.Result is null) return Fail<ISTARODK>(composeResult.Message);
+        if (composeResult.IsError || composeResult.Result is null) return Fail<IActionGraphBundle>(composeResult.Message);
         var manifest = composeResult.Result;
 
         var series = (await GetAsync(seriesId, userId, ct)).Result!;
 
-        // STARODKCreateModel does not yet carry TargetChain/BoundHolonIds; those
-        // flow to ISTARManager via STARDappGenerationRequest on the Generate
+        // ActionGraphBundleCreateModel does not yet carry TargetChain/BoundHolonIds; those
+        // flow to IActionGraphBundleManager via ActionGraphBundleDappGenerationRequest on the Generate
         // call. spec.md §STAR Integration Flow has those fields on the create
-        // model which does not match the runtime ISTARManager surface -- this
+        // model which does not match the runtime IActionGraphBundleManager surface -- this
         // is the authoritative shape.
-        var starCreate = new STARODKCreateModel
+        var bundleCreate = new ActionGraphBundleCreateModel
         {
             Name = series.Name,
             Description = series.Description ?? string.Empty,
             UserId = userId,
         };
-        var starUpsert = await _starManager.CreateOrUpdateAsync(starCreate, userId);
-        if (starUpsert.IsError || starUpsert.Result is null) return Fail<ISTARODK>(starUpsert.Message);
+        var bundleUpsert = await _bundleManager.CreateOrUpdateAsync(bundleCreate, userId);
+        if (bundleUpsert.IsError || bundleUpsert.Result is null) return Fail<IActionGraphBundle>(bundleUpsert.Message);
 
-        var generationRequest = new STARDappGenerationRequest
+        var generationRequest = new ActionGraphBundleDappGenerationRequest
         {
             TargetChain = manifest.TargetChain,
             BoundHolonIds = manifest.BoundHolonIds,
             Config = manifest.Config,
         };
-        var generated = await _starManager.GenerateAsync(starUpsert.Result.Id, generationRequest, userId);
-        if (generated.IsError || generated.Result is null) return Fail<ISTARODK>(generated.Message);
+        var generated = await _bundleManager.GenerateAsync(bundleUpsert.Result.Id, generationRequest, userId);
+        if (generated.IsError || generated.Result is null) return Fail<IActionGraphBundle>(generated.Message);
 
-        series.StarOdkIdGuid = generated.Result.Id;
+        series.ActionGraphBundleIdGuid = generated.Result.Id;
         series.Status = DappSeries.StatusKind.Ready;
         var save = await _seriesStore.UpsertSeriesAsync(series, ct);
-        if (save.IsError) return Fail<ISTARODK>(save.Message);
+        if (save.IsError) return Fail<IActionGraphBundle>(save.Message);
 
         return generated;
     }
 
-    public async Task<AZOAResult<ISTARODK>> DeployAsync(
+    public async Task<AZOAResult<IActionGraphBundle>> DeployAsync(
         Guid seriesId, Guid userId, string? targetOverride = null, CancellationToken ct = default)
     {
         var seriesLoad = await GetAsync(seriesId, userId, ct);
-        if (seriesLoad.IsError || seriesLoad.Result is null) return Fail<ISTARODK>(seriesLoad.Message);
+        if (seriesLoad.IsError || seriesLoad.Result is null) return Fail<IActionGraphBundle>(seriesLoad.Message);
         var series = seriesLoad.Result;
 
         if (series.Status != DappSeries.StatusKind.Ready)
-            return Fail<ISTARODK>($"Series must be in Ready status to deploy; currently {series.Status}.");
-        var starId = series.StarOdkIdGuid;
-        if (starId is null)
-            return Fail<ISTARODK>("Series has no associated STARODK; call Generate first.");
+            return Fail<IActionGraphBundle>($"Series must be in Ready status to deploy; currently {series.Status}.");
+        var bundleId = series.ActionGraphBundleIdGuid;
+        if (bundleId is null)
+            return Fail<IActionGraphBundle>("Series has no associated ActionGraphBundle; call Generate first.");
 
         // targetOverride is currently passed-through informationally; the
-        // ISTARManager.DeployAsync surface does not yet accept per-call target
+        // IActionGraphBundleManager.DeployAsync surface does not yet accept per-call target
         // overrides -- if a different chain is needed, re-run Generate with an
         // updated TargetChain on the series. Tracked as a follow-up.
-        var deployed = await _starManager.DeployAsync(starId.Value, userId);
-        if (deployed.IsError || deployed.Result is null) return Fail<ISTARODK>(deployed.Message);
+        var deployed = await _bundleManager.DeployAsync(bundleId.Value, userId);
+        if (deployed.IsError || deployed.Result is null) return Fail<IActionGraphBundle>(deployed.Message);
 
         series.Status = DappSeries.StatusKind.Deployed;
         series.DeployedDate = DateTimeOffset.UtcNow;
         var save = await _seriesStore.UpsertSeriesAsync(series, ct);
-        if (save.IsError) return Fail<ISTARODK>(save.Message);
+        if (save.IsError) return Fail<IActionGraphBundle>(save.Message);
 
         return deployed;
     }
