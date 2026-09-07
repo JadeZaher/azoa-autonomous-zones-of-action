@@ -699,6 +699,88 @@ is still gated. The tally hash is still computed and stored, so anchoring later
 is an added step rather than a redesign. D20's conditional ("anchor only if
 publicly verifiable voting is actually required") resolves to: not yet.
 
+### Settled 2026-09-07 (owner decision during the production-readiness review)
+
+**D43 — Fiat is baked into AZOA as a first-class rail. The sidecar is retired.**
+The owner's call, made against the product thesis: ArdaNova is a social
+platform whose users must never have to know a chain exists, and a separately
+deployed Stripe bridge is one more thing that can be absent — which it currently
+is (the census found `fiat-sidecar/` has **no deployment target and no CI job**,
+so the entire fiat program had an unowned prerequisite).
+
+*What changes:*
+- A `FiatRailProvider` implementing `IValueRailProvider` lives **inside the .NET
+  backend**, with `RailId = "Fiat.USD"` and a `SettlementProfile` carrying the
+  chargeback reversal window. The seam was built anticipating exactly this —
+  `IValueRailProvider`'s own doc-comment names `"Fiat.USD"` as the example rail.
+- Stripe checkout, webhook signature verification and the dispute/refund event
+  stream terminate **in AZOA**, and the secrets live in AZOA's secret store.
+- `fiat-sidecar/` (210 lines of Express around the SDK's `AzoaStripeOrchestrator`)
+  is retired once the port lands. The SDK orchestration helper stays as a
+  consumer-side convenience only if a consumer still wants to run its own bridge.
+
+*What this SUPERSEDES — amend, do not silently contradict:*
+- **D9's bullet** "Fiat reaches Stripe **only through `fiat-sidecar/`**, never
+  directly (integration contract §3)" is reversed.
+- **Integration contract line 75** assigns "Webhook signature verification (fiat /
+  payment provider)" to the **Consumer**. It moves to AZOA. Both copies of the
+  contract must change together and stay byte-identical.
+- **D27's gate is now correctly SCOPED.** It said custody lands "before any
+  Phase 3 fiat step". Fiat-IN (collection → allocation) already runs through the
+  sidecar today with no custody at all, because a Stripe capture is not a key
+  operation. What custody actually gates is **fiat-OUT** (payouts) and **escrow
+  holds** (D14). The port of fiat-IN into AZOA is therefore NOT custody-gated and
+  can start now; payouts remain behind D27/D36.
+
+*What must be PORTED, not re-derived* — the sidecar's `AGENTS.md` records three
+hard-won invariants, each the fix for a shipped defect:
+1. **§pricing** — the minted quantity is derived at webhook time from the
+   Stripe-confirmed `amount_total` times an operator price schedule, **never from
+   client metadata**. This closed the CRITICAL-1 money-printer where a client
+   could mint an arbitrary amount for a trivial payment. Fiat cents and AZOA base
+   units are two units, never conflated.
+2. **§auth** — checkout is bearer-authenticated with a constant-time compare that
+   fails closed when the secret is unset; routing values are allowlisted; CORS is
+   an origin allowlist.
+3. **§webhook-mapping** — the allocation seam returns a RETRYABLE in-progress
+   failure before the chain tx is recorded; mapping that to a plain error would
+   make Stripe retry forever, give up, and leave a customer charged with no
+   tokens. Transient and terminal outcomes map to different HTTP statuses.
+
+*What this makes EASIER:* D10's reversal pipeline. With Stripe terminating in
+AZOA, `charge.dispute.created`, `charge.refunded` and
+`charge.dispute.funds_withdrawn` land directly in the backend as first-class
+ledger facts instead of being discarded by an orchestrator in another process.
+
+*⚠ A fact discovered while recording this, which the decision must now absorb:*
+**ArdaNova already runs its own Stripe integration and uses neither the sidecar
+nor the SDK orchestrator.** Verified: `StripeWebhookController.cs`,
+`IStripeWebhookInbox.cs`, `StripeDtos.cs`, and `FundingIntentService.cs` →
+`AzoaAllocationService.cs` in `ardanova-backend-api-mcp`; zero references to
+`fiat-sidecar` or `AzoaStripeOrchestrator` anywhere in its tree. The contract's
+line 75 was recording what ArdaNova built, not an aspiration. So "bake fiat into
+AZOA" is not a port of the sidecar — it is a **choice about two live money paths**:
+
+| Option | AZOA owns | ArdaNova owns | Consequence |
+|---|---|---|---|
+| **A. AZOA is the rail; ArdaNova calls it** | Stripe checkout, webhook verification, dispute stream, settlement → allocation | the funding intent (which project, valuation, what the sponsor holds) | ArdaNova's `StripeWebhookController` retires and `FundingIntentService` calls AZOA's fiat rail. Cleanest split under the thesis — economics stays consumer-side, plumbing platform-side — but it is a migration of working ArdaNova code and a **second Stripe account/config to cut over**. |
+| **B. Both coexist** | a fiat rail for consumers that want one | its own Stripe as today | Two Stripe integrations in the product, two webhook secrets, two dispute streams. D10's reversal pipeline would have to exist twice. |
+| **C. AZOA rail only for payouts (fiat-OUT)** | payouts, which nothing does today | collection, as today | Smallest change; leaves collection where it works. But the thesis-level reason for D43 — one fewer thing that can be absent — is only half served. |
+
+The sidecar is retired under all three. **This is the owner's call**; the vertical
+review's sponsorship lane is tracing this exact path and its findings should
+inform it. Until it is made, the fiat port is scoped to the rail primitive
+(`FiatRailProvider` + `SettlementProfile`) and NOT to Stripe endpoints, so no
+duplicate money path is created by default.
+
+*⚠ A second question, not answered by the decision:* the sidecar's
+`TOKENS_PER_CENT` price schedule is a rate. D7/D16 say AZOA receives
+already-decided amounts and never computes economics. Is an operator-configured
+tokens-per-cent schedule a **rail parameter** (fine inside AZOA) or **consumer
+economics** (must stay in ArdaNova, with AZOA receiving the already-computed
+mint quantity)? The sidecar treated it as the former. Decide before the port
+fixes it in place.
+
 **D30 — One commit on a branch off `main`.** The owner chose a single commit over
 themed ones. **Consequence accepted knowingly:** this work is **not bisectable** —
 a regression traced into it lands on one ~8,900-line commit covering seven
