@@ -1,0 +1,155 @@
+{
+ "verdict": "defects-found",
+ "findings": [
+  {
+   "severity": "blocker",
+   "wave_or_item": "W1.7 + Appendix (last bullet) + W1.1 walletReady",
+   "issue": "Custody gating smuggled in by omission. The plan says 'custody assumed present \u2014 the operator sets CustodyMode on the node' and the appendix sequences 'Production CustodyMode value ... set by the operator BEFORE W1.7 flips EnableCustodialAccounts'. But no production custody mode exists in code: oasis-sleek/Managers/TenantCustodialAccountManager.cs:79-99 computes custodyAvailable = (CustodyMode==\"DevelopmentOnly\") && IsDevelopment() && Blockchain:Mode==Simulated && KEK>=32. In any non-Development environment walletReady is always false, so W1.7's 'identity, KYC AND wallet provisioning all proceed' and W1.1's uniform walletReady gate are unfulfillable, and everything downstream (W4.2 issuance to a wallet, W5.1, W6.x) inherits the gate. The code change that makes custody available in Production is exactly the old W8.2 item ('CustodyMode must be Disabled or a registered adapter') that the plan filed under the operator's clock. A scheduled wave therefore gates on a custody-posture item that is not scheduled anywhere.",
+   "fix": "Add an AZOA item in Wave 1 (W1.8, M, risk medium): recognise a non-development CustodyMode (e.g. Platform/Node) in TenantCustodialAccountManager and AllocationManager.EnsureWalletAsync when the KEK secret is present; unavailableReason stays honest. Treat it as the enabling value primitive (like the reserve wallet), not posture. Strike 'before W1.7 flips' from the appendix; W1.7 depends on W1.8 instead of on the operator."
+  },
+  {
+   "severity": "blocker",
+   "wave_or_item": "W5.1 / W6.2 / W5.3 / W8.3 (project treasury)",
+   "issue": "Ledger-first residue on the project side. Under Q-X1(a) the exchange group moves ARDA user\u2192PLATFORM RESERVE and project ASA reserve\u2192user; the project itself receives nothing on chain. The project's funds then exist only as ArdaNova DB rows: W6.2 calls TreasuryService.ProcessFundingInflowAsync (ardanova TreasuryService.cs:30-60: double split into indexFund/liquidReserve/operations bucket balances + PlatformTreasuryTransaction rows), W5.3 keeps PlatformTreasuryTransaction.cs, and W8.3 says 'sell requests are filled from the project's treasury' \u2014 a Postgres balance while the ARDA sits in the operator's reserve. That is a TokenBalance-style ledger of record for real value (the project's ARDA), the exact premise D47 rejected for stakes. D44 says 'spend ARDA to FUND A PROJECT'; here nothing funds the project, and ArdaNova's DB is the only record of whose ARDA the reserve holds.",
+   "fix": "Give each project a custodial treasury account on the node (tenant-provisioned child or reserve sub-account with a node-side ledger). Exchange group = ARDA user\u2192project treasury + ASA reserve\u2192user (reserve is still the ASA counterparty). W5.3 turns TreasuryService into a read-model of the treasury wallet; W8.3 buybacks draw ARDA from the project treasury wallet, with the platform reserve as backstop. Decide this in Wave 0 as Q-X6 (who holds a project's ARDA)."
+  },
+  {
+   "severity": "high",
+   "wave_or_item": "W6.1 vs W6.2 / W6.3 (collision + non-building tree)",
+   "issue": "W6.1 deletes StripeCheckoutGateway.cs, StripeWebhookController.cs and IStripeWebhookInbox.cs, but: FundingIntentService.cs:26,38 (owned by W6.2) injects IStripeCheckoutGateway; the interface Services/Interfaces/IStripeCheckoutGateway.cs is unowned; Application/DependencyInjection.cs:125 (unowned in Wave 6) registers it; IStripeWebhookInbox is registered at Infrastructure/DependencyInjection.cs:71 \u2014 a file W6.3 owns \u2014 and implemented in Infrastructure/Payments/StripeWebhookInbox.cs (unowned); tests/ArdaNova.API.Tests/Controllers/StripeWebhookControllerTests.cs and FundingIntentServiceTests.cs mock both. W6.1 and W6.2 declare no dependency on each other, so the collision proof ('W6.2 reaches the node only through W6.3's gateway') does not cover this.",
+   "fix": "W6.1 owns IStripeCheckoutGateway.cs (rename to IFiatRailGateway), Application/DependencyInjection.cs, Infrastructure/Payments/StripeWebhookInbox.cs and StripeWebhookControllerTests.cs; W6.3 cedes the one DI line at Infrastructure/DependencyInjection.cs:71 to W6.1 (or W6.1 depends on W6.3 and W6.3 removes it); W6.2 depends on W6.1."
+  },
+  {
+   "severity": "high",
+   "wave_or_item": "W4.1 ('may start alongside Wave 3') vs W3.1 / W1.4",
+   "issue": "W4.1 owns oasis-sleek/Program.cs and appsettings.json; W3.1 owns the same two files in Wave 3 and W1.4 owns appsettings.json (Kyc section) in Wave 1. The plan explicitly permits W4.1 to run alongside W3 ('the rail primitive has no chain dependency'), which puts two live owners on Program.cs and three on appsettings.json. The Wave 4 collision proof only covers W4.5/W4.6.",
+   "fix": "Either drop the 'alongside' clause (W4.1 follows W3.1) or make W4.1 register through Providers/Fiat/FiatRailRegistration.cs and read a separate config file (appsettings.Fiat.json) so it owns no shared file; W3.1 wires the one registration call."
+  },
+  {
+   "severity": "high",
+   "wave_or_item": "W8.2 \u2192 W8.3 ordering",
+   "issue": "W5.1 ships the reverse exchange (project ASA \u2192 ARDA) 'behind an ExchangeRatePolicy seam (liquidity policy lands in W8.3)'. W8.2 then un-503s 'Sell units' for real users, and W8.3 \u2014 the liquidity policy \u2014 DEPENDS ON W8.2. So a live sell path exists for one item before any policy exists; the plan's own words for that state are 'either drains the reserve or silently refuses'. Broken dependency direction.",
+   "fix": "W8.3 depends on W5.1 and W5.3 only and lands before (or merged into) W8.2; W8.2 depends on W8.3."
+  },
+  {
+   "severity": "high",
+   "wave_or_item": "Gotchas ledger #22 (accepted by name)",
+   "issue": "Gotcha 22 is accepted as 'no public self-register on the node'. That name is false today: oasis-sleek/Controllers/UserController.cs:24-31 exposes POST /api/user/register with [AllowAnonymous] and UserManager.RegisterAsync has no config gate. The racy O(n) uniqueness scan is live on a public endpoint of the same node that custodies ArdaNova's real users, so the gotcha is neither closed nor honestly accepted.",
+   "fix": "Schedule a Registration:Enabled=false Production gate (W1.4 or W3.6, S) or a unique index on email/username; only then accept the residual by that name."
+  },
+  {
+   "severity": "high",
+   "wave_or_item": "Track spec.md + metadata.json (unowned)",
+   "issue": "Fiat-first residue in the track's own documents. spec.md still says 'The honest path is fiat-first ... put stake in ArdaNova's own ledger with Stripe in and Stripe Connect out, and let AZOA's chain become an invisible anchor only after custody is worth trusting', lists '10 waves, 46 items ... custody \u2192 chain anchor', and AC1 reads 'sponsor a project with a card' (D44: a card buys ARDA; it never sponsors a project). metadata.json says waves=10, owner_questions=7, partitions computed at 2cd6616 for the OLD plan. W0.3 owns other track directories but not this one, so the rejected premise stays in the file a reviewer reads first.",
+   "fix": "W0.3 owns conductor/tracks/ardanova-production-readiness-waves_20260907/{spec.md,metadata.json}: rewrite 'Where it stands' and 'What this track contains' to the D44 loop, AC1 to 'buy ARDA with a card, spend ARDA on a project, receive project units', waves=11, and reset partitions confidence to 'planned' for the new item list."
+  },
+  {
+   "severity": "high",
+   "wave_or_item": "W1.4 (per-tenant KYC provider override)",
+   "issue": "D48: compliance policy \u2014 uniform KYC, AML, the Identomat trust profile \u2014 is set by the operator on the node, 'not chosen per tenant'. W1.4 keeps PUT /api/tenant/kyc/provider as 'an operator-disable-able override'. The KYC provider IS the compliance policy; a tenant-selectable override, enabled by default, is tenant-chosen policy. The wrong-custodian premise survives in a smaller form.",
+   "fix": "Default the per-tenant provider override OFF; only the operator may enable it per tenant (node config allow-list), or remove the route and keep the node default as the single policy."
+  },
+  {
+   "severity": "high",
+   "wave_or_item": "W1.2 (external wallets surface) vs ratified decision #9 / D46",
+   "issue": "The DROPPED section ratifies decision #9 'no external wallets', and D46 says the wallet stays invisible. W1.2 nevertheless keeps /settings/wallets (ardanova-client settings/wallets/page.tsx: public-address entry + shortenAddress + signed challenge) behind an 'Advanced' opt-in and only demotes the payouts page's 'MANAGE EXTERNAL WALLETS' from its ONLY CTA to one of several. That is a wallet address and signing prompt on a non-crypto user's screen one click away, and a ratified-rejected premise kept alive.",
+   "fix": "Delete the /settings/wallets route, the sidebar item and the payouts CTA in W1.2; reintroduce only when a designed 'claim to external wallet' feature exists (a future decision, not an opt-in)."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W3.4 (no dependency on W3.3)",
+   "issue": "HOLD release/refund moves units into a worker's or sponsor's custodial wallet via IValueRailProvider.TransferAsync, and the platform holding wallet must itself opt into every project ASA. Both hit Gotcha 6 (un-opted-in recipient, 0.1 ALGO min balance per ASA, error text naming the ASA) unless they go through W3.3's CustodialRecipientPreparer. W3.4 depends only on W3.1.",
+   "fix": "W3.4 depends on W3.3 and routes every outbound move through CustodialRecipientPreparer (incl. the holding wallet's own opt-ins)."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W3.6 (no dependents) vs W4.2 / W5.1 / W7.2 / W7.4",
+   "issue": "Every tenant-driven signing on a child user (on-ramp issuance, the exchange group where the user's custodial key signs ARDA\u2192reserve, holds, credential issuance) needs the implied consent grant W3.6 creates; KeyCustodyService.WithSigningKeyAsync runs the live consent gate before decrypt (Services/Custody/KeyCustodyService.cs:115-131). W3.6 appears in no item's depends list, and the plan lets W4.1 start alongside W3, so the explicit dependency lists no longer guarantee it.",
+   "fix": "Add W3.6 to the depends of W4.2, W5.1, W7.2 and W7.4."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W6.3 vs W5.1 (receipt endpoint mismatch)",
+   "issue": "W6.3 reconciles sponsor settlements 'via /api/allocation/receipt', but W5.1 creates a separate ExchangeController/ExchangeReceipt and does not say exchanges are recorded in the allocation ledger. Unless W5.1 writes through AllocationManager's ledger, the allocation receipt endpoint will not know an exchange op id.",
+   "fix": "W5.1 either exposes GET /api/exchange/receipt/{key} or records exchange ops in the same idempotency ledger the allocation receipt reads; W6.3 names whichever is chosen."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W2.4 (ownership gap)",
+   "issue": "W2.4 adds a summary field, media paths as a JSON array and an ARDA funding goal but owns only ProjectDtos.cs on the backend. The Project entity, ProjectRepository.cs mapping (W2.1's file) and a migration are unowned in Wave 2, so the DTO fields cannot persist without either colliding with W2.1 or being dead.",
+   "fix": "W2.4 owns ArdaNova.Domain/Models/Entities/Project.cs and a Wave-2 migration, and depends on W2.1 (which lands the repository mapping for the new columns)."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W4.4 vs W4.7 (SDK package.json / tsup)",
+   "issue": "Deleting sdk/azoa-wallet/src/orchestration/** requires removing the './orchestration' export at package.json:45-48 (owned by W4.7) and the entry at tsup.config.ts:11 (unowned). The Wave 4 proof says 'sdk/.../orchestration/** is W4.4; every other SDK path is W4.7' \u2014 which puts W4.4's required edits in W4.7's file.",
+   "fix": "W4.4 owns tsup.config.ts and lands before W4.7, which removes the export line; or W4.7 absorbs the deletion."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W5.2 / W5.3 and W6.2 / W6.6 (migration coupling)",
+   "issue": "'W5.3's column-type changes ride in W5.2's migration (W5.2 lands first)', but W5.3 depends on W5.1 and W4.7, which W5.2 does not wait for \u2014 W5.2 must write a migration for entity shapes W5.3 has not designed. Same pattern: W6.6's consent column rides in W6.2's migration while W6.6 depends on W6.4 \u2192 W6.2.",
+   "fix": "Allow two sequential migrations per wave with explicit ownership order (W5.2 then W5.3; W6.2 then W6.6), or have the later item land entity+migration and the earlier item depend on it."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W8.1 (source-aged rule) / W4.2",
+   "issue": "'Only ARDA older than the Stripe reversal window of its source may be cashed out' needs per-lot provenance of a fungible ASA. The node keeps no balance ledger (Gotcha 4), and ARDA received from selling units has no on-ramp source. No item builds the lot ledger the rule reads.",
+   "fix": "W4.2 writes an on-ramp lot row (user, amount, source, reversalWindowEnds) and W8.1 consumes lots FIFO; or restate the rule as 'no cash-out within N days of the user's last on-ramp' and say so in Q-X2."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W7.2 (two holds conflated)",
+   "issue": "'Owner approve completion \u2192 Release (units move to the worker's holding with the Q5 window)' is release-into-a-second-hold; W3.4's Hold/Release/Refund trio does not express it. Also the Q5 rationale (chargeback exposure of on-ramped ARDA) does not apply to reserve-sourced rewards \u2014 the actual reason is Gotcha 38's tax deferral, which the item never names.",
+   "fix": "W3.4 adds ReleaseIntoHold(releaseNotBefore) (or W7.2 creates a second hold row on release), and W7.2 states the worker window's rationale explicitly."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W5.1 / W3.3 (fee pooling unstated)",
+   "issue": "In the exchange group the user's custodial account signs the ARDA\u2192reserve transfer, which needs ALGO above min balance for its fee. W3.3 funds min balance only. Without fee pooling the first real exchange fails with a chain error about ALGO \u2014 a thesis leak on the sponsorship moment.",
+   "fix": "W5.1 states that the reserve/fee-payer pools fees for every user-signed txn in the group and that user custodial accounts never hold spendable ALGO."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W0.1 (contract \u00a72 phrase)",
+   "issue": "W0.1 amends \u00a711.2 to tenant-custodial but forbids touching \u00a72, which still says users are 'first-class self-sovereign identities' (contract line 95). After W0.1 the contract contradicts itself. D48 protects \u00a72's operator/consumer split, not that phrase.",
+   "fix": "Let W0.1 correct the one phrase in \u00a72 ('tenant-custodial child users; the operator is the custodian of record') while leaving the split and \u00a711.1 untouched."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "Scale, honestly (money-in before money-out)",
+   "issue": "The on-ramp goes live at Wave 4/6, the off-ramp at Wave 8 \u2014 two multi-session waves later. A sponsor who buys ARDA has no exit but a Stripe refund. The section says how far the first sponsorship is but not that it is a one-way door until W8, nor that Wave 0's five decisions and Stripe Connect platform approval are owner/external clocks with no bound.",
+   "fix": "State it: real-card on-ramp opens only when W8.1 exists, or accept 'no cash-out until Wave 8; the exit is a refund through W4.3' by name."
+  },
+  {
+   "severity": "medium",
+   "wave_or_item": "W5.2 / W7.2 vs W3.1 (partition accounting)",
+   "issue": "contributorSupply/investorSupply are recorded as partitions in ArdaNova's DB (W5.2) while the node's reserve ledger (W3.1) is per asset. Sponsor exchanges (W5.1) and contributor holds (W7.2) draw from the same reserve; oversubscription across partitions is only checkable in ArdaNova, so the node can issue beyond a partition.",
+   "fix": "W3.1's reserve ledger carries named partitions per asset; W5.1 and W7.2 draw through a node-side partition check."
+  },
+  {
+   "severity": "low",
+   "wave_or_item": "W1.4 vs W1.5 (test glob)",
+   "issue": "W1.4 owns tests/.../Kyc/* while W1.5 rewrites KycHostedSessionOutcomeHandler and KycScreeningRiskPolicy whose tests naturally live in that directory.",
+   "fix": "W1.5 owns tests/.../Kyc/*Outcome*.cs and *Screening*.cs explicitly."
+  },
+  {
+   "severity": "low",
+   "wave_or_item": "W6.5",
+   "issue": "'ArdaNova API Program.cs drops Stripe options validation' \u2014 ArdaNova.API/Program.cs has no Stripe reference; the item names work that does not exist.",
+   "fix": "Strike the clause."
+  },
+  {
+   "severity": "low",
+   "wave_or_item": "W3.2",
+   "issue": "'records the asset id in node config' \u2014 appsettings.json is W3.1's file and not writable at runtime.",
+   "fix": "Persist the ARDA asset id in a node-state record (platform_token) and read it from there."
+  },
+  {
+   "severity": "low",
+   "wave_or_item": "Dependency graph / Parallelism paragraph",
+   "issue": "'Waves 1, 2 and 3 run in parallel' overstates: W3.1 waits on W1.4, W2.4 waits on W1.1, W1.1 waits on W0.5, and W4.1-alongside-W3 collides. W4.5 also names ActionManager.ReconcileAllParkedRunsAsync as if present (only ReconcileRunAsync exists).",
+   "fix": "Say 'parallel except the declared cross-wave waits' and mark ReconcileAllParkedRunsAsync as new."
+  }
+ ]
+}
