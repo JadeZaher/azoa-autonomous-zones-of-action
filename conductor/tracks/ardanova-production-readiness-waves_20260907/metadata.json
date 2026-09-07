@@ -1,0 +1,23 @@
+{
+  "id": "ardanova-production-readiness-waves_20260907",
+  "title": "ArdaNova production-readiness waves",
+  "type": "feature",
+  "status": "pending",
+  "created": "2026-09-07",
+  "source": "11-agent vertical review, 2026-09-07 (REVIEW-EVIDENCE.json)",
+  "repos": {
+    "azoa": "c:/Users/atooz/Programming/Projects/oasis-sleek",
+    "ardanova": "c:/Users/atooz/Documents/Escherbridge/ardanova"
+  },
+  "finding_count": 147,
+  "waves": 10,
+  "owner_questions": 7,
+  "gotchas": 41,
+  "decisions_to_ratify": 16,
+  "thesis_health": "Far. The vocabulary is mostly right \u2014 a person signs in with Google, sees 'Account setup', 'Identity check', and 'Managed payment account', and never meets gas, chains, signing, or seed phrases on ArdaNova's screens \u2014 and the substrate underneath is careful (single custody chokepoint, fail-closed gates at both dispatch seams, idempotent allocations, honest 'unpriced' analytics). But no thesis moment works end to end in any non-development environment: account setup returns 409 (EnableCustodialAccounts=false, CustodyMode=Disabled, Kyc:Provider=unavailable); a project cannot be edited, published privately, illustrated, or found past the first 50; sponsorship checkout is unreachable by construction (the only settlement gateway is a Retry stub, no project ever gets an assetId, the settlement would mint 'USD' cents as a fresh ASA, and no intent can reach SETTLED); a worker cannot submit a bid from the client, an accepted agreement never advances, escrow is 501/503, the thesis-native off-chain distribute is 501 and admin-only, and payouts are refused at controller and service; voting is a browser alert or a credential nobody can issue; and 'where did the money go' is an admin-only page. Where the UI does function it teaches ARDA, project units, per-ARDA rates, Algorand addresses, transaction hashes, and a Pera/WalletConnect picker in the sidebar. The build order is inverted against the thesis \u2014 three chains and a bridge shipped fail-closed while fiat in/out does not exist \u2014 and the two repos carry contradictory docs (self-sovereign vs custodial, sidecar vs direct Stripe, a Sybil hole already fixed, tracks marked complete that are 501). The honest path is fiat-first: fix the words and docs, make identity real, finish the presentation product, put stake in ArdaNova's own ledger with Stripe in and Stripe Connect out, and let AZOA's chain become an invisible anchor only after custody is worth trusting. Waves 3, 5, 8 and 9 are each multi-session; roughly a quarter of engineering before a real sponsor can pay a real worker, and the seven owner questions must be answered before Wave 1 starts.",
+  "partitions": {
+    "confidence": "planned",
+    "computed_at_commit": "2cd6616",
+    "note": "per-wave owns_files are in plan.md; collision proofs are the reviewer's and must be re-verified with a real grep before each wave launches"
+  }
+}
