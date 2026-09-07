@@ -883,6 +883,18 @@ public sealed class PersonUniquenessGateTests
             }
         }
 
+        /// <summary>D39: every live (unreleased) claim in one uniqueness domain.</summary>
+        public Task<AZOAResult<IReadOnlyList<PersonOperationClaim>>> ListLiveByOperationAsync(
+            string uniquenessScope, string operationKey, CancellationToken ct = default)
+            => Task.FromResult(new AZOAResult<IReadOnlyList<PersonOperationClaim>>
+            {
+                Result = _rows.Values
+                    .Where(r => string.Equals(r.UniquenessScope, uniquenessScope, StringComparison.Ordinal)
+                        && string.Equals(r.OperationKey, operationKey, StringComparison.Ordinal)
+                        && r.ReleasedAt is null)
+                    .ToList(),
+            });
+
         public Task<AZOAResult<PersonOperationClaim?>> GetAsync(
             string uniquenessScope,
             string operationKey,

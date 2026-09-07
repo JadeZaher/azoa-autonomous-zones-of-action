@@ -50,6 +50,21 @@ public sealed class SurrealNftStore : INftStore, ICredentialIssuerStore
             if (userNFT.Id == Guid.Empty)
                 userNFT.Id = Guid.NewGuid();
 
+            // D41: a soulbound row whose issuer IS its holder is the vacuous credential the whole
+            // rail failed on -- "only the issuer may revoke" would then authorize the holder to take
+            // their own credential back. Refused BEFORE the row is written, so no such row can enter
+            // the database at all, whichever seam calls in.
+            if (userNFT.IsSoulbound && userNFT.IssuerUserId != Guid.Empty
+                && userNFT.IssuerUserId == userNFT.UserId)
+                return new AZOAResult<IUserNFT>
+                {
+                    IsError = true,
+                    Message =
+                        $"Credential {userNFT.Id} names the same party as issuer and holder. A "
+                      + "self-issued credential makes the D19 revocation check decide nothing; "
+                      + "refusing to write one."
+                };
+
             var poco   = ToNftPoco(userNFT);
 
             // Coercion-safe SET-based UPSERT (SurrealWriter): omits null option<>
@@ -69,19 +84,23 @@ public sealed class SurrealNftStore : INftStore, ICredentialIssuerStore
             // minted with a null issuer and the whole revocation rail is inert: every
             // revoke dies at "no recorded issuer". This is its one production writer.
             //
-            // Why userNFT.UserId is the ISSUER and not the D19-forbidden "issuer inferred
-            // from the holder": a soulbound row never changes hands. UserNFTService
-            // refuses to transfer one, so user_id stays the minting party for the row's
-            // whole life. The only writer that ever re-points it is
-            // RecordCredentialRevokedAsync below, and by the time that runs the issuer is
-            // already recorded, so the write-once guard inside SetIssuerUserIdAsync
-            // rejects any attempt to re-stamp from it. The forbidden inference is reading
-            // an issuer off current_owner at REVOKE time for an arbitrary row; that is
-            // still never done, and a row that reaches revoke with no issuer still fails
-            // closed.
-            if (userNFT.IsSoulbound && userNFT.UserId != Guid.Empty)
+            // D41: the issuer stamped is the one the ISSUANCE seam put on the row
+            // (UserNFTService.MintUserNFTAsync(issuer, recipient, model), which reads it from the
+            // authenticated caller). It is NEVER derived from userNFT.UserId -- that is the HOLDER,
+            // and stamping it made "only the issuer may revoke" mean "the holder may revoke their
+            // own credential", which is the exact inversion D19 forbids and the vacuous rail this
+            // track exists to end.
+            //
+            // A soulbound row that carries no issuer is a SELF-MINTED badge, not a credential: it
+            // is left with issuer_user_id NONE and the revoke path fails closed on it, rather than
+            // being handed a fabricated authority. The write-once guard inside SetIssuerUserIdAsync
+            // (WHERE issuer_user_id IS NONE) then keeps the column immutable in the DATABASE, so a
+            // later write can never re-point revocation authority at a different party -- including
+            // the round trip through FromPoco/ToNftPoco after RecordCredentialRevokedAsync moves the
+            // row, which re-stamps the SAME issuer and is therefore idempotent.
+            if (userNFT.IsSoulbound && userNFT.IssuerUserId != Guid.Empty)
             {
-                var stamped = await SetIssuerUserIdAsync(userNFT.Id, userNFT.UserId, ct);
+                var stamped = await SetIssuerUserIdAsync(userNFT.Id, userNFT.IssuerUserId, ct);
                 if (stamped.IsError)
                     return new AZOAResult<IUserNFT>
                     {
@@ -611,12 +630,13 @@ public sealed class SurrealNftStore : INftStore, ICredentialIssuerStore
             IsTransferable    = n.IsTransferable,
             IsCurrent         = true,
             CurrentOwner      = n.CurrentOwner,
-            // IssuerUserId (D19) is deliberately LEFT NULL here and is NOT the
+            // IssuerUserId (D19/D41) is deliberately LEFT NULL here and is NOT the
             // §set-omits-null case above: SurrealWriter omits null option<> fields
             // from the SET, so an ordinary UserNFT upsert (a transfer, a metadata
             // edit) preserves whatever issuer the row already carries instead of
             // wiping the authorization anchor. It is written only through
-            // ICredentialIssuerStore.SetIssuerUserIdAsync.
+            // ICredentialIssuerStore.SetIssuerUserIdAsync, whose SQL guard makes the
+            // column write-once in the database rather than by caller convention.
             IsActive          = n.IsActive,
             MintedDate        = new DateTimeOffset(
                                     DateTime.SpecifyKind(n.MintedDate, DateTimeKind.Utc)),
@@ -659,10 +679,14 @@ public sealed class SurrealNftStore : INftStore, ICredentialIssuerStore
             RoyaltyRecipient    = p.RoyaltyRecipient,
             IsSoulbound         = p.IsSoulbound,
             IsTransferable      = p.IsTransferable,
-            // IssuerUserId is not projected onto UserNFT: IUserNFT has no issuer
-            // property, and its only writable carrier (Attributes) is caller-supplied,
-            // which would make the revoke authorization forgeable by the holder. Read
-            // it through ICredentialIssuerStore.FindCurrentByAssetIdAsync instead.
+            // D41: the issuer IS projected now, so a round-tripped soulbound row re-stamps the
+            // SAME issuer (idempotent under the WHERE issuer_user_id IS NONE write-once guard)
+            // instead of arriving issuerless and looking like a self-minted badge. It is NOT an
+            // authorization input: the revoke decision reads the column through
+            // ICredentialIssuerStore.FindCurrentByAssetIdAsync, never this in-memory copy, and the
+            // database guard means a forged value on an inbound row can never re-point an issuer
+            // that is already recorded.
+            IssuerUserId        = ParseUserLink(p.IssuerUserId) ?? Guid.Empty,
             CurrentOwner        = p.CurrentOwner,
             IsActive            = p.IsActive,
             MintedDate          = p.MintedDate.UtcDateTime,

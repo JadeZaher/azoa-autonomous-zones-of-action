@@ -63,6 +63,16 @@ public sealed class SurrealPersonOperationClaimStore : IPersonOperationClaimStor
             // does so on a branch where G was already true — so G cannot flip under
             // its own writes. Reversing the order silently hands a released claim's
             // row to the wrong holder.
+            //
+            // D39/D40 adds the DECISION to the same statement, before user_id for the
+            // same reason. Its extra term is the voting window, evaluated against the
+            // close time PINNED ON THE ROW by the first decision and only falling back
+            // to the caller's when the row has none — so a proposal whose closesAt is
+            // rewritten afterwards cannot reopen a decision that is already frozen.
+            // decision_closes_at is likewise write-once. A refused decision leaves the
+            // stored one untouched, which is what "frozen at close" has to mean.
+            // `decision_closes_at ?? $_decision_closes_at` is therefore always a real
+            // datetime: the row's pinned close once one exists, the caller's otherwise.
             var query = SurrealQuery
                 .Of("""
                     UPSERT type::record($_t, $_id)
@@ -79,6 +89,28 @@ public sealed class SurrealPersonOperationClaimStore : IPersonOperationClaimStor
                                 OR released_at != NONE)
                             THEN $_tenant ELSE tenant_id END,
                         modified_date = $_now,
+                        decision_option = IF ($_decision != ''
+                                AND (user_id = NONE
+                                    OR user_id = ''
+                                    OR user_id = $_user_id
+                                    OR released_at != NONE)
+                                AND $_now < (decision_closes_at ?? $_decision_closes_at))
+                            THEN $_decision ELSE decision_option END,
+                        decided_at = IF ($_decision != ''
+                                AND (user_id = NONE
+                                    OR user_id = ''
+                                    OR user_id = $_user_id
+                                    OR released_at != NONE)
+                                AND $_now < (decision_closes_at ?? $_decision_closes_at))
+                            THEN $_now ELSE decided_at END,
+                        decision_closes_at = IF ($_decision != ''
+                                AND decision_closes_at = NONE
+                                AND (user_id = NONE
+                                    OR user_id = ''
+                                    OR user_id = $_user_id
+                                    OR released_at != NONE)
+                                AND $_now < $_decision_closes_at)
+                            THEN $_decision_closes_at ELSE decision_closes_at END,
                         user_id = IF (user_id = NONE
                                 OR user_id = ''
                                 OR user_id = $_user_id
@@ -98,6 +130,14 @@ public sealed class SurrealPersonOperationClaimStore : IPersonOperationClaimStor
                 .WithParam("_person_key", body.PersonKey)
                 .WithParam("_user_id", body.UserId)
                 .WithParam("_tenant", SurrealRecordParam.Of("user", candidate.TenantId))
+                // NEITHER decision param is ever null. A JSON null is SurrealDB NULL,
+                // not NONE, and NULL propagates through `??` and through every
+                // comparison in the guards above — which would decide the window the
+                // wrong way in silence. So "no decision" is the empty string and
+                // "never closes" is PersonOperationClaim.NeverClosesAt, and the guards
+                // test those two definite values instead of testing for absence.
+                .WithParam("_decision", body.DecisionOption ?? string.Empty)
+                .WithParam("_decision_closes_at", body.DecisionClosesAt ?? PersonOperationClaim.NeverClosesAt)
                 .WithParam("_now", now);
 
             var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
@@ -147,6 +187,51 @@ public sealed class SurrealPersonOperationClaimStore : IPersonOperationClaimStor
         catch (Exception exception)
         {
             return StoreFailure<PersonOperationClaim?>(exception, nameof(GetAsync), uniquenessScope);
+        }
+    }
+
+    public async Task<AZOAResult<IReadOnlyList<PersonOperationClaim>>> ListLiveByOperationAsync(
+        string uniquenessScope,
+        string operationKey,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(uniquenessScope) || string.IsNullOrWhiteSpace(operationKey))
+            return AZOAResult<IReadOnlyList<PersonOperationClaim>>.Failure(
+                "A uniqueness scope and an operation key are required to list claims.");
+
+        try
+        {
+            // PROJECTION, not SELECT *. The tally needs the decision, the holder and
+            // the liveness flag; it has no business holding a person key in process
+            // memory, and a projection is the only way to make that true rather than
+            // merely intended. person_key, id and operation_key are deliberately
+            // absent from the returned rows.
+            var query = SurrealQuery
+                .Of("""
+                    SELECT user_id, released_at, decision_option, decided_at, decision_closes_at
+                    FROM type::table($_t)
+                    WHERE uniqueness_scope = $_scope
+                      AND operation_key = $_operation_key
+                      AND released_at = NONE
+                    """)
+                .WithParam("_t", PersonOperationClaim.SchemaNameConst)
+                .WithParam("_scope", uniquenessScope)
+                .WithParam("_operation_key", operationKey);
+
+            var rows = await _executor.QueryAsync<PersonOperationClaim>(query, ct);
+
+            // No LIMIT on purpose: a truncated electorate publishes a wrong count
+            // under a correct-looking tally hash, which is worse than a slow read.
+            return AZOAResult<IReadOnlyList<PersonOperationClaim>>.Success(rows, "Success");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return StoreFailure<IReadOnlyList<PersonOperationClaim>>(
+                exception, nameof(ListLiveByOperationAsync), uniquenessScope);
         }
     }
 
@@ -228,6 +313,9 @@ public sealed class SurrealPersonOperationClaimStore : IPersonOperationClaimStor
             : SurrealLink.ToLink("user", claim.TenantId),
         ClaimedAt = claim.ClaimedAt?.ToUniversalTime(),
         ReleasedAt = claim.ReleasedAt?.ToUniversalTime(),
+        DecisionOption = claim.DecisionOption,
+        DecidedAt = claim.DecidedAt?.ToUniversalTime(),
+        DecisionClosesAt = claim.DecisionClosesAt?.ToUniversalTime(),
         CreatedDate = claim.CreatedDate.ToUniversalTime(),
         ModifiedDate = claim.ModifiedDate?.ToUniversalTime(),
     };
@@ -244,6 +332,12 @@ public sealed class SurrealPersonOperationClaimStore : IPersonOperationClaimStor
             : SurrealLink.FromLink(claim.TenantId),
         ClaimedAt = claim.ClaimedAt,
         ReleasedAt = claim.ReleasedAt,
+        DecisionOption = claim.DecisionOption,
+        DecidedAt = claim.DecidedAt,
+        // The never-closes sentinel is a storage detail; the domain says "no close".
+        DecisionClosesAt = PersonOperationClaim.IsNeverCloses(claim.DecisionClosesAt)
+            ? null
+            : claim.DecisionClosesAt,
         CreatedDate = claim.CreatedDate,
         ModifiedDate = claim.ModifiedDate,
     };

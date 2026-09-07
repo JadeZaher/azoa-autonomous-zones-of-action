@@ -6,6 +6,7 @@ public class UserNFT : IUserNFT
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid UserId { get; set; }
+    public Guid IssuerUserId { get; set; }
     public string NFTContractAddress { get; set; } = string.Empty;
     public string TokenId { get; set; } = string.Empty;
     public string ChainType { get; set; } = string.Empty;

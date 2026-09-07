@@ -91,3 +91,74 @@ behaviour change; it was left out of the seam change to keep the diff reviewable
 
 `IActionNodeHandler.ResolveSettlementRailId` declares which rail a node settles on, read from
 the node's DECLARED config. See `Services/Actions/AGENTS.md` §rail-capability.
+
+## Person-uniqueness gate and its claim ledger (D3/D23)
+
+`IPersonUniquenessGate` is the per-operation one-human-one-claim opt-in. Three properties
+are contract, not implementation, and every implementor and caller must preserve them:
+
+- **Opt-in by declaration.** An operation opts in by passing a
+  `PersonUniquenessRequirement`; no requirement means no check runs at all. A gate that
+  ran by default would silently one-per-person every operation in the system.
+- **Refusal is never an error.** Every denial is the SAME two-valued answer carrying the
+  SAME sentence: `Success(KycEligibilityDecision.Ineligible(cause))`. Unavailability is a
+  denial too. A 503 that appears only for already-claimed people is the correlation leak
+  wearing a hat, so `IsError` must never be used to mean "refused".
+- **`ReleaseAsync` is the compensation.** A claim taken for a side effect that then failed
+  must be released, or that human is locked out of the operation forever.
+
+The interface is marked FROZEN because a sibling lane codes against these signatures
+verbatim; extend it by widening `PersonUniquenessRequirement`, not by adding a method.
+
+`IPersonOperationClaimStore` is **node-operator-only persistence** — no consumer path may
+reach it. Two shapes carry its safety:
+
+- `TryClaimAsync` decides the winner INSIDE one statement on a deterministic record id,
+  and the caller decides refusal by comparing the returned `UserId` to its own. A
+  preceding read lets two concurrent claims both pass; this follows the `BindUserAsync`
+  precedent for the same reason.
+- Reads are keyed by `(scope, operation)` and nothing else, so a caller cannot ask this
+  store about a person it names and the read cannot be turned into a person-key oracle.
+  A store fault is an error result, never an empty list — an empty list is a published
+  tally of zero.
+
+Person keys live only in this store. See `Services/Kyc/AGENTS.md` §person-uniqueness and
+`Persistence/SurrealDb/Models/AGENTS.md` §person-operation-claim.
+
+## Credential revocation contracts (D19)
+
+`ICredentialManager` states the rule the whole rail turns on in the contract itself:
+**authorization is the recorded ISSUER, never the holder.** The two tempting sources are
+both wrong and named as such — `CurrentOwner` is the party the asset is taken FROM, and
+a mint's `operation_log.user_id` is the tenant that proxied it. A row with no recorded
+issuer is unrevocable and fails closed.
+
+`CredentialRevokeCodes.PendingConfirmation` lives beside that contract deliberately: the
+manager and every transport that maps it (HTTP status, SDK branching) name the same
+constant instead of two string literals that drift. A pending clawback carries
+`IsError = true` because `IsError` is what AZOA client helpers branch on.
+
+`ICredentialIssuerStore` is a second, deliberately NARROW face on the store that
+implements `INftStore`. It exists because `IUserNFT` has no issuer property and its only
+writable carrier is the caller-supplied attributes bag — routing the issuer through that
+bag would make the authorization decision forgeable by the holder. `SetIssuerUserIdAsync`
+is write-once (re-pointing an issuer would hand revocation authority to another party;
+re-stamping the same one succeeds so an idempotent mint retry does not fail), and it is
+the writer that makes revocation possible at all: a mint that skips it produces a
+credential nobody on earth can revoke.
+
+**The node type is currently blocked** by `Services/Actions/NotEnabledActionNodeTypes`;
+these contracts are implemented and gated, not live. See `Services/Actions/AGENTS.md`
+§not-enabled-node-types.
+
+## Analytics read surface (D16)
+
+`IAnalyticsReadService` is a read projection over `operation_log` that **writes nothing
+and prices nothing**. If a change here needs a write, the change is wrong.
+
+Its request type, `AnalyticsQueryRequest`, deliberately has no user-id field: both routes
+read the subject from the credential, so a cross-user view cannot be smuggled in through
+model binding. A node-operator cross-user view belongs on its own policy-gated route —
+never as an optional parameter here, because then the safe call and the privileged call
+are one request apart. Rationale for the three-way `Pricing` / `AmountStatus`
+representations is in `Services/Analytics/AGENTS.md`.

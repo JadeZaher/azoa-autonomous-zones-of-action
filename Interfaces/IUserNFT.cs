@@ -4,6 +4,9 @@ public interface IUserNFT
 {
     Guid Id { get; set; }
     Guid UserId { get; set; }
+
+    /// <summary>D41: the party that ISSUED this row; Guid.Empty when it was self-minted (not a credential).</summary>
+    Guid IssuerUserId { get; set; }
     string NFTContractAddress { get; set; }
     string TokenId { get; set; }
     string ChainType { get; set; }

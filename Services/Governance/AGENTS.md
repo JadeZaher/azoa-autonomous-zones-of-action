@@ -141,46 +141,101 @@ remain globally rate-limited but permanently outside any paid-egress policy.
 ## consumer-governance
 
 Not the node-operator lane above: `ConsumerGovernanceHolonTypes`,
-`GovernanceTallyHash`, and `GovernanceBallotRoll` describe what a TENANT'S
-MEMBERS vote on. A proposal is a Holon; a ballot is a child Holon; D20 adds no
-tables.
+`GovernanceTallyHash`, `GovernanceClaimLedgerTally` and
+`GovernanceVoteOfRecordGuard` describe what a TENANT'S MEMBERS vote on. A
+proposal is a Holon; the vote of record is a `person_operation_claim` row.
 
-**A proposal is published, a ballot never is.** `HolonManager.CanRead` is
-owner-or-public, so a proposal only its author can read is a proposal only its
-author can vote on -- the primitive is inert. `GovernanceProposalCreate`
-therefore writes the proposal with `IsPublic = true`, and `IsPublic` is reachable
-from `HolonCreateModel`/`HolonUpdateModel` ONLY for the asset types on
-`HolonManager.PublishableAssetTypes` (today: `GovernanceProposal`). That
-allow-list is the whole point: a free `isPublic: true` on `POST /api/holon` is
-the cross-tenant read leak this repo has already shipped three times. A ballot is
-deliberately NOT publishable, because a public ballot carries `Holon.UserId`
-beside the choice and reconstitutes the person-to-choice correlation D20 exists
-to prevent. Publishing is refused with an error, never silently downgraded to a
-private write.
+**The claim IS the vote (D39).** The shipped tally counted child holons, and
+`POST /api/holon` writes those, so it counted forgeries: one verified user could
+mint five hundred `GovernanceVote` children without ever reaching
+`GovernanceVoteNodeHandler`. `GovernanceBallotRoll` -- the claim-JOINED holon
+tally -- was the smaller fix and is now DELETED, because the join still let an
+attacker-written holon decide WHICH option a claim was spent on (both the option
+and the ordering key `castAt` came out of metadata the forger owns), and because
+a join stays safe only while nobody drops it. `GovernanceClaimLedgerTally` reads
+`person_operation_claim` and nothing else. Do not reintroduce the join.
 
-**A ballot counts only when a live uniqueness claim backs it.** Ballots are
-ordinary child holons and `POST /api/holon` writes them, so counting child
-holons counts forgeries: one verified user can mint five hundred
-`GovernanceVote` children without ever reaching `GovernanceVoteNodeHandler`.
-`GovernanceBallotRoll` is the join that makes "one member, one vote" real -- for
-each ballot's owner it resolves the person behind them
-(`IKycIdentityStore.GetByUserAsync`) and looks up the node-operator-only
-`person_operation_claim` row for THIS proposal's uniqueness domain. A ballot
-counts iff a live, unreleased claim on that domain is held by that ballot's
-owner, and each claim is spent at most once (earliest `castAt` wins, so a
-re-tally is stable). Two users of one human share a person key and therefore one
-claim row: exactly one of their ballots counts.
+**One row, so no ordering to attack (D40).** `person_operation_claim` holds
+exactly one row per person per operation, written inside one single-winner
+statement. The chosen option (`decision_option`) and a server-set `decided_at`
+now live on that row, so voting again before the close is an IN-PLACE update: no
+second ballot, no "which one is latest", nothing for a hostile client timestamp
+to reorder. The decision rides on `PersonUniquenessRequirement.Decision`, so
+`IPersonUniquenessGate` keeps its frozen three-method contract.
 
-The domain comes from the PROPOSAL, in both the vote and the tally: the declared
-`uniquenessOperationKey` must equal `UniquenessOperationKeyFor(proposalId)`, and
-the scope is parsed with the strict spelled-name parser. The scope value itself
-is `KycPersonKeyDeriver.ScopeValue`, the same one the gate claims through, so a
-Tenant-scoped proposal counts its own tenant's claims and nobody else's.
+**The window is enforced three deep, and the innermost one is the real one.**
+`GovernanceVoteNodeHandler.CheckVotingWindow` refuses a late vote;
+`PersonUniquenessGate.TryClaimAsync` refuses again before it claims (that check is
+subject-independent, so short-circuiting it leaks no timing); and the claim
+statement itself will not write a decision once the window has shut. The
+statement compares against the `decision_closes_at` PINNED ON THE ROW by the first
+decision, falling back to the caller's value only when the row has none -- so
+rewriting a proposal's `closesAt` afterwards cannot thaw a frozen claim. The gate
+reads the decision BACK and answers Ineligible if the store refused it: reporting
+success on a decision that was not written is the exact "claimed in prose, not
+enforced in code" failure this lane exists to end.
 
-`GovernanceBallotRoll` is also the one place allowed an UNSCOPED holon read.
-Ballots are private and each is owned by its own voter, so the consumer-scoped
-owner-or-public read shows a tally runner only their own ballot and certifies a
-count of one (that was the defect). The read is unscoped and the return type is
-`GovernanceBallotCount` -- a total and per-option counts -- so identities cannot
-leave. Store faults fail the whole tally: a skipped ballot would publish a wrong
-count under a correct-looking `tallyHash`.
+**The tally reads no ballot, and a guard says so.** `GovernanceTallyNodeHandler`
+takes an `IHolonManager` and an `IPersonOperationClaimStore` -- no holon store, no
+identity store. Its constructor calls
+`GovernanceVoteOfRecordGuard.ThrowIfTallyIsNotLedgerOnly()`, which refuses to let
+the handler exist if the claim-ledger dependency is gone or an `IHolonStore`
+comes back (directly, or one hop away inside a governance collaborator, which is
+exactly how `GovernanceBallotRoll` used to be reached). The attack tests in
+`tests/AZOA.WebAPI.Tests/Governance` cover the other half -- a tally that keeps
+the dependency and stops reading it publishes wrong counts and goes red. Neither
+half alone is the guard. `GovernanceVoteOfRecordCount.SourceTable` is checked
+against `person_operation_claim` before anything is published, so a count that
+arrived from somewhere else is refused rather than dressed up as a result.
+
+The one holon the tally reads is the PROPOSAL, through the consumer-scoped
+manager: it is the question (declared options, close time, may this caller see it
+at all), never the answer.
+
+**The electorate, not the node (AC5).** `HolonManager.CanRead` is
+owner-or-public with NO tenant term, so `IsPublic` alone publishes node-wide, and
+that rule lives in a file this lane does not own. A proposal is still published --
+an unreadable notice is one only its author can vote on -- but publication is no
+longer what enfranchises. `GovernanceProposalCreate` pins
+`electorateTenant` from the ACTING tenant (never from config: an author must not
+be able to nominate somebody else's members), and both the vote node and the tally
+refuse a caller outside it via `ConsumerGovernanceHolonTypes.IsInElectorate`,
+which fails CLOSED on a proposal that records no electorate. The refusal reuses
+the single `governance proposal not found.` sentence, so a stranger cannot tell a
+foreign proposal from a nonexistent one, and the check runs BEFORE the window and
+option checks so those cannot become the oracle instead. `electorateTenant` is
+also a required field on the `GovernanceProposal` registry seed. The tally derives
+its uniqueness scope from that recorded electorate rather than from whoever runs
+it, so the published count does not move with the caller.
+
+**Still on the read surface:** `GET /api/holon/{id}` returns a published proposal
+to any authenticated user on the node, because `CanRead` is not ours to change.
+What is closed is entering or observing the vote. Narrowing `CanRead` itself is
+the follow-up.
+
+**The receipt carries no authority.** The `GovernanceVote` child holon is a
+receipt for the voter: one per voter per proposal, updated on a re-vote so the
+holarchy never shows two ballots from one person. It is written AFTER the vote of
+record is committed and is never compensated by releasing the claim -- releasing
+would discard a recorded vote (and, on a re-vote, a valid earlier one) because a
+holon write failed. A failed receipt yields `voteId: null` on a successful node.
+`HolonManager.UpdateAsync` still blind-merges a receipt's metadata; under D39 that
+rewrite decides nothing, which is why the fix was to remove the authority rather
+than to police the write.
+
+**Never on a receipt:** a person key, a global person key, or any KYC field. The
+receipt is consumer-readable through HolonQuery, so
+`ConsumerGovernanceHolonTypes.AllowedVoteMetadataKeys` is CLOSED and re-checked
+before the write. `decision_option` sitting beside `person_key` on
+`person_operation_claim` means the node operator -- and only the node operator --
+can read person-to-choice; that is the price of an unforgeable tally and the
+reason the table must stay absent from `SearchableEntityType`,
+`HolonQueryRequest` and the MCP query allow-list. `ListLiveByOperationAsync` is
+keyed by (scope, operation) only, so it cannot be turned into a person-key oracle,
+and it PROJECTS: the tally never holds a person key in process memory.
+
+**Tier-1 (D42).** Neither the proposal, the vote, nor the tally overrides
+`RequiresChainCapability`. The tally hash is still computed and published over
+(proposalId, closesAt, totalVotes, sorted option counts) with no identities in the
+preimage, so anchoring it later is an added `GovernanceTally -> BlockchainExecute`
+step and not a redesign.

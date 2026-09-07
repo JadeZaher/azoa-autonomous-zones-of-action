@@ -33,6 +33,9 @@ public sealed record PersonUniquenessRequirement
     /// <summary>Longest accepted canonical operation key.</summary>
     public const int MaxOperationKeyLength = 200;
 
+    /// <summary>Longest accepted decision the claim may carry.</summary>
+    public const int MaxDecisionLength = 200;
+
     /// <summary>
     /// Tenant-authored, stable identifier of the claimable thing (e.g.
     /// <c>governance:proposal:{holonId}</c>). Canonicalized by
@@ -43,6 +46,24 @@ public sealed record PersonUniquenessRequirement
     /// <summary>D23: per-tenant unless the operator explicitly opts into node-global.</summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public PersonUniquenessScope Scope { get; init; } = PersonUniquenessScope.Tenant;
+
+    /// <summary>
+    /// D39/D40: the decision this claim is spent on, carried ON the claim row so the
+    /// claim IS the vote of record. Null means the operation records no decision —
+    /// every non-governance caller — and the claim behaves exactly as it did before.
+    /// A re-claim by the same holder with a different decision is an IN-PLACE update
+    /// of the one row, so there is never a second ballot and never an ordering rule
+    /// to attack.
+    /// </summary>
+    public string? Decision { get; init; }
+
+    /// <summary>
+    /// D40: the instant after which this operation's decision is frozen. Enforced by
+    /// the gate before the claim AND inside the claim statement itself, so a caller
+    /// that forgets its own window check still cannot record a decision late. Null
+    /// means the operation never closes.
+    /// </summary>
+    public DateTimeOffset? DecisionClosesAt { get; init; }
 
     /// <summary>
     /// Trims, lower-cases invariantly, and REJECTS anything outside
@@ -72,5 +93,21 @@ public sealed record PersonUniquenessRequirement
         }
 
         return canonical;
+    }
+
+    /// <summary>
+    /// Trims a decision and REJECTS anything empty or longer than
+    /// <see cref="MaxDecisionLength"/>. Deliberately does NOT lower-case or strip:
+    /// the decision has to compare Ordinal-equal to an option the proposal declared,
+    /// and a canonicalizer that rewrote it would quietly count a vote for an option
+    /// nobody offered. Returns null when unusable so the caller fails CLOSED.
+    /// </summary>
+    public static string? CanonicalizeDecision(string? decision)
+    {
+        if (string.IsNullOrWhiteSpace(decision))
+            return null;
+
+        var trimmed = decision.Trim();
+        return trimmed.Length == 0 || trimmed.Length > MaxDecisionLength ? null : trimmed;
     }
 }

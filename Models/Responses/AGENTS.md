@@ -63,3 +63,33 @@ contains only an opaque receipt/operation reference, target account facts,
 public transaction reference, timing, fee facts, and a bounded failure code.
 It must never add the raw idempotency key, API-key or tenant identity, operation
 parameters, provider/error payload, KYC material, or custody secrets.
+
+## Analytics projections (D16)
+
+`TransactionHistoryPage`, `TransactionHistoryEntry`, `PositionsResponse` and
+`PositionSummary` are self-scoped read projections over `operation_log`. Their defining
+rule is that **absence is a fact and must survive serialization**:
+
+- `Pricing` (`NeverPriced` / `Priced`) is REQUIRED and always serialized beside the
+  nullable `Value`; `AmountStatus` (`Known` / `Unknown`) is REQUIRED beside the nullable
+  `Amount`. A JSON client with default null-stripping, or a `.Value ?? 0` in a consumer's
+  tax spreadsheet, turns an absent object into a silent zero — an explicit enum cannot be
+  defaulted away. A real quote of `"0"` stays `Priced` and a recorded zero stays `Known`.
+- Every total ships beside the count of what was left out of it
+  (`UnpricedEntryCount`, `UnknownAmountEntryCount`, `UnclassifiedEntryCount`,
+  `UnsettledEntryCount`, `UnstampableEntryCount`, `IsValueComplete`,
+  `IsQuantityComplete`, `IsComplete`). A fiat total that silently omits unpriced legs is
+  a wrong number that looks right, on a tax surface.
+
+Do not add a convenience "total" field that collapses these, and do not make any of the
+status/count fields optional. Rationale: `Services/Analytics/AGENTS.md`.
+
+## Credential revocation result (D19)
+
+`CredentialRevokeResult.Status` is the authority on what happened, and
+`PendingConfirmation` — broadcast but unconfirmed — is **neither a success nor a
+failure**. It is returned with the tx hash, `IsError = true`, and
+`Code = CredentialRevokeCodes.PendingConfirmation`, because `IsError` is what AZOA client
+helpers branch on; a nested status string alone would be read as a completed revocation
+and the credential may or may not have moved. Only chain truth decides. Do not add a
+boolean `Revoked` convenience field: it would have to guess for exactly this state.

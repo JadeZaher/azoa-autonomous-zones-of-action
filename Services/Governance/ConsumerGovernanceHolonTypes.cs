@@ -3,6 +3,7 @@
 using System.Text.Json;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Services.Kyc;
 
 namespace AZOA.WebAPI.Services.Governance;
 
@@ -28,7 +29,12 @@ public static class ConsumerGovernanceHolonTypes
     /// <summary>Holon.AssetType of a proposal (the parent).</summary>
     public const string ProposalAssetType = "GovernanceProposal";
 
-    /// <summary>Holon.AssetType of a single ballot (a child of the proposal).</summary>
+    /// <summary>
+    /// Holon.AssetType of a ballot RECEIPT (a child of the proposal). D39 stripped
+    /// this holon of all authority: the vote of record is the
+    /// <c>person_operation_claim</c> row, the tally never reads this type, and a
+    /// forged or rewritten receipt therefore counts for exactly nothing.
+    /// </summary>
     public const string VoteAssetType = "GovernanceVote";
 
     /// <summary>Proposal accepts ballots.</summary>
@@ -46,7 +52,13 @@ public static class ConsumerGovernanceHolonTypes
         public const string ClosesAt = "closesAt";
         public const string UniquenessOperationKey = "uniquenessOperationKey";
         public const string UniquenessScope = "uniquenessScope";
+
+        /// <summary>The electorate this proposal belongs to: a tenant Guid('N'), or <c>node</c>.</summary>
+        public const string ElectorateTenant = "electorateTenant";
     }
+
+    /// <summary>Electorate value of a proposal raised with no tenant context at all.</summary>
+    public const string NodeElectorate = "node";
 
     /// <summary>Metadata keys carried by a vote holon. This list is CLOSED — see <see cref="AllowedVoteMetadataKeys"/>.</summary>
     public static class VoteMetadata
@@ -84,6 +96,66 @@ public static class ConsumerGovernanceHolonTypes
     /// </summary>
     public static string UniquenessOperationKeyFor(Guid proposalHolonId) =>
         $"governance:proposal:{proposalHolonId:D}".ToLowerInvariant();
+
+    /// <summary>The electorate value a proposal raised under <paramref name="tenantId"/> carries.</summary>
+    public static string ElectorateValueFor(Guid? tenantId) =>
+        tenantId is null || tenantId.Value == Guid.Empty
+            ? NodeElectorate
+            : tenantId.Value.ToString("N");
+
+    /// <summary>
+    /// True only when the acting tenant is the electorate the proposal recorded at
+    /// creation (AC5). FAILS CLOSED on a proposal that records no electorate: an
+    /// unrecorded electorate is an unknown one, and the alternative — treating it as
+    /// "everybody" — is precisely the node-wide read this repo has leaked through
+    /// three times.
+    /// </summary>
+    public static bool IsInElectorate(IReadOnlyDictionary<string, string> proposalMetadata, Guid? actingTenantId)
+    {
+        ArgumentNullException.ThrowIfNull(proposalMetadata);
+        return proposalMetadata.TryGetValue(ProposalMetadata.ElectorateTenant, out var declared)
+            && !string.IsNullOrWhiteSpace(declared)
+            && string.Equals(declared, ElectorateValueFor(actingTenantId), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The uniqueness scope value a proposal's claims live in, derived from the
+    /// ELECTORATE the proposal recorded rather than from whoever happens to be
+    /// running the tally. Reuses the one canonical scope rule
+    /// (<see cref="KycPersonKeyDeriver.ScopeValue"/>) the gate claims through, so the
+    /// vote and the count ask their question in the same domain by construction.
+    /// Returns false when the proposal records no usable electorate.
+    /// </summary>
+    public static bool TryResolveUniquenessScopeValue(
+        IReadOnlyDictionary<string, string> proposalMetadata,
+        PersonUniquenessScope scope,
+        out string uniquenessScopeValue)
+    {
+        ArgumentNullException.ThrowIfNull(proposalMetadata);
+        uniquenessScopeValue = string.Empty;
+
+        if (!proposalMetadata.TryGetValue(ProposalMetadata.ElectorateTenant, out var declared)
+            || string.IsNullOrWhiteSpace(declared))
+            return false;
+
+        if (scope == PersonUniquenessScope.Global)
+        {
+            uniquenessScopeValue = KycPersonKeyDeriver.GlobalScopeSentinel;
+            return true;
+        }
+
+        if (string.Equals(declared, NodeElectorate, StringComparison.Ordinal))
+        {
+            uniquenessScopeValue = KycPersonKeyDeriver.ScopeValue(null);
+            return true;
+        }
+
+        if (!Guid.TryParseExact(declared, "N", out var electorateTenantId))
+            return false;
+
+        uniquenessScopeValue = KycPersonKeyDeriver.ScopeValue(electorateTenantId);
+        return true;
+    }
 
     /// <summary>Serializes the declared option list into the <c>options</c> metadata string.</summary>
     public static string SerializeOptions(IEnumerable<string> options) =>
@@ -151,6 +223,9 @@ public static class ConsumerGovernanceHolonTypes
                 ProposalMetadata.Status,
                 ProposalMetadata.Options,
                 ProposalMetadata.UniquenessScope,
+                // AC5: a proposal with no recorded electorate is refused at the
+                // registry too, not only by IsInElectorate's fail-closed read.
+                ProposalMetadata.ElectorateTenant,
             },
             IsActive = true,
             CreatedAt = now,
@@ -159,7 +234,7 @@ public static class ConsumerGovernanceHolonTypes
         {
             Id = VoteAssetType,
             AssetType = VoteAssetType,
-            Description = "One ballot on a governance proposal (D20). Carries the choice and the time only — never a person key.",
+            Description = "Receipt for one ballot on a governance proposal (D20/D39). Carries the choice and the time only — never a person key — and carries NO authority: the vote of record is the person_operation_claim row and the tally never reads this type.",
             RequiredMetadataFields = new List<string>
             {
                 VoteMetadata.Option,

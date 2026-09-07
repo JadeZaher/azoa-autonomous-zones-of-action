@@ -23,11 +23,74 @@ public class UserNFTService : IUserNFTService
 
     // ─── User NFT CRUD ───
 
-    public async Task<AZOAResult<IUserNFT>> MintUserNFTAsync(Guid userId, UserNFTMintModel model, AZOARequest? request = null)
+    /// <summary>Self-mint: the caller mints a row to THEMSELVES. Never issues a credential.</summary>
+    /// <remarks>
+    /// D41: a soulbound row minted here is a self-held badge, not a credential. It is written with
+    /// NO issuer, so <c>CredentialManager</c> fails closed on it ("no recorded issuer") instead of
+    /// authorizing its own holder to claw it back from themselves -- the vacuous case D19 forbids.
+    /// Issuing to another party is <see cref="MintUserNFTAsync(Guid,Guid,UserNFTMintModel,AZOARequest)"/>.
+    /// </remarks>
+    public Task<AZOAResult<IUserNFT>> MintUserNFTAsync(Guid userId, UserNFTMintModel model, AZOARequest? request = null)
+        => WriteMintedRowAsync(holderUserId: userId, issuerUserId: Guid.Empty, model);
+
+    /// <inheritdoc />
+    public Task<AZOAResult<IUserNFT>> MintUserNFTAsync(
+        Guid issuerUserId, Guid recipientUserId, UserNFTMintModel model, AZOARequest? request = null)
     {
+        if (issuerUserId == Guid.Empty)
+            return Task.FromResult(RefuseMint("An authenticated issuer is required to issue a credential."));
+        if (recipientUserId == Guid.Empty)
+            return Task.FromResult(RefuseMint("A recipient is required to issue a credential."));
+
+        // AC1's teeth at the mint seam. issuer == holder is the vacuous credential the whole rail
+        // failed on: "only the issuer may revoke" would then authorize the holder to take their own
+        // credential back, which is the exact inversion D19 exists to forbid. Refused here so no
+        // production path can write one, rather than left for the revoke path to notice later.
+        if (issuerUserId == recipientUserId)
+            return Task.FromResult(RefuseMint(
+                "A credential cannot be issued to its own issuer: issuer == holder makes the D19 "
+              + "revocation check decide nothing. Use the self-mint seam for a badge you hold yourself."));
+
+        return WriteMintedRowAsync(holderUserId: recipientUserId, issuerUserId: issuerUserId, model);
+    }
+
+    /// <summary>Writes one ownership row: <paramref name="holderUserId"/> holds it, <paramref name="issuerUserId"/> issued it.</summary>
+    private async Task<AZOAResult<IUserNFT>> WriteMintedRowAsync(
+        Guid holderUserId, Guid issuerUserId, UserNFTMintModel model)
+    {
+        if (model is null)
+            return RefuseMint("A mint model is required.");
+
+        // current_owner is the address a revocation claws the credential back FROM. An issued
+        // credential written without it is permanently unrevocable -- a row that reads as valid and
+        // that no party on earth can take back -- which is strictly worse than refusing the mint. So
+        // the holder's address on the credential's own chain is PROVEN from the wallet store before
+        // any row is written. A self-mint (no issuer) is not a credential and is not held to this.
+        string? holderAddress = null;
+        if (issuerUserId != Guid.Empty)
+        {
+            var wallets = await _walletStore.GetByUserAsync(holderUserId, default);
+            if (wallets.IsError)
+                return RefuseMint($"Recipient wallet lookup failed: {wallets.Message}");
+
+            holderAddress = wallets.Result?.FirstOrDefault(w =>
+                string.Equals(w.ChainType, model.ChainType, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(w.Address))?.Address;
+
+            if (string.IsNullOrWhiteSpace(holderAddress))
+                return RefuseMint(
+                    $"The recipient has no {model.ChainType} wallet, so the credential would be written "
+                  + "with no current_owner and could never be clawed back. Refusing to issue a credential "
+                  + "nobody can revoke.");
+        }
+
         var userNFT = new UserNFT
         {
-            UserId = userId,
+            UserId = holderUserId,
+            // Stamped from the authenticated caller the issuance seam was called with, never from
+            // the request model -- UserNFTMintModel deliberately has no issuer field at all.
+            IssuerUserId = issuerUserId,
+            CurrentOwner = holderAddress,
             ChainType = model.ChainType,
             // Chain-mint semantics: the id is assigned at mint when the caller
             // supplies none. Required non-empty by the nft_ownership schema.
@@ -328,6 +391,10 @@ public class UserNFTService : IUserNFTService
     }
 
     // ─── Helpers ───
+
+    /// <summary>A mint that was refused before any row was written.</summary>
+    private static AZOAResult<IUserNFT> RefuseMint(string message)
+        => new() { IsError = true, Message = message };
 
     /// <summary>
     /// Bindings carry no owner of their own — ownership is the parent

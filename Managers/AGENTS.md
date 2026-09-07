@@ -134,6 +134,17 @@ Draft ──publish──▶ Active ──unpublish──▶ Draft
 Execute-time re-validation is kept as defence-in-depth (does not replace the
 publish gate; both run independently).
 
+**Publish also refuses a not-enabled node type.** Before the validation stack,
+`PublishAsync` walks the definition's nodes and refuses any whose type is on
+`Services.Actions.NotEnabledActionNodeTypes`, returning that class's single shared
+refusal sentence. This is one of THREE refusal points, not the only one: an action
+published before the gate landed is already `Active`, so the two dispatch seams
+(`ExecuteAsync` here and `ActionNodeStepHandler`) carry the same check. See
+`Services/Actions/AGENTS.md` §not-enabled-node-types.
+`NotEnabledNodeTypeGateTests.Publish_RefusesABlockedNodeType` reads this method's source
+and fails if the check is deleted — the guarded failure is removal, not a wrong
+answer.
+
 **TOCTOU guard — optimistic concurrency (F6, RESOLVED).** The action definition
 carries a `Version` (`long`) optimistic-concurrency token (`action.version` column,
 default 0). Every lifecycle status transition is a compare-and-swap against it,
@@ -189,6 +200,31 @@ before persisting.
 `ParentHolonId` write: it assigns a fresh `Guid.NewGuid()` as both the clone's
 `Id` and the new tree root, so no existing holon is named as parent and no cycle
 is reachable. No guard call is needed or correct there.
+
+## §holon-publication — IsPublic is an allow-list, not a toggle (D20)
+
+`HolonManager.CanRead` is owner-or-public, so setting `IsPublic` makes a holon readable
+by **every caller on the node**. This repo has leaked cross-tenant through generic read
+surfaces three times, so the flag is deliberately not a free consumer toggle:
+`HolonCreateModel.IsPublic` / `HolonUpdateModel.IsPublic` are accepted only for asset
+types on `HolonManager.PublishableAssetTypes`.
+
+**Refusal, never a silent drop.** `PublicationError` fails the create/update outright.
+Accepting the request and storing `IsPublic = false` would leave the caller believing an
+audience can read something it cannot — for a governance proposal, that is an election
+nobody can see. Unpublishing is always allowed; only publishing is gated.
+
+**Membership rule.** A type earns a place on the allow-list only when the artefact is
+meaningless unless published. A governance proposal is the notice its electorate votes
+on, and an unpublished one cannot be voted on at all (D20), so
+`ConsumerGovernanceHolonTypes.ProposalAssetType` is on the list.
+
+**`GovernanceVote` is deliberately absent, and must stay absent.** A ballot holon carries
+`Holon.UserId`; publishing ballots would reconstitute the person-to-choice correlation
+that the D20 design, its closed vote-metadata allow-list, and the node-operator-only
+`person_operation_claim` table all exist to prevent. A trustworthy public count comes
+from a privileged tally that emits counts only, never from making the ballots readable.
+Pinned by `tests/AZOA.WebAPI.Tests/Managers/HolonPublicationTests.cs`.
 
 ## §holon-type-registry — opt-in Holon AssetType/metadata registry (F5)
 
@@ -646,3 +682,38 @@ why no provider needs an edit and none can drift: a provider that forgets to nam
 gets the custody door's Algorand-pinned legacy path and fails closed. Per-user contexts do
 not strictly need it (those keys come from the wallet record, which is already chain-correct)
 but stamping them too removes the "which contexts carry it" question entirely.
+
+## §credential-revocation — CredentialManager (D19, implemented and gated)
+
+`CredentialManager.RevokeAsync` is the seam behind both the `CredentialRevoke` node and
+`POST /api/credential/{assetId}/revoke`. It claws a soulbound credential back to its
+issuer with an Algorand `AssetClawback` — the only path in this codebase that moves an
+asset out of an account that did not sign. The chain-level proofs and the node-level
+rules live in `Services/Actions/AGENTS.md` §credential-revoke; what this directory
+decides is the three manager-level facts below.
+
+**Status first: the node type is on `NotEnabledActionNodeTypes` and the server refuses
+it** (`Services/Actions/AGENTS.md` §not-enabled-node-types). The rail is written,
+reviewed and tested; it is not runnable. The blocking defect is that the only mint path
+stamps `issuer_user_id` = the holder, so the authorization below — correct as written
+— currently decides nothing. Tracked by
+`conductor/tracks/credential-third-party-issuance_20260906`.
+
+1. **Authorization is the recorded ISSUER, compared against the acting user (node path)
+   or the authenticated caller (REST path).** Never `current_owner` / `NftOwnership.UserId`
+   — that is the HOLDER, and authorizing on it inverts the entire primitive. Never the
+   mint's `operation_log.user_id` either: a mint proxied through a tenant credential
+   stamps the tenant. A row with no recorded issuer is **unrevocable and fails closed**.
+   `credential:revoke:sign` is its own scope for the same reason: a user who consented to
+   "sign my transfers" must not thereby consent to a clawback of an asset they hold.
+2. **Idempotency is partitioned by caller AND by asset.** One credential's cached result
+   can never be replayed as another's, and a redelivered request never submits a second,
+   irreversible clawback.
+3. **`PendingConfirmation` is not a success, and says so twice.** A broadcast that did not
+   confirm in the poll window comes back with `Status = PendingConfirmation`, the tx hash,
+   `IsError = true`, and `Code = CredentialRevokeCodes.PendingConfirmation`. `IsError` —
+   not a nested status string — is what every AZOA client helper branches on, so a
+   status-only signal would read as a completed revocation. The idempotency claim stays
+   `InProgress` so a duplicate replays "in progress" rather than re-broadcasting, and only
+   a CONFIRMED clawback moves ownership through
+   `ICredentialIssuerStore.RecordCredentialRevokedAsync`.

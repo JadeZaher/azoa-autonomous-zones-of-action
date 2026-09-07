@@ -45,11 +45,12 @@ public class HolonManager : IHolonManager
     // meaningless unless published: a governance proposal is the notice its
     // electorate votes on, and an unpublished one cannot be voted on at all (D20).
     //
-    // GovernanceVote is deliberately ABSENT. A public ballot carries Holon.UserId
+    // GovernanceVote is deliberately ABSENT. A public vote holon carries Holon.UserId
     // and would reconstitute the person-to-choice correlation the whole D20 design
-    // exists to prevent; the tally reads ballots through the privileged
-    // GovernanceBallotRoll and emits counts only. See
-    // Services/Governance/AGENTS.md #consumer-governance.
+    // exists to prevent. Since D39 that holon is only the voter's RECEIPT: the vote of
+    // record is the person_operation_claim row, and the tally counts that ledger and
+    // reads no holon ballot at all. See Services/Governance/AGENTS.md
+    // #consumer-governance.
     internal static readonly IReadOnlySet<string> PublishableAssetTypes =
         new HashSet<string>(StringComparer.Ordinal)
         {

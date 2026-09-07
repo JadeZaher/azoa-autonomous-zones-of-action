@@ -431,6 +431,61 @@ card, not a wallet, and lives in its own store. When that store exists it implem
 rail, and an empty result are all "no capability". A transient database fault must never be
 the reason value moves.
 
+## §not-enabled-node-types — "not enabled" is a control, not a badge
+
+`Services/Actions/NotEnabledActionNodeTypes` holds the node types that are fully
+implemented and dispatchable but must NOT run yet. Today that is exactly four:
+`GovernanceProposalCreate`, `GovernanceVote`, `GovernanceTally`, `CredentialRevoke`.
+
+**Why a gate at all.** These four were described as "not enabled" in the runbook, in both
+design track specs, and on the builder's palette badge — while `Program.cs`
+assembly-scans every `IActionNodeHandler` in the `Handlers` namespace and registers it,
+`ActionNodeConfigRegistry` accepts their configs, and both dispatch seams would have
+called `HandleAsync`. A published action reaching `GovernanceVote` WOULD have cast a
+ballot; `GovernanceTally` WOULD have emitted a count its own design cannot trust;
+`CredentialRevoke` WOULD have attempted an Algorand clawback. The badge was frontend copy
+and nothing more. That is the §inert-control class in `Services/AGENTS.md`, so the fix
+takes the shape §rail-capability already proved.
+
+**Three refusal points, one sentence.** `NotEnabledActionNodeTypes.RefusalMessage` is the
+only message, so publish and both seams read identically:
+
+1. `ActionManager.PublishAsync` — a blocked type cannot enter an `Active` action at all;
+2. `ActionManager.ExecuteAsync`, the in-process executor — refused before `HandleAsync`;
+3. `ActionNodeStepHandler`, the durable saga step — refused before `HandleAsync`.
+
+Publish alone is not enough: actions published before the gate landed are already
+`Active`, so only the seams can stop one running. One seam alone is not enough either,
+for the same reason the rail gate lives in both — **the durable path must not be a way
+around what the in-process path enforces.**
+
+**Why each member is here, and what removes it:**
+
+- **Governance cannot be trusted to count.** The tally reads raw child holons, so a
+  ballot created outside the handler is counted without ever taking a uniqueness claim
+  (§governance): one verified user can post N vote holons and all N count. Tracked by
+  `conductor/tracks/governance-vote-of-record_20260906`.
+- **The credential rail cannot authorize.** The only mint path stamps
+  `issuer_user_id` = the holder, which makes the "issuer, never the holder" rule in
+  §credential-revoke vacuous — the party the credential would be taken from is the
+  party entitled to take it. Tracked by
+  `conductor/tracks/credential-third-party-issuance_20260906`.
+
+Neither primitive is absent and neither works. Describe both as **implemented and
+gated**; a reader who believes either extreme will make a wrong decision.
+
+**Removing a member is the LAST step of its track, never the first.** The gate is what
+makes the not-enabled claim true. Deleting a member before the defect above is fixed
+re-creates precisely the situation the gate was added to end.
+
+**Tests that fail when the enforcement is removed** —
+`tests/AZOA.WebAPI.Tests/Actions/NotEnabledNodeTypeGateTests.cs`.
+`BothDispatchSeams_ConsultTheGate` and `Publish_RefusesABlockedNodeType` read the seams'
+SOURCE and fail if any of the three stops calling `IsBlocked`; the failure being guarded
+is "somebody deleted the check", which a behavioural test over a handler cannot see.
+`EveryBlockedType_IsANamedTrackedException` fails if the set grows without naming the
+track that lifts it, so a temporary gate cannot quietly become permanent dead surface.
+
 ## §loan-tracker — the principal-only loan primitive (D21)
 
 `LoanOpen` / `LoanRepaymentRecord` / `LoanBalance` are **Tier-1**. D21 calls the loan
@@ -593,28 +648,35 @@ additionally rejects a holon owned by anyone else; a proposal must be readable b
 electorate, so `GovernanceVote`/`GovernanceTally` accept the manager's owner-or-public
 answer and add no stricter check.
 
-**Known limitation.** `IHolon.IsPublic` is not settable through `HolonCreateModel` or
-`HolonUpdateModel` today, and `HolonManager.CanRead` scopes both `GetAsync` and
-`GetChildrenAsync` to owner-or-public. Until a create/update path can mark a proposal
-(and its ballots) public, a cross-user electorate cannot be assembled through the
-manager: the tally sees only ballots the tallier can read. The nodes are correct as
-written and need no change when that path lands — but do not describe D20 as
-supporting a multi-user co-op vote end to end before it does.
+**How the electorate is assembled.** `HolonManager.CanRead` scopes both `GetAsync` and
+`GetChildrenAsync` to owner-or-public, so a cross-user electorate needs a PUBLIC
+proposal. `HolonCreateModel.IsPublic` / `HolonUpdateModel.IsPublic` now exist and a
+proposal's asset type is on `HolonManager.PublishableAssetTypes` — see
+`Managers/AGENTS.md` §holon-publication for why that is an allow-list rather than a free
+consumer toggle.
+
+**A ballot is deliberately NOT publishable.** `GovernanceVote` is absent from that
+allow-list: a public ballot carries `Holon.UserId` and would reconstitute the
+person-to-choice correlation the whole D20 design exists to prevent (see *A ballot never carries a
+person key* above). A tally therefore still reads only ballots the tallier can read,
+which is why the trustworthy count has to come from the privileged claim ledger rather
+than from a holon scan — the open defect that keeps these nodes in
+§not-enabled-node-types.
 
 ### Where the configs live (temporary)
 
 `GovernanceProposalCreateNodeConfig`, `GovernanceVoteNodeConfig` and
 `GovernanceTallyNodeConfig` are declared alongside their handlers rather than in
-`Models/Actions/NodeConfigs.cs`, because the D20 lane does not own that file. Two
-central-file entries are therefore still OWED and are the only reason a governance
-node cannot be published yet:
+`Models/Actions/NodeConfigs.cs`, because the D20 lane does not own that file. Moving the
+three DTOs there (names unchanged) is the remaining tidy-up.
 
-- `ActionNodeConfigRegistry._map` — one entry per type (missing entries throw
-  `NotSupportedException`, caught by the registry exhaustiveness test);
-- `ActionNodeOutputSchema` — one shape per type, plus the matching bucket in
-  `ActionNodeOutputSchemaGoldenTests`.
-
-Move the three DTOs into `NodeConfigs.cs` (names unchanged) when those land.
+Both central-file entries have LANDED — `ActionNodeConfigRegistry._map` has one entry
+per type (a missing entry throws `NotSupportedException`, caught by the registry
+exhaustiveness test) and `ActionNodeOutputSchema` has one shape per type plus its bucket
+in `ActionNodeOutputSchemaGoldenTests`. **A governance node is therefore fully wired and
+would run; the reason it cannot be published is `NotEnabledActionNodeTypes`**
+(§not-enabled-node-types), not a missing registration. Do not read the DTO location as
+a safety property: it never was one.
 
 ## §credential-revoke — soulbound revocation is the issuer's power (D19)
 
@@ -715,9 +777,14 @@ that is not §set-omits-null.
 
 `CredentialRevokeNodeConfig` is declared alongside its handler rather than in
 `Models/Actions/NodeConfigs.cs`, because the D19 lane does not own that file — same
-situation as the D20 governance configs above. The same two central-file entries are
-OWED and are the only reason a `CredentialRevoke` node cannot be published yet:
-`ActionNodeConfigRegistry._map` and `ActionNodeOutputSchema` (+ its golden bucket).
+situation as the D20 governance configs above, and the same remaining tidy-up.
+
+Both central-file entries have LANDED (`ActionNodeConfigRegistry._map` and
+`ActionNodeOutputSchema` + its golden bucket). **The reason a `CredentialRevoke` node
+cannot be published is `NotEnabledActionNodeTypes`** (§not-enabled-node-types): the rail
+is implemented and gated, not unwired. Its blocking defect is the one named there — the
+only mint path stamps `issuer_user_id` = the holder, so the issuer check below, though
+correct as written, currently decides nothing.
 
 ### Refund is not a back door
 

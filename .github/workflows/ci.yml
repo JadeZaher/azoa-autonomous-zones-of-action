@@ -436,12 +436,18 @@ jobs:
         run: dotnet build azoa.sln --configuration Release --no-restore
 
       # tests/AZOA.WebAPI.IntegrationTests/Perf/SurrealPerfBudgets.cs is
-      # [Trait("Category", "Perf")] and the dotnet job filters it out
-      # (Category!=Chaos&Category!=Perf), so it has never run anywhere. It
-      # bootstraps its own schema into a fresh per-run namespace and talks
-      # straight to SurrealTestDefaults.Endpoint -- http://127.0.0.1:8020,
-      # root/root, no env-var indirection -- so the port publication has to
-      # match the dotnet job's exactly.
+      # [Trait("Category", "Perf")], which the dotnet job filters out
+      # (Category!=Chaos&Category!=Perf). This job is the only place it runs.
+      # It talks straight to SurrealTestDefaults.Endpoint -- http://127.0.0.1:8020,
+      # root/root, a compile-time constant with no env-var indirection -- so the
+      # port publication has to match the dotnet job's exactly.
+      #
+      # No named volume here, unlike the dotnet job: the suite creates and drops
+      # its own per-run namespace and must not inherit a previous run's state.
+      # Why this job blocks rather than reporting: it asserts an 8x regression
+      # ceiling, not the declared latency targets, so it fails on a broken store
+      # or an order-of-magnitude regression -- not on runner noise. The declared
+      # targets are printed per run instead. Derivation: Perf/AGENTS.md.
       - name: Start SurrealDB
         run: |
           docker run --detach \
@@ -462,15 +468,22 @@ jobs:
           docker logs azoa-perf-surrealdb
           exit 1
 
-      # SurrealPerfBudgets probes the server in InitializeAsync and silently
-      # no-ops every test when it cannot reach it, so a vacuous green is
-      # indistinguishable from a real one in the test output. Fail here instead,
-      # from the host, on the same published port the tests use.
+      # SurrealPerfBudgets is [SkippableFact] and skips when it cannot reach the
+      # server, so a vacuous green would be indistinguishable from a real one in
+      # the test output. Two independent controls close that hole: this step
+      # fails from the host on the same published port the tests use, and
+      # AZOA_PERF_REQUIRE_SURREAL below turns the skip itself into a thrown
+      # failure inside InitializeAsync. Removing either one lets this job pass
+      # while running nothing.
       - name: Prove the port the tests probe is answering
         run: curl -fsS --max-time 10 http://127.0.0.1:8020/health
 
       - name: Perf budget tests
-        run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category=Perf"
+        env:
+          # Without this the suite skips instead of failing when SurrealDB is
+          # unreachable, and the job goes green having executed no assertion.
+          AZOA_PERF_REQUIRE_SURREAL: "1"
+        run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category=Perf" --logger "console;verbosity=detailed"
 
       - name: SurrealDB logs on failure
         if: failure()

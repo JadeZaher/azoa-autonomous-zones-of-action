@@ -121,9 +121,14 @@ parameter names: one parameter reused for both bounds would overwrite itself, an
 name is case-folded in the query text but not in the RPC vars, so it binds to `NONE` and
 matches nothing without raising an error.
 
-## Wiring owed
+## §wiring
 
-`IAnalyticsReadService` → `AnalyticsReadService` is **not** registered in `Program.cs` (this
-directory is not covered by the `Services/Actions/Handlers` assembly scan). Add
-`builder.Services.AddScoped<IAnalyticsReadService, AnalyticsReadService>();` alongside the
-other scoped service registrations, or `AnalyticsController` fails to resolve at request time.
+`IAnalyticsReadService` → `AnalyticsReadService` is registered explicitly in `Program.cs`
+(`AddScoped`), because this directory is **not** covered by the
+`Services/Actions/Handlers` assembly scan that picks up node handlers. A new service added
+here needs its own registration line or `AnalyticsController` fails to resolve at request
+time — there is no convention that will find it for you.
+
+Unlike the Phase 5 governance and credential primitives, nothing on this surface is gated:
+the analytics routes are live. It is a read projection with no write path and no node
+type, which is exactly why it needed no gate.

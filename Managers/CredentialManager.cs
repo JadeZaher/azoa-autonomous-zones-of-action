@@ -135,6 +135,19 @@ public sealed class CredentialManager : ICredentialManager
                     $"Credential {normalizedAssetId} has no recorded issuer, so no party can be proven " +
                     "entitled to revoke it. Refusing to infer an issuer from the holder or from an operation log.", ct);
 
+            // AC1's teeth. A credential whose issuer IS its holder decides nothing: "only the
+            // issuer may revoke" would authorize the holder to take their own credential back,
+            // the exact inversion D19 exists to forbid. D41 makes such a row impossible to mint
+            // (UserNFTService refuses it, SurrealNftStore refuses to write it); one already in the
+            // database, or written by a future path that regresses, is refused OUTRIGHT here rather
+            // than clawed back on the strength of a check that decided nothing. This guard is
+            // deliberately independent of the mint seam, so it keeps holding if issuance regresses.
+            if (issuerUserId == credential.HolderUserId)
+                return await FailClaim(idempotencyKey,
+                    $"Credential {normalizedAssetId} records the same party as issuer and holder, so the " +
+                    "issuer-authorization check would decide nothing. A self-issued credential is not " +
+                    "revocable; refusing rather than performing a clawback no rule authorized.", ct);
+
             if (issuerUserId != callerUserId)
                 return await FailClaim(idempotencyKey,
                     $"Only the issuer of credential {normalizedAssetId} may revoke it.", ct,

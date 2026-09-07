@@ -66,6 +66,12 @@ public sealed class GovernanceProposalCreateNodeHandler : IActionNodeHandler
             return ActionNodeResults.Invalid("[GovernanceProposalCreate] name is required.");
         if (options.Count < 2)
             return ActionNodeResults.Invalid("[GovernanceProposalCreate] at least two distinct, non-empty options are required.");
+        // An option longer than a claim's decision field could be declared here and
+        // then never recordable as a vote. Refuse at the proposal, where the author
+        // can still fix it, rather than at every ballot.
+        if (options.Any(o => PersonUniquenessRequirement.CanonicalizeDecision(o) is null))
+            return ActionNodeResults.Invalid(
+                $"[GovernanceProposalCreate] every option must be at most {PersonUniquenessRequirement.MaxDecisionLength} characters.");
         if (cfg.OpensAt is { } opens && cfg.ClosesAt is { } closes && closes <= opens)
             return ActionNodeResults.Invalid("[GovernanceProposalCreate] closesAt must be after opensAt.");
 
@@ -82,6 +88,12 @@ public sealed class GovernanceProposalCreateNodeHandler : IActionNodeHandler
             [ConsumerGovernanceHolonTypes.ProposalMetadata.Status] = ConsumerGovernanceHolonTypes.StatusOpen,
             [ConsumerGovernanceHolonTypes.ProposalMetadata.Options] = ConsumerGovernanceHolonTypes.SerializeOptions(options),
             [ConsumerGovernanceHolonTypes.ProposalMetadata.UniquenessScope] = scope.ToString(),
+            // AC5. The electorate is pinned at creation from the ACTING tenant, never
+            // from config: a proposal author must not be able to nominate somebody
+            // else's members as their electorate. Vote and tally both refuse a caller
+            // outside it, with the same sentence they use for "no such proposal".
+            [ConsumerGovernanceHolonTypes.ProposalMetadata.ElectorateTenant] =
+                ConsumerGovernanceHolonTypes.ElectorateValueFor(context.ActingTenantId),
         };
         if (cfg.OpensAt is { } opensAt)
             metadata[ConsumerGovernanceHolonTypes.ProposalMetadata.OpensAt] = Iso(opensAt);
@@ -100,9 +112,15 @@ public sealed class GovernanceProposalCreateNodeHandler : IActionNodeHandler
                 // vote on: HolonManager.CanRead is owner-or-public, so an unpublished
                 // proposal makes GovernanceVote's read fail for every member except
                 // the author. Publication is the act of putting the notice up.
-                // HolonManager.PublishableAssetTypes is what keeps this from being a
-                // general "any holon may be public" switch, and the BALLOTS stay
-                // private — only the proposal is published.
+                // HolonManager.PublishableAssetTypes keeps this from being a general
+                // "any holon may be public" switch, and the RECEIPTS stay private.
+                //
+                // Publication alone is NODE-wide, because CanRead has no tenant term
+                // and that rule lives in a file this lane does not own. So the notice
+                // being legible is not the same as being enfranchised: the
+                // electorateTenant recorded above is what admits a caller to the vote
+                // and the tally, and every governance node checks it. See AC5 in
+                // Services/Governance/AGENTS.md §consumer-governance.
                 IsPublic = true,
             },
             context.ActingUserId);

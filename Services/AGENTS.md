@@ -3,6 +3,69 @@
 Rationale / cross-cutting notes for `Services/`. Code carries terse one-line
 doc-comments; the "why" lives here.
 
+## §inert-control — the defect class this tree keeps re-shipping
+
+**A claim in prose is not a control in code.** This has now recurred FIVE times. Each
+time the control was real and the place that had to consult it did not — or consulted
+it and ignored the answer — while the surrounding documents described the protection
+as if it held:
+
+1. **The AML decision was inert.** `ScreenAsync` / `RegisterMonitorAsync` had zero
+   production callers and `KycScreeningResult.Decision` was read by nothing, so a
+   sanctioned person who passed identity verification got full value access with a
+   `HIT` row sitting unread in the database. See `Services/Kyc/AGENTS.md`
+   §aml-screening.
+2. **`IKycIdentityStore.GetByGlobalPersonKeyAsync` had zero callers.** The
+   one-human-many-users lookup D3/D23 specified was implemented and never asked.
+   `IPersonUniquenessGate` is what finally consults it (`Services/Kyc/AGENTS.md`
+   §person-uniqueness).
+3. **Governance's tally read raw holons.** The uniqueness gate protected the WRITE path
+   in `GovernanceVoteNodeHandler` while the tally counted every child holon it could
+   read — so a ballot created by any other route counted without ever taking a claim.
+   The gate was real; the consumer of its result checked nothing.
+4. **"Not enabled" was asserted in three documents while every handler was registered
+   and dispatchable.** The runbook, both design track specs and the builder's palette
+   badge said governance and credential revocation were not enabled; `Program.cs`
+   assembly-scans every handler and both dispatch seams would have run them. See
+   `Services/Actions/AGENTS.md` §not-enabled-node-types — that section exists because
+   this class recurred.
+5. **The integration contract asserted a CI grep that did not exist.** A boundary rule
+   in `conductor/ARDANOVA-AZOA-INTEGRATION-CONTRACT.md` named an enforcement no
+   workflow ran, and contradicted the convention actually in force and actually tested.
+
+**The rule.** If you write — in a doc-comment, an `AGENTS.md`, a track spec, or a UI
+string — that something is *gated*, *enforced*, *disabled*, *refused* or *not enabled*,
+the SAME change must:
+
+- (a) add the enforcement at **every** path that reaches the effect, and
+- (b) add a test that **fails when the enforcement is removed**.
+
+Before writing such a sentence, grep for the enforcement. Two facts make (a) easy to get
+wrong here: an action node has **two dispatch seams** (the in-process `ActionManager`
+executor and the durable `ActionNodeStepHandler` saga step), so a gate on one of them is
+a gate on neither; and a publish-time check does not bind actions that were published
+before it landed.
+
+For (b), prefer a test that reads the enforcing seam's SOURCE when the effect is hard to
+drive end to end — `NotEnabledNodeTypeGateTests.BothDispatchSeams_ConsultTheGate` and
+`Publish_RefusesABlockedNodeType` do exactly that. The failure being guarded is "somebody
+deleted the check", which a behavioural test over a handler cannot see.
+
+## Phase 5 primitives — where each one's notes live
+
+| Primitive | Status | Notes live in |
+| --- | --- | --- |
+| D3/D23 person-uniqueness gate + `person_operation_claim` | live | `Services/Kyc/AGENTS.md` §person-uniqueness; `Persistence/SurrealDb/Models/AGENTS.md` §person-operation-claim |
+| D16 analytics read surface | live | `Services/Analytics/AGENTS.md` |
+| D21 principal-only loan tracker | live | `Services/Lending/AGENTS.md`; node rules in `Services/Actions/AGENTS.md` §loan-tracker |
+| D20 consumer governance (proposal / vote / tally) | implemented, **gated** | `Services/Governance/AGENTS.md`; node rules in `Services/Actions/AGENTS.md` §governance |
+| D19 credential rail (soulbound revocation) | implemented, **gated** | `Services/Actions/AGENTS.md` §credential-revoke; manager notes in `Managers/AGENTS.md` §credential-revocation |
+
+"Gated" means the code is written, reviewed and tested, and the server **refuses to run
+it** — `Services/Actions/NotEnabledActionNodeTypes` blocks those four node types at
+publish and at both dispatch seams. Do not describe them as working and do not describe
+them as absent.
+
 ## Credential-free public endpoints
 
 `CredentialFreePublicEndpoint` marks anonymous evidence routes that ignore all

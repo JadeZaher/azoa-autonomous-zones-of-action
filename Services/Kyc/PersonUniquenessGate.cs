@@ -51,11 +51,39 @@ public sealed class PersonUniquenessGate : IPersonUniquenessGate
         if (invalid is not null)
             return invalid;
 
+        var now = _clock.GetUtcNow();
+
+        // D39/D40. Both checks are SUBJECT-INDEPENDENT — they are about the operation,
+        // not about the human — so short-circuiting here reveals nothing and leaks no
+        // timing. The window is enforced HERE, outside the caller, and again inside
+        // the claim statement: a node handler that forgets its own window check still
+        // cannot record a late decision.
+        string? decision = null;
+        if (requirement.Decision is not null)
+        {
+            decision = PersonUniquenessRequirement.CanonicalizeDecision(requirement.Decision);
+            if (decision is null)
+            {
+                _logger.LogError(
+                    "Refusing a uniqueness claim: the declared decision is unusable. cause={Cause}",
+                    KycIneligibilityCause.UniquenessUnavailable);
+                return Ineligible(KycIneligibilityCause.UniquenessUnavailable);
+            }
+
+            if (requirement.DecisionClosesAt is { } closesAt && now >= closesAt)
+            {
+                _logger.LogWarning(
+                    "Refusing a uniqueness claim: the decision window closed at {ClosesAt}. cause={Cause}",
+                    closesAt,
+                    KycIneligibilityCause.UniquenessUnavailable);
+                return Ineligible(KycIneligibilityCause.UniquenessUnavailable);
+            }
+        }
+
         var resolution = await ResolveAsync(requirement, userId, tenantId, ct);
         if (resolution.EarlyRefusal is not null)
             return Ineligible(resolution.EarlyRefusal.Value);
 
-        var now = _clock.GetUtcNow();
         var candidate = new PersonOperationClaim
         {
             Id = PersonOperationClaim.RecordIdFor(
@@ -68,6 +96,20 @@ public sealed class PersonUniquenessGate : IPersonUniquenessGate
             UserId = resolution.UserKey,
             TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),
             ClaimedAt = now,
+            // D39: the decision travels WITH the claim, so one statement both takes
+            // the claim and records the vote of record. DecidedAt is set by the store
+            // from this same server clock; no client value reaches it.
+            //
+            // An UNRESOLVED subject carries NO decision. Its round trip still happens
+            // — that is what keeps "no identity" and "already claimed" the same cost —
+            // but it writes against a per-user sentinel person key, and a sentinel row
+            // holding a decision is a live vote in the ledger cast by somebody with no
+            // verified identity. The refusal below would be returned and the vote
+            // would be counted anyway.
+            DecisionOption = resolution.UnresolvedCause is null ? decision : null,
+            DecisionClosesAt = resolution.UnresolvedCause is null && decision is not null
+                ? requirement.DecisionClosesAt
+                : null,
             CreatedDate = now,
             ModifiedDate = now,
         };
@@ -96,7 +138,25 @@ public sealed class PersonUniquenessGate : IPersonUniquenessGate
         // The refusal is decided by READING THE WRITE BACK. A preceding "is it free?"
         // read is passed by both concurrent claimants and would make this a tautology.
         if (string.Equals(claimed.Result.UserId, resolution.UserKey, StringComparison.Ordinal))
+        {
+            // Same discipline for the decision: the store applies it under its own
+            // window guard, so the ONLY way to know it landed is to read it back.
+            // Reporting Eligible on a decision the store refused is exactly the
+            // "claimed in prose, not enforced in code" failure this track exists to end.
+            if (decision is not null
+                && !string.Equals(claimed.Result.DecisionOption, decision, StringComparison.Ordinal))
+            {
+                LogOperatorCause(
+                    requirement,
+                    userId,
+                    resolution,
+                    KycIneligibilityCause.UniquenessUnavailable,
+                    "the decision was refused by the claim ledger (the window is closed or the claim is frozen)");
+                return Ineligible(KycIneligibilityCause.UniquenessUnavailable);
+            }
+
             return AZOAResult<KycEligibilityDecision>.Success(KycEligibilityDecision.Eligible());
+        }
 
         LogOperatorCause(
             requirement,

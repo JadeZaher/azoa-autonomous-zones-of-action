@@ -25,7 +25,6 @@ using ActionEntity = AZOA.WebAPI.Models.Actions.ActionDefinition;
 // Aliased, never imported wholesale: AZOA.WebAPI.Persistence.SurrealDb.Models also
 // declares a Holon, and importing that namespace would make every Holon in this file
 // ambiguous.
-using KycIdentity = AZOA.WebAPI.Persistence.SurrealDb.Models.KycIdentity;
 using PersonOperationClaim = AZOA.WebAPI.Persistence.SurrealDb.Models.PersonOperationClaim;
 
 namespace AZOA.WebAPI.Tests.Actions.Handlers;
@@ -34,14 +33,33 @@ namespace AZOA.WebAPI.Tests.Actions.Handlers;
 /// Dispatch tests for the D20 consumer-governance nodes: proposal create, vote, tally.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The load-bearing assertions are the Sybil ones. <c>GovernanceVote</c> MUST consult
-/// <see cref="IPersonUniquenessGate"/> before a ballot is written, in the uniqueness
+/// <see cref="IPersonUniquenessGate"/> before anything is recorded, in the uniqueness
 /// domain the PROPOSAL declared — remove the consultation and
 /// <c>Vote_Refused_WhenGateSaysIneligible_AndNoBallotIsWritten</c> plus
-/// <c>Vote_ClaimsUniqueness_BeforeWritingBallot</c> both fail. The other load-bearing
-/// assertion is that a ballot carries the choice and the time and NOTHING else: a
-/// person key on a consumer-readable vote holon reconstitutes the person-to-choice
-/// correlation the whole design exists to prevent.
+/// <c>Vote_ClaimsUniqueness_BeforeWritingBallot</c> both fail.
+/// </para>
+/// <para>
+/// <b>D39: the claim row IS the vote of record.</b> The tally counts
+/// <c>person_operation_claim</c> and reads NO ballot holon, so the holon a vote leaves
+/// behind is a RECEIPT that carries no authority. The tests here therefore seed
+/// decisions into the LEDGER and use holons only as forgeries. The claim-JOINED
+/// ballot tally this file once pinned was considered and REJECTED: the join still let
+/// an attacker-written holon decide WHICH option a claim was spent on, and it stayed
+/// safe only while nobody dropped it.
+/// </para>
+/// <para>
+/// The other load-bearing assertion is that a receipt carries the choice and the time
+/// and NOTHING else: a person key on a consumer-readable vote holon reconstitutes the
+/// person-to-choice correlation the whole design exists to prevent.
+/// </para>
+/// <para>
+/// The behavioural attack tests for the same design — the 500-holon bypass, hostile
+/// castAt ordering, re-vote replacement, the post-close freeze, and the AC5 electorate
+/// — live in <c>tests/AZOA.WebAPI.Tests/Governance</c> and run the REAL
+/// <c>HolonManager</c>. This is the unit/dispatch lane; it does not restate them.
+/// </para>
 /// </remarks>
 public class GovernanceNodeHandlerTests
 {
@@ -192,9 +210,14 @@ public class GovernanceNodeHandlerTests
     }
 
     /// <summary>
-    /// A proposal exactly as <c>GovernanceProposalCreate</c> leaves it.
-    /// <paramref name="isPublic"/> models the electorate case: a private proposal is
-    /// readable only by its author (see Services/Actions/AGENTS.md §governance).
+    /// A proposal exactly as <c>GovernanceProposalCreate</c> leaves it, INCLUDING the
+    /// electorate it records. <paramref name="isPublic"/> models readability (a private
+    /// proposal is readable only by its author) and <paramref name="electorateTenant"/>
+    /// the AC5 case: both the vote node and the tally refuse a caller outside the
+    /// recorded electorate, with the same sentence they use for a proposal that does
+    /// not exist. The electorate key is written unconditionally because
+    /// <c>IsInElectorate</c> FAILS CLOSED on a proposal that records none — seeding it
+    /// without one would make every assertion below pass for the wrong reason.
     /// </summary>
     private static Holon SeedProposal(
         List<Holon> store,
@@ -203,7 +226,8 @@ public class GovernanceNodeHandlerTests
         string scope = "Tenant",
         string status = "Open",
         DateTimeOffset? closesAt = null,
-        bool isPublic = true)
+        bool isPublic = true,
+        Guid? electorateTenant = null)
     {
         var proposal = new Holon
         {
@@ -219,6 +243,8 @@ public class GovernanceNodeHandlerTests
         proposal.Metadata[ConsumerGovernanceHolonTypes.ProposalMetadata.UniquenessScope] = scope;
         proposal.Metadata[ConsumerGovernanceHolonTypes.ProposalMetadata.UniquenessOperationKey] =
             ConsumerGovernanceHolonTypes.UniquenessOperationKeyFor(proposal.Id);
+        proposal.Metadata[ConsumerGovernanceHolonTypes.ProposalMetadata.ElectorateTenant] =
+            ConsumerGovernanceHolonTypes.ElectorateValueFor(electorateTenant);
         if (closesAt is { } closes)
             proposal.Metadata[ConsumerGovernanceHolonTypes.ProposalMetadata.ClosesAt] =
                 closes.ToUniversalTime().ToString("O");
@@ -250,87 +276,51 @@ public class GovernanceNodeHandlerTests
         return ballot;
     }
 
-    // -- the tally's privileged world: ballots plus the claim ledger behind them --
+    // -- the tally's world since D39: the claim ledger, and nothing else --
 
     /// <summary>
-    /// The UNSCOPED store read the tally's <c>GovernanceBallotRoll</c> performs. It
-    /// deliberately ignores ownership: that is the whole reason the roll returns
-    /// counts and never rows.
+    /// The node-operator-only claim ledger, keyed exactly as the gate writes it. Only
+    /// <c>ListLiveByOperationAsync</c> is set up, because it is the ONLY read the D39
+    /// tally performs: keyed by (scope, operation), naming no person and no caller, so
+    /// the read cannot be turned into a person-key oracle.
     /// </summary>
-    private static Mock<IHolonStore> HolonStoreOver(List<Holon> store, string? queryError = null)
+    /// <param name="includeReleased">
+    /// Models a store that FORGETS its own contract and hands back released rows, so
+    /// the tally's own <c>ReleasedAt</c> re-check is exercised rather than assumed.
+    /// </param>
+    private static Mock<IPersonOperationClaimStore> LedgerOf(
+        List<PersonOperationClaim> claims, string? readError = null, bool includeReleased = false)
     {
-        var mock = new Mock<IHolonStore>();
-        mock.Setup(s => s.QueryAsync(It.IsAny<HolonQueryRequest?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((HolonQueryRequest? query, CancellationToken _) =>
-                queryError is not null
-                    ? new AZOAResult<IEnumerable<IHolon>> { IsError = true, Message = queryError }
-                    : new AZOAResult<IEnumerable<IHolon>>
+        var mock = new Mock<IPersonOperationClaimStore>();
+        mock.Setup(s => s.ListLiveByOperationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string scope, string operationKey, CancellationToken _) =>
+                readError is not null
+                    ? new AZOAResult<IReadOnlyList<PersonOperationClaim>> { IsError = true, Message = readError }
+                    : new AZOAResult<IReadOnlyList<PersonOperationClaim>>
                     {
-                        Result = store
-                            .Where(h => query is null || query.ParentHolonId is null || h.ParentHolonId == query.ParentHolonId)
-                            .Cast<IHolon>()
+                        Result = claims
+                            .Where(c => c.UniquenessScope == scope
+                                && c.OperationKey == operationKey
+                                && (includeReleased || c.ReleasedAt is null))
                             .ToList(),
                     });
         return mock;
     }
 
-    /// <summary>Acting user to the person behind them; an unlisted user has no binding at all.</summary>
-    private static Mock<IKycIdentityStore> IdentitiesFor(
-        Dictionary<Guid, string> personKeyByUser, string? readError = null)
-    {
-        var mock = new Mock<IKycIdentityStore>();
-        mock.Setup(s => s.GetByUserAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string scope, string userKey, CancellationToken _) =>
-            {
-                if (readError is not null)
-                    return new AZOAResult<KycIdentity?> { IsError = true, Message = readError };
-
-                var personKey = personKeyByUser
-                    .Where(kv => kv.Key.ToString("N") == userKey)
-                    .Select(kv => kv.Value)
-                    .FirstOrDefault();
-
-                return personKey is null
-                    ? new AZOAResult<KycIdentity?> { Result = null }
-                    : new AZOAResult<KycIdentity?>
-                    {
-                        Result = new KycIdentity
-                        {
-                            TenantScope = scope,
-                            PersonKey = personKey,
-                            GlobalPersonKey = "global:" + personKey,
-                        },
-                    };
-            });
-        return mock;
-    }
-
-    /// <summary>The node-operator-only claim ledger, keyed exactly as the gate writes it.</summary>
-    private static Mock<IPersonOperationClaimStore> ClaimsFor(
-        List<PersonOperationClaim> claims, string? readError = null)
-    {
-        var mock = new Mock<IPersonOperationClaimStore>();
-        mock.Setup(s => s.GetAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string scope, string operationKey, string personKey, CancellationToken _) =>
-                readError is not null
-                    ? new AZOAResult<PersonOperationClaim?> { IsError = true, Message = readError }
-                    : new AZOAResult<PersonOperationClaim?>
-                    {
-                        Result = claims.FirstOrDefault(c =>
-                            c.UniquenessScope == scope
-                            && c.OperationKey == operationKey
-                            && c.PersonKey == personKey),
-                    });
-        return mock;
-    }
-
-    /// <summary>The ledger row the vote handler's TryClaimAsync would have left behind.</summary>
-    private static PersonOperationClaim SeedClaim(
+    /// <summary>
+    /// A vote of record: the ONE claim row a human holds on a proposal, carrying the
+    /// option they chose (D39). This — never a holon — is what the tally counts.
+    /// <paramref name="tenantId"/> is the uniqueness domain the claim was taken in,
+    /// which the tally derives from the proposal's ELECTORATE rather than from
+    /// whoever happens to run the count.
+    /// </summary>
+    private static PersonOperationClaim SeedVoteOfRecord(
         List<PersonOperationClaim> claims,
         Guid proposalId,
         string personKey,
         Guid holder,
+        string? decision = null,
         Guid? tenantId = null,
         bool released = false)
     {
@@ -345,46 +335,26 @@ public class GovernanceNodeHandlerTests
             UserId = holder.ToString("N"),
             ClaimedAt = Now,
             ReleasedAt = released ? Now : null,
+            DecisionOption = decision,
+            DecidedAt = decision is null ? null : Now,
         };
         claims.Add(claim);
         return claim;
     }
 
-    /// <summary>A member who voted THROUGH the handler: a live claim plus one ballot.</summary>
-    private static Holon SeedClaimBackedBallot(
-        List<Holon> store,
-        List<PersonOperationClaim> claims,
-        Dictionary<Guid, string> personKeyByUser,
-        Guid proposalId,
-        Guid voter,
-        string option,
-        DateTimeOffset? castAt = null)
-    {
-        if (!personKeyByUser.TryGetValue(voter, out var personKey))
-        {
-            personKey = $"person-{voter:N}";
-            personKeyByUser[voter] = personKey;
-        }
-
-        var operationKey = ConsumerGovernanceHolonTypes.UniquenessOperationKeyFor(proposalId);
-        if (!claims.Any(c => c.PersonKey == personKey && c.OperationKey == operationKey))
-            SeedClaim(claims, proposalId, personKey, voter);
-
-        return SeedBallot(store, proposalId, voter, option, castAt);
-    }
-
+    /// <summary>
+    /// The tally as production wires it: the consumer-scoped holon manager for the
+    /// QUESTION (the proposal's options, close time, electorate and readability) and
+    /// the claim ledger for the ANSWER. There is deliberately no identity store and no
+    /// holon store — the tally resolves no person, and
+    /// <see cref="GovernanceVoteOfRecordGuard"/> refuses to construct a tally holding
+    /// either.
+    /// </summary>
     private static GovernanceTallyNodeHandler TallyHandler(
         List<Holon> store,
         List<PersonOperationClaim> claims,
-        Dictionary<Guid, string> personKeyByUser,
-        string? holonQueryError = null,
-        string? identityReadError = null,
-        string? claimReadError = null) =>
-        new(HolonWorld(store).Object,
-            HolonStoreOver(store, holonQueryError).Object,
-            IdentitiesFor(personKeyByUser, identityReadError).Object,
-            ClaimsFor(claims, claimReadError).Object,
-            ClockAt(Now));
+        string? ledgerReadError = null) =>
+        new(HolonWorld(store).Object, LedgerOf(claims, ledgerReadError).Object, ClockAt(Now));
 
     private static JsonElement Output(ActionNodeHandlerResult result)
     {
@@ -401,8 +371,7 @@ public class GovernanceNodeHandlerTests
         IActionNodeHandler create = new GovernanceProposalCreateNodeHandler(HolonWorld(store).Object);
         IActionNodeHandler vote = new GovernanceVoteNodeHandler(
             HolonWorld(store).Object, Gate(new List<PersonUniquenessRequirement>()).Object);
-        IActionNodeHandler tally = TallyHandler(
-            store, new List<PersonOperationClaim>(), new Dictionary<Guid, string>());
+        IActionNodeHandler tally = TallyHandler(store, new List<PersonOperationClaim>());
 
         create.NodeType.Should().Be(ActionNodeType.GovernanceProposalCreate);
         vote.NodeType.Should().Be(ActionNodeType.GovernanceVote);
@@ -560,6 +529,11 @@ public class GovernanceNodeHandlerTests
         trace.Should().ContainInOrder("claim", $"create:{ConsumerGovernanceHolonTypes.VoteAssetType}");
         claimed.Single().OperationKey
             .Should().Be(ConsumerGovernanceHolonTypes.UniquenessOperationKeyFor(proposal.Id));
+
+        // D39: the chosen option rides ON the claim requirement, because the claim row
+        // IS the vote of record. Drop it and the gate writes a claim with no decision,
+        // the tally counts nobody, and every ballot silently evaporates.
+        claimed.Single().Decision.Should().Be("yes");
     }
 
     /// <summary>
@@ -642,8 +616,21 @@ public class GovernanceNodeHandlerTests
                 nameof(GovernanceVoteNodeConfig.Option));
     }
 
+    /// <summary>
+    /// D39 INVERTS the old compensation rule. The vote of record is committed the
+    /// moment the gate writes the claim; the holon written afterwards is only the
+    /// voter's receipt. A failed receipt write must therefore NOT release the claim —
+    /// releasing would discard a decision the ledger has already recorded (and, on a
+    /// re-vote, a valid earlier one) because a holon write failed.
+    /// </summary>
+    /// <remarks>
+    /// Replaces <c>Vote_ReleasesTheClaim_WhenTheBallotWriteFails</c>, which was correct
+    /// only while the ballot HOLON was the vote: then a held claim with no ballot
+    /// behind it disenfranchised the human. Under D39 the claim IS the ballot, so the
+    /// same release is data loss.
+    /// </remarks>
     [Fact]
-    public async Task Vote_ReleasesTheClaim_WhenTheBallotWriteFails()
+    public async Task Vote_KeepsTheCommittedClaim_WhenOnlyTheReceiptWriteFails()
     {
         var store = new List<Holon>();
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
@@ -658,15 +645,18 @@ public class GovernanceNodeHandlerTests
             new GovernanceVoteNodeConfig { ProposalHolonId = proposal.Id, Option = "yes" },
             Voter));
 
-        // A held claim with no ballot behind it disenfranchises this human for the rest
-        // of the proposal.
-        result.IsError.Should().BeTrue();
-        released.Single().OperationKey
-            .Should().Be(ConsumerGovernanceHolonTypes.UniquenessOperationKeyFor(proposal.Id));
+        // The vote STANDS: the ledger holds it and the caller is told which option.
+        var output = Output(result);
+        output.GetProperty("option").GetString().Should().Be("yes");
+
+        // No receipt, and no compensation. A release here would erase a recorded vote.
+        output.GetProperty("voteId").ValueKind.Should().Be(JsonValueKind.Null);
+        released.Should().BeEmpty();
+        store.Should().NotContain(h => h.AssetType == ConsumerGovernanceHolonTypes.VoteAssetType);
     }
 
     [Fact]
-    public async Task Vote_BallotCarriesOnlyOptionAndCastAt_NeverAPersonKey()
+    public async Task Vote_ReceiptCarriesOnlyOptionAndCastAt_NeverAPersonKey()
     {
         var store = new List<Holon>();
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
@@ -733,27 +723,51 @@ public class GovernanceNodeHandlerTests
         store.Should().NotContain(h => h.AssetType == ConsumerGovernanceHolonTypes.VoteAssetType);
     }
 
+    /// <summary>
+    /// D40. Voting again before the close is ALLOWED and replaces the earlier option:
+    /// one row per person means the change is an update of that row, not a second
+    /// ballot. The receipt mirrors it — one receipt per voter per proposal, refreshed
+    /// in place — so nothing in the holarchy ever looks like two ballots from one human.
+    /// </summary>
+    /// <remarks>
+    /// Replaces <c>Vote_RejectsASecondBallotFromTheSameUser</c>, which pinned the
+    /// pre-D39 rule: with the outcome living in holons a re-vote meant two ballots and
+    /// an ordering rule to pick between them, so the handler refused it outright. The
+    /// ledger tally removes that cost. The COUNT side of the same rule is
+    /// <c>Governance/GovernanceVoteOfRecordTests.Vote_CastAgainBeforeClose_ReplacesThePriorOption_WithNoDuplicateCounted</c>.
+    /// </remarks>
     [Fact]
-    public async Task Vote_RejectsASecondBallotFromTheSameUser()
+    public async Task Vote_CastAgain_RefreshesTheOneReceipt_RatherThanAppendingASecond()
     {
         var store = new List<Holon>();
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-        SeedBallot(store, proposal.Id, Voter, "yes");
         var claimed = new List<PersonUniquenessRequirement>();
 
         var handler = new GovernanceVoteNodeHandler(
             HolonWorld(store).Object, Gate(claimed).Object, ClockAt(Now));
 
-        var result = await handler.HandleAsync(Ctx(
+        var first = await handler.HandleAsync(Ctx(
+            ActionNodeType.GovernanceVote,
+            new GovernanceVoteNodeConfig { ProposalHolonId = proposal.Id, Option = "yes" },
+            Voter));
+
+        var second = await handler.HandleAsync(Ctx(
             ActionNodeType.GovernanceVote,
             new GovernanceVoteNodeConfig { ProposalHolonId = proposal.Id, Option = "no" },
             Voter));
 
-        // One ballot per USER is answered locally; one ballot per HUMAN is the gate's
-        // job, so this path must not even spend a claim.
-        result.IsError.Should().BeTrue();
-        claimed.Should().BeEmpty();
-        store.Count(h => h.AssetType == ConsumerGovernanceHolonTypes.VoteAssetType).Should().Be(1);
+        first.IsError.Should().BeFalse(first.Message ?? string.Empty);
+        second.IsError.Should().BeFalse(second.Message ?? string.Empty);
+
+        // The second vote re-claims the SAME uniqueness row, carrying the new decision.
+        claimed.Should().HaveCount(2);
+        claimed[1].OperationKey.Should().Be(claimed[0].OperationKey);
+        claimed[1].Decision.Should().Be("no");
+
+        var receipt = store.Single(h => h.AssetType == ConsumerGovernanceHolonTypes.VoteAssetType);
+        receipt.UserId.Should().Be(Voter);
+        receipt.Metadata[ConsumerGovernanceHolonTypes.VoteMetadata.Option].Should().Be("no");
+        Output(second).GetProperty("voteId").GetString().Should().Be(receipt.Id.ToString());
     }
 
     [Fact]
@@ -806,16 +820,13 @@ public class GovernanceNodeHandlerTests
     {
         var store = new List<Holon>();
         var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string>();
         var closesAt = Now.AddDays(3);
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no", "abstain" }, closesAt: closesAt);
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Voter, "yes");
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Stranger, "yes");
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Guid.NewGuid(), "no");
+        SeedVoteOfRecord(claims, proposal.Id, "person-voter", Voter, "yes");
+        SeedVoteOfRecord(claims, proposal.Id, "person-stranger", Stranger, "yes");
+        SeedVoteOfRecord(claims, proposal.Id, "person-third", Guid.NewGuid(), "no");
 
-        var handler = TallyHandler(store, claims, people);
-
-        var output = Output(await handler.HandleAsync(Ctx(
+        var output = Output(await TallyHandler(store, claims).HandleAsync(Ctx(
             ActionNodeType.GovernanceTally,
             new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
             Owner)));
@@ -834,15 +845,17 @@ public class GovernanceNodeHandlerTests
         output.GetProperty("tallyHash").GetString().Should().Be(expected);
     }
 
+    /// <summary>
+    /// Every declared option comes back, including the ones nobody chose: a count that
+    /// silently omitted a zero would move the tally-hash preimage as votes arrive.
+    /// </summary>
     [Fact]
     public async Task Tally_ListsEveryDeclaredOption_WhenNobodyVoted()
     {
         var store = new List<Holon>();
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
 
-        var handler = TallyHandler(store, new List<PersonOperationClaim>(), new Dictionary<Guid, string>());
-
-        var output = Output(await handler.HandleAsync(Ctx(
+        var output = Output(await TallyHandler(store, new List<PersonOperationClaim>()).HandleAsync(Ctx(
             ActionNodeType.GovernanceTally,
             new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
             Owner)));
@@ -857,102 +870,89 @@ public class GovernanceNodeHandlerTests
     {
         var store = new List<Holon>();
         var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string>();
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Voter, "yes");
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Stranger, "no");
+        SeedVoteOfRecord(claims, proposal.Id, "person-voter", Voter, "yes");
+        SeedVoteOfRecord(claims, proposal.Id, "person-stranger", Stranger, "no");
 
-        var handler = TallyHandler(store, claims, people);
-
-        var result = await handler.HandleAsync(Ctx(
+        var result = await TallyHandler(store, claims).HandleAsync(Ctx(
             ActionNodeType.GovernanceTally,
             new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
             Owner));
 
-        // D20: anchoring ballots would make every member's choice permanently public.
-        // Only counts leave this node, and only counts enter the hash preimage.
+        // D39 puts person_operation_claim.decision_option BESIDE person_key, so the
+        // node operator — and only the node operator — can read person-to-choice. That
+        // is exactly why only counts leave this node, and only counts enter the hash.
         result.Output.Should().NotContain(Voter.ToString()).And.NotContain(Stranger.ToString());
+        result.Output.Should().NotContain("person-voter").And.NotContain("person-stranger");
         GovernanceTallyHash.Preimage(proposal.Id, null, 2, new Dictionary<string, int> { ["yes"] = 1, ["no"] = 1 })
             .Should().NotContain(Voter.ToString()).And.NotContain(Stranger.ToString());
     }
 
     /// <summary>
-    /// G1. The attack that works without this: one verified user POSTs
-    /// /api/holon five hundred times with
-    /// {"assetType":"GovernanceVote","parentHolonId":"..."} — no handler, no claim,
-    /// and a child-holon count happily certifies all five hundred. Delete the claim
-    /// consultation in <c>GovernanceBallotRoll</c> and this test reports no=3.
+    /// The forged-ballot property, restated as D39 makes it true: a
+    /// <c>GovernanceVote</c> holon written straight through <c>POST /api/holon</c>
+    /// counts for nothing BY CONSTRUCTION, because the tally reads no ballot holon at
+    /// all. That is strictly stronger than what this test used to assert — a
+    /// claim-JOINED ballot count, which was considered and REJECTED: the join still let
+    /// an attacker-written holon decide WHICH option a claim was spent on, and it
+    /// stayed safe only while nobody dropped it.
     /// </summary>
+    /// <remarks>
+    /// The STRUCTURAL half is asserted here; the behavioural half is
+    /// <c>Governance/GovernanceVoteOfRecordTests.Tally_CountsNoBallotHolonWrittenOutsideTheVoteNode</c>
+    /// (the 500-holon attack, through the real <c>HolonManager</c>). Neither alone is
+    /// the guarantee: the guard catches a tally that REGAINS a way to read ballots, and
+    /// the attack test catches one that keeps the ledger dependency and stops
+    /// reflecting it.
+    /// </remarks>
     [Fact]
-    public async Task Tally_CountsOnlyClaimBackedBallots_AndIgnoresForgedOnes()
+    public async Task Tally_CountsNoForgedBallotHolon_BecauseItReadsNoBallotHolonAtAll()
     {
         var store = new List<Holon>();
         var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string>();
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
 
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Voter, "yes");
+        SeedVoteOfRecord(claims, proposal.Id, "person-voter", Voter, "yes");
 
-        // The forger is a real, verified user (they have an identity binding) who
-        // simply never went through GovernanceVote, so they hold no claim.
-        people[Stranger] = "person-stranger";
+        // A verified user who never went through GovernanceVote and holds no claim,
+        // plus the claim holder flooding their own proposal with rewritten choices.
         SeedBallot(store, proposal.Id, Stranger, "no");
         SeedBallot(store, proposal.Id, Stranger, "no");
-        SeedBallot(store, proposal.Id, Stranger, "no");
-
-        var output = Output(await TallyHandler(store, claims, people).HandleAsync(Ctx(
-            ActionNodeType.GovernanceTally,
-            new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
-            Owner)));
-
-        output.GetProperty("totalVotes").GetInt32().Should().Be(1);
-        output.GetProperty("counts").GetProperty("yes").GetInt32().Should().Be(1);
-        output.GetProperty("counts").GetProperty("no").GetInt32().Should().Be(0);
-    }
-
-    /// <summary>
-    /// G1. A claim holder who then floods the proposal with hand-written ballots
-    /// still counts once: each claim is spent at most once.
-    /// </summary>
-    [Fact]
-    public async Task Tally_SpendsEachClaimOnce_NoMatterHowManyBallotsOneUserWrites()
-    {
-        var store = new List<Holon>();
-        var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string>();
-        var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Voter, "yes", Now);
         for (var extra = 1; extra <= 20; extra++)
             SeedBallot(store, proposal.Id, Voter, "no", Now.AddMinutes(extra));
 
-        var output = Output(await TallyHandler(store, claims, people).HandleAsync(Ctx(
+        var output = Output(await TallyHandler(store, claims).HandleAsync(Ctx(
             ActionNodeType.GovernanceTally,
             new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
             Owner)));
 
-        // The earliest ballot is the one the claim pays for, so a re-tally is stable.
         output.GetProperty("totalVotes").GetInt32().Should().Be(1);
         output.GetProperty("counts").GetProperty("yes").GetInt32().Should().Be(1);
         output.GetProperty("counts").GetProperty("no").GetInt32().Should().Be(0);
+
+        // Executable form of "by construction": the handler holds no ballot-reading
+        // surface, so there is no join left for a later change to drop.
+        GovernanceVoteOfRecordGuard.Violations(typeof(GovernanceTallyNodeHandler))
+            .Should().BeEmpty();
     }
 
     /// <summary>
-    /// G3. Ballots are private and each is owned by its own voter, so a
-    /// runner-scoped read shows the runner exactly one ballot: their own. Here the
-    /// runner has cast none at all, and the honest answer is still two.
+    /// The count must not move with the caller. The ledger read is keyed by (scope,
+    /// operation) and carries no caller term at all, so a runner who cast no vote — and
+    /// whose consumer-scoped read would show them nobody else's receipt — still gets
+    /// the honest total, and the certified digest is the digest of that honest count.
     /// </summary>
     [Fact]
-    public async Task Tally_CountsEveryVotersBallot_NotJustTheRunners()
+    public async Task Tally_CountsEveryVotersDecision_NotJustTheRunners()
     {
         var store = new List<Holon>();
         var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string>();
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Voter, "yes");
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Stranger, "no");
+        SeedVoteOfRecord(claims, proposal.Id, "person-voter", Voter, "yes");
+        SeedVoteOfRecord(claims, proposal.Id, "person-stranger", Stranger, "no");
 
-        var output = Output(await TallyHandler(store, claims, people).HandleAsync(Ctx(
+        // Owner holds no claim on this proposal and owns none of the receipts.
+        var output = Output(await TallyHandler(store, claims).HandleAsync(Ctx(
             ActionNodeType.GovernanceTally,
             new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
             Owner)));
@@ -961,86 +961,102 @@ public class GovernanceNodeHandlerTests
         output.GetProperty("counts").GetProperty("yes").GetInt32().Should().Be(1);
         output.GetProperty("counts").GetProperty("no").GetInt32().Should().Be(1);
 
-        // The certified digest has to be the digest of the honest count, not of the
-        // runner-visible slice.
         output.GetProperty("tallyHash").GetString().Should().Be(GovernanceTallyHash.Compute(
             proposal.Id, null, 2, new Dictionary<string, int> { ["yes"] = 1, ["no"] = 1 }));
     }
 
-    /// <summary>G1. A released claim is a compensated one: it no longer backs a ballot.</summary>
-    [Fact]
-    public async Task Tally_IgnoresABallotBackedByAReleasedClaim()
-    {
-        var store = new List<Holon>();
-        var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string> { [Voter] = "person-voter" };
-        var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-        SeedClaim(claims, proposal.Id, "person-voter", Voter, released: true);
-        SeedBallot(store, proposal.Id, Voter, "yes");
-
-        var output = Output(await TallyHandler(store, claims, people).HandleAsync(Ctx(
-            ActionNodeType.GovernanceTally,
-            new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
-            Owner)));
-
-        output.GetProperty("totalVotes").GetInt32().Should().Be(0);
-    }
-
     /// <summary>
-    /// D23. Two users, ONE human: the uniqueness ledger holds a single row, so only
-    /// the user that actually holds it votes. This is the Sybil case the whole gate
-    /// exists for, and a per-user check alone would count both.
+    /// A released claim is a compensated one and no longer a vote. The store excludes
+    /// released rows by contract AND the tally re-checks <c>ReleasedAt</c> on every row
+    /// it is handed, so a store that forgets its own filter cannot turn a withdrawn
+    /// vote back into a counted one.
     /// </summary>
     [Fact]
-    public async Task Tally_CountsOneBallotPerHUMAN_WhenOnePersonHoldsTwoUsers()
+    public async Task Tally_IgnoresAReleasedClaim_EvenFromALedgerThatForgetsToFilter()
     {
         var store = new List<Holon>();
         var claims = new List<PersonOperationClaim>();
-        var secondUser = Guid.Parse("44444444-4444-4444-4444-444444444444");
-        var people = new Dictionary<Guid, string>
-        {
-            [Voter] = "one-and-the-same-person",
-            [secondUser] = "one-and-the-same-person",
-        };
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-        SeedClaim(claims, proposal.Id, "one-and-the-same-person", Voter);
-        SeedBallot(store, proposal.Id, Voter, "yes", Now);
-        SeedBallot(store, proposal.Id, secondUser, "no", Now.AddMinutes(1));
+        SeedVoteOfRecord(claims, proposal.Id, "person-voter", Voter, "yes", released: true);
 
-        var output = Output(await TallyHandler(store, claims, people).HandleAsync(Ctx(
+        var context = Ctx(
             ActionNodeType.GovernanceTally,
             new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
-            Owner)));
+            Owner);
 
-        output.GetProperty("totalVotes").GetInt32().Should().Be(1);
-        output.GetProperty("counts").GetProperty("yes").GetInt32().Should().Be(1);
-        output.GetProperty("counts").GetProperty("no").GetInt32().Should().Be(0);
+        Output(await TallyHandler(store, claims).HandleAsync(context))
+            .GetProperty("totalVotes").GetInt32().Should().Be(0);
+
+        var forgetfulLedger = new GovernanceTallyNodeHandler(
+            HolonWorld(store).Object, LedgerOf(claims, includeReleased: true).Object, ClockAt(Now));
+
+        Output(await forgetfulLedger.HandleAsync(context))
+            .GetProperty("totalVotes").GetInt32().Should().Be(0);
     }
 
     /// <summary>
-    /// A Tenant-scoped proposal counts the claims of its own uniqueness domain. A
-    /// claim made under another tenant is not evidence here, and silently counting it
-    /// would let a second tenant's members vote in this one's ballot.
+    /// The uniqueness domain is the PROPOSAL's electorate, never the caller's. A claim
+    /// taken under another tenant is not evidence in this ballot, and counting it would
+    /// let a second tenant's members vote in this one's proposal.
     /// </summary>
     [Fact]
     public async Task Tally_DoesNotCountAClaimMadeUnderAnotherTenant()
     {
         var store = new List<Holon>();
         var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string> { [Voter] = "person-voter" };
         var otherTenant = Guid.Parse("55555555-5555-5555-5555-555555555555");
         var thisTenant = Guid.Parse("66666666-6666-6666-6666-666666666666");
-        var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-        SeedClaim(claims, proposal.Id, "person-voter", Voter, tenantId: otherTenant);
-        SeedBallot(store, proposal.Id, Voter, "yes");
+        var proposal = SeedProposal(store, Owner, new[] { "yes", "no" }, electorateTenant: thisTenant);
 
-        var output = Output(await TallyHandler(store, claims, people).HandleAsync(Ctx(
+        // Same proposal, two uniqueness domains. Only the electorate's own domain counts.
+        SeedVoteOfRecord(claims, proposal.Id, "person-outsider", Voter, "yes", tenantId: otherTenant);
+        SeedVoteOfRecord(claims, proposal.Id, "person-member", Stranger, "no", tenantId: thisTenant);
+
+        var output = Output(await TallyHandler(store, claims).HandleAsync(Ctx(
             ActionNodeType.GovernanceTally,
             new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
             Owner,
             thisTenant)));
 
-        output.GetProperty("totalVotes").GetInt32().Should().Be(0);
+        output.GetProperty("totalVotes").GetInt32().Should().Be(1);
+        output.GetProperty("counts").GetProperty("no").GetInt32().Should().Be(1);
+        output.GetProperty("counts").GetProperty("yes").GetInt32().Should().Be(0);
+    }
+
+    /// <summary>
+    /// AC5 for the COUNT. A proposal is published so its electorate can read the
+    /// notice, and <c>HolonManager.CanRead</c> has no tenant term — so the tally
+    /// refuses a caller outside the recorded electorate with the SAME sentence it uses
+    /// for a proposal that does not exist. Two different sentences would make the tally
+    /// a proposal-existence oracle across tenants.
+    /// </summary>
+    [Fact]
+    public async Task Tally_GivesTheSameAnswerOutsideTheElectorateAndForAMissingProposal()
+    {
+        var store = new List<Holon>();
+        var claims = new List<PersonOperationClaim>();
+        var electorate = Guid.Parse("66666666-6666-6666-6666-666666666666");
+        var foreignTenant = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        var proposal = SeedProposal(store, Owner, new[] { "yes", "no" }, electorateTenant: electorate);
+        SeedVoteOfRecord(claims, proposal.Id, "person-member", Voter, "yes", tenantId: electorate);
+
+        var handler = TallyHandler(store, claims);
+
+        var foreign = await handler.HandleAsync(Ctx(
+            ActionNodeType.GovernanceTally,
+            new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
+            Stranger,
+            foreignTenant));
+
+        var missing = await handler.HandleAsync(Ctx(
+            ActionNodeType.GovernanceTally,
+            new GovernanceTallyNodeConfig { ProposalHolonId = Guid.NewGuid() },
+            Stranger,
+            foreignTenant));
+
+        foreign.IsError.Should().BeTrue();
+        foreign.Output.Should().BeNull();
+        foreign.Message.Should().Be(missing.Message);
     }
 
     /// <summary>
@@ -1052,11 +1068,10 @@ public class GovernanceNodeHandlerTests
     {
         var store = new List<Holon>();
         var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string>();
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Voter, "yes");
+        SeedVoteOfRecord(claims, proposal.Id, "person-voter", Voter, "yes");
 
-        var result = await TallyHandler(store, claims, people, claimReadError: "ledger down").HandleAsync(Ctx(
+        var result = await TallyHandler(store, claims, ledgerReadError: "ledger down").HandleAsync(Ctx(
             ActionNodeType.GovernanceTally,
             new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
             Owner));
@@ -1065,45 +1080,28 @@ public class GovernanceNodeHandlerTests
         result.Output.Should().BeNull();
     }
 
-    /// <summary>Same rule for the identity bindings the claim lookup goes through.</summary>
-    [Fact]
-    public async Task Tally_FailsClosed_WhenTheIdentityBindingsCannotBeRead()
-    {
-        var store = new List<Holon>();
-        var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string>();
-        var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Voter, "yes");
-
-        var result = await TallyHandler(store, claims, people, identityReadError: "identity store down").HandleAsync(Ctx(
-            ActionNodeType.GovernanceTally,
-            new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
-            Owner));
-
-        result.IsError.Should().BeTrue();
-    }
-
     /// <summary>
     /// The tally reads the uniqueness domain from the proposal exactly as the vote
-    /// does, so a rewritten key cannot aim the count at a domain nobody claimed in.
+    /// does, including the derived-key equality check, so a rewritten key cannot aim
+    /// the count at a domain nobody claimed in.
     /// </summary>
     [Fact]
     public async Task Tally_FailsClosed_WhenTheProposalsUniquenessKeyWasRewritten()
     {
         var store = new List<Holon>();
         var claims = new List<PersonOperationClaim>();
-        var people = new Dictionary<Guid, string>();
         var proposal = SeedProposal(store, Owner, new[] { "yes", "no" });
-        SeedClaimBackedBallot(store, claims, people, proposal.Id, Voter, "yes");
+        SeedVoteOfRecord(claims, proposal.Id, "person-voter", Voter, "yes");
         proposal.Metadata[ConsumerGovernanceHolonTypes.ProposalMetadata.UniquenessOperationKey] =
             "governance:proposal:somebody-elses-domain";
 
-        var result = await TallyHandler(store, claims, people).HandleAsync(Ctx(
+        var result = await TallyHandler(store, claims).HandleAsync(Ctx(
             ActionNodeType.GovernanceTally,
             new GovernanceTallyNodeConfig { ProposalHolonId = proposal.Id },
             Owner));
 
         result.IsError.Should().BeTrue();
+        result.Output.Should().BeNull();
     }
 
     // ── the hash itself ───────────────────────────────────────────────────────

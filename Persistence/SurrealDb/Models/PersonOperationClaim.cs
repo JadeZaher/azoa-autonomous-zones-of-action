@@ -16,6 +16,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("NODE-OPERATOR-ONLY. Deliberately absent from SearchableEntityType, HolonQueryRequest, and the MCP user_scoped_query allow-list; see Persistence/SurrealDb/Models/AGENTS.md #person-operation-claim. A perfect denial message is worthless if a consumer can list this table and read a person key it did not create.")]
     [SurrealNote("Stores a person KEY and nothing else about the human. No first/last name, birthday, citizenship, or document field may ever be added here: a joinable attribute on this table would re-identify the pseudonymous claim ledger.")]
     [SurrealNote("Uniqueness is (uniqueness_scope, operation_key, person_key). uniqueness_scope is a tenant Guid('N') by default and the node-global sentinel only on an explicit per-operation opt-in (D23).")]
+    [SurrealNote("D39: decision_option is the VOTE OF RECORD, and it sits beside person_key — so the node operator, and only the node operator, can read person-to-choice here. That is the price of a tally nobody can forge, and the reason this table must stay off every consumer read surface. The consumer-visible ballot receipt holon carries no authority and the tally publishes counts only.")]
     [Slice("identity")]
     [Index("person_operation_claim_unique",
         Fields = new[] { "uniqueness_scope", "operation_key", "person_key" },
@@ -67,6 +68,33 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         /// <summary>Set by compensation when the side effect failed; a released claim no longer blocks.</summary>
         public DateTimeOffset? ReleasedAt { get; set; }
+
+        /// <summary>The option this claim is spent on — the VOTE OF RECORD (D39).</summary>
+        [FieldGroup("Decision carried by the claim (D39: the claim IS the vote of record)")]
+        public string? DecisionOption { get; set; }
+
+        /// <summary>SERVER-set instant the current decision was written; never client-supplied.</summary>
+        public DateTimeOffset? DecidedAt { get; set; }
+
+        /// <summary>Instant the decision window shuts. Pinned on the first decision and never moved after.</summary>
+        public DateTimeOffset? DecisionClosesAt { get; set; }
+
+        /// <summary>
+        /// The close stored for an operation that never closes. A definite "end of
+        /// time" rather than an absent value, because a JSON null reaches SurrealDB as
+        /// NULL (not NONE) and NULL propagates through every comparison the claim
+        /// statement's window guard makes — deciding the window wrong, in silence.
+        /// </summary>
+        public static readonly DateTimeOffset NeverClosesAt = DateTimeOffset.MaxValue.ToUniversalTime();
+
+        /// <summary>
+        /// True when a stored close is the never-closes sentinel. Compares by YEAR,
+        /// not by equality: a datetime that round-trips through the database may lose
+        /// sub-second precision, and an exact match would then quietly report a real
+        /// close time.
+        /// </summary>
+        public static bool IsNeverCloses(DateTimeOffset? closesAt) =>
+            closesAt is { } value && value.UtcDateTime.Year >= NeverClosesAt.UtcDateTime.Year;
 
         /// <summary>Database-defaulted and read-only; claim upserts omit it by design.</summary>
         [FieldGroup("Timestamps")]

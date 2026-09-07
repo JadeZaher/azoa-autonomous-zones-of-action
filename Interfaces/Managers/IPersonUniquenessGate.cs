@@ -24,6 +24,17 @@ public interface IPersonUniquenessGate
     /// Atomically claims the operation for the person behind <paramref name="userId"/>.
     /// Idempotent: a re-claim by the SAME user in the SAME scope succeeds.
     /// NEVER returns IsError for a refusal.
+    ///
+    /// D39/D40 — <b>the claim can BE the decision.</b> When the requirement carries a
+    /// <see cref="PersonUniquenessRequirement.Decision"/>, the same single statement
+    /// that decides the claim also writes that decision onto the one claim row, and a
+    /// re-claim by the same holder with a different decision REPLACES it in place.
+    /// One row per person means there is no "which ballot is latest" question and so
+    /// no ordering to attack. The decision is refused — and the whole call answers
+    /// Ineligible — once <see cref="PersonUniquenessRequirement.DecisionClosesAt"/>
+    /// has passed, enforced here AND inside the write, never only in the caller.
+    /// The signature is unchanged on purpose: the decision rides on the requirement
+    /// so no implementor of this frozen contract has to grow a method.
     /// </summary>
     Task<AZOAResult<KycEligibilityDecision>> TryClaimAsync(
         PersonUniquenessRequirement requirement,

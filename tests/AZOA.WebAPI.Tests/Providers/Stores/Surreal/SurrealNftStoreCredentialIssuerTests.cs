@@ -44,8 +44,33 @@ public sealed class SurrealNftStoreCredentialIssuerTests
             + "call the revocation rail has no authorization anchor to read");
         code.Should().Contain("IsSoulbound",
             "only soulbound rows are credentials; an ordinary NFT gets no issuer stamp");
-        code.Should().Contain("userNFT.UserId",
-            "the issuer recorded is the minting party carried on the row, never a caller-supplied field");
+        code.Should().Contain("SetIssuerUserIdAsync(userNFT.Id, userNFT.IssuerUserId",
+            "D41: the issuer stamped is the one the ISSUANCE seam recorded from the authenticated "
+            + "caller and carried on the row");
+        code.Should().NotContain("SetIssuerUserIdAsync(userNFT.Id, userNFT.UserId",
+            "user_id is the HOLDER. Stamping it is what made \"only the issuer may revoke\" mean "
+            + "\"the holder may revoke their own credential\" — the vacuous rail D41 exists to end");
+    }
+
+    /// <summary>
+    /// D41/AC1 at the store: a soulbound row whose issuer IS its holder must never be written. A
+    /// row in that shape reads as a valid credential and authorizes its own holder to claw it back
+    /// from themselves, which is the exact inversion D19 forbids.
+    /// </summary>
+    [Fact]
+    public void UpsertUserNFT_RefusesASelfIssuedSoulboundRow_BeforeItIsWritten()
+    {
+        var code = CodeOf("public async Task<AZOAResult<IUserNFT>> UpsertUserNFTAsync");
+
+        var guard = code.IndexOf("userNFT.IssuerUserId == userNFT.UserId", StringComparison.Ordinal);
+        var write = code.IndexOf("SurrealWriter.Upsert(", StringComparison.Ordinal);
+
+        guard.Should().BeGreaterOrEqualTo(0,
+            "issuer == holder is the vacuous credential; the store must refuse to persist one");
+        write.Should().BeGreaterOrEqualTo(0);
+        guard.Should().BeLessThan(write,
+            "the refusal must happen BEFORE the row reaches the database, not after — a row already "
+            + "written is a credential nobody can revoke, whatever the return value says");
     }
 
     /// <summary>

@@ -5,6 +5,7 @@
 -- Note: NODE-OPERATOR-ONLY. Deliberately absent from SearchableEntityType, HolonQueryRequest, and the MCP user_scoped_query allow-list; see Persistence/SurrealDb/Models/AGENTS.md #person-operation-claim. A perfect denial message is worthless if a consumer can list this table and read a person key it did not create.
 -- Note: Stores a person KEY and nothing else about the human. No first/last name, birthday, citizenship, or document field may ever be added here: a joinable attribute on this table would re-identify the pseudonymous claim ledger.
 -- Note: Uniqueness is (uniqueness_scope, operation_key, person_key). uniqueness_scope is a tenant Guid('N') by default and the node-global sentinel only on an explicit per-operation opt-in (D23).
+-- Note: D39: decision_option is the VOTE OF RECORD, and it sits beside person_key — so the node operator, and only the node operator, can read person-to-choice here. That is the price of a tally nobody can forge, and the reason this table must stay off every consumer read surface. The consumer-visible ballot receipt holon carries no authority and the tally publishes counts only.
 -- ============================================================
 
 DEFINE TABLE IF NOT EXISTS person_operation_claim SCHEMAFULL;
@@ -28,6 +29,11 @@ DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE person_operation_claim TYPE option
 -- Claim lifecycle
 DEFINE FIELD IF NOT EXISTS claimed_at ON TABLE person_operation_claim TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS released_at ON TABLE person_operation_claim TYPE option<datetime>;
+
+-- Decision carried by the claim (D39: the claim IS the vote of record)
+DEFINE FIELD IF NOT EXISTS decision_option ON TABLE person_operation_claim TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS decided_at ON TABLE person_operation_claim TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS decision_closes_at ON TABLE person_operation_claim TYPE option<datetime>;
 
 -- Timestamps
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE person_operation_claim TYPE datetime
