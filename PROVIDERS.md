@@ -4,15 +4,19 @@
 
 AZOA is a .NET 10 WebAPI. The sole storage engine is SurrealDB (via `SurrealForge.*` packages). JWT and `X-Api-Key` authentication are supported, and stricter rate limits apply to value-moving endpoints.
 
-_Last reconciled: 2026-07-18 (operator/KYC/custody and fail-closed bridge stopping point)._
+_Last reconciled: 2026-09-07 — re-derived from `Controllers/*.cs`, `Providers/Blockchain/`, `Managers/` and `Program.cs` after the Avatar→User / Quest→Action rename and the Phase 5 landing._
 
 ## Architecture
 
 **Manager → Store → SurrealDB:**
 Each business aggregate (User, Wallet, Holon, NFT, etc.) has a manager exposing business logic and a corresponding SurrealDB store (`I*Store` interface + `Surreal*Store` implementation) handling persistence.
 
-**Blockchain Providers:**
-Algorand and Solana plug into the `IBlockchainProvider` factory. The common interface is complete, but capability flags deliberately keep real bridge execution unavailable until a provider implements and passes review for the entire lock/mint/burn/release lifecycle and production custody. Adding a chain requires an implementation, registration, and conformance review; registration alone does not make it launchable.
+**Value rails and blockchain providers:**
+`IValueRailProviderFactory` resolves a bound `IValueRailProvider` for one rail + environment, whether or not that rail is a chain (decision D9). It exists because the older chain-typed factory could not express a fiat rail at all: registration was `Func<IBlockchainProvider>`, so a rail with no contracts, faucet, or wrapped assets had nowhere to go. `IBlockchainProviderFactory` extends it for the chain case. See `Providers/Blockchain/AGENTS.md`.
+
+Four providers are registered in `Program.cs` (~L1373): **Algorand**, **Solana**, **Ethereum**, and **Simulated**. A provider is bound once per canonical `(chainType, network)` pair through a `Lazy` cache and is never shared across networks — `Initialize` mutates the provider's client, so a shared instance would let a Testnet resolution retarget a cached Devnet provider.
+
+Bridge capability is a **module, not a boolean**: there is no `SupportsBridging` flag. A chain that can bridge implements `IBridgeSourceLeg` (`LockAsync`/`ReleaseAsync`) and/or `IBridgeTargetLeg` (`MintWrappedAsync`/`BurnWrappedAsync`), and `TryGetModule` resolves it at runtime. Absence *is* the fail-closed refusal, structurally — there is no method to call and no boolean that can be set true by mistake — and it expresses a direction asymmetry the boolean could not (Algorand is a proven source and deliberately not a target). Adding a chain still requires implementation, registration, and conformance review; registration alone does not make it launchable.
 
 **DEX Adapters:**
 Swap routing is dispatched by `SwapManager` to chain-specific `IDexAdapter` implementations (Tinyman for Algorand, Jupiter for Solana). Adding a DEX requires implementing `IDexAdapter` + one DI line.
@@ -27,7 +31,55 @@ assurance label. Attempts persist that profile in a versioned provenance
 envelope, so provider or policy rotation requires re-verification. See
 `docs/TENANT-CUSTODIAL-ONBOARDING.md`.
 
-## Controllers (15)
+## Controllers (35)
+
+Full inventory with route prefix. The sections that follow detail the surfaces the SDK
+and frontend consume; operator-, webhook- and admin-only controllers are listed here by
+prefix rather than enumerated.
+
+| Controller | Route prefix | Endpoints |
+|---|---|---|
+| ActionController | `api/action` | 47 |
+| AllocationController | `api/allocation` | 1 |
+| AllocationReceiptController | `api/allocation/receipt` | 2 |
+| AnalyticsController | `api/analytics` | 2 |
+| ApiKeyController | `api/apikey` | 7 |
+| BackfillController | `api/admin/backfill` | 2 |
+| BlockchainOperationController | `api/blockchainoperation` | 2 |
+| BridgeController | `api/bridge` | 7 |
+| ConsentController | `api/user/consent` | 4 |
+| CredentialController | `api/credential` | 1 |
+| DappCompositionController | `api/dapp-series/{id}` | 6 |
+| DappSeriesController | `api/dapp-series` | 10 |
+| ExternalAuthController | `auth/oauth` | 7 |
+| HolonController | `api/holon` | 16 |
+| HolonTypeRegistryController | `api/holon-types` | 5 |
+| KeyRotationController | `api/admin/key-rotation` | 1 |
+| KycCallbackController | `api/kyc/callback` | 1 |
+| KycController | `api/kyc` | 5 |
+| NetworkController | `api/network` | 1 |
+| NftController | `api/nft` | 7 |
+| NodeGovernanceController | `api/node-governance` | 9 |
+| NodeOperatorController | `api/operator` | 9 |
+| NodeOperatorSessionController | `api/operator/session` | 2 |
+| NodeTransparencyController | `api/node-transparency` | 5 |
+| STARODKController | `api/starodk` | 9 |
+| SagaOperatorController | `api/admin/sagas` | 3 |
+| SearchController | `api/search` | 2 |
+| SwapController | `api/swap` | 2 |
+| TenantConsentController | `api/tenant/consent` | 2 |
+| TenantController | `api/tenant` | 9 |
+| TenantKycConfigurationController | `api/tenant/kyc` | 3 |
+| UserController | `api/user` | 8 |
+| UserNFTController | `api/usernft` | 19 |
+| WalletAuthController | `api/user` (wallet challenge/verify) | 5 |
+| WalletController | `api/wallet` | 12 |
+
+⚠ `NodeGovernanceController` governs **node parameters** — fee schedule, treasury,
+audit trail. It is unrelated to the D20 on-chain-vote action nodes, which are not
+enabled; see "Phase 5 primitives that are NOT enabled" below.
+
+### Endpoint detail
 
 ### ApiKeyController
 - `POST /api/apikey` — Create an API key
@@ -61,13 +113,40 @@ envelope, so provider or policy rotation requires re-verification. See
 - `GET /api/bridge/{id}` — Get bridge status
 
 ### DappCompositionController
-- `GET /api/dappcomposition/{id}` — Get dapp composition
+Mounted **under** the series route, not on a `dappcomposition` prefix.
+- `POST /api/dapp-series/{id}/compose` — Compose the series
+- `GET /api/dapp-series/{id}/validate` — Validate the composition
+- `GET /api/dapp-series/{id}/manifest` — Read the manifest
+- `POST /api/dapp-series/{id}/generate` — Generate
+- `POST /api/dapp-series/{id}/deploy` — Deploy
+- `GET /api/dapp-series/{id}/status` — Composition status
 
 ### DappSeriesController
-- `GET /api/dappseries/{id}` — Get dapp series by ID
-- `GET /api/dappseries` — Query dapp series
-- `POST /api/dappseries` — Create dapp series
-- `PUT /api/dappseries/{id}` — Update dapp series
+- `GET /api/dapp-series/{id}` — Get dapp series by ID
+- `GET /api/dapp-series` — List dapp series
+- `POST /api/dapp-series` — Create dapp series
+- `PUT /api/dapp-series/{id}` — Update dapp series
+- `DELETE /api/dapp-series/{id}` — Delete dapp series
+- `GET|POST /api/dapp-series/{seriesId}/actions` — List / add series actions
+- `DELETE /api/dapp-series/{seriesId}/actions/{actionId}` — Remove a series action
+- `PUT /api/dapp-series/{seriesId}/actions/{actionId}/order` — Reorder a series action
+- `PUT /api/dapp-series/{seriesId}/actions/{actionId}/mappings` — Update its mappings
+
+### AnalyticsController
+- `GET /api/analytics/transactions` — Paged transaction history
+- `GET /api/analytics/positions` — Current positions
+
+### CredentialController
+- `POST /api/credential/{assetId}/revoke` — Revoke a soulbound credential you issued, by
+  clawing the ASA back on chain. Rate-limited ("financial" policy), idempotent on the
+  `Idempotency-Key` header. **`200` means revoked, and nothing else does**: a broadcast
+  that has not confirmed returns `202 Accepted` with `isError = true` and code
+  `PendingConfirmation`, so neither a status-code check nor an `isError` check can
+  mistake it for a completed revocation. Do not re-submit a `202` — the transaction is
+  already on the network; reconcile, or poll the operation named by `operationId`.
+
+  ⚠ **The rail behind this route is inert.** See "Phase 5 primitives that are NOT
+  enabled" below before describing it as a working revocation capability.
 
 ### HolonController
 - `GET /api/holon/{id}` — Get holon by ID
@@ -83,7 +162,12 @@ envelope, so provider or policy rotation requires re-verification. See
 
 ### ActionController
 
-30 endpoints total. Per ADR §2.2, `activate`/`complete`/`fail`/`execution-state` are exposed on `ActionRun`, not `ActionDefinition`.
+47 endpoints total. Per ADR §2.2, `activate`/`complete`/`fail`/`execution-state` are exposed on `ActionRun`, not `ActionDefinition`.
+
+⚠ **D35 naming.** The C# entity is `ActionDefinition` and its namespaces are plural
+(`Models.Actions`), to avoid colliding with `System.Action` under `ImplicitUsings`.
+The DB table, the REST route segment, and the SDK type are all plain `action`. The
+wire surface is unaffected by the C# suffix — do not add `-definition` to a route.
 
 **Action CRUD:**
 - `POST /api/action` — Create action
@@ -137,8 +221,13 @@ envelope, so provider or policy rotation requires re-verification. See
 ### STARODKController
 - `GET /api/starodk/{id}` — Get STARODK by ID
 - `GET /api/starodk` — List STARODK
-- `POST /api/starodk` — Create STARODK
+- `POST /api/starodk` — Create or update STARODK
+- `PUT /api/starodk/{id}` — Update STARODK (IDOR-resistant; see Auth & Safety)
 - `DELETE /api/starodk/{id}` — Delete STARODK
+- `POST /api/starodk/{id}/generate` — Generate the dapp (**not** `/generate-dapp`)
+- `POST /api/starodk/{id}/deploy` — Deploy
+- `GET /api/starodk/{id}/ecosystem` — Read the ecosystem tree
+- `POST /api/starodk/{id}/ecosystem/dapp-series` — Attach a series to the tree
 
 ### SwapController
 - `GET /api/swap/quote` — Get swap quote (query params: chain, tokenIn, tokenOut, amount, slippage)
@@ -158,24 +247,33 @@ envelope, so provider or policy rotation requires re-verification. See
 - `POST /api/wallet/{id}/topup` — Top-up with test tokens (dev/test only)
 - `GET /api/wallet/types` — Get wallets grouped by type
 
-## Managers (10)
+## Managers (28)
 
-| Manager | Public Methods | Role |
-|---|---|---|
-| **ActionManager** | 16 | Action DAG orchestration, execution, templates |
-| **HolonManager** | 15 | Holon CRUD, asset queries, portfolio aggregation |
-| **DappCompositionManager** | 14 | DApp series + composition queries |
-| **WalletManager** | 11 | Wallet CRUD, balance federation, portfolio, faucet |
-| **UserManager** | 6 | User lifecycle (register, login, update, delete) |
-| **NftManager** | 6 | NFT queries, user NFT bindings |
-| **STARManager** | 6 | STARODK CRUD, dapp generation, deployment |
-| **SwapManager** | 4 | DEX dispatcher (thin facade to adapters) |
-| **BlockchainOperationManager** | 4 | Blockchain operation CRUD + status queries |
-| **SearchManager** | 2 | Full-text search dispatch |
+`Managers/*.cs`, grouped by the surface each one backs. Method counts are no longer
+tracked here — they went stale every track; read the interface in `Interfaces/Managers/`.
 
-## SDK — AzoaApiClient (84 Typed Methods)
+| Group | Managers |
+|---|---|
+| Core domain | `ActionManager`, `HolonManager`, `HolonTypeRegistryManager`, `NftManager`, `UserManager`, `WalletManager`, `SearchManager`, `BlockchainOperationManager`, `SwapManager` |
+| Dapp / STAR | `DappCompositionManager`, `STARManager` |
+| Identity & consent | `ConsentManager`, `WalletAuthManager`, `TenantManager`, `TenantCustodialAccountManager` |
+| KYC control plane | `KycManager`, `KycControlPlaneManager` |
+| Value rail | `AllocationManager`, `AllocationReceiptManager`, `FungibleTokenManager`, `CredentialManager` |
+| Node operation | `NodeOperatorManager`, `NodeGovernanceManager`, `NodeFeeScheduleManager`, `NodeFeeSettlementManager`, `NodeTreasuryManager`, `NodeTransparencyManager`, `NodeTransparencyHistoryService` |
 
-The SDK provides a typed `AzoaApiClient` wrapping all 15 controllers. All amounts are strings for arbitrary precision. Notable method families:
+## SDK — AzoaApiClient
+
+`sdk/azoa-wallet/src/api/client.ts` carries ~126 typed methods; holon reads and writes
+live on the fluent `HolonQueryBuilder` (`src/client/holon-query.ts`) rather than on the
+client. It does **not** wrap all 35 controllers — `API_SYNC.md` is the authoritative
+controller ↔ SDK map and lists the gaps. All amounts are strings for arbitrary precision.
+
+⚠ Several method families named below regressed out of the SDK and no longer exist:
+`generateWallet`, `connectWallet`, `exportWallet`, `topupWallet`, `getWalletsByType`,
+`getNetworkInfo`, `completeBridge`. Their controller endpoints are still live. See
+`API_SYNC.md` "Open Drift" rows 9–11.
+
+Notable method families:
 
 **User:** `login`, `getUser`, `getAllUsers`, `deleteUser`
 
@@ -205,6 +303,14 @@ The SDK provides a typed `AzoaApiClient` wrapping all 15 controllers. All amount
 
 ## Blockchain Providers
 
+Amounts crossing `IBlockchainProvider` are `RailAmount` (`Core/RailAmount.cs`) —
+arbitrary-precision `BigInteger` base units plus the `ValueDimension` they are counted
+in. This replaced a `ulong` surface whose ceiling of ~1.8447e19 wei is about **18.45
+ETH**, which the shared interface could not express at all. Algorand and Solana narrow
+to 64-bit chain base units via `NarrowToChainBaseUnits`; Ethereum deliberately never
+narrows. `RejectUnsettleableAmount` (on `BaseBlockchainProvider`) refuses a
+fiat-denominated amount rather than reinterpreting it as base units.
+
 ### Algorand Provider
 Implements `IBlockchainProvider` fully:
 - `GetBalance` — Native ALGO balance
@@ -232,8 +338,9 @@ uses the real SHA-512/256 checksum (`Algorand.Address.IsValid`).
   `AZOA:Algorand:PlatformMnemonic` from config (no per-user ownership check). The
   production ownership-checked, KMS-backed, byte[]-zeroing resolver is the
   `custody-key-management` track (retired deploy registry item B3/P1, now `docs/NODE-HOST.md` §8). Mainnet stays gated (B6).
-- Soulbound clawback-revoke is deferred (D4 → H2); the mint path sets the platform
-  as manager/freeze/clawback so revoke is a pure follow-up.
+- Soulbound clawback-revoke **shipped as a route but cannot revoke anything.** The mint
+  path sets the platform as manager/freeze/clawback, and `POST /api/credential/{assetId}/revoke`
+  exists, but the rail is inert — see "Phase 5 primitives that are NOT enabled" below.
 - The TypeScript SDK provider still builds `json-descriptor`/wallet-adapter signing
   envelopes client-side; the real server-side signer above is the .NET backend path.
 
@@ -252,6 +359,27 @@ Implements `IBlockchainProvider` fully:
 - `getTokenMetadata` returns supply stats only; full NFT metadata (name, image, URI) not fetched
 - `buildMint` and `buildBurn` produce `json-descriptor` format (intent description, not executable transaction bytes)
 
+### Ethereum Provider
+
+Registered in `Program.cs` alongside Algorand and Solana. Implementation notes live in
+`Providers/Blockchain/Ethereum/AGENTS.md`; the load-bearing contracts are:
+
+- **Every internal is `BigInteger`** — wei amounts, balances, gas and fee math, nonces,
+  chain ids, ABI values. Wei never transits a `ulong`. `IEthereumValueModule` is the
+  direct value path, not an escape hatch.
+- **Signing is EIP-2718 type-2 only.** The provider produces the signing payload
+  `0x02 ‖ rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value,
+  data, accessList])`; `EthereumTransactionSigner` returns the fully framed envelope
+  `0x02 ‖ rlp([…, yParity, r, s])`, which the provider hex-encodes and submits
+  **unmodified** — re-encoding after signing would invalidate the signature. The
+  signature is secp256k1 over `keccak256(payload)` with y-parity (0/1), not legacy V;
+  the signer refuses any payload not starting `0x02` rather than guessing, and
+  re-derives the sender from the assembled envelope before returning.
+
+**Caveat:** like every other chain, Ethereum real-value routes stay behind
+`RealValueEnabled=false` until a provider passes the full lock/mint/burn/release plus
+production-custody review.
+
 ## DEX Adapters
 
 ### TinymanAdapter (Algorand)
@@ -266,7 +394,7 @@ Implements `IBlockchainProvider` fully:
 
 ## MCP Surface
 
-The `/mcp` endpoint exposes 5 read-only tools + HNSW vector search via `ModelContextProtocol.AspNetCore`. User-scoped auth required. (See `mcp-surface` conductor track.)
+The `/mcp` endpoint exposes 6 read-only tools (`[McpServerTool]`-decorated) + HNSW vector search via `ModelContextProtocol.AspNetCore`. User-scoped auth required. (See `mcp-surface` conductor track.)
 
 ## Auth & Safety
 
@@ -289,13 +417,52 @@ Spine for replay safety on key endpoints. Client can supply `Idempotency-Key` he
 
 See `docs/RESIDUAL-RISK-RUNBOOK.md` for full pre-launch gates.
 
+## Phase 5 primitives that are NOT enabled
+
+Two primitives landed in commit `a59bd85` and **must not be described as done.** Both
+failed the same way: a control was wired on one path and the thing that consumes its
+result was wired to a different, unprotected one. Each has a design track dated
+2026-09-06 that has not been implemented.
+
+### Governance vote / tally (D20) — live Sybil hole, do not enable
+
+`GovernanceVoteNodeHandler` claims correctly through `IPersonUniquenessGate`.
+`GovernanceTallyNodeHandler` then **counts raw child holons and never reads the claim
+ledger.** One verified user can `POST /api/holon` 500 times with
+`{"assetType":"GovernanceVote","parentHolonId":"<proposal>","metadata":{"option":"yes"}}`;
+none pass through the handler, none take a claim, and the tally counts all 500. Two
+compounding defects: the ballot ordering key is read from attacker-controlled holon
+metadata, and `HolonManager.UpdateAsync` blind-merges caller metadata so a voter can
+rewrite a cast ballot's option.
+
+Corrective: `conductor/tracks/governance-vote-of-record_20260906` (D39 — the uniqueness
+claim *is* the vote of record; the tally reads `person_operation_claim` and never reads
+holons).
+
+### Credential revocation (D19) — inert
+
+`POST /api/credential/{assetId}/revoke` authorizes the credential's **issuer, not its
+holder** — but the only production mint path stamps `issuer_user_id` = the minting
+caller, who is also the holder, so the authorization check is **vacuous**. No production
+path writes `current_owner` on a soulbound row, so a real revoke dies at the
+holder-address precondition before authorization is reached; a revoke confirmed by
+reconciliation never re-points `nft_ownership`; and the Algorand clawback precondition
+uses `RequireOptedInAsync`, which refuses a frozen holding — while soulbound credentials
+are minted `defaultFrozen: true`, so the guard refuses exactly the case it exists to
+serve.
+
+Corrective: `conductor/tracks/credential-third-party-issuance_20260906` (D41 — soulbound
+mint takes a recipient distinct from the caller). This is an API change to the *mint*
+path; patching revoke alone cannot work, because the data it authorizes against is never
+written.
+
 ## Removed Surfaces
 
 **EOL as of SurrealDB migration (2026-05-27):**
 - `IAZOAStorageProvider` — EF + PostgreSQL + InMemory paths are deleted
 - No controllers or managers use EF code paths
 
-Old documentation mentioning "9 controllers / 7 managers / EF+InMemory" is obsolete.
+Old documentation mentioning "9 controllers / 7 managers / EF+InMemory" is obsolete, and so is the "15 controllers / 10 managers" count this file itself carried until 2026-09-07.
 
 ## Storage Duality Status
 

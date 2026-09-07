@@ -1,4 +1,4 @@
-export { AzoaApiClient, DAPP_ROLES } from "./client.js";
+export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./client.js";
 export type {
   AzoaApiConfig,
   UserResponse,
@@ -103,6 +103,20 @@ export type {
   // Wallet wrapping-key rotation (final-hardening B5)
   KeyRotationReport,
   KeyRotationParams,
+  // Credential revocation (CredentialController, D19) — parity only; rail not enabled server-side
+  CredentialRevokeParams,
+  CredentialRevokeStatus,
+  CredentialRevokeResult,
+  // Analytics read surface (AnalyticsController, D16)
+  AnalyticsQueryParams,
+  PricingStatus,
+  QuantityStatus,
+  ValueStampResponse,
+  TransactionHistoryEntry,
+  TransactionHistoryPage,
+  FiatValueResponse,
+  PositionSummary,
+  PositionsResponse,
 } from "./client.js";
 export { resolveApiPath, API_PATHS } from "./api-version.js";
 export type { ApiVersionConfig, ApiController } from "./api-version.js";

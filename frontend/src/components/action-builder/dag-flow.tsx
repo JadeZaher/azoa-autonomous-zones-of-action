@@ -29,6 +29,11 @@ const CATEGORY_HEX: Record<NodeCategory, string> = {
   Blockchain: '#f97316',
   Control: '#64748b',
   Economic: '#f43f5e',
+  // Phase 5 D20/D21 rails. Record<NodeCategory, string> is exhaustive by design:
+  // adding a category without a colour here is a compile error, which is how this
+  // miss surfaced.
+  Governance: '#8b5cf6',
+  Lending: '#14b8a6',
 }
 
 /** Shape of a node as returned by the backend on a fetched action. */

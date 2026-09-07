@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { CATEGORY_COLOR, NODE_CATALOG_BY_TYPE, categoryFor } from '../node-catalog'
+import { CATEGORY_COLOR, NODE_CATALOG_BY_TYPE, PREVIEW_NOT_ENABLED_LABEL, categoryFor, isPreviewNodeType } from '../node-catalog'
 import { isValidJsonConfig } from '../dag-analysis'
 import type { ActionNodeData } from '../action-node'
 
@@ -21,9 +21,19 @@ interface NodeInspectorProps {
 /** Inspector body for the selected node: name, type badges, entry/terminal flags, JSON config. */
 export function NodeInspector({ node, onPatch, onDelete }: NodeInspectorProps) {
   const configValid = useMemo(() => isValidJsonConfig(node.data.config), [node.data.config])
+  const isPreview = isPreviewNodeType(node.data.nodeType)
 
   return (
     <>
+      {isPreview && (
+        <div
+          role="alert"
+          className="rounded border border-amber-500/60 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+        >
+          <span className="font-semibold">{PREVIEW_NOT_ENABLED_LABEL}.</span> This node type is mirrored from the
+          backend but cannot run yet; a run that reaches it will not settle. Its design track must land before this flow ships.
+        </div>
+      )}
       <div className="space-y-1.5">
         <Label className="text-xs">Name</Label>
         <Input
@@ -40,6 +50,9 @@ export function NodeInspector({ node, onPatch, onDelete }: NodeInspectorProps) {
           </Badge>
           {NODE_CATALOG_BY_TYPE[node.data.nodeType]?.requiresChain && (
             <Badge variant="outline" className="text-[9px]">on-chain</Badge>
+          )}
+          {isPreview && (
+            <Badge variant="outline" className="border-amber-500 text-[9px] text-amber-700 dark:text-amber-400">preview</Badge>
           )}
         </div>
       </div>

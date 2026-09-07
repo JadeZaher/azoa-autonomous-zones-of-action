@@ -262,6 +262,160 @@ export interface NftBurnParams {
   walletId: string;
 }
 
+// ─── Credential types matching .NET DTOs (CredentialController, D19) ───
+
+/** Mirrors .NET CredentialRevokeRequest — the body for `POST /api/credential/{assetId}/revoke`. */
+export interface CredentialRevokeParams {
+  /** Chain the credential lives on. Algorand-only (ASA clawback) in v1. */
+  chainType: string;
+  /** Optional free-text reason recorded on the operation row. */
+  reason?: string;
+}
+
+/** The OperationStatus constants a revocation can carry; only "Completed" is a confirmed clawback. */
+export type CredentialRevokeStatus = "Completed" | "PendingConfirmation" | "Failed";
+
+/**
+ * Mirrors .NET CredentialRevokeResult. `status` is the ONLY authority on what happened —
+ * branch on it (or `isConfirmed`), never on "the call returned a result". The SDK never
+ * returns a "PendingConfirmation" outcome as `ok`; see {@link isCredentialRevocationPending}.
+ */
+export interface CredentialRevokeResult {
+  /** Chain-native asset id (ASA id) of the revoked credential. */
+  assetId: string;
+  /** AZOA's ownership-row id for the credential. */
+  credentialId: string;
+  /** The issuer that authorized this revocation — never the holder. */
+  issuerUserId: string;
+  /** The user the credential was taken from. */
+  holderUserId: string;
+  /** On-chain address the credential was clawed back FROM. */
+  holderAddress: string;
+  /** On-chain address the credential was clawed back TO (the issuer's wallet). */
+  recipientAddress: string;
+  chainType: string;
+  status: CredentialRevokeStatus;
+  /** True only when `status` is "Completed". */
+  isConfirmed: boolean;
+  /** Present whenever a transaction reached the network — including unconfirmed / failed-after-broadcast. */
+  txHash?: string;
+  /** The `CredentialRevoke` operation row recording this move (D16 analytics). */
+  operationId: string;
+  /** True when this response replays a prior revocation under the same idempotency key. */
+  replayed: boolean;
+}
+
+/**
+ * True when a revoke came back HTTP 202: broadcast but NOT confirmed. The credential may
+ * or may not have moved — reconcile against chain truth; do NOT re-submit.
+ */
+export function isCredentialRevocationPending(error: SdkError): boolean {
+  return error.code === SdkErrorCode.API_ERROR && error.status === 202;
+}
+
+// ─── Analytics types matching .NET DTOs (AnalyticsController, D16) ───
+
+/** Mirrors .NET AnalyticsQueryRequest (sent as querystring). ISO-8601 window bounds; skip/take page. */
+export interface AnalyticsQueryParams {
+  from?: string;
+  to?: string;
+  skip?: number;
+  take?: number;
+}
+
+/** Mirrors .NET PricingStatus. "NeverPriced" is a fact, not a zero — never default `value` to 0. */
+export type PricingStatus = "NeverPriced" | "Priced";
+
+/** Mirrors .NET QuantityStatus. "Unknown" is a fact, not a zero — never read `amount ?? "0"`. */
+export type QuantityStatus = "Unknown" | "Known";
+
+/** Mirrors .NET ValueStampResponse — every component a string. */
+export interface ValueStampResponse {
+  /** ISO-4217 code of the stamped currency. */
+  currencyCode: string;
+  /** Decimal string in the currency's minor unit. */
+  minorUnits: string;
+  /** The rate applied; "0" is a real quote of zero, not an absent one. */
+  rate: string;
+  /** When the applied rate was observed — not when it was applied. */
+  rateAsOf: string;
+  rateSource: string;
+}
+
+/** Mirrors .NET TransactionHistoryEntry. Money fields are base-unit decimal strings, never numbers. */
+export interface TransactionHistoryEntry {
+  operationId: string;
+  timestamp: string;
+  settledAt?: string;
+  operationType: string;
+  /** An OperationStatus constant. */
+  status: string;
+  assetType?: string;
+  assetId?: string;
+  chainType?: string;
+  /** Base-unit decimal string; absent iff `amountStatus` is "Unknown". */
+  amount?: string;
+  amountStatus: QuantityStatus;
+  counterpartyAddress?: string;
+  txHash?: string;
+  /** Base-unit decimal string. */
+  fee?: string;
+  /** False for Swap/Exchange/Deploy/Call and non-broadcast rows — not a pricing gap. */
+  isStampable: boolean;
+  pricing: PricingStatus;
+  /** Present iff `pricing` is "Priced". */
+  value?: ValueStampResponse;
+}
+
+/** Mirrors .NET TransactionHistoryPage — one page, newest first. */
+export interface TransactionHistoryPage {
+  items: TransactionHistoryEntry[];
+  skip: number;
+  take: number;
+  hasMore: boolean;
+  /** Rows in this page carrying no value stamp. */
+  unpricedEntryCount: number;
+  /** Rows in this page whose quantity the log does not record. */
+  unknownAmountEntryCount: number;
+}
+
+/** Mirrors .NET FiatValueResponse. Present only when every contributing entry was really priced. */
+export interface FiatValueResponse {
+  currencyCode: string;
+  /** Signed decimal string in the currency's minor unit. */
+  minorUnits: string;
+}
+
+/** Mirrors .NET PositionSummary. A fiat total is either complete or absent — never a partial sum. */
+export interface PositionSummary {
+  chainType?: string;
+  /** Absent means the chain's own native asset. */
+  assetId?: string;
+  /** Signed base-unit decimal string of settled, direction-classified movement. */
+  quantity: string;
+  entryCount: number;
+  unsettledEntryCount: number;
+  unclassifiedEntryCount: number;
+  unknownAmountEntryCount: number;
+  isQuantityComplete: boolean;
+  pricedEntryCount: number;
+  unpricedEntryCount: number;
+  /** Subset of `unpricedEntryCount` that can NEVER be stamped by design (e.g. Swap). */
+  unstampableEntryCount: number;
+  isValueComplete: boolean;
+  /** Absent unless the position is value- and quantity-complete in one currency. */
+  realizedValue?: FiatValueResponse;
+  /** Always absent today: no current-rate source exists. */
+  unrealizedValue?: FiatValueResponse;
+}
+
+/** Mirrors .NET PositionsResponse. `isComplete: false` = truncated scan, never a final total. */
+export interface PositionsResponse {
+  items: PositionSummary[];
+  scannedEntryCount: number;
+  isComplete: boolean;
+}
+
 // ─── Swap types (match SwapController DTOs) ───
 
 /** Mirrors .NET SwapQuoteRequest (sent as querystring). */
@@ -545,6 +699,11 @@ export type ActionNodeType =
   | "UserNftMint" | "UserNftTransfer" | "UserNftVerify"
   | "BlockchainExecute"
   | "Gate" | "Delay" | "Webhook" | "Script"
+  // Value-rail primitives (mirrors backend ActionNodeType). Governance + CredentialRevoke are
+  // NOT enabled server-side (governance-vote-of-record_20260906, credential-third-party-issuance_20260906).
+  | "CredentialRevoke"
+  | "GovernanceProposalCreate" | "GovernanceVote" | "GovernanceTally"
+  | "LoanOpen" | "LoanRepaymentRecord" | "LoanBalance"
   | string; // extensible
 
 export interface ActionNodeResult {
@@ -1054,6 +1213,18 @@ function assertPositiveUlongDecimal(value: string, paramName: string): void {
   }
 }
 
+/** Appends the defined AnalyticsQueryParams as a querystring. */
+function withAnalyticsQuery(path: string, query?: AnalyticsQueryParams): string {
+  const qs = new URLSearchParams();
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) qs.set(key, String(value));
+    }
+  }
+  const encoded = qs.toString();
+  return encoded ? `${path}?${encoded}` : path;
+}
+
 export class AzoaApiClient {
   private config: AzoaApiConfig;
   private _refreshInFlight: Promise<string> | null = null;
@@ -1294,6 +1465,52 @@ export class AzoaApiClient {
   async getNftMetadata(nftId: string): Promise<Result<NftMetadata, SdkError>> {
     assertUuid(nftId, "nftId");
     return this.request("GET", `/api/nft/${nftId}/metadata`);
+  }
+
+  // ─── Credential (CredentialController, D19) ───
+
+  /**
+   * Revoke a soulbound credential (issuer-only ASA clawback). Maps to
+   * `POST /api/credential/{assetId}/revoke`. KYC-gated, scope-gated
+   * (`credential:revoke:sign`) and idempotent — `options.idempotencyKey` sets the
+   * `Idempotency-Key` header; a duplicate call replays the ORIGINAL result with
+   * `replayed: true`.
+   *
+   * NOT yet enabled server-side (credential-third-party-issuance_20260906); this
+   * method exists for parity with the backend surface.
+   *
+   * A PendingConfirmation outcome (HTTP 202, broadcast but unconfirmed) is NEVER
+   * returned as `ok` — it surfaces as an `SdkError` with `status: 202`. Detect it
+   * with {@link isCredentialRevocationPending} and reconcile rather than re-submit.
+   */
+  async revokeCredential(
+    assetId: string,
+    params: CredentialRevokeParams,
+    options?: { idempotencyKey?: string }
+  ): Promise<Result<CredentialRevokeResult, SdkError>> {
+    assertNonEmpty(assetId, "assetId");
+    const extraHeaders = options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined;
+    return this.request<CredentialRevokeResult>(
+      "POST",
+      API_PATHS.CREDENTIAL_REVOKE(assetId),
+      params,
+      false,
+      extraHeaders
+    );
+  }
+
+  // ─── Analytics (AnalyticsController, D16) ───
+
+  /** One page of the caller's operation history, newest first. Unpriced / unknown-quantity rows stay flagged — never coerce to 0. */
+  async getAnalyticsTransactions(query?: AnalyticsQueryParams): Promise<Result<TransactionHistoryPage, SdkError>> {
+    return this.request<TransactionHistoryPage>("GET", withAnalyticsQuery(API_PATHS.ANALYTICS_TRANSACTIONS, query));
+  }
+
+  /** Net movement per (chain, asset) over the window. `isComplete: false` means a truncated scan. */
+  async getAnalyticsPositions(query?: AnalyticsQueryParams): Promise<Result<PositionsResponse, SdkError>> {
+    return this.request<PositionsResponse>("GET", withAnalyticsQuery(API_PATHS.ANALYTICS_POSITIONS, query));
   }
 
   // ─── Bridge ───

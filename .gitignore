@@ -193,6 +193,11 @@ pnpm-lock.yaml
 # The SDK's executable test suite is part of the published-client contract and
 # must remain visible to its CI vitest job.
 !sdk/azoa-wallet/**/*.test.ts
+# The frontend's vitest suite is likewise executable contract, not scratch.
+# Without this the action-builder drift guard (node-catalog-mirror.test.ts) is
+# silently untrackable, which is exactly how the mirrors lagged the backend enum
+# by seven node types unnoticed.
+!frontend/src/**/*.test.ts
 
 # Build artifacts
 dist/

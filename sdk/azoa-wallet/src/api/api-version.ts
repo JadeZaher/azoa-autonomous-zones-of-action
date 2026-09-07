@@ -32,7 +32,9 @@ export type ApiController =
   | "tenant"
   | "holontypes"
   | "sagaoperator"
-  | "keyrotation";
+  | "keyrotation"
+  | "credential"
+  | "analytics";
 
 /**
  * Resolves the API path for a given controller and sub-path.
@@ -190,6 +192,15 @@ export const API_PATHS = {
 
   // Wallet wrapping-key rotation (KeyRotationController, final-hardening B5). Operator-scoped.
   KEY_ROTATION_ROTATE: "/api/admin/key-rotation/rotate",
+
+  // Soulbound credential revocation (CredentialController, D19). Issuer-only ASA
+  // clawback; NOT enabled server-side yet (credential-third-party-issuance_20260906).
+  CREDENTIAL_REVOKE: (assetId: string) => `/api/credential/${encodeURIComponent(assetId)}/revoke`,
+
+  // Analytics read surface (AnalyticsController, D16): operation history + positions.
+  // Unpriced / unknown-quantity rows are flagged by enum, never rendered as zero.
+  ANALYTICS_TRANSACTIONS: "/api/analytics/transactions",
+  ANALYTICS_POSITIONS: "/api/analytics/positions",
 
   // API-key issuance discovery + rotation (dapp-developer-experience audit).
   // `scopes` lists the self-issuable scope vocabulary; `rotate` mints a successor key.

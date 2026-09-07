@@ -10,7 +10,8 @@
  * Presets intentionally use only Tier-0/Tier-1 node types (no on-chain
  * `requiresChain` nodes) so they pass DAG validation and can be saved without a
  * tenant chain capability. The "Token Launch" preset is the one exception and
- * is flagged accordingly.
+ * is flagged accordingly. Presets never reference a `status: 'preview'` node
+ * type (governance / credential) — those are mirrored but not enabled.
  */
 
 import { NODE_CATALOG_BY_TYPE } from './node-catalog'
@@ -529,6 +530,42 @@ export const ACTION_PRESETS: ActionPreset[] = [
       { from: 'membership', to: 'bridge' },
       { from: 'bridge', to: 'project-token' },
       { from: 'project-token', to: 'emit-peg' },
+    ],
+  },
+
+  // ─── Credit rails (Phase 5 D21) ───
+  // Pure-DB loan ledger. Every node returns the same LoanBalanceProjection, so each
+  // downstream node binds `loanHolonId` from its DIRECT predecessor's `loanId`.
+  // Money is a base-unit decimal STRING ("1000000"), never a JS number.
+  {
+    id: 'loan-tracker',
+    name: 'Loan Tracker',
+    description: 'Open a loan → record a repayment → project the outstanding balance. Pure-DB; no chain needed.',
+    nodes: [
+      {
+        key: 'open',
+        nodeType: 'LoanOpen',
+        label: 'OpenLoan',
+        config: '{\n  "principal": "1000000",\n  "currencyCode": "USD",\n  "currencyKind": null,\n  "name": "DemoLoan",\n  "description": null,\n  "parentHolonId": null,\n  "borrowerUserId": null,\n  "lenderUserId": null,\n  "reference": null\n}',
+        isEntry: true,
+      },
+      {
+        key: 'repay',
+        nodeType: 'LoanRepaymentRecord',
+        label: 'RecordRepayment',
+        config: '{\n  "loanHolonId": { "$from": "upstream.OpenLoan.loanId" },\n  "amount": "250000",\n  "entryKind": null,\n  "reference": null\n}',
+      },
+      {
+        key: 'balance',
+        nodeType: 'LoanBalance',
+        label: 'LoanBalance',
+        config: '{\n  "loanHolonId": { "$from": "upstream.RecordRepayment.loanId" }\n}',
+        isTerminal: true,
+      },
+    ],
+    edges: [
+      { from: 'open', to: 'repay' },
+      { from: 'repay', to: 'balance' },
     ],
   },
 ]

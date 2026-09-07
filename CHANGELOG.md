@@ -12,7 +12,7 @@ remaining after this tag are operator actions (`railway up` + secret/guardian-se
 provisioning), documented in `docs/NODE-HOST.md`.
 
 ### Core platform
-- Self-sovereign user identity (self-owned users, external-wallet
+- Self-sovereign user identity (self-owned identities, external-wallet
   challenge-signature auth) with a revocable, live-checked tenant-consent model
   (`KeyCustodyService` + `TenantConsentGate`).
 - Durable Action workflow engine: DAG-defined multi-step workflows (gates,

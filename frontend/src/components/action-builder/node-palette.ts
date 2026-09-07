@@ -34,6 +34,7 @@ export function buildPalette(templates: NodeTemplateMeta[]): PaletteEntry[] {
       description: t.description ?? base?.description ?? `Template for ${t.nodeType}`,
       defaultConfig: t.defaultConfig ?? base?.defaultConfig ?? '{}',
       requiresChain: base?.requiresChain,
+      status: base?.status,
       templateId: t.id,
       templateName: t.name,
     })

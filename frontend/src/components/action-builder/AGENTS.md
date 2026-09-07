@@ -34,8 +34,8 @@ purpose is not discoverable that cheaply, so purpose is what lives here.
 | `panels/*` | Presentational only. No state beyond local view concerns. |
 | `edge-model.ts` | `EdgeData` + `edgeStyle` (edge type → stroke/dash/animation). |
 | `node-palette.ts` | Catalog ∪ API node templates → `PaletteEntry[]`. |
-| `node-catalog.ts` | The static `NodeTypeMeta` table mirroring the backend `ActionNodeType` enum, plus category colors/order. |
-| `node-output-schema.ts` | Per-node-type output shape mirror, used to check `$from` bindings and to annotate run output. |
+| `node-catalog.ts` | The static `NodeTypeMeta` table mirroring the backend `ActionNodeType` enum (50 members, see §catalog-status), plus category colors/order and the `status` preview flag. |
+| `node-output-schema.ts` | Per-node-type output shape mirror (same 50 members), used to check `$from` bindings and to annotate run output. |
 | `presets.ts` | Starter flows offered by the toolbar's Presets menu. |
 | `layout.ts` | Execution-layered auto-layout (`layoutGraph`), shared with the read-only renders. |
 | `dag-analysis.ts` | `$from` binding-site collection, dominator dataflow, config-JSON validity. |
@@ -301,6 +301,53 @@ reactive effect that exists purely to call `setState`, and every path that
 changes `filter` already goes through this one setter, so there's nothing an
 effect would catch that the setter itself doesn't already know about.
 
+## §catalog-status
+
+`NODE_CATALOG` and `NODE_OUTPUT_SHAPE` each mirror **all 50** members of the
+backend `ActionNodeType` enum (`Models/Actions/ActionEnums.cs`), one entry per
+member, no more, no less. The catalog header has promised that since the file
+was born, and it was still seven members short after the Phase 5 rails
+(credential D19, governance D20, credit D21) landed server-side — nothing on the
+client failed, because `getOutputShapeMirror` treats an unknown type as open and
+the palette simply never offered the node. `__tests__/node-catalog-mirror.test.ts`
+now carries the enum transcribed verbatim and fails the moment either mirror is
+missing a member or carries one the backend doesn't know; adding a backend node
+type is not finished until that list, the catalog and the shape map move together.
+
+Two categories were added for the rails: `Governance` (proposal / vote / tally,
+pure-DB) and `Lending` (loan ledger, pure-DB). `CredentialRevoke` sits under
+`User` beside `UserNFTGetComposite` — a credential is a holder-bound identity
+asset, not an economic primitive — and is the only Tier-2 (`requiresChain`) node
+outside `Economic`, because revocation publishes an Algorand clawback. Every
+money field in the Lending configs is a base-unit decimal **string**; a JS number
+silently loses precision past 2^53 and the backend `RailAmount` rejects it.
+
+`NodeTypeMeta.status` (`'stable'` | `'preview'`, default stable) exists because
+mirroring the enum and endorsing a node are different promises. Two primitives
+are wired but **not enabled**: governance has a live Sybil hole (the tally counts
+raw holons; fix tracked as `governance-vote-of-record_20260906`) and credential
+revocation is inert until `credential-third-party-issuance_20260906`. Hiding
+those four would break the mirror, so they stay in the palette with
+`status: 'preview'`, which the palette renders as a dashed, muted row with a
+`preview` badge and a tooltip that opens with `PREVIEW_NOT_ENABLED_LABEL`, and
+the inspector renders as an amber `role="alert"` banner above the name field.
+`node-palette.ts` copies `status` onto template-backed rows so an API template
+for a preview type cannot launder it into a buildable one. Presets never
+reference a preview type (the drift-guard test asserts it); the one Phase 5
+preset is `loan-tracker`, whose `LoanRepaymentRecord` and `LoanBalance` nodes
+bind `loanHolonId` from their direct predecessor's `loanId` — all three loan
+nodes return the same flat camelCase `LoanBalanceProjection`, so the chain works
+with `upstream.` rather than `run.` bindings. Node names are labels, so those
+labels are single tokens (`OpenLoan`, `RecordRepayment`) to keep the `$from`
+path readable.
+
+Output-shape casing is not uniform across the rails and must not be "tidied":
+`CredentialRevoke` serializes `CredentialRevokeResult` directly (PascalCase),
+while the governance and loan handlers emit camelCase dictionaries. The presence
+check is case-insensitive, so a wrong case would pass here and fail nowhere until
+a run — the mirror copies the backend exactly precisely so a reader can diff it
+against `Services/Actions/ActionNodeOutputSchema.cs` by eye.
+
 ## §serialization
 
 `BuiltGraph.edges[].sourceNodeId` / `targetNodeId` are **array indices into
@@ -343,6 +390,13 @@ What the harness has to paper over, and why:
   `clickToolbarButton`, never `element.click()`, which is not act-wrapped.
 - Base UI keeps a closing popup mounted for its exit animation, so assert on
   `[data-slot="popover-content"][data-open]`, not mere presence.
+
+`__tests__/node-catalog-mirror.test.ts` is the one pure-data test: no DOM, no
+harness. It pins the 50-member `ActionNodeType` transcription against both
+mirrors in both directions (missing AND extra), the preview set, the
+chain-capability split, string-typed money, category order/color coverage, and
+preset loadability. When the backend enum changes, this is the test that goes
+red first — update the transcription in the same commit as the mirrors.
 
 ## §known-quirks
 

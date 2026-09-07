@@ -917,7 +917,8 @@ dotnet build azoa.sln --no-incremental  # expect: 0 errors, 23 warnings
 ```
 
 ⚠ **Green is not done.** Two Phase 5 primitives shipped with known open defects
-and **must not be enabled** — see the track's Phase 5b section. Both are the same
+and are now **gated by a real control** (`Services/Actions/NotEnabledActionNodeTypes`)
+— see the track's Phase 5b section. Both are the same
 recurring shape: *a control exists, is invoked on one path, and the consumer of
 its result never checks it.* Third instance in the §2 ledger.
 

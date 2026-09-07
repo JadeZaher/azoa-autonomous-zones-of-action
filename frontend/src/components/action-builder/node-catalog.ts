@@ -17,6 +17,11 @@ export type NodeCategory =
   | 'Blockchain'
   | 'Control'
   | 'Economic'
+  | 'Governance'
+  | 'Lending'
+
+/** 'preview' = mirrored from the backend enum but NOT enabled to run; see `AGENTS.md` §catalog-status. */
+export type NodeStatus = 'stable' | 'preview'
 
 export interface NodeTypeMeta {
   /** Matches the backend ActionNodeType enum name. */
@@ -30,6 +35,8 @@ export interface NodeTypeMeta {
   defaultConfig: string
   /** True for nodes that require an on-chain capability (Tier-2 economic). */
   requiresChain?: boolean
+  /** Buildability; defaults to 'stable'. Preview nodes stay in the palette but are badged as not enabled. */
+  status?: NodeStatus
 }
 
 const J = (o: Record<string, unknown>) => JSON.stringify(o, null, 2)
@@ -77,6 +84,9 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
 
   // ─── User ───
   { type: 'UserNFTGetComposite', category: 'User', label: 'Composite User NFT', description: 'Fetch composite user NFT', defaultConfig: J({ userId: '' }) },
+  // Verifiable-credential rails (Phase 5 D19): revocation publishes an Algorand clawback, so it is the
+  // ONLY Tier-2 node outside Economic. PREVIEW: revocation is inert until credential-third-party-issuance lands.
+  { type: 'CredentialRevoke', category: 'User', label: 'Revoke Credential', description: 'Preview — not enabled. Revoke a holder credential on-chain (Algorand clawback); cannot run yet', defaultConfig: J({ chainType: 'Algorand', assetId: '', reason: null }), requiresChain: true, status: 'preview' },
 
   // ─── Blockchain ───
   { type: 'BlockchainExecute', category: 'Blockchain', label: 'Execute On-chain', description: 'Execute a raw blockchain operation', defaultConfig: J({ chain: '', operation: '' }) },
@@ -104,6 +114,19 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   // only — peg/valuation is tenant-side (compute it and hand it off via Emit).
   { type: 'Bridge', category: 'Economic', label: 'Bridge', description: 'Lock/bridge an asset cross-chain (real bridge; peg stays tenant-side)', defaultConfig: J({ sourceChain: 'Algorand', targetChain: '', tokenId: '', recipientAddress: '', amount: 1, mode: null }), requiresChain: true },
   { type: 'Back', category: 'Economic', label: 'Back (Reverse Bridge)', description: 'Reverse a prior Bridge: burn wrapped on target, release original on source', defaultConfig: J({ bridgeTransactionId: '', sourceRecipientAddress: '' }), requiresChain: true },
+
+  // ─── Governance (Tier-1, pure-DB) — PREVIEW ───
+  // Mirrored so the catalog stays complete, but NOT enabled: the tally counts raw holons (Sybil hole)
+  // until governance-vote-of-record lands. See AGENTS.md §catalog-status.
+  { type: 'GovernanceProposalCreate', category: 'Governance', label: 'Create Proposal', description: 'Preview — not enabled. Open a governance proposal holon with options and a voting window; cannot run yet', defaultConfig: J({ name: '', description: '', parentHolonId: null, options: [], opensAt: null, closesAt: null, uniquenessScope: null }), status: 'preview' },
+  { type: 'GovernanceVote', category: 'Governance', label: 'Cast Vote', description: 'Preview — not enabled. Cast a ballot on a proposal; cannot run yet', defaultConfig: J({ proposalHolonId: '', option: '' }), status: 'preview' },
+  { type: 'GovernanceTally', category: 'Governance', label: 'Tally Votes', description: 'Preview — not enabled. Tally ballots on a proposal; cannot run yet', defaultConfig: J({ proposalHolonId: '' }), status: 'preview' },
+
+  // ─── Lending (Tier-1, pure-DB) ───
+  // Credit rails (Phase 5 D21): holonic loan ledger. Money is ALWAYS a base-unit decimal STRING, never a number.
+  { type: 'LoanOpen', category: 'Lending', label: 'Open Loan', description: 'Open a loan ledger holon with a principal (base-unit string)', defaultConfig: J({ principal: '0', currencyCode: '', currencyKind: null, name: null, description: null, parentHolonId: null, borrowerUserId: null, lenderUserId: null, reference: null }) },
+  { type: 'LoanRepaymentRecord', category: 'Lending', label: 'Record Repayment', description: 'Record a repayment (or write-off) entry against a loan', defaultConfig: J({ loanHolonId: '', amount: '0', entryKind: null, reference: null }) },
+  { type: 'LoanBalance', category: 'Lending', label: 'Loan Balance', description: 'Project the outstanding balance of a loan ledger', defaultConfig: J({ loanHolonId: '' }) },
 ]
 
 export const NODE_CATALOG_BY_TYPE: Record<string, NodeTypeMeta> = Object.fromEntries(
@@ -111,7 +134,7 @@ export const NODE_CATALOG_BY_TYPE: Record<string, NodeTypeMeta> = Object.fromEnt
 )
 
 export const CATEGORY_ORDER: NodeCategory[] = [
-  'Holon', 'NFT', 'Wallet', 'STAR', 'Search', 'User', 'Blockchain', 'Control', 'Economic',
+  'Holon', 'NFT', 'Wallet', 'STAR', 'Search', 'User', 'Blockchain', 'Control', 'Economic', 'Governance', 'Lending',
 ]
 
 /** Tailwind classes for the colored left-border / accent per category. */
@@ -125,6 +148,16 @@ export const CATEGORY_COLOR: Record<NodeCategory, { border: string; badge: strin
   Blockchain: { border: 'border-l-orange-500', badge: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300', dot: 'bg-orange-500' },
   Control: { border: 'border-l-slate-500', badge: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300', dot: 'bg-slate-500' },
   Economic: { border: 'border-l-rose-500', badge: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300', dot: 'bg-rose-500' },
+  Governance: { border: 'border-l-indigo-500', badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300', dot: 'bg-indigo-500' },
+  Lending: { border: 'border-l-teal-500', badge: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300', dot: 'bg-teal-500' },
+}
+
+/** Human copy for the preview badge / banner — one string so palette and inspector never drift. */
+export const PREVIEW_NOT_ENABLED_LABEL = 'Preview — not enabled'
+
+/** True when the catalog marks this node type as preview (mirrored, but cannot run yet). */
+export function isPreviewNodeType(nodeType: string): boolean {
+  return NODE_CATALOG_BY_TYPE[nodeType]?.status === 'preview'
 }
 
 /** Best-effort category lookup for an arbitrary node type string. */

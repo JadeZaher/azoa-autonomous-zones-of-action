@@ -61,7 +61,7 @@ export type { TinymanConfig, AlgodClientConfig } from "./dex/tinyman.js";
 export type { JupiterConfig } from "./dex/jupiter.js";
 
 // API client
-export { AzoaApiClient, DAPP_ROLES } from "./api/index.js";
+export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./api/index.js";
 export type {
   AzoaApiConfig,
   // user-dapp-rbac: assignable DApp role allowlist + user DTO
@@ -116,6 +116,20 @@ export type {
   SagaStepCancelResult,
   KeyRotationReport,
   KeyRotationParams,
+  // Credential revocation (CredentialController, D19) — parity only; rail not enabled server-side
+  CredentialRevokeParams,
+  CredentialRevokeStatus,
+  CredentialRevokeResult,
+  // Analytics read surface (AnalyticsController, D16)
+  AnalyticsQueryParams,
+  PricingStatus,
+  QuantityStatus,
+  ValueStampResponse,
+  TransactionHistoryEntry,
+  TransactionHistoryPage,
+  FiatValueResponse,
+  PositionSummary,
+  PositionsResponse,
 } from "./api/index.js";
 
 // High-level client

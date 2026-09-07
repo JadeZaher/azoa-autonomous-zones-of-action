@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { CATEGORY_COLOR, CATEGORY_ORDER, type NodeCategory } from '../node-catalog'
+import { CATEGORY_COLOR, CATEGORY_ORDER, PREVIEW_NOT_ENABLED_LABEL, type NodeCategory } from '../node-catalog'
 import type { PaletteEntry } from '../node-palette'
 
 interface NodePalettePanelProps {
@@ -20,6 +20,10 @@ interface NodePalettePanelProps {
 }
 
 const rowKey = (entry: PaletteEntry) => `${entry.type}:${entry.templateId ?? 'builtin'}`
+
+/** Tooltip text; preview rows say up front that they cannot run yet. */
+const rowTitle = (entry: PaletteEntry) =>
+  entry.status === 'preview' ? `${PREVIEW_NOT_ENABLED_LABEL}. ${entry.description}` : entry.description
 
 /** Left column: searchable, category-grouped, keyboard-navigable list of draggable node types. */
 export function NodePalettePanel({
@@ -85,6 +89,7 @@ export function NodePalettePanel({
                 <div className="space-y-1">
                   {items.map((entry) => {
                     const isActive = entry === activeEntry
+                    const isPreview = entry.status === 'preview'
                     return (
                       <button
                         key={rowKey(entry)}
@@ -97,12 +102,21 @@ export function NodePalettePanel({
                         onDragStart={(e) => onDragStart(e, entry.type, entry.templateId)}
                         onClick={() => onAddNode(entry)}
                         onMouseEnter={() => onSetActiveEntry(entry)}
-                        title={entry.description}
+                        title={rowTitle(entry)}
                         className={`flex w-full cursor-grab items-center justify-between rounded border border-l-2 bg-background px-2 py-1 text-left text-xs transition-colors hover:bg-accent active:cursor-grabbing ${CATEGORY_COLOR[cat].border} ${
                           isActive ? 'bg-accent ring-1 ring-primary/50' : ''
-                        }`}
+                        } ${isPreview ? 'border-dashed text-muted-foreground' : ''}`}
                       >
                         <span className="truncate">{entry.label}</span>
+                        {isPreview && (
+                          <Badge
+                            variant="outline"
+                            aria-label={PREVIEW_NOT_ENABLED_LABEL}
+                            className="ml-1 shrink-0 border-amber-500 px-1 py-0 text-[8px] text-amber-700 dark:text-amber-400"
+                          >
+                            preview
+                          </Badge>
+                        )}
                         {entry.templateId && (
                           <Badge variant="outline" className="ml-1 shrink-0 text-[8px] px-1 py-0">
                             tpl

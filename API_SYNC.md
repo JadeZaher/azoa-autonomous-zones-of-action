@@ -25,6 +25,8 @@ allocation receipt endpoint for allocation status.
 | | /api/user | GET | `getAllUsers` | client.ts | OK |
 | | /api/user/{id} | PUT | `updateUser` | client.ts | OK |
 | | /api/user/{id} | DELETE | `deleteUser` | client.ts | OK |
+| | /api/user/logout | POST | `logoutEverywhere` | client.ts | OK |
+| | /api/user/{id}/dapp-role | PUT | `assignDappRole` | client.ts | OK |
 | **Wallet** | /api/wallet/{id} | GET | `getWallet` | client.ts | OK |
 | | /api/wallet | GET | `listWallets` | client.ts | OK |
 | | /api/wallet | POST | `createWallet` | client.ts | OK |
@@ -32,16 +34,28 @@ allocation receipt endpoint for allocation status.
 | | /api/wallet/{id} | DELETE | `deleteWallet` | client.ts | OK |
 | | /api/wallet/{id}/set-default | POST | `setDefaultWallet` | client.ts | OK |
 | | /api/wallet/{id}/portfolio | GET | `getWalletPortfolio` | client.ts | OK |
-| | /api/wallet/generate | POST | `generateWallet` | client.ts | OK |
-| | /api/wallet/connect | POST | `connectWallet` | client.ts | OK |
-| | /api/wallet/{id}/export | POST | `exportWallet` | client.ts | OK |
-| | /api/wallet/{id}/topup | POST | `topupWallet` | client.ts | OK |
-| | /api/wallet/types | GET | `getWalletsByType` | client.ts | OK |
-| **Holon** | /api/holon/{id} | GET | `getHolon` | holon-query.ts | OK |
-| | /api/holon | GET | `queryHolons` | holon-query.ts | OK |
-| | /api/holon | POST | `createHolon` | client.ts | OK |
-| | /api/holon/{id} | PUT | `updateHolon` | client.ts | OK |
-| | /api/holon/{id}/compose | GET | `getComposite` | holon-query.ts | OK |
+| | /api/wallet/generate | POST | — | — | **SDK gap** (`generateWallet` no longer in the SDK) |
+| | /api/wallet/connect | POST | — | — | **SDK gap** (`connectWallet` no longer in the SDK) |
+| | /api/wallet/{id}/export | POST | — | — | **SDK gap** (`exportWallet` no longer in the SDK) |
+| | /api/wallet/{id}/topup | POST | — | — | **SDK gap** (`topupWallet` no longer in the SDK) |
+| | /api/wallet/types | GET | — | — | **SDK gap** (`getWalletsByType` no longer in the SDK) |
+| | (no endpoint) | — | `rotateWalletKeys` | client.ts | see KeyRotation — `POST /api/admin/key-rotation/rotate` |
+| **Holon** | /api/holon/{id} | GET | `holons.get` | holon-query.ts | OK |
+| | /api/holon | GET | `holons.execute` (fluent builder) | holon-query.ts | OK |
+| | /api/holon | POST | `holons.create` | holon-query.ts | OK |
+| | /api/holon/{id} | PUT | `holons.update` | holon-query.ts | OK |
+| | /api/holon/{id} | DELETE | `holons.delete` | holon-query.ts | OK |
+| | /api/holon/{id}/compose | GET | `holons.getComposite` | holon-query.ts | OK |
+| | /api/holon/{id}/children | GET | `holons.getChildren` | holon-query.ts | OK |
+| | /api/holon/{id}/peers | GET | `holons.getPeers` | holon-query.ts | OK |
+| | /api/holon/{id}/ancestors | GET | `holons.getAncestors` | holon-query.ts | OK |
+| | /api/holon/{id}/descendants | GET | `holons.getDescendants` | holon-query.ts | OK |
+| | /api/holon/{id}/clone | POST | `holons.clone` | holon-query.ts | OK |
+| | /api/holon/{id}/interact | POST | — | — | **SDK gap** |
+| | /api/holon/{id}/mint | POST | — | — | **SDK gap** |
+| | /api/holon/{id}/exchange | POST | — | — | **SDK gap** |
+| | /api/holon/{id}/propagate | POST | — | — | **SDK gap** |
+| | /api/holon/{id}/move | POST | — | — | **SDK gap** |
 | **NFT** | /api/nft/{id} | GET | `getNft` | client.ts | OK |
 | | /api/nft | GET | `listNfts` | client.ts | OK |
 | | /api/nft/mint | POST | `mintNft` | client.ts | OK (safe operation projection) |
@@ -74,7 +88,9 @@ allocation receipt endpoint for allocation status.
 | | /api/starodk | POST | `createSTARODK` | client.ts | OK |
 | | /api/starodk/{id} | PUT | `updateSTARODK` | client.ts | OK |
 | | /api/starodk/{id} | DELETE | `deleteSTARODK` | client.ts | OK |
-| | /api/starodk/{id}/generate-dapp | POST | `generateSTARDapp` | client.ts | OK |
+| | /api/starodk/{id}/generate | POST | `generateSTARDapp` | client.ts | OK |
+| | /api/starodk/{id}/ecosystem | GET | — | — | **SDK gap** |
+| | /api/starodk/{id}/ecosystem/dapp-series | POST | — | — | **SDK gap** |
 | | /api/starodk/{id}/deploy | POST | `deploySTARODK` | client.ts | OK |
 | **Action** | /api/action | POST | `createAction` | client.ts | OK |
 | | /api/action/{id} | GET | `getAction` | client.ts | OK |
@@ -108,20 +124,60 @@ allocation receipt endpoint for allocation status.
 | | /api/action/runs/{runId}/complete | POST | — | — | **SDK gap** |
 | | /api/action/runs/{runId}/fork | POST | — | — | **SDK gap** |
 | | /api/action/runs/{runId}/mark-failed | POST | — | — | **SDK gap** |
+| | /api/action/public | GET | `listPublicActions` | client.ts | OK |
+| | /api/action/{id}/preview | GET | — | — | **SDK gap** |
+| | /api/action/{id}/start-workflow | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/advance | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/signal | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/reconcile | POST | — | — | **SDK gap** |
+| | /api/action/runs/reconcile-sweep | POST | — | — | **SDK gap** |
+| | /api/action/{id}/run-access | PUT | `setActionRunAccess` | client.ts | OK |
+| | /api/action/{id}/invite | POST | `inviteUser` | client.ts | OK |
+| | /api/action/{id}/invite/{userId} | DELETE | `revokeInvite` | client.ts | OK |
+| | /api/action/{id}/access-requests | POST | `requestActionAccess` | client.ts | OK |
+| | /api/action/{id}/access-requests | GET | `listAccessRequests` | client.ts | OK |
+| | /api/action/access-requests/{requestId}/decision | POST | `decideAccessRequest` | client.ts | OK |
+| | /api/action/access-requests/{requestId}/withdraw | POST | `withdrawAccessRequest` | client.ts | OK |
+| | /api/action/access-requests/mine | GET | `listMyAccessRequests` | client.ts | OK |
 | **Search** | /api/search | POST | `search` | client.ts | OK |
 | | /api/search/facets | GET | `getSearchFacets` | client.ts | OK |
 | **ApiKey** | /api/apikey | POST | `createApiKey` | client.ts | OK |
 | | /api/apikey | GET | `listApiKeys` | client.ts | OK |
 | | /api/apikey/{id}/revoke | POST | `revokeApiKey` | client.ts | OK |
 | | /api/apikey/{id} | DELETE | `deleteApiKey` | client.ts | OK |
-| **DappComposition** | /api/dappcomposition/{id} | GET | `getDappComposition` | client.ts | OK |
-| **DappSeries** | /api/dappseries/{id} | GET | `getDappSeries` | client.ts | OK |
-| | /api/dappseries | GET | `queryDappSeries` | client.ts | OK |
-| | /api/dappseries | POST | `createDappSeries` | client.ts | OK |
-| | /api/dappseries/{id} | PUT | `updateDappSeries` | client.ts | OK |
+| | /api/apikey/{id}/rotate | POST | `rotateApiKey` | client.ts | OK |
+| | /api/apikey/scopes | GET | `listIssuableScopes`, `listSelfIssuableApiKeyScopes` | client.ts | OK |
+| | /api/apikey/tenant | POST | — | — | **SDK gap** (tenant-scoped key issuance) |
+| **DappComposition** | /api/dapp-series/{id}/compose | POST | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/validate | GET | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/manifest | GET | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/generate | POST | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/deploy | POST | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/status | GET | — | — | **SDK gap** |
+| **DappSeries** | /api/dapp-series/{id} | GET | `getDappSeries` | client.ts | OK |
+| | /api/dapp-series | GET | `listDappSeries` | client.ts | OK |
+| | /api/dapp-series | POST | `createDappSeries` | client.ts | OK |
+| | /api/dapp-series/{id} | PUT | `updateDappSeries` | client.ts | OK |
+| | /api/dapp-series/{id} | DELETE | `deleteDappSeries` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions | GET | `listSeriesActions` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions | POST | `addSeriesAction` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions/{actionId} | DELETE | `removeSeriesAction` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions/{actionId}/order | PUT | `reorderSeriesAction` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions/{actionId}/mappings | PUT | `updateSeriesMappings` | client.ts | OK |
 | **Swap** | /api/swap/quote | GET | `getSwapQuote` | client.ts | OK |
 | | /api/swap/execute | POST | `executeSwap` | client.ts | OK |
-| **Network** | /api/network | GET | `getNetworkInfo` | client.ts | OK |
+| **Network** | /api/network | GET | — | — | **SDK gap** (`getNetworkInfo` no longer in the SDK) |
+| **Credential** | /api/credential/{assetId}/revoke | POST | `revokeCredential` | client.ts | OK — see caveat below |
+| **Analytics** | /api/analytics/transactions | GET | `getAnalyticsTransactions` | client.ts | OK |
+| | /api/analytics/positions | GET | `getAnalyticsPositions` | client.ts | OK |
+| **Allocation** | /api/allocation/{userId} | POST | `allocate` | client.ts | OK |
+| **HolonTypeRegistry** | /api/holon-types | GET/POST | `listHolonTypes`, `registerHolonType` | client.ts | OK |
+| | /api/holon-types/{assetType} | GET/DELETE | `getHolonType`, `deleteHolonType` | client.ts | OK |
+| | /api/holon-types/{assetType}/deactivate | POST | `deactivateHolonType` | client.ts | OK |
+| **SagaOperator** | /api/admin/sagas/dead-letters | GET | `listSagaDeadLetters` | client.ts | OK |
+| | /api/admin/sagas/{id}/requeue | POST | `requeueSagaStep` | client.ts | OK |
+| | /api/admin/sagas/{id}/cancel | POST | `cancelSagaStep` | client.ts | OK |
+| **KeyRotation** | /api/admin/key-rotation/rotate | POST | `rotateWalletKeys` | client.ts | OK |
 
 ## Known Drift (Snapshot 2026-06-11)
 
@@ -143,7 +199,15 @@ allocation receipt endpoint for allocation status.
 
 7. **`DELETE /api/action/node-templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
 
-8. **Action sub-resource endpoints (nodes, edges, dependencies, runs) — 16 new controller routes** — Shipped in `action-api` phase-F. No SDK methods exist yet. See the SDK gap rows in the Action section above.
+8. **Action sub-resource endpoints (nodes, edges, dependencies, runs) — 16 controller routes** — Shipped in `action-api` phase-F. No SDK methods exist yet. See the SDK gap rows in the Action section above.
+
+9. **Wallet lifecycle methods regressed out of the SDK** — `generateWallet`, `connectWallet`, `exportWallet`, `topupWallet` and `getWalletsByType` are documented history but no longer exist in `sdk/azoa-wallet/src`. The five controller endpoints are still live, so this is an SDK gap, not a removed surface. Decide whether to restore the methods or retire the routes.
+
+10. **`getNetworkInfo` regressed out of the SDK** — `GET /api/network` is live with no typed method.
+
+11. **Durable-run control surface has no SDK** — `start-workflow`, `advance`, `signal`, `reconcile` and `reconcile-sweep` on `ActionRun` are reachable only through `azoa.api.request(...)`.
+
+12. **Whole controllers with no mapping rows** — `Backfill` (`/api/admin/backfill`), `Consent` (`/api/user/consent`), `ExternalAuth` (`/auth/oauth`), `Kyc` (`/api/kyc`), `KycCallback` (`/api/kyc/callback`), `NodeGovernance` (`/api/node-governance`), `NodeOperator` (`/api/operator`), `NodeOperatorSession` (`/api/operator/session`), `NodeTransparency` (`/api/node-transparency`), `TenantConsent` (`/api/tenant/consent`), `TenantKycConfiguration` (`/api/tenant/kyc`), `WalletAuth` (`/api/user`, wallet-challenge login) and the non-custodial half of `Tenant` (`/api/tenant`). Several are deliberately operator- or webhook-only surfaces that no browser SDK should call; the rest are genuine gaps. Classify each before the next SDK minor.
 
 ## How to Keep This Current
 
@@ -160,7 +224,19 @@ allocation receipt endpoint for allocation status.
 
 **CI does not validate this document.** It is a manual gate at PR-review. The author of a PR touching controllers or the SDK is responsible for syncing this table before merge.
 
-**Last reconciled:** 2026-07-18 (tenant custody/KYC SDK contract and bridge route corrections)
+**Last reconciled:** 2026-09-07 — re-derived from `Controllers/*.cs` route attributes and the
+`sdk/azoa-wallet/src` method surface after the Avatar→User / Quest→Action rename and the Phase 5
+landing. Route-level corrections made in this pass: the dapp surface is `/api/dapp-series`, never
+`/api/dappseries` or `/api/dappcomposition`; holon CRUD lives on `HolonQueryBuilder`
+(`holons.get` / `.execute` / `.create` / `.update` / `.delete`), not on `client.ts`; holon types key
+on `{assetType}`, not `{id}`; key rotation is `POST /api/admin/key-rotation/rotate`.
+
+⚠ **Credential caveat.** `POST /api/credential/{assetId}/revoke` and its `revokeCredential` SDK
+method are wired end to end, but the rail behind them **cannot currently revoke anything**: the
+only production mint path stamps the issuer as the holder, so D19's issuer-authorization check is
+vacuous and every real revoke fails its holder-address precondition first. Treat the route as
+present-but-inert until `conductor/tracks/credential-third-party-issuance_20260906` closes. Do not
+document it as a working revocation capability.
 
 **Note:** The actions page (`frontend/src/app/(dashboard)/actions/page.tsx`) uses `azoa.api.request(...)` directly rather than the typed SDK action methods. The publish/unpublish calls on the page are therefore direct HTTP calls, not `publishAction`/`unpublishAction`. The typed SDK methods exist for external SDK consumers. This gap is tracked as part of the existing action sub-resource SDK gap (row 8 in "Open Drift" above).
 

@@ -168,6 +168,13 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
         {
             result = ActionNodeHandlerResult.Fail($"Unsupported node type: {node.NodeType}");
         }
+        else if (NotEnabledActionNodeTypes.IsBlocked(node.NodeType))
+        {
+            // Same refusal as the legacy executor: the durable path must not be a way
+            // around a gate the in-process path enforces.
+            result = ActionNodeHandlerResult.Fail(
+                NotEnabledActionNodeTypes.RefusalMessage(node.NodeType));
+        }
         else if ((handlerRequiresChain = handler.RequiresChainCapability)
             && !await _railGate.HasUsableDestinationAsync(
                 actingUserId, handler.ResolveSettlementRailId(node), ct))

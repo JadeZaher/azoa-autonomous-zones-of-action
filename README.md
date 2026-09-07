@@ -8,7 +8,7 @@ blockchains, fiat, or both.
 
 It is built from three composable layers:
 
-- **Identity** — a self-sovereign user that a person actually owns, and a
+- **Identity** — a self-sovereign identity that a person actually owns, and a
   consent model that lets an app act on their behalf only within explicit,
   revocable permission.
 - **Actions** — durable, structured workflows. An action is a graph of steps
@@ -105,13 +105,25 @@ the responsibility pattern above end to end.
 ## Status
 
 Pre-launch (Alpha Gate). The core platform features have been shipped and hardened:
-- **User Self-Sovereignty & Consent Delegation**: Shipped and code-complete. End users own their users (wallet-challenge login, ed25519), and tenants can only act on behalf of a user under a live, revocable `ConsentGrant`. The security review has been completed and all findings remediated (commit `10e5dad`).
+- **User Self-Sovereignty & Consent Delegation**: Shipped and code-complete. End users own their identities (wallet-challenge login, ed25519), and tenants can only act on behalf of a user under a live, revocable `ConsentGrant`. The security review has been completed and all findings remediated (commit `10e5dad`).
 - **Tenant onboarding + Azoa-owned KYC control plane**: The authenticated tenant can idempotently ensure one user identity per external subject, begin or submit KYC from a profile flow, and read a secret-free readiness projection. Wallet creation is limited to explicit Development simulation until a reviewed production custody adapter exists. See [`docs/TENANT-CUSTODIAL-ONBOARDING.md`](docs/TENANT-CUSTODIAL-ONBOARDING.md).
 - **Node operator control plane**: A reserved, revisioned operator identity and mobile-first `/operator` console expose deployment readiness, KYC provider/tenant policy, and human review without exposing host secrets. See [`docs/NODE-HOST.md`](docs/NODE-HOST.md) §8.9.
 - **Durable Actions & Stepwise Execution**: Shipped. Features stepwise saga execution (`ActionNodeStepHandler`), run-scoped variable data bindings (`run.<node>.<field>`), control-cascade skips (failed check nodes stop downstream payout chains), and publish-time semantic/executability validation.
 - **Visual Action Builder**: Shipped. Replaced the legacy JSON textarea builder with an interactive drag-and-drop React Flow builder interface in the Next.js frontend.
 - **SurrealDB Persistence Cutover**: Shipped. SurrealDB is the sole persistent data engine backing the WebAPI, operating with RocksDB-backed G1 durability.
 - **API Key Scopes & Allowed Origins**: Dynamic CORS allowed origins per API key is implemented / in-flight to secure public and developer-scoped SDK requests.
+- **Three chain providers + a value-rail seam**: Algorand, Solana and Ethereum are registered against `IBlockchainProvider`, and `IValueRailProviderFactory` resolves a rail whether or not it is a chain — so a fiat settlement partner is expressible without pretending to be a blockchain. Bridge capability is a runtime module (`IBridgeSourceLeg` / `IBridgeTargetLeg`), never a boolean: a chain that cannot bridge has no method to call.
+- **KYC/AML + external OAuth**: multi-tenant, fail-closed KYC with a versioned policy envelope, and an `auth/oauth` external-identity surface.
+- **Terminology rename (breaking)**: the platform's domain nouns were neutralized across C#, the SurrealDB schema, REST routes, the SDK and the frontend. The C# entity is `ActionDefinition` with plural namespaces (`Models.Actions`) to dodge a `System.Action` collision under `ImplicitUsings`; the DB table, REST route segment and SDK type are all plain `action`, so the wire surface is unchanged.
+
+**Landed but deliberately NOT enabled — do not describe these as done:**
+
+- **Governance vote / tally (D20)** — has a live Sybil hole. The vote node claims through the person-uniqueness gate, but the tally counts raw child holons and never reads the claim ledger, so ballots posted straight at `POST /api/holon` are counted. Corrective track: `conductor/tracks/governance-vote-of-record_20260906`.
+- **Credential revocation (D19)** — inert. The route authorizes the *issuer*, but the only mint path makes the issuer the holder, so the check is vacuous and every real revoke fails its holder-address precondition first. Corrective track: `conductor/tracks/credential-third-party-issuance_20260906`.
+
+Both failed the same way, and it is worth naming the pattern: *a control is not wired
+until the thing that reads its result is wired too.* See `PROVIDERS.md` §"Phase 5
+primitives that are NOT enabled".
 
 The repository includes unit, integration, schema-equivalence, and release-contract suites. All real-value bridge routes are disabled by default (`RealValueEnabled=false`) and remain non-launchable: no provider currently implements the complete reviewed lock/mint/burn/release plus production-custody lifecycle. Simulated routes remain available for development. See `conductor/tracks.md` for the full roadmap.
 
@@ -132,9 +144,11 @@ A quick orientation for contributors:
 
 - `Controllers/`, `Managers/` — HTTP surface and business logic (identity,
   actions, holons, swaps, STAR, bridge, …)
-- `Core/` — providers, base classes, auth handlers
+- `Core/` — primitives, base classes, auth handlers
+- `Providers/Blockchain/` — chain providers (Algorand, Solana, Ethereum, Simulated),
+  the value-rail factory, and per-chain transaction signers
 - `Persistence/SurrealDb/`, `Providers/Stores/Surreal/` — data engine and
-  per-aggregate stores; conventions in `CONVENTION.md`
+  per-aggregate stores; conventions in `Persistence/SurrealDb/CONVENTION.md`
 - `https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.*` — SurrealDB toolkit (C#-first schema authoring +
   Roslyn injection-guard analyzer)
 - `sdk/azoa-wallet/` — TypeScript SDK

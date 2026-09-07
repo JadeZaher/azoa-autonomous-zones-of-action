@@ -75,6 +75,76 @@ const GATE_CHECK_SHAPE: NodeOutputShapeMirror = {
   fields: { pass: 'scalar' },
 }
 
+/** Flat CredentialRevokeResult — PascalCase because the handler serializes the record directly. */
+const CREDENTIAL_REVOKE_SHAPE: NodeOutputShapeMirror = {
+  open: false,
+  fields: {
+    AssetId: 'scalar',
+    CredentialId: 'scalar',
+    IssuerUserId: 'scalar',
+    HolderUserId: 'scalar',
+    HolderAddress: 'scalar',
+    RecipientAddress: 'scalar',
+    ChainType: 'scalar',
+    Status: 'scalar',
+    IsConfirmed: 'scalar',
+    TxHash: 'scalar',
+    OperationId: 'scalar',
+    Replayed: 'scalar',
+  },
+}
+
+/** Governance handlers emit camelCase dictionary keys (not a serialized record). */
+const GOVERNANCE_PROPOSAL_SHAPE: NodeOutputShapeMirror = {
+  open: false,
+  fields: {
+    proposalId: 'scalar',
+    status: 'scalar',
+    options: 'deep', // Array
+    opensAt: 'scalar',
+    closesAt: 'scalar',
+    uniquenessOperationKey: 'scalar',
+    uniquenessScope: 'scalar',
+    createdAt: 'scalar',
+  },
+}
+
+const GOVERNANCE_VOTE_SHAPE: NodeOutputShapeMirror = {
+  open: false,
+  fields: {
+    proposalId: 'scalar',
+    voteId: 'scalar',
+    option: 'scalar',
+    castAt: 'scalar',
+  },
+}
+
+const GOVERNANCE_TALLY_SHAPE: NodeOutputShapeMirror = {
+  open: false,
+  fields: {
+    proposalId: 'scalar',
+    totalVotes: 'scalar',
+    counts: 'deep', // Object: option → count
+    tallyHash: 'scalar',
+    tallyAt: 'scalar',
+    closesAt: 'scalar',
+  },
+}
+
+/** Flat camelCase LoanBalanceProjection — all three loan nodes return it. Money fields are STRINGS. */
+const LOAN_BALANCE_PROJECTION_SHAPE: NodeOutputShapeMirror = {
+  open: false,
+  fields: {
+    loanId: 'scalar',
+    principal: 'scalar',
+    totalRepaid: 'scalar',
+    totalWrittenOff: 'scalar',
+    outstanding: 'scalar',
+    status: 'scalar',
+    entryCount: 'scalar',
+  },
+}
+
 /** nodeType (matches NODE_CATALOG `type`) → output shape mirror. */
 export const NODE_OUTPUT_SHAPE: Record<string, NodeOutputShapeMirror> = {
   // ── Holon operations ──
@@ -141,6 +211,19 @@ export const NODE_OUTPUT_SHAPE: Record<string, NodeOutputShapeMirror> = {
   // ── Fractionalization rails — flat BridgeTransactionResult ──
   Bridge: BRIDGE_TRANSACTION_SHAPE,
   Back: BRIDGE_TRANSACTION_SHAPE,
+
+  // ── Verifiable-credential rails — flat PascalCase CredentialRevokeResult ──
+  CredentialRevoke: CREDENTIAL_REVOKE_SHAPE,
+
+  // ── Governance rails — flat camelCase dictionaries ──
+  GovernanceProposalCreate: GOVERNANCE_PROPOSAL_SHAPE,
+  GovernanceVote: GOVERNANCE_VOTE_SHAPE,
+  GovernanceTally: GOVERNANCE_TALLY_SHAPE,
+
+  // ── Credit rails — flat camelCase LoanBalanceProjection (shared by all three) ──
+  LoanOpen: LOAN_BALANCE_PROJECTION_SHAPE,
+  LoanRepaymentRecord: LOAN_BALANCE_PROJECTION_SHAPE,
+  LoanBalance: LOAN_BALANCE_PROJECTION_SHAPE,
 }
 
 /**

@@ -27,6 +27,7 @@ import {
   ShieldAlert,
   GitMerge,
   BadgeCheck,
+  BarChart3,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -70,6 +71,7 @@ const navGroups = [
       { href: '/actions', label: 'Actions', icon: Star },
       { href: '/star-odk', label: 'Star ODK', icon: Star },
       { href: '/api-keys', label: 'API Keys', icon: KeyRound },
+      { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],
   },
   {

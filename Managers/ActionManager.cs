@@ -363,6 +363,31 @@ public class ActionManager : IActionManager
         if (action.Status == ActionStatus.Active)
             return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action is already Active." };
 
+        // A not-enabled node type may not become runnable. Publish refuses so a broken
+
+        // primitive cannot enter an Active action; the dispatch seams refuse too, so an
+
+        // already-published action cannot run one either.
+
+        var blockedNode = action.Nodes?.FirstOrDefault(
+
+            n => Services.Actions.NotEnabledActionNodeTypes.IsBlocked(n.NodeType));
+
+        if (blockedNode != null)
+
+            return new AZOAResult<ActionDefinition>
+
+            {
+
+                IsError = true,
+
+                Message = "Publish failed — " + Services.Actions.NotEnabledActionNodeTypes
+
+                    .RefusalMessage(blockedNode.NodeType)
+
+            };
+
+
         // Full validation stack: structural DAG + fan-out-as-error + config check.
         var dagResult = _dagValidator.Validate(action, fanOutAsError: true);
         if (!dagResult.IsValid)
@@ -769,6 +794,13 @@ public class ActionManager : IActionManager
             else if (!_registry.TryGet(node.NodeType, out var handler))
             {
                 result = ActionNodeResults.Fail($"Unsupported node type: {node.NodeType}");
+            }
+            else if (Services.Actions.NotEnabledActionNodeTypes.IsBlocked(node.NodeType))
+            {
+                // Fail closed BEFORE HandleAsync, exactly as the rail gate below does.
+                // These handlers ARE registered and would otherwise execute.
+                result = ActionNodeResults.Fail(
+                    Services.Actions.NotEnabledActionNodeTypes.RefusalMessage(node.NodeType));
             }
             else if (handler.RequiresChainCapability
                 && !await _railGate.HasUsableDestinationAsync(
