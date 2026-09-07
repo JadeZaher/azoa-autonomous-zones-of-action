@@ -841,18 +841,32 @@ later) was **rejected**. *Consequences:*
 - Requires custody, holder opt-in, a **HOLD** primitive (D14 — still absent on
   every path) and a reserve wallet **before the first sponsor**. All critical path.
 
-**D48 — Custody is self-hosted; ArdaNova (the same owner) is the operator and
-custodian of record.** Contract §11.1 ("ArdaNova owns no KMS") and §2 are amended
-to say so in both copies. ⚠ **STATED ASSUMPTION, not the owner's words:** the
-posture is the **capped pilot** — a sign-only key handle (env-backed provider
-allowed per D36), envelope-encrypted DEKs, per-user and total-float caps enforced
-in `AllocationManager`, a HOLD on a platform holding wallet — with a vendor
-KMS/HSM required **before uncapped mainnet**. *Why inferred:* the owner said
-"self host" and chose real ASAs from day one; a vendor-HSM-first reading would
-stall the entire economy on procurement, which contradicts day-one ASAs.
-*Reversal cost if wrong:* the custody wave gains a procurement gate and every wave
-behind it waits. **D27 is reconciled with D36 by this reading:** D36's env-backed
-seam is the pilot; D27's vendor HSM is the uncapped-mainnet gate.
+**D48 — CORRECTED 2026-09-07. The owner runs the AZOA node and is the operator,
+custodian of record, and owner of compliance and completeness. ArdaNova is a
+TENANT on that node.** In the owner's words: *"assume we have custody; I run the
+AZOA node and will own compliance and completeness; ArdaNova is a user on the
+AZOA node I manage."*
+- ⚠ **The first version of this decision was WRONG** and stood for under an hour.
+  It named *ArdaNova* as operator and custodian, following the review's inference
+  that the same person deploying AZOA on Railway made ArdaNova the operator. It
+  does not. The **contract's §11.1 ("ArdaNova owns no KMS") and its
+  operator/consumer split were correct as written**; the review's item to amend
+  them is **withdrawn**. What the contract *does* need is the D45 change (webhook
+  verification → AZOA) and nothing about custodianship.
+- **Custody is ASSUMED PRESENT for planning.** It is the operator's
+  responsibility, handled outside this program, and **no wave gates on it**. The
+  D27/D36 procurement question is the operator's to close on their own clock; the
+  capped-pilot posture I had inferred is no longer a planning assumption at all —
+  it is simply not this program's concern.
+- *What this does NOT remove from the critical path:* the **HOLD primitive** (D14)
+  and the **platform reserve wallet** (D47). Those are value primitives the node
+  must expose for escrow and `IssueUnits` to work, not custody-assurance
+  questions. They stay.
+- *What this changes for the tenant boundary:* ArdaNova provisions its users as
+  **tenant-custodial child users** with a `tenant:provision` key (which its code
+  already does) and never holds a key, a seed phrase or a payment-provider secret.
+  Compliance policy — D46's uniform KYC, AML screening, the Identomat trust
+  profile — is **set by the operator on the node**, not chosen per tenant.
 
 *Not asked this round — taken as assumptions from the review's recommendations,
 each reversible at its wave:* **Q5** hold window on stake until the Stripe
