@@ -194,31 +194,11 @@ services:
     networks:
       - azoa-dev
 
-  fiat-sidecar:
-    # Optional integration: ordinary dev-up starts only the core
-    # SurrealDB/API/frontend stack. Opt in explicitly with
-    # `docker compose -f docker-compose.dev.yml --profile fiat up` after
-    # replacing the development-only Stripe/API-key placeholders below.
-    profiles: ["fiat"]
-    build:
-      context: .
-      dockerfile: fiat-sidecar/Dockerfile
-    container_name: azoa-dev-fiat-sidecar
-    restart: unless-stopped
-    depends_on:
-      azoa-api:
-        condition: service_healthy
-    environment:
-      AZOA_API_URL: "http://azoa-api:5000"
-      AZOA_API_KEY: "dev_tenant_key" # Replace with real key
-      STRIPE_SECRET_KEY: "sk_test_123"
-      STRIPE_WEBHOOK_SECRET: "whsec_123"
-      SUCCESS_URL: "http://localhost:3000/success"
-      CANCEL_URL: "http://localhost:3000/cancel"
-    ports:
-      - "4000:4000"
-    networks:
-      - azoa-dev
+  # fiat-sidecar (standalone Express bridge, port 4000) was retired 2026-09-08
+  # per RUNBOOK D43/D45 -- Stripe checkout/webhooks now bake into AZOA as a
+  # first-class FiatRailProvider instead of a separately-deployed service.
+  # See docs/FIAT-RAIL.md for the port record and the invariants carried
+  # forward from the sidecar's AGENTS.md.
 
 volumes:
   surrealdb_data:

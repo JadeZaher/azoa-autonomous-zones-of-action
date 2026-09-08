@@ -25,7 +25,7 @@ namespace AZOA.WebAPI.Managers;
 /// and <see cref="IActionNodeHandlerRegistry"/> (the per-<see cref="ActionNodeType"/>
 /// dispatch table).
 /// </summary>
-public class ActionManager : IActionManager
+public class ActionManager : IActionManager, IParkedRunReconciler
 {
     private readonly IActionStore _actionStore;
     private readonly IActionRunStore _runStore;
@@ -53,6 +53,13 @@ public class ActionManager : IActionManager
     // unchanged. A future track that needs a per-action lifecycle can promote this to
     // an injected dependency.
     private readonly ActionTransitionValidator _transitionValidator = new();
+
+    // Parked-run sweep tuning. The BACKGROUND caller passes its own thresholds
+    // (ReconciliationOptions, see Services/Reconciliation); these are the defaults the
+    // synchronous operator endpoint sweeps with.
+    private const int DefaultParkedRunHardStuckSeconds = 3600;
+    private const int DefaultParkedRunBatchSize = 500;
+    private const int MaxParkedRunBatchSize = 1000;
 
     public ActionManager(
         IActionStore actionStore,
@@ -2125,19 +2132,124 @@ public class ActionManager : IActionManager
     /// </summary>
     public async Task<AZOAResult<IEnumerable<ActionReconciliationResult>>> SweepReconciliationAsync(AZOARequest? request = null)
     {
-        var parked = await _runStore.GetByStatusAsync(ActionRunStatus.AwaitingReconciliation);
-        if (parked.IsError)
-            return new AZOAResult<IEnumerable<ActionReconciliationResult>> { IsError = true, Message = parked.Message };
+        var report = await SweepParkedRunsAsync(
+            TimeSpan.FromSeconds(DefaultParkedRunHardStuckSeconds),
+            DefaultParkedRunBatchSize,
+            CancellationToken.None);
 
-        var results = new List<ActionReconciliationResult>();
-        foreach (var run in parked.Result ?? Enumerable.Empty<ActionRun>())
-            results.Add(await ReprobeReconciliationAsync(run));
+        if (report.Error is not null)
+            return new AZOAResult<IEnumerable<ActionReconciliationResult>> { IsError = true, Message = report.Error };
+
+        var message = report.HardStuck.Count > 0
+            ? $"Swept {report.Results.Count} run(s) awaiting reconciliation; {report.HardStuck.Count} " +
+              $"remain parked past the {DefaultParkedRunHardStuckSeconds}s hard-stuck threshold - manual intervention required."
+            : $"Swept {report.Results.Count} run(s) awaiting reconciliation.";
 
         return new AZOAResult<IEnumerable<ActionReconciliationResult>>
         {
-            Result = results,
-            Message = $"Swept {results.Count} run(s) awaiting reconciliation."
+            Result = report.Results,
+            Message = message
         };
+    }
+
+    /// <summary>
+    /// Unattended sweep entry point (<see cref="IParkedRunReconciler"/>): re-probe EVERY
+    /// run parked in <see cref="ActionRunStatus.AwaitingReconciliation"/>, oldest park
+    /// first, and report the runs still parked past <paramref name="hardStuckAfter"/> so
+    /// the caller can raise the operator alert. Unscoped (background/operator context);
+    /// identical chain-truth logic to <see cref="ReconcileRunAsync"/> - NEVER re-broadcasts.
+    /// </summary>
+    public Task<ParkedRunSweepReport> ReconcileAllParkedRunsAsync(
+        TimeSpan hardStuckAfter, int batchSize, CancellationToken ct = default)
+        => SweepParkedRunsAsync(hardStuckAfter, batchSize, ct);
+
+    /// <summary>
+    /// The ONE parked-run sweep body behind both seams (the operator endpoint's
+    /// <see cref="SweepReconciliationAsync"/> and the background
+    /// <see cref="ReconcileAllParkedRunsAsync"/>), so the two can never diverge.
+    /// A per-run failure is counted, never fatal: one unreachable RPC must not strand
+    /// the rest of the backlog.
+    /// </summary>
+    private async Task<ParkedRunSweepReport> SweepParkedRunsAsync(
+        TimeSpan hardStuckAfter, int batchSize, CancellationToken ct)
+    {
+        var parked = await _runStore.GetByStatusAsync(ActionRunStatus.AwaitingReconciliation, ct);
+        if (parked.IsError)
+            return ParkedRunSweepReport.Empty with
+            {
+                Errors = 1,
+                Error = string.IsNullOrWhiteSpace(parked.Message)
+                    ? "Failed to list runs awaiting reconciliation."
+                    : parked.Message
+            };
+
+        var now = DateTime.UtcNow;
+        var hardStuckFloor = hardStuckAfter < TimeSpan.Zero ? TimeSpan.Zero : hardStuckAfter;
+        var runs = (parked.Result ?? Enumerable.Empty<ActionRun>())
+            .OrderBy(r => r.StartedAt)
+            .Take(Math.Clamp(batchSize, 1, MaxParkedRunBatchSize))
+            .ToList();
+
+        var results = new List<ActionReconciliationResult>(runs.Count);
+        var hardStuck = new List<HardStuckParkedRun>();
+        var errors = 0;
+
+        foreach (var run in runs)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var executions = await LoadRunExecutionsAsync(run.Id);
+                var parkedSince = ResolveParkedSinceUtc(run, executions);
+                var outcome = await ReprobeReconciliationAsync(run, executions);
+                results.Add(outcome);
+
+                // Hard-stuck is judged AFTER the re-probe: a run this pass just un-parked
+                // is not stuck, no matter how old its park was.
+                if (outcome.Status == ActionRunStatus.AwaitingReconciliation
+                    && now - parkedSince >= hardStuckFloor)
+                {
+                    hardStuck.Add(new HardStuckParkedRun(
+                        run.Id, run.ActionId, run.UserId, parkedSince, now - parkedSince,
+                        outcome.StillIndeterminate));
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception)
+            {
+                errors++;
+            }
+        }
+
+        return new ParkedRunSweepReport
+        {
+            Scanned = runs.Count,
+            ReconciledConfirmed = results.Sum(r => r.ReconciledConfirmed),
+            ReleasedFailedOnChain = results.Sum(r => r.ReleasedFailedOnChain),
+            StillIndeterminate = results.Sum(r => r.StillIndeterminate),
+            Errors = errors,
+            HardStuck = hardStuck,
+            Results = results
+        };
+    }
+
+    /// <summary>When the run was parked: the newest Failed node end time, else the run start.</summary>
+    private static DateTime ResolveParkedSinceUtc(
+        ActionRun run, IReadOnlyList<ActionNodeExecution> executions)
+    {
+        var lastFailedEnd = executions
+            .Where(e => e.State == ActionNodeState.Failed && e.EndedAt.HasValue)
+            .Select(e => e.EndedAt!.Value)
+            .DefaultIfEmpty(default)
+            .Max();
+        return lastFailedEnd == default ? run.StartedAt : lastFailedEnd;
+    }
+
+    /// <summary>Materializes a run's per-node execution rows (empty on a store fault).</summary>
+    private async Task<IReadOnlyList<ActionNodeExecution>> LoadRunExecutionsAsync(Guid runId)
+    {
+        var result = await _executionStore.GetByRunIdAsync(runId);
+        return (result.Result ?? Enumerable.Empty<ActionNodeExecution>()).ToList();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -2352,12 +2464,14 @@ public class ActionManager : IActionManager
     /// terminal status here — the engine (success advance) or the saga
     /// (retry/compensation) owns the terminal verdict, exactly as on the live path.</para>
     /// </summary>
-    private async Task<ActionReconciliationResult> ReprobeReconciliationAsync(ActionRun run)
+    private async Task<ActionReconciliationResult> ReprobeReconciliationAsync(
+        ActionRun run, IReadOnlyList<ActionNodeExecution>? preloadedExecutions = null)
     {
         var outcome = new ActionReconciliationResult { RunId = run.Id, Status = run.Status };
 
-        var execsResult = await _executionStore.GetByRunIdAsync(run.Id);
-        var execs = (execsResult.Result ?? Enumerable.Empty<ActionNodeExecution>()).ToList();
+        // The sweep already read these rows to date the park; reuse them rather than
+        // paying a second store round-trip per parked run.
+        var execs = preloadedExecutions ?? await LoadRunExecutionsAsync(run.Id);
 
         // Only Failed rows carrying a broadcast hash are candidates: those are the
         // parked chain-action nodes the step handler stamped before parking. A
@@ -2511,4 +2625,68 @@ public class ActionManager : IActionManager
         var stamped = parsed with { SignalPayload = signalPayload ?? string.Empty };
         return SagaStep<ActionStepPayload>.Serialize(stamped);
     }
+}
+
+/// <summary>
+/// The unattended parked-run reconciliation seam: re-probe every run parked in
+/// <see cref="ActionRunStatus.AwaitingReconciliation"/> without a human naming it.
+/// Implemented by <see cref="ActionManager"/> and consumed by the background
+/// reconciliation tick (<c>Services/Reconciliation/ReconciliationHostedService</c>).
+/// </summary>
+/// <remarks>
+/// Declared here rather than under <c>Interfaces/Managers/</c> because the wave that
+/// introduced it owns only this file; promote it to its own file when that constraint
+/// lifts.
+/// </remarks>
+public interface IParkedRunReconciler
+{
+    /// <summary>Sweep every parked run, oldest park first, capped at
+    /// <paramref name="batchSize"/>; runs still parked after their re-probe and older
+    /// than <paramref name="hardStuckAfter"/> come back in
+    /// <see cref="ParkedRunSweepReport.HardStuck"/> for the caller to alert on.</summary>
+    Task<ParkedRunSweepReport> ReconcileAllParkedRunsAsync(
+        TimeSpan hardStuckAfter, int batchSize, CancellationToken ct = default);
+}
+
+/// <summary>One run still parked past the hard-stuck threshold - the operator-alert payload.</summary>
+public sealed record HardStuckParkedRun(
+    Guid RunId,
+    Guid ActionId,
+    Guid UserId,
+    DateTime ParkedSinceUtc,
+    TimeSpan Age,
+    int IndeterminateNodes);
+
+/// <summary>Outcome of one parked-run sweep pass. Immutable.</summary>
+public sealed record ParkedRunSweepReport
+{
+    /// <summary>Runs examined this pass (after the batch cap).</summary>
+    public int Scanned { get; init; }
+
+    /// <summary>Nodes whose tx was Confirmed and reconciled to Succeeded - no re-broadcast.</summary>
+    public int ReconciledConfirmed { get; init; }
+
+    /// <summary>Nodes provably FailedOnChain and released to retry/compensation.</summary>
+    public int ReleasedFailedOnChain { get; init; }
+
+    /// <summary>Nodes whose chain truth is still not derivable - left parked.</summary>
+    public int StillIndeterminate { get; init; }
+
+    /// <summary>Per-run probe failures, plus 1 when the parked-run listing itself faulted.</summary>
+    public int Errors { get; init; }
+
+    /// <summary>Set only when the parked-run listing faulted, so nothing was swept.</summary>
+    public string? Error { get; init; }
+
+    /// <summary>Runs still parked after this pass AND older than the hard-stuck threshold.</summary>
+    public IReadOnlyList<HardStuckParkedRun> HardStuck { get; init; } = Array.Empty<HardStuckParkedRun>();
+
+    /// <summary>One re-probe outcome per run swept, in sweep order.</summary>
+    public IReadOnlyList<ActionReconciliationResult> Results { get; init; } = Array.Empty<ActionReconciliationResult>();
+
+    public static ParkedRunSweepReport Empty { get; } = new();
+
+    public override string ToString() =>
+        $"scanned={Scanned} reconciled={ReconciledConfirmed} released={ReleasedFailedOnChain} " +
+        $"indeterminate={StillIndeterminate} hardStuck={HardStuck.Count} errors={Errors}";
 }

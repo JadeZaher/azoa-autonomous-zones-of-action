@@ -120,6 +120,31 @@ export type {
   CredentialRevokeParams,
   CredentialRevokeStatus,
   CredentialRevokeResult,
+  // Allocation (AllocationController, D4/D47)
+  AllocationRequest,
+  AllocationResult,
+  // Hold rails (HoldController, D14 / W3.4)
+  HoldState,
+  HoldOpenParams,
+  HoldSettlementParams,
+  HoldChainParams,
+  HoldView,
+  // Fiat on-ramp checkout (FiatCheckoutController)
+  FiatCheckoutStatus,
+  FiatSettlementState,
+  FiatCheckoutPurpose,
+  HostedSessionCapabilities,
+  FiatCheckoutStartParams,
+  FiatCheckoutIntent,
+  // Platform token reserve/genesis read (PlatformTokenController). Operator-scoped.
+  PlatformTokenDefinition,
+  PlatformTokenSupply,
+  PlatformTokenState,
+  // Project treasury reads (ProjectTreasuryController). Operator-scoped.
+  ProjectTreasuryAccount,
+  ProjectTreasuryAsset,
+  ProjectTreasuryLedger,
+  ProjectTreasuryView,
   // Analytics read surface (AnalyticsController, D16)
   AnalyticsQueryParams,
   PricingStatus,

@@ -8,6 +8,9 @@ import { AzoaAuthProvider } from "./auth-provider.js";
 import type { AuthProviderConfig } from "./auth-provider.js";
 import { PortfolioAggregator } from "./portfolio.js";
 import { WorkflowClient } from "../workflow/index.js";
+import type { Result } from "../core/result.js";
+import { ok } from "../core/result.js";
+import type { SdkError } from "../core/errors.js";
 
 export interface AzoaClientConfig {
   /** AZOA API base URL */
@@ -217,5 +220,31 @@ export class AzoaClient {
     for (const reg of Object.values(this._chainsForNetwork(this._network))) {
       this.wallet.register(reg);
     }
+  }
+
+  /**
+   * The real capability probe for cross-chain bridging: asks the backend's
+   * live `GET /api/bridge/routes` registry whether `chainId` currently
+   * participates as an ENABLED source or target on any route.
+   *
+   * A `ChainProvider.supportsBridging` flag only declares that the provider
+   * implements chain-specific bridge transaction building — it is NOT a live
+   * availability check (mirrors the .NET module seam in
+   * `Providers/Blockchain/Base/BaseBlockchainProvider.cs`, which deliberately
+   * has no boolean a provider could set `true` by mistake). Call this before
+   * offering a bridge flow in a UI so an administratively-disabled or
+   * not-yet-live route never looks bridgeable.
+   */
+  async checkBridgeCapability(chainId: string): Promise<Result<boolean, SdkError>> {
+    const routes = await this.api.getBridgeRoutes();
+    if (!routes.ok) return routes;
+
+    const normalized = chainId.trim().toLowerCase();
+    const capable = routes.value.some(
+      (route) =>
+        route.isEnabled &&
+        (route.sourceChain.toLowerCase() === normalized || route.targetChain.toLowerCase() === normalized)
+    );
+    return ok(capable);
   }
 }

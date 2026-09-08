@@ -32,6 +32,14 @@ public sealed class AnalyticsReadService : IAnalyticsReadService
     private const string BurnOperationType = "Burn";
     private const string TransferOperationType = "Transfer";
 
+    /// <summary>
+    /// Types that give up one identifiable leg and so CAN carry a stamp, but whose direction is
+    /// deliberately left unclassified below: a swap moves two assets and folding one leg into a
+    /// single-asset position would under-report the other.
+    /// </summary>
+    private const string ExchangeOperationType = "Exchange";
+    private const string SwapOperationType = "Swap";
+
     private readonly IBlockchainOperationStore _operations;
 
     public AnalyticsReadService(IBlockchainOperationStore operations)
@@ -242,9 +250,20 @@ public sealed class AnalyticsReadService : IAnalyticsReadService
         };
     }
 
-    /// <summary>Mirrors §value-stamp: only a broadcast Mint/Burn/Transfer can ever carry a stamp.</summary>
+    /// <summary>
+    /// Mirrors §value-stamp. This set is the READ side of a control and must stay identical to
+    /// the write side — <c>BlockchainOperationManager.TryResolveStampableAmount</c>, which
+    /// resolves an amount for Mint, Burn, Transfer, Exchange (the asset given up) and Swap
+    /// (<c>AmountIn</c>). While this list was narrower a stamped Exchange read back as
+    /// <c>"pricing": "Priced"</c> beside <c>"isStampable": false</c>, and its unpriced twin was
+    /// miscounted as "could never be priced" rather than as a genuine pricing gap.
+    /// </summary>
     private static bool IsStampable(IBlockchainOperation operation) =>
-        operation.OperationType is MintOperationType or BurnOperationType or TransferOperationType
+        operation.OperationType is MintOperationType
+            or BurnOperationType
+            or TransferOperationType
+            or ExchangeOperationType
+            or SwapOperationType
         && HasBroadcast(operation.Status);
 
     /// <summary>True only for statuses that mean a transaction actually went to the chain.</summary>

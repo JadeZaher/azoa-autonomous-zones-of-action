@@ -153,8 +153,10 @@ public sealed class AnalyticsReadServiceTests
     [InlineData("Mint", OperationStatus.Minted, true)]
     [InlineData("Burn", OperationStatus.Burned, true)]
     [InlineData("Transfer", OperationStatus.Transferred, true)]
-    [InlineData("Swap", OperationStatus.Swapped, false)]
-    [InlineData("Exchange", OperationStatus.Exchanged, false)]
+    // Swap and Exchange became stampable when the writer learned to resolve the leg they give
+    // up; this theory is the tripwire that keeps the two sides of the rule from drifting apart.
+    [InlineData("Swap", OperationStatus.Swapped, true)]
+    [InlineData("Exchange", OperationStatus.Exchanged, true)]
     [InlineData("DeployContract", OperationStatus.Deployed, false)]
     [InlineData("Mint", OperationStatus.Failed, false)]
     [InlineData("Mint", OperationStatus.AwaitingSignature, false)]
@@ -172,17 +174,20 @@ public sealed class AnalyticsReadServiceTests
     }
 
     [Fact]
-    public async Task GetPositionsAsync_UnstampableSwap_IsCountedSeparatelyFromAPricingGap()
+    public async Task GetPositionsAsync_UnstampableDeploy_IsCountedSeparatelyFromAPricingGap()
     {
+        // DeployContract moves no quantity, so it can never carry a stamp. A Swap no longer
+        // belongs here: it gives up an identifiable leg and the writer stamps it.
         var service = ServiceReturning(
-            Operation(type: "Swap", status: OperationStatus.Swapped),
+            Operation(type: "DeployContract", status: OperationStatus.Deployed),
             Operation(type: "Mint", status: OperationStatus.Minted));
 
         var result = await service.GetPositionsAsync(SubjectId, new AnalyticsQueryRequest());
 
         var position = result.Result!.Items.Should().ContainSingle().Subject;
         position.UnpricedEntryCount.Should().Be(2);
-        position.UnstampableEntryCount.Should().Be(1, "only the Swap can never be stamped");
+        position.UnstampableEntryCount.Should().Be(
+            1, "only the DeployContract can never be stamped");
     }
 
     // ── Positions: today's truthful answer ────────────────────────────────────

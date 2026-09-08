@@ -77,6 +77,53 @@ function base64ToBytes(b64: string): Uint8Array {
   return out.slice(0, idx);
 }
 
+/**
+ * Converts a decimal amount string into an exact base-unit integer without the
+ * float precision loss `Math.round(Number(amount) * 10 ** decimals)` can
+ * introduce (e.g. `0.1 * 1_000_000` is `99999.99999999999` in IEEE-754 before
+ * `Math.round` patches it back — a patch that stops being exact once the whole
+ * part grows large enough that the multiplication itself loses bits). Parsed
+ * with `BigInt` end-to-end on the decimal string; converted to a JS `number`
+ * only at the very end, and only when the exact result is safely representable.
+ *
+ * Throws rather than silently rounding when the string is not a non-negative
+ * decimal, when it carries more fractional digits than `decimals` allows
+ * (sub-base-unit precision has nowhere to go), or when the exact result
+ * exceeds `Number.MAX_SAFE_INTEGER` (the `json-descriptor` format is JSON, so
+ * it cannot carry a `bigint` — an amount that large cannot be represented here
+ * at all, and must fail closed rather than truncate).
+ */
+function parseBaseUnitAmount(amount: string, decimals: number, paramName: string): number {
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(amount.trim());
+  if (!match) {
+    throw new SdkError(
+      SdkErrorCode.INVALID_INPUT,
+      `${paramName} must be a non-negative decimal amount, got "${amount}"`,
+      { chain: "algorand" }
+    );
+  }
+  const whole = match[1]!;
+  const fraction = match[2] ?? "";
+  if (fraction.length > decimals) {
+    throw new SdkError(
+      SdkErrorCode.INVALID_INPUT,
+      `${paramName} has more precision (${fraction.length} fractional digits) than this asset's ` +
+        `${decimals} decimals allow — this SDK never rounds a monetary amount`,
+      { chain: "algorand" }
+    );
+  }
+  const baseUnits = BigInt(whole + fraction.padEnd(decimals, "0"));
+  if (baseUnits > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new SdkError(
+      SdkErrorCode.INVALID_INPUT,
+      `${paramName} (${baseUnits.toString()} base units) exceeds Number.MAX_SAFE_INTEGER and cannot ` +
+        "be represented in the json-descriptor format",
+      { chain: "algorand" }
+    );
+  }
+  return Number(baseUnits);
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface AlgorandProviderConfig extends ChainProviderConfig {
@@ -101,6 +148,13 @@ export class AlgorandProvider implements ChainProvider {
   readonly chainId = "algorand";
   readonly displayName = "Algorand";
   readonly supportsDex = true;
+  /**
+   * Declares that this provider implements Algorand-side bridge transaction
+   * building — Algorand is a proven bridge SOURCE. This is NOT a live
+   * availability check; call `AzoaClient.checkBridgeCapability("algorand")`
+   * for the backend-verified answer on a specific route (see the interface
+   * doc on `ChainProvider.supportsBridging`).
+   */
   readonly supportsBridging = true;
 
   private readonly config: AlgorandProviderConfig;
@@ -248,6 +302,9 @@ export class AlgorandProvider implements ChainProvider {
       }
       return ok(this.buildPaymentTx(params, sp));
     } catch (e) {
+      // An invalid/oversized amount (parseBaseUnitAmount) is a caller input error,
+      // not a network fault — preserve its INVALID_INPUT code instead of relabelling it.
+      if (e instanceof SdkError) return err(e);
       return err(new SdkError(SdkErrorCode.NETWORK_ERROR, `Build transfer failed: ${e}`, { chain: "algorand", cause: e as Error }));
     }
   }
@@ -467,7 +524,7 @@ export class AlgorandProvider implements ChainProvider {
       type: "pay",
       from: params.from,
       to: params.to,
-      amount: Math.round(Number(params.amount) * 1_000_000), // ALGO → microAlgos
+      amount: parseBaseUnitAmount(params.amount, 6, "amount"), // ALGO → microAlgos, exact (BigInt, no float rounding)
       fee: sp.fee,
       firstRound: sp.firstRound,
       lastRound: sp.lastRound,
@@ -490,7 +547,9 @@ export class AlgorandProvider implements ChainProvider {
       from: params.from,
       to: params.to,
       assetIndex: Number(params.tokenId),
-      amount: Number(params.amount),
+      // ASA amounts are already base units (no decimal-shift), so decimals=0: any
+      // fractional digits are a caller error, refused rather than truncated.
+      amount: parseBaseUnitAmount(params.amount, 0, "amount"),
       fee: sp.fee,
       firstRound: sp.firstRound,
       lastRound: sp.lastRound,

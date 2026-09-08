@@ -746,6 +746,19 @@ var rlOperatorLoginWindowSeconds = Math.Clamp(
     rlSection.GetValue<int?>("OperatorLogin:WindowSeconds") ?? 900,
     60,
     86_400);
+// Payment-webhook budget (W4.1). The provider retries one event a handful of times with
+// backoff, and a busy node sees several distinct payments a minute, so the allowance is
+// generous; it exists to bound an unauthenticated flood, not to throttle the provider.
+// Set it too low and a legitimate retry burst is rejected with a 429 the provider counts
+// as a failed delivery, which is a person charged with nothing credited.
+var rlFiatWebhookPermit = Math.Clamp(
+    rlSection.GetValue<int?>("FiatWebhook:PermitLimit") ?? 240,
+    1,
+    10_000);
+var rlFiatWebhookWindowSeconds = Math.Clamp(
+    rlSection.GetValue<int?>("FiatWebhook:WindowSeconds") ?? 60,
+    1,
+    86_400);
 
 var rlDevMultiplier = builder.Environment.IsDevelopment()
     ? Math.Max(1, rlSection.GetValue<int?>("DevMultiplier") ?? 1)
@@ -837,6 +850,22 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
+    // The payment webhook has NO authenticated principal — its authority is the signature on
+    // the body — so the identity-partitioned global limiter degenerates to one bucket per
+    // source IP. Its own policy keeps a signature-guessing flood off the anonymous global
+    // allowance every other unauthenticated caller shares.
+    options.AddPolicy(AZOA.WebAPI.Controllers.StripeWebhookController.RateLimitPolicy, httpContext =>
+    {
+        var address = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter($"fiat-webhook:{address}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = rlFiatWebhookPermit,
+            Window = TimeSpan.FromSeconds(rlFiatWebhookWindowSeconds),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+
     options.OnRejected = (context, _) =>
     {
         // Emit a Retry-After that matches the policy that actually rejected
@@ -861,6 +890,8 @@ builder.Services.AddRateLimiter(options =>
                 "operator-login" => rlOperatorLoginWindowSeconds,
                 AZOA.WebAPI.Controllers.KycCallbackController.RateLimitPolicy =>
                     rlKycCallbackWindowSeconds,
+                AZOA.WebAPI.Controllers.StripeWebhookController.RateLimitPolicy =>
+                    rlFiatWebhookWindowSeconds,
                 _ => rlGlobalWindowSeconds
             };
         }
@@ -1390,8 +1421,30 @@ builder.Services.AddSingleton<IBlockchainProviderFactory>(sp =>
             new BlockchainProviderRegistration(
                 "Simulated",
                 sp.GetRequiredService<AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>),
+            // ─── Fiat.USD (W4.1) — a NON-chain rail on the same factory ───
+            // It brings its OWN environment → endpoint resolver, because Blockchain:Chains is
+            // keyed Devnet/Testnet/Mainnet and a card rail has test and live only. A null
+            // result from that resolver is how "Fiat:Enabled=false", "that is not the selected
+            // environment" and "the secret is missing" all collapse into one fail-closed
+            // answer: the factory reports the environment disabled and no rail is handed out.
+            // Registered here rather than in a sibling extension because the factory takes its
+            // whole registration set in one constructor call.
+            new ValueRailProviderRegistration(
+                AZOA.WebAPI.Providers.Fiat.FiatRailIds.UsdRail,
+                sp.GetRequiredService<AZOA.WebAPI.Providers.Fiat.FiatRailProvider>,
+                environment => sp.GetRequiredService<AZOA.WebAPI.Providers.Fiat.FiatOptions>()
+                    .ResolveEndpoint(environment)),
         },
         sp.GetRequiredService<IConfiguration>()));
+
+// The rail-generic face of the SAME singleton. Without this line the D9 seam is unreachable
+// from DI: AddSingleton<IBlockchainProviderFactory> registers exactly ONE service type, so a
+// consumer that correctly depends on IValueRailProviderFactory — because it settles on a rail
+// that is not a chain — cannot be constructed at all. Forwarding rather than registering a
+// second instance is what keeps ONE provider cache; two caches would mean two bound instances
+// per (rail, environment), and for a payment rail that is two live bindings of one environment.
+builder.Services.AddSingleton<IValueRailProviderFactory>(sp =>
+    sp.GetRequiredService<IBlockchainProviderFactory>());
 
 // ─── Platform reserve (W3.1) ───
 // The operator-owned custodial account every unit a sponsor or a worker receives comes
@@ -1441,6 +1494,68 @@ AZOA.WebAPI.Services.Consent.TenantProvisionedGrantRegistration
     .AddTenantProvisionedConsentGrants(builder.Services);
 AZOA.WebAPI.Services.Reserve.ProjectTreasuryRegistration
     .AddProjectTreasury(builder.Services);
+
+// ─── Fiat.USD rail (W4.1) ───
+// The card rail: money in through a hosted payment page today, money out from Wave 8. It is a
+// value rail, not a chain, and it is registered through the rail-aware factory above.
+//
+// FiatOptions is bound as an INSTANCE (the ReserveOptions precedent): an absent section must
+// still yield the fail-closed defaults rather than an unbound object, and the rail, both
+// controllers and the webhook inbox must all read the SAME environment selection. Two call
+// sites each picking their own test-vs-live answer is a test-mode checkout settled by a live
+// webhook — which is why nothing below re-reads Fiat:Environment for itself.
+var fiatOptions = builder.Configuration
+    .GetSection(AZOA.WebAPI.Providers.Fiat.FiatOptions.SectionName)
+    .Get<AZOA.WebAPI.Providers.Fiat.FiatOptions>()
+    ?? new AZOA.WebAPI.Providers.Fiat.FiatOptions();
+builder.Services.AddSingleton(fiatOptions);
+
+// Named client: its own connection pool and handler lifetime. The per-request deadline is the
+// rail's (linked CancellationTokenSource), so no HttpClient.Timeout is set here — mutating a
+// pooled client's Timeout per call is a race.
+builder.Services.AddHttpClient(AZOA.WebAPI.Providers.Fiat.StripeGateway.HttpClientName);
+builder.Services.AddSingleton<AZOA.WebAPI.Providers.Fiat.IStripeGateway,
+    AZOA.WebAPI.Providers.Fiat.StripeGateway>();
+
+// Transient on purpose: the factory caches one BOUND instance per (rail, environment) and a
+// pre-bound instance is refused, exactly as for a chain provider.
+builder.Services.AddTransient<AZOA.WebAPI.Providers.Fiat.FiatRailProvider>();
+
+builder.Services.AddScoped<AZOA.WebAPI.Services.Fiat.IStripeWebhookInbox,
+    AZOA.WebAPI.Services.Fiat.StripeWebhookInbox>();
+
+// Intent bookkeeping: it moves the funding intent through its states and credits NOTHING, which
+// is why it implements IFiatEventHandler and NOT IFiatSettlementHandler. That distinction is
+// load-bearing — the live-environment boot guard below counts settlement handlers, so this
+// registration can never be mistaken for a wired money path.
+builder.Services.AddScoped<AZOA.WebAPI.Services.Fiat.IFiatEventHandler,
+    AZOA.WebAPI.Services.Fiat.FiatCheckoutIntentEventHandler>();
+
+// ─── Wave 4 composition (W4.1 owns this file for the wave) ───
+// W4.6 — the D16 value-rate seam. Without this call the tenant-declared rate source is INERT
+// and every operation settles unpriced; the extension is TryAdd-based, so a durable store
+// registered before it still wins.
+AZOA.WebAPI.Services.Analytics.AnalyticsRegistration
+    .AddValueRateSources(builder.Services, builder.Configuration);
+//
+// W4.5 needs no new registration: IReconciliationService and ReconciliationHostedService are
+// already registered further down this file, and that item extends them in place.
+//
+// CONTRACT for the settlement items. W4.2 (on-ramp) and W4.3 (reversal pipeline) do not own
+// this file, and the plan gave them no registration call, so the wave's join gate wired them.
+// They are NOT registered here: both extensions CHECK their collaborators rather than trusting
+// call order, and two of those collaborators (IRealValueKycGate, ISagaCoordinator) are
+// registered further down this file. The four calls therefore sit in the
+// "Wave 4 settlement composition" block below the saga layer. Until they existed the on-ramp
+// and the reversal ladder compiled, tested and shipped INERT.
+//
+// The gap is also closed by teeth rather than by prose: FiatRailStartup.Validate below REFUSES
+// to boot the live environment unless an IFiatSettlementHandler is registered, so a node cannot
+// charge a real card while nothing is able to credit it.
+
+// The matching boot guard runs immediately before builder.Build(), NOT here: it counts the
+// registrations in the container, so running it mid-file would read a snapshot taken before a
+// later item added its handler and pass on a node that cannot credit anything.
 
 // ─── Wormhole trustless bridge adapter ───
 builder.Services.Configure<WormholeConfig>(
@@ -1550,6 +1665,35 @@ builder.Services.AddScoped<
     AZOA.WebAPI.Sagas.IStepHandler<AZOA.WebAPI.Services.Actions.Workflow.ActionCompensatePayload>,
     AZOA.WebAPI.Services.Actions.Workflow.ActionCompensateStepHandler>();
 
+// ─── Wave 4 settlement composition (added by the wave's join gate) ───
+// The money path the contract comment above asked for, placed HERE and not in the Wave 4 block
+// because every one of these extensions VERIFIES its collaborators and throws at boot instead
+// of registering something that cannot work:
+//   AddFiatOnRamp             needs ISurrealExecutor, IAllocationManager, IPlatformTokenGenesis
+//                             and IRealValueKycGate (registered ~line 1599).
+//   AddOnRampValueRateSource  needs AddFiatOnRamp AND AddValueRateSources (~line 1539).
+//   AddFiatReversalPipeline   needs the on-ramp lot ledger, the reserve, the hold primitive,
+//                             the idempotency store, ISagaCoordinator (~line 1640), the
+//                             provider factory, IWalletStore and the named Stripe client.
+//   AddReversalRiskValueGate  needs AddFiatReversalPipeline AND the D46 gate it wraps.
+// Ordering inside the block is therefore load-bearing and is asserted by those guards.
+AZOA.WebAPI.Services.Fiat.OnRamp.OnRampRegistration
+    .AddFiatOnRamp(builder.Services);
+// Prices the D16 value stamp from the SAME schedule that converted the money. It REPLACES the
+// configuration-backed declared-rate store installed by AddValueRateSources and composes it as
+// the fallback, so one price decides both the quantity issued and what the row was worth.
+AZOA.WebAPI.Services.Fiat.OnRamp.OnRampRegistration
+    .AddOnRampValueRateSource(builder.Services);
+// Refunds, disputes and the three-rung recovery ladder. Registers IFiatEventHandler ONLY: it
+// credits nothing, so it must never satisfy the live-boot settlement probe below.
+AZOA.WebAPI.Services.Fiat.Reversal.ReversalRegistration
+    .AddFiatReversalPipeline(builder.Services);
+// Makes the account risk flag a CONTROL instead of a written-and-never-read field: it wraps the
+// D46 value gate so an account with an unresolved reversal cannot buy more units or move value
+// out. Without this call the flag is written and nothing reads it.
+AZOA.WebAPI.Services.Fiat.Reversal.ReversalRegistration
+    .AddReversalRiskValueGate(builder.Services);
+
 // ─── MCP surface (mcp-surface track Phase 1) ───
 // Registers McpToolRegistry (singleton) + the SDK's Streamable HTTP transport
 // at /mcp. Tool implementations (W2-W5) register themselves as IMcpTool via DI;
@@ -1594,6 +1738,25 @@ if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("
 
 builder.Services.AddSingleton<Microsoft.AspNetCore.Cors.Infrastructure.ICorsPolicyProvider, AZOA.WebAPI.Middleware.DynamicCorsPolicyProvider>();
 builder.Services.AddCors();
+
+// ─── Fiat rail boot guard (W4.1) ───
+// Capability honesty for the money path, mirroring the two chain guards in
+// BlockchainProviderFactory: a node that advertises a payment rail it cannot complete must fail
+// at STARTUP, not at the moment a person's card is charged. It runs here, after every
+// registration, because it counts what is actually in the container — the live environment is
+// refused unless something implementing IFiatSettlementHandler can turn a cleared payment into
+// funds in the payer's account.
+AZOA.WebAPI.Providers.Fiat.FiatRailStartup.Validate(
+    fiatOptions,
+    simulatedBlockchainMode: string.Equals(
+        builder.Configuration.GetSection("Blockchain").Get<BlockchainConfig>()?.Mode ?? "Live",
+        "Simulated",
+        StringComparison.OrdinalIgnoreCase),
+    settlementHandlerRegistered: builder.Services.Any(descriptor =>
+        descriptor.ServiceType == typeof(AZOA.WebAPI.Services.Fiat.IFiatSettlementHandler)
+        || descriptor.ImplementationType is not null
+            && typeof(AZOA.WebAPI.Services.Fiat.IFiatSettlementHandler)
+                .IsAssignableFrom(descriptor.ImplementationType)));
 
 var app = builder.Build();
 

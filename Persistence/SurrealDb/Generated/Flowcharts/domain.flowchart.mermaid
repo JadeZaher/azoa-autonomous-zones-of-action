@@ -8,7 +8,7 @@ graph LR
     %%   action_templates: action_node_template, action_template
     %%   bridge: action_webhook_event, bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, node_fee_atomic_group, node_fee_settlement, operation_log, saga_steps, webhook_registration
     %%   dapp_composition: dapp_series, dapp_series_action, ecosystem, ecosystem_node
-    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, hold_ledger, holon, holon_type_registry, hosted_session, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, oauth_exchange_code, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, user, user_external_login, wallet_auth_challenge, wallet_auth_claim_token
+    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, fiat_event, fiat_reversal, hold_ledger, holon, holon_type_registry, hosted_session, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, oauth_exchange_code, on_ramp_lot, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, tenant_price_schedule, user, user_external_login, wallet_auth_challenge, wallet_auth_claim_token
     %%   wallet_nft: nft_ownership, swap_state, wallet
     %% 
     %% Enums:
@@ -30,6 +30,11 @@ graph LR
     %%   consent_webhook_event.status: Pending, Delivered, DeadLettered  (ConsentWebhookEvent.DeliveryStatus)
     %%   dapp_series.status: Draft, Building, Ready, Deployed, Archived  (DappSeries.StatusKind)
     %%   ecosystem_node.ref_kind: DappSeries, ActionGraphBundle  (EcosystemNode.RefKindValue)
+    %%   fiat_event.environment: test, live
+    %%   fiat_event.status: Received, Applied, Ignored, Failed
+    %%   fiat_reversal.kind: Refund, Dispute
+    %%   fiat_reversal.recovery_path: None, Balance, Hold, Purchase, Reserve, Mixed
+    %%   fiat_reversal.status: Open, Recovering, Recovered, PartiallyRecovered, Absorbed, Reinstated, Unmatched, NeedsOperator
     %%   hold_ledger.funding_source: Reserve, Funder
     %%   hold_ledger.network: Devnet, Testnet, Mainnet
     %%   hold_ledger.state: Pending, Held, Releasing, Released, Refunded, ReleasedIntoHold
@@ -54,6 +59,7 @@ graph LR
     %%   node_treasury_destination.network: Devnet, Testnet, Mainnet
     %%   oauth_exchange_code.provider: GOOGLE, GITHUB  (OAuthExchangeCode.ExternalAuthProvider)
     %%   oauth_exchange_code.purpose: SESSION, LINK  (OAuthExchangeCode.OAuthExchangeCodePurpose)
+    %%   on_ramp_lot.status: Pending, Issued, Refused, Stuck, Reversed
     %%   operation_log.status: Pending, Unknown, Failed, Completed, AwaitingSignature, PendingConfirmation, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (OperationLog.StatusKind)
     %%   platform_reserve_ledger.network: Devnet, Testnet, Mainnet
     %%   platform_token.network: Devnet, Testnet, Mainnet
@@ -62,6 +68,7 @@ graph LR
     %%   project_treasury_ledger.status: Open, Closed
     %%   saga_steps.status: Pending, InProgress, Completed, Compensating, DeadLettered, Parked, Cancelled  (SagaSteps.StepStatus)
     %%   swap_state.status: Pending, Unknown, Failed, Completed, AwaitingSignature, PendingConfirmation, Minted, Burned, Exchanged, Swapped, Transferred, Deployed, Called  (SwapState.StatusKind)
+    %%   tenant_price_schedule.status: Active, Retired
     %%   user_external_login.provider: GOOGLE, GITHUB  (UserExternalLogin.ExternalAuthProvider)
     %%   wallet.wallet_type: External, Platform  (Wallet.WalletTypeKind)
 
@@ -108,6 +115,8 @@ graph LR
         api_key["api_key: Node"]:::nodeClass
         consent_audit["consent_audit: Node"]:::nodeClass
         consent_grant["consent_grant: Node"]:::nodeClass
+        fiat_event["fiat_event: Node"]:::nodeClass
+        fiat_reversal["fiat_reversal: Node"]:::nodeClass
         hold_ledger["hold_ledger: Node"]:::nodeClass
         holon["holon: Node"]:::nodeClass
         holon_type_registry["holon_type_registry: Node"]:::nodeClass
@@ -127,11 +136,13 @@ graph LR
         node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
         node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
         oauth_exchange_code["oauth_exchange_code: Node"]:::nodeClass
+        on_ramp_lot["on_ramp_lot: Node"]:::nodeClass
         person_operation_claim["person_operation_claim: Node"]:::nodeClass
         platform_reserve_ledger["platform_reserve_ledger: Node"]:::nodeClass
         platform_token["platform_token: Node"]:::nodeClass
         project_treasury_ledger["project_treasury_ledger: Node"]:::nodeClass
         tenant_kyc_provider_selection["tenant_kyc_provider_selection: Node"]:::nodeClass
+        tenant_price_schedule["tenant_price_schedule: Node"]:::nodeClass
         user["user: Node"]:::nodeClass
         user_external_login["user_external_login: Node"]:::nodeClass
         wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
@@ -195,6 +206,14 @@ graph LR
     ecosystem -- "user_id [N:1]" --> user
     ecosystem_node -- "ecosystem_id [N:1]" --> ecosystem
     ecosystem_node -- "parent_node_id [N:0..1]" --> ecosystem_node
+    fiat_event -- "intent_id [N:0..1]" --> hosted_session
+    fiat_event -- "subject_user_id [N:0..1]" --> user
+    fiat_reversal -- "intent_id [N:0..1]" --> hosted_session
+    fiat_reversal -- "lot_id [N:0..1]" --> on_ramp_lot
+    fiat_reversal -- "operation_id [N:0..1]" --> operation_log
+    fiat_reversal -- "flag_cleared_by [N:0..1]" --> user
+    fiat_reversal -- "subject_user_id [N:0..1]" --> user
+    fiat_reversal -- "tenant_id [N:0..1]" --> user
     hold_ledger -- "funder_user_id [N:0..1]" --> user
     hold_ledger -- "tenant_id [N:0..1]" --> user
     hold_ledger -- "beneficiary_user_id [N:1]" --> user
@@ -229,6 +248,11 @@ graph LR
     node_treasury_destination -- "updated_by_user_id [N:0..1]" --> user
     oauth_exchange_code -- "tenant_id [N:0..1]" --> user
     oauth_exchange_code -- "user_id [N:1]" --> user
+    on_ramp_lot -- "intent_id [N:1]" --> hosted_session
+    on_ramp_lot -- "operation_id [N:0..1]" --> operation_log
+    on_ramp_lot -- "price_schedule_id [N:0..1]" --> tenant_price_schedule
+    on_ramp_lot -- "tenant_id [N:0..1]" --> user
+    on_ramp_lot -- "subject_user_id [N:1]" --> user
     operation_log -- "initiator_api_key_id [N:0..1]" --> api_key
     operation_log -- "holon_id [N:0..1]" --> holon
     operation_log -- "source_holon_id [N:0..1]" --> holon
@@ -245,6 +269,8 @@ graph LR
     swap_state -- "user_id [N:1]" --> user
     tenant_kyc_provider_selection -- "tenant_id [N:1]" --> user
     tenant_kyc_provider_selection -- "updated_by_user_id [N:1]" --> user
+    tenant_price_schedule -- "tenant_id [N:0..1]" --> user
+    tenant_price_schedule -- "registered_by_user_id [N:1]" --> user
     user -- "owner_tenant_id [N:0..1]" --> user
     user_external_login -- "tenant_id [N:0..1]" --> user
     user_external_login -- "user_id [N:1]" --> user

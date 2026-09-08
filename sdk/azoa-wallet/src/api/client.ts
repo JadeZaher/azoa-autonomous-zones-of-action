@@ -1105,14 +1105,45 @@ export type ApiKeyScopeInfo = SelfIssuableApiKeyScopeInfo;
 
 // ─── Allocation types (Fiat Stripe Bridge) ───
 
+/**
+ * Mirrors AZOA's `AllocationKind` (D4/D47). `Mint` is retired for tenants — the
+ * manager refuses it for any tenant-driven caller — and stays only so historical
+ * receipts still deserialise. `IssueUnits` is the tenant-facing default: it draws
+ * already-existing units from a named reserve partition instead of creating supply.
+ */
 export interface AllocationRequest {
-  kind: "Mint" | "Transfer";
+  kind: "Mint" | "Transfer" | "IssueUnits";
   chainType: string;
   amount: string;
   name?: string;
   description?: string;
   assetId?: string;
   assetRecordId?: string;
+  /**
+   * The named reserve partition an `IssueUnits` draw comes from (e.g.
+   * `"contributor"`, `"investor"`). Required on that path — the backend refuses
+   * an `IssueUnits` request with no partition rather than defaulting one, so one
+   * purpose can never quietly overdraw another's earmark.
+   */
+  partition?: string;
+  /**
+   * Why these units are being issued, in the caller's own words (e.g.
+   * `"milestone-2 contributor stake"`). Recorded against the durable operation;
+   * never interpreted.
+   */
+  purpose?: string;
+  /**
+   * The fee schedule version the caller quoted via `previewOnly`. When set and
+   * the node's live schedule has moved on, the allocation is refused rather than
+   * settling on terms the caller never agreed to.
+   */
+  expectedFeeScheduleVersion?: number;
+  /**
+   * Quote only: runs every readiness check and returns the exact gross/fee/net
+   * and schedule version, performing NO allocation and claiming NO idempotency
+   * key. Use this to show a caller the fee before it locks terms with a person.
+   */
+  previewOnly?: boolean;
   metadata?: Record<string, string>;
   memo?: string;
 }
@@ -1128,6 +1159,242 @@ export interface AllocationResult {
   nodeFeeAmount: string;
   netAmount: string;
   nodeFeeScheduleVersion: number;
+}
+
+// ─── Hold types (HoldController, D14 / W3.4) ───
+// The tenant-callable HOLD surface: units committed out of a declared reserve
+// partition, held until a release window elapses. No address, key, fee or chain
+// name is ever exposed to the person a hold is for.
+
+/** Durable hold lifecycle state (mirrors the backend's `HoldLedger.State` allow-list). */
+export type HoldState =
+  | "Open"
+  | "Released"
+  | "Refunded"
+  | "ChainedToHold";
+
+export interface HoldOpenParams {
+  /** Rail the hold settles on (e.g. "Algorand"). */
+  chain: string;
+  /** The caller's own hold id — the idempotency anchor. */
+  holdId: string;
+  /** Asset being held. */
+  assetId: string;
+  /** Amount in the asset's base units, as a whole decimal string. */
+  amount: string;
+  /** Declared reserve partition the commitment is drawn from. */
+  reservePartition: string;
+  /** Who the units are held for. */
+  beneficiaryUserId: string;
+  /** The hold window (ISO-8601); absent means releasable immediately. */
+  releaseNotBefore?: string;
+  /** Whether the hosted sweep may release it once due. Defaults true server-side. */
+  autoRelease?: boolean;
+  /** The caller's own reason for the hold. */
+  purpose?: string;
+}
+
+export interface HoldSettlementParams {
+  /** Why the hold is being settled; recorded on the ledger row. */
+  reason?: string;
+}
+
+export interface HoldChainParams {
+  /** Id of the hold that continues this one. */
+  nextHoldId: string;
+  /** Who the units are held for next. */
+  nextBeneficiaryUserId: string;
+  /** The next window (ISO-8601); may never be earlier than the one it continues. */
+  releaseNotBefore?: string;
+  autoRelease?: boolean;
+  purpose?: string;
+}
+
+/**
+ * Wire view of a hold. Deliberately carries NO address and NO rail reference —
+ * the person a hold is for needs to know how much is theirs and when, not which
+ * account it is parked in or what the chain called the payment.
+ */
+export interface HoldView {
+  holdId: string;
+  chain: string;
+  assetId: string;
+  amount: string;
+  reservePartition: string;
+  fundingSource: string;
+  beneficiaryUserId: string;
+  funderUserId: string | null;
+  state: HoldState;
+  releaseNotBefore: string | null;
+  autoRelease: boolean;
+  parentHoldId: string | null;
+  childHoldId: string | null;
+  purpose: string | null;
+  settledAt: string | null;
+  settlementReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Fiat on-ramp checkout types (FiatCheckoutController) ───
+// The "add funds" surface: start a payment for a person's account and find that
+// payment again when they come back. This controller never credits anything — a
+// payment becomes funds only when the provider's webhook clears server-side.
+
+/**
+ * Consumer-facing lifecycle words for one funding intent (mirrors
+ * `FiatIntentStatuses`). Never rail vocabulary — a caller never sees a Stripe
+ * session state directly.
+ */
+export type FiatCheckoutStatus =
+  | "starting"
+  | "awaiting_payment"
+  | "processing"
+  | "complete"
+  | "failed"
+  | "expired";
+
+/**
+ * How far a funding intent has got, in the vocabulary of the person who paid
+ * (mirrors `FiatSettlementStates`). `payment_received` means the card cleared but
+ * the funds have not yet landed in the account; only `funds_applied` means the
+ * account balance actually moved.
+ */
+export type FiatSettlementState =
+  | "not_started"
+  | "payment_received"
+  | "funds_applied"
+  | "payment_failed";
+
+/** Allowlisted routing value for a checkout (mirrors `FiatCheckoutPurposes`). */
+export type FiatCheckoutPurpose = "funds-top-up";
+
+/** Non-secret capability report for a hosted-session provider (KYC or fiat checkout). */
+export interface HostedSessionCapabilities {
+  providerKey: string;
+  flowKind: string;
+  available: boolean;
+  /** Configuration key NAMES that are missing or invalid. Never values. */
+  missingConfigurationKeys: string[];
+  unavailableReason: string | null;
+}
+
+export interface FiatCheckoutStartParams {
+  /**
+   * Caller-stable key. The same key resumes the same payment instead of opening
+   * a second one, so a double-tapped button cannot charge twice.
+   */
+  requestKey: string;
+  /** Allowlisted routing value; see `Fiat:Checkout:AllowedPurposes` server-side. */
+  purpose?: FiatCheckoutPurpose | string;
+  /** The amount to pay, in minor units of the node's configured currency. Never a unit count. */
+  amountMinorUnits: number;
+  /** Where to return the payer afterwards. Must be on an allowlisted origin. */
+  successUrl?: string;
+  /** Where to return the payer if they back out. Must be on an allowlisted origin. */
+  cancelUrl?: string;
+}
+
+/** Everything the return page needs to recognise the intent it came back to. */
+export interface FiatCheckoutIntent {
+  /** The node's own intent id. Safe to show; it is NOT the payment provider's id. */
+  intentId: string;
+  admissionKey: string;
+  status: FiatCheckoutStatus;
+  settlementState: FiatSettlementState;
+  /** The hosted payment page, while the intent is still open. */
+  paymentUrl: string | null;
+  /** True when this call resumed an existing intent instead of creating one. */
+  resumed: boolean;
+  /** The amount that actually cleared, re-read from the provider. Null until it has. */
+  amountPaidMinorUnits: number | null;
+  currency: string | null;
+  expiresAt: string | null;
+}
+
+// ─── Platform token reserve/genesis read (PlatformTokenController, W3.2/D49) ───
+// Operator-scoped (JWT operator policy; unreachable via API key). Read-only —
+// the SDK deliberately does not expose the one-time genesis mutation, which
+// additionally requires a fresh, non-API-key node-operator login.
+
+/** The platform unit's on-chain definition. Amounts are base-unit decimal strings. */
+export interface PlatformTokenDefinition {
+  chainType: string;
+  network: string;
+  assetId: string;
+  name: string;
+  unitName: string;
+  decimals: number;
+  totalSupply: string;
+  reserveAddress: string;
+  activatedAt: string | null;
+}
+
+/** Supply in base units as decimal strings — nothing here is truncated to a JS number. */
+export interface PlatformTokenSupply {
+  /** The genesis ceiling: everything this node could ever issue. */
+  total: string;
+  /** Reserve outflow: units that have left the reserve and not come back. */
+  circulating: string;
+  /** Units committed to holds; promised, but not yet out of the reserve. */
+  held: string;
+  /** Total minus circulating: what the reserve still accounts for. */
+  inReserve: string;
+}
+
+/** The platform unit plus its live supply. */
+export interface PlatformTokenState {
+  definition: PlatformTokenDefinition;
+  supply: PlatformTokenSupply;
+}
+
+// ─── Project treasury reads (ProjectTreasuryController, Admin/Operator) ───
+// Operator-scoped read surface for per-project custodial treasuries — the
+// accounts a project's funding actually lands in. No SDK method moves units;
+// crediting/spending belong to the value paths that actually move money.
+
+export interface ProjectTreasuryAccount {
+  chain: string;
+  tenantId: string;
+  projectReference: string;
+  address: string;
+  derivationVersion: string;
+  status: string;
+}
+
+/** One asset's counters on a treasury, in base units as decimal strings. */
+export interface ProjectTreasuryAsset {
+  assetId: string;
+  credited: string;
+  spent: string;
+  held: string;
+  available: string;
+}
+
+export interface ProjectTreasuryLedger {
+  chain: string;
+  network: string;
+  tenantId: string;
+  projectReference: string;
+  address: string;
+  derivationVersion: string;
+  status: string;
+  closedAt: string | null;
+  closeReason: string | null;
+  assets: ProjectTreasuryAsset[];
+  /** Set (with an empty `assets`) when the assets blob could not be decoded — never read as "no commitments". */
+  assetsError: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Combines the account, its ledger, and chain truth for one asset. */
+export interface ProjectTreasuryView {
+  account: ProjectTreasuryAccount;
+  ledger: ProjectTreasuryLedger;
+  chainBalance: string | null;
+  chainBalanceError: string | null;
 }
 
 // ─── DappSeries types matching .NET DTOs (DappSeriesController) ───
@@ -1781,6 +2048,148 @@ export class AzoaApiClient {
       false,
       headers
     );
+  }
+
+  // ─── Hold (HoldController, D14 / W3.4) ───
+  // Value-moving writes require an API-key principal carrying transfer:sign,
+  // exactly like allocate(). Reads are owner-scoped server-side.
+
+  /**
+   * Opens a hold, or returns the one this hold id already opened. Idempotent on
+   * the caller's own `holdId`: a redelivered request returns the existing hold
+   * and commits nothing twice.
+   */
+  async openHold(params: HoldOpenParams): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(params.chain, "chain");
+    assertNonEmpty(params.holdId, "holdId");
+    assertNonEmpty(params.assetId, "assetId");
+    assertPositiveUlongDecimal(params.amount, "amount");
+    return this.request<HoldView>("POST", API_PATHS.HOLD_OPEN, params);
+  }
+
+  /** Releases a due hold to its beneficiary. Refused before the window elapses. */
+  async releaseHold(
+    chain: string,
+    holdId: string,
+    params?: HoldSettlementParams
+  ): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertNonEmpty(holdId, "holdId");
+    return this.request<HoldView>("POST", API_PATHS.HOLD_RELEASE(chain, holdId), params);
+  }
+
+  /** Gives a hold back: the commitment returns to the partition it was drawn from. */
+  async refundHold(
+    chain: string,
+    holdId: string,
+    params?: HoldSettlementParams
+  ): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertNonEmpty(holdId, "holdId");
+    return this.request<HoldView>("POST", API_PATHS.HOLD_REFUND(chain, holdId), params);
+  }
+
+  /** Continues a hold as a second hold over the same units — what approving completed work is. */
+  async releaseHoldIntoHold(
+    chain: string,
+    holdId: string,
+    params: HoldChainParams
+  ): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertNonEmpty(holdId, "holdId");
+    assertNonEmpty(params.nextHoldId, "nextHoldId");
+    return this.request<HoldView>("POST", API_PATHS.HOLD_RELEASE_INTO_HOLD(chain, holdId), params);
+  }
+
+  /** One hold, visible only to the beneficiary, funder, or owning tenant. */
+  async getHold(chain: string, holdId: string): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertNonEmpty(holdId, "holdId");
+    return this.request<HoldView>("GET", API_PATHS.HOLD_GET(chain, holdId));
+  }
+
+  /** Every hold the authenticated person funds or benefits from, newest first. */
+  async listMyHolds(limit?: number): Promise<Result<HoldView[], SdkError>> {
+    const path = limit ? `${API_PATHS.HOLD_MINE}?limit=${limit}` : API_PATHS.HOLD_MINE;
+    return this.request<HoldView[]>("GET", path);
+  }
+
+  // ─── Fiat on-ramp checkout (FiatCheckoutController) ───
+
+  /** Whether this node can take a payment right now, and which config keys are missing if not. */
+  async getFiatCheckoutCapabilities(): Promise<Result<HostedSessionCapabilities, SdkError>> {
+    return this.request<HostedSessionCapabilities>("GET", API_PATHS.FIAT_CHECKOUT_CAPABILITIES);
+  }
+
+  /**
+   * Starts (or resumes) a payment that adds funds to `userId`'s account. A
+   * first-party login may only pay for itself — `userId` must be the caller's own
+   * id unless the principal is a tenant API key with the person's live consent.
+   */
+  async startFiatCheckout(
+    userId: string,
+    params: FiatCheckoutStartParams
+  ): Promise<Result<FiatCheckoutIntent, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(params.requestKey, "requestKey");
+    return this.request<FiatCheckoutIntent>("POST", API_PATHS.FIAT_CHECKOUT_START(userId), params);
+  }
+
+  /**
+   * Reads one payment for the person it belongs to — what the return page calls
+   * with the `intent` query parameter the rail put on the return URL.
+   */
+  async getFiatCheckoutIntent(
+    userId: string,
+    intentId: string
+  ): Promise<Result<FiatCheckoutIntent, SdkError>> {
+    assertUuid(userId, "userId");
+    assertUuid(intentId, "intentId");
+    return this.request<FiatCheckoutIntent>("GET", API_PATHS.FIAT_CHECKOUT_GET(userId, intentId));
+  }
+
+  // ─── Platform token reserve/genesis read (PlatformTokenController). Operator-scoped. ───
+
+  /**
+   * The platform unit on this node's active network, with live supply. There is
+   * deliberately no `runPlatformTokenGenesis` method — that mutation additionally
+   * requires a fresh, non-API-key node-operator login the SDK's bearer/API-key
+   * config cannot express.
+   */
+  async getPlatformTokenState(): Promise<Result<PlatformTokenState, SdkError>> {
+    return this.request<PlatformTokenState>("GET", API_PATHS.PLATFORM_TOKEN_GET);
+  }
+
+  // ─── Project treasury reads (ProjectTreasuryController). Operator-scoped. ───
+
+  /**
+   * One project's treasury: the account, its ledger counters, and what the chain
+   * says the address actually holds. No SDK method moves units through this
+   * surface — crediting and spending belong to the value paths that move money.
+   */
+  async getProjectTreasury(
+    chain: string,
+    tenantId: string,
+    projectReference: string,
+    assetId?: string
+  ): Promise<Result<ProjectTreasuryView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertUuid(tenantId, "tenantId");
+    assertNonEmpty(projectReference, "projectReference");
+    return this.request<ProjectTreasuryView>(
+      "GET",
+      API_PATHS.PROJECT_TREASURY_GET(chain, tenantId, projectReference, assetId)
+    );
+  }
+
+  /** Every treasury one tenant owns, newest first. */
+  async listProjectTreasuriesByTenant(
+    tenantId: string,
+    limit?: number
+  ): Promise<Result<ProjectTreasuryLedger[], SdkError>> {
+    assertUuid(tenantId, "tenantId");
+    const base = API_PATHS.PROJECT_TREASURY_LIST_BY_TENANT(tenantId);
+    return this.request<ProjectTreasuryLedger[]>("GET", limit ? `${base}?limit=${limit}` : base);
   }
 
   // ─── Swap (SwapController) ───

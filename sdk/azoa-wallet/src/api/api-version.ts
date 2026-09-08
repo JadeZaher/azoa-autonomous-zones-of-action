@@ -193,6 +193,37 @@ export const API_PATHS = {
   // Wallet wrapping-key rotation (KeyRotationController, final-hardening B5). Operator-scoped.
   KEY_ROTATION_ROTATE: "/api/admin/key-rotation/rotate",
 
+  // Hold rails (HoldController, D14 / W3.4): commit-and-later-release units out of a
+  // declared reserve partition. Route (not body) carries chain + hold id.
+  HOLD_OPEN: "/api/holds",
+  HOLD_GET: (chain: string, holdId: string) =>
+    `/api/holds/${encodeURIComponent(chain)}/${encodeURIComponent(holdId)}`,
+  HOLD_RELEASE: (chain: string, holdId: string) =>
+    `/api/holds/${encodeURIComponent(chain)}/${encodeURIComponent(holdId)}/release`,
+  HOLD_REFUND: (chain: string, holdId: string) =>
+    `/api/holds/${encodeURIComponent(chain)}/${encodeURIComponent(holdId)}/refund`,
+  HOLD_RELEASE_INTO_HOLD: (chain: string, holdId: string) =>
+    `/api/holds/${encodeURIComponent(chain)}/${encodeURIComponent(holdId)}/release-into-hold`,
+  HOLD_MINE: "/api/holds/mine",
+
+  // Fiat on-ramp checkout (FiatCheckoutController). The subject is always the
+  // route userId — no body field can redirect a payment to a different account.
+  FIAT_CHECKOUT_CAPABILITIES: "/api/fiat/checkout/capabilities",
+  FIAT_CHECKOUT_START: (userId: string) => `/api/fiat/checkout/${userId}`,
+  FIAT_CHECKOUT_GET: (userId: string, intentId: string) => `/api/fiat/checkout/${userId}/${intentId}`,
+
+  // Platform token reserve/genesis read (PlatformTokenController, W3.2/D49). Operator-scoped;
+  // the genesis mutation is deliberately NOT exposed here (needs a fresh node-operator login).
+  PLATFORM_TOKEN_GET: "/api/admin/platform-token",
+
+  // Per-project custodial treasury reads (ProjectTreasuryController). Operator-scoped.
+  PROJECT_TREASURY_GET: (chain: string, tenantId: string, projectReference: string, assetId?: string) => {
+    const qs = new URLSearchParams({ chain, tenantId, projectReference });
+    if (assetId) qs.set("assetId", assetId);
+    return `/api/admin/project-treasuries?${qs}`;
+  },
+  PROJECT_TREASURY_LIST_BY_TENANT: (tenantId: string) => `/api/admin/project-treasuries/tenant/${tenantId}`,
+
   // Soulbound credential revocation (CredentialController, D19). Issuer-only ASA
   // clawback; NOT enabled server-side yet (credential-third-party-issuance_20260906).
   CREDENTIAL_REVOKE: (assetId: string) => `/api/credential/${encodeURIComponent(assetId)}/revoke`,

@@ -155,7 +155,9 @@ public sealed class WideAmountAndValueStampTests
     // ── D16: the value stamp ───────────────────────────────────────────────────
 
     /// <summary>
-    /// The normal case today: nothing implements <see cref="IValueRateSource"/>, so the
+    /// A manager built with NO <see cref="IValueRateSource"/> — which is what this test does,
+    /// not what the node does: <c>TenantDeclaredValueRateSource</c> implements it and
+    /// <c>AnalyticsRegistration.AddValueRateSources</c> registers it. With no source the
     /// operation is written with NO stamp — every stamp column null — and that state is
     /// what "never priced" means on the row.
     /// </summary>

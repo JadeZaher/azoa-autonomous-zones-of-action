@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Managers;
 
 namespace AZOA.WebAPI.Services.Reconciliation;
 
@@ -22,6 +24,15 @@ namespace AZOA.WebAPI.Services.Reconciliation;
 /// scoped <see cref="IReconciliationService"/> directly
 /// (<c>ReconcileBridgeTransactionAsync</c>); wiring an admin endpoint to it is
 /// out of scope for this service.</para>
+///
+/// <para><b>Parked action runs.</b> Each tick ALSO drains the durable action runs
+/// parked in <c>AwaitingReconciliation</c> via
+/// <see cref="IParkedRunReconciler.ReconcileAllParkedRunsAsync"/> — before this the
+/// backlog only moved when a human called
+/// <c>POST /api/action/runs/reconcile-sweep</c>, so an issuance whose confirmation
+/// read timed out sat pending indefinitely. Runs still parked after their re-probe
+/// and older than <see cref="ReconciliationOptions.OperationHardStuckAfterSeconds"/>
+/// raise the same "MANUAL INTERVENTION REQUIRED" alert the bridge G6 check uses.</para>
 /// </summary>
 public sealed class ReconciliationHostedService : BackgroundService
 {
@@ -117,18 +128,28 @@ public sealed class ReconciliationHostedService : BackgroundService
             var ops = await svc.ReconcileOperationsAsync(stoppingToken);
             var combined = bridge.Combine(ops);
 
-            if (combined.StuckFlagged > 0 || combined.Failed > 0 || combined.Errors > 0)
+            // Third leg of the tick: un-park durable action runs. Kept in the same
+            // scope so one tick is one DI scope, and after the bridge/op passes so a
+            // chain-truth read the earlier passes warmed is already cached.
+            var parkedRuns = await ReconcileParkedActionRunsAsync(scope, stoppingToken);
+
+            var needsAttention =
+                combined.StuckFlagged > 0 || combined.Failed > 0 || combined.Errors > 0
+                || parkedRuns.HardStuck.Count > 0 || parkedRuns.Errors > 0;
+
+            if (needsAttention)
             {
                 _logger.LogWarning(
                     "Reconciliation sweep complete with attention items — " +
-                    "bridge[{Bridge}] ops[{Ops}] combined[{Combined}]",
-                    bridge, ops, combined);
+                    "bridge[{Bridge}] ops[{Ops}] parkedRuns[{ParkedRuns}] combined[{Combined}]",
+                    bridge, ops, parkedRuns, combined);
             }
             else
             {
                 _logger.LogInformation(
-                    "Reconciliation sweep complete — bridge[{Bridge}] ops[{Ops}] combined[{Combined}]",
-                    bridge, ops, combined);
+                    "Reconciliation sweep complete — bridge[{Bridge}] ops[{Ops}] " +
+                    "parkedRuns[{ParkedRuns}] combined[{Combined}]",
+                    bridge, ops, parkedRuns, combined);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -140,5 +161,79 @@ public sealed class ReconciliationHostedService : BackgroundService
             _logger.LogError(ex,
                 "Reconciliation sweep failed — swallowed; will retry next interval.");
         }
+    }
+
+    /// <summary>
+    /// Un-parks durable action runs stuck in <c>AwaitingReconciliation</c> and raises the
+    /// hard-stuck operator alert for the ones the re-probe could not resolve (bridge G6
+    /// pattern: log + count, never mutate, never re-broadcast). Returns the report so the
+    /// tick log carries its counts.
+    /// </summary>
+    private async Task<ParkedRunSweepReport> ReconcileParkedActionRunsAsync(
+        IServiceScope scope, CancellationToken ct)
+    {
+        // Resolution is guarded: a manager-construction fault must not sink the whole
+        // tick (the bridge and operation passes have already done their work by now).
+        IActionManager? actionManager;
+        try
+        {
+            actionManager = scope.ServiceProvider.GetService<IActionManager>();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Reconciliation: parked-run sweep could not resolve IActionManager — runs parked in " +
+                "AwaitingReconciliation were NOT swept this tick.");
+            return ParkedRunSweepReport.Empty with { Errors = 1, Error = ex.Message };
+        }
+
+        if (actionManager is not IParkedRunReconciler reconciler)
+        {
+            // Loud, never silent: a swallowed cast here would restore exactly the gap
+            // this pass closes — parked runs waiting for a human to name them.
+            _logger.LogError(
+                "Reconciliation: parked-run sweep is NOT running — the registered IActionManager " +
+                "({Registered}) does not implement IParkedRunReconciler. Runs parked in " +
+                "AwaitingReconciliation will only drain when an operator calls " +
+                "POST /api/action/runs/reconcile-sweep.",
+                actionManager?.GetType().FullName ?? "<not registered>");
+            return ParkedRunSweepReport.Empty;
+        }
+
+        // Parked runs share the blockchain-operation thresholds: both are "a chain
+        // effect whose truth we cannot derive". A dedicated ParkedRun* knob belongs in
+        // ReconciliationOptions when that file is next open.
+        var hardStuckAfter = TimeSpan.FromSeconds(Math.Max(0, _options.OperationHardStuckAfterSeconds));
+
+        var report = await reconciler.ReconcileAllParkedRunsAsync(
+            hardStuckAfter, _options.BatchSize, ct);
+
+        if (report.Error is not null)
+        {
+            _logger.LogError(
+                "Reconciliation: parked-run sweep could not list runs awaiting reconciliation " +
+                "— nothing was swept this tick. {Error}",
+                report.Error);
+            return report;
+        }
+
+        if (report.HardStuck.Count > 0)
+        {
+            var sample = string.Join(", ", report.HardStuck
+                .OrderByDescending(r => r.Age)
+                .Take(5)
+                .Select(r => $"{r.RunId} (parked {r.Age.TotalMinutes:F0}m, {r.IndeterminateNodes} unresolved node(s))"));
+
+            _logger.LogError(
+                "Reconciliation: MANUAL INTERVENTION REQUIRED — {Count} action run(s) are STILL " +
+                "parked in AwaitingReconciliation after a re-probe and have been parked longer " +
+                "than the {ThresholdSeconds}s hard-stuck threshold. Chain truth is not derivable " +
+                "for them; the sweep will NEVER re-broadcast. Operator console: /admin/parked-runs. " +
+                "Sample: [{Sample}]",
+                report.HardStuck.Count, hardStuckAfter.TotalSeconds, sample);
+        }
+
+        return report;
     }
 }

@@ -271,11 +271,29 @@ public class BlockchainProviderFactory : IBlockchainProviderFactory
 
         var binding = ResolveEnabledBinding(registration, environment);
         var key = new ProviderRailKey(registration.RailId, binding.Environment.Name);
-        return _activeProviders.GetOrAdd(
+        var lazy = _activeProviders.GetOrAdd(
             key,
             _ => new Lazy<IValueRailProvider>(
                 () => CreateInitializedProvider(registration, binding),
-                LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+                LazyThreadSafetyMode.ExecutionAndPublication));
+
+        try
+        {
+            return lazy.Value;
+        }
+        catch
+        {
+            // ExecutionAndPublication CACHES the exception forever: once a creation throws, every
+            // later resolve of that (rail, environment) rethrows the SAME failure until the process
+            // restarts. For a chain provider built from static config that was invisible; for a rail
+            // whose creation reaches into the container it means one transient startup-order failure
+            // permanently strands the rail — and a payment rail that is permanently unavailable
+            // after one hiccup takes every sponsor with it. Evicting the faulted entry (only when
+            // it is still the one we published) lets the next call rebuild. The exception still
+            // propagates to THIS caller: a failure is never swallowed, only un-cached.
+            _activeProviders.TryRemove(new KeyValuePair<ProviderRailKey, Lazy<IValueRailProvider>>(key, lazy));
+            throw;
+        }
     }
 
     /// <inheritdoc/>

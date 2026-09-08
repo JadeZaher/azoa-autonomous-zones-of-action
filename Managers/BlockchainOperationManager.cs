@@ -23,10 +23,11 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     private readonly IValueRateSource _valueRateSource;
     private readonly ILogger<BlockchainOperationManager>? _logger;
 
-    /// <param name="valueRateSource">D16 seam. Optional and unregistered today: this
-    /// codebase has no price oracle, so the default never quotes and every operation is
-    /// written explicitly unpriced. See <c>Persistence/SurrealDb/Models/AGENTS.md</c>
-    /// §value-stamp.</param>
+    /// <param name="valueRateSource">D16 seam. Optional: a node that has not called
+    /// <c>AddValueRateSources</c> (<c>Services/Analytics/AnalyticsRegistration</c>) falls
+    /// back to the source that never quotes, and every operation is written explicitly
+    /// unpriced rather than mispriced. See <c>Persistence/SurrealDb/Models/AGENTS.md</c>
+    /// §value-stamp and <c>Services/Analytics/AGENTS.md</c> §declared-rate-source.</param>
     /// <param name="logger">Optional so the many hand-constructed instances in tests stay
     /// two-line; the container supplies a real one.</param>
     public BlockchainOperationManager(
@@ -580,14 +581,14 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// </summary>
     /// <remarks>
     /// Three ways an operation ends up unpriced, all of them legitimate and all of them
-    /// recorded as "no stamp at all" rather than a zero: the operation moved no single
-    /// quantity (Swap/Exchange/DeployContract/CallContract), nothing was broadcast
-    /// (Failed / AwaitingSignature / unrecognised type), or no rate source could quote.
-    /// The third is the normal case today — nothing implements
-    /// <see cref="IValueRateSource"/> — and it must stay visibly absent: a defaulted or
-    /// invented rate on a value record is worse than a missing one, and the analytics
-    /// surface reads a null stamp as "never priced" while a stamped <c>"0"</c> rate means
-    /// a source genuinely quoted zero.
+    /// recorded as "no stamp at all" rather than a zero: the row records no quantity to
+    /// price (DeployContract/CallContract move none, and a Burn/Transfer/Exchange/Swap whose
+    /// amount parameter is absent or unreadable refuses rather than defaults), nothing was
+    /// broadcast (Failed / AwaitingSignature / unrecognised type), or no rate source could
+    /// quote. The third is the normal case on a node whose consumer has declared no rates,
+    /// and it must stay visibly absent: a defaulted or invented rate on a value record is
+    /// worse than a missing one, and the analytics surface reads a null stamp as "never
+    /// priced" while a stamped <c>"0"</c> rate means a source genuinely quoted zero.
     /// <para>A rate source that throws is treated exactly like one that declines. The
     /// chain effect has already happened by this point; letting a price lookup fail the
     /// operation would turn an oracle outage into a settled-but-Failed row, and
@@ -632,42 +633,107 @@ public class BlockchainOperationManager : IBlockchainOperationManager
             or OperationStatus.Pending);
 
     /// <summary>
-    /// The single quantity this operation moved, when it has one. Swap and Exchange move
-    /// two different assets and Deploy/Call move none, so they carry no single amount to
-    /// price and are left unstamped rather than stamped with a half-truth.
+    /// The quantity this operation moved AND the asset that quantity is counted in, when the
+    /// row records both. DeployContract/CallContract move no quantity and are never stamped.
     /// </summary>
     /// <remarks>
-    /// Burn and Transfer read their quantity from the <c>Amount</c> parameter, and this path
-    /// takes NO fallback: the execution paths may default a missing amount (a transfer of one
-    /// asset), but a value stamp computed against a defaulted quantity is a fabricated figure
-    /// on a financial record. D16 is explicit that an absent value must read back as unpriced,
-    /// never as a real number, so an unreadable amount refuses the stamp instead.
+    /// Every branch dimensions the amount with the SAME asset the execution path hands the
+    /// provider, because a stamp whose dimension does not name its asset is the D16 trap:
+    /// <see cref="ValueDimension.NativeChainAsset"/> means "whatever asset this call itself
+    /// named", so a rate source handed that on a project-token move would price N project
+    /// units at the chain's native rate — N micro-Algos on a sponsor's statement. Naming the
+    /// asset here is what lets a source price it correctly, or refuse it.
+    /// <para>Swap and Exchange stamp the leg they GIVE UP (<c>AmountIn</c> in <c>TokenIn</c>,
+    /// <c>Amount</c> in <c>SourceTokenId</c>): it is the consideration the initiator paid, it
+    /// is the only leg whose quantity the row records, and it is dimensioned so no source can
+    /// mistake it for the other side. The received leg is NOT stamped and must never be
+    /// inferred from this figure.</para>
+    /// <para>Burn/Transfer/Exchange/Swap take NO amount fallback: the execution paths may
+    /// default a missing amount (a transfer of one asset), but a value stamp computed against
+    /// a defaulted quantity is a fabricated figure on a financial record. D16 is explicit that
+    /// an absent value must read back as unpriced, never as a real number, so an unreadable
+    /// amount refuses the stamp instead.</para>
     /// </remarks>
     private static bool TryResolveStampableAmount(IBlockchainOperation operation, out RailAmount amount)
     {
+        var parameters = operation.Parameters;
         switch (operation.OperationType)
         {
             case "Mint" when operation is IMintOperation mint:
-                amount = mint.Amount;
+                // The typed field already carries the count; name the asset when the row does,
+                // and otherwise leave the caller's own dimension untouched.
+                amount = NameAsset(mint.Amount, MintedAssetId(operation));
                 return true;
             case "Burn":
+                return TryReadRailAmount(
+                    operation, "Amount", parameters.GetValueOrDefault("TokenId", string.Empty), out amount);
             case "Transfer":
-                return TryReadRailAmount(operation, out amount);
+                return TryReadRailAmount(operation, "Amount", TransferredAssetId(operation), out amount);
+            case "Exchange":
+                return TryReadRailAmount(operation, "Amount", ExchangedAssetId(operation), out amount);
+            case "Swap":
+                return TryReadRailAmount(
+                    operation, "AmountIn", parameters.GetValueOrDefault("TokenIn", string.Empty), out amount);
             default:
                 amount = RailAmount.Zero;
                 return false;
         }
     }
 
+    /// <summary>The asset a mint issued, when the row names one; blank otherwise (an ASA-create names none yet).</summary>
+    private static string MintedAssetId(IBlockchainOperation operation) =>
+        FirstNonBlankParameter(operation, "AssetId", "TokenId");
+
+    /// <summary>The asset a transfer moved — resolved exactly as <see cref="ExecuteTransferAsync"/> resolves it.</summary>
+    private static string TransferredAssetId(IBlockchainOperation operation) =>
+        operation.Parameters.GetValueOrDefault(
+            "SourceTokenId", (operation as ITransferOperation)?.SourceHolonId?.ToString() ?? string.Empty);
+
+    /// <summary>The asset an exchange gave up — resolved exactly as <see cref="ExecuteExchangeAsync"/> resolves it.</summary>
+    private static string ExchangedAssetId(IBlockchainOperation operation) =>
+        operation.Parameters.GetValueOrDefault(
+            "SourceTokenId", (operation as IExchangeOperation)?.SourceHolonId?.ToString() ?? string.Empty);
+
+    /// <summary>The first of <paramref name="parameterNames"/> the row actually carries, or blank.</summary>
+    private static string FirstNonBlankParameter(IBlockchainOperation operation, params string[] parameterNames)
+    {
+        foreach (var name in parameterNames)
+        {
+            var value = operation.Parameters.GetValueOrDefault(name, string.Empty);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return string.Empty;
+    }
+
     /// <summary>
-    /// The op's <c>Amount</c> parameter as a <see cref="RailAmount"/>, or <c>false</c> when it
-    /// is absent or unparseable. The refusing twin of <see cref="ReadRailAmount"/>, for the
-    /// value-stamp path where a defaulted count would become a real-looking fiat figure.
+    /// Re-labels <paramref name="amount"/> with the asset the row names, when it names one and
+    /// the amount does not already carry its own. An amount whose dimension was set
+    /// deliberately keeps it: naming it a second time, differently, would be the manager
+    /// overruling the caller's own statement of what moved.
     /// </summary>
-    private static bool TryReadRailAmount(IBlockchainOperation operation, out RailAmount amount) =>
+    private static RailAmount NameAsset(RailAmount amount, string assetId) =>
+        string.IsNullOrWhiteSpace(assetId) || amount.Dimension.Code.Length > 0
+            ? amount
+            : amount.WithDimension(ValueDimension.ChainAsset(assetId));
+
+    /// <summary>
+    /// The named base-unit parameter as a <see cref="RailAmount"/> counted in
+    /// <paramref name="assetId"/>, or <c>false</c> when the parameter is absent or
+    /// unparseable. The refusing twin of <see cref="ReadRailAmount"/>, for the value-stamp
+    /// path where a defaulted count would become a real-looking fiat figure — and the one
+    /// place the stamped dimension is chosen, which is why it takes the asset explicitly
+    /// instead of defaulting to <see cref="ValueDimension.NativeChainAsset"/>.
+    /// </summary>
+    private static bool TryReadRailAmount(
+        IBlockchainOperation operation,
+        string parameterName,
+        string assetId,
+        out RailAmount amount) =>
         RailAmount.TryParse(
-            operation.Parameters.GetValueOrDefault("Amount", string.Empty),
-            ValueDimension.NativeChainAsset,
+            operation.Parameters.GetValueOrDefault(parameterName, string.Empty),
+            ValueDimension.ChainAsset(assetId),
             out amount);
 
     /// <summary>

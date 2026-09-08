@@ -46,4 +46,4 @@ await orchestrator.handleWebhook(req.body, req.headers["stripe-signature"]);
 Because AZOA's allocation endpoint uses bulletproof idempotency, the orchestrator does **not** need its own database to prevent double-mints. If Stripe redelivers a webhook, the orchestrator will blindly call AZOA again. AZOA will recognize the Stripe `PaymentIntent ID` as the `Idempotency-Key`, return a `replayed: true` response, and suppress any duplicate asset creation.
 
 ## Reference Implementation
-A complete, Docker-ready reference implementation of a standalone sidecar using this SDK orchestrator is provided in `fiat-sidecar/` at the root of the repository.
+~~A complete, Docker-ready reference implementation of a standalone sidecar using this SDK orchestrator is provided in `fiat-sidecar/` at the root of the repository.~~ **Retired.** `fiat-sidecar/` and the `@azoa/sdk` `orchestration/` module were both deleted in the ardanova-production-readiness Wave 4: Stripe now terminates in-process (`Providers/Fiat/`, `Services/Fiat/`) and the sidecar had no CI and no deploy target. Its invariants are ported and recorded in `docs/FIAT-RAIL.md`.

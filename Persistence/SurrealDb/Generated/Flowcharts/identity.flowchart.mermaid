@@ -9,6 +9,8 @@ graph LR
     api_key["api_key: Node"]:::nodeClass
     consent_audit["consent_audit: Node"]:::nodeClass
     consent_grant["consent_grant: Node"]:::nodeClass
+    fiat_event["fiat_event: Node"]:::nodeClass
+    fiat_reversal["fiat_reversal: Node"]:::nodeClass
     hold_ledger["hold_ledger: Node"]:::nodeClass
     holon["holon: Node"]:::nodeClass
     holon_type_registry["holon_type_registry: Node"]:::nodeClass
@@ -28,15 +30,20 @@ graph LR
     node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
     node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
     oauth_exchange_code["oauth_exchange_code: Node"]:::nodeClass
+    on_ramp_lot["on_ramp_lot: Node"]:::nodeClass
     person_operation_claim["person_operation_claim: Node"]:::nodeClass
     platform_reserve_ledger["platform_reserve_ledger: Node"]:::nodeClass
     platform_token["platform_token: Node"]:::nodeClass
     project_treasury_ledger["project_treasury_ledger: Node"]:::nodeClass
     tenant_kyc_provider_selection["tenant_kyc_provider_selection: Node"]:::nodeClass
+    tenant_price_schedule["tenant_price_schedule: Node"]:::nodeClass
     user["user: Node"]:::nodeClass
     user_external_login["user_external_login: Node"]:::nodeClass
     wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
     wallet_auth_claim_token["wallet_auth_claim_token: Node"]:::nodeClass
+
+    %% Cross-slice targets (rendered as ghost nodes)
+    operation_log["operation_log: Node (external)"]:::externalNode
 
     %% Edges (outbound from this slice)
     action_graph_bundle -- "user_id [N:0..1]" --> user
@@ -46,6 +53,14 @@ graph LR
     consent_audit -- "tenant_id [N:1]" --> user
     consent_grant -- "grantor_user_id [N:1]" --> user
     consent_grant -- "tenant_id [N:1]" --> user
+    fiat_event -- "intent_id [N:0..1]" --> hosted_session
+    fiat_event -- "subject_user_id [N:0..1]" --> user
+    fiat_reversal -- "intent_id [N:0..1]" --> hosted_session
+    fiat_reversal -- "lot_id [N:0..1]" --> on_ramp_lot
+    fiat_reversal -- "operation_id [N:0..1]" --> operation_log
+    fiat_reversal -- "flag_cleared_by [N:0..1]" --> user
+    fiat_reversal -- "subject_user_id [N:0..1]" --> user
+    fiat_reversal -- "tenant_id [N:0..1]" --> user
     hold_ledger -- "funder_user_id [N:0..1]" --> user
     hold_ledger -- "tenant_id [N:0..1]" --> user
     hold_ledger -- "beneficiary_user_id [N:1]" --> user
@@ -75,6 +90,11 @@ graph LR
     node_treasury_destination -- "updated_by_user_id [N:0..1]" --> user
     oauth_exchange_code -- "tenant_id [N:0..1]" --> user
     oauth_exchange_code -- "user_id [N:1]" --> user
+    on_ramp_lot -- "intent_id [N:1]" --> hosted_session
+    on_ramp_lot -- "operation_id [N:0..1]" --> operation_log
+    on_ramp_lot -- "price_schedule_id [N:0..1]" --> tenant_price_schedule
+    on_ramp_lot -- "tenant_id [N:0..1]" --> user
+    on_ramp_lot -- "subject_user_id [N:1]" --> user
     person_operation_claim -- "tenant_id [N:0..1]" --> user
     platform_reserve_ledger -- "tenant_id [N:0..1]" --> user
     platform_token -- "genesis_user_id [N:1]" --> user
@@ -82,6 +102,8 @@ graph LR
     project_treasury_ledger -- "tenant_id [N:1]" --> user
     tenant_kyc_provider_selection -- "tenant_id [N:1]" --> user
     tenant_kyc_provider_selection -- "updated_by_user_id [N:1]" --> user
+    tenant_price_schedule -- "tenant_id [N:0..1]" --> user
+    tenant_price_schedule -- "registered_by_user_id [N:1]" --> user
     user -- "owner_tenant_id [N:0..1]" --> user
     user_external_login -- "tenant_id [N:0..1]" --> user
     user_external_login -- "user_id [N:1]" --> user
@@ -89,3 +111,4 @@ graph LR
     wallet_auth_claim_token -- "tenant_id [N:1]" --> user
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
+    classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;

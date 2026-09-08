@@ -19,6 +19,28 @@ export type {
   // Allocation types (Fiat Stripe Bridge)
   AllocationRequest,
   AllocationResult,
+  // Hold types (HoldController, D14 / W3.4)
+  HoldState,
+  HoldOpenParams,
+  HoldSettlementParams,
+  HoldChainParams,
+  HoldView,
+  // Fiat on-ramp checkout types (FiatCheckoutController)
+  FiatCheckoutStatus,
+  FiatSettlementState,
+  FiatCheckoutPurpose,
+  HostedSessionCapabilities,
+  FiatCheckoutStartParams,
+  FiatCheckoutIntent,
+  // Platform token reserve/genesis read (PlatformTokenController)
+  PlatformTokenDefinition,
+  PlatformTokenSupply,
+  PlatformTokenState,
+  // Project treasury reads (ProjectTreasuryController)
+  ProjectTreasuryAccount,
+  ProjectTreasuryAsset,
+  ProjectTreasuryLedger,
+  ProjectTreasuryView,
   // Fungible mint (fungible-mint-and-render-model)
   FungibleMintParams,
   FungibleTokenResult,

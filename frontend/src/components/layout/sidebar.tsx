@@ -28,6 +28,8 @@ import {
   GitMerge,
   BadgeCheck,
   BarChart3,
+  Clock,
+  Undo2,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -79,6 +81,8 @@ const navGroups = [
     items: [
       { href: '/admin/key-rotation', label: 'Key Rotation', icon: ShieldAlert },
       { href: '/admin/sagas', label: 'Saga Console', icon: GitMerge },
+      { href: '/admin/parked-runs', label: 'Waiting on Settlement', icon: Clock },
+      { href: '/admin/fiat-reversals', label: 'Returned Payments', icon: Undo2 },
     ],
   },
   {

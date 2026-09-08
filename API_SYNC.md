@@ -15,6 +15,44 @@ fungible-token, and bridge responses likewise do not return raw idempotency
 keys; use the request header to correlate a caller-owned request and the
 allocation receipt endpoint for allocation status.
 
+## SDK 0.3.1 — Waves 3-4 parity (W4.7)
+
+Adds typed coverage for the Wave 3-4 value-rail surfaces that had shipped
+backend-first with no SDK method: Hold (`HoldController`), fiat on-ramp
+checkout (`FiatCheckoutController`), and the two Admin/Operator-scoped read
+surfaces (`PlatformTokenController`, `ProjectTreasuryController`). See the
+new rows below. `AllocationRequest.kind` gains `"IssueUnits"` plus
+`partition`/`purpose`/`expectedFeeScheduleVersion`/`previewOnly` (D47 — the
+tenant-facing default allocation path; `Mint` stays retired-for-tenants).
+
+**Breaking, pre-launch (no external consumer depended on it):** the SDK's
+`./orchestration` subpath export — a standalone Stripe checkout-and-mint
+orchestrator that duplicated `FiatCheckoutController` + `AllocationController`
+client-side and held its own Stripe secret key — is removed. `stripe` is no
+longer a dependency of this package. A consumer that wants its own
+orchestration bridge builds it externally against `azoa.api.startFiatCheckout`
++ `azoa.api.allocate`; the backend's own fiat rail (`FiatCheckoutController` →
+`FiatRailProvider` → a registered `IFiatSettlementHandler`) is the
+supported path for this node's own on-ramp.
+
+**Hygiene fixes (no behavior change under existing tests):**
+- `TinymanAdapter` no longer defaults an unknown ASA's decimals to `6`; it
+  resolves them from a configured indexer (`TinymanConfig.indexer`) and fails
+  closed (an `SdkError`, never a guess) when neither the caller nor an
+  indexer can supply them. Native ALGO (asset id 0) still resolves to 6
+  directly — a protocol constant, not a default.
+- `AlgorandProvider.buildTransfer`'s ALGO→microAlgo and ASA base-unit
+  conversion no longer goes through `Number(...) * 10**decimals` floating
+  math; both parse the decimal amount string exactly via `BigInt` and only
+  convert to a `number` when the exact result is a safe integer, throwing an
+  `INVALID_INPUT` `SdkError` otherwise. Output is unchanged for every amount
+  the existing behavior computed correctly (e.g. `"1.5"` ALGO → `1500000`).
+- `ChainProvider.supportsBridging` is now documented as a static
+  participation declaration, not a live availability check — see
+  `AzoaClient.checkBridgeCapability(chainId)`, a new method that asks the
+  backend's `GET /api/bridge/routes` registry whether a chain is currently an
+  enabled source or target on any route.
+
 ## Method Mapping Table
 
 | Controller | Endpoint | HTTP | SDK Method | SDK File | Status |
@@ -74,6 +112,21 @@ allocation receipt endpoint for allocation status.
 | | /api/bridge/{id}/redeem | POST | `redeemBridge` | client.ts | OK (safe response) |
 | | /api/bridge/{id}/reverse | POST | `reverseBridge` | client.ts | OK (safe response) |
 | | /api/bridge/history | GET | `getBridgeHistory` | client.ts | OK (safe response) |
+| **Hold** | /api/holds | POST | `openHold` | client.ts | OK |
+| | /api/holds/{chain}/{holdId} | GET | `getHold` | client.ts | OK |
+| | /api/holds/{chain}/{holdId}/release | POST | `releaseHold` | client.ts | OK |
+| | /api/holds/{chain}/{holdId}/refund | POST | `refundHold` | client.ts | OK |
+| | /api/holds/{chain}/{holdId}/release-into-hold | POST | `releaseHoldIntoHold` | client.ts | OK |
+| | /api/holds/mine | GET | `listMyHolds` | client.ts | OK |
+| **Fiat checkout** | /api/fiat/checkout/capabilities | GET | `getFiatCheckoutCapabilities` | client.ts | OK |
+| | /api/fiat/checkout/{userId} | POST | `startFiatCheckout` | client.ts | OK |
+| | /api/fiat/checkout/{userId}/{intentId} | GET | `getFiatCheckoutIntent` | client.ts | OK |
+| **PlatformToken** (Admin/Operator) | /api/admin/platform-token | GET | `getPlatformTokenState` | client.ts | OK |
+| | /api/admin/platform-token/genesis | POST | — | — | Deliberate SDK gap — the one-time mint additionally requires a fresh `RecentNodeOperatorSession` (non-API-key node-operator login) this SDK's bearer/API-key config cannot express; run genesis through the operator console, not this SDK. |
+| **ProjectTreasury** (Admin/Operator) | /api/admin/project-treasuries | GET | `getProjectTreasury` | client.ts | OK |
+| | /api/admin/project-treasuries/tenant/{tenantId} | GET | `listProjectTreasuriesByTenant` | client.ts | OK |
+| | /api/admin/project-treasuries/resolve | POST | — | — | **SDK gap** — operator-only account provisioning; not part of this track's read-surface scope. |
+| | /api/admin/project-treasuries/close | POST | — | — | **SDK gap** — operator-only account retirement; not part of this track's read-surface scope. |
 | **Tenant custodial account** | /api/tenant/custodial-accounts/capabilities | GET | `getTenantCustodialCapabilities` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject} | PUT | `ensureTenantCustodialAccount` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject} | GET | `getTenantCustodialAccount` | client.ts | OK |
@@ -171,7 +224,7 @@ allocation receipt endpoint for allocation status.
 | | /api/credential/{assetId}/revoke | POST | `revokeCredential` | client.ts | OK — see caveat below |
 | **Analytics** | /api/analytics/transactions | GET | `getAnalyticsTransactions` | client.ts | OK |
 | | /api/analytics/positions | GET | `getAnalyticsPositions` | client.ts | OK |
-| **Allocation** | /api/allocation/{userId} | POST | `allocate` | client.ts | OK |
+| **Allocation** | /api/allocation/{userId} | POST | `allocate` | client.ts | OK — `AllocationRequest.kind` covers `Mint` (retired-for-tenants) \| `Transfer` \| `IssueUnits` (D47 default), plus `partition`/`purpose`/`expectedFeeScheduleVersion`/`previewOnly` |
 | **HolonTypeRegistry** | /api/holon-types | GET/POST | `listHolonTypes`, `registerHolonType` | client.ts | OK |
 | | /api/holon-types/{assetType} | GET/DELETE | `getHolonType`, `deleteHolonType` | client.ts | OK |
 | | /api/holon-types/{assetType}/deactivate | POST | `deactivateHolonType` | client.ts | OK |
@@ -232,6 +285,10 @@ landing. Route-level corrections made in this pass: the dapp surface is `/api/da
 (`holons.get` / `.execute` / `.create` / `.update` / `.delete`), not on `client.ts`; holon types key
 on `{assetType}`, not `{id}`; key rotation is `POST /api/admin/key-rotation/rotate`.
 
+**Updated 2026-09-08 (W4.7, `azoa-sdk` 0.3.1):** added the Hold, Fiat checkout, PlatformToken and
+ProjectTreasury rows above (all previously undocumented SDK gaps); the SDK's `./orchestration`
+subpath export and its `stripe` dependency are removed — see the "SDK 0.3.1" section above.
+
 ⚠ **Credential caveat — corrected 2026-09-07.** The vacuous issuer-equals-holder mint path this
 caveat used to describe is **fixed**: `POST /api/credential/issue/{recipientUserId}` (added by
 `credential-third-party-issuance_20260906`, D41) mints two-party, with the issuer of record
@@ -245,6 +302,26 @@ route also has no typed SDK method yet (see the SDK-gap row above) — add one b
 frontend/consumer surface tries to use it.
 
 **Note:** The actions page (`frontend/src/app/(dashboard)/actions/page.tsx`) uses `azoa.api.request(...)` directly rather than the typed SDK action methods. The publish/unpublish calls on the page are therefore direct HTTP calls, not `publishAction`/`unpublishAction`. The typed SDK methods exist for external SDK consumers. This gap is tracked as part of the existing action sub-resource SDK gap (row 8 in "Open Drift" above).
+
+## Decision: ArdaNova's .NET clients are NOT generated from this SDK
+
+Asked by W4.7 (`ardanova-production-readiness-waves_20260907`). **No.** This
+SDK (`azoa-sdk`) is a TypeScript package built for browser/Node/React Native
+consumers with client-side signing; ArdaNova is a separate .NET repository
+(`c:/Users/atooz/Documents/Escherbridge/ardanova`) consuming Azoa over plain
+HTTP. There is no TypeScript→.NET code-generation step in this toolchain, and
+building one only for a single internal partner would be new infrastructure
+this track's scope does not cover.
+
+ArdaNova's typed HTTP clients should instead be either hand-maintained against
+this document (the pattern already in effect — see
+`conductor/ARDANOVA-AZOA-INTEGRATION-CONTRACT.md`) or, if drift between the
+two repos keeps recurring, generated from an OpenAPI/Swagger document emitted
+by the AZOA WebAPI itself (ASP.NET already produces one at the controller
+level) via a standard `.NET` OpenAPI client generator — never from this TS
+SDK's source. That is future work, not part of this track; the near-term
+mitigation is keeping this table current at PR-review time as the existing
+"How to Keep This Current" section already asks.
 
 ## Next integration track
 

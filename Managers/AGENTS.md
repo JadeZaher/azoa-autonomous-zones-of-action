@@ -717,3 +717,35 @@ stamps `issuer_user_id` = the holder, so the authorization below — correct as 
    `InProgress` so a duplicate replays "in progress" rather than re-broadcasting, and only
    a CONFIRMED clawback moves ownership through
    `ICredentialIssuerStore.RecordCredentialRevokedAsync`.
+
+## §parked-run-sweep — re-probing runs parked on chain truth (W4.5)
+
+A run whose chain action came back indeterminate parks in
+`ActionRunStatus.AwaitingReconciliation` rather than retrying, because retrying a mint whose
+outcome is unknown is how a double-mint happens. Something must therefore come back and ask the
+chain again. That is this sweep.
+
+Three decisions are worth stating, because each is easy to undo by accident.
+
+1. **One implementation, two seams.** `ActionManager` implements `IParkedRunReconciler`
+   alongside `IActionManager`, and both the operator-triggered
+   `SweepReconciliationAsync` (`POST /api/action/runs/reconcile-sweep`) and the unattended
+   `ReconcileAllParkedRunsAsync` (driven by `ReconciliationHostedService`) delegate to the same
+   private `SweepParkedRunsAsync`. AZOA has two dispatch seams and a control enforced at only
+   one of them is not enforced; the same rule applies to the thing that repairs them.
+
+2. **Hard-stuck is judged AFTER the re-probe, never before.** A run whose park is old but which
+   this pass just resolved is not stuck. Judging on park age alone would page an operator about
+   runs the sweep had already fixed, and an alert that cries wolf is an alert nobody reads. See
+   `SweepParkedRunsAsync`: the `hardStuckFloor` comparison sits inside the branch that checks
+   the run is *still* `AwaitingReconciliation` after `ReprobeReconciliationAsync`.
+
+3. **The report records; it does not decide.** `ParkedRunSweepReport.HardStuck` carries the run,
+   its owner, how long it has been parked and how many nodes are still indeterminate, and hands
+   that to the caller to alert on. The sweep never fails, cancels or force-completes a run: a
+   value movement whose outcome is unknown is a question for a person, not for a timer.
+
+One behaviour change worth knowing at the call site: `SweepReconciliationAsync` caps at
+`DefaultParkedRunBatchSize` (500) runs per call where it was previously unbounded. An operator
+draining a backlog larger than that calls it repeatedly; the background tick drains the rest
+regardless.
