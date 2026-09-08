@@ -178,13 +178,25 @@ operator, KYC, and custodial-account work. It does not claim production custody,
 live provider verification, or real-value bridge readiness; those remain
 fail-closed as described above.
 
-The next named track is **Arda Nova financial workflow conformance**:
+⚠ **The self-sovereign-vs-tenant-custodial question this section used to leave
+open is now RESOLVED, by the owner, as D48** (`conductor/RUNBOOK.md`): the tenant-
+custodial mode documented on this page is the one that ships. ArdaNova provisions
+its users as tenant-custodial child users under a `tenant:provision` key — which
+its code already does — and never holds a key, a seed phrase, or a payment-
+provider secret. Compliance policy (uniform KYC, AML screening, the trust
+profile) is set by the **operator on the node**, not chosen per tenant (D46). Any
+doc still describing this as an open reconciliation between two live models is
+describing a question that has already been answered.
 
-See
-[`ardanova-financial-workflow-conformance`](../conductor/tracks/ardanova-financial-workflow-conformance/spec.md).
-The track must first reconcile this generic tenant-custodial mode with the
-integration contract's currently locked self-sovereign ArdaNova path; the
-example consumer name here does not silently change that decision.
+The currently active program building on this baseline is
+[`ardanova-production-readiness-waves_20260907`](../conductor/tracks/ardanova-production-readiness-waves_20260907/spec.md)
+(P0), which takes the chain-first economic loop (D44) — fiat buys the platform
+token, spending the platform token funds a project, a project pays out in its
+own token, D46's uniform KYC-plus-wallet policy gates every value action — the
+rest of the way to a working thesis moment. The earlier-named
+[`ardanova-financial-workflow-conformance`](../conductor/tracks/ardanova-financial-workflow-conformance/spec.md)
+track remains in flight for the conformance-matrix work below, now scoped against
+the D48 tenant-custodial baseline rather than an open question:
 
 - define a versioned Arda Nova↔Azoa contract matrix for account bootstrap, KYC,
   wallet readiness, idempotency, and financial-operation outcomes;

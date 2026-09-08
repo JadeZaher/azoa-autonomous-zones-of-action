@@ -63,10 +63,10 @@ public sealed class KeyCustodyService : IKeyCustodyService
 
     /// <summary>
     /// Config path for the <b>Algorand</b> platform signing mnemonic. Aligned with the
-    /// interim resolver the signing-core track shipped
-    /// (<c>AlgorandProvider.ResolveInterimKeyMaterial</c>, retired deploy registry B2) and
-    /// the faucet precedent (<c>Core/AlgorandFaucet.cs:45</c>), so the platform key
-    /// supply is single-sourced.
+    /// no-custody-wired fallback
+    /// (<c>AlgorandProvider.SignWithFallbackPlatformKeyAsync</c>) and the faucet
+    /// precedent (<c>Providers/Blockchain/Algorand/AlgorandFaucet.cs:46</c>), so the
+    /// platform key supply is single-sourced.
     /// <para>
     /// This is one chain's path, NOT the platform path. Every chain declares its own
     /// (<see cref="IPlatformKeyDerivation.PlatformKeyConfigPath"/>); resolve a chain's

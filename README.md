@@ -116,16 +116,32 @@ Pre-launch (Alpha Gate). The core platform features have been shipped and harden
 - **KYC/AML + external OAuth**: multi-tenant, fail-closed KYC with a versioned policy envelope, and an `auth/oauth` external-identity surface.
 - **Terminology rename (breaking)**: the platform's domain nouns were neutralized across C#, the SurrealDB schema, REST routes, the SDK and the frontend. The C# entity is `ActionDefinition` with plural namespaces (`Models.Actions`) to dodge a `System.Action` collision under `ImplicitUsings`; the DB table, REST route segment and SDK type are all plain `action`, so the wire surface is unchanged.
 
-**Landed but deliberately NOT enabled — do not describe these as done:**
+**Fixed in code, still deliberately gated off — do not describe these as shipped:**
 
-- **Governance vote / tally (D20)** — has a live Sybil hole. The vote node claims through the person-uniqueness gate, but the tally counts raw child holons and never reads the claim ledger, so ballots posted straight at `POST /api/holon` are counted. Corrective track: `conductor/tracks/governance-vote-of-record_20260906`.
-- **Credential revocation (D19)** — inert. The route authorizes the *issuer*, but the only mint path makes the issuer the holder, so the check is vacuous and every real revoke fails its holder-address precondition first. Corrective track: `conductor/tracks/credential-third-party-issuance_20260906`.
+- **Governance vote / tally (D20/D39/D40/D42)** — the original live Sybil hole is
+  **fixed**: the tally now reads a per-person-per-operation claim ledger
+  (`GovernanceClaimLedgerTally`) instead of counting raw child holons, so a
+  ballot posted straight at `POST /api/holon` counts for nothing by
+  construction, and re-voting before close is a mutable in-place update with a
+  server-set ordering key. It still cannot run: `GovernanceProposalCreate` /
+  `Vote` / `Tally` remain in `NotEnabledActionNodeTypes` pending the adversarial
+  review that closes the track. Corrective track:
+  `conductor/tracks/governance-vote-of-record_20260906`.
+- **Credential issuance/revocation (D19/D41)** — the vacuous issuer-equals-holder
+  check is **fixed**: soulbound mint is now two-party
+  (`POST /api/credential/issue/{recipientUserId}`, role-gated to `dapp:manager`),
+  `current_owner` is written at mint, and the Algorand clawback precondition no
+  longer refuses the `defaultFrozen` holding it exists to serve. It still cannot
+  run: `CredentialRevoke` remains in `NotEnabledActionNodeTypes` pending the
+  non-negotiable `/security-review` on this value path. Corrective track:
+  `conductor/tracks/credential-third-party-issuance_20260906`.
 
-Both failed the same way, and it is worth naming the pattern: *a control is not wired
-until the thing that reads its result is wired too.* The refusal is now enforced in code
-(`Services/Actions/NotEnabledActionNodeTypes.cs`) at publish and at both dispatch seams,
-rather than asserted in prose. See `PROVIDERS.md` §"Phase 5 primitives that are NOT
-enabled".
+Both were the same defect class — *a control is not wired until the thing that reads
+its result is wired too* — and both are now corrected at the source. What remains open
+is the deliberate enablement gate, not the underlying bug: the refusal is enforced in
+code (`Services/Actions/NotEnabledActionNodeTypes.cs`) at publish and at both dispatch
+seams, and is lifted per-node-type only when that node's track closes its adversarial
+review. See `PROVIDERS.md` §"Phase 5 primitives that are NOT enabled".
 
 The repository includes unit, integration, schema-equivalence, and release-contract suites. All real-value bridge routes are disabled by default (`RealValueEnabled=false`) and remain non-launchable: no provider currently implements the complete reviewed lock/mint/burn/release plus production-custody lifecycle. Simulated routes remain available for development. See `conductor/tracks.md` for the full roadmap.
 

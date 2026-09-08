@@ -331,8 +331,12 @@ The invariants it encodes:
   persona who should never see a blockchain — **failed** the gate for a pure fiat
   payout.
 - Network resolution required Devnet/Testnet/Mainnet; Stripe is live/test.
-- Fiat reaches Stripe **only through `fiat-sidecar/`**, never directly
-  (integration contract §3).
+- ⚠ **SUPERSEDED by D43/D45 (2026-09-07).** ~~Fiat reaches Stripe **only through
+  `fiat-sidecar/`**, never directly (integration contract §3).~~ Reversed: Stripe
+  checkout, webhook signature verification, and the dispute/refund event stream now
+  terminate **inside AZOA** through a `FiatRailProvider` implementing this same
+  `IValueRailProvider` seam, and `fiat-sidecar/` retires once the port lands. The
+  seam this decision built is exactly what makes that port possible — see D43.
 
 **D10 — `SettlementProfile` is necessary but NOT sufficient; the real primitive
 is a reversal-event pipeline.** A release-time check relocates the money-printer
@@ -346,6 +350,17 @@ everything but `checkout.session.completed`, dropping `charge.dispute.created`,
 dispute/refund events; AZOA records them as **first-class ledger facts** and runs
 a **compensation saga**; plus a per-flow risk policy. Partial refunds and
 multi-recipient Split clawback are part of this primitive, not edge cases.
+
+⚠ **Status (re-checked 2026-09-07): still NOT implemented.** A repo-wide search
+for `charge.dispute`, `ChargebackEvent`, `ReversalEvent`, and "compensation saga"
+returns zero hits outside `Interfaces/IValueRailProvider.cs`'s own doc-comment
+example naming `SettlementProfile`. No reversal-event pipeline, no first-class
+ledger fact for a dispute/refund, and no compensation saga exist anywhere in the
+tree yet. D43 makes this **easier to build** — with Stripe terminating in AZOA,
+`charge.dispute.created`/`charge.refunded`/`charge.dispute.funds_withdrawn` land
+directly in the backend instead of being discarded by a separate sidecar process
+— but D43 does **not build it**. D10 remains open and still gates any
+escrow-release step (D14); see §7 step F.
 
 **D11 — Fiat-in and KYC-begin share one `HostedSessionFlow` abstraction.** Both
 are begin → hosted redirect → callback → **authoritative server-side re-fetch**.
@@ -637,14 +652,23 @@ a golden is silently overwritten; edit the POCO instead.
 **D36 — The KMS vendor is deferred; the custody seam is built provider-agnostic
 with an environment-backed fallback.** No vendor was named anywhere in the repo,
 and the node runs on Railway which has no native KMS. So D27's adapter is built
-against an abstract **sign-without-export** interface behind
-`IPlatformKeyDerivation`, with a concrete implementation that pulls key material
-from the environment/secret store as the interim custody mode.
-⚠ **Consequence stated plainly: this does NOT clear D27's gate.** An env-backed
-key is still config-derived custody — it is a better-shaped seam, not an HSM.
-Phase 3 fiat remains gated until a real vendor lands behind the same interface.
-Record the interim mode explicitly rather than letting `CustodyMode` imply more
-assurance than exists.
+against `IPlatformKeyDerivation`, with a concrete implementation that pulls key
+material from the environment/secret store as the interim custody mode.
+⚠ **Wording corrected 2026-09-07.** This decision previously described that
+interface as an abstract "**sign-without-export**" interface. It is not one, and
+the phrase overstated what was built: `IPlatformKeyDerivation.TryDerive` returns
+the raw private-key bytes into process memory (zeroed after use by the caller) so
+a chain SDK can sign with them — the key is exported into the process, exactly
+what a real sign-without-export design (the key material never leaving a KMS/HSM
+boundary at all) is meant to avoid. **That design does not exist yet** in this
+codebase; what exists is a clean per-chain derivation seam a real adapter can
+later plug into. Consequence stated plainly: this does NOT clear D27's gate. An
+env-backed key is still config-derived custody — it is a better-shaped seam, not
+an HSM. Per **D48**, closing this gap is **the operator's clock**, not a scheduled
+workstream in this program: Phase 3 fiat remains gated until a real vendor lands
+behind the same interface, but procuring that vendor is explicitly not this
+program's concern. Record the interim mode explicitly rather than letting
+`CustodyMode` imply more assurance than exists.
 
 **D37 — Authorized: publish `azoa-sdk@0.3.0`, and wipe/re-seed the live
 database.** Both are irreversible or outward-facing and were explicitly approved.
@@ -811,6 +835,13 @@ platform token which they can sell for fiat."* So:
   treasury-rate. D44 requires *some* exchange for cash-out. Treasury-rate vs AMM is
   an open design question the re-sequenced W0 must surface.
 
+**Cross-links — how D44 resolves into D45-D51:** the Stripe rail scoped to
+on/off-ramp only is **D45**; uniform KYC + wallet-before-value is **D46**; the
+per-project ASA shape for a stake is **D47**; the operator/custody posture that
+lets all of this proceed without waiting on a KMS vendor is **D48**; the ARDA
+genesis answer is **D49**; the exchange-mechanism answer is **D50**; the
+deployable-composition rename the exchange is built from is **D51**.
+
 **D45 — D43 stands as stated: AZOA owns the Stripe rail.** The review's
 alternative (ArdaNova owns Stripe in+out, AZOA as a later anchor) was put to the
 owner with its evidence and **rejected**. Under D44 the rail's job is precisely
@@ -827,7 +858,10 @@ consistent with D44 — every value action is on chain, so every actor needs a
 wallet — and the friction is accepted as policy. *What the thesis promise now
 means, precisely:* the **wallet stays invisible** (custodial, tenant-provisioned,
 never a seed phrase or address on a user screen) but **KYC does not**. "Never has
-to know a chain exists" holds; "never does an identity check" does not.
+to know a chain exists" holds; "never does an identity check" does not. The
+custodial wallet this decision requires up front is provisioned under the same
+tenant-custodial posture **D48** assumes present; the KMS/HSM gate that would make
+that wallet's custody real is **D27/D36**, unaffected by this decision.
 
 **D47 — A stake is a real per-project ASA from day one.** The review's
 ledger-first option (units in ArdaNova's `TokenBalance`, one ASA per project
@@ -1119,7 +1153,10 @@ three SCHEMAFULL tables (`ecosystem` REQUIRED, `ecosystem_node` discriminator,
 wipe-and-reseed. It is not: the live node holds **0 rows** in `star_odk`,
 `ecosystem` and `dapp_series`, so regenerating the goldens is sufficient and the
 table rename rides the D31 wipe already scheduled. Re-verify the row counts if
-D31 slips past a seeding run.
+D31 slips past a seeding run. **This rename is what D50 builds the ARDA↔project-
+token exchange on** — "an Action DAG plus an ActionGraphBundle" only parses once
+this decision has landed the type; see D50's own note distinguishing the old
+`STAR`/`ActionGraph` field-name collision from this class name.
 
 ⚠ **Sixth instance of the recurring class, and the first where the *guard itself*
 was the claim.** `AttributePocoByteEquivalenceTests` auto-authored a golden on a

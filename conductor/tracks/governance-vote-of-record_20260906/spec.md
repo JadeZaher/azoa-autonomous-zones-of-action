@@ -2,7 +2,7 @@
 type: Track Spec
 title: Governance vote of record
 description: Replace the holon-counting tally with a claim-ledger tally, so a forged ballot counts for nothing by construction rather than by a check that can be forgotten.
-tags: [feature, governance-vote-of-record_20260906, pending, security, rework]
+tags: [feature, governance-vote-of-record_20260906, in_progress, security, rework]
 timestamp: 2026-09-06T00:00:00Z
 resource: ./metadata.json
 ---
@@ -19,6 +19,14 @@ run it. "Not enabled" was a claim in prose, not a control in code, which is the
 very defect class this track exists to correct. A real gate now exists
 (`Services/Actions/NotEnabledActionNodeTypes`), refusing at publish and at both
 dispatch seams. It lifts when this track closes.
+
+⚠ **Status (2026-09-07): Phases 0-3 below are landed** (`fa2dfcf`) — the tally
+described as broken in the rest of this section has already been rewritten onto
+the claim ledger. **See `plan.md`, whose checkboxes were reconciled against source
+in this pass.** Only Phase 4 (adversarial review, then removing
+`GovernanceProposalCreate`/`Vote`/`Tally` from `NotEnabledActionNodeTypes`)
+remains, so the description below is retained as the reason the fix was built,
+not as the current state of the code.
 
 `GovernanceVoteNodeHandler` claims correctly through `IPersonUniquenessGate`.
 `GovernanceTallyNodeHandler` then **counts raw child holons** and never reads the

@@ -1,6 +1,6 @@
 {
   "type": "feature",
-  "status": "pending",
+  "status": "in_progress",
   "created": "2026-09-06",
   "repos": {
     "azoa": "c:/Users/atooz/Programming/Projects/oasis-sleek"
@@ -34,5 +34,7 @@
   },
   "acceptance_headline": "a vote holon created directly via the holon API is NOT counted",
   "enforcement_gate": "Enforcement now exists: Services/Actions/NotEnabledActionNodeTypes refuses GovernanceProposalCreate/Vote/Tally at publish and at BOTH dispatch seams. Remove those three members from that set as the final step of this track, and not before - the gate is what makes 'not enabled' true.",
-  "gate_added_commit": "7b28a16"
+  "gate_added_commit": "7b28a16",
+  "phases_0_to_3_landed_commit": "fa2dfcf",
+  "reconciled_2026_09_07": "plan.md and spec.md had not been updated to reflect fa2dfcf, which is already on this branch's history. Verified against source (GovernanceClaimLedgerTally.cs, GovernanceVoteOfRecordGuard.cs, PersonOperationClaim.cs, GovernanceVoteOfRecordTests.cs) before ticking Phases 0-3. Only Phase 4 (adversarial review + gate removal) remains open; status stays in_progress, not shipped, until it closes."
 }

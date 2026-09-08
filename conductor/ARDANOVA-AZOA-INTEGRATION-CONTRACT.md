@@ -70,9 +70,10 @@ reference consumer**, used only as a concrete example.
 |---|---|
 | Domain (Project/Sprint/Epic/PBI/Task/Opportunity lifecycle + records of truth) | **Consumer** |
 | Treasury split, equity math, funding-gate *valuation*, token economics | **Consumer** |
-| KYC document capture + the investment/escrow record | **Consumer** |
+| KYC document capture (AZOA-hosted Identomat session) | **AZOA node** (§1.1, D46/D48) |
+| Investment / escrow record of truth | **Consumer** |
 | Deciding *how much* of *which* asset to allocate / reward | **Consumer** |
-| Webhook signature verification (fiat / payment provider) | **Consumer** |
+| Webhook signature verification (fiat / payment provider) | **AZOA node** (§3, D45) |
 | Authoring action **definitions** (templates / DAGs) | **Consumer** |
 | Hosting the node; **custody of user keys** (per node operator) | **Node operator** |
 | Provisioning a wallet for a user (if absent) | **AZOA node** |
@@ -83,6 +84,22 @@ reference consumer**, used only as a concrete example.
 | Action engine that orchestrates the project→fund→work lifecycle | **AZOA node** |
 | Starting / driving an action **run** (as the acting identity) | **User** (self) or **consumer under a consent grant** |
 
+### 1.1 KYC policy is node-level, not per-tenant (D46, D48)
+
+AZOA hosts the KYC document-capture flow (Identomat is the sole implemented
+hosted-session provider today — `IdentomatKycProviderService`, the only
+`IHostedSessionProvider`). **Policy — vendor, trust profile, assurance level,
+AML screening — is a node-operator decision, not a per-tenant choice** (D46,
+D48): the operator sets it once for the whole node. The consumer still owns
+the investment/escrow record of truth (above); AZOA never becomes a system of
+record for the underlying investment.
+
+> **Deploy-step note.** `PUT /api/tenant/kyc/provider`
+> (`TenantKycConfigurationController`) lets a tenant self-select its provider
+> today with no operator allow-list — that is the wrong-custodian premise in a
+> smaller form, and is scheduled to become an operator-gated override rather
+> than the way policy is set.
+
 ---
 
 ## 2. Custody follows the node operator
@@ -91,8 +108,9 @@ Custody is determined by **who hosts the AZOA node**, not by who authored an act
 or who triggered a value move:
 
 - **Self-hosted consumer node** (e.g. ArdaNova runs its own AZOA instance): that
-  operator custodies the keys of the users on it. The users are still
-  first-class self-sovereign identities; the operator is the custodian of record.
+  operator custodies the keys of the users on it. The users are
+  tenant-custodial child users; the operator is the custodian of record
+  (§11.2, ratified decision #1).
 - **Shared / public node**: the node operator running that instance is the
   custodian for its users. A consumer integrating against someone else's node
   holds **no** custody — it can only act through standard API calls and (for
@@ -125,8 +143,20 @@ JWT. Scopes gate capability:
 
 The consumer's AZOA API key is a **deploy-time secret** (`AZOA_TENANT_API_KEY`,
 bound by the consumer's secret store to `Azoa:TenantApiKey` / `AZOA__TenantApiKey`).
-**Never commit or document the key value.** AZOA holds **no** payment-provider
-secret — webhook verification is the consumer's job.
+**Never commit or document the key value.**
+
+⚠ **Corrected 2026-09-07 (D45) — this clause used to say the opposite.** It
+read "AZOA holds no payment-provider secret — webhook verification is the
+consumer's job." That is reversed: **AZOA owns the `Fiat.USD` rail, scoped to
+the ARDA on-ramp and off-ramp; ArdaNova owns the funding intent and the
+rate.** AZOA terminates the payment provider's webhook and holds its signing
+secret; webhook signature verification moves to the **AZOA node** (line 75,
+§1). The consumer never holds that secret and never re-derives a settled
+amount — it declares the rate (a `TenantDeclared` rate source) and the
+funding intent; AZOA settles. **As-built today:** the rail seam
+(`Interfaces/IValueRailProvider.cs` — a fiat rail names itself, e.g.
+`"Fiat.USD"`) exists; no fiat provider implements it yet, so Stripe
+termination inside AZOA is scheduled, not shipped.
 
 ---
 
@@ -164,7 +194,7 @@ per owner — the lookup key).
 | Step | Call | Notes |
 |---|---|---|
 | provision | `POST /api/tenant/users` `{ "externalUserId": "...", "externalRef": "..." }` | Idempotent on `externalUserId`. Requires `tenant:provision`. |
-| act-as | `POST /api/tenant/users/{userId}/credential` `{ "scopes": [...] }` | 15-min child JWT; scopes = intersection with the key's scopes, minus `tenant:provision`. |
+| act-as | `POST /api/tenant/users/{userId}/credential` `{ "scopes": [...] }` | ⚠ **Disabled.** Unconditionally returns `503` — "Delegated child credentials are unavailable until every accepting endpoint has an explicit scope policy" (`Controllers/TenantController.cs:158-165`). Documents the intended shape only; issues no JWT today. |
 | resolve | `GET /api/tenant/users/{externalUserId}` | userId → user; 404 if not this owner's. |
 
 (Full prose: `conductor/tracks/tenant-onboarding/ONBOARDING.md`. A
@@ -188,6 +218,14 @@ durable engine advances the run, parking at gates for signals.
 | **Start work** | `FUNDED→IN_PROGRESS` | `GateCheck`(`status == "FUNDED"`) → `Emit`(`sprint.started`) | the creator/lead user |
 | **Task / PBI / Bounty** | `TODO→…→COMPLETED`; escrow `NONE→FUNDED→RELEASED/REFUNDED` | `GateCheck`(submission accepted) → `Transfer`/`Grant`(reward) → `Emit`(`task.completed`); reject branch → `Refund`/`Emit` | the contributor user |
 | **Membership credential** | soulbound ASA | `Grant` (soulbound: total=1, decimals=0, frozen) → credential Holon | the member user |
+
+**§5.1 as-built note.** The **Create project** row above is **target-state,
+not built**. A presented project lives only in the consumer's own database
+today; AZOA learns of it only through the `allocation`/funding calls in §6 —
+there is no `HolonCreate`/`Emit(project.created)` call at publish, and no
+Project holon mirror. This is the accepted status quo (consistent with §1 —
+domain lifecycle stays consumer-owned) and is revisited only when a
+project's share token needs a holon anchor at `FUNDED`.
 
 **Tier note.** `GateCheck`/`Emit`/`HolonCreate` are Tier-0/1 (no chain). `Grant`,
 `Transfer`, `Refund`, `Swap`, `FungibleTokenCreate` are **Tier-2** — they require
@@ -247,26 +285,33 @@ header ⇒ deterministic content key (never random). (Full prose:
 
 ---
 
-## 7. Reconcile-before-retry — the double-mint clause (AZOA owes the wiring, P7)
+## 7. Reconcile-before-retry — the double-mint clause (P7 — DONE)
 
 **Hazard.** A Tier-2 node (or allocation) that broadcasts then times out waiting
 for confirmation surfaces as an error indistinguishable from "never broadcast." A
 blind retry **re-mints** — double-paying a bounty.
 
-**Guarantee AZOA provides** (owner `blockchain-recovery-and-portable-wallets`):
+**Guarantee AZOA provides — shipped, not owed.**
 1. Record the broadcast `TxHash` on the `ActionNodeExecution` before confirmation
-   resolves.
-2. On failure, probe chain truth (`ChainConfirmation`: Confirmed / NotFound /
-   Indeterminate) before any retry.
+   resolves (`Models/Actions/ActionNodeExecution.cs`).
+2. On failure, probe chain truth (`ChainConfirmation`: Confirmed / FailedOnChain /
+   Pending / Unknown) before any retry (`ChainActionRecovery.Decide`,
+   `Services/Actions/Workflow/ChainActionRecovery.cs`).
 3. `ChainActionRecovery` branches: **Confirmed** → advance reconciled (no
-   re-broadcast); **NotFound** → safe retry; **Indeterminate** → park
-   `AwaitingReconciliation` (sweep / manual re-probe; **never** auto-re-broadcast).
+   re-broadcast); **FailedOnChain** → safe retry; **Pending** or **Unknown**
+   (or no tx hash recorded) → park `AwaitingReconciliation` — resolved by
+   `POST /api/action/runs/{runId}/reconcile` (user-scoped) or the
+   operator-only `POST /api/action/runs/reconcile-sweep`
+   (`Controllers/ActionController.cs`, `ActionManager.ReconcileRunAsync` /
+   `SweepReconciliationAsync`); **never** auto-re-broadcast.
 
 **Consumer obligations:** send a **stable `Idempotency-Key`** on every allocation;
 treat `AwaitingReconciliation` as a non-terminal, non-error board state ("pending
-settlement") and do not re-trigger. **Until P7 lands**, bounty automation must
-not run on real value — use `Blockchain:Mode=Simulated` (deterministic `sim:`
-ids) for end-to-end dev.
+settlement") and do not re-trigger — call the per-run reconcile endpoint (or
+wait for the operator sweep) instead of retrying. Bounty automation on real
+value is no longer blocked by this clause; `Blockchain:Mode=Simulated`
+(deterministic `sim:` ids) remains the recommended mode for end-to-end dev
+regardless.
 
 ---
 
@@ -341,13 +386,19 @@ decomposition intent and consult `conductor/tracks.md` for actual status.
 - (pre-prod, in DEPLOY-STEPS: **B3** KMS custody. Note: **P5 is now resolved** — wallet-generate is intentionally NOT KYC-gated; the gate lives at the value seams.)
 
 ### ArdaNova (`ardanova/conductor/tracks/`)
-> **Locked decisions (§11):** ArdaNova integrates a **shared/managed AZOA node**
-> (node operator custodies — ArdaNova owns no B3/P3 concern) and uses
-> **self-register + self-run users** (each user is a self-sovereign user; **no
-> fleet map, no `tenant:provision`, no acting-as path** by default). This drops the
-> user-mapping and node-hosting tracks entirely.
+> **Locked decisions (§11):** ArdaNova integrates a **shared/managed AZOA
+> node** (node operator custodies — ArdaNova owns no B3/P3 concern, §11.1)
+> and its users are **tenant-custodial AZOA child users**, provisioned via
+> `POST /api/tenant/users` under `tenant:provision` (§11.2, ratified decision
+> #1) — never self-registered, self-sovereign AZOA identities. This makes
+> §4.1's fleet-mapping table the ArdaNova path.
+>
+> ⚠ **Corrected 2026-09-07.** This previously read "self-register + self-run
+> users … no fleet map, no `tenant:provision`, no acting-as path" — a model
+> the code never built and the ratified decision rejects. §11.1's
+> node-hosting split is unchanged.
 
-- `azoa-user-onboarding` — link each ArdaNova user to a **self-sovereign** AZOA user (the user holds keys / consents); thin reference + wallet-bound check before Tier-2 (§4, §5.1). No `tenant:provision`.
+- `azoa-user-onboarding` — link each ArdaNova user to a **tenant-custodial** AZOA child user, provisioned via `POST /api/tenant/users` under `tenant:provision`; wallet-bound check before Tier-2 (§4, §4.1, §5.1). ⚠ Corrected 2026-09-07 (ratified decision #1) — previously said "self-sovereign … No `tenant:provision`."
 - `azoa-provider-adapter` — `AzoaBackedAlgorandService` via the shared node's standard API, feature-flagged, platform mnemonic removed (§9).
 - `azoa-action-authoring` — publish the scrum-lifecycle action definitions/templates; **users self-run**; map board events → gate signals (§5).
 - `treasury-reward-to-azoa-allocation` — funding + task-reward → `POST /api/allocation` with stable idempotency keys (§6, §7).
@@ -367,10 +418,19 @@ uses a **shared node**, the node operator owns B3 (KMS custody) + P3 (fee-fundin
 1. **Node hosting (§2): shared / managed node.** ArdaNova integrates against a
    shared AZOA node; **that operator custodies** the users. ArdaNova is a pure
    API consumer and owns **no** B3 (KMS) / P3 (fee-funding) deploy concern.
-2. **User model (§4): self-register + self-run.** Each ArdaNova user is a
-   **self-sovereign** AZOA user that runs actions as itself. **No fleet map, no
-   `tenant:provision`, no acting-as/consent-delegation path** by default. §4.1 and
-   the `azoa-user-mapping` track do **not** apply.
+2. **User model (§4): tenant-custodial, not self-register/self-run.** Each
+   ArdaNova user is a **tenant-custodial AZOA child user**, provisioned by
+   ArdaNova via `POST /api/tenant/users` under its `tenant:provision` scope
+   (§4.1) — never a self-registered, self-sovereign AZOA identity. A
+   consumer person never holds an AZOA credential, seed phrase, or export
+   path; claim-to-self-sovereign is a future, explicitly-designed opt-in, not
+   the default. §4.1's fleet-mapping table **does** apply. ⚠ **Corrected
+   2026-09-07 (ratified decision #1) — this reverses the prior lock**, which
+   read "self-register + self-run … no fleet map, no `tenant:provision` … do
+   not apply"; ArdaNova never built that path (its self-sovereign avatar
+   service is being deleted as dead code, not extended). The act-as
+   credential leg of §4.1 stays **disabled** pending an explicit
+   per-endpoint scope policy — see §4.1.
 
 ### Locked (resolved)
 3. **Dedicated fungible-mint endpoint — YES.** A one-shot

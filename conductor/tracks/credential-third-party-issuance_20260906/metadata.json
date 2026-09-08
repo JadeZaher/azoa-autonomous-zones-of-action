@@ -1,6 +1,6 @@
 {
   "type": "feature",
-  "status": "pending",
+  "status": "in_progress",
   "created": "2026-09-06",
   "repos": {
     "azoa": "c:/Users/atooz/Programming/Projects/oasis-sleek"
@@ -15,7 +15,7 @@
   ],
   "priority": 2,
   "why_second": "the rail is inert, not dangerous - it refuses every revoke rather than performing a wrong one",
-  "open_question": "who may issue a credential to another user: a role, a recipient consent grant, or open? Griefing risk if open.",
+  "open_question": "RESOLVED (Phase 0, plan.md): who may issue a credential to another user is ROLE-GATED - dapp:manager role plus nft:mint scope, enforced in CredentialController.Issue. A recipient-consent-grant model was considered and deliberately deferred (owed, not dismissed).",
   "requires_security_review": true,
   "partitions": {
     "confidence": "planned",
@@ -31,6 +31,8 @@
     ]
   },
   "acceptance_headline": "issuer != holder on a real mint, and no path reports success without a confirmed broadcast",
-  "enforcement_gate": "Enforcement now exists: Services/Actions/NotEnabledActionNodeTypes refuses CredentialRevoke at publish and at BOTH dispatch seams. Remove that member as the final step of this track. Also: the ONE open question (who may issue a credential to another user) must be answered before Phase 1 - it does not follow from D41.",
-  "gate_added_commit": "7b28a16"
+  "enforcement_gate": "Enforcement now exists: Services/Actions/NotEnabledActionNodeTypes refuses CredentialRevoke at publish and at BOTH dispatch seams. Phases 0-3 (two-party mint, current_owner at mint, clawback preconditions, confirmation/ownership re-pointing) are landed per plan.md. Only Phase 4 remains: adversarial review, /security-review, then remove CredentialRevoke as the final step.",
+  "gate_added_commit": "7b28a16",
+  "phases_0_to_3_landed": true,
+  "reconciled_2026_09_07": "status moved from pending to in_progress and the open_question marked resolved, matching plan.md's own Phase 0-3 [x] checkboxes and verified against source (Controllers/CredentialController.cs Issue endpoint, Services/Reconciliation/ReconciliationService.cs D41/AC5 handling, tests/AZOA.WebAPI.Tests/Credentials/). Only Phase 4 remains open; status stays in_progress, not shipped, until it closes."
 }

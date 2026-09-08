@@ -167,7 +167,8 @@ allocation receipt endpoint for allocation status.
 | **Swap** | /api/swap/quote | GET | `getSwapQuote` | client.ts | OK |
 | | /api/swap/execute | POST | `executeSwap` | client.ts | OK |
 | **Network** | /api/network | GET | — | — | **SDK gap** (`getNetworkInfo` no longer in the SDK) |
-| **Credential** | /api/credential/{assetId}/revoke | POST | `revokeCredential` | client.ts | OK — see caveat below |
+| **Credential** | /api/credential/issue/{recipientUserId} | POST | — | — | **SDK gap** — backend two-party mint route (D41) has no typed SDK method yet |
+| | /api/credential/{assetId}/revoke | POST | `revokeCredential` | client.ts | OK — see caveat below |
 | **Analytics** | /api/analytics/transactions | GET | `getAnalyticsTransactions` | client.ts | OK |
 | | /api/analytics/positions | GET | `getAnalyticsPositions` | client.ts | OK |
 | **Allocation** | /api/allocation/{userId} | POST | `allocate` | client.ts | OK |
@@ -231,12 +232,17 @@ landing. Route-level corrections made in this pass: the dapp surface is `/api/da
 (`holons.get` / `.execute` / `.create` / `.update` / `.delete`), not on `client.ts`; holon types key
 on `{assetType}`, not `{id}`; key rotation is `POST /api/admin/key-rotation/rotate`.
 
-⚠ **Credential caveat.** `POST /api/credential/{assetId}/revoke` and its `revokeCredential` SDK
-method are wired end to end, but the rail behind them **cannot currently revoke anything**: the
-only production mint path stamps the issuer as the holder, so D19's issuer-authorization check is
-vacuous and every real revoke fails its holder-address precondition first. Treat the route as
-present-but-inert until `conductor/tracks/credential-third-party-issuance_20260906` closes. Do not
-document it as a working revocation capability.
+⚠ **Credential caveat — corrected 2026-09-07.** The vacuous issuer-equals-holder mint path this
+caveat used to describe is **fixed**: `POST /api/credential/issue/{recipientUserId}` (added by
+`credential-third-party-issuance_20260906`, D41) mints two-party, with the issuer of record
+stamped from the authenticated caller and `current_owner` written at mint, so `POST
+/api/credential/{assetId}/revoke` and `revokeCredential` are now backed by a real, reachable
+authorization check. **The route is still present-but-inert for a different reason:**
+`ActionNodeType.CredentialRevoke` remains in `Services/Actions/NotEnabledActionNodeTypes.cs`
+until the track's non-negotiable `/security-review` closes (a value + key-authority path). Do not
+document either route as a working end-to-end capability until that gate lifts. The new `issue`
+route also has no typed SDK method yet (see the SDK-gap row above) — add one before any
+frontend/consumer surface tries to use it.
 
 **Note:** The actions page (`frontend/src/app/(dashboard)/actions/page.tsx`) uses `azoa.api.request(...)` directly rather than the typed SDK action methods. The publish/unpublish calls on the page are therefore direct HTTP calls, not `publishAction`/`unpublishAction`. The typed SDK methods exist for external SDK consumers. This gap is tracked as part of the existing action sub-resource SDK gap (row 8 in "Open Drift" above).
 

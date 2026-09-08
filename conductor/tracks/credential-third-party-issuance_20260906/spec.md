@@ -2,12 +2,21 @@
 type: Track Spec
 title: Credential third-party issuance
 description: Make soulbound credentials issuable by one party to another, so D19's issuer-authorized revocation stops being vacuous and the rail stops being inert.
-tags: [feature, credential-third-party-issuance_20260906, pending, value-path, rework]
+tags: [feature, credential-third-party-issuance_20260906, in_progress, value-path, rework]
 timestamp: 2026-09-06T00:00:00Z
 resource: ./metadata.json
 ---
 
 # Credential third-party issuance
+
+⚠ **Status (2026-09-07): Phases 0-3 below are landed** — soulbound mint is
+two-party, `current_owner` is written at mint, the clawback precondition proves
+the right thing, and ownership re-points on confirmation. **See `plan.md`,** whose
+checkboxes are the per-item evidence. Only Phase 4 remains
+(adversarial review + `/security-review`, then removing `CredentialRevoke` from
+`Services/Actions/NotEnabledActionNodeTypes`), so the description below is
+retained as the reason the fix was built, not as the current state of the mint
+path.
 
 ## Why this track exists
 
@@ -88,10 +97,17 @@ against is never written.
   replay the first credential's result.
 - **AC8** `/security-review` before enabling. This is a value path.
 
-## The question to answer before writing code
+## The question to answer before writing code — RESOLVED (Phase 0)
 
 **Who may issue?** If any authenticated user can mint a credential to any other
 user, a griefer can spam unwanted credentials onto someone's identity. Decide
 whether issuance requires a role, a consent grant from the recipient, or is open —
-and record it. This is the one genuinely open design question in the track; the
+and record it. This was the one genuinely open design question in the track; the
 rest follows from D41.
+
+**Decided: role-gated.** Issuance requires the `dapp:manager` role plus a scoped
+API key carrying `nft:mint`, enforced in `CredentialController.Issue`. A
+recipient-consent-grant model is the right long-term answer and is deliberately
+deferred, not dismissed — it needs its own offer/accept rail and does not by
+itself stop griefing (an unsolicited offer is still spam). Full reasoning:
+`plan.md` Phase 0 and the doc-comment on `CredentialController.Issue` itself.
