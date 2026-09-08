@@ -1350,8 +1350,9 @@ the lucide-react `<Star>` icon is an unrelated third-party symbol. Both intact.
 
 ### ▶ RESUME HERE (state as of 2026-09-08)
 
-**AZOA:** branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, HEAD `8328c07`, **29 commits
-ahead of `9f4e026`, none pushed.**
+**AZOA:** branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, nothing pushed. Last **code**
+commit `8328c07` — **29 code commits ahead of `9f4e026`** — with the closeout doc commits
+sitting on top of it, so `git rev-list --count 9f4e026..HEAD` will read a little higher.
 **ArdaNova** (`c:/Users/atooz/Documents/Escherbridge/ardanova`): branch
 `codex/azoa-security-hardening`, HEAD `3ffa223`.
 The ArdaNova production-readiness program closed 2026-09-08: **11 waves, 53 of 54 items, 21
