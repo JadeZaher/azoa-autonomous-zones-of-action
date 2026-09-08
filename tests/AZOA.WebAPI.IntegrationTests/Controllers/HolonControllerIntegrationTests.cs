@@ -167,7 +167,7 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
         var holon = await SeedHolonAsync();
         var target = await SeedHolonAsync();
         var wallet = await SeedWalletAsync(w => w.ForUser(Guid.Parse(TestAuthHandler.DefaultUserId)));
-        var request = new ExchangeRequest
+        var request = new HolonExchangeRequest
         {
             WalletId = wallet.Id,
             TargetHolonId = target.Id,

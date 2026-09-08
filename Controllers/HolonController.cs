@@ -108,7 +108,7 @@ public class HolonController : ControllerBase
 
     [HttpPost("{id:guid}/exchange")]
     [Authorize(Policy = "DappDevelop")]
-    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Exchange(Guid id, [FromBody] ExchangeRequest request, [FromQuery] AZOARequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Exchange(Guid id, [FromBody] HolonExchangeRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _blockchainManager.BuildAndExecuteAsync(builder =>
             builder.ForUser(GetUserIdFromClaims() ?? Guid.Empty)
@@ -219,7 +219,7 @@ public class MintRequest
     public string AssetType { get; set; } = string.Empty;
 }
 
-public class ExchangeRequest
+public class HolonExchangeRequest
 {
     public Guid WalletId { get; set; }
     public Guid TargetHolonId { get; set; }

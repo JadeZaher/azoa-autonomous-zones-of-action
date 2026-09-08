@@ -1694,6 +1694,44 @@ AZOA.WebAPI.Services.Fiat.Reversal.ReversalRegistration
 AZOA.WebAPI.Services.Fiat.Reversal.ReversalRegistration
     .AddReversalRiskValueGate(builder.Services);
 
+// ─── Wave 5 composition: the treasury-rate exchange (W5.1 / N-X1 / D50) ───
+// The sponsorship moment. A sponsor spends the platform unit, the PROJECT receives it on chain
+// (never the platform reserve), and the sponsor's units either arrive or are held for a window —
+// all in one atomic group. It is composed from primitives registered above, so it sits here and
+// not in the Wave 3/4 blocks: it needs the reserve, the project treasury, the hold primitive,
+// platform-unit genesis, the recipient preparer, the idempotency store and the D16 rate seam.
+//
+// This is NOT a swap. The existing Swap node and SwapManager stay on the DEX path; nothing below
+// touches ISwapManager.
+var exchangeOptions = builder.Configuration
+    .GetSection(AZOA.WebAPI.Services.Reserve.ExchangeOptions.SectionName)
+    .Get<AZOA.WebAPI.Services.Reserve.ExchangeOptions>()
+    ?? new AZOA.WebAPI.Services.Reserve.ExchangeOptions();
+builder.Services.AddSingleton(exchangeOptions);
+
+// The rate policy. It admits the rate the consumer declared and REFUSES the reverse direction
+// while no IExchangeLiquidityPolicy is registered — which is the state of this node today, and
+// is the whole of "users cannot sell yet" (W8.2 registers the policy that changes it). Nothing
+// registers IExchangeLiquidityPolicy below, deliberately; the manager reads the refusal.
+builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IExchangeRatePolicy,
+    AZOA.WebAPI.Services.Reserve.TreasuryRateExchangePolicy>();
+
+// The atomic-group submitter. The fail-closed default settles NOTHING: no rail adapter can yet
+// assemble a two-asset, two-signer, fee-pooled group (IAtomicTransferGroupModule carries only a
+// same-asset, same-signer pair). TryAdd, so a real adapter registered earlier wins; without one
+// every exchange refuses rather than degrading into two separate transfers.
+Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
+    .TryAddScoped<AZOA.WebAPI.Services.Reserve.IExchangeGroupSubmitter,
+        AZOA.WebAPI.Services.Reserve.UnavailableExchangeGroupSubmitter>(builder.Services);
+
+// The durable declared-rate store, composing whatever AddValueRateSources / AddOnRampValueRateSource
+// left in place as the fallback. It must run AFTER both, or the on-ramp's price schedule — which
+// prices the platform unit it sold — would be dropped instead of composed.
+AZOA.WebAPI.Services.Reserve.HolonTenantDeclaredRateStore.Install(builder.Services);
+
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IReserveExchangeManager,
+    AZOA.WebAPI.Managers.ReserveExchangeManager>();
+
 // ─── MCP surface (mcp-surface track Phase 1) ───
 // Registers McpToolRegistry (singleton) + the SDK's Streamable HTTP transport
 // at /mcp. Tool implementations (W2-W5) register themselves as IMcpTool via DI;
