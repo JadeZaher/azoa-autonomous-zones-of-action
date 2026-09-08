@@ -19,6 +19,12 @@ export type {
   // Allocation types (Fiat Stripe Bridge)
   AllocationRequest,
   AllocationResult,
+  // Exchange types (ExchangeController, W5.1/D50)
+  ExchangeDirection,
+  DeclaredExchangeRate,
+  ExchangeParams,
+  ExchangeReceiptState,
+  ExchangeReceipt,
   // Hold types (HoldController, D14 / W3.4)
   HoldState,
   HoldOpenParams,
@@ -32,6 +38,11 @@ export type {
   HostedSessionCapabilities,
   FiatCheckoutStartParams,
   FiatCheckoutIntent,
+  // Fiat off-ramp / cash-out types (FiatPayoutController)
+  CashOutQuote,
+  PayoutAccountStatus,
+  CashOutStartParams,
+  CashOutView,
   // Platform token reserve/genesis read (PlatformTokenController)
   PlatformTokenDefinition,
   PlatformTokenSupply,
@@ -41,6 +52,28 @@ export type {
   ProjectTreasuryAsset,
   ProjectTreasuryLedger,
   ProjectTreasuryView,
+  // Node transparency reads (NodeTransparencyController) — public, anonymous
+  NodeChainNetwork,
+  NodeFeeScheduleEntry,
+  NodeFeeSchedule,
+  NodeGovernanceParameters,
+  NodeTreasuryDestination,
+  NodeTransparencySnapshot,
+  NodeTransparencyPage,
+  NodeGovernanceAuditEntry,
+  NodeFeeAuditEntry,
+  NodeTreasuryAuditEntry,
+  NodePublicKey,
+  NodePreviousKeyContinuity,
+  NodeDescriptor,
+  NodeTransparencyHistoryCheckpoint,
+  NodeTransparencyHistoryEntry,
+  NodeTransparencyHistoryDocument,
+  // Fiat reversal types (FiatReversalOperatorController) — types only, no SDK methods
+  FiatReversalKind,
+  FiatReversalStatus,
+  FiatReversalRecoveryPath,
+  FiatReversalView,
   // Fungible mint (fungible-mint-and-render-model)
   FungibleMintParams,
   FungibleTokenResult,

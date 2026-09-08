@@ -31,6 +31,7 @@ import {
   Clock,
   Undo2,
   Banknote,
+  Scale,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -85,6 +86,7 @@ const navGroups = [
       { href: '/admin/parked-runs', label: 'Waiting on Settlement', icon: Clock },
       { href: '/admin/fiat-reversals', label: 'Returned Payments', icon: Undo2 },
       { href: '/admin/fiat-payouts', label: 'Cash-outs', icon: Banknote },
+      { href: '/node-transparency', label: 'Node Economic Rules', icon: Scale },
     ],
   },
   {

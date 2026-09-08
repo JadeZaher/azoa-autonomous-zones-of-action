@@ -1161,6 +1161,150 @@ export interface AllocationResult {
   nodeFeeScheduleVersion: number;
 }
 
+// ─── Exchange types (ExchangeController, W5.1/D50) ───
+// The sponsorship moment: a consumer that has already decided the amounts and
+// the rate calls `exchange()`, the sponsor's funds reach the project on chain,
+// and the sponsor's units are either theirs immediately or committed to a hold
+// — all in one atomic group. Requires an API-key principal carrying the
+// exchange-signing scope, exactly like `allocate()`.
+
+/** Which way units move in a treasury-rate exchange. */
+export type ExchangeDirection =
+  | "Buy"
+  /**
+   * A holder gives project units back and receives the platform unit. Refused
+   * until a buy-back liquidity policy is registered server-side.
+   */
+  | "Sell";
+
+/**
+ * The rate the CALLER decided, relayed verbatim. AZOA computes no exchange
+ * rate of its own: it records the one its consumer declared, with that
+ * consumer's own source, version and observation time, or it records nothing.
+ * Exactly one of `majorUnitsPerWholeUnit` and `minorUnitsPerBaseUnit` must be
+ * supplied, both as decimal strings so a price is never rounded through a
+ * binary floating-point conversion.
+ */
+export interface DeclaredExchangeRate {
+  /** ISO-4217 code the rate converts into. USD only today. */
+  currencyCode?: string;
+  /** Price of ONE WHOLE project unit in the currency's major unit. Needs `assetDecimals`. */
+  majorUnitsPerWholeUnit?: string;
+  /** Minor units of `currencyCode` per ONE BASE UNIT of the project asset. */
+  minorUnitsPerBaseUnit?: string;
+  /** The project asset's decimals, needed to convert `majorUnitsPerWholeUnit`. */
+  assetDecimals?: number;
+  /** Digits in the currency's minor unit — 2 for USD cents. Defaults to 2. */
+  currencyMinorUnitDigits?: number;
+  /** When the caller observed this rate — not when AZOA read or applied it. */
+  declaredAt?: string;
+  /** The caller's own identifier for where the rate came from (e.g. `"ardanova:treasury-rate"`). */
+  source?: string;
+  /** The caller's own version for the rate schedule it belongs to, when it versions one. */
+  version?: string;
+}
+
+/**
+ * One treasury-rate exchange, with every amount already decided by the
+ * caller. AZOA executes the move; it does not price it. The person the
+ * exchange is for is the `userId` route argument, never a field here.
+ */
+export interface ExchangeParams {
+  /** The rail both legs settle on. They are one atomic group, so there is exactly one. */
+  chainType: string;
+  /** Which way units move. Defaults to `"Buy"` server-side. */
+  direction?: ExchangeDirection;
+  /** The caller's own project id. Names the project treasury the funds land in. */
+  projectReference: string;
+  /** The project's asset — the units the sponsor receives. */
+  projectAssetId: string;
+  /** Platform-unit amount, in base units, as a whole decimal string. The funds leg. */
+  platformAmount: string;
+  /** Project-unit amount, in base units, as a whole decimal string. The units leg. */
+  projectUnitAmount: string;
+  /**
+   * Named partition on the reserve ledger the project units are drawn from.
+   * Required: without it one purpose could quietly draw down another's earmark.
+   */
+  reservePartition: string;
+  /** The rate this exchange was priced at. Required unless the node's policy says otherwise. */
+  declaredRate?: DeclaredExchangeRate;
+  /**
+   * The hold window. When present the project units are COMMITTED to a hold
+   * for the sponsor and become theirs at this instant; when absent they move
+   * straight to them.
+   */
+  releaseNotBefore?: string;
+  /** Optional caller-supplied hold id; derived from the exchange when absent. */
+  holdReference?: string;
+  /** The caller's own reason, carried onto the durable record. */
+  purpose?: string;
+  /**
+   * Runs every gate and validation and then STOPS: no idempotency claim, no
+   * partition draw, no movement, and an empty operation id as the
+   * machine-checkable proof. Exempt from the consent check other exchanges
+   * require, since nothing moves.
+   */
+  previewOnly?: boolean;
+}
+
+/** Externally observable state of a caller-authorized exchange. */
+export type ExchangeReceiptState = "AwaitingReconciliation" | "Completed" | "Failed";
+
+/**
+ * Secret-free, caller-scoped exchange receipt — what a consumer reconciles
+ * against. Deliberately omits raw idempotency keys, caller identity, account
+ * keys and provider payloads.
+ */
+export interface ExchangeReceipt {
+  /** Opaque SHA-256 reference for this exchange. Safe to log and to echo back. */
+  receiptReference: string;
+  /** Opaque durable operation reference once AZOA has persisted one. */
+  operationId: string | null;
+  state: ExchangeReceiptState;
+  isTerminal: boolean;
+  requiresReconciliation: boolean;
+  /** True when this answer replays an earlier identical request rather than a new exchange. */
+  replayed: boolean;
+  direction: ExchangeDirection;
+  /** The person the exchange was for. */
+  userId: string | null;
+  /** The caller's own project id, echoed back. */
+  projectReference: string | null;
+  /** Base units the initiator gave up, and the asset they are counted in. */
+  amountSpent: string | null;
+  amountSpentAssetId: string | null;
+  /** Base units the initiator received, and the asset they are counted in. */
+  amountReceived: string | null;
+  amountReceivedAssetId: string | null;
+  /** Base units credited to the project's own account by this exchange. */
+  projectCreditAmount: string | null;
+  /** The rail's reference for the whole atomic group, when one settled. */
+  settlementReference: string | null;
+  /** The rail's per-leg references, in the order the group declared them. */
+  settlementLegReferences: string[];
+  /** The hold the received units are committed to, when the exchange opened one. */
+  holdReference: string | null;
+  /** When the held units become the recipient's to move. */
+  holdReleasesAt: string | null;
+  /** The declared rate that priced this exchange, and where it came from. */
+  rate: string | null;
+  rateCurrencyCode: string | null;
+  rateSource: string | null;
+  rateVersion: string | null;
+  rateAsOf: string | null;
+  /**
+   * What the spent leg was worth in the rate currency's minor unit at
+   * settlement, when a rate source priced it. Absent means never priced —
+   * never zero.
+   */
+  valueMinorUnits: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Bounded terminal error discriminator; never provider detail. */
+  failureCode: string | null;
+}
+
 // ─── Hold types (HoldController, D14 / W3.4) ───
 // The tenant-callable HOLD surface: units committed out of a declared reserve
 // partition, held until a release window elapses. No address, key, fee or chain
@@ -1312,6 +1456,82 @@ export interface FiatCheckoutIntent {
   expiresAt: string | null;
 }
 
+// ─── Fiat off-ramp / cash-out (FiatPayoutController) ───
+// The "cash out" surface: set up where a person's money should go, see what
+// they can take out, and take it out. A first-party login may only cash out
+// for itself; an API-key principal additionally needs the subject's live
+// consent, the same gate `startFiatCheckout` applies. Nothing here ever moves
+// value inline — a request claims a durable cash-out and hands it to the
+// backend's saga, so the read surface reports a status, never a receipt.
+
+/**
+ * What a person may cash out right now, in money, plus why the rest may not
+ * leave yet.
+ */
+export interface CashOutQuote {
+  /** Whether this node offers cashing out at all. */
+  available: boolean;
+  /** Whether their payout account can actually receive money. */
+  accountReady: boolean;
+  /** The most they could ask for today, in minor units of `currencyCode`. */
+  cashableMinorUnits: number;
+  /** Money-equivalent of what is still inside a reversal window. */
+  onHoldMinorUnits: number;
+  /** When the oldest held part becomes cashable, when that is knowable. */
+  availableFrom: string | null;
+  /** The smallest cash-out this node will send, in minor units. */
+  minimumAmountMinorUnits: number;
+  /** The largest cash-out this node will send in one go, in minor units. */
+  maximumAmountMinorUnits: number;
+  currencyCode: string;
+  /** One sentence a person can act on. */
+  statusMessage: string;
+}
+
+/** What a person's payout account can do right now, in the words they read on the page. */
+export interface PayoutAccountStatus {
+  /** Whether this node offers cashing out at all. */
+  available: boolean;
+  /** Whether a payout account exists for this person yet. */
+  accountOpened: boolean;
+  /** Whether money may actually be sent to it. */
+  readyToReceive: boolean;
+  /** Whether they have finished the provider's form. */
+  detailsSubmitted: boolean;
+  /** How many things the provider is still waiting for. */
+  outstandingRequirementCount: number;
+  /** The hosted setup page, when there is something left to do. */
+  setupUrl: string | null;
+  /** When that link stops working. */
+  setupUrlExpiresAt: string | null;
+  /** One sentence a person can act on. */
+  statusMessage: string;
+}
+
+/** What a caller posts to cash out. The amount is MONEY; the node works out the units. */
+export interface CashOutStartParams {
+  /**
+   * Caller-stable key. The same key returns the same cash-out instead of
+   * starting a second one, so a double-tapped button cannot pay twice.
+   */
+  requestKey: string;
+  /** The amount to send, in minor units of the node's configured currency. */
+  amountMinorUnits: number;
+}
+
+/** One cash-out as a person sees it. No chain words, no provider ids. */
+export interface CashOutView {
+  id: string;
+  status: string;
+  /** Consumer sentence for the current status. The row's own words are never shown raw. */
+  statusMessage: string;
+  amountMinorUnits: number;
+  currencyCode: string;
+  requestedAt: string;
+  paidAt: string | null;
+  reversedAt: string | null;
+}
+
 // ─── Platform token reserve/genesis read (PlatformTokenController, W3.2/D49) ───
 // Operator-scoped (JWT operator policy; unreachable via API key). Read-only —
 // the SDK deliberately does not expose the one-time genesis mutation, which
@@ -1395,6 +1615,226 @@ export interface ProjectTreasuryView {
   ledger: ProjectTreasuryLedger;
   chainBalance: string | null;
   chainBalanceError: string | null;
+}
+
+// ─── Node transparency reads (NodeTransparencyController) ───
+// Public, anonymous, ETag/Cache-Control-cacheable reads — never signed and
+// never scoped to a caller. What any browser may show about this node's own
+// governance policy, fee schedule and treasury destinations, plus the append-
+// only audit trail behind each. Every method here needs no `token`/`apiKey`
+// on the client config at all.
+
+/** Network a chain destination or fee change applies to (mirrors the backend's `ChainNetwork`). */
+export type NodeChainNetwork = "Devnet" | "Testnet" | "Mainnet";
+
+/** One operation's flat-plus-bps fee terms, in base units. */
+export interface NodeFeeScheduleEntry {
+  flatBaseUnits: string;
+  bps: number;
+}
+
+/** The node's live, publicly-declared fee schedule. */
+export interface NodeFeeSchedule {
+  mint: NodeFeeScheduleEntry;
+  transfer: NodeFeeScheduleEntry;
+  swap: NodeFeeScheduleEntry;
+  actionComplete: NodeFeeScheduleEntry;
+  federationPublish: NodeFeeScheduleEntry;
+  version: number;
+  updatedAt: string | null;
+}
+
+/** The node's live, publicly-declared governance parameters. */
+export interface NodeGovernanceParameters {
+  allowedChains: string[] | null;
+  allowedAssetTypes: string[] | null;
+  version: number;
+  updatedAt: string | null;
+}
+
+/** One chain the node settles a treasury on, and the address it uses. */
+export interface NodeTreasuryDestination {
+  chain: string;
+  network: NodeChainNetwork;
+  address: string;
+  version: number;
+  updatedAt: string | null;
+}
+
+/** The current state of everything this node discloses about its own policy. */
+export interface NodeTransparencySnapshot {
+  governance: NodeGovernanceParameters;
+  feeSchedule: NodeFeeSchedule;
+  treasuryDestinations: NodeTreasuryDestination[];
+  lastUpdatedAt: string | null;
+  /** Content hash of this snapshot; doubles as the response ETag. */
+  contentSha256: string;
+  cryptographicHistoryProofAvailable: boolean;
+}
+
+/** One cursor-paginated page of a public audit trail. */
+export interface NodeTransparencyPage<T> {
+  items: T[];
+  /** Pass back as the `cursor` query parameter to read the next page. Null on the last page. */
+  nextCursor: string | null;
+  /** Content hash of this page; doubles as the response ETag. */
+  contentSha256: string;
+  cryptographicHistoryProofAvailable: boolean;
+}
+
+/** One recorded change to the node's governance parameters. */
+export interface NodeGovernanceAuditEntry {
+  action: string;
+  previousVersion: number;
+  newVersion: number;
+  previousAllowedChains: string[] | null;
+  previousAllowedAssetTypes: string[] | null;
+  allowedChains: string[] | null;
+  allowedAssetTypes: string[] | null;
+  occurredAt: string;
+}
+
+/** One recorded change to the node's fee schedule. */
+export interface NodeFeeAuditEntry {
+  action: string;
+  previousVersion: number;
+  newVersion: number;
+  previousSchedule: NodeFeeSchedule | null;
+  schedule: NodeFeeSchedule;
+  occurredAt: string;
+}
+
+/** One recorded change to a treasury destination. */
+export interface NodeTreasuryAuditEntry {
+  action: string;
+  chain: string;
+  network: NodeChainNetwork;
+  previousVersion: number;
+  newVersion: number;
+  previousDestination: NodeTreasuryDestination | null;
+  destination: NodeTreasuryDestination;
+  occurredAt: string;
+}
+
+/** Public signing key in SubjectPublicKeyInfo form. */
+export interface NodePublicKey {
+  algorithm: string;
+  keyId: string;
+  subjectPublicKeyInfoBase64: string;
+}
+
+/** Proof that the immediately preceding node key authorized the current key. */
+export interface NodePreviousKeyContinuity {
+  key: NodePublicKey;
+  continuitySignatureBase64: string;
+}
+
+/** Public identity facts for this sovereign node. */
+export interface NodeDescriptor {
+  nodeId: string;
+  currentKey: NodePublicKey;
+  previousKey: NodePreviousKeyContinuity | null;
+}
+
+/** A node-identity-signed checkpoint over the ordered public audit history. */
+export interface NodeTransparencyHistoryCheckpoint {
+  schemaVersion: number;
+  descriptor: NodeDescriptor;
+  issuedAt: string;
+  auditEventCount: number;
+  headSha256: string;
+  signatureBase64: string;
+}
+
+/** One redacted event committed into the public governance-history chain. */
+export interface NodeTransparencyHistoryEntry {
+  kind: string;
+  occurredAt: string;
+  payloadJson: string;
+  entrySha256: string;
+}
+
+/**
+ * Bounded public history and the checkpoint that authenticates it — a
+ * consumer can verify this document independently of trusting the node's own
+ * HTTPS transport.
+ */
+export interface NodeTransparencyHistoryDocument {
+  checkpoint: NodeTransparencyHistoryCheckpoint;
+  entries: NodeTransparencyHistoryEntry[];
+}
+
+// ─── Fiat reversal types (FiatReversalOperatorController) ───
+// TYPES ONLY. This is an Operator-JWT-gated admin board (a refund or dispute
+// unwind, and the account-level risk flag it can carry) with no API-key
+// surface, so the SDK does not wrap it with request methods — an operator
+// console types its own `azoa.api.request(...)` calls against these instead
+// of hand-rolling the shape locally.
+
+/** "Refund" (the node issued it) or "Dispute" (the payer raised it). */
+export type FiatReversalKind = "Refund" | "Dispute";
+
+/** Where a reversal stands (mirrors the backend's `FiatReversal.Status` allow-list). */
+export type FiatReversalStatus =
+  | "Open"
+  | "Recovering"
+  | "Recovered"
+  | "PartiallyRecovered"
+  | "Absorbed"
+  | "Reinstated"
+  | "Unmatched"
+  | "NeedsOperator";
+
+/**
+ * Which rung of the compensation ladder answered (mirrors the backend's
+ * `FiatReversal.RecoveryPath` allow-list). `Mixed` means more than one rung
+ * contributed; `None` means no rung has run yet.
+ */
+export type FiatReversalRecoveryPath =
+  | "None"
+  | "Balance"
+  | "Hold"
+  | "Purchase"
+  | "Reserve"
+  | "Mixed";
+
+/**
+ * One reversal as an operator sees it. Amounts are exact decimal strings;
+ * nothing here is a float, because a rounded figure on a financial board is
+ * worse than no figure. Card details never existed on the row and none
+ * appear here.
+ */
+export interface FiatReversalView {
+  id: string;
+  kind: FiatReversalKind;
+  status: FiatReversalStatus;
+  statusReason: string | null;
+  /** The provider event that last moved this reversal. */
+  lastEventType: string;
+  chargeId: string;
+  subjectUserId: string | null;
+  flowPurpose: string | null;
+  /** The money taken back, in minor units of `currencyCode`. */
+  amountMinorUnits: number;
+  /** The original payment, in the same minor units. */
+  sourceAmountMinorUnits: number;
+  currencyCode: string;
+  isPartial: boolean;
+  /** False for a dispute nobody has debited yet. */
+  fundsWithdrawn: boolean;
+  assetId: string | null;
+  targetQuantityBaseUnits: string;
+  recoveredQuantityBaseUnits: string;
+  absorbedQuantityBaseUnits: string;
+  reinstatementOwedBaseUnits: string;
+  recoveryPath: FiatReversalRecoveryPath;
+  accountFlagged: boolean;
+  flagReason: string | null;
+  flagClearedAt: string | null;
+  attemptCount: number;
+  openedAt: string;
+  resolvedAt: string | null;
+  reinstatedAt: string | null;
 }
 
 // ─── DappSeries types matching .NET DTOs (DappSeriesController) ───
@@ -1502,6 +1942,15 @@ function withAnalyticsQuery(path: string, query?: AnalyticsQueryParams): string 
       if (value !== undefined) qs.set(key, String(value));
     }
   }
+  const encoded = qs.toString();
+  return encoded ? `${path}?${encoded}` : path;
+}
+
+/** Appends the `limit`/`cursor` pagination pair the node-transparency audit reads share. */
+function withAuditQuery(path: string, limit?: number, cursor?: string): string {
+  const qs = new URLSearchParams();
+  if (limit !== undefined) qs.set("limit", String(limit));
+  if (cursor !== undefined) qs.set("cursor", cursor);
   const encoded = qs.toString();
   return encoded ? `${path}?${encoded}` : path;
 }
@@ -2050,6 +2499,47 @@ export class AzoaApiClient {
     );
   }
 
+  // ─── Exchange (ExchangeController, W5.1/D50) ───
+  // Value-moving write requires an API-key principal carrying the exchange-
+  // signing scope, exactly like allocate(). Unlike allocate(), the
+  // idempotency key is REQUIRED — the backend refuses a bare exchange rather
+  // than guessing whether a repeat is a retry or a second sponsorship.
+
+  /**
+   * Runs one sponsorship exchange for `userId` at the rate the caller
+   * declared (AZOA never prices an exchange itself). Idempotent on the
+   * `Idempotency-Key` header, partitioned by the caller's own API key, so a
+   * redelivered request never sponsors twice.
+   *
+   * @param userId The person the exchange is for. Route value only.
+   * @param params The exchange details — rail, direction, amounts, declared rate.
+   * @param idempotencyKey The caller's own stable key for this exchange. Required.
+   */
+  async exchange(
+    userId: string,
+    params: ExchangeParams,
+    idempotencyKey: string
+  ): Promise<Result<ExchangeReceipt, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request<ExchangeReceipt>(
+      "POST",
+      API_PATHS.EXCHANGE_RUN(userId),
+      params,
+      false,
+      { "Idempotency-Key": idempotencyKey }
+    );
+  }
+
+  /**
+   * The receipt for one exchange — the read surface a consumer reconciles
+   * against. Scoped to the caller's own API key and identity.
+   */
+  async getExchangeReceipt(idempotencyKey: string): Promise<Result<ExchangeReceipt, SdkError>> {
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request<ExchangeReceipt>("GET", API_PATHS.EXCHANGE_RECEIPT(idempotencyKey));
+  }
+
   // ─── Hold (HoldController, D14 / W3.4) ───
   // Value-moving writes require an API-key principal carrying transfer:sign,
   // exactly like allocate(). Reads are owner-scoped server-side.
@@ -2148,6 +2638,57 @@ export class AzoaApiClient {
     return this.request<FiatCheckoutIntent>("GET", API_PATHS.FIAT_CHECKOUT_GET(userId, intentId));
   }
 
+  // ─── Fiat off-ramp / cash-out (FiatPayoutController) ───
+  // The subject is always `userId`; a first-party login may only cash out for
+  // itself, and an API-key principal additionally needs that person's live
+  // consent, resolved server-side exactly like startFiatCheckout().
+
+  /** What `userId` can cash out today, and why the rest is still held. */
+  async getCashOutAvailability(userId: string): Promise<Result<CashOutQuote, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request<CashOutQuote>("GET", API_PATHS.FIAT_PAYOUT_AVAILABILITY(userId));
+  }
+
+  /** Where `userId`'s money goes, and whether it is ready to receive any. */
+  async getPayoutAccountStatus(userId: string): Promise<Result<PayoutAccountStatus, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request<PayoutAccountStatus>("GET", API_PATHS.FIAT_PAYOUT_ACCOUNT(userId));
+  }
+
+  /**
+   * Starts (or resumes) payout-account setup and hands back a fresh hosted
+   * link. This is the one moment paperwork is expected, so it happens at the
+   * first cash-out rather than at sign-up.
+   */
+  async beginPayoutAccountSetup(userId: string): Promise<Result<PayoutAccountStatus, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request<PayoutAccountStatus>("POST", API_PATHS.FIAT_PAYOUT_ACCOUNT(userId));
+  }
+
+  /**
+   * Claims a cash-out for `userId` and hands it to the backend's saga.
+   * Idempotent on `params.requestKey`: a redelivered request resumes the same
+   * cash-out and pays nothing twice.
+   */
+  async startCashOut(
+    userId: string,
+    params: CashOutStartParams
+  ): Promise<Result<CashOutView, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(params.requestKey, "requestKey");
+    return this.request<CashOutView>("POST", API_PATHS.FIAT_PAYOUT_BASE(userId), params);
+  }
+
+  /** `userId`'s own cash-out history, newest first. */
+  async listCashOutHistory(
+    userId: string,
+    limit?: number
+  ): Promise<Result<CashOutView[], SdkError>> {
+    assertUuid(userId, "userId");
+    const base = API_PATHS.FIAT_PAYOUT_BASE(userId);
+    return this.request<CashOutView[]>("GET", limit ? `${base}?limit=${limit}` : base);
+  }
+
   // ─── Platform token reserve/genesis read (PlatformTokenController). Operator-scoped. ───
 
   /**
@@ -2190,6 +2731,62 @@ export class AzoaApiClient {
     assertUuid(tenantId, "tenantId");
     const base = API_PATHS.PROJECT_TREASURY_LIST_BY_TENANT(tenantId);
     return this.request<ProjectTreasuryLedger[]>("GET", limit ? `${base}?limit=${limit}` : base);
+  }
+
+  // ─── Node transparency reads (NodeTransparencyController) ───
+  // Public, anonymous, cacheable. No token or API key participates in any of
+  // these calls — what this node discloses about its own policy is the same
+  // answer for every viewer.
+
+  /** The node's current governance parameters, fee schedule and treasury destinations. */
+  async getNodeTransparencySnapshot(): Promise<Result<NodeTransparencySnapshot, SdkError>> {
+    return this.request<NodeTransparencySnapshot>("GET", API_PATHS.NODE_TRANSPARENCY_CURRENT);
+  }
+
+  /** Public audit trail of governance-parameter changes, newest first. */
+  async listNodeGovernanceAudit(
+    limit?: number,
+    cursor?: string
+  ): Promise<Result<NodeTransparencyPage<NodeGovernanceAuditEntry>, SdkError>> {
+    return this.request<NodeTransparencyPage<NodeGovernanceAuditEntry>>(
+      "GET",
+      withAuditQuery(API_PATHS.NODE_TRANSPARENCY_GOVERNANCE_AUDIT, limit, cursor)
+    );
+  }
+
+  /** Public audit trail of fee-schedule changes, newest first. */
+  async listNodeFeeAudit(
+    limit?: number,
+    cursor?: string
+  ): Promise<Result<NodeTransparencyPage<NodeFeeAuditEntry>, SdkError>> {
+    return this.request<NodeTransparencyPage<NodeFeeAuditEntry>>(
+      "GET",
+      withAuditQuery(API_PATHS.NODE_TRANSPARENCY_FEE_AUDIT, limit, cursor)
+    );
+  }
+
+  /** Public audit trail of treasury-destination changes, newest first. */
+  async listNodeTreasuryAudit(
+    limit?: number,
+    cursor?: string
+  ): Promise<Result<NodeTransparencyPage<NodeTreasuryAuditEntry>, SdkError>> {
+    return this.request<NodeTransparencyPage<NodeTreasuryAuditEntry>>(
+      "GET",
+      withAuditQuery(API_PATHS.NODE_TRANSPARENCY_TREASURY_AUDIT, limit, cursor)
+    );
+  }
+
+  /**
+   * The node-identity-signed checkpoint over the bounded audit history above
+   * — verify this independently of trusting the node's own HTTPS transport.
+   */
+  async getNodeTransparencyHistoryCheckpoint(): Promise<
+    Result<NodeTransparencyHistoryDocument, SdkError>
+  > {
+    return this.request<NodeTransparencyHistoryDocument>(
+      "GET",
+      API_PATHS.NODE_TRANSPARENCY_HISTORY_CHECKPOINT
+    );
   }
 
   // ─── Swap (SwapController) ───

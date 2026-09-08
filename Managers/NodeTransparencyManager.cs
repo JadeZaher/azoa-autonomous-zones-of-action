@@ -10,6 +10,20 @@ using AZOA.WebAPI.Services.Governance;
 
 namespace AZOA.WebAPI.Managers;
 
+/// <summary>
+/// Builds the public, credential-free <b>node economic-rules transparency</b> surface — the
+/// current governance parameters, fee schedule, and treasury destinations this node applies, plus
+/// an append-only audit history of changes to each. See <c>docs/NODE-TRANSPARENCY.md</c>.
+/// </summary>
+/// <remarks>
+/// This is disclosure of this node's own rules for auditors, integrators, and other nodes — never
+/// a sponsor-facing feature, and never the same thing as the separate node conformance manifest
+/// (<see cref="AZOA.WebAPI.Interfaces.INodeConformanceManifestService"/>, <c>/.well-known/azoa-node.json</c>),
+/// which answers a different question (federation/interop conformance, not economic rules) and
+/// must not be folded into this narrative. Call this surface "node economic-rules transparency" in
+/// any prose that describes it — the bare word "transparency" reads as a promise made to sponsors
+/// about their own money, which this is not.
+/// </remarks>
 public sealed class NodeTransparencyManager : INodeTransparencyManager
 {
     private const int MaxAuditLimit = 100;

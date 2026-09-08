@@ -123,6 +123,12 @@ export type {
   // Allocation (AllocationController, D4/D47)
   AllocationRequest,
   AllocationResult,
+  // Exchange (ExchangeController, W5.1/D50)
+  ExchangeDirection,
+  DeclaredExchangeRate,
+  ExchangeParams,
+  ExchangeReceiptState,
+  ExchangeReceipt,
   // Hold rails (HoldController, D14 / W3.4)
   HoldState,
   HoldOpenParams,
@@ -136,6 +142,11 @@ export type {
   HostedSessionCapabilities,
   FiatCheckoutStartParams,
   FiatCheckoutIntent,
+  // Fiat off-ramp / cash-out (FiatPayoutController)
+  CashOutQuote,
+  PayoutAccountStatus,
+  CashOutStartParams,
+  CashOutView,
   // Platform token reserve/genesis read (PlatformTokenController). Operator-scoped.
   PlatformTokenDefinition,
   PlatformTokenSupply,
@@ -145,6 +156,28 @@ export type {
   ProjectTreasuryAsset,
   ProjectTreasuryLedger,
   ProjectTreasuryView,
+  // Node transparency reads (NodeTransparencyController). Public, anonymous.
+  NodeChainNetwork,
+  NodeFeeScheduleEntry,
+  NodeFeeSchedule,
+  NodeGovernanceParameters,
+  NodeTreasuryDestination,
+  NodeTransparencySnapshot,
+  NodeTransparencyPage,
+  NodeGovernanceAuditEntry,
+  NodeFeeAuditEntry,
+  NodeTreasuryAuditEntry,
+  NodePublicKey,
+  NodePreviousKeyContinuity,
+  NodeDescriptor,
+  NodeTransparencyHistoryCheckpoint,
+  NodeTransparencyHistoryEntry,
+  NodeTransparencyHistoryDocument,
+  // Fiat reversal types (FiatReversalOperatorController). Types only, no SDK methods.
+  FiatReversalKind,
+  FiatReversalStatus,
+  FiatReversalRecoveryPath,
+  FiatReversalView,
   // Analytics read surface (AnalyticsController, D16)
   AnalyticsQueryParams,
   PricingStatus,

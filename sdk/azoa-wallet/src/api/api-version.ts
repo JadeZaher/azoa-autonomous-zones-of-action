@@ -212,6 +212,19 @@ export const API_PATHS = {
   FIAT_CHECKOUT_START: (userId: string) => `/api/fiat/checkout/${userId}`,
   FIAT_CHECKOUT_GET: (userId: string, intentId: string) => `/api/fiat/checkout/${userId}/${intentId}`,
 
+  // Fiat off-ramp / cash-out (FiatPayoutController). The subject is always the
+  // route userId — no body field can redirect a cash-out to a different account.
+  FIAT_PAYOUT_AVAILABILITY: (userId: string) => `/api/fiat/payouts/${userId}/availability`,
+  FIAT_PAYOUT_ACCOUNT: (userId: string) => `/api/fiat/payouts/${userId}/account`,
+  // Shared by POST (start a cash-out) and GET (this person's history).
+  FIAT_PAYOUT_BASE: (userId: string) => `/api/fiat/payouts/${userId}`,
+
+  // Sponsorship exchange (ExchangeController, W5.1/D50). The person the
+  // exchange is for is always the route userId, never a body field.
+  EXCHANGE_RUN: (userId: string) => `/api/exchange/${userId}`,
+  EXCHANGE_RECEIPT: (idempotencyKey: string) =>
+    `/api/exchange/receipt/${encodeURIComponent(idempotencyKey)}`,
+
   // Platform token reserve/genesis read (PlatformTokenController, W3.2/D49). Operator-scoped;
   // the genesis mutation is deliberately NOT exposed here (needs a fresh node-operator login).
   PLATFORM_TOKEN_GET: "/api/admin/platform-token",
@@ -249,4 +262,12 @@ export const API_PATHS = {
   DAPP_SERIES_ACTION_REMOVE: (seriesId: string, actionId: string) => `/api/dapp-series/${seriesId}/actions/${actionId}`,
   DAPP_SERIES_ACTION_ORDER: (seriesId: string, actionId: string) => `/api/dapp-series/${seriesId}/actions/${actionId}/order`,
   DAPP_SERIES_ACTION_MAPPINGS: (seriesId: string, actionId: string) => `/api/dapp-series/${seriesId}/actions/${actionId}/mappings`,
+
+  // Public node transparency reads (NodeTransparencyController). Anonymous,
+  // cacheable; no token or API key is ever sent with these.
+  NODE_TRANSPARENCY_CURRENT: "/api/node-transparency/current",
+  NODE_TRANSPARENCY_GOVERNANCE_AUDIT: "/api/node-transparency/audit/governance",
+  NODE_TRANSPARENCY_FEE_AUDIT: "/api/node-transparency/audit/fees",
+  NODE_TRANSPARENCY_TREASURY_AUDIT: "/api/node-transparency/audit/treasury",
+  NODE_TRANSPARENCY_HISTORY_CHECKPOINT: "/api/node-transparency/audit/checkpoint",
 } as const;

@@ -53,6 +53,42 @@ supported path for this node's own on-ramp.
   backend's `GET /api/bridge/routes` registry whether a chain is currently an
   enabled source or target on any route.
 
+## SDK 0.4.0 — final value-rail parity (W10.3)
+
+Adds typed coverage for the remaining consumer-facing value-rail surfaces and
+the public transparency reads that had shipped backend-first with no SDK
+method: sponsorship `Exchange` (`ExchangeController`), the fiat off-ramp
+cash-out flow (`FiatPayoutController` — availability, payout-account status
+and setup, start, history), and the anonymous public reads on
+`NodeTransparencyController` (current snapshot, the three audit trails, and
+the signed history checkpoint). See the new rows below.
+
+`FiatReversalView` and its `FiatReversalKind` / `FiatReversalStatus` /
+`FiatReversalRecoveryPath` types are also added, **types only** — mirrors of
+`FiatReversalOperatorController`'s wire shape so an operator console can
+import a typed shape instead of hand-rolling one locally (the admin
+`fiat-reversals` frontend page previously declared its own copy). No SDK
+*method* wraps that controller: it is gated by the hardened JWT `Operator`
+policy with no API-key path at all, unlike `PlatformTokenController` /
+`ProjectTreasuryController` in 0.3.1, which stayed Operator-scoped but kept a
+bearer-JWT path an SDK caller can actually reach. The same reasoning holds
+`FiatPayoutOperatorController`'s operator board (advance/return/park/restart
+a cash-out) out of the SDK; only the tenant-facing `FiatPayoutController` gets
+methods here.
+
+**ArdaNova .NET clients — not re-opened.** W4.7 already decided this (see
+"Decision: ArdaNova's .NET clients are NOT generated from this SDK" below);
+that decision was not deferred and W10.3 does not re-litigate it. The answer
+stands: hand-maintain ArdaNova's HTTP clients against this document, or
+generate them from AZOA's own OpenAPI document in a future track — never from
+this TypeScript SDK's source.
+
+**Publish owed.** This SDK bump (0.3.1 → 0.4.0) was made source-only; running
+`tsup` and `npm publish` needs a live build/publish step this track does not
+perform (concurrent agents were editing the same tree). Build and publish
+`azoa-sdk@0.4.0` to npm before any consumer takes a dependency on the methods
+below.
+
 ## Method Mapping Table
 
 | Controller | Endpoint | HTTP | SDK Method | SDK File | Status |
@@ -112,6 +148,8 @@ supported path for this node's own on-ramp.
 | | /api/bridge/{id}/redeem | POST | `redeemBridge` | client.ts | OK (safe response) |
 | | /api/bridge/{id}/reverse | POST | `reverseBridge` | client.ts | OK (safe response) |
 | | /api/bridge/history | GET | `getBridgeHistory` | client.ts | OK (safe response) |
+| **Exchange** | /api/exchange/{userId} | POST | `exchange` | client.ts | OK — requires an API-key principal carrying the exchange-signing scope, exactly like `allocate`; idempotencyKey is REQUIRED (not optional, unlike allocate) |
+| | /api/exchange/receipt/{idempotencyKey} | GET | `getExchangeReceipt` | client.ts | OK |
 | **Hold** | /api/holds | POST | `openHold` | client.ts | OK |
 | | /api/holds/{chain}/{holdId} | GET | `getHold` | client.ts | OK |
 | | /api/holds/{chain}/{holdId}/release | POST | `releaseHold` | client.ts | OK |
@@ -121,6 +159,24 @@ supported path for this node's own on-ramp.
 | **Fiat checkout** | /api/fiat/checkout/capabilities | GET | `getFiatCheckoutCapabilities` | client.ts | OK |
 | | /api/fiat/checkout/{userId} | POST | `startFiatCheckout` | client.ts | OK |
 | | /api/fiat/checkout/{userId}/{intentId} | GET | `getFiatCheckoutIntent` | client.ts | OK |
+| **Fiat payout (off-ramp / cash-out)** | /api/fiat/payouts/{userId}/availability | GET | `getCashOutAvailability` | client.ts | OK |
+| | /api/fiat/payouts/{userId}/account | GET | `getPayoutAccountStatus` | client.ts | OK |
+| | /api/fiat/payouts/{userId}/account | POST | `beginPayoutAccountSetup` | client.ts | OK |
+| | /api/fiat/payouts/{userId} | POST | `startCashOut` | client.ts | OK |
+| | /api/fiat/payouts/{userId} | GET | `listCashOutHistory` | client.ts | OK |
+| **FiatPayoutOperator** (Admin/Operator, JWT-only) | /api/admin/fiat-payouts | GET | — | — | Deliberate SDK gap — operator board with no API-key path; not part of this SDK's scope |
+| | /api/admin/fiat-payouts/{id} | GET | — | — | Deliberate SDK gap — same as above |
+| | /api/admin/fiat-payouts/accounts/{userId} | GET | — | — | Deliberate SDK gap — same as above |
+| | /api/admin/fiat-payouts/{id}/advance \| /return \| /park \| /restart | POST | — | — | Deliberate SDK gap — same as above |
+| **FiatReversalOperator** (Admin/Operator, JWT-only) | /api/admin/fiat-reversals | GET | — | — | Deliberate SDK gap for the METHOD (operator board, no API-key path); `FiatReversalView` TYPE is exported (0.4.0) for a console to type its own `request()` calls |
+| | /api/admin/fiat-reversals/{id} | GET | — | — | Deliberate SDK gap — same as above |
+| | /api/admin/fiat-reversals/accounts/{userId} | GET | — | — | Deliberate SDK gap — same as above |
+| | /api/admin/fiat-reversals/{id}/recover \| /settle \| /restart \| /clear-flag | POST | — | — | Deliberate SDK gap — same as above |
+| **NodeTransparency** (public, anonymous) | /api/node-transparency/current | GET | `getNodeTransparencySnapshot` | client.ts | OK |
+| | /api/node-transparency/audit/governance | GET | `listNodeGovernanceAudit` | client.ts | OK |
+| | /api/node-transparency/audit/fees | GET | `listNodeFeeAudit` | client.ts | OK |
+| | /api/node-transparency/audit/treasury | GET | `listNodeTreasuryAudit` | client.ts | OK |
+| | /api/node-transparency/audit/checkpoint | GET | `getNodeTransparencyHistoryCheckpoint` | client.ts | OK |
 | **PlatformToken** (Admin/Operator) | /api/admin/platform-token | GET | `getPlatformTokenState` | client.ts | OK |
 | | /api/admin/platform-token/genesis | POST | — | — | Deliberate SDK gap — the one-time mint additionally requires a fresh `RecentNodeOperatorSession` (non-API-key node-operator login) this SDK's bearer/API-key config cannot express; run genesis through the operator console, not this SDK. |
 | **ProjectTreasury** (Admin/Operator) | /api/admin/project-treasuries | GET | `getProjectTreasury` | client.ts | OK |
@@ -261,7 +317,7 @@ supported path for this node's own on-ramp.
 
 11. **Durable-run control surface has no SDK** — `start-workflow`, `advance`, `signal`, `reconcile` and `reconcile-sweep` on `ActionRun` are reachable only through `azoa.api.request(...)`.
 
-12. **Whole controllers with no mapping rows** — `Backfill` (`/api/admin/backfill`), `Consent` (`/api/user/consent`), `ExternalAuth` (`/auth/oauth`), `Kyc` (`/api/kyc`), `KycCallback` (`/api/kyc/callback`), `NodeGovernance` (`/api/node-governance`), `NodeOperator` (`/api/operator`), `NodeOperatorSession` (`/api/operator/session`), `NodeTransparency` (`/api/node-transparency`), `TenantConsent` (`/api/tenant/consent`), `TenantKycConfiguration` (`/api/tenant/kyc`), `WalletAuth` (`/api/user`, wallet-challenge login) and the non-custodial half of `Tenant` (`/api/tenant`). Several are deliberately operator- or webhook-only surfaces that no browser SDK should call; the rest are genuine gaps. Classify each before the next SDK minor.
+12. **Whole controllers with no mapping rows** — `Backfill` (`/api/admin/backfill`), `Consent` (`/api/user/consent`), `ExternalAuth` (`/auth/oauth`), `Kyc` (`/api/kyc`), `KycCallback` (`/api/kyc/callback`), `NodeGovernance` (`/api/node-governance`), `NodeOperator` (`/api/operator`), `NodeOperatorSession` (`/api/operator/session`), `TenantConsent` (`/api/tenant/consent`), `TenantKycConfiguration` (`/api/tenant/kyc`), `WalletAuth` (`/api/user`, wallet-challenge login) and the non-custodial half of `Tenant` (`/api/tenant`). Several are deliberately operator- or webhook-only surfaces that no browser SDK should call; the rest are genuine gaps. Classify each before the next SDK minor. (`NodeTransparency` was resolved in 0.4.0 — see the Method Mapping Table; `FiatPayoutOperator` and `FiatReversalOperator` are now explicitly rows above, deliberately without methods, rather than missing controllers.)
 
 ## How to Keep This Current
 
@@ -289,6 +345,10 @@ on `{assetType}`, not `{id}`; key rotation is `POST /api/admin/key-rotation/rota
 ProjectTreasury rows above (all previously undocumented SDK gaps); the SDK's `./orchestration`
 subpath export and its `stripe` dependency are removed — see the "SDK 0.3.1" section above.
 
+**Updated 2026-09-08 (W10.3, `azoa-sdk` 0.4.0):** added the Exchange, Fiat payout (off-ramp),
+NodeTransparency rows and the FiatPayoutOperator/FiatReversalOperator "deliberate gap" rows above
+— see the "SDK 0.4.0" section above. `FiatReversalView` ships as a type only, no SDK method.
+
 ⚠ **Credential caveat — corrected 2026-09-07.** The vacuous issuer-equals-holder mint path this
 caveat used to describe is **fixed**: `POST /api/credential/issue/{recipientUserId}` (added by
 `credential-third-party-issuance_20260906`, D41) mints two-party, with the issuer of record
@@ -305,7 +365,9 @@ frontend/consumer surface tries to use it.
 
 ## Decision: ArdaNova's .NET clients are NOT generated from this SDK
 
-Asked by W4.7 (`ardanova-production-readiness-waves_20260907`). **No.** This
+Asked by W4.7 (`ardanova-production-readiness-waves_20260907`), reaffirmed by
+W10.3 (same track, later wave) — this decision was made, not deferred, so
+W10.3 did not re-open it. **No.** This
 SDK (`azoa-sdk`) is a TypeScript package built for browser/Node/React Native
 consumers with client-side signing; ArdaNova is a separate .NET repository
 (`c:/Users/atooz/Documents/Escherbridge/ardanova`) consuming Azoa over plain
