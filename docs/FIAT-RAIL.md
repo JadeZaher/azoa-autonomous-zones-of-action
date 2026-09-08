@@ -88,7 +88,8 @@ correlation id; the client gets a generic message plus that opaque id.
 All four Wave 4 registrations are live in `Program.cs`, in the
 **Wave 4 settlement composition** block below the saga layer:
 `AddFiatOnRamp`, `AddOnRampValueRateSource`, `AddFiatReversalPipeline` and
-`AddReversalRiskValueGate`. Each verifies its collaborators and throws at boot
+`AddReversalRiskValueGate`. **`AddFiatOffRamp` (W8.1) sits directly below them**
+and follows the same rule. Each verifies its collaborators and throws at boot
 rather than registering something that cannot work, and
 `FiatRailStartup.Validate` refuses the **live** environment unless an
 `IFiatSettlementHandler` is registered — so a node cannot charge a real card
@@ -99,6 +100,36 @@ Two things are still owed before real cards, and neither is code: declare the
 (`IPlatformReserve.DeclarePartitionsAsync`), and register a first price schedule
 (`POST /api/fiat/price-schedule` as the node operator, `UnitsPerMinorUnit: "100"`
 for the settled 1 ARDA = $0.01 base at 2 decimals).
+
+## The off-ramp — money out (W8.1)
+
+`Services/Fiat/OffRamp/` is the other end of the loop: units back into a
+person's own bank account, through the same provider's Connect payouts.
+`OffRampRegistration.AddFiatOffRamp` verifies all thirteen collaborators and
+throws at boot rather than letting `api/fiat/payouts` answer with a container
+error. Every default is fail-closed, so an **absent** `Fiat:OffRamp` section is
+a working configuration in which cashing out reports that it is not available —
+it never half-works.
+
+Enabling it requires `Enabled`, `OnboardingReturnUrl` and `OnboardingRefreshUrl`,
+and each URL must itself satisfy `Fiat:Checkout:AllowedReturnOrigins`: an
+unbounded return URL on an identity-verification page is the same open redirect
+the checkout page guards against. `ReservePartition` names the partition a
+cash-out is drawn back into and should match `Fiat:OnRamp:ReservePartition`
+unless an operator deliberately separates them.
+
+The subject is always the `userId` **route** value — no body field can redirect
+a cash-out — and the destination bank account is resolved by the node from that
+person's own durable onboarding record, never from anything a caller sends. The
+routes are `GET/POST /api/fiat/payouts/{userId}/account`,
+`GET /api/fiat/payouts/{userId}/availability`, `POST /api/fiat/payouts/{userId}`
+and `GET /api/fiat/payouts/{userId}`, with an operator console at
+`/admin/fiat-payouts`. `Services/Fiat/OffRamp/AGENTS.md` is the authoritative
+note on aging, the ledger and the saga.
+
+A third thing is now owed alongside the two below before real money moves out:
+the connected-account onboarding flow has to be reachable, which means both
+onboarding URLs must resolve to pages this deployment actually serves.
 
 ## What is NOT yet built (still open after this retirement)
 
@@ -115,6 +146,10 @@ for the settled 1 ARDA = $0.01 base at 2 decimals).
   priced by the tenant's registered schedule and issued from the platform reserve
   as an `on_ramp_lot`. See `Services/Fiat/OnRamp/AGENTS.md` for §pricing, §lots
   and §retries.
+- ~~**The off-ramp**~~ — **BUILT** in Wave 8 (W8.1): a person's units become
+  money in their own bank account through Connect payouts, aged against the
+  chargeback window so freshly on-ramped funds cannot be cashed straight out.
+  See `Services/Fiat/OffRamp/AGENTS.md`.
 - **Which live Stripe integration wins** — ArdaNova already runs its own
   Stripe integration independent of the sidecar (`StripeWebhookController.cs`,
   `AzoaAllocationService.cs`). RUNBOOK D45 scopes the AZOA rail to the

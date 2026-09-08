@@ -175,9 +175,22 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             return Invalid(rateError);
         }
 
+        // The buy-back queue's replay anchor is this exchange's own idempotency identity, so a
+        // retry re-reads its own place rather than taking a second one. Derived HERE — before the
+        // rate policy runs — and reused for the ledger claim at step 7.
+        var identity = ExchangeIdempotency.CreateFromClientKey(caller.ApiKeyId, caller.ClientIdempotencyKey);
+
+        // The trailing five values are the buy-back context (W8.2). Without them the liquidity
+        // policy cannot see the treasury a sell would be paid from and refuses every sell; and
+        // without IsPreview a quote would take a place in the queue.
         var evaluation = new ExchangeRateEvaluation(
             chainType, request.Direction, projectAssetId, platformAssetId,
-            platformAmount, projectUnitAmount, declaredRate, now);
+            platformAmount, projectUnitAmount, declaredRate, now,
+            TenantId: caller.ActingTenantId,
+            ProjectReference: projectReference,
+            SellerUserId: caller.TargetUserId,
+            RequestKey: identity.Correlation,
+            IsPreview: request.PreviewOnly);
         var decision = await _ratePolicy.EvaluateAsync(evaluation, ct);
         if (decision.IsError || decision.Result is null)
         {
@@ -213,7 +226,6 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         }
 
         // ── Step 7: idempotency claim, BEFORE any irreversible effect ─────────
-        var identity = ExchangeIdempotency.CreateFromClientKey(caller.ApiKeyId, caller.ClientIdempotencyKey);
         var ledgerKey = identity.LedgerKey;
         var claim = await _idempotencyStore.TryClaimAsync(ledgerKey, OperationType, CancellationToken.None);
         if (!claim.Won)

@@ -10,6 +10,7 @@ graph LR
     consent_audit["consent_audit: Node"]:::nodeClass
     consent_grant["consent_grant: Node"]:::nodeClass
     fiat_event["fiat_event: Node"]:::nodeClass
+    fiat_payout["fiat_payout: Node"]:::nodeClass
     fiat_reversal["fiat_reversal: Node"]:::nodeClass
     hold_ledger["hold_ledger: Node"]:::nodeClass
     holon["holon: Node"]:::nodeClass
@@ -55,6 +56,10 @@ graph LR
     consent_grant -- "tenant_id [N:1]" --> user
     fiat_event -- "intent_id [N:0..1]" --> hosted_session
     fiat_event -- "subject_user_id [N:0..1]" --> user
+    fiat_payout -- "reversal_id [N:0..1]" --> fiat_reversal
+    fiat_payout -- "price_schedule_id [N:0..1]" --> tenant_price_schedule
+    fiat_payout -- "tenant_id [N:0..1]" --> user
+    fiat_payout -- "subject_user_id [N:1]" --> user
     fiat_reversal -- "intent_id [N:0..1]" --> hosted_session
     fiat_reversal -- "lot_id [N:0..1]" --> on_ramp_lot
     fiat_reversal -- "operation_id [N:0..1]" --> operation_log

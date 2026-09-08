@@ -8,7 +8,7 @@ graph LR
     %%   action_templates: action_node_template, action_template
     %%   bridge: action_webhook_event, bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, node_fee_atomic_group, node_fee_settlement, operation_log, saga_steps, webhook_registration
     %%   dapp_composition: dapp_series, dapp_series_action, ecosystem, ecosystem_node
-    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, fiat_event, fiat_reversal, hold_ledger, holon, holon_type_registry, hosted_session, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, oauth_exchange_code, on_ramp_lot, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, tenant_price_schedule, user, user_external_login, wallet_auth_challenge, wallet_auth_claim_token
+    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, fiat_event, fiat_payout, fiat_reversal, hold_ledger, holon, holon_type_registry, hosted_session, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, oauth_exchange_code, on_ramp_lot, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, tenant_price_schedule, user, user_external_login, wallet_auth_challenge, wallet_auth_claim_token
     %%   wallet_nft: nft_ownership, swap_state, wallet
     %% 
     %% Enums:
@@ -32,6 +32,7 @@ graph LR
     %%   ecosystem_node.ref_kind: DappSeries, ActionGraphBundle  (EcosystemNode.RefKindValue)
     %%   fiat_event.environment: test, live
     %%   fiat_event.status: Received, Applied, Ignored, Failed
+    %%   fiat_payout.status: Requested, UnitsCollected, Paid, Reversed, Returned, Refused, NeedsOperator
     %%   fiat_reversal.kind: Refund, Dispute
     %%   fiat_reversal.recovery_path: None, Balance, Hold, Purchase, Reserve, Mixed
     %%   fiat_reversal.status: Open, Recovering, Recovered, PartiallyRecovered, Absorbed, Reinstated, Unmatched, NeedsOperator
@@ -116,6 +117,7 @@ graph LR
         consent_audit["consent_audit: Node"]:::nodeClass
         consent_grant["consent_grant: Node"]:::nodeClass
         fiat_event["fiat_event: Node"]:::nodeClass
+        fiat_payout["fiat_payout: Node"]:::nodeClass
         fiat_reversal["fiat_reversal: Node"]:::nodeClass
         hold_ledger["hold_ledger: Node"]:::nodeClass
         holon["holon: Node"]:::nodeClass
@@ -208,6 +210,10 @@ graph LR
     ecosystem_node -- "parent_node_id [N:0..1]" --> ecosystem_node
     fiat_event -- "intent_id [N:0..1]" --> hosted_session
     fiat_event -- "subject_user_id [N:0..1]" --> user
+    fiat_payout -- "reversal_id [N:0..1]" --> fiat_reversal
+    fiat_payout -- "price_schedule_id [N:0..1]" --> tenant_price_schedule
+    fiat_payout -- "tenant_id [N:0..1]" --> user
+    fiat_payout -- "subject_user_id [N:1]" --> user
     fiat_reversal -- "intent_id [N:0..1]" --> hosted_session
     fiat_reversal -- "lot_id [N:0..1]" --> on_ramp_lot
     fiat_reversal -- "operation_id [N:0..1]" --> operation_log

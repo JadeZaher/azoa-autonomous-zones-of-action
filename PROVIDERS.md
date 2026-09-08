@@ -31,7 +31,7 @@ assurance label. Attempts persist that profile in a versioned provenance
 envelope, so provider or policy rotation requires re-verification. See
 `docs/TENANT-CUSTODIAL-ONBOARDING.md`.
 
-## Controllers (35)
+## Controllers (37)
 
 Full inventory with route prefix. The sections that follow detail the surfaces the SDK
 and frontend consume; operator-, webhook- and admin-only controllers are listed here by
@@ -52,6 +52,8 @@ prefix rather than enumerated.
 | DappCompositionController | `api/dapp-series/{id}` | 6 |
 | DappSeriesController | `api/dapp-series` | 10 |
 | ExternalAuthController | `auth/oauth` | 7 |
+| FiatPayoutController | `api/fiat/payouts` | 5 |
+| FiatPayoutOperatorController | `api/admin/fiat-payouts` | 7 |
 | HolonController | `api/holon` | 16 |
 | HolonTypeRegistryController | `api/holon-types` | 5 |
 | KeyRotationController | `api/admin/key-rotation` | 1 |
@@ -310,6 +312,17 @@ ETH**, which the shared interface could not express at all. Algorand and Solana 
 to 64-bit chain base units via `NarrowToChainBaseUnits`; Ethereum deliberately never
 narrows. `RejectUnsettleableAmount` (on `BaseBlockchainProvider`) refuses a
 fiat-denominated amount rather than reinterpreting it as base units.
+
+### Fiat Rail Provider
+
+`Providers/Fiat/FiatRailProvider.cs` is the money rail, resolved through the same
+`IValueRailProviderFactory` as a chain. Money **in** is the hosted checkout page
+(`Providers/Fiat/`); money **out** is `Providers/Fiat/StripeConnectGateway.cs`, the
+Connect payouts surface the off-ramp uses to open a person's payout account and send
+them their money. Neither ever hands a provider name, a session id or a webhook
+detail to anything a person can read - those stay behind the transport boundary, and
+the consumer-facing wording is produced by `Services/Fiat/OffRamp/` in plain money
+words. See `docs/FIAT-RAIL.md` and `Services/Fiat/OffRamp/AGENTS.md`.
 
 ### Algorand Provider
 Implements `IBlockchainProvider` fully:

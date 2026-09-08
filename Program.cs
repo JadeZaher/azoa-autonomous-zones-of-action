@@ -1694,6 +1694,13 @@ AZOA.WebAPI.Services.Fiat.Reversal.ReversalRegistration
 AZOA.WebAPI.Services.Fiat.Reversal.ReversalRegistration
     .AddReversalRiskValueGate(builder.Services);
 
+// The off-ramp (W8.1). The other half of the money path: units become money in a person's
+// bank account. Registered here because AddFiatOffRamp verifies all thirteen collaborators
+// and throws at boot rather than letting api/fiat/payouts answer with a container error.
+// Fail-closed by configuration: absent Fiat:OffRamp, every route reports that cashing out
+// is not available rather than half-working.
+AZOA.WebAPI.Services.Fiat.OffRamp.OffRampRegistration.AddFiatOffRamp(builder.Services);
+
 // ─── Wave 5 composition: the treasury-rate exchange (W5.1 / N-X1 / D50) ───
 // The sponsorship moment. A sponsor spends the platform unit, the PROJECT receives it on chain
 // (never the platform reserve), and the sponsor's units either arrive or are held for a window —
@@ -1709,12 +1716,18 @@ var exchangeOptions = builder.Configuration
     ?? new AZOA.WebAPI.Services.Reserve.ExchangeOptions();
 builder.Services.AddSingleton(exchangeOptions);
 
-// The rate policy. It admits the rate the consumer declared and REFUSES the reverse direction
-// while no IExchangeLiquidityPolicy is registered — which is the state of this node today, and
-// is the whole of "users cannot sell yet" (W8.2 registers the policy that changes it). Nothing
-// registers IExchangeLiquidityPolicy below, deliberately; the manager reads the refusal.
+// The rate policy. It admits the rate the consumer declared, and refuses the SELL direction
+// unless an IExchangeLiquidityPolicy is registered below and that policy admits the sell.
 builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IExchangeRatePolicy,
     AZOA.WebAPI.Services.Reserve.TreasuryRateExchangePolicy>();
+
+// The liquidity policy the SELL direction needs (W8.2): a buy-back paid from the project's own
+// treasury, with the platform reserve as a declared backstop, per-project caps and a FIFO queue
+// when the treasury is short. Registering it is not by itself an opening — Exchange:BuyBack
+// Enabled defaults to false, so the policy still refuses until an operator configures a
+// buy-back. Without this line the rate policy refuses every sell (fail-closed, but closed).
+AZOA.WebAPI.Services.Reserve.BuyBackLiquidityRegistration
+    .AddBuyBackLiquidityPolicy(builder.Services, builder.Configuration);
 
 // The atomic-group submitter. The fail-closed default settles NOTHING: no rail adapter can yet
 // assemble a two-asset, two-signer, fee-pooled group (IAtomicTransferGroupModule carries only a
