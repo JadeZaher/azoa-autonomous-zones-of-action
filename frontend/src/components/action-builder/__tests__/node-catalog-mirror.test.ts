@@ -41,9 +41,11 @@ const BACKEND_ACTION_NODE_TYPES = [
   'GovernanceProposalCreate', 'GovernanceVote', 'GovernanceTally',
   // Credit rails (Phase 5 D21)
   'LoanOpen', 'LoanRepaymentRecord', 'LoanBalance',
+  // Hold rails (D14 / W3.4)
+  'Hold', 'Release', 'HoldRefund', 'ReleaseIntoHold',
 ] as const
 
-const EXPECTED_MEMBER_COUNT = 50
+const EXPECTED_MEMBER_COUNT = 54
 
 /** The four Phase 5 nodes that are mirrored but deliberately not enabled. */
 const PREVIEW_TYPES = ['CredentialRevoke', 'GovernanceProposalCreate', 'GovernanceVote', 'GovernanceTally']

@@ -3,6 +3,7 @@ using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Services.Actions;
+using AZOA.WebAPI.Services.Hold;
 
 namespace AZOA.WebAPI.Services.Actions.Handlers;
 
@@ -148,3 +149,91 @@ public sealed class RefundNodeHandler : IActionNodeHandler
         return false;
     }
 }
+
+/// <summary>
+/// Handles <see cref="ActionNodeType.HoldRefund"/> — Tier-2 chain action (D14 / W3.4).
+/// Abandons a hold: the commitment goes back to the reserve partition it was drawn from
+/// and NOTHING moves on chain, because a reserve-sourced hold's units never left the
+/// holding account.
+/// <para>
+/// It is a separate node type from <see cref="ActionNodeType.Refund"/> above, and the
+/// name is not an accident. That one reverses an NFT transfer under the run actor's own
+/// authority over an asset the actor sent; this one un-commits custodial units under the
+/// platform's authority over a ledger row. Overloading one node type across both would
+/// have let an NFT reversal reach the hold ledger and vice versa, and the handler
+/// registry enforces one handler per node type precisely so that cannot be papered over.
+/// </para>
+/// <para>
+/// A hold whose release draw has already committed is REFUSED here rather than
+/// un-committed: those units are counted as issued, so crediting the partition again
+/// would hand the same budget out twice. That refusal lives in the hold service, at the
+/// state machine, where both dispatch seams and the REST surface all reach it.
+/// </para>
+/// Requires a chain capability.
+/// </summary>
+public sealed class HoldRefundNodeHandler : IActionNodeHandler
+{
+    private readonly IPlatformHold _holds;
+
+    public HoldRefundNodeHandler(IPlatformHold holds) => _holds = holds;
+
+    public ActionNodeType NodeType => ActionNodeType.HoldRefund;
+
+    public bool RequiresChainCapability => true;
+
+    /// <inheritdoc />
+    public string? ResolveSettlementRailId(ActionNode node) =>
+        HoldNodeRail.Resolve<HoldRefundNodeConfig>(
+            node, nameof(ActionNodeType.HoldRefund), cfg => cfg.ChainType);
+
+    public async Task<ActionNodeHandlerResult> HandleAsync(
+        ActionNodeExecutionContext context, CancellationToken ct = default)
+    {
+        if (!ActionNodeConfig.TryDeserialize<HoldRefundNodeConfig>(
+                context.Node.Config, nameof(ActionNodeType.HoldRefund), out var cfg, out var cfgError))
+        {
+            return ActionNodeResults.Invalid(cfgError);
+        }
+
+        if (string.IsNullOrWhiteSpace(cfg.ChainType))
+            return ActionNodeResults.Invalid("[HoldRefund] config must name the rail the hold settles on.");
+
+        if (!HoldNodeTargetResolver.TryResolve(
+                cfg.HoldId, cfg.HoldNodeName, context, nameof(ActionNodeType.HoldRefund),
+                out var holdId, out var resolveError))
+        {
+            return ActionNodeResults.Invalid(resolveError);
+        }
+
+        var refunded = await _holds.RefundAsync(
+            new HoldSettlementRequest(
+                new HoldReference(cfg.ChainType!, holdId),
+                ActingTenantId: context.ActingTenantId,
+                Reason: cfg.Reason),
+            ct);
+
+        if (refunded.IsError || refunded.Result is null)
+            return ActionNodeResults.Fail(refunded.Message, chainType: cfg.ChainType);
+
+        return ActionNodeResults.Ok(
+            HoldNodeResult.Serialize(refunded.Result),
+            chainType: cfg.ChainType);
+    }
+}
+
+/// <summary>Config for <see cref="ActionNodeType.HoldRefund"/>.</summary>
+public sealed class HoldRefundNodeConfig
+{
+    /// <summary>Rail the hold settles on (e.g. <c>Algorand</c>).</summary>
+    public string? ChainType { get; set; }
+
+    /// <summary>The hold to give back. Mutually exclusive with <see cref="HoldNodeName"/>.</summary>
+    public string? HoldId { get; set; }
+
+    /// <summary>Name of the node in this action that opened the hold, when no id is given.</summary>
+    public string? HoldNodeName { get; set; }
+
+    /// <summary>Why the hold is being given back; recorded on the ledger row.</summary>
+    public string? Reason { get; set; }
+}
+

@@ -81,7 +81,11 @@ public sealed class AllocationControllerTests
             allClaims.Add(new Claim("AuthMethod", authMethod));
         allClaims.AddRange(claims);
 
-        return new AllocationController(manager)
+        // W3.6 added an edge consent check: with no gate the controller REFUSES (503)
+        // rather than waving the allocation through, so these principal-shape tests have
+        // to supply a gate that says yes. What the gate itself does under a real grant is
+        // covered by AllocationConsentGateTests, not here.
+        return new AllocationController(manager, PermissiveConsentGate())
         {
             ControllerContext = new ControllerContext
             {
@@ -91,5 +95,14 @@ public sealed class AllocationControllerTests
                 },
             },
         };
+    }
+
+    private static ITenantConsentGate PermissiveConsentGate()
+    {
+        var gate = new Mock<ITenantConsentGate>();
+        gate.Setup(candidate => candidate.EnsureAllowedAsync(
+                It.IsAny<SigningContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<bool> { Result = true });
+        return gate.Object;
     }
 }

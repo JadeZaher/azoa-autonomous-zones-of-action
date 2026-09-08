@@ -54,6 +54,12 @@ public class ChainCapabilityFlagInvariantTests
         // GovernanceVote, GovernanceTally, LoanOpen, LoanRepaymentRecord,
         // LoanBalance) are deliberately absent.
         ActionNodeType.CredentialRevoke,
+        // D14 / W3.4 hold rails: all four reach the platform-custodial holding account
+        // and a release/refund moves real value out of it, so all four are Tier-2.
+        ActionNodeType.Hold,
+        ActionNodeType.Release,
+        ActionNodeType.HoldRefund,
+        ActionNodeType.ReleaseIntoHold,
     };
 
     /// <summary>

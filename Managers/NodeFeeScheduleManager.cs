@@ -83,6 +83,10 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
         if (errors.Count > 0)
             return AZOAResult<NodeFeeScheduleResponse>.Failure(string.Join(" ", errors));
 
+        // A stale ExpectedVersion whose merged values equal the current schedule is a
+        // deliberate idempotent retry, not a conflict — hence the no-op short-circuit
+        // ahead of the version check. Pinned by
+        // NodeFeeScheduleManagerTests.UpdateScheduleAsync_IdenticalRetry_ReturnsCurrentWithoutNewAudit.
         if (SameFeeValues(next, baseSchedule))
         {
             return new AZOAResult<NodeFeeScheduleResponse>

@@ -6,10 +6,16 @@ namespace AZOA.WebAPI.Models.Requests;
 /// Tenant-callable request to launch a fungible token (an Algorand ASA with a real
 /// <see cref="Total"/> supply + <see cref="Decimals"/>, as opposed to the supply-1
 /// NFT path). The supply and decimals are tenant-supplied and authoritative — AZOA
-/// derives no economic meaning (peg/valuation stays tenant-side). The token is
-/// minted into the target user's provisioned custodial wallet, whose address is
-/// used as the ASA manager/reserve/freeze/clawback address (mechanism only;
-/// configurable roles are a follow-up).
+/// derives no economic meaning (peg/valuation stays tenant-side).
+///
+/// <para>Mint destination (W3.1): under the node's DEFAULT policy the asset is created
+/// BY the platform reserve, which therefore holds all four ASA authorities
+/// (manager/reserve/freeze/clawback), and the reserve opens the asset's partition
+/// ledger row. The target user's provisioned custodial wallet RECEIVES the units but
+/// holds no authority over the asset. The legacy shape — creator = the caller's wallet
+/// — survives only behind <c>Reserve:FungibleMintTarget = CallerWallet</c> and is
+/// broken on chain: the creator would be the caller's wallet while the ASA-create is
+/// signed by the platform key, so the sender and the signature disagree.</para>
 ///
 /// IDOR note: like <see cref="AllocationRequest"/>, this DTO carries no owner /
 /// target user id. The target user is supplied out-of-band (route / run

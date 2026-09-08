@@ -34,6 +34,8 @@ const CATEGORY_HEX: Record<NodeCategory, string> = {
   // miss surfaced.
   Governance: '#8b5cf6',
   Lending: '#14b8a6',
+  // D14 / W3.4 hold rails.
+  Escrow: '#6366f1',
 }
 
 /** Shape of a node as returned by the backend on a fetched action. */

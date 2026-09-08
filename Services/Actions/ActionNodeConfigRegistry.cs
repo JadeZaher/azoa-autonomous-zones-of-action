@@ -91,6 +91,12 @@ public static class ActionNodeConfigRegistry
             [ActionNodeType.LoanOpen]             = typeof(LoanOpenNodeConfig),
             [ActionNodeType.LoanRepaymentRecord]  = typeof(LoanRepaymentRecordNodeConfig),
             [ActionNodeType.LoanBalance]          = typeof(LoanBalanceNodeConfig),
+
+            // Hold rails (D14 / W3.4) -- configs are declared beside their handlers.
+            [ActionNodeType.Hold]                 = typeof(Handlers.HoldNodeConfig),
+            [ActionNodeType.Release]              = typeof(Handlers.ReleaseNodeConfig),
+            [ActionNodeType.HoldRefund]           = typeof(Handlers.HoldRefundNodeConfig),
+            [ActionNodeType.ReleaseIntoHold]      = typeof(Handlers.ReleaseIntoHoldNodeConfig),
         };
 
     /// <summary>

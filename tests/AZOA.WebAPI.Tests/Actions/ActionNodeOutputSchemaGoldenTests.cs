@@ -96,6 +96,11 @@ public class ActionNodeOutputSchemaGoldenTests
         [ActionNodeType.LoanOpen] = () => Serialize(RepresentativeLoanProjection()),
         [ActionNodeType.LoanRepaymentRecord] = () => Serialize(RepresentativeLoanProjection()),
         [ActionNodeType.LoanBalance] = () => Serialize(RepresentativeLoanProjection()),
+        // All four hold handlers serialize the same flat HoldNodeResult.
+        [ActionNodeType.Hold] = () => Serialize(RepresentativeHold()),
+        [ActionNodeType.Release] = () => Serialize(RepresentativeHold()),
+        [ActionNodeType.HoldRefund] = () => Serialize(RepresentativeHold()),
+        [ActionNodeType.ReleaseIntoHold] = () => Serialize(RepresentativeHold()),
     };
 
     /// <summary>Open / anonymous / dynamic-key entries — EXCLUDED from field checks.
@@ -405,4 +410,37 @@ public class ActionNodeOutputSchemaGoldenTests
         Status = "Open",
         EntryCount = 2,
     };
+
+    /// <summary>The <see cref="AZOA.WebAPI.Services.Actions.Handlers.HoldNodeResult"/> all
+    /// four hold handlers serialize (D14 / W3.4). Every source field is populated so the
+    /// closed-shape check sees the full record rather than a row whose optional fields
+    /// happen to collapse to the empty string.</summary>
+    private static AZOA.WebAPI.Services.Actions.Handlers.HoldNodeResult RepresentativeHold() =>
+        AZOA.WebAPI.Services.Actions.Handlers.HoldNodeResult.Representative(
+            new AZOA.WebAPI.Persistence.SurrealDb.Models.HoldLedger
+            {
+                Id = "0123456789abcdef",
+                HoldId = "hold-1",
+                Chain = "Algorand",
+                Network = "Devnet",
+                HoldingAddress = "RESERVEADDRESS",
+                AssetId = "12345",
+                Amount = "1000",
+                ReservePartition = "contributor",
+                FundingSource = "Reserve",
+                FunderUserId = Guid.NewGuid().ToString(),
+                BeneficiaryUserId = Guid.NewGuid().ToString(),
+                TenantId = Guid.NewGuid().ToString(),
+                Purpose = "milestone",
+                State = "Held",
+                ReleaseNotBefore = new DateTimeOffset(2026, 1, 8, 0, 0, 0, TimeSpan.Zero),
+                AutoRelease = true,
+                InheritsReserveCommitment = false,
+                ParentHoldId = "hold-0",
+                ChildHoldId = "hold-2",
+                SettlementTransactionId = "TXID",
+                SettledAt = new DateTimeOffset(2026, 1, 9, 0, 0, 0, TimeSpan.Zero),
+                SettlementReason = "released",
+                Version = 3,
+            });
 }

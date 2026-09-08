@@ -102,7 +102,31 @@ public enum ActionNodeType
     // amount is a RailAmount; settlement of that amount is handed to the tenant via Emit.
     LoanOpen,
     LoanRepaymentRecord,
-    LoanBalance
+    LoanBalance,
+
+    // Hold rails (D14 / W3.4). Tier-2 (RequiresChainCapability == true): every one of
+    // them either commits units in the platform-custodial holding account or moves them
+    // out of it, so the run context must be able to settle on the rail it names.
+    // Appended at the END deliberately -- existing rows persist the ENUM NAME (see
+    // action_node.surql $action_node_node_type), and appending keeps the numeric
+    // ordinals of every earlier member stable for anything that persisted them as int.
+    //
+    // Hold           -- park units from a named reserve partition until releaseNotBefore.
+    // Release        -- hand a due hold's units to its beneficiary (the only outbound move).
+    // HoldRefund     -- abandon a hold; the units go back to the partition's availability.
+    // ReleaseIntoHold-- close one hold by opening the NEXT one over the same units, which
+    //                   is what "approve completion" is: a release into the worker's own
+    //                   window. A plain Release cannot express it because Release ends the
+    //                   commitment, and the second window must keep it.
+    //
+    // NOTE the name HoldRefund, not Refund: `Refund` above is the NFT-transfer reversal
+    // node and is a different authority over a different asset shape. Two node types
+    // cannot share one name, and silently overloading the existing one would have let an
+    // NFT reversal reach the hold ledger. See Services/Hold/AGENTS.md.
+    Hold,
+    Release,
+    HoldRefund,
+    ReleaseIntoHold
 }
 
 /// <summary>

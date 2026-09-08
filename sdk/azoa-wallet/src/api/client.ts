@@ -716,6 +716,8 @@ export type ActionNodeType =
   | "CredentialRevoke"
   | "GovernanceProposalCreate" | "GovernanceVote" | "GovernanceTally"
   | "LoanOpen" | "LoanRepaymentRecord" | "LoanBalance"
+  // Hold rails (D14 / W3.4): funds set aside in the platform holding account.
+  | "Hold" | "Release" | "HoldRefund" | "ReleaseIntoHold"
   | string; // extensible
 
 export interface ActionNodeResult {

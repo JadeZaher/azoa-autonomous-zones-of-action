@@ -196,7 +196,33 @@ public static class ActionNodeOutputSchema
             [ActionNodeType.LoanOpen] = LoanBalanceProjectionShape,
             [ActionNodeType.LoanRepaymentRecord] = LoanBalanceProjectionShape,
             [ActionNodeType.LoanBalance] = LoanBalanceProjectionShape,
+
+            // ── D14 / W3.4 hold rails — all four serialize the same flat
+            //    Handlers.HoldNodeResult, whose [JsonPropertyName] attributes pin
+            //    PascalCase names so a downstream $from binding reads identical
+            //    fields whichever hold node produced them. ──
+            [ActionNodeType.Hold] = HoldNodeShape,
+            [ActionNodeType.Release] = HoldNodeShape,
+            [ActionNodeType.HoldRefund] = HoldNodeShape,
+            [ActionNodeType.ReleaseIntoHold] = HoldNodeShape,
         };
+
+    /// <summary>
+    /// The flat <c>Handlers.HoldNodeResult</c> shape (D14 / W3.4). Every field is
+    /// non-null — empty string for "none" — so a binding never has to distinguish an
+    /// absent field from a null one.
+    /// </summary>
+    private static NodeOutputShape HoldNodeShape => NodeOutputShape.Of(
+        ("HoldId", OutputFieldType.String),
+        ("ChainType", OutputFieldType.String),
+        ("AssetId", OutputFieldType.String),
+        ("Amount", OutputFieldType.String),
+        ("State", OutputFieldType.String),
+        ("BeneficiaryUserId", OutputFieldType.String),
+        ("ReleaseNotBefore", OutputFieldType.String),
+        ("NextHoldId", OutputFieldType.String),
+        ("TransactionId", OutputFieldType.String),
+        ("Replayed", OutputFieldType.Boolean));
 
     /// <summary>
     /// The flat <c>BridgeTransactionResult</c> shape — Bridge/Back serialize

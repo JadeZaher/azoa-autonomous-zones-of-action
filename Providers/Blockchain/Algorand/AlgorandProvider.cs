@@ -30,7 +30,7 @@ namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 /// Avoids SDK versioning issues while providing full devnet/testnet/mainnet connectivity.
 /// </summary>
 public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule,
-    IAtomicTransferGroupObservationModule, IBridgeSourceLeg
+    IAtomicTransferGroupObservationModule, IBridgeSourceLeg, IRecipientPreparationModule
 {
     // Assigned in BuildClients() during the provider's one-time network binding; the
     // null-forgiving initializer documents that and clears CS8618 without a
@@ -1241,6 +1241,361 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
             : Ok(balanceResult.Result ?? "0", balanceResult.Message);
     }
 
+    // ─── IRecipientPreparationModule (W3.3 custodial recipient preparation) ───
+
+    /// <summary>Base account minimum this chain enforces, in native base units.</summary>
+    private const ulong AccountMinimumBaseUnits = 100_000;
+
+    /// <summary>Additional account minimum each accepted asset costs, in native base units.</summary>
+    private const ulong PerAssetMinimumBaseUnits = 100_000;
+
+    /// <summary>
+    /// Headroom advanced with the account minimum so the recipient can pay for its own
+    /// acceptance even if the network's flat fee has moved since the readiness read. Two
+    /// flat fees; the recipient keeps the remainder.
+    /// </summary>
+    private const ulong AcceptanceHeadroomBaseUnits = 2_000;
+
+    /// <inheritdoc />
+    public bool SupportsRecipientPreparation => true;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Reads the recipient's real state rather than assuming it. A fresh custodial
+    /// account holds nothing and has accepted nothing, so the first delivery to it is
+    /// rejected outright unless it has both accepted the asset and been funded up to the
+    /// account minimum that acceptance raises.
+    /// </remarks>
+    public async Task<AZOAResult<RecipientAssetReadiness>> GetRecipientAssetReadinessAsync(
+        string assetId, string recipientAddress, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(assetId) || !ulong.TryParse(
+                assetId, NumberStyles.None, CultureInfo.InvariantCulture, out var assetIndex)
+            || assetIndex == 0)
+        {
+            return Error<RecipientAssetReadiness>("A numeric asset ID is required to read recipient readiness");
+        }
+        if (string.IsNullOrWhiteSpace(recipientAddress) || !ValidateAddressFormat(recipientAddress))
+            return Error<RecipientAssetReadiness>("A valid recipient address is required to read recipient readiness");
+
+        AlgodAccountInfo? account;
+        try
+        {
+            account = await ExecuteWithRetryAsync(
+                async () => await AlgodHttpClient.GetFromJsonAsync<AlgodAccountInfo>(
+                    $"/v2/accounts/{recipientAddress}", cancellationToken: ct),
+                ct: ct,
+                safety: RetrySafety.Idempotent);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return Error<RecipientAssetReadiness>(
+                $"recipient account read failed: {ex.Message}", ex);
+        }
+
+        if (account is null)
+        {
+            return Error<RecipientAssetReadiness>(
+                $"recipient account {recipientAddress} was not found on {ActiveNetwork}");
+        }
+
+        var holding = account.Assets?.FirstOrDefault(
+            item => item.AssetId >= 0 && (ulong)item.AssetId == assetIndex);
+        if (holding is not null)
+        {
+            // Already accepted. A frozen holding can hold but cannot move, which is a
+            // different refusal from "not ready" and must not be papered over as one.
+            return Ok(new RecipientAssetReadiness(
+                CanReceive: true, IsBlocked: holding.IsFrozen, ShortfallBaseUnits: "0"));
+        }
+
+        // Algod reports the account's CURRENT minimum; accepting one more asset raises it.
+        var currentMinimum = account.MinBalance > 0
+            ? (ulong)account.MinBalance
+            : AccountMinimumBaseUnits;
+        var required = checked(currentMinimum + PerAssetMinimumBaseUnits + AcceptanceHeadroomBaseUnits);
+        var held = account.Amount > 0 ? (ulong)account.Amount : 0UL;
+        var shortfall = required > held ? required - held : 0UL;
+
+        return Ok(new RecipientAssetReadiness(
+            CanReceive: false,
+            IsBlocked: false,
+            ShortfallBaseUnits: shortfall.ToString(CultureInfo.InvariantCulture)));
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// One group, two legs, TWO signers: the fee payer advances the account minimum and
+    /// the recipient authorises its own acceptance. Grouping them is the whole point — a
+    /// funded-but-unaccepted account strands the fee payer's advance, and an
+    /// accepted-but-unfunded account is rejected outright by the chain.
+    /// </remarks>
+    public async Task<AZOAResult<RecipientPreparationReceipt>> PrepareRecipientForAssetAsync(
+        RecipientPreparationRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ct.ThrowIfCancellationRequested();
+
+        if (_signerFactory is null)
+            return Error<RecipientPreparationReceipt>(
+                "Cannot prepare a recipient: no transaction signer is configured for Algorand.");
+        if (string.IsNullOrWhiteSpace(request.AssetId) || !ulong.TryParse(
+                request.AssetId, NumberStyles.None, CultureInfo.InvariantCulture, out var assetIndex)
+            || assetIndex == 0)
+        {
+            return Error<RecipientPreparationReceipt>("A numeric asset ID is required to prepare a recipient");
+        }
+        if (!ValidateAddressFormat(request.RecipientAddress) || !ValidateAddressFormat(request.FeePayerAddress))
+            return Error<RecipientPreparationReceipt>("Valid recipient and fee-payer addresses are required");
+        if (!ulong.TryParse(request.FundingBaseUnits, NumberStyles.None,
+                CultureInfo.InvariantCulture, out var fundingBaseUnits))
+        {
+            return Error<RecipientPreparationReceipt>(
+                "Recipient funding must be a non-negative integer base-unit amount");
+        }
+
+        // The recipient's acceptance is signed with the recipient's own key. A platform
+        // context here would mean the node accepted on the person's behalf, which this
+        // chain does not permit and the node must never claim.
+        if (!request.RecipientSigningContext.IsResolvableUserContext)
+        {
+            return Error<RecipientPreparationReceipt>(
+                "Recipient preparation requires the recipient's own resolvable signing context.");
+        }
+
+        var opLabel = $"prepare recipient {request.RecipientAddress} for ASA {request.AssetId}";
+
+        AlgodSuggestedParams paramsInfo;
+        try
+        {
+            var fetched = await ExecuteWithRetryAsync(
+                async () => await AlgodHttpClient.GetFromJsonAsync<AlgodSuggestedParams>(
+                    "/v2/transactions/params", cancellationToken: ct),
+                ct: ct,
+                safety: RetrySafety.Idempotent);
+            if (fetched is null)
+                return Error<RecipientPreparationReceipt>($"Algod returned no suggested params to {opLabel}.");
+            paramsInfo = fetched;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return Error<RecipientPreparationReceipt>(
+                $"Failed to fetch suggested params to {opLabel}: {ex.Message}", ex);
+        }
+
+        var recipient = new Address(request.RecipientAddress);
+        var legs = new List<Transaction>(2);
+        var legContexts = new List<SigningContext>(2);
+
+        if (fundingBaseUnits > 0)
+        {
+            legs.Add(new PaymentTransaction
+            {
+                Sender = new Address(request.FeePayerAddress),
+                Receiver = recipient,
+                Amount = fundingBaseUnits,
+            });
+            legContexts.Add(request.FeePayerSigningContext);
+        }
+
+        legs.Add(new AssetAcceptTransaction
+        {
+            Sender = recipient,
+            XferAsset = assetIndex,
+            AssetReceiver = recipient,
+        });
+        legContexts.Add(request.RecipientSigningContext);
+        var acceptanceIndex = legs.Count - 1;
+
+        var transactions = legs.ToArray();
+        foreach (var transaction in transactions)
+            ApplySuggestedParams(transaction, paramsInfo);
+
+        // A group id is only meaningful across two or more legs. When the recipient owes
+        // nothing there is a single acceptance transaction and grouping it with itself
+        // would add a constraint with nothing to bind.
+        string? groupId = null;
+        if (transactions.Length > 1)
+        {
+            TxGroup.AssignGroupID(transactions);
+            var group = transactions[0].Group;
+            if (group is null || transactions.Any(leg => leg.Group is null || !leg.Group.Equals(group)))
+            {
+                return Error<RecipientPreparationReceipt>(
+                    $"Algorand group-id assignment did not bind every leg of the {opLabel} group.");
+            }
+
+            groupId = group.ToString();
+            if (string.IsNullOrWhiteSpace(groupId))
+            {
+                return Error<RecipientPreparationReceipt>(
+                    "Algorand group-id assignment returned no group identifier.");
+            }
+        }
+
+        var acceptanceTxId = transactions[acceptanceIndex].TxID();
+        groupId ??= acceptanceTxId;
+
+        var signed = await SignGroupWithMultipleSignersAsync(transactions, legContexts, opLabel, ct);
+        if (signed.IsError || signed.Result is null)
+            return Error<RecipientPreparationReceipt>($"Signing failed to {opLabel}: {signed.Message}", signed.Exception);
+
+        try
+        {
+            var payload = JoinSignedTransactions(signed.Result);
+            await ExecuteWithRetryAsync(
+                async () =>
+                {
+                    using var content = new ByteArrayContent(payload);
+                    content.Headers.ContentType = new MediaTypeHeaderValue("application/x-binary");
+                    var response = await AlgodHttpClient.PostAsync("/v2/transactions", content, ct);
+                    response.EnsureSuccessStatusCode();
+                },
+                ct: ct,
+                safety: RetrySafety.Broadcast);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return Error<RecipientPreparationReceipt>(
+                $"Recipient preparation broadcast was not acknowledged to {opLabel}; reconcile against "
+                + $"chain truth before re-sending: {ex.Message}", ex);
+        }
+
+        // Confirm on the acceptance leg: a group lands whole, so acceptance confirming
+        // proves the funding leg landed with it.
+        var confirmation = await WaitForConfirmationAsync(acceptanceTxId, opLabel, ct);
+        if (confirmation.IsError || confirmation.Result is null)
+            return Error<RecipientPreparationReceipt>(confirmation.Message, confirmation.Exception);
+
+        var receipt = new RecipientPreparationReceipt(
+            groupId,
+            acceptanceTxId,
+            confirmation.Result.PendingConfirmation,
+            fundingBaseUnits.ToString(CultureInfo.InvariantCulture));
+
+        return Ok(receipt, confirmation.Result.PendingConfirmation
+            ? $"{OperationStatus.PendingConfirmationMarker}: Algorand {opLabel} submitted but not yet "
+              + "confirmed; reconcile against chain truth."
+            : $"Algorand {opLabel} confirmed in round {confirmation.Result.ConfirmedRound}");
+    }
+
+    /// <summary>
+    /// Signs one group whose legs do NOT share a signer. Legs are grouped by signing
+    /// context so each key is decrypted once, and every leg is checked against the address
+    /// its resolved key actually derives — a mismatch refuses rather than broadcasting a
+    /// transaction the chain would reject or, worse, one signed by the wrong account.
+    /// </summary>
+    private async Task<AZOAResult<byte[][]>> SignGroupWithMultipleSignersAsync(
+        Transaction[] transactions,
+        IReadOnlyList<SigningContext> legSigningContexts,
+        string opLabel,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (transactions.Length != legSigningContexts.Count)
+            return ErrorT<byte[][]>($"Cannot {opLabel}: every group leg needs exactly one signing context.");
+
+        var signed = new byte[transactions.Length][];
+        var assignments = legSigningContexts
+            .Select((context, index) => (context, index))
+            .GroupBy(pair => pair.context);
+
+        foreach (var assignment in assignments)
+        {
+            var indexes = assignment.Select(pair => pair.index).ToArray();
+            var legResult = await SignViaCustodyAsync<byte[][]>(
+                opLabel,
+                assignment.Key,
+                keyBytes =>
+                {
+                    using var material = new SigningKeyMaterial(keyBytes);
+                    var signingAddress = new AlgoAccount(keyBytes).Address.EncodeAsString();
+                    var signer = _signerFactory!.GetSigner(ChainType);
+                    var legs = new byte[indexes.Length][];
+
+                    for (var position = 0; position < indexes.Length; position++)
+                    {
+                        var transaction = transactions[indexes[position]];
+                        if (!string.Equals(
+                                transaction.Sender.EncodeAsString(), signingAddress, StringComparison.Ordinal))
+                        {
+                            return Task.FromResult(new AZOAResult<byte[][]>
+                            {
+                                IsError = true,
+                                Message =
+                                    "A group leg's sender does not match the key resolved to sign it; "
+                                    + "rekeyed and multisig senders are not supported.",
+                            });
+                        }
+
+                        var leg = signer.Sign(Encoder.EncodeToMsgPackOrdered(transaction), material);
+                        if (leg.IsError || leg.Result is null)
+                        {
+                            return Task.FromResult(new AZOAResult<byte[][]>
+                            {
+                                IsError = true,
+                                Message = leg.Message,
+                                Exception = leg.Exception,
+                            });
+                        }
+
+                        legs[position] = leg.Result;
+                    }
+
+                    return Task.FromResult(new AZOAResult<byte[][]> { Result = legs });
+                });
+
+            if (legResult.IsError || legResult.Result is null)
+                return ErrorT<byte[][]>(legResult.Message, legResult.Exception);
+
+            for (var position = 0; position < indexes.Length; position++)
+                signed[indexes[position]] = legResult.Result[position];
+        }
+
+        return Ok(signed);
+    }
+
+    /// <summary>
+    /// Concatenates an N-leg signed group into one broadcast payload. Distinct from
+    /// <c>JoinSignedGroup</c>, whose exactly-two-legs invariant is part of the two-leg
+    /// treasury settlement contract and must not be relaxed.
+    /// </summary>
+    private static byte[] JoinSignedTransactions(IReadOnlyList<byte[]> signedLegs)
+    {
+        if (signedLegs.Count == 0)
+            throw new InvalidOperationException("A signed Algorand group requires at least one leg.");
+
+        var length = 0;
+        foreach (var leg in signedLegs)
+        {
+            if (leg is null || leg.Length == 0)
+                throw new InvalidOperationException("A signed Algorand group leg cannot be empty.");
+            length = checked(length + leg.Length);
+        }
+
+        var payload = new byte[length];
+        var offset = 0;
+        foreach (var leg in signedLegs)
+        {
+            Buffer.BlockCopy(leg, 0, payload, offset, leg.Length);
+            offset += leg.Length;
+        }
+
+        return payload;
+    }
+
     /// <inheritdoc />
     /// <remarks>
     /// The only path here that moves value out of an account which did not sign, so
@@ -2248,6 +2603,9 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
     {
         [System.Text.Json.Serialization.JsonPropertyName("amount")]
         public long Amount { get; set; }
+        /// <summary>Algod's own account minimum; authoritative because it counts apps and boxes too.</summary>
+        [System.Text.Json.Serialization.JsonPropertyName("min-balance")]
+        public long MinBalance { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("assets")]
         public List<AlgodAssetHolding>? Assets { get; set; }
         /// <summary>Present only when the account has been rekeyed: the key now authorised to sign for it.</summary>

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Consent;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -19,6 +20,13 @@ namespace AZOA.WebAPI.Controllers;
 /// tenant-scoped, so a tenant can never receive another tenant's grants) and may
 /// revoke a participation it owns on offboard (L3: exact-match within its own
 /// grants only).
+///
+/// <para>The one grant a tenant never asked a person for is the IMPLIED provisioning
+/// grant (<see cref="TenantProvisionedGrant"/>): it is created by
+/// <c>TenantManager.ProvisionChildAsync</c> so a custodially onboarded person need not
+/// hold an AZOA login to be acted for. It appears in <see cref="List"/> like any other
+/// grant, the person can revoke it from their own consent surface at any time, and
+/// <see cref="RevokeProvisioned"/> lets the tenant hand it back on offboard.</para>
 /// </summary>
 [ApiController]
 [Route("api/tenant/consent")]
@@ -74,6 +82,41 @@ public class TenantConsentController : ControllerBase
         if (tenantId is null) return Unauthorized();
 
         var result = await _manager.RevokeByParticipationAsync(tenantId.Value, participationRef, HttpContext.RequestAborted);
+        if (result.IsError) return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Offboard the IMPLIED provisioning grant (W3.6) a tenant-provisioned user carries,
+    /// addressed by the tenant's own external user id rather than by an opaque reference the
+    /// tenant would have to have stored. The reference is derived, so this revokes exactly
+    /// the grant <c>TenantManager.ProvisionChildAsync</c> issued for that (tenant, external
+    /// user) pair and nothing else; the underlying revoke is still the tenant-scoped
+    /// exact-match sweep (L3), so no other tenant's grant is reachable from here.
+    ///
+    /// <para>Returns the count revoked. An external user id with no live implied grant —
+    /// never provisioned, already offboarded, or already revoked by the person themselves —
+    /// returns 0, not an error.</para>
+    ///
+    /// <para>The external user id travels as a query parameter, never a path segment: tenant
+    /// ids of the form <c>acme/user/42</c> are legitimate on the tenant's own platform and
+    /// would otherwise be mangled by routing.</para>
+    /// </summary>
+    [HttpDelete("provisioned")]
+    public async Task<ActionResult<AZOAResult<int>>> RevokeProvisioned([FromQuery] string externalUserId)
+    {
+        var tenantId = GetTenantIdFromClaims();
+        if (tenantId is null) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(externalUserId))
+            return BadRequest(AZOAResult<int>.FailureWithCode(
+                "externalUserId is required.", AzoaErrorCodes.InvalidRequest));
+
+        var participationRef = TenantProvisionedGrant.ParticipationRefFor(tenantId.Value, externalUserId);
+
+        var result = await _manager.RevokeByParticipationAsync(
+            tenantId.Value, participationRef, HttpContext.RequestAborted);
         if (result.IsError) return BadRequest(result);
 
         return Ok(result);

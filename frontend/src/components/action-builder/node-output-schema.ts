@@ -131,6 +131,23 @@ const GOVERNANCE_TALLY_SHAPE: NodeOutputShapeMirror = {
   },
 }
 
+/** Flat PascalCase HoldNodeResult -- all four hold nodes return it. Amount is a STRING. */
+const HOLD_NODE_SHAPE: NodeOutputShapeMirror = {
+  open: false,
+  fields: {
+    HoldId: 'scalar',
+    ChainType: 'scalar',
+    AssetId: 'scalar',
+    Amount: 'scalar',
+    State: 'scalar',
+    BeneficiaryUserId: 'scalar',
+    ReleaseNotBefore: 'scalar',
+    NextHoldId: 'scalar',
+    TransactionId: 'scalar',
+    Replayed: 'scalar',
+  },
+}
+
 /** Flat camelCase LoanBalanceProjection — all three loan nodes return it. Money fields are STRINGS. */
 const LOAN_BALANCE_PROJECTION_SHAPE: NodeOutputShapeMirror = {
   open: false,
@@ -224,6 +241,12 @@ export const NODE_OUTPUT_SHAPE: Record<string, NodeOutputShapeMirror> = {
   LoanOpen: LOAN_BALANCE_PROJECTION_SHAPE,
   LoanRepaymentRecord: LOAN_BALANCE_PROJECTION_SHAPE,
   LoanBalance: LOAN_BALANCE_PROJECTION_SHAPE,
+
+  // -- Hold rails -- flat PascalCase HoldNodeResult (shared by all four) --
+  Hold: HOLD_NODE_SHAPE,
+  Release: HOLD_NODE_SHAPE,
+  HoldRefund: HOLD_NODE_SHAPE,
+  ReleaseIntoHold: HOLD_NODE_SHAPE,
 }
 
 /**

@@ -1264,8 +1264,14 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationManager,
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationReceiptManager,
     AZOA.WebAPI.Managers.AllocationReceiptManager>();
 // fungible-token-node: idempotent, KYC-gated fungible-token (ASA) launch seam.
-builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleTokenManager,
-    AZOA.WebAPI.Managers.FungibleTokenManager>();
+// Registered by CONCRETE type first, with the interface forwarding to the same scoped
+// instance. The concrete class carries the mint-destination-explicit CreateAsync overload
+// (W3.1) that platform-token genesis needs; IFungibleTokenManager only exposes the
+// config-resolved overload, and a second AddScoped for the interface would hand callers
+// two different instances inside one request.
+builder.Services.AddScoped<AZOA.WebAPI.Managers.FungibleTokenManager>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleTokenManager>(
+    sp => sp.GetRequiredService<AZOA.WebAPI.Managers.FungibleTokenManager>());
 // D19 soulbound-credential revocation (Algorand AssetClawback). Backs both
 // CredentialController and CredentialRevokeNodeHandler -- and the handler set is
 // constructed EAGERLY (ActionNodeHandlerRegistry takes IEnumerable<IActionNodeHandler>
@@ -1386,6 +1392,55 @@ builder.Services.AddSingleton<IBlockchainProviderFactory>(sp =>
                 sp.GetRequiredService<AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>),
         },
         sp.GetRequiredService<IConfiguration>()));
+
+// ─── Platform reserve (W3.1) ───
+// The operator-owned custodial account every unit a sponsor or a worker receives comes
+// FROM: it holds the platform unit and every project asset, is the manager/reserve/
+// freeze/clawback authority on the assets this node creates, and pays the chain fees.
+// Its key is the per-chain platform key behind IKeyCustodyService — the reserve has no
+// secret of its own, so a chain with no configured platform key resolves NO reserve
+// address rather than one this node cannot sign for.
+//
+// ReserveOptions is registered as a bound INSTANCE (not IOptions<T>) because the reserve
+// and the fungible-token manager read it as plain configuration, and because a null
+// section must still yield the fail-closed defaults rather than an unbound object.
+var reserveOptions = builder.Configuration
+    .GetSection(AZOA.WebAPI.Services.Reserve.ReserveOptions.SectionName)
+    .Get<AZOA.WebAPI.Services.Reserve.ReserveOptions>()
+    ?? new AZOA.WebAPI.Services.Reserve.ReserveOptions();
+builder.Services.AddSingleton(reserveOptions);
+builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IPlatformReserveLedgerStore,
+    AZOA.WebAPI.Services.Reserve.SurrealPlatformReserveLedgerStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IPlatformReserve,
+    AZOA.WebAPI.Services.Reserve.PlatformReserveService>();
+
+// ─── Wave 3 composition (each item owns its own *Registration.cs; W3.1 owns this file) ───
+// CONTRACT for the sibling items — the exact symbols this file calls. An item that names
+// its extension differently breaks the build here, which is deliberate: an unregistered
+// value service that boots green is how a feature ships inert.
+//   W3.2  AZOA.WebAPI.Services.Reserve.PlatformTokenGenesisRegistration.AddPlatformTokenGenesis(IServiceCollection)
+//   W3.3  AZOA.WebAPI.Services.Allocation.AllocationIssuanceRegistration.AddAllocationIssuance(IServiceCollection)
+//   W3.4  AZOA.WebAPI.Services.Hold.HoldRegistration.AddPlatformHold(IServiceCollection)
+//   W3.6  AZOA.WebAPI.Services.Consent.TenantProvisionedGrantRegistration
+//           .AddTenantProvisionedConsentGrants(IServiceCollection)   [landed — name verified]
+//   W3.7  AZOA.WebAPI.Services.Reserve.ProjectTreasuryRegistration.AddProjectTreasury(IServiceCollection)
+// Each is called as a fully-qualified static (the AddCrossChainBridgeProtocols precedent)
+// so adding one cannot introduce a name ambiguity elsewhere in this file.
+// W3.2 sits first: genesis mints THROUGH the reserve registrations above and through the
+// concrete FungibleTokenManager registered earlier in this file, and everything downstream
+// of it spends the supply it creates.
+AZOA.WebAPI.Services.Reserve.PlatformTokenGenesisRegistration
+    .AddPlatformTokenGenesis(builder.Services);
+AZOA.WebAPI.Services.Allocation.AllocationIssuanceRegistration
+    .AddAllocationIssuance(builder.Services);
+AZOA.WebAPI.Services.Hold.HoldRegistration
+    .AddPlatformHold(builder.Services);
+// W3.6 throws unless IConsentGrantStore (line ~1004) and IConsentManager (line ~1111) are
+// already registered, which is why this call sits here and not earlier in the file.
+AZOA.WebAPI.Services.Consent.TenantProvisionedGrantRegistration
+    .AddTenantProvisionedConsentGrants(builder.Services);
+AZOA.WebAPI.Services.Reserve.ProjectTreasuryRegistration
+    .AddProjectTreasury(builder.Services);
 
 // ─── Wormhole trustless bridge adapter ───
 builder.Services.Configure<WormholeConfig>(

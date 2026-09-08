@@ -9,6 +9,7 @@ graph LR
     api_key["api_key: Node"]:::nodeClass
     consent_audit["consent_audit: Node"]:::nodeClass
     consent_grant["consent_grant: Node"]:::nodeClass
+    hold_ledger["hold_ledger: Node"]:::nodeClass
     holon["holon: Node"]:::nodeClass
     holon_type_registry["holon_type_registry: Node"]:::nodeClass
     hosted_session["hosted_session: Node"]:::nodeClass
@@ -28,6 +29,9 @@ graph LR
     node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
     oauth_exchange_code["oauth_exchange_code: Node"]:::nodeClass
     person_operation_claim["person_operation_claim: Node"]:::nodeClass
+    platform_reserve_ledger["platform_reserve_ledger: Node"]:::nodeClass
+    platform_token["platform_token: Node"]:::nodeClass
+    project_treasury_ledger["project_treasury_ledger: Node"]:::nodeClass
     tenant_kyc_provider_selection["tenant_kyc_provider_selection: Node"]:::nodeClass
     user["user: Node"]:::nodeClass
     user_external_login["user_external_login: Node"]:::nodeClass
@@ -42,6 +46,9 @@ graph LR
     consent_audit -- "tenant_id [N:1]" --> user
     consent_grant -- "grantor_user_id [N:1]" --> user
     consent_grant -- "tenant_id [N:1]" --> user
+    hold_ledger -- "funder_user_id [N:0..1]" --> user
+    hold_ledger -- "tenant_id [N:0..1]" --> user
+    hold_ledger -- "beneficiary_user_id [N:1]" --> user
     holon -- "parent_holon_id [N:0..1]" --> holon
     holon -- "source_holon_id [N:0..1]" --> holon
     holon -- "origin_user_id [N:0..1]" --> user
@@ -69,6 +76,10 @@ graph LR
     oauth_exchange_code -- "tenant_id [N:0..1]" --> user
     oauth_exchange_code -- "user_id [N:1]" --> user
     person_operation_claim -- "tenant_id [N:0..1]" --> user
+    platform_reserve_ledger -- "tenant_id [N:0..1]" --> user
+    platform_token -- "genesis_user_id [N:1]" --> user
+    project_treasury_ledger -- "closed_by_user_id [N:0..1]" --> user
+    project_treasury_ledger -- "tenant_id [N:1]" --> user
     tenant_kyc_provider_selection -- "tenant_id [N:1]" --> user
     tenant_kyc_provider_selection -- "updated_by_user_id [N:1]" --> user
     user -- "owner_tenant_id [N:0..1]" --> user

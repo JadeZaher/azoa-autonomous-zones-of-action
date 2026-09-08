@@ -9,6 +9,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Consent;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -30,6 +31,15 @@ namespace AZOA.WebAPI.Managers;
 /// with no covering live grant returns <see cref="TenantAuthorizationError.NotFound"/>
 /// (404, never 403 — the isolation crux).</para>
 ///
+/// <para><b>Implied consent at provisioning (W3.6).</b> A custodially onboarded
+/// person cannot log into AZOA to click "allow", so <see cref="ProvisionChildAsync"/>
+/// issues an implied, revocable <see cref="GrantOrigin.Participation"/> grant scoped
+/// to the provisioning tenant (see <see cref="TenantProvisionedGrant"/>). It is a
+/// REAL grant — audited, listed on the person's own consent surface, revocable by
+/// them at any time, and structurally incapable of carrying an outbound
+/// value-signing scope. It is issued ONLY on first create, so re-provisioning never
+/// resurrects a grant the person revoked.</para>
+///
 /// <para>The issued child JWT carries the USER's user id as subject PLUS an
 /// <c>act_as_tenant</c> claim (the tenant id) so a tenant-driven action is
 /// DISTINGUISHABLE from a user-driven one at the signing seam (C1); and its
@@ -41,18 +51,38 @@ public class TenantManager : ITenantManager
     /// <summary>Short-lived child credential TTL (D2: shorten vs. the 24h login token).</summary>
     private static readonly TimeSpan ChildTokenLifetime = TimeSpan.FromMinutes(15);
 
+    /// <summary>Message suffix stated on the response when no implied grant could be issued.</summary>
+    public const string NoImpliedGrantNotice =
+        " NO implied consent grant was issued, so this tenant holds no authority over the user.";
+
     private readonly IUserStore _userStore;
     private readonly IConfiguration _config;
     private readonly IConsentGrantStore _consentGrants;
+    private readonly ITenantProvisionedGrantIssuer? _provisionedGrants;
 
+    /// <param name="provisionedGrants">Issues the implied provisioning grant. Optional so
+    /// the manager still constructs without a container; register it explicitly with
+    /// <c>services.AddTenantProvisionedConsentGrants()</c>.</param>
+    /// <param name="consentManager">Fallback source of the issuer. The consent authority is
+    /// already in the container, so an unregistered issuer is BUILT from it here rather than
+    /// left null — the implied grant must not depend on one extra line of wiring landing.
+    /// Only when neither is available does the manager have no issuer, and that absence can
+    /// only fail to grant authority, never confer any; the provisioning response then says
+    /// so explicitly (<see cref="NoImpliedGrantNotice"/>) instead of reading as a clean success.</param>
     public TenantManager(
         IUserStore userStore,
         IConfiguration config,
-        IConsentGrantStore consentGrants)
+        IConsentGrantStore consentGrants,
+        ITenantProvisionedGrantIssuer? provisionedGrants = null,
+        IConsentManager? consentManager = null)
     {
         _userStore = userStore;
         _config = config;
         _consentGrants = consentGrants;
+        _provisionedGrants = provisionedGrants
+            ?? (consentManager is null
+                ? null
+                : new TenantProvisionedGrantIssuer(consentManager, consentGrants));
     }
 
     public async Task<AZOAResult<ChildUserResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default)
@@ -79,11 +109,9 @@ public class TenantManager : ITenantManager
                 Message = SafePersistenceMessage(existing.Message)
             };
         if (existing.Result is not null)
-            return new AZOAResult<ChildUserResponse>
-            {
-                Result = ToResponse(existing.Result),
-                Message = "User already provisioned for this tenant user."
-            };
+            return await WithImpliedGrantAsync(
+                existing.Result, tenantId, externalUserId,
+                "User already provisioned for this tenant user.", ct);
 
         // Claim severs OwnerTenantId by design. Resolve the immutable deterministic
         // id before create so a post-claim retry returns the original user account
@@ -94,11 +122,9 @@ public class TenantManager : ITenantManager
             if (!MatchesCorrelation(deterministicExisting.Result, tenantId, externalUserId, deterministicId))
                 return CorrelationConflict();
 
-            return new AZOAResult<ChildUserResponse>
-            {
-                Result = ToResponse(deterministicExisting.Result),
-                Message = "User already provisioned for this tenant user."
-            };
+            return await WithImpliedGrantAsync(
+                deterministicExisting.Result, tenantId, externalUserId,
+                "User already provisioned for this tenant user.", ct);
         }
         if (deterministicExisting.IsError
             && IsPersistenceUnavailable(deterministicExisting.Message))
@@ -148,8 +174,61 @@ public class TenantManager : ITenantManager
         if (!MatchesCorrelation(saved.Result, tenantId, externalUserId, deterministicId))
             return CorrelationConflict();
 
-        result.Result = ToResponse(saved.Result);
-        result.Message = "Tenant-bound user provisioned (claimable by the user).";
+        return await WithImpliedGrantAsync(
+            saved.Result, tenantId, externalUserId,
+            "Tenant-bound user provisioned (claimable by the user).", ct);
+    }
+
+    /// <summary>
+    /// Attaches the implied, revocable provisioning grant (W3.6) to a just-provisioned or
+    /// already-provisioned user, then returns the provisioning result.
+    ///
+    /// <para>Three rules, each a deliberate refusal to hand out authority:</para>
+    /// <list type="number">
+    /// <item>A user whose <c>OwnerTenantId</c> is no longer this tenant has CLAIMED their
+    /// account. Claiming revokes every grant they made; issuing a fresh one here would
+    /// silently re-attach tenant authority to a self-sovereign person, so nothing is
+    /// issued and the response says so.</item>
+    /// <item>With no issuer wired, no grant exists and the tenant can do nothing with the
+    /// user. That is fail-closed, but it is NOT a clean success — the message states it.</item>
+    /// <item>A failed issue is an ERROR, not a quiet partial success: provisioning is
+    /// idempotent, so the caller retries and the issuer (which never re-issues over a prior
+    /// record) heals the gap exactly once.</item>
+    /// </list>
+    /// </summary>
+    private async Task<AZOAResult<ChildUserResponse>> WithImpliedGrantAsync(
+        IUser user,
+        Guid tenantId,
+        string externalUserId,
+        string message,
+        CancellationToken ct)
+    {
+        var result = new AZOAResult<ChildUserResponse> { Result = ToResponse(user), Message = message };
+
+        if (user.OwnerTenantId != tenantId)
+        {
+            result.Message = message + " The user has claimed this account; no tenant authority is implied.";
+            return result;
+        }
+
+        if (_provisionedGrants is null)
+        {
+            result.Message = message + NoImpliedGrantNotice;
+            return result;
+        }
+
+        var granted = await _provisionedGrants.IssueOnProvisionAsync(tenantId, user.Id, externalUserId, ct);
+        if (granted.IsError)
+        {
+            result.IsError = true;
+            result.Result = null;
+            result.Message =
+                "TENANT_CONSENT_UNAVAILABLE: The user exists but the implied consent grant could not be " +
+                "issued, so this tenant holds no authority over them. Retry the provisioning call. " +
+                granted.Message;
+            return result;
+        }
+
         return result;
     }
 

@@ -680,6 +680,70 @@ lose at the index; before, both passed the scan.
 absent, `POST /api/user/register` returns `403` and creates no row; setting
 `Registration__Enabled=false` returns the same `403` in every environment.
 
+### 8.11 The platform reserve
+
+The reserve is the operator-owned custodial account that every unit a sponsor or
+a worker ever receives comes **from**. It holds the platform unit and every
+project asset, it is the manager / reserve / freeze / clawback authority stamped
+on assets this node creates, and it pays the chain fees (§8.4 is the same
+account).
+
+**It has no secret of its own.** The reserve key *is* the per-chain platform key
+you provisioned in §8.2 (`AZOA__Algorand__PlatformMnemonic` and friends), resolved
+through `IKeyCustodyService`. The address is derived **inside** the custody door,
+as a by-product of proving the node can sign as the reserve — so a chain whose
+platform key is missing or malformed resolves **no reserve address at all**,
+rather than one that looks fundable and can never spend.
+
+```text
+Reserve__Chains__0=Algorand
+Reserve__FungibleMintTarget=PlatformReserve
+Reserve__ExpectedAddresses__Algorand=<the address you verified>
+Reserve__SeparateFeePayerAccount=false
+```
+
+- **`Chains`** — the chains the reserve may operate on. A reserve operation on a
+  chain absent from a **non-empty** list is refused before any key is touched, so
+  a node cannot quietly start holding value on a chain nobody approved. An empty
+  list means "no restriction" and is the unconfigured default.
+- **`FungibleMintTarget`** — where a fungible asset this node creates is minted.
+  `PlatformReserve` (the default) makes the reserve the creator and the holder of
+  all four ASA authorities, and opens the asset's reserve ledger row.
+  `CallerWallet` is the legacy shape and **cannot broadcast on Algorand**: an
+  ASA-create is signed with the platform key, so a create whose sender is a
+  caller's custodial wallet has a sender the signature does not match. Do not use
+  it outside a simulated chain.
+- **`ExpectedAddresses`** — the load-bearing operator assertion. Fill this in per
+  environment once you have read the derived address and verified it against the
+  chain. From then on a mismatch between the configured key and the declared
+  address fails **every** reserve operation on that chain closed, which is how a
+  swapped or mistyped mnemonic is caught at first use instead of after value has
+  moved to an account nobody expected.
+- **`SeparateFeePayerAccount`** — reserved. There is no separate fee-payer key;
+  the reserve pays fees. Leave it `false`.
+
+**Named partitions — the node-side oversubscription check.** For each asset the
+reserve holds, the node keeps one `platform_reserve_ledger` row carrying named
+partitions (`contributor`, `investor`, and anything a tenant declares) with
+`declared` / `issued` / `held` / `returned` counters. Every draw is checked
+against `issued + held - returned <= declared` and refused when it would
+oversubscribe. This lives on the node — not only in a tenant's database — because
+sponsor exchanges and contributor holds draw from the **same** reserve: a
+partition policed in one caller's database can be overdrawn by the other caller.
+
+Two consequences worth knowing before you operate this:
+
+- A partition that was never **declared** cannot be drawn from. That is
+  deliberate: auto-creating a partition on first draw would let a caller invent
+  unlimited availability by naming one nobody declared.
+- An asset whose ledger row failed to open is inert, not dangerous. The create
+  returns `Code = RESERVE_LEDGER_UNREGISTERED` with the asset id, and every draw
+  against it is refused until the row is registered.
+
+**Verify:** with the platform mnemonic set, a reserve read resolves an address and
+it matches `Reserve__ExpectedAddresses__<Chain>`; with the mnemonic blank, the
+same read fails with an error naming the chain and no address is returned.
+
 ---
 
 ## 9. Cross-links

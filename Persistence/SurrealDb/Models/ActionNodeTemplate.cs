@@ -85,6 +85,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             LoanOpen,
             LoanRepaymentRecord,
             LoanBalance,
+            // Hold rails (D14 / W3.4) -- mirrors ActionNodeType; order must match.
+            Hold,
+            Release,
+            HoldRefund,
+            ReleaseIntoHold,
         }
 
         [Id]
@@ -110,7 +115,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
                 "FungibleTokenCreate", "Bridge", "Back",
                 "CredentialRevoke",
                 "GovernanceProposalCreate", "GovernanceVote", "GovernanceTally",
-                "LoanOpen", "LoanRepaymentRecord", "LoanBalance")]
+                "LoanOpen", "LoanRepaymentRecord", "LoanBalance",
+                "Hold", "Release", "HoldRefund", "ReleaseIntoHold")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public NodeTypeKind NodeType { get; set; }
 

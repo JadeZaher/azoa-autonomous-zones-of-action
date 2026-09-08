@@ -19,6 +19,7 @@ export type NodeCategory =
   | 'Economic'
   | 'Governance'
   | 'Lending'
+  | 'Escrow'
 
 /** 'preview' = mirrored from the backend enum but NOT enabled to run; see `AGENTS.md` §catalog-status. */
 export type NodeStatus = 'stable' | 'preview'
@@ -127,6 +128,15 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   { type: 'LoanOpen', category: 'Lending', label: 'Open Loan', description: 'Open a loan ledger holon with a principal (base-unit string)', defaultConfig: J({ principal: '0', currencyCode: '', currencyKind: null, name: null, description: null, parentHolonId: null, borrowerUserId: null, lenderUserId: null, reference: null }) },
   { type: 'LoanRepaymentRecord', category: 'Lending', label: 'Record Repayment', description: 'Record a repayment (or write-off) entry against a loan', defaultConfig: J({ loanHolonId: '', amount: '0', entryKind: null, reference: null }) },
   { type: 'LoanBalance', category: 'Lending', label: 'Loan Balance', description: 'Project the outstanding balance of a loan ledger', defaultConfig: J({ loanHolonId: '' }) },
+
+  // ─── Escrow (Tier-2, requires chain capability) ───
+  // Hold rails (D14 / W3.4): funds are set aside in the platform's holding account and
+  // paid out only when the window elapses. Sponsor-facing copy says "set aside" / "pay
+  // out" / "give back" -- never "hold on chain", never "token".
+  { type: 'Hold', category: 'Escrow', label: 'Set Funds Aside', description: 'Set an amount aside for someone until a release date', defaultConfig: J({ chainType: 'Algorand', holdId: null, assetId: '', amount: '0', reservePartition: '', beneficiaryUserId: null, releaseNotBefore: null, autoRelease: true, purpose: null }), requiresChain: true },
+  { type: 'Release', category: 'Escrow', label: 'Pay Out', description: 'Pay a due set-aside to the person it was set aside for', defaultConfig: J({ chainType: 'Algorand', holdId: null, holdNodeName: null, reason: null }), requiresChain: true },
+  { type: 'HoldRefund', category: 'Escrow', label: 'Give Back', description: 'Abandon a set-aside; the funds return to available', defaultConfig: J({ chainType: 'Algorand', holdId: null, holdNodeName: null, reason: null }), requiresChain: true },
+  { type: 'ReleaseIntoHold', category: 'Escrow', label: 'Hand On', description: 'Close a set-aside by opening the next one over the same funds', defaultConfig: J({ chainType: 'Algorand', holdId: null, holdNodeName: null, nextHoldId: null, nextBeneficiaryUserId: null, releaseNotBefore: null, autoRelease: true, purpose: null }), requiresChain: true },
 ]
 
 export const NODE_CATALOG_BY_TYPE: Record<string, NodeTypeMeta> = Object.fromEntries(
@@ -134,7 +144,7 @@ export const NODE_CATALOG_BY_TYPE: Record<string, NodeTypeMeta> = Object.fromEnt
 )
 
 export const CATEGORY_ORDER: NodeCategory[] = [
-  'Holon', 'NFT', 'Wallet', 'ActionGraphBundle', 'Search', 'User', 'Blockchain', 'Control', 'Economic', 'Governance', 'Lending',
+  'Holon', 'NFT', 'Wallet', 'ActionGraphBundle', 'Search', 'User', 'Blockchain', 'Control', 'Economic', 'Governance', 'Lending', 'Escrow',
 ]
 
 /** Tailwind classes for the colored left-border / accent per category. */
@@ -148,6 +158,7 @@ export const CATEGORY_COLOR: Record<NodeCategory, { border: string; badge: strin
   Blockchain: { border: 'border-l-orange-500', badge: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300', dot: 'bg-orange-500' },
   Control: { border: 'border-l-slate-500', badge: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300', dot: 'bg-slate-500' },
   Economic: { border: 'border-l-rose-500', badge: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300', dot: 'bg-rose-500' },
+  Escrow: { border: 'border-l-indigo-500', badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300', dot: 'bg-indigo-500' },
   Governance: { border: 'border-l-indigo-500', badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300', dot: 'bg-indigo-500' },
   Lending: { border: 'border-l-teal-500', badge: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300', dot: 'bg-teal-500' },
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using System.Numerics;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Helpers;
@@ -10,21 +11,27 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Governance;
+using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Managers;
 
 /// <summary>
-/// Composes value readiness, wallet provisioning, and mint/transfer primitives
-/// into one idempotent, readiness-gated, tenant-callable allocation seam
-/// (see <see cref="IAllocationManager"/>). Holds no payment-provider secret and
-/// applies the node's configured fee schedule to the tenant-decided gross amount,
-/// then materialises the wallet and moves the net asset amount exactly once.
+/// Composes value readiness, wallet provisioning, recipient preparation and the
+/// reserve's issue/transfer primitives into one idempotent, readiness-gated,
+/// tenant-callable allocation seam (see <see cref="IAllocationManager"/>). Holds no
+/// payment-provider secret and applies the node's configured fee schedule to the
+/// tenant-decided gross amount, then materialises the wallet and moves the net amount
+/// exactly once.
 /// </summary>
 public sealed class AllocationManager : IAllocationManager
 {
     private const string OperationType = "fiat_allocation";
     private const string UnexpectedFailureMessage = "Allocation failed unexpectedly.";
+    private const int MaxPurposeLength = 256;
+    private const int MaxPartitionLength = 64;
 
     private readonly IValueAccessService _valueAccess;
     private readonly IWalletManager _walletManager;
@@ -36,7 +43,25 @@ public sealed class AllocationManager : IAllocationManager
     private readonly INodeGovernanceGuard _nodeGovernance;
     private readonly INodeFeeScheduleManager _nodeFees;
     private readonly IUserStore? _users;
+    private readonly IPlatformReserve? _reserve;
+    private readonly ICustodialRecipientPreparer? _recipientPreparer;
+    private readonly INodeFeeSettlementManager? _feeSettlement;
+    private readonly INodeTreasuryManager? _treasury;
+    private readonly IBlockchainProviderFactory? _providers;
+    private readonly ILogger<AllocationManager>? _logger;
 
+    /// <param name="reserve">
+    /// The platform reserve every issued unit comes from (W3.1). Optional so the many
+    /// hand-constructed instances in tests stay short; <see cref="AllocationKind.IssueUnits"/>
+    /// REFUSES when it is absent rather than falling back to creating supply.
+    /// </param>
+    /// <param name="recipientPreparer">
+    /// Makes a never-used custodial account able to hold the asset (W3.3). Same
+    /// optional-but-fail-closed contract as <paramref name="reserve"/>.
+    /// </param>
+    /// <param name="feeSettlement">Durable obligation a non-zero transfer fee is admitted into.</param>
+    /// <param name="treasury">Resolves where a non-zero transfer fee settles.</param>
+    /// <param name="providers">Read for the configured network only; never used to broadcast here.</param>
     public AllocationManager(
         IValueAccessService valueAccess,
         IWalletManager walletManager,
@@ -47,7 +72,13 @@ public sealed class AllocationManager : IAllocationManager
         IIdempotencyStore idempotencyStore,
         INodeFeeScheduleManager nodeFees,
         INodeGovernanceGuard? nodeGovernance = null,
-        IUserStore? users = null)
+        IUserStore? users = null,
+        IPlatformReserve? reserve = null,
+        ICustodialRecipientPreparer? recipientPreparer = null,
+        INodeFeeSettlementManager? feeSettlement = null,
+        INodeTreasuryManager? treasury = null,
+        IBlockchainProviderFactory? providers = null,
+        ILogger<AllocationManager>? logger = null)
     {
         _valueAccess = valueAccess ?? throw new ArgumentNullException(nameof(valueAccess));
         _walletManager = walletManager ?? throw new ArgumentNullException(nameof(walletManager));
@@ -59,6 +90,12 @@ public sealed class AllocationManager : IAllocationManager
         _nodeGovernance = nodeGovernance ?? NodeGovernanceGuard.Unrestricted;
         _nodeFees = nodeFees ?? throw new ArgumentNullException(nameof(nodeFees));
         _users = users;
+        _reserve = reserve;
+        _recipientPreparer = recipientPreparer;
+        _feeSettlement = feeSettlement;
+        _treasury = treasury;
+        _providers = providers;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -98,9 +135,18 @@ public sealed class AllocationManager : IAllocationManager
             callerApiKeyId, userId, request, clientIdempotencyKey);
         var ledgerKey = allocationIdempotency.LedgerKey;
 
+        // ── Step 1b: quote-only ───────────────────────────────────────────────
+        // A caller must be able to see the node fee BEFORE it locks terms with a
+        // person. A preview runs every gate and every validation and then STOPS: no
+        // idempotency claim, no wallet provisioning, no movement, empty operation id.
+        // It deliberately sits before TryClaim so a preview can never consume the key
+        // the real allocation will need.
+        if (request.PreviewOnly)
+            return await PreviewAsync(userId, request, actingTenantId);
+
         // ── Step 2: idempotency claim ─────────────────────────────────────────
         // TryClaim BEFORE any irreversible effect. On a lost claim we replay the
-        // stored original result and perform NO second mint/transfer.
+        // stored original result and perform NO second issue/transfer.
         var claim = await _idempotencyStore.TryClaimAsync(ledgerKey, OperationType, CancellationToken.None);
         if (!claim.Won)
             return ReplayFromRecord(claim.Record);
@@ -119,6 +165,14 @@ public sealed class AllocationManager : IAllocationManager
                 return AZOAResult<AllocationResult>.Failure(gate.Message);
             }
 
+            // ── Step 3b: is this kind admissible for this caller? ─────────────
+            var admissible = ValidateKind(request, clientIdempotencyKey, actingTenantId);
+            if (admissible is not null)
+            {
+                await _idempotencyStore.FailAsync(ledgerKey, admissible, CancellationToken.None);
+                return AZOAResult<AllocationResult>.Failure(admissible);
+            }
+
             // ── Step 4: parse the amount (H4) — reject BEFORE any broadcast ───
             // AllocationRequest.Amount is an arbitrary-precision string; the
             // provider value surface is ulong. A non-numeric / negative /
@@ -130,7 +184,7 @@ public sealed class AllocationManager : IAllocationManager
                 return AZOAResult<AllocationResult>.Failure(amountError);
             }
 
-            var feeQuoteResult = await QuoteAllocationFeeAsync(request.Kind, amount);
+            var feeQuoteResult = await QuoteAllocationFeeAsync(request, amount);
             if (feeQuoteResult.IsError || feeQuoteResult.Result is null)
             {
                 var msg = feeQuoteResult.IsError ? feeQuoteResult.Message : "Node fee quote produced no result.";
@@ -138,6 +192,18 @@ public sealed class AllocationManager : IAllocationManager
                 return AZOAResult<AllocationResult>.Failure(msg);
             }
             var feeQuote = feeQuoteResult.Result;
+
+            // ── Step 4b: a non-zero fee becomes a durable obligation ──────────
+            // Shaving the fee off the moved amount without recording where it settles
+            // is how a node quietly keeps money it never accounted for. Admitting the
+            // obligation first makes the fee recoverable and auditable; a fee with
+            // nowhere to settle still refuses.
+            var feeObligation = await AdmitFeeObligationAsync(request, feeQuote, ledgerKey);
+            if (feeObligation is not null)
+            {
+                await _idempotencyStore.FailAsync(ledgerKey, feeObligation, CancellationToken.None);
+                return AZOAResult<AllocationResult>.Failure(feeObligation);
+            }
 
             // ── Step 5: provision-if-absent ───────────────────────────────────
             var (wallet, provisioned, walletError) = await EnsureWalletAsync(userId, request.ChainType);
@@ -161,14 +227,19 @@ public sealed class AllocationManager : IAllocationManager
                 AllocationKind.Transfer => await TransferAsync(
                     userId, callerUserId, wallet, provisioned, request, feeQuote,
                     ledgerKey, allocationIdempotency.Correlation, callerUserId, callerApiKeyId, actingTenantId),
+                AllocationKind.IssueUnits => await IssueUnitsAsync(
+                    userId, wallet, provisioned, request, feeQuote, ledgerKey,
+                    allocationIdempotency.Correlation, callerUserId, callerApiKeyId, actingTenantId),
                 _ => Operation.Invalid($"Unsupported allocation kind: {request.Kind}.")
             };
 
             if (opResult.IsError || opResult.Result is null)
             {
-                var msg = opResult.IsError ? opResult.Message : "Allocation produced no operation.";
-                await _idempotencyStore.FailAsync(ledgerKey, msg, CancellationToken.None);
-                return AZOAResult<AllocationResult>.Failure(msg);
+                var failure = ToConsumerSafeFailure(
+                    opResult.IsError ? opResult.Message : "Allocation produced no operation.",
+                    opResult.Code);
+                await _idempotencyStore.FailAsync(ledgerKey, failure.Message, CancellationToken.None);
+                return failure;
             }
 
             var op = opResult.Result;
@@ -184,12 +255,13 @@ public sealed class AllocationManager : IAllocationManager
             var txHash = op.Parameters.GetValueOrDefault("TxHash", string.Empty);
             if (string.IsNullOrWhiteSpace(txHash))
             {
-                // Broadcast did not (yet) record a TxHash. Do NOT Complete the key —
-                // leave it InProgress so reconciliation/replay can settle it from
-                // chain truth. Surface a retryable in-progress state to the caller.
-                return AZOAResult<AllocationResult>.Failure(
-                    "Allocation broadcast is in progress; the on-chain effect has not yet " +
-                    "recorded a transaction hash. Retry once it settles.");
+                // Broadcast did not (yet) record a settlement reference. Do NOT
+                // Complete the key — leave it InProgress so reconciliation/replay can
+                // settle it from chain truth. Surface a retryable in-progress state.
+                return AZOAResult<AllocationResult>.FailureWithCode(
+                    "This allocation is still settling and has not yet been confirmed. " +
+                    "Retry once it settles; do not raise a second one.",
+                    ConsumerSafeErrorCodes.SettlementPending);
             }
 
             await _idempotencyStore.CompleteAsync(
@@ -204,6 +276,138 @@ public sealed class AllocationManager : IAllocationManager
                     _idempotencyStore, ledgerKey, UnexpectedFailureMessage, ex);
             throw;
         }
+    }
+
+    // ── Quote-only (terms before the lock) ────────────────────────────────────
+
+    /// <summary>
+    /// Runs every gate and validation an allocation runs, returns the exact gross / node
+    /// fee / net / schedule version, and performs NOTHING. The result's
+    /// <see cref="AllocationResult.OperationId"/> is <see cref="Guid.Empty"/>, which is
+    /// the machine-checkable proof that no allocation happened.
+    /// </summary>
+    private async Task<AZOAResult<AllocationResult>> PreviewAsync(
+        Guid userId, AllocationRequest request, Guid? actingTenantId)
+    {
+        var gate = await _valueAccess.RequireValueAccessAsync(userId, actingTenantId);
+        if (gate.IsError)
+            return AZOAResult<AllocationResult>.Failure(gate.Message);
+
+        // A preview is exempt from the client-key requirement: it claims no key.
+        var admissible = ValidateKind(request, "preview", actingTenantId);
+        if (admissible is not null)
+            return AZOAResult<AllocationResult>.Failure(admissible);
+
+        if (!TryParseAmount(request.Amount, out var amount, out var amountError))
+            return AZOAResult<AllocationResult>.Failure(amountError);
+
+        var quote = await QuoteAllocationFeeAsync(request, amount);
+        if (quote.IsError || quote.Result is null)
+        {
+            return AZOAResult<AllocationResult>.Failure(
+                quote.IsError ? quote.Message : "Node fee quote produced no result.");
+        }
+
+        // A fee that could never settle would deny the real allocation, so the quote
+        // must say so now rather than let a caller lock terms it cannot honour.
+        var settlementRefusal = await DescribeFeeSettlementAvailabilityAsync(request, quote.Result);
+        if (settlementRefusal is not null)
+            return AZOAResult<AllocationResult>.Failure(settlementRefusal);
+
+        var (wallet, _) = await FindWalletAsync(userId, request.ChainType);
+        return new AZOAResult<AllocationResult>
+        {
+            Result = new AllocationResult
+            {
+                UserId = userId,
+                WalletId = wallet?.Id ?? Guid.Empty,
+                WalletAddress = wallet?.Address ?? string.Empty,
+                WalletProvisioned = false,
+                OperationId = Guid.Empty,
+                Replayed = false,
+                GrossAmount = FormatAmount(quote.Result.GrossAmount),
+                NodeFeeAmount = FormatAmount(quote.Result.FeeAmount),
+                NetAmount = FormatAmount(quote.Result.NetAmount),
+                NodeFeeScheduleVersion = quote.Result.ScheduleVersion,
+            },
+            Message =
+                "Quote only: no allocation was performed and no wallet was provisioned. " +
+                "The empty operation id confirms it.",
+        };
+    }
+
+    // ── Kind admissibility ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Refusal text when this kind cannot be run by this caller with these inputs, or null
+    /// when it can. <see cref="AllocationKind.Mint"/> is retired for tenants (D47) and
+    /// <see cref="AllocationKind.IssueUnits"/> demands the inputs an issuance cannot be
+    /// safely derived without.
+    /// </summary>
+    private string? ValidateKind(
+        AllocationRequest request, string? clientIdempotencyKey, Guid? actingTenantId)
+    {
+        switch (request.Kind)
+        {
+            case AllocationKind.Mint when actingTenantId.HasValue:
+                return
+                    "Creating supply per allocation is retired. Supply is created once into the " +
+                    "platform reserve; use IssueUnits with the assetId and the partition the " +
+                    "units are drawn from.";
+
+            case AllocationKind.Mint:
+                return null;
+
+            // Transfer moves an asset the node already tracks, identified by
+            // AssetRecordId; TransferAsync enforces that. AssetId is the optional
+            // chain-native alias and is deliberately NOT made mandatory here.
+            case AllocationKind.Transfer:
+                return null;
+
+            case AllocationKind.IssueUnits:
+                if (_reserve is null || _recipientPreparer is null)
+                {
+                    return
+                        "Issuing units is not available on this node: the platform reserve is not " +
+                        "configured.";
+                }
+                if (string.IsNullOrWhiteSpace(request.AssetId))
+                    return "AssetId is required to issue units: units are always units OF something.";
+                if (!IsValidPartition(request.Partition))
+                {
+                    return
+                        "Partition is required to issue units and must be 1-" + MaxPartitionLength +
+                        " characters of letters, digits, '-' or '_'. Without it one purpose could " +
+                        "quietly draw down another's earmark.";
+                }
+                if (request.Purpose is { Length: > MaxPurposeLength })
+                    return $"Purpose must be {MaxPurposeLength} characters or fewer.";
+                if (string.IsNullOrWhiteSpace(clientIdempotencyKey))
+                {
+                    return
+                        "An Idempotency-Key is required to issue units. Two identical issuances are " +
+                        "a normal thing to want, so the node will not guess whether a repeat is a " +
+                        "retry or a second award.";
+                }
+                return null;
+
+            default:
+                return $"Unsupported allocation kind: {request.Kind}.";
+        }
+    }
+
+    private static bool IsValidPartition(string? partition)
+    {
+        if (string.IsNullOrWhiteSpace(partition)) return false;
+        var trimmed = partition.Trim();
+        if (trimmed.Length > MaxPartitionLength) return false;
+        foreach (var character in trimmed)
+        {
+            if (!char.IsAsciiLetterOrDigit(character) && character != '-' && character != '_')
+                return false;
+        }
+
+        return true;
     }
 
     // ── Provision-if-absent ───────────────────────────────────────────────────
@@ -355,6 +559,134 @@ public sealed class AllocationManager : IAllocationManager
         return await _blockchainOps.ExecuteAsync(op);
     }
 
+    /// <summary>
+    /// D47 issuance: units already exist in the platform reserve, so this draws them from
+    /// a named partition, makes the recipient's account able to hold them, and moves the
+    /// net amount out of the reserve. The node fee is not moved — it simply never leaves
+    /// the reserve, which is why an issuance needs no separate treasury leg.
+    /// <para>
+    /// Ordering is deliberate. Preparation runs BEFORE the partition draw: a refused draw
+    /// after a successful preparation costs the node only the account minimum it advanced
+    /// (which the recipient keeps and can reuse), whereas a draw committed before a failed
+    /// preparation would record units as issued that nobody received.
+    /// </para>
+    /// </summary>
+    private async Task<AZOAResult<IBlockchainOperation>> IssueUnitsAsync(
+        Guid userId,
+        IWallet wallet,
+        bool walletProvisioned,
+        AllocationRequest request,
+        AllocationFeeQuote feeQuote,
+        string ledgerKey,
+        string correlation,
+        Guid callerUserId,
+        Guid callerApiKeyId,
+        Guid? actingTenantId)
+    {
+        // ValidateKind has already refused when either is absent; these are the
+        // compiler's proof, not a second policy.
+        if (_reserve is null || _recipientPreparer is null)
+            return Operation.Invalid("Issuing units is not available on this node.");
+
+        var assetId = request.AssetId!.Trim();
+        var partition = request.Partition!.Trim();
+
+        var account = await _reserve.GetAccountAsync(request.ChainType);
+        if (account.IsError || account.Result is null)
+        {
+            _logger?.LogWarning(
+                "Issuance refused: the reserve account for {Chain} did not resolve ({Detail}).",
+                request.ChainType, account.Message);
+            return RailRefusal(account.Message);
+        }
+
+        var reserveAddress = account.Result.Address;
+        var reserveContext = StampTenant(
+            SigningContext.PlatformFor(request.ChainType), actingTenantId, userId);
+        var recipientContext = StampTenant(
+            SigningContext.ForUser(userId, wallet.Id).ForChain(request.ChainType), actingTenantId, userId);
+
+        // Recipient preparation — the first issuance to a real person fails here without
+        // it, with a rail error naming the asset and its acceptance step.
+        var prepared = await _recipientPreparer.PrepareAsync(
+            new CustodialRecipientPreparation(
+                request.ChainType,
+                assetId,
+                wallet.Address,
+                recipientContext,
+                reserveAddress,
+                reserveContext));
+        if (prepared.IsError || prepared.Result is null)
+            return RailRefusal(prepared.Message);
+
+        // Acceptance submitted but unconfirmed is NOT ready: sending units into an
+        // account whose acceptance has not landed is exactly the rejection this whole
+        // path exists to prevent. Refuse and let the caller retry.
+        if (prepared.Result.PendingConfirmation)
+        {
+            return Operation.InvalidWithCode(
+                "The recipient's account is being made ready and has not finished settling. " +
+                "Retry shortly; nothing was moved.",
+                ConsumerSafeErrorCodes.SettlementPending);
+        }
+
+        // The node-side oversubscription check. A partition that would be overdrawn is
+        // REFUSED here, before any value moves, and the draw replays safely on retry
+        // because the allocation ledger key is its operation key.
+        var draw = await _reserve.DrawAsync(new ReserveDrawRequest(
+            request.ChainType,
+            assetId,
+            partition,
+            ReserveDrawKind.Issue,
+            new BigInteger(feeQuote.NetAmount),
+            ledgerKey));
+        if (draw.IsError || draw.Result is null)
+        {
+            _logger?.LogWarning(
+                "Issuance refused by the reserve partition '{Partition}' for asset {Asset}: {Detail}",
+                partition, assetId, draw.Message);
+            return RailRefusal(draw.Message);
+        }
+
+        // The move itself. UserId carries the recipient (the grantor a tenant-driven
+        // signature is checked against) while WalletId stays null, which is what makes
+        // BlockchainOperationManager.BuildSigningContext resolve the PLATFORM key — the
+        // units leave the reserve, not the recipient's wallet.
+        var op = new BlockchainOperation
+        {
+            UserId = userId,
+            WalletId = null,
+            OperationType = "Transfer",
+            Status = OperationStatus.Pending,
+            RecipientAddress = wallet.Address,
+            ActingTenantId = actingTenantId,
+            SigningScope = actingTenantId.HasValue ? AzoaScopes.TransferSign : null,
+            IdempotencyKey = correlation,
+            InitiatorUserId = callerUserId,
+            InitiatorApiKeyId = callerApiKeyId,
+            Parameters = BuildOpParameters(reserveAddress, request, feeQuote, ledgerKey, holonId: null),
+        };
+        op.Parameters["SourceTokenId"] = assetId;
+        op.Parameters["ReserveAddress"] = reserveAddress;
+        op.Parameters["ReservePartition"] = partition;
+        op.Parameters["AllocationKind"] = nameof(AllocationKind.IssueUnits);
+        op.Parameters[IdempotencyParameterNames.ResultPayload] = SerializeForReplay(BuildAllocationResult(
+            userId, wallet, walletProvisioned, op.Id, feeQuote));
+
+        return await _blockchainOps.ExecuteAsync(op);
+    }
+
+    /// <summary>
+    /// Threads the acting tenant + grantor + the transfer scope onto a signing context so
+    /// the custody seam runs the LIVE consent check before any decrypt. A user-driven or
+    /// platform-internal issuance needs no grant and is returned unchanged.
+    /// </summary>
+    private static SigningContext StampTenant(
+        SigningContext context, Guid? actingTenantId, Guid grantorUserId)
+        => actingTenantId is { } tenantId && tenantId != Guid.Empty
+            ? context.ActingAs(tenantId, AzoaScopes.TransferSign, grantorUserId)
+            : context;
+
     private async Task<(IWallet? Wallet, string Error)> FindWalletAsync(Guid userId, string chainType)
     {
         var wallets = await _walletStore.GetByUserAsync(userId);
@@ -378,8 +710,16 @@ public sealed class AllocationManager : IAllocationManager
     /// ulong is authoritative; this string entry is the fallback for the typeless
     /// op types and storage rehydration.
     /// </summary>
-    private static Dictionary<string, string> BuildOpParameters(
+    private Dictionary<string, string> BuildOpParameters(
         IWallet wallet,
+        AllocationRequest request,
+        AllocationFeeQuote feeQuote,
+        string ledgerKey,
+        string? holonId)
+        => BuildOpParameters(wallet.Address, request, feeQuote, ledgerKey, holonId);
+
+    private Dictionary<string, string> BuildOpParameters(
+        string senderAddress,
         AllocationRequest request,
         AllocationFeeQuote feeQuote,
         string ledgerKey,
@@ -387,7 +727,7 @@ public sealed class AllocationManager : IAllocationManager
     {
         var p = new Dictionary<string, string>
         {
-            ["WalletAddress"] = wallet.Address,
+            ["WalletAddress"] = senderAddress,
             ["Amount"] = FormatAmount(feeQuote.NetAmount),
             ["GrossAmount"] = FormatAmount(feeQuote.GrossAmount),
             ["NodeFeeAmount"] = FormatAmount(feeQuote.FeeAmount),
@@ -404,6 +744,18 @@ public sealed class AllocationManager : IAllocationManager
             p["TokenUri"] = request.AssetId!;
         if (!string.IsNullOrWhiteSpace(holonId))
             p["holonId"] = holonId;
+
+        // The caller's own words for WHY these units moved, carried onto the durable
+        // operation. SurrealBlockchainOperationStore persists the whole parameters bag
+        // onto operation_log.parameters, so this is what lands in the log.
+        if (!string.IsNullOrWhiteSpace(request.Purpose))
+            p["Purpose"] = request.Purpose!.Trim();
+
+        // Never let an unstamped network silently pin a production allocation to devnet:
+        // BlockchainOperationManager defaults the parameter to Devnet when it is absent.
+        if (_providers is not null)
+            p["ChainNetwork"] = _providers.DefaultNetwork.ToString();
+
         return p;
     }
 
@@ -425,12 +777,14 @@ public sealed class AllocationManager : IAllocationManager
         return metadata;
     }
 
+    // ── Node fee: quote, pin, and settle ──────────────────────────────────────
+
     private async Task<AZOAResult<AllocationFeeQuote>> QuoteAllocationFeeAsync(
-        AllocationKind kind,
+        AllocationRequest request,
         ulong grossAmount)
     {
-        if (!TryResolveFeeOperation(kind, out var operation))
-            return AZOAResult<AllocationFeeQuote>.Failure($"Unsupported allocation kind: {kind}.");
+        if (!TryResolveFeeOperation(request.Kind, out var operation))
+            return AZOAResult<AllocationFeeQuote>.Failure($"Unsupported allocation kind: {request.Kind}.");
 
         var quote = await _nodeFees.QuoteAsync(operation, grossAmount);
         if (quote.IsError || quote.Result is null)
@@ -441,14 +795,105 @@ public sealed class AllocationManager : IAllocationManager
         if (converted.IsError || converted.Result is null)
             return converted;
 
-        if (operation == NodeFeeOperation.Transfer && converted.Result.FeeAmount > 0)
+        // Terms the caller quoted must be the terms it settles on. A schedule that has
+        // moved since the quote is a REFUSAL, not a silent re-price.
+        if (request.ExpectedFeeScheduleVersion is { } expected
+            && expected != converted.Result.ScheduleVersion)
         {
             return AZOAResult<AllocationFeeQuote>.Failure(
-                "Transfer node fees require on-chain treasury settlement, which is not configured; allocation denied.");
+                $"The node fee schedule has changed since this was quoted (quoted version {expected}, " +
+                $"current version {converted.Result.ScheduleVersion}). Re-quote before allocating.");
         }
 
         return converted;
     }
+
+    /// <summary>
+    /// Admits a non-zero node fee as a durable, recoverable obligation, or returns the
+    /// refusal. Returns null when there is nothing to admit.
+    /// <para>
+    /// An issuance needs no obligation: its fee never leaves the reserve, so there is no
+    /// second effect to settle and nothing to strand. A transfer between two accounts is
+    /// different — the fee has to reach the node's treasury from somewhere, so it is
+    /// admitted here and refused outright when no destination is configured.
+    /// </para>
+    /// </summary>
+    private async Task<string?> AdmitFeeObligationAsync(
+        AllocationRequest request, AllocationFeeQuote feeQuote, string ledgerKey)
+    {
+        if (feeQuote.FeeAmount == 0 || request.Kind != AllocationKind.Transfer)
+            return null;
+
+        var destination = await ResolveTreasuryDestinationAsync(request.ChainType);
+        if (destination.IsError || destination.Result is null)
+            return destination.Message;
+
+        if (_feeSettlement is null)
+            return NoTreasurySettlementMessage;
+
+        var admitted = await _feeSettlement.PrepareAsync(new NodeFeeSettlementDraft
+        {
+            ParentIdempotencyKey = ledgerKey,
+            Operation = NodeFeeOperation.Transfer,
+            Chain = destination.Result.Chain,
+            Network = destination.Result.Network,
+            AssetId = request.AssetId ?? string.Empty,
+            GrossAmount = FormatAmount(feeQuote.GrossAmount),
+            FeeAmount = FormatAmount(feeQuote.FeeAmount),
+            NetAmount = FormatAmount(feeQuote.NetAmount),
+            FeeScheduleVersion = feeQuote.ScheduleVersion,
+            TreasuryAddress = destination.Result.Address,
+            TreasuryDestinationVersion = destination.Result.Version,
+        });
+
+        return admitted.IsError || admitted.Result is null
+            ? $"{NoTreasurySettlementMessage} ({ConsumerSafeErrors.Map(admitted.Message).Code})"
+            : null;
+    }
+
+    /// <summary>Read-only twin of <see cref="AdmitFeeObligationAsync"/> for the quote path.</summary>
+    private async Task<string?> DescribeFeeSettlementAvailabilityAsync(
+        AllocationRequest request, AllocationFeeQuote feeQuote)
+    {
+        if (feeQuote.FeeAmount == 0 || request.Kind != AllocationKind.Transfer)
+            return null;
+
+        if (_feeSettlement is null)
+            return NoTreasurySettlementMessage;
+
+        var destination = await ResolveTreasuryDestinationAsync(request.ChainType);
+        return destination.IsError || destination.Result is null ? destination.Message : null;
+    }
+
+    private async Task<AZOAResult<NodeTreasuryDestinationResponse>> ResolveTreasuryDestinationAsync(
+        string chainType)
+    {
+        if (_treasury is null || _providers is null)
+        {
+            return AZOAResult<NodeTreasuryDestinationResponse>.Failure(NoTreasurySettlementMessage);
+        }
+
+        var destination = await _treasury.GetDestinationAsync(chainType, _providers.DefaultNetwork);
+        if (destination.IsError || destination.Result is null
+            || string.IsNullOrWhiteSpace(destination.Result.Address))
+        {
+            _logger?.LogWarning(
+                "Transfer fee refused: no treasury destination for {Chain} ({Detail}).",
+                chainType, destination.Message);
+            return AZOAResult<NodeTreasuryDestinationResponse>.Failure(NoTreasurySettlementMessage);
+        }
+
+        return destination;
+    }
+
+    /// <summary>
+    /// The refusal a transfer fee gets when it has nowhere to go. Kept as one constant so
+    /// the wording — and the "treasury settlement" phrase callers and tests key on —
+    /// cannot drift between the quote path and the allocation path.
+    /// </summary>
+    private const string NoTreasurySettlementMessage =
+        "Node fees for this operation require a configured treasury settlement destination, " +
+        "which this node does not have; allocation denied.";
 
     private static AZOAResult<AllocationFeeQuote> ToAllocationFeeQuote(
         NodeFeeQuoteResponse quote,
@@ -476,6 +921,11 @@ public sealed class AllocationManager : IAllocationManager
         };
     }
 
+    /// <summary>
+    /// Maps an allocation kind onto the fee schedule entry that prices it. Issuance is
+    /// priced as a transfer because that is exactly what it is on the rail — units moving
+    /// out of the reserve — so it needs no schedule entry of its own.
+    /// </summary>
     private static bool TryResolveFeeOperation(AllocationKind kind, out NodeFeeOperation operation)
     {
         switch (kind)
@@ -484,6 +934,7 @@ public sealed class AllocationManager : IAllocationManager
                 operation = NodeFeeOperation.Mint;
                 return true;
             case AllocationKind.Transfer:
+            case AllocationKind.IssueUnits:
                 operation = NodeFeeOperation.Transfer;
                 return true;
             default:
@@ -514,6 +965,36 @@ public sealed class AllocationManager : IAllocationManager
 
     private static string FormatAmount(ulong amount)
         => amount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// A refusal that originated on the rail (the reserve, the provider, the preparer).
+    /// It is ALWAYS mapped: rail text is written for an operator and mentions accounts,
+    /// assets and acceptance steps, none of which may reach a tenant.
+    /// </summary>
+    private static AZOAResult<IBlockchainOperation> RailRefusal(string? railMessage)
+    {
+        var mapped = ConsumerSafeErrors.Map(railMessage);
+        return Operation.InvalidWithCode(mapped.Message, mapped.Code);
+    }
+
+    /// <summary>
+    /// Last gate before a failure leaves for a tenant. A message carrying rail detail is
+    /// REPLACED by its consumer-safe equivalent; one that does not is passed through so the
+    /// node's own plain-language refusals keep their meaning. An already-assigned code
+    /// (a rail refusal that mapped itself upstream) always wins.
+    /// </summary>
+    private static AZOAResult<AllocationResult> ToConsumerSafeFailure(string? message, string? code)
+    {
+        if (!ConsumerSafeErrors.LeaksRailDetail(message))
+        {
+            return code is null
+                ? AZOAResult<AllocationResult>.Failure(message ?? string.Empty)
+                : AZOAResult<AllocationResult>.FailureWithCode(message ?? string.Empty, code);
+        }
+
+        var mapped = ConsumerSafeErrors.Map(message);
+        return AZOAResult<AllocationResult>.FailureWithCode(mapped.Message, code ?? mapped.Code);
+    }
 
     private static AllocationResult BuildAllocationResult(
         Guid userId,
@@ -616,5 +1097,8 @@ public sealed class AllocationManager : IAllocationManager
     {
         public static AZOAResult<IBlockchainOperation> Invalid(string message)
             => new() { IsError = true, Message = message };
+
+        public static AZOAResult<IBlockchainOperation> InvalidWithCode(string message, string code)
+            => new() { IsError = true, Message = message, Code = code };
     }
 }
