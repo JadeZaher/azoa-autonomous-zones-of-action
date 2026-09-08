@@ -15,42 +15,82 @@ public class UserManager : IUserManager
     private readonly IUserStore _userStore;
     private readonly IConfiguration _config;
     private readonly IAdminBootstrapStateStore? _adminBootstrapStateStore;
+    private readonly IHostEnvironment? _environment;
 
     public UserManager(
         IUserStore userStore,
         IConfiguration config,
-        IAdminBootstrapStateStore? adminBootstrapStateStore = null)
+        IAdminBootstrapStateStore? adminBootstrapStateStore = null,
+        IHostEnvironment? environment = null)
     {
         _userStore = userStore;
         _config = config;
         _adminBootstrapStateStore = adminBootstrapStateStore;
+        _environment = environment;
     }
 
     public async Task<AZOAResult<IUser>> RegisterAsync(UserRegisterModel model, AZOARequest? request = null)
     {
-        if (string.Equals(model.Email?.Trim(), NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase))
+        // Second of the two seams. The controller refuses first; this one is what a
+        // future non-HTTP caller inherits, so the gate cannot be routed around.
+        if (!SelfRegistrationPolicy.IsAllowed(_config, _environment))
+            return new AZOAResult<IUser> { IsError = true, Message = SelfRegistrationPolicy.DisabledMessage };
+
+        var email = NormalizeIdentityValue(model.Email);
+        var username = NormalizeIdentityValue(model.Username);
+        if (string.Equals(email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase))
             return new AZOAResult<IUser> { IsError = true, Message = "This account identity is reserved." };
-
-        // Check for duplicate email
-        var allUsers = await _userStore.GetAllAsync(default);
-        if (allUsers.Result?.Any(a => a.Email.Equals(model.Email, StringComparison.OrdinalIgnoreCase)) == true)
-            return new AZOAResult<IUser> { IsError = true, Message = "An account with this email already exists." };
-
-        // Check for duplicate username
-        if (allUsers.Result?.Any(a => a.Username.Equals(model.Username, StringComparison.OrdinalIgnoreCase)) == true)
-            return new AZOAResult<IUser> { IsError = true, Message = "This username is already taken." };
+        if (email.Length == 0 || username.Length == 0)
+            return new AZOAResult<IUser> { IsError = true, Message = "A username and email are required." };
 
         var user = new User
         {
-            Username = model.Username,
-            Email = model.Email,
+            Username = username,
+            Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(model.Password),
             Title = model.Title,
             FirstName = model.FirstName,
             LastName = model.LastName
         };
 
-        return await _userStore.UpsertAsync(user, default);
+        // Uniqueness is the database's job, not a read-then-write scan: `user_email`
+        // and `user_username` are UNIQUE indexes (Persistence/SurrealDb/Generated/
+        // Schemas/user.surql). The old O(n) GetAllAsync scan loaded every user on
+        // every registration AND still let two concurrent registrations both pass it.
+        // The write below carries a fresh id, so it is a create the index adjudicates.
+        var saved = await _userStore.UpsertAsync(user, default);
+        if (!saved.IsError)
+            return saved;
+
+        // Off the happy path only: name which field collided so the caller gets a
+        // usable message instead of an opaque persistence error.
+        return await DescribeRegistrationFailureAsync(user, saved);
+    }
+
+    /// <summary>Trimmed, lower-invariant identity value; the UNIQUE indexes match exactly.</summary>
+    private static string NormalizeIdentityValue(string? value)
+        => value?.Trim().ToLowerInvariant() ?? string.Empty;
+
+    /// <summary>Translates a failed registration write into the field that collided.</summary>
+    private async Task<AZOAResult<IUser>> DescribeRegistrationFailureAsync(
+        IUser attempted,
+        AZOAResult<IUser> storeFailure)
+    {
+        var existing = await _userStore.GetAllAsync(default);
+        if (existing.IsError || existing.Result is null)
+            return storeFailure;
+        if (existing.Result.Any(candidate =>
+                string.Equals(candidate.Email, attempted.Email, StringComparison.OrdinalIgnoreCase)))
+        {
+            return new AZOAResult<IUser> { IsError = true, Message = "An account with this email already exists." };
+        }
+        if (existing.Result.Any(candidate =>
+                string.Equals(candidate.Username, attempted.Username, StringComparison.OrdinalIgnoreCase)))
+        {
+            return new AZOAResult<IUser> { IsError = true, Message = "This username is already taken." };
+        }
+
+        return storeFailure;
     }
 
     public async Task<AZOAResult<string>> LoginAsync(UserLoginModel model, AZOARequest? request = null)
@@ -286,4 +326,47 @@ public class UserManager : IUserManager
         return new AZOAResult<bool> { Result = true, Message = "Username is valid." };
     }
 
+}
+
+/// <summary>
+/// Whether <c>POST /api/user/register</c> may create an account on this node.
+/// </summary>
+/// <remarks>
+/// The endpoint is <c>[AllowAnonymous]</c> and the same node custodies another
+/// product's real users, so "nobody self-registers here" has to be a control, not
+/// a habit. Two keys, because a node inherits the base appsettings verbatim: the
+/// node-wide switch turns it off anywhere, and Production additionally demands an
+/// explicit acknowledgement before an anonymous stranger may create an identity.
+/// See <c>docs/NODE-HOST.md</c> section 3.
+/// </remarks>
+public static class SelfRegistrationPolicy
+{
+    /// <summary>Node-wide switch. Absent means enabled outside Production.</summary>
+    public const string EnabledKey = "Registration:Enabled";
+
+    /// <summary>Production-only acknowledgement. Absent or false refuses in Production.</summary>
+    public const string ProductionAcknowledgementKey =
+        "Registration:AllowPublicSelfServiceInProduction";
+
+    /// <summary>Refusal surfaced to an anonymous caller; states a node fact, never a user fact.</summary>
+    public const string DisabledMessage =
+        "Public self-registration is disabled on this node. Accounts are provisioned by the operator.";
+
+    /// <summary>True only when the node allows anonymous account creation right now.</summary>
+    public static bool IsAllowed(IConfiguration? configuration, IHostEnvironment? environment)
+    {
+        if (configuration is null)
+            return environment?.IsProduction() != true;
+        // Parsed rather than bound. An absent switch means "not configured", which is
+        // enabled outside Production; a PRESENT but unparseable one reads as OFF,
+        // because a typo on this key must never open anonymous account creation.
+        var switchValue = configuration[EnabledKey];
+        if (switchValue is not null && (!bool.TryParse(switchValue, out var enabled) || !enabled))
+            return false;
+        if (environment?.IsProduction() != true)
+            return true;
+
+        return bool.TryParse(configuration[ProductionAcknowledgementKey], out var acknowledged)
+            && acknowledged;
+    }
 }

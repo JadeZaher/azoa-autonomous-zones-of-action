@@ -4,6 +4,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -15,16 +16,35 @@ namespace AZOA.WebAPI.Controllers;
 public class UserController : ControllerBase
 {
     private readonly IUserManager _manager;
+    private readonly IConfiguration? _configuration;
+    private readonly IHostEnvironment? _environment;
 
-    public UserController(IUserManager manager)
+    public UserController(
+        IUserManager manager,
+        IConfiguration? configuration = null,
+        IHostEnvironment? environment = null)
     {
         _manager = manager;
+        _configuration = configuration;
+        _environment = environment;
     }
 
+    /// <summary>
+    /// Anonymous account creation. Gated by <see cref="SelfRegistrationPolicy"/>:
+    /// this is the outer of two seams, and <c>UserManager.RegisterAsync</c> refuses
+    /// again behind it so a non-HTTP caller inherits the same answer.
+    /// </summary>
     [HttpPost("register")]
     [AllowAnonymous]
     public async Task<ActionResult<AZOAResult<IUser>>> Register([FromBody] UserRegisterModel model, [FromQuery] AZOARequest? request)
     {
+        if (!SelfRegistrationPolicy.IsAllowed(_configuration, _environment))
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new AZOAResult<IUser> { IsError = true, Message = SelfRegistrationPolicy.DisabledMessage });
+        }
+
         var result = await _manager.RegisterAsync(model, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);

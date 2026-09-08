@@ -129,8 +129,9 @@ public sealed class RealValueKycGate : IRealValueKycGate
         if (screening.IsError || screening.Result is null)
             return false;
 
-        return screening.Result.Decision == KycScreeningDecision.NO_HIT
-            && !screening.Result.ResultsTruncated;
+        // Ask KycAmlClearance rather than restating the rule: a third copy is how the
+        // status projection and the value gate came apart in the first place.
+        return KycAmlClearance.IsClear(screening.Result);
     }
 
     private async Task<AZOAResult<KycProviderResolution>> ResolveAuthorityAsync(

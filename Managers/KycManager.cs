@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using SurrealForge.Client;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Hosting;
 using AZOA.WebAPI.Interfaces.HostedSessions;
@@ -29,18 +30,21 @@ public sealed class KycManager : IKycManager
     private readonly IKycProviderRegistry? _registry;
     private readonly KycSettings _settings;
     private readonly IHostEnvironment _environment;
+    private readonly IConfiguration? _configuration;
 
     public KycManager(
         IKycStore store,
         IKycProviderService provider,
         IOptions<KycSettings> settings,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IConfiguration? configuration = null)
     {
         _store = store;
         _provider = provider;
         _registry = null;
         _settings = settings.Value;
         _environment = environment;
+        _configuration = configuration;
     }
 
     [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
@@ -49,13 +53,15 @@ public sealed class KycManager : IKycManager
         IKycProviderService provider,
         IKycProviderRegistry registry,
         IOptions<KycSettings> settings,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IConfiguration? configuration = null)
     {
         _store = store;
         _provider = provider;
         _registry = registry;
         _settings = settings.Value;
         _environment = environment;
+        _configuration = configuration;
     }
 
     public KycProviderCapabilitiesModel GetCapabilities()
@@ -545,6 +551,11 @@ public sealed class KycManager : IKycManager
         submission.ReviewerId   = SurrealId.ToSurrealId(reviewerUserId);
         submission.ReviewNotes  = notes;
         submission.ReviewedAt   = now;
+        // An APPROVAL lives on Kyc:ApprovalValidityDays, never on the far shorter
+        // Kyc:SubmissionExpiryDays the PENDING attempt was stamped with. Without
+        // this restamp the approval inherits the attempt's expiry and every
+        // verified sponsor is forced back through identity check a month later.
+        submission.ExpiresAt    = KycApprovalValidity.ResolveExpiry(_configuration, now);
         submission.ModifiedDate = now;
 
         var saved = await _store.TryReviewAsync(submission, ct);
@@ -846,4 +857,44 @@ public sealed class KycManager : IKycManager
         if (ex is not null) r.Exception = ex;
         return r;
     }
+}
+
+/// <summary>
+/// The single source of truth for how long a KYC APPROVAL stays current, split
+/// from <c>Kyc:SubmissionExpiryDays</c> (how long an unfinished ATTEMPT may sit).
+/// </summary>
+/// <remarks>
+/// Read through <see cref="IConfiguration"/> rather than <c>KycSettings</c> so
+/// every seam that terminalizes a submission - the manual reviewer path here and
+/// the hosted-provider outcome handler - resolves one number from one key. See
+/// <c>docs/NODE-HOST.md</c> section 8.5.
+/// </remarks>
+public static class KycApprovalValidity
+{
+    /// <summary>Configuration key holding the approval lifetime in days.</summary>
+    public const string ConfigurationKey = "Kyc:ApprovalValidityDays";
+
+    /// <summary>Twelve months: the shortest lifetime that is not re-verification theatre.</summary>
+    public const int DefaultDays = 365;
+
+    public const int MinimumDays = 1;
+    public const int MaximumDays = 3650;
+
+    /// <summary>Clamped approval lifetime; an absent or unparseable value falls back to twelve months.</summary>
+    /// <remarks>
+    /// Parsed rather than bound: an operator typo must not throw on the approval
+    /// path, and a nonsense value must fall back to the safe default instead of
+    /// silently becoming zero (an approval that expires the instant it is granted).
+    /// </remarks>
+    public static int ResolveDays(IConfiguration? configuration)
+    {
+        var configured = configuration?[ConfigurationKey];
+        return int.TryParse(configured, out var days) && days > 0
+            ? Math.Clamp(days, MinimumDays, MaximumDays)
+            : DefaultDays;
+    }
+
+    /// <summary>Absolute expiry to stamp on a submission at the moment it is approved.</summary>
+    public static DateTimeOffset ResolveExpiry(IConfiguration? configuration, DateTimeOffset approvedAt)
+        => approvedAt.AddDays(ResolveDays(configuration));
 }

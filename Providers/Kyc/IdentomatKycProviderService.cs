@@ -2,6 +2,7 @@
 
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Interfaces.HostedSessions;
@@ -43,6 +44,19 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     private const string UnconfiguredMessage =
         "The Identomat KYC adapter is not fully configured.";
 
+    /// <summary>
+    /// Where the widget sends the applicant when they are finished. Optional: the
+    /// vendor's <c>/begin</c> has no top-level redirect parameter at all (checked
+    /// against docs.identomat.com/developer-tools/api-reference, 2026-09) - the only
+    /// documented one is <c>general.returnUrl</c>, a per-session override of the
+    /// dashboard configuration. Unset means "send nothing", which leaves the
+    /// configured flow exactly as it behaves today.
+    /// </summary>
+    public const string ReturnUrlConfigurationKey = "Kyc:Identomat:ReturnUrl";
+
+    /// <summary>Operator-facing name of <see cref="ReturnUrlConfigurationKey"/>.</summary>
+    public const string ReturnUrlConfigurationName = "Kyc__Identomat__ReturnUrl";
+
     private static readonly JsonSerializerOptions CallbackJson = new(JsonSerializerDefaults.Web);
 
     private readonly IdentomatKycSettings _settings;
@@ -50,19 +64,22 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     private readonly IKycTenantQuota _quota;
     private readonly IHostedSessionFlow _flow;
     private readonly ILogger<IdentomatKycProviderService> _logger;
+    private readonly IConfiguration? _configuration;
 
     public IdentomatKycProviderService(
         IOptions<KycSettings> options,
         IIdentomatHttpTransport transport,
         IKycTenantQuota quota,
         IHostedSessionFlow flow,
-        ILogger<IdentomatKycProviderService>? logger = null)
+        ILogger<IdentomatKycProviderService>? logger = null,
+        IConfiguration? configuration = null)
     {
         _settings = options.Value.Identomat;
         _transport = transport;
         _quota = quota;
         _flow = flow;
         _logger = logger ?? NullLogger<IdentomatKycProviderService>.Instance;
+        _configuration = configuration;
     }
 
     public KycProvider Provider => KycProvider.IDENTOMAT;
@@ -271,19 +288,21 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         if (!capabilities.Available)
             return AZOAResult<HostedSessionCreation>.Failure(capabilities.UnavailableReason!);
 
-        var body = new IdentomatBeginRequest
+        var body = new IdentomatBeginRequestWithSessionOverrides
         {
             CompanyKey = _settings.CompanyKey!.Trim(),
             ConfigId = _settings.ConfigId!.Trim(),
             ClientUserId = request.SubjectUserId.ToString("N"),
+            General = BuildSessionOverrides(),
         };
 
-        var response = await _transport.PostAsync<IdentomatBeginRequest, IdentomatBeginResponse>(
-            _settings.BeginBaseUrl!,
-            BeginPath,
-            body,
-            "begin",
-            ct);
+        var response = await _transport
+            .PostAsync<IdentomatBeginRequestWithSessionOverrides, IdentomatBeginResponse>(
+                _settings.BeginBaseUrl!,
+                BeginPath,
+                body,
+                "begin",
+                ct);
         if (response.IsError || response.Result is null)
             return AZOAResult<HostedSessionCreation>.FailureWithCode(response.Message, response.Code ?? AzoaErrorCodes.DependencyUnavailable);
 
@@ -462,6 +481,33 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             ? null
             : value.Length <= maximum ? value : value[..maximum];
 
+    /// <summary>
+    /// The documented per-session overrides we send, or <c>null</c> when the operator
+    /// configured none. Only a well-formed public HTTPS URL is forwarded: the value
+    /// is an operator-supplied redirect target the applicant's browser follows, so a
+    /// malformed or internal one is dropped rather than handed to the vendor.
+    /// </summary>
+    private IdentomatBeginSessionOverrides? BuildSessionOverrides()
+    {
+        var returnUrl = ResolveReturnUrl();
+        return returnUrl is null ? null : new IdentomatBeginSessionOverrides { ReturnUrl = returnUrl };
+    }
+
+    /// <summary>Configured return URL, or <c>null</c> when unset or not an acceptable HTTPS URL.</summary>
+    private string? ResolveReturnUrl()
+    {
+        var configured = _configuration?[ReturnUrlConfigurationKey]?.Trim();
+        if (string.IsNullOrEmpty(configured))
+            return null;
+        if (ValidHttpsRedirect(configured))
+            return configured;
+
+        _logger.LogError(
+            "{ConfigurationName} is set but is not an acceptable public HTTPS URL; no return URL was sent.",
+            ReturnUrlConfigurationName);
+        return null;
+    }
+
     /// <summary>Mirrors the origin validation used by the generic hosted scaffold.</summary>
     private static bool ValidHttpsOrigin(string? value)
         => Uri.TryCreate(value, UriKind.Absolute, out var uri)
@@ -519,4 +565,39 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             || address.IsIPv6UniqueLocal
             || address.Equals(System.Net.IPAddress.IPv6Any);
     }
+}
+
+/// <summary>
+/// <c>POST /begin</c> body carrying the documented per-session <c>general</c>
+/// overrides. Lives here rather than beside the other Identomat wire DTOs because
+/// the <c>general</c> override object is adapter policy, not vendor vocabulary the
+/// rest of the codebase reads.
+/// </summary>
+public sealed class IdentomatBeginRequestWithSessionOverrides
+{
+    [JsonPropertyName("companyKey")]
+    public string CompanyKey { get; set; } = string.Empty;
+
+    [JsonPropertyName("configId")]
+    public string? ConfigId { get; set; }
+
+    /// <summary>The AZOA user id - this is the user-to-person binding correlation.</summary>
+    [JsonPropertyName("clientUserId")]
+    public string? ClientUserId { get; set; }
+
+    /// <summary>Omitted entirely when unset; the vendor treats an explicit null as an override.</summary>
+    [JsonPropertyName("general")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IdentomatBeginSessionOverrides? General { get; set; }
+}
+
+/// <summary>
+/// The subset of <c>general</c> AZOA sets. <c>returnUrl</c> is the ONLY documented
+/// redirect-back parameter anywhere on <c>/begin</c>; there is no top-level one.
+/// </summary>
+public sealed class IdentomatBeginSessionOverrides
+{
+    [JsonPropertyName("returnUrl")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReturnUrl { get; set; }
 }

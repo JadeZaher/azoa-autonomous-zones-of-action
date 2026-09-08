@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Core.Blockchain;
@@ -20,20 +21,28 @@ public class WalletManager : IWalletManager
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly WalletKeyService _keyService;
     private readonly IConfiguration _config;
+    private readonly IHostEnvironment? _environment;
     private readonly BlockchainConfigurationManager _blockchainConfig;
 
+    /// <param name="environment">
+    /// Host environment the custody predicate reads. Optional so the manager can be
+    /// constructed outside a host; absent is treated as "not Development", which makes
+    /// <see cref="CustodyModeResolver"/> fail closed rather than open.
+    /// </param>
     public WalletManager(
         IWalletStore walletStore,
         IHolonStore holonStore,
         IBlockchainProviderFactory chainFactory,
         WalletKeyService keyService,
-        IConfiguration config)
+        IConfiguration config,
+        IHostEnvironment? environment = null)
     {
         _walletStore = walletStore;
         _holonStore = holonStore;
         _chainFactory = chainFactory;
         _keyService = keyService;
         _config = config;
+        _environment = environment;
         _blockchainConfig = new BlockchainConfigurationManager(config);
     }
 
@@ -358,8 +367,22 @@ public class WalletManager : IWalletManager
 
     // ─── New: Generate a wallet on-platform ───
 
+    /// <summary>Stable prefix callers match on when custody refuses a new wallet.</summary>
+    public const string WalletCustodyUnavailable = "WALLET_CUSTODY_UNAVAILABLE: ";
+
+    /// <summary>
+    /// Generates and stores a platform-custodied wallet. Every wallet-creating path that
+    /// is not the deterministic tenant bootstrap funnels through here — the direct
+    /// <c>POST /api/wallet/generate</c> route, <c>AllocationManager.EnsureWalletAsync</c>
+    /// and <c>FungibleTokenManager.EnsureWalletAsync</c> — so the custody predicate is
+    /// answered once, here, instead of three times at the call sites.
+    /// </summary>
     public async Task<AZOAResult<IWallet>> GenerateWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null)
     {
+        var custody = CustodyModeResolver.Resolve(_config, _environment);
+        if (!custody.Available)
+            return AZOAResult<IWallet>.Failure($"{WalletCustodyUnavailable}{custody.UnavailableReason}");
+
         try
         {
             var (publicKey, privateKeyHex, address, seedPhrase) = _keyService.GenerateKeypair(model.ChainType);

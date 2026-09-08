@@ -8,7 +8,11 @@ public enum TenantKycStatus
     Unknown,
     Pending,
     Approved,
-    Rejected
+    Rejected,
+
+    /// <summary>Identity is verified; a compliance check still awaits a human decision.</summary>
+    /// <remarks>Appended last so the existing wire ordinals are unchanged.</remarks>
+    UnderReview
 }
 
 /// <summary>Secret-free tenant account projection consumed by ArdaNova.</summary>
@@ -33,6 +37,9 @@ public sealed class TenantCustodialAccountStatusResponse
     public bool WalletReady { get; set; }
     public bool Ready { get; set; }
     public string? UnavailableReason { get; set; }
+
+    /// <summary>When an open manual review is due a decision; null unless UnderReview.</summary>
+    public DateTimeOffset? ReviewDueAt { get; set; }
 }
 
 /// <summary>Runtime capability report for tenant-managed custody and verification.</summary>

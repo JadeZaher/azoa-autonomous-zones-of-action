@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Moq;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Interfaces;
@@ -516,6 +517,80 @@ public class KycManagerTests
             It.Is<KycSubmission>(submission => submission.Status == KycStatus.APPROVED),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task Approve_StampsTheApprovalClockNotTheSubmissionClock()
+    {
+        // The attempt was stamped with the SUBMISSION clock (three days). Approving
+        // it must move the row onto the APPROVAL clock, or every verified sponsor is
+        // pushed back through identity check when the attempt window lapses.
+        var submissionId = Guid.NewGuid();
+        var stored = Stored(submissionId, Guid.NewGuid(), KycStatus.PENDING);
+        stored.ExpiresAt = DateTimeOffset.UtcNow.AddDays(3);
+        _store.Setup(s => s.GetSubmissionByIdAsync(submissionId, It.IsAny<CancellationToken>()))
+              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = stored });
+
+        var floor = DateTimeOffset.UtcNow.AddDays(KycApprovalValidity.DefaultDays - 1);
+        var result = await _manager.ApproveAsync(submissionId, Guid.NewGuid(), null);
+
+        result.IsError.Should().BeFalse(result.Message);
+        _store.Verify(s => s.TryReviewAsync(
+            It.Is<KycSubmission>(submission =>
+                submission.Status == KycStatus.APPROVED
+                && submission.ExpiresAt > floor),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Approve_HonoursAConfiguredApprovalValidity()
+    {
+        var submissionId = Guid.NewGuid();
+        var stored = Stored(submissionId, Guid.NewGuid(), KycStatus.PENDING);
+        _store.Setup(s => s.GetSubmissionByIdAsync(submissionId, It.IsAny<CancellationToken>()))
+              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = stored });
+        var manager = new KycManager(
+            _store.Object,
+            _provider.Object,
+            Options.Create(TrustedManualSettings()),
+            DevelopmentEnvironment(),
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [KycApprovalValidity.ConfigurationKey] = "30",
+                })
+                .Build());
+
+        var ceiling = DateTimeOffset.UtcNow.AddDays(31);
+        var result = await manager.ApproveAsync(submissionId, Guid.NewGuid(), null);
+
+        result.IsError.Should().BeFalse(result.Message);
+        _store.Verify(s => s.TryReviewAsync(
+            It.Is<KycSubmission>(submission => submission.ExpiresAt < ceiling),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(null, KycApprovalValidity.DefaultDays)]
+    [InlineData("", KycApprovalValidity.DefaultDays)]
+    [InlineData("0", KycApprovalValidity.DefaultDays)]
+    [InlineData("-5", KycApprovalValidity.DefaultDays)]
+    [InlineData("30", 30)]
+    [InlineData("99999", KycApprovalValidity.MaximumDays)]
+    public void ApprovalValidity_DefaultsAndClamps(string? configured, int expectedDays)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [KycApprovalValidity.ConfigurationKey] = configured,
+            })
+            .Build();
+
+        KycApprovalValidity.ResolveDays(configuration).Should().Be(expectedDays);
+    }
+
+    [Fact]
+    public void ApprovalValidity_WithoutConfiguration_IsTwelveMonths()
+        => KycApprovalValidity.ResolveDays(null).Should().Be(365);
 
     [Fact]
     public async Task Reject_SetsRejectedWithReason()

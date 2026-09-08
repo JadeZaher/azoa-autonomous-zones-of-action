@@ -167,6 +167,11 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             return CopyFailure<bool, IReadOnlyList<TenantKycProviderChoiceResponse>>(authority);
         if (!authority.Result)
             return Forbidden<IReadOnlyList<TenantKycProviderChoiceResponse>>("TENANT_CONFIGURATION_FORBIDDEN");
+        // The read mirrors the write gate: a tenant the operator has not admitted to
+        // the override allow-list is never shown a provider menu it cannot act on.
+        if (!TenantKycProviderOverridePolicy.IsAllowedForTenant(_configuration, tenantId))
+            return AZOAResult<IReadOnlyList<TenantKycProviderChoiceResponse>>.Success(
+                Array.Empty<TenantKycProviderChoiceResponse>());
         return await _registry.ListTenantChoicesAsync(ct);
     }
 
@@ -203,6 +208,16 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             return requireTenantAuthority
                 ? Forbidden<TenantKycSelectionResponse>("TENANT_CONFIGURATION_FORBIDDEN")
                 : NotFound<TenantKycSelectionResponse>("Tenant not found.");
+        // D48: the KYC provider IS the compliance policy, so a tenant may only
+        // repoint its own provider when the OPERATOR has admitted that tenant to the
+        // node-config allow-list. requireTenantAuthority == false is the operator's
+        // own route (NodeOperatorController), which is the custodian and not gated.
+        if (requireTenantAuthority
+            && !TenantKycProviderOverridePolicy.IsAllowedForTenant(_configuration, tenantId))
+        {
+            return Forbidden<TenantKycSelectionResponse>(
+                TenantKycProviderOverridePolicy.ForbiddenReason);
+        }
         var tenant = await _users.GetByIdAsync(tenantId, ct);
         if (tenant.IsError)
             return string.Equals(tenant.Code, AzoaErrorCodes.NotFound, StringComparison.Ordinal)
@@ -743,5 +758,56 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         {
             return false;
         }
+    }
+}
+
+/// <summary>
+/// D48 node-config gate for the per-tenant KYC provider override
+/// (<c>PUT /api/tenant/kyc/provider</c>). OFF for every tenant by default.
+/// </summary>
+/// <remarks>
+/// The provider a tenant verifies through IS that tenant's compliance policy, so
+/// letting a tenant repoint it at will is tenant-chosen policy on a node that
+/// custodies someone else's real users. Both keys must agree before a tenant may
+/// choose: the node-wide switch AND that tenant's id on the allow-list. Operator
+/// routes are unaffected - the operator is the custodian. See
+/// <c>docs/NODE-HOST.md</c> section 8.5.
+/// </remarks>
+public static class TenantKycProviderOverridePolicy
+{
+    /// <summary>Node-wide master switch; absent or false disables every tenant override.</summary>
+    public const string EnabledKey = "Kyc:TenantProviderOverride:Enabled";
+
+    /// <summary>Array of tenant ids the operator has admitted to the override.</summary>
+    public const string AllowedTenantIdsKey = "Kyc:TenantProviderOverride:AllowedTenantIds";
+
+    /// <summary>Wildcard entry admitting every tenant; deliberately explicit and auditable.</summary>
+    public const string AllowAllTenantsEntry = "*";
+
+    /// <summary>Machine-readable refusal surfaced to the tenant.</summary>
+    public const string ForbiddenReason = "TENANT_PROVIDER_OVERRIDE_NOT_ENABLED";
+
+    /// <summary>True only when the node switch is on AND this tenant is allow-listed.</summary>
+    public static bool IsAllowedForTenant(IConfiguration? configuration, Guid tenantId)
+    {
+        if (configuration is null || tenantId == Guid.Empty)
+            return false;
+        // Parsed rather than bound: an unparseable switch reads as OFF, never as ON.
+        if (!bool.TryParse(configuration[EnabledKey], out var enabled) || !enabled)
+            return false;
+
+        var allowed = false;
+        foreach (var entry in configuration.GetSection(AllowedTenantIdsKey).GetChildren())
+        {
+            var value = entry.Value?.Trim();
+            if (string.IsNullOrEmpty(value))
+                continue;
+            if (string.Equals(value, AllowAllTenantsEntry, StringComparison.Ordinal))
+                return true;
+            if (Guid.TryParse(value, out var parsed) && parsed == tenantId)
+                allowed = true;
+        }
+
+        return allowed;
     }
 }

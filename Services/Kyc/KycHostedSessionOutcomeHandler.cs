@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.HostedSessions;
-using AZOA.WebAPI.Settings;
 
 namespace AZOA.WebAPI.Services.Kyc;
 
@@ -23,31 +22,27 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
 {
     private const string PersistenceMessage = "The KYC outcome could not be recorded.";
 
-    /// <summary>Same clamp KycManager applies, so one approval never outlives another.</summary>
-    private const int MinimumExpiryDays = 1;
-    private const int MaximumExpiryDays = 365;
-
     private readonly IKycStore _kycStore;
     private readonly IKycIdentityBindingService _binding;
     private readonly IIdentomatScreeningService _screening;
-    private readonly KycSettings _settings;
     private readonly ILogger<KycHostedSessionOutcomeHandler> _logger;
     private readonly TimeProvider _clock;
+    private readonly IConfiguration? _configuration;
 
     public KycHostedSessionOutcomeHandler(
         IKycStore kycStore,
         IKycIdentityBindingService binding,
         IIdentomatScreeningService screening,
-        IOptions<KycSettings> settings,
         ILogger<KycHostedSessionOutcomeHandler>? logger = null,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        IConfiguration? configuration = null)
     {
         _kycStore = kycStore;
         _binding = binding;
         _screening = screening;
-        _settings = settings.Value;
         _logger = logger ?? NullLogger<KycHostedSessionOutcomeHandler>.Instance;
         _clock = clock ?? TimeProvider.System;
+        _configuration = configuration;
     }
 
     public async Task<AZOAResult<string?>> ResumeAsync(
@@ -95,16 +90,26 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
                     screened.Code ?? AzoaErrorCodes.DependencyUnavailable);
             }
 
-            if (screened.Result.Decision != KycScreeningDecision.NO_HIT)
+            if (KycAmlClearance.RequiresManualReview(screened.Result))
             {
                 // The submission still records that IDENTITY was verified — that is
                 // true and is a distinct fact. The value gate reads the screening row
-                // and stays shut. Nothing here is projected to the subject or the
-                // tenant: an adverse AML finding is not something to tip off about.
+                // and stays shut. The FINDING is never projected to the subject or the
+                // tenant — an adverse AML finding is not something to tip off about —
+                // but the fact that a review is open is, so the tenant custodial
+                // projection reports UnderReview with the SLA and a legitimate subject
+                // caught by a name collision has a route to a human instead of a
+                // permanent silent denial.
                 _logger.LogWarning(
-                    "AML screening returned {Decision} for a verified identity; the value gate stays closed for user {UserId}.",
+                    "AML manual review opened: screening returned {Decision} (truncated: {Truncated}, policy {PolicyVersion}) "
+                        + "for verified identity {UserId} in tenant {TenantId} at {ScreenedAt}. The value gate stays closed "
+                        + "and the tenant projection reports UnderReview until an operator decides.",
                     screened.Result.Decision,
-                    userId);
+                    screened.Result.ResultsTruncated,
+                    screened.Result.PolicyVersion,
+                    userId,
+                    tenantId,
+                    screened.Result.ScreenedAt);
             }
 
             var bound = await _binding.BindAsync(
@@ -167,9 +172,10 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
             // Begin set this to the ~30 minute SESSION window. Leaving it there makes
             // every approval expire minutes after it is granted — invisible in a fast
             // test, total denial in production — because both value gates require an
-            // explicit FUTURE expiry.
-            submission.ExpiresAt = now.AddDays(
-                Math.Clamp(_settings.SubmissionExpiryDays, MinimumExpiryDays, MaximumExpiryDays));
+            // explicit FUTURE expiry. This is the ONLY approval seam a hosted-provider
+            // sponsor reaches, so it must resolve the SAME lifetime as the manual
+            // reviewer path in KycManager — one number, one key. See docs/NODE-HOST.md §8.5.
+            submission.ExpiresAt = KycApprovalValidity.ResolveExpiry(_configuration, now);
         }
         else
         {

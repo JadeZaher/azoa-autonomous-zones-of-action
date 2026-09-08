@@ -3,11 +3,14 @@ using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Services.Custody;
+using AZOA.WebAPI.Services.Kyc;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics;
@@ -28,6 +31,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
     private readonly IIdempotencyStore _idempotency;
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
+    private readonly IKycScreeningStore? _screening;
     private readonly ILogger<TenantCustodialAccountManager> _logger;
 
     public TenantCustodialAccountManager(
@@ -38,6 +42,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         IIdempotencyStore idempotency,
         IConfiguration configuration,
         IHostEnvironment environment,
+        IKycScreeningStore? screening = null,
         ILogger<TenantCustodialAccountManager>? logger = null)
     {
         _tenants = tenants;
@@ -47,6 +52,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         _idempotency = idempotency;
         _configuration = configuration;
         _environment = environment;
+        _screening = screening;
         _logger = logger ?? NullLogger<TenantCustodialAccountManager>.Instance;
     }
 
@@ -76,27 +82,15 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         var chain = WalletBootstrapIdentity.CanonicalChain(
             _configuration["CustodialAccounts:WalletChain"]
             ?? _configuration["Blockchain:DefaultChain"]);
-        var custodyMode = _configuration["CustodialAccounts:CustodyMode"]?.Trim()
-            ?? "Disabled";
-        var custodySecret = _configuration["AZOA:WalletEncryptionKey"];
-        var simulated = string.Equals(
-            _configuration["Blockchain:Mode"],
-            "Simulated",
-            StringComparison.OrdinalIgnoreCase);
-        var developmentCustody = string.Equals(
-            custodyMode,
-            "DevelopmentOnly",
-            StringComparison.OrdinalIgnoreCase);
-        var custodyAvailable = developmentCustody
-            && _environment.IsDevelopment()
-            && simulated
-            && !string.IsNullOrWhiteSpace(custodySecret)
-            && custodySecret.Length >= 32;
+        // One custody answer for the whole node (W1.8). Re-deriving the predicate
+        // here is how "walletReady is false by construction outside Development"
+        // survived a production custody mode being configured.
+        var custody = CustodyModeResolver.Resolve(_configuration, _environment);
         var blockchainProviderAvailable = chain is not null && ResolveProviderAvailable(chain);
         var walletReason = FirstReason(
             (!enabled, "Tenant custodial accounts are disabled."),
             (chain is null, "The custodial wallet chain is unsupported."),
-            (!custodyAvailable, CustodyUnavailableReason(custodyMode, simulated)),
+            (!custody.Available, TenantSafeCustodyReason(custody)),
             (!blockchainProviderAvailable, "The configured blockchain provider is unavailable."));
         var identityReady = enabled;
         var kycReady = enabled && kyc.Available;
@@ -110,8 +104,8 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         {
             Enabled = enabled,
             WalletChain = chain ?? string.Empty,
-            CustodyMode = custodyMode,
-            CustodyAvailable = custodyAvailable,
+            CustodyMode = custody.ConfiguredMode,
+            CustodyAvailable = custody.Available,
             BlockchainProviderAvailable = blockchainProviderAvailable,
             KycProvider = kyc.ProviderKey,
             KycAvailable = kyc.Available,
@@ -419,6 +413,12 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 "TENANT_KYC_UNAVAILABLE: KYC status is temporarily unavailable.");
         }
 
+        var review = await ResolveAmlReviewAsync(userId, tenantId, kycStatus, ct);
+        if (review.IsError)
+            return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(review.Message);
+        if (review.Result!.UnderReview)
+            kycStatus = TenantKycStatus.UnderReview;
+
         var walletReady = capabilities.WalletProvisioningReady
             && wallet is not null
             && wallet.Id != Guid.Empty
@@ -426,8 +426,11 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
             && wallet.WalletType == WalletType.Platform
             && !string.IsNullOrWhiteSpace(wallet.Address)
             && !string.IsNullOrWhiteSpace(wallet.EncryptedPrivateKey);
+        // Under review comes first: it is the one state the subject cannot resolve
+        // themselves, so it is the one they must be told about by name.
         var unavailableReason = capabilities.UnavailableReason
-            ?? (!walletReady ? "The custodial wallet is not ready."
+            ?? (kycStatus == TenantKycStatus.UnderReview ? KycAmlClearance.UnderReviewReason
+                : !walletReady ? "The custodial wallet is not ready."
                 : kycStatus != TenantKycStatus.Approved ? "KYC verification is not approved."
                 : null);
 
@@ -446,8 +449,55 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 && capabilities.KycReady
                 && walletReady
                 && kycStatus == TenantKycStatus.Approved,
-            UnavailableReason = unavailableReason
+            UnavailableReason = unavailableReason,
+            ReviewDueAt = review.Result.ReviewDueAt
         });
+    }
+
+    /// <summary>Whether an approved identity still owes a sanctions answer, and by when.</summary>
+    private sealed record AmlReviewProjection(bool UnderReview, DateTimeOffset? ReviewDueAt);
+
+    /// <summary>
+    /// Identity and sanctions are two questions. An approved identity whose AML
+    /// verdict is not clear must project UnderReview, or this response tells a sponsor
+    /// they are ready while <see cref="KycGateService"/> denies every value
+    /// action they attempt, with no visible reason and no route to a human. The AML
+    /// finding itself is never projected - only that a review is open, and its SLA.
+    /// </summary>
+    private async Task<AZOAResult<AmlReviewProjection>> ResolveAmlReviewAsync(
+        Guid userId,
+        Guid? tenantId,
+        TenantKycStatus kycStatus,
+        CancellationToken ct)
+    {
+        if (kycStatus != TenantKycStatus.Approved)
+            return AZOAResult<AmlReviewProjection>.Success(new AmlReviewProjection(false, null));
+
+        if (_screening is null)
+        {
+            // The screening store is the only source of the AML answer. Without it
+            // this projection cannot be computed, and guessing "clear" is the one
+            // answer that would let a sanctioned subject read as ready.
+            _logger.LogError(
+                "No KYC screening store is registered; the tenant custodial projection cannot report AML clearance.");
+            return AZOAResult<AmlReviewProjection>.Failure(
+                "TENANT_KYC_UNAVAILABLE: KYC status is temporarily unavailable.");
+        }
+
+        var screening = await _screening.GetLatestResultAsync(userId, tenantId, ct);
+        if (screening.IsError)
+        {
+            return AZOAResult<AmlReviewProjection>.Failure(
+                "TENANT_KYC_UNAVAILABLE: KYC status is temporarily unavailable.");
+        }
+
+        if (KycAmlClearance.IsClear(screening.Result))
+            return AZOAResult<AmlReviewProjection>.Success(new AmlReviewProjection(false, null));
+
+        var sla = KycAmlClearance.ResolveManualReviewSla(_configuration);
+        return AZOAResult<AmlReviewProjection>.Success(new AmlReviewProjection(
+            true,
+            KycAmlClearance.ReviewDueAt(screening.Result, sla)));
     }
 
     private async Task<AZOAResult<IWallet>> FindBootstrapWalletAsync(Guid userId, string chain)
@@ -502,18 +552,24 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         }
     }
 
-    private string CustodyUnavailableReason(string custodyMode, bool simulated)
+    /// <summary>
+    /// The resolver owns the verdict; this owns the wording a TENANT may read. Only
+    /// the key-material and unrecognised-mode reasons are rewritten: one names a node
+    /// configuration path and the other echoes an operator-chosen string, and both are
+    /// operator information rather than tenant information.
+    /// </summary>
+    private static string TenantSafeCustodyReason(CustodyModeDecision custody)
     {
-        if (string.Equals(custodyMode, "KmsHsm", StringComparison.OrdinalIgnoreCase))
-            return "No production KMS/HSM custody adapter is registered.";
+        const string generic = "Custodial key management is disabled or unavailable.";
+        if (custody.UnavailableReason is null || custody.Mode == RecognisedCustodyMode.Unrecognised)
+            return generic;
 
-        if (string.Equals(custodyMode, "DevelopmentOnly", StringComparison.OrdinalIgnoreCase)
-            && (!_environment.IsDevelopment() || !simulated))
-        {
-            return "Development key custody is allowed only in Development with Blockchain:Mode=Simulated.";
-        }
-
-        return "Custodial key management is disabled or unavailable.";
+        return string.Equals(
+            custody.UnavailableReason,
+            CustodyModeResolver.WalletEncryptionKeyUnusableReason,
+            StringComparison.Ordinal)
+                ? generic
+                : custody.UnavailableReason;
     }
 
     private static string? ValidateResourceIdentity(Guid tenantId, string externalSubject, string? idempotencyKey)

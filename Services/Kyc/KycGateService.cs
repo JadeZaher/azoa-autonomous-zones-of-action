@@ -129,8 +129,9 @@ public sealed class KycGateService : IKycGateService
         if (screening.IsError || screening.Result is null)
             return false;
 
-        var result = screening.Result;
-        return result.Decision == KycScreeningDecision.NO_HIT && !result.ResultsTruncated;
+        // Ask KycAmlClearance rather than restating the rule: a third copy is how the
+        // status projection and the value gate came apart in the first place.
+        return KycAmlClearance.IsClear(screening.Result);
     }
 
     public Task<AZOAResult<KycStatus>> GetKycStatusAsync(Guid userId)

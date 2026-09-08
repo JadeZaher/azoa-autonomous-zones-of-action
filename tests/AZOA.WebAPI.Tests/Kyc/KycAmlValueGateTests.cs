@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.HostedSessions;
@@ -173,13 +175,22 @@ public sealed class KycAmlValueGateTests
 
     // ── The approval the outcome handler writes actually survives ───────────
 
-    [Fact]
-    public async Task HostedApproval_ExpiresOnTheSubmissionWindow_NotTheSessionWindow()
+    /// <summary>
+    /// Begin sets ExpiresAt to the ~30 minute SESSION window. Leaving it there makes
+    /// every approval expire minutes after it is granted, because both value gates
+    /// require an explicit FUTURE expiry — invisible in a fast test, total denial in
+    /// production. The hosted handler is the ONLY approval seam a production sponsor
+    /// reaches, so it must resolve the SAME operator key as the manual reviewer path
+    /// in KycManager: one lifetime, one key, both seams.
+    /// </summary>
+    [Theory]
+    [InlineData(null, KycApprovalValidity.DefaultDays)]
+    [InlineData("30", 30)]
+    [InlineData("0", KycApprovalValidity.DefaultDays)]
+    public async Task HostedApproval_ResolvesTheOperatorApprovalLifetime_NotTheSessionWindow(
+        string? configuredDays,
+        int expectedDays)
     {
-        // Begin sets ExpiresAt to the ~30 minute SESSION window. Leaving it there makes
-        // every approval expire minutes after it is granted, because both value gates
-        // require an explicit FUTURE expiry — invisible in a fast test, total denial in
-        // production.
         var userId = Guid.NewGuid();
         var sessionId = Guid.NewGuid().ToString("N");
         var submission = new KycSubmission
@@ -199,13 +210,24 @@ public sealed class KycAmlValueGateTests
             .ReturnsAsync((KycSubmission item, CancellationToken _) =>
                 new AZOAResult<KycSubmission> { Result = item });
 
-        var handler = NewOutcomeHandler(kycStore, KycScreeningDecision.NO_HIT, submissionExpiryDays: 30);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [KycApprovalValidity.ConfigurationKey] = configuredDays,
+            })
+            .Build();
+
+        var handler = NewOutcomeHandler(kycStore, KycScreeningDecision.NO_HIT, configuration);
         var resumed = await handler.ResumeAsync(Session(sessionId, userId), ApprovedOutcome());
 
         resumed.IsError.Should().BeFalse(resumed.Message);
         submission.Status.Should().Be(KycStatus.APPROVED);
-        submission.ExpiresAt.Should().BeCloseTo(DateTimeOffset.UtcNow.AddDays(30), TimeSpan.FromMinutes(1),
+        submission.ExpiresAt.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddDays(expectedDays), TimeSpan.FromMinutes(1),
             "an approval that expires with its begin-session window denies everyone");
+        submission.ExpiresAt.Should().BeCloseTo(
+            KycApprovalValidity.ResolveExpiry(configuration, DateTimeOffset.UtcNow), TimeSpan.FromMinutes(1),
+            "the hosted seam and the manual reviewer seam must grant the same lifetime");
     }
 
     [Fact]
@@ -224,7 +246,6 @@ public sealed class KycAmlValueGateTests
             kycStore.Object,
             binding,
             screening,
-            Options.Create(new KycSettings()),
             NullLogger<KycHostedSessionOutcomeHandler>.Instance);
 
         var resumed = await handler.ResumeAsync(Session(sessionId, userId), ApprovedOutcome());
@@ -251,7 +272,6 @@ public sealed class KycAmlValueGateTests
             kycStore.Object,
             binding,
             screening,
-            Options.Create(new KycSettings()),
             NullLogger<KycHostedSessionOutcomeHandler>.Instance);
 
         var resumed = await handler.ResumeAsync(
@@ -305,13 +325,14 @@ public sealed class KycAmlValueGateTests
     private static KycHostedSessionOutcomeHandler NewOutcomeHandler(
         Mock<IKycStore> kycStore,
         KycScreeningDecision decision,
-        int submissionExpiryDays = 30)
+        IConfiguration? configuration = null)
         => new(
             kycStore.Object,
             new RecordingBindingService(),
             new RecordingScreeningService(decision),
-            Options.Create(new KycSettings { SubmissionExpiryDays = submissionExpiryDays }),
-            NullLogger<KycHostedSessionOutcomeHandler>.Instance);
+            NullLogger<KycHostedSessionOutcomeHandler>.Instance,
+            clock: null,
+            configuration: configuration);
 
     private static HostedSession Session(string sessionId, Guid userId) => new()
     {

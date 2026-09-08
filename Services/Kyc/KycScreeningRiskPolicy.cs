@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Models.Kyc;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Settings;
 
 namespace AZOA.WebAPI.Services.Kyc;
@@ -28,6 +30,60 @@ public interface IKycScreeningRiskPolicy
     KycScreeningAssessment Assess(
         IReadOnlyList<IdentomatScreeningHit> hits,
         bool resultsTruncated = false);
+}
+
+/// <summary>
+/// The one AML clearance predicate, and the recourse window that opens when it is
+/// not met. It lives beside the risk policy because "cleared" and "what happens when
+/// not cleared" are a single policy: a value gate and a status projection that answer
+/// them differently strand a subject who is told they are ready and denied anyway.
+/// See <c>Services/Kyc/AGENTS.md</c> §aml-screening.
+/// </summary>
+public static class KycAmlClearance
+{
+    /// <summary>Node-operator SLA, in hours, for deciding a flagged screening.</summary>
+    public const string ManualReviewSlaHoursConfigurationPath = "Kyc:ManualReviewSlaHours";
+
+    public const int DefaultManualReviewSlaHours = 72;
+    public const int MinimumManualReviewSlaHours = 1;
+    public const int MaximumManualReviewSlaHours = 720;
+
+    /// <summary>
+    /// Wording a subject or tenant may see. It names no list, score, topic or vendor:
+    /// an adverse AML finding is not something to tip a subject off about, and a
+    /// false-positive name match must not read as an accusation either.
+    /// </summary>
+    public const string UnderReviewReason =
+        "Identity verification is complete and an additional compliance check is under review. "
+        + "No further action is needed; support will confirm the outcome.";
+
+    /// <summary>
+    /// Exactly the rule the value gates apply: only a NO_HIT verdict over a complete
+    /// hit list clears. A missing row is an unanswered question, never a clean one.
+    /// </summary>
+    public static bool IsClear(KycScreeningResult? result)
+        => result is { Decision: KycScreeningDecision.NO_HIT, ResultsTruncated: false };
+
+    /// <summary>True when a human still owes this subject a decision.</summary>
+    public static bool RequiresManualReview(KycScreeningResult? result) => !IsClear(result);
+
+    /// <summary>Operator-configured review SLA, clamped so a typo cannot remove it.</summary>
+    public static TimeSpan ResolveManualReviewSla(IConfiguration? configuration)
+    {
+        var hours = configuration?.GetValue(
+            ManualReviewSlaHoursConfigurationPath,
+            DefaultManualReviewSlaHours) ?? DefaultManualReviewSlaHours;
+
+        return TimeSpan.FromHours(
+            Math.Clamp(hours, MinimumManualReviewSlaHours, MaximumManualReviewSlaHours));
+    }
+
+    /// <summary>
+    /// When the operator's decision is due. Null when nothing is under review, and
+    /// null when nothing has been screened yet — the SLA clock starts at the screen.
+    /// </summary>
+    public static DateTimeOffset? ReviewDueAt(KycScreeningResult? result, TimeSpan sla)
+        => result is null || IsClear(result) ? null : result.ScreenedAt.Add(sla);
 }
 
 /// <summary>AZOA's verdict plus the evidence that produced it.</summary>

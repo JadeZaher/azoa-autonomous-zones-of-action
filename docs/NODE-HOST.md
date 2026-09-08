@@ -139,6 +139,11 @@ family so schema-owner authority cannot enter the API process.
 | `NodeOperator__CredentialRevision` | yes on first boot | Positive monotonic integer. Increment for every username/password rotation; rollback is refused. |
 | `NodeOperator__SessionMinutes` | optional | Dedicated operator-session lifetime, 5–30 minutes (default 20). |
 | `AZOA__WalletEncryptionKey` | yes (**SECRET**) | At-rest key for platform wallet generation. No default — `WalletKeyService` throws without it. |
+| `Registration__Enabled` | yes (prod) | Node-wide switch for the anonymous `POST /api/user/register`. `false` refuses it on any host. |
+| `Registration__AllowPublicSelfServiceInProduction` | yes (prod) | Production-only acknowledgement. Absent or `false` refuses anonymous registration in Production **even when `Registration__Enabled` is true** — see §8.10. |
+| `Kyc__Provider` | yes (prod) | Node identity provider. Base ships `identomat`. A Production host **refuses to boot** on `manual`/`mock`/`unavailable`/unknown (`KycRuntimeSafety.GuardProductionProviderIsReal`). |
+| `Kyc__ApprovalValidityDays` | optional | How long a granted approval stays current; default `365`, clamped 1–3650. Distinct from `Kyc__SubmissionExpiryDays` (how long an unfinished attempt may sit). |
+| `CustodialAccounts__CustodyMode` | yes for wallets | `Disabled`, `DevelopmentOnly`, or the production mode the node recognises — see §8.2. |
 | `PORT` | injected | On Railway the entrypoint binds `ASPNETCORE_URLS=http://0.0.0.0:$PORT` (falls back to 5000). Do not also pin `ASPNETCORE_URLS`. |
 
 Only the separate schema job receives `SURREALFORGE_*` (`_URL`, `_NS`, `_DB`,
@@ -312,12 +317,35 @@ the `SurrealDb__*` reality of this guide, not its legacy Postgres DSN).
 ### 8.2 Choose your key custody (recommended for real value)
 
 The tenant custodial-account capability treats the current AES-GCM key derived
-from `AZOA__WalletEncryptionKey` as **development-only**. It reports ready only
-with `CustodialAccounts__CustodyMode=DevelopmentOnly`, a `Development` host, and
-`Blockchain__Mode=Simulated`. It stores no recovery seed phrase for these
-bootstrap wallets. A live/non-development node fails wallet provisioning
-closed, while deterministic identity creation and an available KYC provider
-remain usable as independent readiness dimensions.
+from `AZOA__WalletEncryptionKey` as **development-only**. It stores no recovery
+seed phrase for these bootstrap wallets. Deterministic identity creation and an
+available KYC provider remain usable as independent readiness dimensions, so a
+node with custody off still verifies people.
+
+`CustodialAccounts__CustodyMode` is the operator's declaration of which custody
+the node is running, and the node recognises exactly three answers:
+
+| Value | Meaning | Preconditions |
+|---|---|---|
+| `Disabled` | No wallet provisioning. | none |
+| `DevelopmentOnly` | Local E2E only; never a live network. | `Development` host **and** `Blockchain__Mode=Simulated` |
+| `Platform` (alias `Node`) | The production mode: the node itself custodies tenant wallet material under the operator's KEK. | `AZOA__WalletEncryptionKey` present (≥32 bytes, already boot-validated) **and** `Blockchain__Mode` **not** `Simulated` |
+
+`Platform` is the value to set on a real deployment. The predicate lives in
+`Services/Custody/CustodyModeResolver.cs` and every wallet-creating path resolves
+through it, so `walletReady` and the `unavailableReason` a tenant sees are one
+answer rather than three re-derivations. An unrecognised mode, a missing KEK, or
+`Blockchain__Mode=Simulated` on a Production host each keep custody closed and
+say which of the three it was.
+
+`Platform` is the *enabling* half only: it lets wallet provisioning succeed off a
+developer's laptop. It does **not** satisfy the KMS/HSM recommendation below, and
+it does not add float caps or a Production boot guard. Read the next two
+paragraphs before you set it on a node that will hold real value.
+
+**Verify:** with `CustodyMode=Platform` and the KEK set, `walletReady` is true and
+`unavailableReason` is empty; clear the KEK and the reason names the KEK, not a
+generic failure.
 
 For production custody, implement and provision a **KMS/HSM-backed key store**.
 The code exposes a custody seam
@@ -378,12 +406,32 @@ threshold.
 
 ### 8.5 Select KYC deliberately
 
-Base/production configuration uses `Kyc__Provider=unavailable` and a bounded
-`Kyc__SubmissionExpiryDays=30`. Development explicitly selects `manual`, the
-only implemented provider, with a 30-minute session TTL. It accepts validated
-credential-free HTTPS document references and requires an Azoa operator to
-approve/reject them. An explicit production `manual` override still fails
-closed until private upload, scanning, retention, and review operations exist.
+**Identomat is the node default.** Base configuration ships
+`Kyc__Provider=identomat`; the adapter reports UNAVAILABLE with the exact missing
+key NAMES until the `Kyc__Identomat__*` secrets are supplied at deploy time, so
+naming it selects the policy without pretending it is configured. A Production
+host **refuses to boot** when `Kyc__Provider` resolves to `manual`, `mock`,
+`unavailable`, or an unknown value: a misconfigured node must fail at start, not
+fail closed on every sponsor's verification. Development overrides the default to
+`manual`, which accepts validated credential-free HTTPS document references and
+requires an operator to approve/reject them; manual approval is explicitly
+non-authoritative and never satisfies a value-operation gate.
+
+**Two expiry clocks, not one.** `Kyc__SubmissionExpiryDays` (default 30) bounds
+how long an UNFINISHED attempt may sit before it is abandoned.
+`Kyc__ApprovalValidityDays` (default 365, clamped 1–3650) is how long a granted
+APPROVAL stays current. They were the same number, which meant every verified
+sponsor was pushed back through identity check a month after being approved. Set
+the approval clock to your regulator's re-verification interval — twelve months
+is the shipped default.
+
+**Where the applicant lands when they finish.** Identomat's `/begin` has no
+top-level redirect parameter at all; the only documented one is the per-session
+`general.returnUrl` override. Set `Kyc__Identomat__ReturnUrl` to a **public HTTPS**
+URL on your product and the adapter forwards it as that override. Loopback,
+private address space, and credential-bearing URLs are refused and nothing is
+sent — the applicant then stays on the vendor page and your app resumes from the
+callback plus its own polling, exactly as it does today when the key is unset.
 
 The node control plane stores multiple secret-free provider profiles and a
 versioned selection per tenant. A profile key is bound to its installed adapter
@@ -400,13 +448,31 @@ browsers cannot silently overwrite one another. Trust-bearing changes advance
 `trustRevision`; submissions and approvals remain bound to the tenant
 selection, provider, policy, and assurance provenance that produced them.
 
-Provider selection is not sufficient to authorize KYC. Configure the reviewed
-trust profile explicitly:
+**The tenant provider override is OFF by default.** The provider a tenant
+verifies through IS that tenant's compliance policy, so a tenant-selectable
+override that ships enabled is tenant-chosen policy on a node that custodies
+someone else's real users. `PUT /api/tenant/kyc/provider` refuses with
+`TENANT_PROVIDER_OVERRIDE_NOT_ENABLED`, and `GET /api/tenant/kyc/providers`
+returns an empty menu, unless **both** of these agree:
 
 ```text
-Kyc__ApprovalPolicy__PolicyVersion=<operator-controlled-version>
-Kyc__ApprovalPolicy__AssuranceLevel=<reviewed-assurance-label>
-Kyc__ApprovalPolicy__TrustedProviderKeys__0=<active-provider-key>
+Kyc__TenantProviderOverride__Enabled=true
+Kyc__TenantProviderOverride__AllowedTenantIds__0=<tenant-user-id>
+```
+
+Add one indexed entry per admitted tenant. `*` as an entry admits every tenant
+and should be a deliberate, audited choice, not a shortcut. The operator's own
+route, `PUT /api/nodeoperator/tenants/{tenantId}/kyc-provider`, is never gated by
+this — the operator is the custodian, and repointing a tenant is their call.
+
+Provider selection is not sufficient to authorize KYC. The reviewed trust profile
+is node configuration; base ships it populated for Identomat and Development
+overrides it for `manual`:
+
+```text
+Kyc__ApprovalPolicy__PolicyVersion=identomat-hosted-v1
+Kyc__ApprovalPolicy__AssuranceLevel=document-and-liveness
+Kyc__ApprovalPolicy__TrustedProviderKeys__0=identomat
 Kyc__ApprovalPolicy__AllowManualInDevelopment=false
 ```
 
@@ -417,7 +483,8 @@ valid only for a Development host with `Blockchain__Mode=Simulated` and
 non-authoritative and cannot satisfy a value-operation KYC gate. Approvals
 without a future expiry or the current versioned provenance envelope are denied.
 
-External options are explicit but unavailable until reviewed integrations land:
+Other provider options are explicit but unavailable until reviewed integrations
+land:
 
 - `Kyc__Provider=veriff` selects the fail-closed Veriff adapter stub.
 - `Kyc__Provider=hosted` selects the generic hosted-provider scaffold. Its keys
@@ -426,11 +493,12 @@ External options are explicit but unavailable until reviewed integrations land:
   `Kyc__Hosted__SessionPath`, and `Kyc__Hosted__StatusPath`.
 - Any other value is unknown and fails closed; it never falls back to manual.
 
-Both external choices report unavailable even when their config is complete.
+`veriff` and `hosted` report unavailable even when their config is complete.
 They are extension contracts, not working integrations. Do not enable one until
 it has durable idempotent attempts, persisted hosted sessions, raw-body webhook
 signature verification, event replay protection, attempt/user mapping, and
-CAS terminal status. Full contract: `TENANT-CUSTODIAL-ONBOARDING.md`.
+CAS terminal status — the bar `identomat` already meets. Full contract:
+`TENANT-CUSTODIAL-ONBOARDING.md`.
 
 **Note:** the **mint path is KYC-gated** — an unverified user is rejected at
 the single mint choke point with no asset created, whether it arrives via the
@@ -441,7 +509,11 @@ decision you make; by default wallet provisioning is allowed pre-KYC.
 **Verify:** an unverified, expired, indefinite, or stale-policy user is denied
 at mint (403); `manual` reports available only in Development; production
 manual, `veriff`, `hosted`, and unknown values report unavailable and do not
-create a submission.
+create a submission; a freshly approved submission's `expiresAt` is
+`Kyc__ApprovalValidityDays` out, not `Kyc__SubmissionExpiryDays`; and a tenant
+that is not on `Kyc__TenantProviderOverride__AllowedTenantIds` gets
+`TENANT_PROVIDER_OVERRIDE_NOT_ENABLED` from `PUT /api/tenant/kyc/provider` and an
+empty list from `GET /api/tenant/kyc/providers`.
 
 ### 8.6 Onboard the first tenant
 
@@ -540,8 +612,9 @@ Use the console in this order:
    names. The console never reads secret values.
 3. Enable and version only a `READY` provider profile. `trustRevision` advances
    when trust-bearing policy changes, making older approval provenance stale.
-4. Let each authenticated tenant choose from the ready catalog at `/kyc`, or
-   manage assignments from `/operator/tenants`.
+4. Assign each tenant's provider from `/operator/tenants`. Tenant self-service
+   at `/kyc` is refused unless you admitted that tenant to
+   `Kyc__TenantProviderOverride__AllowedTenantIds` (§8.5).
 5. Work `/operator/reviews` only when the API reports
    `humanReviewAllowed=true`. Manual review is Development simulation, not an
    external-provider override.
@@ -566,6 +639,46 @@ remain silent.
 and an `X-Api-Key` do not. Rotation succeeds only with a higher revision, global
 revocation signs out all browsers, and ordinary sign-out leaves other browsers
 active.
+
+### 8.10 Close public self-registration
+
+`POST /api/user/register` is `[AllowAnonymous]`. On a node that custodies another
+product's real people, "nobody self-registers here" has to be a control rather
+than a habit, so two keys guard it and Production needs both:
+
+```text
+Registration__Enabled=true
+Registration__AllowPublicSelfServiceInProduction=false
+```
+
+Resolution order, enforced identically at the controller and at
+`UserManager.RegisterAsync` so a non-HTTP caller inherits the same answer:
+
+- `Registration__Enabled=false` → refused on any host, any environment.
+- Not Production → allowed (this is what lets local and integration hosts seed
+  users).
+- Production → refused unless `Registration__AllowPublicSelfServiceInProduction`
+  is **explicitly** `true`. Base `appsettings.json` ships it `false`, so a node
+  that inherits the file verbatim never opens anonymous account creation by
+  accident.
+
+Refusal is `403` with a message that states a NODE fact
+("Public self-registration is disabled on this node") and never a user fact, so
+the endpoint cannot be used to probe whether an account exists.
+
+Accounts on a closed node arrive the operator's way instead: register the tenant
+principal yourself (§8.6), mint its tenant-scoped key, and let the tenant
+provision its own child users through `PUT /api/tenant/custodial-accounts/...`.
+
+Username and email are stored trimmed and lower-invariant, and uniqueness is
+adjudicated by the `user_username` and `user_email` UNIQUE indexes
+(`Persistence/SurrealDb/Generated/Schemas/user.surql`) rather than by a read of
+every user before the write. Two simultaneous registrations for one email now
+lose at the index; before, both passed the scan.
+
+**Verify:** with `ASPNETCORE_ENVIRONMENT=Production` and the acknowledgement
+absent, `POST /api/user/register` returns `403` and creates no row; setting
+`Registration__Enabled=false` returns the same `403` in every environment.
 
 ---
 

@@ -36,6 +36,13 @@ public sealed class TenantKycConfigurationController : ControllerBase
         return Translate(await _manager.GetTenantSelectionAsync(tenantId, true, ct));
     }
 
+    /// <summary>
+    /// Repoints this tenant's KYC provider. OFF by default: the manager refuses with
+    /// <c>TENANT_PROVIDER_OVERRIDE_NOT_ENABLED</c> unless the operator has switched
+    /// <c>Kyc:TenantProviderOverride:Enabled</c> on AND listed this tenant in
+    /// <c>Kyc:TenantProviderOverride:AllowedTenantIds</c>. The provider IS the
+    /// compliance policy, so choosing one is the node operator's call by default.
+    /// </summary>
     [HttpPut("provider")]
     [Authorize(Policy = "RecentFirstPartyLogin")]
     [EnableRateLimiting("financial")]

@@ -44,7 +44,17 @@ export interface UserResponse {
   isActive: boolean;
 }
 
-export type TenantKycStatus = "Unknown" | "Pending" | "Approved" | "Rejected";
+/**
+ * Mirrors AZOA's `TenantKycStatus`. `UnderReview` means identity verified but an
+ * additional compliance check still owes a human decision: neither approved nor
+ * rejected, and closed to value until it resolves.
+ */
+export type TenantKycStatus =
+  | "Unknown"
+  | "Pending"
+  | "Approved"
+  | "Rejected"
+  | "UnderReview";
 
 /** Secret-free tenant account projection returned to platforms such as ArdaNova. */
 export interface TenantCustodialAccountStatus {
@@ -61,6 +71,8 @@ export interface TenantCustodialAccountStatus {
   walletReady: boolean;
   ready: boolean;
   unavailableReason: string | null;
+  /** When an open compliance review is due a decision; null unless `UnderReview`. */
+  reviewDueAt: string | null;
 }
 
 export interface TenantCustodialCapabilities {
