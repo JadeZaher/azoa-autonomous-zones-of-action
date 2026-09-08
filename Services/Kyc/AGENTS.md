@@ -111,6 +111,15 @@ accepted residual risk is the inverse — an operator who FORGETS to opt a
 Sybil-sensitive operation into `Global` gets no cross-tenant protection. That is
 a decided trade; do not "fix" it by defaulting to `Global`.
 
+**The Warning fires on the RESOLVED scope, not the declared one (W9.2).** The
+arithmetic is worth writing down because it is not obvious:
+`KycPersonKeyDeriver.ScopeValue(null) == GlobalScopeSentinel`, so for a caller with
+no acting tenant "per-tenant" and "node-global" are literally the same domain. A
+tenant-less caller declaring `Tenant` therefore lands in the node-global domain, and
+`PersonUniquenessGate` logs it — with `declaredScope` beside the resolved one, so the
+two cases can be told apart in the audit trail. Auditing the DECLARED scope would
+have left the quietest cross-tenant path on the node unlogged.
+
 **Four steps, always all four.** Canonicalize the operation key ->
 `KycPersonKeyDeriver.ScopeValue(tenantId)` (the ONE canonical scope rule, reused
 rather than re-derived) -> `IKycIdentityStore.GetByUserAsync` -> claim. Step three

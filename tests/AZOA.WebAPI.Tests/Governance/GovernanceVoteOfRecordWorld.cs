@@ -90,14 +90,24 @@ internal sealed class InMemoryKycIdentityStore : IKycIdentityStore
 {
     private readonly Dictionary<(string TenantScope, string UserKey), KycIdentity> _bindings = new();
 
-    /// <summary>Registers a verified human: one user, one person key, inside one tenant scope.</summary>
-    public void Bind(string tenantScope, Guid userId, string personKey) =>
+    /// <summary>
+    /// Registers a verified human: one user, one person key, inside one tenant scope.
+    /// <paramref name="globalPersonKey"/> is the SAME human seen node-wide, so two
+    /// bindings in two tenant scopes that share it are one person across the node.
+    /// </summary>
+    public void Bind(
+        string tenantScope,
+        Guid userId,
+        string personKey,
+        string? globalPersonKey = null,
+        DateTimeOffset? erasedAt = null) =>
         _bindings[(tenantScope, userId.ToString("N"))] = new KycIdentity
         {
             TenantScope = tenantScope,
             PersonKey = personKey,
             // Same derivation the tally's roll and the gate both assume.
-            GlobalPersonKey = "global:" + personKey,
+            GlobalPersonKey = globalPersonKey ?? "global:" + personKey,
+            ErasedAt = erasedAt,
         };
 
     public Task<AZOAResult<KycIdentity?>> GetByUserAsync(string tenantScope, string userId, CancellationToken ct = default)
@@ -133,6 +143,13 @@ internal sealed class InMemoryPersonOperationClaimLedger : IPersonOperationClaim
     private readonly List<PersonOperationClaim> _rows = new();
 
     public IReadOnlyList<PersonOperationClaim> Rows => _rows;
+
+    /// <summary>
+    /// When set, every list-by-operation read fails. The freeze must refuse a rewrite it
+    /// cannot prove is unclaimed, so this is the difference between a control and a
+    /// control-shaped comment.
+    /// </summary>
+    public string? ListFailure { get; set; }
 
     /// <summary>
     /// Winner decided INSIDE the one write and read back by the caller — never by a
@@ -176,7 +193,9 @@ internal sealed class InMemoryPersonOperationClaimLedger : IPersonOperationClaim
     /// <summary>D39: every live (unreleased) claim in one uniqueness domain.</summary>
     public Task<AZOAResult<IReadOnlyList<PersonOperationClaim>>> ListLiveByOperationAsync(
         string uniquenessScope, string operationKey, CancellationToken ct = default)
-        => Task.FromResult(new AZOAResult<IReadOnlyList<PersonOperationClaim>>
+        => ListFailure is { } failure
+        ? Task.FromResult(new AZOAResult<IReadOnlyList<PersonOperationClaim>> { IsError = true, Message = failure })
+        : Task.FromResult(new AZOAResult<IReadOnlyList<PersonOperationClaim>>
         {
             Result = _rows
                 .Where(r => string.Equals(r.UniquenessScope, uniquenessScope, StringComparison.Ordinal)
@@ -338,11 +357,16 @@ internal sealed class GovernanceWorld
         Tenant = tenant ?? Guid.Parse("7e57a11a-0000-4000-8000-000000000001");
         Clock = new SteppableClock(Start);
         Holons = new InMemoryHolonStore();
-        // The REAL manager: owner-or-public CanRead, the publication allow-list, and
-        // the blind metadata merge on UpdateAsync are all the production rules.
-        Manager = new HolonManager(Holons);
         Identities = new InMemoryKycIdentityStore();
         Claims = new InMemoryPersonOperationClaimLedger();
+        // The REAL manager, wired to the REAL vote-of-record ledger: owner-or-public
+        // CanRead, the publication allow-list, the electorate rule and the W9.2 proposal
+        // freeze are all the production rules, over the same claim rows the tally counts.
+        Manager = new HolonManager(Holons, voteOfRecord: Claims);
+        // The same manager WITHOUT the ledger, for the one question a caller can still
+        // ask of a production node whose dependency went missing: is an unprovable
+        // rewrite refused, or quietly allowed?
+        ManagerWithNoVoteOfRecord = new HolonManager(Holons);
         Gate = new InMemoryPersonUniquenessGate(Claims, Identities, Clock);
     }
 
@@ -353,6 +377,9 @@ internal sealed class GovernanceWorld
     public InMemoryHolonStore Holons { get; }
 
     public HolonManager Manager { get; }
+
+    /// <summary>The same holons and the same rules, with no vote-of-record ledger wired.</summary>
+    public HolonManager ManagerWithNoVoteOfRecord { get; }
 
     public InMemoryKycIdentityStore Identities { get; }
 
@@ -377,8 +404,28 @@ internal sealed class GovernanceWorld
         string uniquenessScope = "Tenant",
         Guid? tenant = null)
     {
+        var result = await TryCreateProposalAsync(owner, options, closesAt, uniquenessScope, tenant ?? Tenant);
+        if (result.IsError)
+            throw new InvalidOperationException($"Proposal setup failed: {result.Message}");
+
+        return Guid.Parse(Read(result).GetProperty("proposalId").GetString()!);
+    }
+
+    /// <summary>
+    /// Creates a proposal through the real node handler and REPORTS the outcome, so a
+    /// refused creation is an assertion instead of an exception. <paramref name="tenant"/>
+    /// is passed through verbatim, including null — that is the case where the acting
+    /// credential carries no <c>act_as_tenant</c> claim.
+    /// </summary>
+    public Task<ActionNodeHandlerResult> TryCreateProposalAsync(
+        Guid owner,
+        string[] options,
+        DateTimeOffset? closesAt = null,
+        string uniquenessScope = "Tenant",
+        Guid? tenant = null)
+    {
         var handler = new GovernanceProposalCreateNodeHandler(Manager, Clock);
-        var result = await handler.HandleAsync(Context(
+        return handler.HandleAsync(Context(
             ActionNodeType.GovernanceProposalCreate,
             new GovernanceProposalCreateNodeConfig
             {
@@ -389,12 +436,7 @@ internal sealed class GovernanceWorld
                 UniquenessScope = uniquenessScope,
             },
             owner,
-            tenant ?? Tenant));
-
-        if (result.IsError)
-            throw new InvalidOperationException($"Proposal setup failed: {result.Message}");
-
-        return Guid.Parse(Read(result).GetProperty("proposalId").GetString()!);
+            tenant));
     }
 
     /// <summary>Casts a ballot through the vote node — the only sanctioned path.</summary>
@@ -484,6 +526,69 @@ internal sealed class GovernanceWorld
 
         return accepted;
     }
+
+    /// <summary>
+    /// <c>PUT /api/holon/{id}</c> against the PROPOSAL itself, by its author. This is the
+    /// live route the review found: the author owns the holon, so ownership lets them
+    /// through, and the manager blind-merges whatever metadata arrives. Everything a
+    /// recorded vote depends on is reachable from here.
+    /// </summary>
+    /// <param name="useManagerWithNoVoteOfRecord">
+    /// Runs the same rewrite through a manager with no claim ledger wired, which is the
+    /// only way to ask whether an unprovable rewrite is refused or quietly allowed.
+    /// </param>
+    public Task<AZOAResult<IHolon>> RewriteProposalAsync(
+        Guid proposalId,
+        Guid author,
+        IDictionary<string, string>? metadata = null,
+        bool? isPublic = null,
+        string? assetType = null,
+        string? name = null,
+        bool useManagerWithNoVoteOfRecord = false)
+    {
+        var manager = useManagerWithNoVoteOfRecord ? ManagerWithNoVoteOfRecord : Manager;
+        return manager.UpdateAsync(
+            proposalId,
+            new HolonUpdateModel
+            {
+                Name = name,
+                AssetType = assetType,
+                IsPublic = isPublic,
+                Metadata = metadata is null
+                    ? null
+                    : new Dictionary<string, string>(metadata, StringComparer.Ordinal),
+            },
+            author);
+    }
+
+    /// <summary>
+    /// <c>POST /api/holon/{id}/interact</c> against the proposal, by its author. The
+    /// manager's SECOND metadata-mutation seam: it both sets and REMOVES keys, so a
+    /// freeze enforced only on the update route would have a documented way around it.
+    /// </summary>
+    public Task<AZOAResult<IHolon>> InteractWithProposalAsync(
+        Guid proposalId,
+        Guid author,
+        IDictionary<string, string>? setMetadata = null,
+        IEnumerable<string>? removeMetadataKeys = null) =>
+        Manager.InteractAsync(
+            proposalId,
+            new HolonInteractionRequest
+            {
+                SetMetadata = setMetadata is null
+                    ? null
+                    : new Dictionary<string, string>(setMetadata, StringComparer.Ordinal),
+                RemoveMetadataKeys = removeMetadataKeys?.ToList(),
+            },
+            author);
+
+    /// <summary><c>DELETE /api/holon/{id}</c> against the proposal, by its author.</summary>
+    public Task<AZOAResult<bool>> DeleteProposalAsync(Guid proposalId, Guid author) =>
+        Manager.DeleteAsync(proposalId, author);
+
+    /// <summary>The proposal holon as it is stored right now, whatever the manager allowed.</summary>
+    public IHolon ProposalHolon(Guid proposalId) =>
+        Holons.All.Single(h => h.Id == proposalId);
 
     /// <summary>Every GovernanceVote child of a proposal, whatever wrote it.</summary>
     public IReadOnlyList<IHolon> BallotHolons(Guid proposalId) =>

@@ -57,7 +57,17 @@ public static class ConsumerGovernanceHolonTypes
         public const string ElectorateTenant = "electorateTenant";
     }
 
-    /// <summary>Electorate value of a proposal raised with no tenant context at all.</summary>
+    /// <summary>
+    /// What <see cref="ElectorateValueFor"/> mints for a proposal raised with no tenant
+    /// context at all. RECOGNISED SO IT CAN BE REFUSED (W9.2): a plain user JWT carries
+    /// no <c>act_as_tenant</c> claim, so an ordinary member raising a proposal would
+    /// otherwise enfranchise every tenant-less verified human on the node — and do it in
+    /// the same person-key domain node-global claims use, because
+    /// <see cref="KycPersonKeyDeriver.ScopeValue"/> of a null tenant IS
+    /// <see cref="KycPersonKeyDeriver.GlobalScopeSentinel"/>.
+    /// <see cref="ProposalElectorateRejection"/> refuses it at the holon chokepoint.
+    /// See <c>Services/Governance/AGENTS.md</c> §electorate-must-name-a-tenant.
+    /// </summary>
     public const string NodeElectorate = "node";
 
     /// <summary>Metadata keys carried by a vote holon. This list is CLOSED — see <see cref="AllowedVoteMetadataKeys"/>.</summary>
@@ -104,12 +114,67 @@ public static class ConsumerGovernanceHolonTypes
             : tenantId.Value.ToString("N");
 
     /// <summary>
+    /// True only for an electorate that NAMES ONE TENANT. <see cref="NodeElectorate"/>
+    /// and anything unparseable are false: an electorate nobody chose is not a smaller
+    /// electorate, it is the whole node.
+    /// </summary>
+    public static bool IsUsableElectorateValue(string? declared) =>
+        !string.IsNullOrWhiteSpace(declared)
+        && !string.Equals(declared, NodeElectorate, StringComparison.Ordinal)
+        && Guid.TryParseExact(declared, "N", out var electorate)
+        && electorate != Guid.Empty;
+
+    /// <summary>
+    /// The refusal a proposal earns when it RECORDS an electorate that names no tenant,
+    /// or null when there is nothing to refuse. Applied by <c>HolonManager</c> on every
+    /// write and on the reads both governance nodes perform, so the node electorate
+    /// cannot be minted through <c>GovernanceProposalCreate</c> OR through a hand-written
+    /// <c>POST /api/holon</c>, and a row written before this rule is never handed back as
+    /// a live notice.
+    /// </summary>
+    /// <remarks>
+    /// A proposal that records NO electorate at all is deliberately left alone: it is
+    /// already inert, because <see cref="IsInElectorate"/> and
+    /// <see cref="TryResolveUniquenessScopeValue"/> both fail closed on it, so nobody can
+    /// vote on it or tally it. Only a recorded-but-unusable electorate is a live claim to
+    /// an audience the author never had.
+    /// </remarks>
+    public static string? ProposalElectorateRejection(
+        string? assetType,
+        IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (!string.Equals(assetType, ProposalAssetType, StringComparison.Ordinal))
+            return null;
+
+        if (metadata is null
+            || !metadata.TryGetValue(ProposalMetadata.ElectorateTenant, out var declared)
+            || string.IsNullOrWhiteSpace(declared))
+            return null;
+
+        return IsUsableElectorateValue(declared)
+            ? null
+            : "A governance proposal's electorate must name one tenant; "
+              + $"'{declared}' names the whole node.";
+    }
+
+    /// <summary>
     /// True only when the acting tenant is the electorate the proposal recorded at
     /// creation (AC5). FAILS CLOSED on a proposal that records no electorate: an
     /// unrecorded electorate is an unknown one, and the alternative — treating it as
     /// "everybody" — is precisely the node-wide read this repo has leaked through
     /// three times.
     /// </summary>
+    /// <remarks>
+    /// This comparison still ADMITS a proposal recording <see cref="NodeElectorate"/> to a
+    /// caller with no acting tenant, and that is not the guarantee — the guarantee is that
+    /// such a proposal cannot be written or read back through <c>HolonManager</c>
+    /// (<see cref="ProposalElectorateRejection"/>), so the value cannot reach here from
+    /// storage. Narrowing this predicate as well is the belt to that braces and is
+    /// deliberately NOT done in W9.2: it would rewrite the expectations of ~18 tests in
+    /// <c>tests/AZOA.WebAPI.Tests/Actions/Handlers/GovernanceNodeHandlerTests.cs</c>, a
+    /// file that item does not own. See <c>Services/Governance/AGENTS.md</c>
+    /// §electorate-must-name-a-tenant for the exact follow-up edit.
+    /// </remarks>
     public static bool IsInElectorate(IReadOnlyDictionary<string, string> proposalMetadata, Guid? actingTenantId)
     {
         ArgumentNullException.ThrowIfNull(proposalMetadata);
@@ -155,6 +220,141 @@ public static class ConsumerGovernanceHolonTypes
 
         uniquenessScopeValue = KycPersonKeyDeriver.ScopeValue(electorateTenantId);
         return true;
+    }
+
+    /// <summary>
+    /// The proposal metadata a recorded vote DEPENDS ON: the question, the domain the
+    /// claims live in, and the window. Frozen from the first vote of record onward — see
+    /// <see cref="DescribeDecisionBearingRewrite"/> and
+    /// <c>Services/Governance/AGENTS.md</c> §proposal-freeze.
+    /// </summary>
+    /// <remarks>
+    /// <c>name</c> and <c>description</c> are deliberately ABSENT: fixing a typo in the
+    /// title moves no outcome, and a freeze that blocked it would be dropped the first
+    /// time it got in somebody's way.
+    /// </remarks>
+    public static readonly IReadOnlySet<string> FrozenProposalMetadataKeys =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            ProposalMetadata.Status,
+            ProposalMetadata.Options,
+            ProposalMetadata.OpensAt,
+            ProposalMetadata.ClosesAt,
+            ProposalMetadata.UniquenessOperationKey,
+            ProposalMetadata.UniquenessScope,
+            ProposalMetadata.ElectorateTenant,
+        };
+
+    /// <summary>
+    /// The claim domain a vote on this proposal WOULD have been recorded in, or false
+    /// when the proposal cannot hold a claim at all.
+    /// </summary>
+    /// <remarks>
+    /// False is a PROOF, not a guess: <c>GovernanceVoteNodeHandler</c> refuses before it
+    /// reaches the gate unless the stored uniqueness key equals the key derived from the
+    /// proposal's own id, the scope parses by its spelled name, and the recorded
+    /// electorate resolves — exactly the three conditions below. A proposal failing any of
+    /// them has no claim to freeze, which is also why a freshly created proposal (its
+    /// derived key not yet recorded) can still receive that one write.
+    /// </remarks>
+    public static bool TryResolveClaimDomain(
+        Guid proposalHolonId,
+        IReadOnlyDictionary<string, string> proposalMetadata,
+        out string uniquenessScopeValue,
+        out string operationKey)
+    {
+        ArgumentNullException.ThrowIfNull(proposalMetadata);
+        uniquenessScopeValue = string.Empty;
+        operationKey = string.Empty;
+
+        var expectedKey = UniquenessOperationKeyFor(proposalHolonId);
+        if (!string.Equals(
+                proposalMetadata.GetValueOrDefault(ProposalMetadata.UniquenessOperationKey),
+                expectedKey,
+                StringComparison.Ordinal))
+            return false;
+
+        // The SAME canonicalization the claim was written under, so the lookup asks for
+        // the rows the gate actually wrote rather than for a key that matches nothing.
+        var canonicalKey = PersonUniquenessRequirement.Canonicalize(expectedKey);
+        if (canonicalKey is null)
+            return false;
+
+        if (!TryParseScope(proposalMetadata.GetValueOrDefault(ProposalMetadata.UniquenessScope), out var scope))
+            return false;
+
+        if (!TryResolveUniquenessScopeValue(proposalMetadata, scope, out uniquenessScopeValue))
+            return false;
+
+        operationKey = canonicalKey;
+        return true;
+    }
+
+    /// <summary>
+    /// Names the decision-bearing parts of a proposal an incoming write would CHANGE, or
+    /// null when it changes none of them. Compares values, so re-sending what is already
+    /// recorded stays idempotent and a retry is never mistaken for a rewrite.
+    /// </summary>
+    /// <param name="recordedMetadata">The proposal's metadata BEFORE the merge.</param>
+    /// <param name="recordedIsPublic">The proposal's publication BEFORE the merge.</param>
+    /// <param name="recordedAssetType">The proposal's asset type BEFORE the merge.</param>
+    /// <param name="incomingMetadata">Caller metadata; blind-merged by the manager.</param>
+    /// <param name="incomingIsPublic">Caller publication flag, or null when untouched.</param>
+    /// <param name="incomingAssetType">Caller asset type, or null when untouched.</param>
+    /// <param name="removedMetadataKeys">
+    /// Keys the caller is DELETING (the holon-interaction route can). Deleting the close
+    /// time or the electorate moves the outcome exactly as rewriting it does, and a
+    /// value-only comparison would never see it.
+    /// </param>
+    public static string? DescribeDecisionBearingRewrite(
+        IReadOnlyDictionary<string, string> recordedMetadata,
+        bool recordedIsPublic,
+        string? recordedAssetType,
+        IReadOnlyDictionary<string, string>? incomingMetadata,
+        bool? incomingIsPublic,
+        string? incomingAssetType,
+        IEnumerable<string>? removedMetadataKeys = null)
+    {
+        ArgumentNullException.ThrowIfNull(recordedMetadata);
+
+        var changed = new List<string>();
+
+        if (incomingMetadata is not null)
+        {
+            foreach (var key in FrozenProposalMetadataKeys)
+            {
+                if (incomingMetadata.TryGetValue(key, out var incoming)
+                    && !string.Equals(recordedMetadata.GetValueOrDefault(key), incoming, StringComparison.Ordinal))
+                    changed.Add(key);
+            }
+        }
+
+        if (removedMetadataKeys is not null)
+        {
+            foreach (var key in removedMetadataKeys)
+            {
+                if (FrozenProposalMetadataKeys.Contains(key)
+                    && recordedMetadata.ContainsKey(key)
+                    && !changed.Contains(key, StringComparer.Ordinal))
+                    changed.Add(key);
+            }
+        }
+
+        // Renaming the type away from GovernanceProposal makes every vote already
+        // recorded unreachable: both governance nodes check the asset type first.
+        if (incomingAssetType is not null
+            && !string.Equals(incomingAssetType, recordedAssetType, StringComparison.Ordinal))
+            changed.Add("assetType");
+
+        // Un-publishing takes the notice — and with it the tally, which reads the
+        // proposal owner-or-public — away from everyone except the author.
+        if (incomingIsPublic is { } isPublic && isPublic != recordedIsPublic)
+            changed.Add("isPublic");
+
+        // Sorted so the refusal a caller sees does not depend on hash-set order.
+        return changed.Count == 0
+            ? null
+            : string.Join(", ", changed.OrderBy(key => key, StringComparer.Ordinal));
     }
 
     /// <summary>Serializes the declared option list into the <c>options</c> metadata string.</summary>

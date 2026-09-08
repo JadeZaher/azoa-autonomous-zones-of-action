@@ -221,7 +221,8 @@ would discard a recorded vote (and, on a re-vote, a valid earlier one) because a
 holon write failed. A failed receipt yields `voteId: null` on a successful node.
 `HolonManager.UpdateAsync` still blind-merges a receipt's metadata; under D39 that
 rewrite decides nothing, which is why the fix was to remove the authority rather
-than to police the write.
+than to police the write. The PROPOSAL is a different matter and is no longer
+blind-merged — see §proposal-freeze.
 
 **Never on a receipt:** a person key, a global person key, or any KYC field. The
 receipt is consumer-readable through HolonQuery, so
@@ -239,3 +240,150 @@ and it PROJECTS: the tally never holds a person key in process memory.
 (proposalId, closesAt, totalVotes, sorted option counts) with no identities in the
 preimage, so anchoring it later is an added `GovernanceTally -> BlockchainExecute`
 step and not a redesign.
+
+<a id="proposal-freeze"></a>
+## consumer-governance — the proposal freeze (W9.2)
+
+D39 made a forged BALLOT count for nothing. It left the other half open: the author
+never had to touch a ballot, because they own the proposal holon and
+`PUT /api/holon/{id}` checks ownership and then blind-merges metadata. Everything a
+recorded vote depends on lives in that metadata — the declared options, the uniqueness
+scope, the electorate, `opensAt`/`closesAt`, the derived uniqueness key — so the
+outcome was editable after the members had voted, which is the trust failure this
+audience notices first.
+
+**The rule.** From the first live vote of record, a `GovernanceProposal` holon's
+decision-bearing surface is frozen:
+`ConsumerGovernanceHolonTypes.FrozenProposalMetadataKeys` (status, options, opensAt,
+closesAt, uniquenessOperationKey, uniquenessScope, electorateTenant), plus the asset
+type and the publication flag, plus deletion. `name` and `description` stay editable on
+purpose: fixing a typo moves no outcome, and a freeze that blocked ordinary drafting
+would be routed around inside a week.
+
+**Where it is enforced, and why there.** `HolonManager.UpdateAsync`,
+`HolonManager.InteractAsync` and `HolonManager.DeleteAsync`, all three through
+`FrozenProposalErrorAsync` / `ProposalFreezeStateAsync`. The manager is the one write
+path BOTH ways in share: the governance node handler creates and updates through it, and
+so does `POST`/`PUT`/`DELETE /api/holon`. A check inside
+`GovernanceProposalCreateNodeHandler` would have guarded the door nobody was attacking.
+`InteractAsync` is named separately because it is the manager's SECOND
+metadata-mutation seam and it also DELETES keys — dropping `closesAt` off a proposal
+opens the poll forever, which a value-only comparison would never notice, so
+`DescribeDecisionBearingRewrite` takes the removal list too. `PropagateAsync` is not on
+the list and does not need to be: it writes only `IsActive` and keys it prefixes with
+`propagated_`, neither of which any governance node reads.
+
+**It runs before the merge.** `HolonManager.UpdateAsync` mutates the holon in place and
+then upserts, so the freeze is evaluated on the PRE-merge state. That is not a style
+choice: it is what stops an author from moving the electorate and the question in one
+request and having the freeze consult the domain they just invented rather than the one
+the existing votes live in.
+
+**"No claim domain" is a proof, not a shortcut.**
+`ConsumerGovernanceHolonTypes.TryResolveClaimDomain` returns false unless the stored
+uniqueness key equals the key derived from the proposal's own id, the scope parses by
+its spelled name, and the recorded electorate resolves — the exact three conditions
+`GovernanceVoteNodeHandler` requires before it reaches the gate. A proposal failing any
+of them has no claim to freeze. It is also what lets `GovernanceProposalCreate` record
+the derived key on the proposal it has just created: at that instant the key is absent,
+so no vote can exist, and the write is safe by construction rather than by exemption.
+
+**An unreadable ledger is a refusal.** `ProposalFreezeState.Unknown` covers both a
+store error and an unwired `IPersonOperationClaimStore`, and both refuse the rewrite.
+"The dependency was not wired, so the control did nothing" is the failure in the §2
+ledger six times over; `Proposal_RewriteIsRefused_WhenNoVoteOfRecordLedgerIsWired`
+exists so it cannot be reintroduced quietly.
+
+**What it deliberately does not cover.** A released claim is not a live vote, so a
+proposal whose every claim has been released is editable again — releasing is the
+claim-holder's act, not the author's, and the tally of such a proposal is zero either
+way. `ParentHolonId` is not frozen: the operation key derives from the proposal's own
+id, so re-parenting moves no vote.
+
+<a id="electorate-must-name-a-tenant"></a>
+## consumer-governance — the electorate must name a tenant (W9.2)
+
+`electorateTenant` is pinned from `context.ActingTenantId`, and `ActingTenantId` is set
+only by an `act_as_tenant` claim on a tenant-driven child credential. A plain user JWT
+carries none. So an ordinary member raising a proposal recorded
+`electorateTenant = node`, and `IsInElectorate` then admitted every caller with no
+acting tenant — the whole node, minted by omission.
+
+It is worse than the name suggests, and the reason is arithmetic rather than policy:
+`KycPersonKeyDeriver.ScopeValue(null)` IS `KycPersonKeyDeriver.GlobalScopeSentinel`. A
+`node` electorate with `uniquenessScope: Tenant` therefore resolves, through
+`TryResolveUniquenessScopeValue`, to the SAME person-key domain node-global claims use.
+"One vote per human in this tenant" and "one vote per human on this node" were one
+domain. `PersonUniquenessGateElectorateScopeTests` pins that equality so nobody has to
+take the sentence on trust.
+
+**The rule.** A `GovernanceProposal` that RECORDS an electorate must record one that
+names a tenant: `ConsumerGovernanceHolonTypes.IsUsableElectorateValue`. `node`, a blank
+value, and anything that is not a `Guid("N")` are refused by
+`ProposalElectorateRejection`, which `HolonManager` applies on `CreateAsync`, on
+`UpdateAsync` (post-merge, so an update cannot widen a good electorate), on `GetAsync`
+and in `ScopeReadable`. A proposal recording NO electorate is left alone: it is already
+inert, because `IsInElectorate` and `TryResolveUniquenessScopeValue` both fail closed on
+it, so nobody can enter or observe its vote.
+
+**Refused on the read as well as the write** because the write rule only governs rows
+written after it. A row that predates it is not handed back as a live notice, so it can
+be neither voted on nor tallied, and the refusal reuses the `Holon not found.` sentence
+rather than explaining itself to a stranger.
+
+**The residue, stated plainly.** `IsInElectorate` and `TryResolveUniquenessScopeValue`
+still ACCEPT the `node` value when they are handed it directly. That is belt to the
+manager's braces and it is not fastened: narrowing those two predicates would rewrite
+the expectations of ~18 tests in
+`tests/AZOA.WebAPI.Tests/Actions/Handlers/GovernanceNodeHandlerTests.cs`, which seed
+proposals with `electorateTenant: null` and vote with `tenantId: null` — a file W9.2
+does not own. The follow-up edit is mechanical: pass a real tenant to `SeedProposal`
+and `Ctx` in that file, then make `IsInElectorate` and `TryResolveUniquenessScopeValue`
+return false for `NodeElectorate`. Until that lands, the guarantee is exactly "no such
+proposal can be written, and none is handed back by the reads governance actually
+performs", not "the predicate refuses it". Said precisely, because a claim in prose is
+not a control in code: the electorate filter lives in `HolonManager.GetAsync` and in the
+shared `ScopeReadable` collection filter, which covers `GetAllAsync`, `QueryAsync` and
+`GetChildrenAsync` — i.e. every seam `GovernanceVoteNodeHandler` and
+`GovernanceTallyNodeHandler` read through. It does NOT cover `GetPeersAsync`,
+`GetAncestorsAsync` or `GetDescendantsAsync`, which still scope by `CanRead` alone, so a
+pre-rule row can still surface as somebody else's graph neighbour. That is a stale-notice
+leak, not a franchise: no vote or tally can be taken on it. Narrowing the two predicates
+closes both at once, which is why it is the follow-up rather than a fourth filter.
+
+<a id="phase-4-verdict"></a>
+## consumer-governance — Phase 4 adversarial pass (W9.2), recorded
+
+`conductor/tracks/governance-vote-of-record_20260906/plan.md` Phase 4 asks for an
+adversarial review, prompted to refute, whose decisive question is *can a vote that
+never took a claim still be counted?* — and for the verdict to be recorded, because a
+phase with no verdict is unreviewed rather than done. This is that record. It is the
+IMPLEMENTER's pass, not an independent sign-off: W9.2 wrote the fixes below, so a
+separate context still owes the phase its review, and the three node types stay in
+`NotEnabledActionNodeTypes` until it lands.
+
+**The decisive question: no.** Verified against source, not against the track docs.
+`GovernanceTallyNodeHandler` takes an `IHolonManager` and an
+`IPersonOperationClaimStore` and calls `GovernanceVoteOfRecordGuard
+.ThrowIfTallyIsNotLedgerOnly()` in its constructor; `GovernanceClaimLedgerTally
+.CountVotesOfRecordAsync` reads `ListLiveByOperationAsync` and nothing else; the
+published count is refused unless its `SourceTable` is `person_operation_claim`; and
+`GovernanceVoteOfRecordTests.Tally_CountsNoBallotHolonWrittenOutsideTheVoteNode` writes
+a thousand forged ballot holons against a live proposal and still reads one vote.
+
+**But the question was too narrow, and three holes were open behind it.** An outcome
+does not have to be miscounted to be moved — it is enough to move the QUESTION.
+
+| Finding | Status |
+| --- | --- |
+| The proposal author could rewrite options, scope, electorate, status and the window after ballots were cast; rewriting the scope silently emptied the count while `tallyHash` still verified | CLOSED — the proposal freeze above, with 20 attack tests in `GovernanceProposalRewriteTests` |
+| A proposal raised on a plain user JWT recorded the `node` electorate and enfranchised every tenant-less verified human, in the same person-key domain node-global claims use | CLOSED at the write and read chokepoint — see §electorate-must-name-a-tenant, and the named residue |
+| The gate's node-global audit warning fired on the DECLARED scope, so a tenant-less caller resolving into the node-global domain was not audited at all | CLOSED — `PersonUniquenessGate.ResolveAsync` now logs on the RESOLVED scope and carries the declared one beside it |
+
+**Still open, and none of it is closed by this item:** `HolonManager.CanRead` remains
+owner-or-public with no tenant term, so a published proposal is legible node-wide even
+though its vote and tally are not (narrowing `CanRead` is still the follow-up); the
+`IsInElectorate` residue named above; and the thesis-level finding that AZOA's franchise
+is "the acting tenant" and never "the sponsors and workers of THIS project", which is a
+design track and not a gate-lift item. The gate stays on.
+

@@ -228,6 +228,12 @@ Pinned by `tests/AZOA.WebAPI.Tests/Managers/HolonPublicationTests.cs`.
 
 ## §holon-type-registry — opt-in Holon AssetType/metadata registry (F5)
 
+> Its neighbours in `HolonManager` include a governance-specific control. The proposal
+> freeze and the electorate rule live here rather than in the governance services
+> because this manager is the one write path shared by the governance action nodes and
+> by `POST`/`PUT`/`DELETE /api/holon` — see `Services/Governance/AGENTS.md`
+> §proposal-freeze.
+
 `final-hardening-cutover` Phase C / F5. Purpose: let the platform *optionally*
 constrain the free-string `Holon.AssetType`. Today `AssetType` is an unvalidated
 `string?`; this adds a registry that governs *only the types explicitly registered*

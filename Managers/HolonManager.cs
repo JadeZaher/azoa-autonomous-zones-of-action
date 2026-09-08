@@ -20,14 +20,21 @@ public class HolonManager : IHolonManager
     private readonly IHolonTypeRegistryManager? _typeRegistry;
     private readonly INodeGovernanceGuard _nodeGovernance;
 
+    // The consumer-governance vote of record (W9.2). Optional for the same reason the
+    // registry is — unit tests construct this manager with a store alone — but its
+    // ABSENCE is a refusal, not a skip: see ProposalFreezeStateAsync.
+    private readonly IPersonOperationClaimStore? _voteOfRecord;
+
     public HolonManager(
         IHolonStore holonStore,
         IHolonTypeRegistryManager? typeRegistry = null,
-        INodeGovernanceGuard? nodeGovernance = null)
+        INodeGovernanceGuard? nodeGovernance = null,
+        IPersonOperationClaimStore? voteOfRecord = null)
     {
         _holonStore = holonStore;
         _typeRegistry = typeRegistry;
         _nodeGovernance = nodeGovernance ?? NodeGovernanceGuard.Unrestricted;
+        _voteOfRecord = voteOfRecord;
     }
 
     private static bool IsOwnedBy(IHolon holon, Guid userId) => holon.UserId == userId;
@@ -72,6 +79,14 @@ public class HolonManager : IHolonManager
         if (result.IsError || result.Result == null) return result;
         if (!CanRead(result.Result, callerUserId))
             return new AZOAResult<IHolon> { IsError = true, Message = "Holon not found." };
+        // A governance proposal whose recorded electorate names the whole node is not a
+        // notice, it is a franchise nobody granted. This is the read BOTH governance
+        // nodes perform, so refusing here is what stops a row written before the rule
+        // from being voted on or tallied. Same sentence as the CanRead refusal: an
+        // existence oracle is not worth the diagnostic.
+        if (ConsumerGovernanceHolonTypes.ProposalElectorateRejection(
+                result.Result.AssetType, result.Result.Metadata) != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = "Holon not found." };
         return result;
     }
 
@@ -89,7 +104,10 @@ public class HolonManager : IHolonManager
         if (result.IsError || result.Result == null) return result;
         return new AZOAResult<IEnumerable<IHolon>>
         {
-            Result = result.Result.Where(h => CanRead(h, callerUserId)).ToList(),
+            Result = result.Result
+                .Where(h => CanRead(h, callerUserId)
+                    && ConsumerGovernanceHolonTypes.ProposalElectorateRejection(h.AssetType, h.Metadata) == null)
+                .ToList(),
             Message = result.Message
         };
     }
@@ -114,6 +132,14 @@ public class HolonManager : IHolonManager
         var publicationError = PublicationError(holon);
         if (publicationError != null)
             return new AZOAResult<IHolon> { IsError = true, Message = publicationError };
+
+        // W9.2. The electorate is minted from the ACTING tenant, and a plain user JWT
+        // carries none — so GovernanceProposalCreate would hand an ordinary member the
+        // whole node, and POST /api/holon would hand it to anyone who can type "node".
+        // Both go through here.
+        var electorateError = ConsumerGovernanceHolonTypes.ProposalElectorateRejection(holon.AssetType, holon.Metadata);
+        if (electorateError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = electorateError };
 
         // FR-6 / AC-6a: guard self-parent on create (descendant check is
         // vacuous for a brand-new holon, but self-parent is still a cycle).
@@ -143,6 +169,14 @@ public class HolonManager : IHolonManager
         if (existing.IsError || existing.Result == null) return existing;
         if (userId.HasValue && !IsOwnedBy(existing.Result, userId.Value))
             return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different user." };
+
+        // W9.2 - the proposal freeze. Runs on the PRE-MERGE state, so an author cannot
+        // dodge it by rewriting the uniqueness domain in the same request that moves the
+        // question. See Services/Governance/AGENTS.md #proposal-freeze.
+        var freezeError = await FrozenProposalRewriteErrorAsync(
+            existing.Result, model.Metadata, model.IsPublic, model.AssetType);
+        if (freezeError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = freezeError };
 
         var holon = (Holon)existing.Result;
         if (model.Name != null) holon.Name = model.Name;
@@ -177,6 +211,12 @@ public class HolonManager : IHolonManager
         if (publicationError != null)
             return new AZOAResult<IHolon> { IsError = true, Message = publicationError };
 
+        // Post-merge for the same reason: an update that sets electorateTenant to the
+        // node value is refused here even though the recorded value was fine.
+        var electorateError = ConsumerGovernanceHolonTypes.ProposalElectorateRejection(holon.AssetType, holon.Metadata);
+        if (electorateError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = electorateError };
+
         // F5 opt-in AssetType validation against the post-merge type + metadata.
         var governanceError = await EnsureGovernedAssetTypeAllowedAsync(holon.AssetType, "holon:update");
         if (governanceError != null)
@@ -197,6 +237,13 @@ public class HolonManager : IHolonManager
         if (userId.HasValue && !IsOwnedBy(existing.Result, userId.Value))
             return new AZOAResult<bool> { IsError = true, Message = "Holon is owned by a different user." };
 
+        // Deleting a decided proposal destroys the question while the votes of record
+        // live on, which leaves a tally nobody can run rather than a result somebody can
+        // dispute. Same freeze, same ledger.
+        var freezeError = await FrozenProposalErrorAsync(existing.Result, "a vote has already been recorded on it");
+        if (freezeError != null)
+            return new AZOAResult<bool> { IsError = true, Message = freezeError };
+
         return await _holonStore.DeleteAsync(id, default);
     }
 
@@ -213,6 +260,19 @@ public class HolonManager : IHolonManager
         // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
         if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
             return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different user." };
+
+        // W9.2. InteractAsync is the manager's SECOND metadata-mutation seam: it sets
+        // and REMOVES arbitrary keys on any holon its caller owns, which is every frozen
+        // field on a proposal. A freeze enforced only on UpdateAsync would be a freeze
+        // with a documented way around it.
+        var interactionFreezeError = await FrozenProposalRewriteErrorAsync(
+            existing.Result,
+            request.SetMetadata,
+            incomingIsPublic: null,
+            incomingAssetType: null,
+            request.RemoveMetadataKeys);
+        if (interactionFreezeError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = interactionFreezeError };
 
         var holon = (Holon)existing.Result;
 
@@ -648,5 +708,116 @@ public class HolonManager : IHolonManager
     {
         var result = await _nodeGovernance.EnsureAssetTypeAllowedAsync(assetType, action);
         return result.IsError ? result.Message : null;
+    }
+
+    /// <summary>What the vote-of-record ledger says about a governance proposal.</summary>
+    private enum ProposalFreezeState
+    {
+        /// <summary>Not a proposal, or a proposal no vote could ever have been recorded against.</summary>
+        NotFreezable,
+
+        /// <summary>A proposal that could hold votes and holds none.</summary>
+        Unclaimed,
+
+        /// <summary>At least one live vote of record exists.</summary>
+        Claimed,
+
+        /// <summary>The ledger could not be consulted, so no answer may be assumed.</summary>
+        Unknown,
+    }
+
+    /// <summary>
+    /// Refusal sentence when an incoming write would move something a recorded vote
+    /// depends on, or null when the write is free. The single entry point both mutation
+    /// seams use. See Services/Governance/AGENTS.md #proposal-freeze.
+    /// </summary>
+    private async Task<string?> FrozenProposalRewriteErrorAsync(
+        IHolon existing,
+        IReadOnlyDictionary<string, string>? incomingMetadata,
+        bool? incomingIsPublic,
+        string? incomingAssetType,
+        IEnumerable<string>? removedMetadataKeys = null)
+    {
+        if (!string.Equals(existing.AssetType, ConsumerGovernanceHolonTypes.ProposalAssetType, StringComparison.Ordinal))
+            return null;
+
+        var rewrite = ConsumerGovernanceHolonTypes.DescribeDecisionBearingRewrite(
+            existing.Metadata,
+            existing.IsPublic,
+            existing.AssetType,
+            incomingMetadata,
+            incomingIsPublic,
+            incomingAssetType,
+            removedMetadataKeys);
+
+        return await FrozenProposalErrorAsync(
+            existing,
+            rewrite is null ? null : $"a recorded vote already depends on {rewrite}");
+    }
+
+    /// <summary>
+    /// Refusal sentence when <paramref name="what"/> would change a proposal that has
+    /// already been voted on, or null when the change is free. A null
+    /// <paramref name="what"/> means nothing decision-bearing is changing.
+    /// See Services/Governance/AGENTS.md #proposal-freeze.
+    /// </summary>
+    private async Task<string?> FrozenProposalErrorAsync(IHolon existing, string? what)
+    {
+        if (what == null)
+            return null;
+
+        var state = await ProposalFreezeStateAsync(existing);
+        return state switch
+        {
+            ProposalFreezeState.Claimed =>
+                $"A governance proposal is frozen once its members start voting: {what}.",
+            ProposalFreezeState.Unknown =>
+                "A governance proposal cannot be changed while its vote-of-record ledger is unavailable.",
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Reads the proposal's own claim domain out of its PRE-MERGE metadata and asks the
+    /// vote-of-record ledger whether anybody has voted.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The domain comes from the recorded proposal, never from the incoming write, so
+    /// moving the electorate and the question in one request still consults the domain
+    /// the existing votes live in.
+    /// </para>
+    /// <para>
+    /// A proposal that cannot resolve a claim domain is NotFreezable, and that is a proof
+    /// rather than a convenience: both governance nodes refuse before claiming unless the
+    /// derived uniqueness key, the spelled scope and the recorded electorate are all
+    /// present. It is also what lets GovernanceProposalCreate record the derived key on
+    /// the proposal it has just created - at that instant the key is absent, so no claim
+    /// can exist.
+    /// </para>
+    /// <para>
+    /// An ABSENT ledger is Unknown, never Unclaimed. "The dependency was not wired, so the
+    /// control did nothing" is the failure this repo has shipped six times.
+    /// </para>
+    /// </remarks>
+    private async Task<ProposalFreezeState> ProposalFreezeStateAsync(IHolon existing)
+    {
+        if (!string.Equals(existing.AssetType, ConsumerGovernanceHolonTypes.ProposalAssetType, StringComparison.Ordinal))
+            return ProposalFreezeState.NotFreezable;
+
+        if (!ConsumerGovernanceHolonTypes.TryResolveClaimDomain(
+                existing.Id, existing.Metadata, out var uniquenessScopeValue, out var operationKey))
+            return ProposalFreezeState.NotFreezable;
+
+        if (_voteOfRecord == null)
+            return ProposalFreezeState.Unknown;
+
+        var live = await _voteOfRecord.ListLiveByOperationAsync(uniquenessScopeValue, operationKey, default);
+        if (live.IsError || live.Result == null)
+            return ProposalFreezeState.Unknown;
+
+        return live.Result.Any(claim => claim.ReleasedAt is null && !string.IsNullOrWhiteSpace(claim.UserId))
+            ? ProposalFreezeState.Claimed
+            : ProposalFreezeState.Unclaimed;
     }
 }

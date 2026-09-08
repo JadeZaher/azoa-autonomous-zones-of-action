@@ -303,14 +303,20 @@ public sealed class PersonUniquenessGate : IPersonUniquenessGate
         var tenantScope = KycPersonKeyDeriver.ScopeValue(tenantId);
         var global = requirement.Scope == PersonUniquenessScope.Global;
         var uniquenessScope = global ? _deriver.GlobalScope : tenantScope;
-        if (global)
+
+        // Audited on the RESOLVED scope, not the declared one (W9.2). ScopeValue of a
+        // null tenant IS the global sentinel, so a caller with no acting tenant lands in
+        // the node-global domain while asking for "Tenant" — the quietest way this node
+        // can answer a cross-tenant question. Every such resolution is auditable, and the
+        // declared scope is logged beside it so the two can be told apart.
+        if (string.Equals(uniquenessScope, _deriver.GlobalScope, StringComparison.Ordinal))
         {
-            // Every cross-tenant question the node is ever asked is auditable.
             _logger.LogWarning(
-                "Resolving a NODE-GLOBAL uniqueness claim. operation={OperationKey}; user={UserId}; tenant={TenantId}",
+                "Resolving a NODE-GLOBAL uniqueness claim. operation={OperationKey}; user={UserId}; tenant={TenantId}; declaredScope={DeclaredScope}",
                 operationKey,
                 userId,
-                tenantId);
+                tenantId,
+                requirement.Scope);
         }
 
         // (b) The reverse lookup: acting user -> their identity row in the acting

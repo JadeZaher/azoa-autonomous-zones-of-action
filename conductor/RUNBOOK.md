@@ -128,6 +128,7 @@ map from a regression back to the workstream that caused it.
 | **Phase 2 step 11 — bridge modules** | D22 capability seam | `SupportsBridging` deleted repo-wide; Algorand ships **source-only**, which the boolean could not express; every precondition proven against Algod before signing, incl. the rekey check | **SHIPPED** |
 | **Phase 2 FR-6 — conformance harness** | 77 tests, auto-enrolling | 13 declared exemptions, zero silent skips; a `NotApplicable` with no compensating control **throws**. VAA fail-open removed — `WormholeConfig` now has zero booleans | **SHIPPED** |
 | **Phase 4 steps 21 + 22 — builder** | opus adversarial review that **built a jsdom harness and executed the code** | **2 CRITICAL** — infinite render loop on mount (301 renders, with *and* without StrictMode); copy/paste dead code — plus 1 HIGH and 9 lower | **REFUTED → REMEDIATED** |
+| **Phase 4 — governance-vote-of-record, W9.2 implementer pass** | proposal-rewrite + electorate audit, 29 new tests | decisive question ("can a vote that never took a claim still be counted?") answered NO with source evidence; **3 NEW holes** found behind it (proposal rewrite after a ballot exists, node-wide electorate, unaudited node-global scope resolution), all CLOSED | **REFUTED-AS-TOO-NARROW → REMEDIATED**; independent review still owed, the three node types stay in `NotEnabledActionNodeTypes`. Full record with evidence: `Services/Governance/AGENTS.md` §phase-4-verdict |
 
 **Nothing in §7 "Next session" has been reviewed or executed.**
 

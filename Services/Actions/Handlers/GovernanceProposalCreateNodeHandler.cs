@@ -34,6 +34,25 @@ namespace AZOA.WebAPI.Services.Actions.Handlers;
 /// one-human-one-vote gate would be decorative. See
 /// <c>Services/Actions/AGENTS.md</c> §governance.
 /// </para>
+/// <para>
+/// The ELECTORATE is minted here from the acting tenant, but it is REFUSED elsewhere
+/// (W9.2). A plain user JWT carries no <c>act_as_tenant</c> claim, so an ordinary
+/// member raising a proposal mints <c>electorateTenant = node</c> — the whole node,
+/// in the same person-key domain node-global claims use. The refusal lives on
+/// <c>HolonManager</c> rather than here because this handler is only ONE of the two
+/// ways a proposal holon gets written: a hand-written <c>POST /api/holon</c> is the
+/// other, and both go through the manager. A proposal raised with no acting tenant
+/// therefore fails at the create with the manager's own sentence and leaves nothing
+/// behind. See <c>Services/Governance/AGENTS.md</c> §electorate-must-name-a-tenant.
+/// </para>
+/// <para>
+/// Everything this handler records is FROZEN from the first vote of record onward —
+/// options, scope, electorate, the window, the derived uniqueness key, the asset type
+/// and the publication. The freeze is enforced in <c>HolonManager.UpdateAsync</c> /
+/// <c>DeleteAsync</c>; the second write below (the derived uniqueness key) is exempt
+/// by construction, because a proposal that does not yet carry that key cannot have
+/// taken a claim. See <c>Services/Governance/AGENTS.md</c> §proposal-freeze.
+/// </para>
 /// </remarks>
 public sealed class GovernanceProposalCreateNodeHandler : IActionNodeHandler
 {
@@ -92,6 +111,11 @@ public sealed class GovernanceProposalCreateNodeHandler : IActionNodeHandler
             // from config: a proposal author must not be able to nominate somebody
             // else's members as their electorate. Vote and tally both refuse a caller
             // outside it, with the same sentence they use for "no such proposal".
+            //
+            // W9.2: with no acting tenant this mints the node electorate, which
+            // HolonManager.CreateAsync REFUSES. Minting it and letting the chokepoint
+            // refuse is deliberate — the raw holon API is the other way in, and one
+            // rule in one place beats two that can drift.
             [ConsumerGovernanceHolonTypes.ProposalMetadata.ElectorateTenant] =
                 ConsumerGovernanceHolonTypes.ElectorateValueFor(context.ActingTenantId),
         };
@@ -133,6 +157,10 @@ public sealed class GovernanceProposalCreateNodeHandler : IActionNodeHandler
         // The uniqueness key is DERIVED from the proposal's own id, so it can only be
         // recorded once the id exists. Record it; if that write fails, delete the
         // half-built proposal rather than leaving one that votes would have to trust.
+        //
+        // This update and this delete both pass the proposal freeze for the same
+        // reason: until the derived key is recorded the proposal resolves no claim
+        // domain, so no vote can have been taken against it.
         var operationKey = ConsumerGovernanceHolonTypes.UniquenessOperationKeyFor(proposalId);
         var recorded = await _holonManager.UpdateAsync(
             proposalId,

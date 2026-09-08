@@ -70,3 +70,38 @@ someone implements it.
 `VoteAsync` / `CreateProposalAsync` are the only places a handler is
 constructed, so the D39 change to the tally's dependencies touches one line in
 this directory.
+
+## W9.2 — the second attack surface, and the gate's scope arithmetic
+
+`GovernanceVoteOfRecordTests` proved a forged BALLOT counts for nothing. Two files
+were added because that left the author's own route open, and because the
+electorate's uniqueness domain had never been pinned against the gate's.
+
+`GovernanceProposalRewriteTests` is the PROPOSAL-rewrite attack set: the author owns
+the proposal holon, `PUT /api/holon/{id}` checks ownership and blind-merges
+metadata, and the question, the domain, the window and the notice all live in that
+metadata. Twenty tests, all reading an OUTCOME (the published tally, or whether the
+platform accepted the write) so they survive a move to the alternative fix
+(snapshotting the question onto the claim rows) and go red the day the freeze is
+relaxed. Two of them are the ones that matter most and are the easiest to lose:
+`Proposal_RewriteIsRefused_WhenTheVoteOfRecordLedgerCannotBeRead` and
+`Proposal_RewriteIsRefused_WhenNoVoteOfRecordLedgerIsWired` — a freeze that allows
+what it cannot prove is unclaimed is a comment.
+
+`PersonUniquenessGateElectorateScopeTests` runs the REAL `PersonUniquenessGate` over
+this directory's fakes plus the REAL `KycPersonKeyDeriver`, and asserts the one
+equality nothing else asserts: the scope the gate CLAIMS in equals the scope
+`ConsumerGovernanceHolonTypes.TryResolveUniquenessScopeValue` says the electorate
+will be COUNTED in. It also pins, rather than describes,
+`KycPersonKeyDeriver.ScopeValue(null) == GlobalScopeSentinel` — the arithmetic that
+made a tenant-less electorate the whole node. The general gate contract (one winner,
+the read-back, the sentinel round trip, one refusal sentence) stays in
+`tests/AZOA.WebAPI.Tests/Kyc/PersonUniquenessGateTests.cs` and is not restated here.
+
+<a id="world-wiring"></a>
+**`GovernanceWorld` now runs the manager over the REAL claim ledger.**
+`Manager = new HolonManager(Holons, voteOfRecord: Claims)` — the same rows the tally
+counts are the rows the freeze consults, exactly as in production.
+`ManagerWithNoVoteOfRecord` is the same manager with that dependency missing, and it
+exists for one question only: is an unprovable rewrite refused, or quietly allowed?
+
