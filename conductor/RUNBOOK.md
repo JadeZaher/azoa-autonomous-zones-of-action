@@ -4,8 +4,12 @@ type: runbook
 
 # AZOA — Session Runbook
 
-**Last updated:** 2026-09-04 · **Branch:** `feat/kyc-aml-providers-value-rail` ·
-**Last commit:** `9f4e026 feat: KYC/AML, three chain providers, value-rail seam, OAuth, builder rebuild` (unpushed, 286 files)
+**Last updated:** 2026-09-08 · **Branch:** `feat/kyc-aml-providers-value-rail` ·
+**Last commit:** `8328c07 feat(wave-10): node economic-rules transparency, SDK parity, and a reachable operator view`
+(unpushed). **ArdaNova:** `codex/azoa-security-hardening` @ `3ffa223`. The 11-wave ArdaNova
+production-readiness program closed 2026-09-08 — see §2 *Program record* and
+`conductor/tracks/ardanova-production-readiness-waves_20260907/OPEN-ITEMS.md` (95 open items,
+10 CRITICAL) before starting anything.
 
 > **Two files are named RUNBOOK.md — they are different documents.**
 > This one (`conductor/RUNBOOK.md`) is the *session/continuation* runbook: goal,
@@ -68,7 +72,13 @@ AZOA's primitives, not to how consumers describe themselves.
 
 ## 2. State
 
-### Verified green — measured 2026-08-21, unchanged at `9f4e026`
+### Verified green — measured 2026-08-21 at `9f4e026`. ⚠ **STALE as of 2026-09-08.**
+
+> The table below is the last **full-tree** measurement and it is now **29 commits old**. The
+> ArdaNova production-readiness program (§2 *Program record*) landed 11 waves on top of it; each
+> wave's join gate reported green at its own commit, and **no single sweep has run across all of
+> them**. Do not quote these numbers as current — run the sweep in §7 ▶ RESUME HERE first, and
+> expect three suites to be assertion-red by design (`OI-91`).
 
 | Gate | Result |
 |---|---|
@@ -130,7 +140,114 @@ map from a regression back to the workstream that caused it.
 | **Phase 4 steps 21 + 22 — builder** | opus adversarial review that **built a jsdom harness and executed the code** | **2 CRITICAL** — infinite render loop on mount (301 renders, with *and* without StrictMode); copy/paste dead code — plus 1 HIGH and 9 lower | **REFUTED → REMEDIATED** |
 | **Phase 4 — governance-vote-of-record, W9.2 implementer pass** | proposal-rewrite + electorate audit, 29 new tests | decisive question ("can a vote that never took a claim still be counted?") answered NO with source evidence; **3 NEW holes** found behind it (proposal rewrite after a ballot exists, node-wide electorate, unaudited node-global scope resolution), all CLOSED | **REFUTED-AS-TOO-NARROW → REMEDIATED**; independent review still owed, the three node types stay in `NotEnabledActionNodeTypes`. Full record with evidence: `Services/Governance/AGENTS.md` §phase-4-verdict |
 
-**Nothing in §7 "Next session" has been reviewed or executed.**
+| **Wave 0 — docs, decisions, hardening set** | join gate, both repos | commit message asserts a lockfile fix not in the commit; ArdaNova runbook still describes the pre-commit tree | **PASS-WITH-DEBT** — `7dbfc8a` / `ea9b9d1`. W0.4 (publish azoa-sdk) NOT delivered |
+| **Wave 1 — identity, custody mode, AML UnderReview** | join gate + adversarial review | 2 HIGH, 2 MEDIUM. `UnderReview` plumbed through 5 layers, read by nothing user-facing; registration canonicalisation on 1 of 3 writer paths; `BootstrapWalletAsync` gated at its call site only | **PASS-WITH-DEBT** — `33e08e3`, `881a609` |
+| **Wave 2 — draft privacy, publish, media, field notes** | join gate + adversarial review | **2 CRITICAL** (MCP tools serve DRAFT projects; anonymous field-note leak of draft content), 1 HIGH (CANCELLED→PUBLISHED via `UpdateAsync`), 2 MEDIUM | **FAIL** — `0026dbe` |
+| **Wave 3 — reserve, ARDA genesis, IssueUnits, HOLD, consent** | join gate + adversarial review | **2 CRITICAL** (allocation seam has no tenant-ownership guard; the guard that exists fails open on ARDA), 3 HIGH incl. W3.3/W3.6 cancelling each other, 3 MEDIUM, 2 LOW | **FAIL** — `2336a13`, `ca11c2d` |
+| **Wave 4 — `Fiat.USD` card rail, reversals, un-park, D16** | join gate + adversarial review | 2 HIGH (instance seven: the "charged and not credited" read has zero callers; the account pause is at neither dispatch seam), 2 MEDIUM, 1 LOW | **PASS-WITH-DEBT** — `2f7944f` |
+| **Wave 5 — project tokens, the exchange, money model** | join gate + adversarial review | 3 HIGH (missing replay payload; uncompensated unconfirmed group; unguarded divide-by-zero on the ARDA rate), 3 MEDIUM, 2 LOW | **PASS-WITH-DEBT** — `413b0d5`, `baa5105` |
+| **Wave 6 — the first sponsorship as one exchange** | join gate + adversarial review | **2 CRITICAL schema drift** (settlement enum and three money columns exist in C# and in no migration — money moves, ledger write throws), 1 HIGH (node debit never compared to the authorised amount), 3 MEDIUM | **FAIL** — `7c4e078` |
+| **Wave 7 — work for a stake, escrow, credentials** | join gate + adversarial review | **1 CRITICAL** (the "Verified" badge is the SIMULATED mint on the default config), 2 HIGH (the 90-day restriction is written to a field nothing reads; the escrow lifecycle gates on an unreachable state), 3 MEDIUM, 1 LOW | **FAIL** — `16f1a38` |
+| **Wave 8 — cash out: units → ARDA → dollars** | join gate + adversarial review | **1 CRITICAL** (an AZOA refusal arrives as 409, is read as ambiguous, and freezes the seller's units on the shipped default), 1 HIGH (the buy-back queue is a promise nothing can keep) | **FAIL** — `671894a` / `ae4bc34` |
+| **Wave 9 — governance a member can use** | join gate + adversarial review | 1 HIGH (one member can manufacture a PASSED outcome: 1% quorum floor + author may publish, vote and close), 4 MEDIUM/LOW | **PASS-WITH-DEBT** — `924ec47` / `160b6be`. Independent Phase-4 review still owed |
+| **Wave 10 — transparency: where did the money go** | join gate + adversarial review | **1 CRITICAL** (the Money view's balance can never be read; its stub refusal is rendered to sponsors), 1 HIGH (the ledger gates names, not data), 5 MEDIUM/LOW | **FAIL** — `8328c07` / `3ffa223` |
+**§7's "Next session" list is superseded.** The ArdaNova production-readiness program ran
+instead and is recorded below; §7's ▶ RESUME HERE block was rewritten 2026-09-08.
+
+### ▣ Program record — ArdaNova production-readiness waves (closed 2026-09-08)
+
+**What it was.** The 11-wave, 54-item chain-first program from the 2026-09-07 vertical review
+(147 findings, 8 verticals). Track:
+`conductor/tracks/ardanova-production-readiness-waves_20260907/`. Executed as parallel fan-outs
+with pre-declared disjoint file partitions and a join gate per wave, across **two repos** — AZOA
+here, ArdaNova at `c:/Users/atooz/Documents/Escherbridge/ardanova`.
+
+**Outcome: 53 of 54 items delivered, 18 commits, and every wave shipped with debt.**
+
+| Wave | Delivered | Commit(s) |
+|---|---|---|
+| 0 | Docs resynced in both repos to D44-D51; the ~81-file ArdaNova hardening set landed; the self-sovereign path deleted outright | `7dbfc8a` · `ea9b9d1` |
+| 1 | Uniform eligibility (identity + KYC + walletReady), `CustodyModeResolver` so the node recognises a production custody mode, AML `UnderReview`, crypto stripped from account surfaces, `/settings/wallets` deleted | `33e08e3`, `881a609` |
+| 2 | Viewer-scoped project visibility, idempotent publish, edit route, media + summary, and the field-notes community surface | `0026dbe` |
+| 3 | Platform reserve wallet, ARDA genesis, `AllocationKind.IssueUnits`, the HOLD/Release/Refund/ReleaseIntoHold quartet, tenant-provisioned implied consent grants, per-project custodial treasuries | `2336a13`, `ca11c2d` |
+| 4 | The `Fiat.USD` rail: Stripe checkout, webhook inbox, on-ramp saga with lot ledger, the reversal pipeline and its three-rung recovery ladder, parked-run un-parking, D16 value stamps | `2f7944f` |
+| 5 | Treasury-rate exchange as an Action DAG + bundle, self-serve project-token provisioning, ArdaNova's fixed-scale (minor-unit) money model | `413b0d5`, `baa5105` |
+| 6 | Sponsorship as one atomic idempotent exchange with an outbox and an operator attestation; the card rail retired at the funding seam; economy-mode honesty banner | `7c4e078` |
+| 7 | Bid → accept → real node HOLD from the contributor partition → release into the worker's holding window; credential tiers; readiness-lapse HOLDING state | `16f1a38` |
+| 8 | Stripe Connect Express off-ramp (onboarding at first cash-out), buy-back liquidity policy and FIFO queue, ArdaNova sell-then-withdraw flow | `671894a` · `ae4bc34` |
+| 9 | One confirmed member one vote, server-derived voter identity, real electorate + quorum, AZOA proposal freeze after the first ballot | `924ec47` · `160b6be` |
+| 10 | Node economic-rules transparency + operator console page, azoa-sdk parity, per-project **Money** view derived from ArdaNova's own rows | `8328c07` · `3ffa223` |
+
+**Verdicts:** 5 PASS-WITH-DEBT (0, 1, 4, 5, 9) · 6 FAIL (2, 3, 6, 7, 8, 10). A FAIL means the
+wave's code landed and was committed **and** an adversarial reviewer found at least one CRITICAL
+that is still open — nothing was reverted. **10 CRITICALs are open.**
+
+#### What is stubbed rather than built, what each stub does, and what unblocks it
+
+Every one of these refuses, says why, and names its own unblock. Several are the only reason a
+CRITICAL above is latent rather than live. Full list with file:line: **OPEN-ITEMS.md §D**.
+
+1. **No reserve partition can be declared** (`OI-22`). `PlatformReserveService.DeclarePartitionsAsync`
+   has zero production callers and no REST surface; `DrawAsync` fails closed on an undeclared
+   partition, so every `IssueUnits` allocation and every Hold/Release refuses at the first draw. The
+   whole reserve/issuance/hold rail is therefore inert. *Unblock:* an operator/tenant route that
+   declares partitions at fungible-token-create time.
+2. **No project can be provisioned** (`OI-24`). `IAzoaProjectTokenNodeGateway` has zero
+   implementations; `ProvisionAsync` refuses with `NodeGatewayUnwiredError` and mints nothing. It
+   *cannot* be implemented today: AZOA's treasury-resolve and partition-declare surfaces are
+   `[Authorize(Policy = "Operator")]` admin routes an API key can never reach. *Unblock:* AZOA
+   `POST /api/projects/treasury/resolve` (tenant id from the key, never the body) +
+   `POST /api/reserve/{assetId}/partitions`, then an ArdaNova adapter and one DI line.
+3. **No exchange can settle** (`OI-31`). `UnavailableExchangeGroupSubmitter` returns
+   `RAIL_UNAVAILABLE` for every chain and never falls back to sequential transfers — that fallback
+   is exactly the funds-taken/units-undelivered failure atomicity exists to prevent. *Unblock:* a
+   rail adapter implementing `IExchangeGroupSubmitter` (heterogeneous multi-signer group with fee
+   pooling). **Fix `OI-32` and `OI-33` in the same change**, or the first real settlement loses its
+   receipt and a dropped group strands a credited treasury.
+4. **No sponsor can obtain platform units** (`OI-38`). `AzoaFiatRailGateway` is complete
+   server-side and has no HTTP surface — no controller, no apiClient endpoint, no tRPC procedure.
+   The client refuses honestly via `ADD_FUNDS_SERVER_ROUTE_PENDING`. *Unblock:* an
+   `AddFundsController` over `IFiatRailGateway` plus the client plumbing.
+5. **Credentials are granted but not independently issued** (`OI-55`).
+   `IAzoaCredentialIssuanceNode` has no adapter. ⚠ Its *fallback* is the defect — see `OI-40`.
+   *Unblock:* the adapter, an `AzoaNodePathPolicy` entry, one DI line, and a `dapp:manager` +
+   `nft:mint` key.
+6. **The withdraw leg has no transport** (`OI-56`). `IAzoaCashOutNode` unimplemented;
+   `PayoutService` refuses by name and the controller answers a stated 503.
+7. **Rung 2 of the reversal ladder refuses** (`OI-59`). `UnavailableReversedPurchaseProvenance`
+   reports `IsAvailable == false` rather than guessing which units a reversed payment bought —
+   refunding an arbitrary hold would rob whichever honest backer actually funded it. Both unwinds
+   are built. *Unblock:* register a real `IReversedPurchaseProvenance`.
+8. **The buy-back backstop is a seam with no implementation** (`OI-60`), so nothing can fill a
+   queued place; **selling is refused platform-wide** because no `IExchangeLiquidityPolicy` is
+   registered (`OI-62`, deliberate); **guild bids cannot enter commerce** because a hold has one
+   beneficiary and a bid declares no split (`OI-68`).
+9. **Operator alerts go to the log** (`OI-61`). `IOperatorAlertService` has no channel and no DI
+   registration; the dispatcher falls back to a logging implementation so alerts are live with zero
+   registration and reach nobody's phone.
+10. **azoa-sdk 0.3.0/0.3.1/0.4.0 were never published** (`OI-01`) — `npm whoami` 401s. ArdaNova's
+    `package.json` (`^0.3.0`) and `package-lock.json` (`0.1.0`) now disagree, so `npm ci` exits
+    **EUSAGE before it reaches the registry**: publishing alone will not turn its CI green, the
+    lockfile must be regenerated too, and the check must run from a clean clone with no `npm link`.
+
+#### Operator actions nobody can code around
+
+`OI-05` Stripe Connect platform approval · `OI-06` the shipped Railway template sets
+`Kyc__Provider=unavailable`, which the Production boot guard **throws** on (fix the template *and*
+the test that pins the string, together) · `OI-08` Identomat vendor credentials · `OI-09` ArdaNova
+has no tenant provisioned on AZOA, so `Azoa__CustodyApiKey`/`__TenantId` cannot be set · `OI-45`
+the `on-ramp` reserve partition is undeclared and no price schedule is registered — without both,
+a real card is charged, five redeliveries burn, the lot parks `Stuck`, and per `OI-27` nobody sees
+it · `OI-82` `CustodyMode` still ships `Disabled` · `OI-03` `ardanova-client/.env` is missing four
+values, so no one can run a validated client build (do **not** weaken `src/env.js`).
+
+#### ⚠ One thing that must be settled before mainnet genesis, not after
+
+`OI-26` — platform-token supply is capped at `int.MaxValue` base units by
+`IAlgorandASAModule.CreateASAAsync(int total)`. Genesis ships 2,000,000,000 base units
+(20,000,000.00 units at 2 decimals). **Widening the surface after genesis does not raise a minted
+asset's supply — it requires a second asset.** Widen `CreateASAAsync`, `TryValidateSupply` and the
+`checked((int)…)` cast together, first.
 
 ### Three defect *classes* this codebase keeps reproducing
 
@@ -155,6 +272,62 @@ Recorded because each recurred; check for them in every new pass.
    value access against a session the node had recorded as failed. The existing
    idempotency test ran its five redeliveries **sequentially** and passed
    trivially.
+
+### The "a claim in prose is not a control in code" ledger — now **22** instances
+
+This is the class this codebase reproduces faster than it fixes. It stood at **six** before the
+ArdaNova production-readiness program; that program's eleven adversarial reviews found **sixteen
+more**. Kept here, in §2, because it is state, not history.
+
+**The rule, restated:** when you write "X is gated / disabled / enforced / validated", **grep for
+the enforcement first**. When you build a control, **wire the thing that READS its result in the
+same change**. When a guard has a self-healing path, **ask what it heals over**. AZOA has **two**
+dispatch seams — the legacy `ActionManager` and the durable `ActionNodeStepHandler` — and every
+gate must be enforced at BOTH.
+
+**1-6, the original six** (unchanged): the AML decision was inert (`ScreenAsync` had zero
+production callers) · `GetByGlobalPersonKeyAsync` sat with zero callers while D3 claimed uniqueness
+was wired (**fixed** — `IPersonUniquenessGate`) · governance's tally read raw holons while the gate
+protected only the write path · "not enabled" was asserted in the runbook, two track specs and a UI
+badge while every handler was assembly-scanned into DI and dispatchable (**fixed** —
+`NotEnabledActionNodeTypes`, enforced at publish and at both seams) · the integration contract
+asserted a CI grep that existed nowhere (**corrected**) · `AttributePocoByteEquivalenceTests`
+auto-authored a golden on a MISSING file, so a table rename made it write the new golden and pass
+green over three stale `record<star_odk>` FKs (**fixed** — a missing golden is now RED).
+
+**7-22, found 2026-09-08 by the wave reviews.** Each id resolves in
+`conductor/tracks/ardanova-production-readiness-waves_20260907/OPEN-ITEMS.md`.
+
+| # | Instance | Id |
+|---|---|---|
+| 7 | A commit message asserts a lockfile fix that is not in the commit, citing lines that disprove it | `OI-02` |
+| 8 | `UnderReview` plumbed through five layers and read by nothing user-facing — a person held for a human decision is told a transient outage and to retry shortly, forever | `OI-10` |
+| 9 | Case-insensitive registration uniqueness enforced on one of three writer paths, replacing a scan that was stronger | `OI-11` |
+| 10 | Two key-minting seams, one gate: `BootstrapWalletAsync` is on the public interface and gated only at its single call site | `OI-12` |
+| 11 | "The non-controller seam is public-only by construction" — the claim enumerated the seven LIST methods; MCP calls the two unscoped single-row ones | `OI-13` |
+| 12 | The publish rule guards `PublishAsync` and not `UpdateAsync`, which sets `status` directly and stamps `publishedAt` | `OI-15` |
+| 13 | The reserve partition guard exists on the hold seam and was never wired into the allocation seam — and fails open on the platform's own unit | `OI-20`, `OI-21` |
+| 14 | Two items in one wave cancel each other: `IssueUnits` demands a scope the implied consent grant is forbidden to carry; ships green because the test mocks the gate | `OI-23` |
+| 15 | "The sweep stamps no acting tenant" — the service absorbs the null and stamps it anyway | `OI-25` |
+| 16 | **Instance seven, as the wave itself labelled it:** the read that surfaces "charged and not credited" has zero production callers, while every such outcome tells the provider to stop retrying | `OI-27` |
+| 17 | The account pause is consulted by three call sites and by no node handler — enforced at neither dispatch seam | `OI-28` |
+| 18 | The live-boot guard proves a type is in the container, not that anything can credit a payment; the doc falsifies its own guarantee four lines later | `OI-29` |
+| 19 | A reconciler-confirmed exchange's receipt loses every money field, because the one parameter every sibling sets was omitted | `OI-32` |
+| 20 | `ReconcileAsync` reports success and stamps a timestamp having reconciled nothing, because the set it iterates is always empty | `OI-35` |
+| 21 | The worker's restriction window is written to a field no spend path reads; every liquidity decision reads a different field recomputed from the gate alone | `OI-41` |
+| 22 | An SDK "parity" guard that asserts the SDK against string literals in its own file, never against a controller — the same shape as the CI grep that existed nowhere | `OI-69` |
+
+**Two structural lessons from this batch, worth more than the individual rows.**
+
+- **A schema drift guard that never reads the schema is not a guard.**
+  `EconomicSettlementPersistenceContractTests` is C# reflection over attributes; an entity grew
+  three columns and an enum two labels that the database does not have, and it stayed green
+  (`OI-80`, and the CRITICALs it failed to catch, `OI-36`/`OI-37`). Whatever owns the database must
+  be read by whatever claims to protect it.
+- **A fail-closed stub is honest; a fail-closed stub with a fallback is not.** `OI-40` is the whole
+  lesson: the node-issuance port was absent and *disclosed as absent*, but control fell through to a
+  simulated mint whose fabricated id renders to a member as "Verified — independently verifiable".
+  When you add a port, check what runs when it is null.
 
 **Settled fact, load-bearing for the D28 rename:** a SurrealDB UNIQUE index does
 **not** collide `NONE` components — verified empirically against 3.1.4, and
@@ -1172,43 +1345,103 @@ has a self-healing path, ask what it heals *over*.**
 Two traps the proof phase caught before any edit: `StarTable` lowercases to
 "startable" and would have collided with the `LoadStartableActionAsync` family;
 the lucide-react `<Star>` icon is an unrelated third-party symbol. Both intact.
-### ▶ RESUME HERE (state as of 2026-09-07)
 
-**Branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, 20 commits ahead of
-`9f4e026`, none pushed.** ArdaNova at `03ab6d2`, Taawun at `94ab2e4` (its first
-CI ever). All three repos clean apart from ArdaNova's ~81 uncommitted
-security-hardening files, which are deliberately untouched.
+---
 
-**Gates:** build 0 errors / 23 warnings · backend **2688 passed, 1 skipped, 0
-failed** · SDK tsc 0 + **204** · frontend tsc 0 + **78 across 13 files** + build
-**43 routes**.
+### ▶ RESUME HERE (state as of 2026-09-08)
 
-**Re-entry:**
+**AZOA:** branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, HEAD `8328c07`, **29 commits
+ahead of `9f4e026`, none pushed.**
+**ArdaNova** (`c:/Users/atooz/Documents/Escherbridge/ardanova`): branch
+`codex/azoa-security-hardening`, HEAD `3ffa223`.
+The ArdaNova production-readiness program closed 2026-09-08: **11 waves, 53 of 54 items, 21
+commits, 5 PASS-WITH-DEBT + 6 FAIL, 10 CRITICALs open.** §2 *Program record* has the wave-by-wave
+list; every open item is in
+`conductor/tracks/ardanova-production-readiness-waves_20260907/OPEN-ITEMS.md` (95 items).
+
+**Gates — read this before quoting a number.** The last **full-tree** measurement is still the
+2026-09-07 one at `9f4e026`: build 0 errors / 23 warnings · backend **2688 passed, 1 skipped, 0
+failed** · SDK tsc 0 + **204** · frontend tsc 0 + **78 across 13 files** + build **43 routes**.
+Each of the 11 waves reported its own join gate green at its own commit, but **no single sweep has
+run across all 18 commits**, and several suites are expected to be *assertion*-red by design (see
+`OI-91`: `GovernanceServiceTests` now needs an electorate mock, `ProjectMemberValueBoundaryTests`
+expects 501 where the answer is now 400, `AllocationControllerTests` still asserts that an API-key
+allocation succeeds with no consent grant). ArdaNova's client build needs `SKIP_ENV_VALIDATION=1`
+on this machine until `OI-03` is fixed — that is an environment gap, not a code failure, and
+`ignoreBuildErrors` is false so the build still typechecks every route.
+
+**Re-entry — run one full sweep first, in this order:**
 ```
-python scripts/d28_rename.py verify     # expect: 0 files left to change
-dotnet build azoa.sln --no-incremental  # expect: 0 errors, 23 warnings
+dotnet build azoa.sln --no-incremental      # expect 0 errors; baseline is 23 warnings
+dotnet test  azoa.sln                       # expect the three known assertion-red suites (OI-91)
+cd sdk/azoa-wallet && npx tsc --noEmit && npx vitest run
+cd frontend        && npx tsc --noEmit && npx vitest run && npm run build
+# ArdaNova:
+dotnet build ardanova-backend-api-mcp/api-server/ArdaNova.sln
+cd ardanova-client && SKIP_ENV_VALIDATION=1 npm run build     # until OI-03
 ```
 
-#### The one lesson this session kept re-teaching
+#### → THE NEXT ACTION, singular
 
-**A claim in prose is not a control in code.** It recurred five times, twice by
-my own hand:
-1. The AML decision was inert — `ScreenAsync` had zero production callers.
-2. `GetByGlobalPersonKeyAsync` sat with zero callers; D3's uniqueness opt-in was
-   designed and never wired. **Now fixed** — `IPersonUniquenessGate`.
-3. Governance's tally reads raw holons, so the gate protects the write path while
-   the *consumer* of its result reads an unprotected one. **Open** — track P1.
-4. "Not enabled" was asserted in the runbook, both track specs and a builder
-   badge while every handler was registered and dispatchable. **Now fixed** —
-   `Services/Actions/NotEnabledActionNodeTypes` refuses at publish and at BOTH
-   dispatch seams, with 13 tests including two that fail if a seam stops
-   consulting it.
-5. The integration contract's boundary rule 1 asserted a CI-enforced no-brand-leak
-   rule that was enforced nowhere and violated 15 times. **Now corrected.**
+**Fix the two Wave-6 Prisma schema drifts — `OI-36` and `OI-37` — before anything else touches
+money.** They are one migration in `ardanova-client/prisma/migrations/`, and they are first not
+because they are the worst finding but because they are the only one where **the current tree can
+take a sponsor's money and keep no record of it**: `EconomicSettlementKind` gained `EXCHANGE` and
+`HOLD_RELEASE` in C# and in no migration (so the settlement INSERT fails with 22P02, disguised by a
+catch block as a uniqueness race), and `EconomicSettlement` gained `azoaGross/Fee/NetBaseUnits` in
+C# and in no migration and no preflight (so the moment the enum is hotfixed, dispatch succeeds at
+the node, the sponsor's ARDA is debited, and `SaveChanges` throws 42703 and rolls back everything
+except the money). Put the enum values in their own migration step ahead of the column add.
+**In the same change, extend `migration-preflight.ts`'s expectation list and make the
+"persistence contract" test read a migration** (`OI-80`) — otherwise the guard that missed this
+will miss the next one.
 
-When writing "X is gated/disabled/enforced", grep for the enforcement first.
+Then, in order, and each with the reason it sits where it does:
 
-#### Next: the two design tracks are ready to implement
+1. **The two anonymous read leaks** — `OI-14` (a DRAFT project's field notes are readable by the
+   anonymous internet, with a public enumeration path to the ids) and `OI-13` (the MCP tools serve
+   DRAFT projects to any caller). One visibility guard each. These leak *now*, on the current tree,
+   with no configuration required.
+2. **`OI-52`** — the project ledger gates names on membership but not data, so any signed-in
+   stranger reads every pledge amount and worker award. Branch the payload, the way the sibling
+   `GetInvestors` endpoint already does.
+3. **`OI-40`** — stop the SIMULATED mint from producing a "Verified — independently verifiable"
+   badge, and add a production guard on `Algorand:Provider = Simulated`.
+4. **`OI-43`** — give AZOA a distinct error code for "refused, nothing moved" so ArdaNova stops
+   classifying a flat no as an ambiguous timeout and freezing the seller's units.
+5. **`OI-20` + `OI-21`** — the reserve tenant-scope guard, on the allocation seam and on the
+   platform's own unit. Do these before `OI-22` opens the valve: today they are latent only
+   because no partition can be declared.
+6. **`OI-26`** — settle the supply ceiling **before** mainnet genesis. Afterwards it needs a
+   second asset, not a wider type.
+7. **`OI-01`** — publish azoa-sdk and regenerate ArdaNova's lockfile, from a clean clone with no
+   `npm link`. This is the only thing standing between ArdaNova and a CI that can run at all.
+
+Everything after that is `OPEN-ITEMS.md` §C-§G, in whatever order the operator's own clock allows.
+
+#### The one lesson this program kept re-teaching
+
+**A claim in prose is not a control in code.** It now stands at **22 recorded instances** — the
+ledger moved to §2 and is the single most useful page in this file. Read it before writing the word
+"enforced".
+
+#### ⚠ SUPERSEDED 2026-09-08 — the two design tracks, and what actually happened to them
+
+> Both were absorbed by the production-readiness program rather than run as standalone tracks.
+> **P1 governance-vote-of-record**: Phases 0-3 shipped earlier; **Phase 4 was executed by W9.2 and
+> W9.1** (`924ec47` / `160b6be`) — proposal freeze after the first ballot, node-wide electorate
+> refused, one confirmed member one vote, server-derived voter identity. It is **not closed**: the
+> Phase-4 adversarial review must run in a SEPARATE context and the implementer + join gate cannot
+> be its reviewer, so the three governance node types stay in `NotEnabledActionNodeTypes`
+> (`OI-50`), and the review found a hole of its own — one member can still manufacture a PASSED
+> outcome (`OI-46`) and `InteractAsync` is an unguarded third write seam (`OI-47`).
+> **P2 credential-third-party-issuance**: its open question (*who may issue a credential to
+> another user*) was answered in practice by W7.4 — grant is behind project-owner authorization
+> and `check-auto-grant` stays refused because it has no actor to authorize. The issuance
+> transport itself is unbuilt (`OI-55`) and its fallback is a live defect (`OI-40`).
+
+The original text, kept because the reasoning still holds:
+
 
 - **P1 [`governance-vote-of-record_20260906`](tracks/governance-vote-of-record_20260906/spec.md)**
   — D39/D40/D42. Live Sybil hole; blocks Phase 5 closure.
@@ -1223,7 +1456,13 @@ code, because every defect they correct came from a guard nobody wrote.
 
 #### Blocked on the operator, not on work
 
-- ⛔ **`npm publish`** — `~/.npmrc`'s token 401s on `whoami` (expired/revoked).
+- ⛔ **`npm publish`** (now tracked as **`OI-01`**) — `~/.npmrc`'s token 401s on `whoami`
+  (expired/revoked). ⚠ **Updated 2026-09-08: the situation is worse than "CI stays red".**
+  0.3.0, 0.3.1 and 0.4.0 were all version-bumped and none published, and ArdaNova's
+  `package.json` (`^0.3.0`) and `package-lock.json` (`0.1.0`) now **disagree**, so `npm ci` exits
+  EUSAGE *before it reaches the registry*. Publishing alone will not fix it — regenerate the
+  lockfile with `npm install azoa-sdk@^0.4.0` and verify from a clean clone with no `npm link`.
+  Original note:
   Registry reads work; writes do not. `npm login` needs a TTY, and this session
   has no browser tool and no authorized mail connector. **Interim:** both
   consumers build from SDK source by symlink — AZOA's frontend via
