@@ -140,7 +140,7 @@ map from a regression back to the workstream that caused it.
 | **Phase 4 steps 21 + 22 — builder** | opus adversarial review that **built a jsdom harness and executed the code** | **2 CRITICAL** — infinite render loop on mount (301 renders, with *and* without StrictMode); copy/paste dead code — plus 1 HIGH and 9 lower | **REFUTED → REMEDIATED** |
 | **Phase 4 — governance-vote-of-record, W9.2 implementer pass** | proposal-rewrite + electorate audit, 29 new tests | decisive question ("can a vote that never took a claim still be counted?") answered NO with source evidence; **3 NEW holes** found behind it (proposal rewrite after a ballot exists, node-wide electorate, unaudited node-global scope resolution), all CLOSED | **REFUTED-AS-TOO-NARROW → REMEDIATED**; independent review still owed, the three node types stay in `NotEnabledActionNodeTypes`. Full record with evidence: `Services/Governance/AGENTS.md` §phase-4-verdict |
 
-| **Wave 0 — docs, decisions, hardening set** | join gate, both repos | commit message asserts a lockfile fix not in the commit; ArdaNova runbook still describes the pre-commit tree | **PASS-WITH-DEBT** — `7dbfc8a` / `ea9b9d1`. W0.4 (publish azoa-sdk) NOT delivered |
+| **Wave 0 — docs, decisions, hardening set** | join gate, both repos | commit message asserts a lockfile fix not in the commit; ArdaNova runbook still describes the pre-commit tree | **PASS-WITH-DEBT** — `7dbfc8a` / `ea9b9d1`. W0.4 (publish azoa-sdk) NOT delivered. **Both findings remediated 2026-09-08:** the false claim is retracted in ArdaNova `conductor/RUNBOOK.md` §0 and is now carried by a control instead of prose (`ardanova-client/scripts/verify-azoa-sdk-pin.mjs`, enforced at both seams — CI before `npm ci`, and the release gate); the stale §§0/3 were rewritten. The guard also caught a latent defect neither the wave nor the review named: `^0.3.0` is minor-locked below 1.0 and could never have accepted the 0.4.0 being published — pin corrected to `^0.4.0` |
 | **Wave 1 — identity, custody mode, AML UnderReview** | join gate + adversarial review | 2 HIGH, 2 MEDIUM. `UnderReview` plumbed through 5 layers, read by nothing user-facing; registration canonicalisation on 1 of 3 writer paths; `BootstrapWalletAsync` gated at its call site only | **PASS-WITH-DEBT** — `33e08e3`, `881a609` |
 | **Wave 2 — draft privacy, publish, media, field notes** | join gate + adversarial review | **2 CRITICAL** (MCP tools serve DRAFT projects; anonymous field-note leak of draft content), 1 HIGH (CANCELLED→PUBLISHED via `UpdateAsync`), 2 MEDIUM | **FAIL** — `0026dbe` |
 | **Wave 3 — reserve, ARDA genesis, IssueUnits, HOLD, consent** | join gate + adversarial review | **2 CRITICAL** (allocation seam has no tenant-ownership guard; the guard that exists fails open on ARDA), 3 HIGH incl. W3.3/W3.6 cancelling each other, 3 MEDIUM, 2 LOW | **FAIL** — `2336a13`, `ca11c2d` |
@@ -226,9 +226,13 @@ CRITICAL above is latent rather than live. Full list with file:line: **OPEN-ITEM
    registration; the dispatcher falls back to a logging implementation so alerts are live with zero
    registration and reach nobody's phone.
 10. **azoa-sdk 0.3.0/0.3.1/0.4.0 were never published** (`OI-01`) — `npm whoami` 401s. ArdaNova's
-    `package.json` (`^0.3.0`) and `package-lock.json` (`0.1.0`) now disagree, so `npm ci` exits
-    **EUSAGE before it reaches the registry**: publishing alone will not turn its CI green, the
-    lockfile must be regenerated too, and the check must run from a clean clone with no `npm link`.
+    `package.json` (`^0.4.0`, corrected 2026-09-08) and `package-lock.json` (`0.1.0`) disagree, so
+    `npm ci` exits **EUSAGE before it reaches the registry**: publishing alone will not turn its CI
+    green, the lockfile must be regenerated too, and the check must run from a clean clone with no
+    `npm link`. This is no longer only written down: `ardanova-client/scripts/verify-azoa-sdk-pin.mjs`
+    fails the build at both seams (CI before `npm ci`, and the release gate) and prints the ordered
+    remediation. The pin was `^0.3.0` until 2026-09-08, which — caret being minor-locked below 1.0 —
+    could never have resolved the 0.4.0 that is the thing being published.
 
 #### Operator actions nobody can code around
 
@@ -804,8 +808,9 @@ a golden is silently overwritten; edit the POCO instead.
 
 #### ArdaNova coupling (the one consumer that could be scoped)
 
-- `ardanova-client/package.json:61` pins **`azoa-sdk: "^0.1.0"`** — behind the
-  published line; version drift to flag separately.
+- `ardanova-client/package.json:62` pins **`azoa-sdk: "^0.4.0"`** (was `^0.1.0` when this
+  survey was written, then `^0.3.0`; corrected 2026-09-08) — ahead of the published line,
+  which is what `OI-01` is about.
   `ardanova-client/src/lib/azoa-sdk/{client,queries,types}.ts` import
   `AzoaApiClient`/`AzoaApiConfig`, call `API_PATHS.HOLON_GET` and
   `API_PATHS.QUEST_RUN_EXECUTION_STATE`, and use types `QuestResult`,
@@ -844,7 +849,8 @@ behind the same interface, but procuring that vendor is explicitly not this
 program's concern. Record the interim mode explicitly rather than letting
 `CustodyMode` imply more assurance than exists.
 
-**D37 — Authorized: publish `azoa-sdk@0.3.0`, and wipe/re-seed the live
+**D37 — Authorized: publish `azoa-sdk@0.4.0` (was written as 0.3.0; the source has since
+been bumped and 0.3.0/0.3.1 were never published), and wipe/re-seed the live
 database.** Both are irreversible or outward-facing and were explicitly approved.
 Also authorized: retiring legacy implementations as needed, adding/updating
 integration tests to match, and **pushing to online staging**.
@@ -1415,8 +1421,9 @@ Then, in order, and each with the reason it sits where it does:
    because no partition can be declared.
 6. **`OI-26`** — settle the supply ceiling **before** mainnet genesis. Afterwards it needs a
    second asset, not a wider type.
-7. **`OI-01`** — publish azoa-sdk and regenerate ArdaNova's lockfile, from a clean clone with no
-   `npm link`. This is the only thing standing between ArdaNova and a CI that can run at all.
+7. **`OI-01`** — publish azoa-sdk@0.4.0 and regenerate ArdaNova's lockfile (`npm install azoa-sdk@^0.4.0`),
+   from a clean clone with no `npm link`. This is the only thing standing between ArdaNova and a CI
+   that can run at all. Done when `npm run verify:sdk-pin` exits 0 in that clean clone.
 
 Everything after that is `OPEN-ITEMS.md` §C-§G, in whatever order the operator's own clock allows.
 
@@ -1463,12 +1470,15 @@ code, because every defect they correct came from a guard nobody wrote.
   `package.json` (`^0.3.0`) and `package-lock.json` (`0.1.0`) now **disagree**, so `npm ci` exits
   EUSAGE *before it reaches the registry*. Publishing alone will not fix it — regenerate the
   lockfile with `npm install azoa-sdk@^0.4.0` and verify from a clean clone with no `npm link`.
+  ✅ 2026-09-08: the pin itself was corrected `^0.3.0` → `^0.4.0` (caret is minor-locked below
+  1.0, so the old pin could not have accepted the version being published), and
+  `ardanova-client/scripts/verify-azoa-sdk-pin.mjs` now enforces the three-way agreement.
   Original note:
   Registry reads work; writes do not. `npm login` needs a TTY, and this session
   has no browser tool and no authorized mail connector. **Interim:** both
   consumers build from SDK source by symlink — AZOA's frontend via
   `file:../sdk/azoa-wallet` (permanent and correct for a monorepo sibling),
-  ArdaNova via `npm link` (manifest left honest at `^0.3.0`). ⚠ ArdaNova's link is
+  ArdaNova via `npm link` (manifest left honest at `^0.4.0`). ⚠ ArdaNova's link is
   machine-local and invisible to git, so its CI stays red until the publish lands.
   ⚠ **Never re-copy the SDK into a consumer's `node_modules`** — a copy is what
   went 7 weeks stale and hid two `bridge/page.tsx` defects; a link cannot drift.
@@ -1570,7 +1580,7 @@ section stays as the operational summary.*
   **already drifted before this work** (ArdaNova's copy still said `oasis-sleek/`),
   so the file's own sync invariant was being violated silently.
 
-⛔ **STILL BLOCKING: `azoa-sdk@0.3.0` is unpublished, and this machine cannot
+⛔ **STILL BLOCKING: `azoa-sdk@0.4.0` is unpublished, and this machine cannot
 publish it.** `~/.npmrc` holds a literal `_authToken` for `registry.npmjs.org`
 that returns **401 on `npm whoami`** — expired or revoked. Registry *reads* work
 (`npm view azoa-sdk version` → `0.2.2`); writes do not. `npm login` needs an
@@ -1584,11 +1594,11 @@ registry.** This is deliberate and was authorized as a testing measure:
 | Consumer | Mechanism | Manifest |
 |---|---|---|
 | AZOA `frontend/` | `"azoa-sdk": "file:../sdk/azoa-wallet"` → npm links it; lockfile records `"link": true` | **changed** — correct permanently for a monorepo sibling |
-| ArdaNova `ardanova-client/` | `npm link azoa-sdk` (global link, no manifest edit) | **unchanged**, still `^0.3.0` — honest about what CI needs |
+| ArdaNova `ardanova-client/` | `npm link azoa-sdk` (global link) | **`^0.4.0`** since 2026-09-08 — honest about what CI needs, and the only range that can accept the version queued for publish |
 
 ⚠ **Two consequences to hold onto:**
 1. **ArdaNova's link is machine-local and invisible to git.** A fresh clone, a
-   different machine, or CI still resolves `^0.3.0` from the registry and fails
+   different machine, or CI still resolves `^0.4.0` from the registry and fails
    until the publish lands. Green locally ≠ green in CI here.
 2. **Never re-copy the SDK into a consumer's `node_modules`.** A *copy* is what
    silently went 7 weeks stale and hid two `bridge/page.tsx` defects; a *link*
