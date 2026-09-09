@@ -86,7 +86,7 @@ account has to act.
   partition name. The predicate now needs a POSITIVE operator signal
   (`ReserveDrawAuthority.NodeOperator`, `Services/Reserve/ReserveDrawAuthority.cs:50`) and
   refuses a caller with no resolvable tenant under EVERY policy
-  (`ReserveDrawAuthority.cs:173-179`). Who else may draw the node's own unit is now an operator
+  (`ReserveDrawAuthority.cs:167-173`). Who else may draw the node's own unit is now an operator
   setting — `Reserve:PlatformUnitDrawPolicy`, defaulting to `OperatorOnly`
   (`PlatformReserveService.cs:67`, `appsettings.json:243-245`). The one production rail that
   legitimately draws with no tenant says so explicitly: `OnRampSettlementHandler.cs:388-394`.
