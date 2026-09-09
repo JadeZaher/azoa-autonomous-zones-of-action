@@ -298,6 +298,13 @@ internal sealed class InMemoryOperationStore : IBlockchainOperationStore
 
     public IReadOnlyCollection<IBlockchainOperation> All => _byId.Values;
 
+    /// <summary>
+    /// Makes lookups answer "unreadable" rather than "absent" — a transient store failure, not a
+    /// row that is not there. The two are different answers and the receipt seams must not
+    /// conflate them: absence is describable from the ledger alone, unreadability is not.
+    /// </summary>
+    public bool ReadsFail { get; set; }
+
     public Task<AZOAResult<IBlockchainOperation>> GetByIdAsync(Guid id, CancellationToken ct = default)
         => Task.FromResult(_byId.TryGetValue(id, out var found)
             ? AZOAResult<IBlockchainOperation>.Success(found)
@@ -306,6 +313,12 @@ internal sealed class InMemoryOperationStore : IBlockchainOperationStore
     public Task<AZOAResult<IBlockchainOperation>> GetByIdempotencyKeyAsync(
         string idempotencyKey, CancellationToken ct = default)
     {
+        if (ReadsFail)
+        {
+            return Task.FromResult(AZOAResult<IBlockchainOperation>.FailureWithCode(
+                "The operation store is unavailable.", AzoaErrorCodes.DependencyUnavailable));
+        }
+
         var found = _byId.Values.FirstOrDefault(operation =>
             string.Equals(operation.IdempotencyKey, idempotencyKey, StringComparison.Ordinal));
         return Task.FromResult(found is null

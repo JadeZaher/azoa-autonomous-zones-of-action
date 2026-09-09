@@ -7,6 +7,14 @@
 // accepted-then-dropped group is compensated" is true only for the seconds the request is still
 // on the wire.
 //
+// Everything here is irreversible and everything here is re-entered: a sweep calls back in
+// whenever a previous pass returned false, and the commonest reason a pass returns false is that
+// the effect LANDED and the bookkeeping after it did not. The primitives underneath dedupe on a
+// BOUNDED window (128 keys, both of them, evicted oldest-first) and both say in as many words
+// that a caller must keep its own anchor. So each effect below is claimed in the unbounded
+// insert-wins idempotency ledger first — see OnceAsync — and a window is never the thing standing
+// between a project and a second credit.
+//
 // See Services/Reserve/AGENTS.md §exchange-settlement.
 
 using System.Globalization;
@@ -16,6 +24,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Hold;
@@ -63,6 +72,7 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
     private readonly IPlatformReserve _reserve;
     private readonly IPlatformHold _holds;
     private readonly IBlockchainOperationStore _operations;
+    private readonly IIdempotencyStore _anchors;
     private readonly ILogger<ExchangeSettlementReconciler>? _logger;
 
     public ExchangeSettlementReconciler(
@@ -70,12 +80,17 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
         IPlatformReserve reserve,
         IPlatformHold holds,
         IBlockchainOperationStore operations,
+        IIdempotencyStore anchors,
         ILogger<ExchangeSettlementReconciler>? logger = null)
     {
         _treasury = treasury ?? throw new ArgumentNullException(nameof(treasury));
         _reserve = reserve ?? throw new ArgumentNullException(nameof(reserve));
         _holds = holds ?? throw new ArgumentNullException(nameof(holds));
         _operations = operations ?? throw new ArgumentNullException(nameof(operations));
+        // Not optional. A reconciler with no anchor is the defect this parameter exists to end:
+        // the only marker it had was the flag on the row, and the failure it is written to
+        // survive is the one that leaves that flag stale.
+        _anchors = anchors ?? throw new ArgumentNullException(nameof(anchors));
         _logger = logger;
     }
 
@@ -115,26 +130,43 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
             return false;
         }
 
-        // The SAME ledger key the in-request credit would have used, so a credit that did land and
-        // whose flag was never flipped replays instead of doubling. RecordMovementAsync is
-        // idempotent on it and reports Replayed.
-        var credited = await _treasury.RecordMovementAsync(
-            new ProjectTreasuryMovementRequest(
-                new ProjectTreasuryReference(legs.ChainType, legs.TenantId, legs.ProjectReference),
-                legs.PlatformAssetId,
-                ProjectTreasuryMovementKind.Credit,
-                legs.PlatformAmount,
-                legs.LedgerKey),
+        // The credit still carries the SAME treasury ledger key the in-request credit would have
+        // used, so an in-request credit whose flag was never flipped is a replay there. But that
+        // window is BOUNDED — ProjectTreasuryService.MovementReplayWindowSize is 128 keys, evicted
+        // oldest-first — and outside it a repeated key is unknown and the movement APPLIES. The
+        // exact failure this method exists to survive is the one that leaves the row's flag stale:
+        // the credit lands, the UpsertAsync below fails, the row still says "false", and the next
+        // sweep re-enters here. With 128 other movements on that project in between, a bounded
+        // window credits the project TWICE for one exchange. So the reconciler keeps its own
+        // anchor, in the unbounded insert-wins ledger, and never leans on somebody else's window.
+        var credit = await OnceAsync(
+            legs.LedgerKey + ReconcileCreditAnchorSuffix,
+            operation.Id,
+            "the project credit",
+            async () =>
+            {
+                var credited = await _treasury.RecordMovementAsync(
+                    new ProjectTreasuryMovementRequest(
+                        new ProjectTreasuryReference(legs.ChainType, legs.TenantId, legs.ProjectReference),
+                        legs.PlatformAssetId,
+                        ProjectTreasuryMovementKind.Credit,
+                        legs.PlatformAmount,
+                        legs.LedgerKey),
+                    ct);
+
+                if (!credited.IsError)
+                    return true;
+
+                _logger?.LogError(
+                    "MANUAL INTERVENTION REQUIRED — exchange {OperationId} is chain-confirmed but "
+                    + "its project credit could not be recorded: {Detail}. NOT advancing it.",
+                    operation.Id, credited.Message);
+                return false;
+            },
             ct);
 
-        if (credited.IsError)
-        {
-            _logger?.LogError(
-                "MANUAL INTERVENTION REQUIRED — exchange {OperationId} is chain-confirmed but its "
-                + "project credit could not be recorded: {Detail}. NOT advancing it.",
-                operation.Id, credited.Message);
+        if (credit == SettlementEffect.Refused)
             return false;
-        }
 
         // The flag is the read side two surfaces consult, so it has to move with the money. A row
         // that credited and still says "false" reports AwaitingReconciliation forever.
@@ -146,8 +178,9 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
         {
             _logger?.LogError(
                 "Exchange {OperationId} had its project credit recorded but the row still says the "
-                + "credit is outstanding: {Detail}. The credit is idempotent on its ledger key, so "
-                + "the next sweep replays it rather than doubling it.",
+                + "credit is outstanding: {Detail}. The next sweep re-enters, finds this "
+                + "settlement's own anchor already Completed, and flips the flag WITHOUT crediting "
+                + "again.",
                 operation.Id, persisted.Message);
             return false;
         }
@@ -194,18 +227,28 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
             return false;
         }
 
-        var handedBack = kind switch
-        {
-            ReserveExchangeManager.CommitmentKinds.PartitionIssue =>
-                await ReturnToPartitionAsync(legs, ct),
-            ReserveExchangeManager.CommitmentKinds.PartitionReturn =>
-                await ReIssueFromPartitionAsync(legs, ct),
-            ReserveExchangeManager.CommitmentKinds.Hold =>
-                await RefundHoldAsync(operation, legs, ct),
-            _ => false,
-        };
+        // The unwind rides PlatformReserveService's replay window, bounded exactly as the
+        // treasury's is (DrawReplayWindowSize = 128). This method is re-entered whenever ANY later
+        // step in it returns false — the treasury refund below, most obviously — so a bounded
+        // window is not enough on its own: 128 draws later the partition would be handed back a
+        // second time, on top of a group that never happened. The anchor is what makes it once.
+        var handedBack = await OnceAsync(
+            legs.LedgerKey + ReconcileUnwindAnchorSuffix,
+            operation.Id,
+            "the " + kind + " unwind",
+            () => kind switch
+            {
+                ReserveExchangeManager.CommitmentKinds.PartitionIssue =>
+                    ReturnToPartitionAsync(legs, ct),
+                ReserveExchangeManager.CommitmentKinds.PartitionReturn =>
+                    ReIssueFromPartitionAsync(legs, ct),
+                ReserveExchangeManager.CommitmentKinds.Hold =>
+                    RefundHoldAsync(operation, legs, ct),
+                _ => Task.FromResult(false),
+            },
+            ct);
 
-        if (!handedBack)
+        if (handedBack == SettlementEffect.Refused)
         {
             _logger?.LogError(
                 "MANUAL INTERVENTION REQUIRED — exchange {OperationId} failed on chain and its "
@@ -223,24 +266,35 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
                 "true",
                 StringComparison.Ordinal))
         {
-            var refunded = await _treasury.RecordMovementAsync(
-                new ProjectTreasuryMovementRequest(
-                    new ProjectTreasuryReference(legs.ChainType, legs.TenantId, legs.ProjectReference),
-                    legs.PlatformAssetId,
-                    ProjectTreasuryMovementKind.Credit,
-                    legs.PlatformAmount,
-                    legs.LedgerKey + CompensationSuffix),
+            var refund = await OnceAsync(
+                legs.LedgerKey + ReconcileRefundAnchorSuffix,
+                operation.Id,
+                "the treasury refund",
+                async () =>
+                {
+                    var refunded = await _treasury.RecordMovementAsync(
+                        new ProjectTreasuryMovementRequest(
+                            new ProjectTreasuryReference(legs.ChainType, legs.TenantId, legs.ProjectReference),
+                            legs.PlatformAssetId,
+                            ProjectTreasuryMovementKind.Credit,
+                            legs.PlatformAmount,
+                            legs.LedgerKey + CompensationSuffix),
+                        ct);
+
+                    if (!refunded.IsError)
+                        return true;
+
+                    _logger?.LogError(
+                        "MANUAL INTERVENTION REQUIRED — exchange {OperationId} failed on chain, its "
+                        + "partition was handed back, but the project's treasury is still short "
+                        + "{Amount} base units: {Detail}.",
+                        operation.Id, legs.PlatformAmount, refunded.Message);
+                    return false;
+                },
                 ct);
 
-            if (refunded.IsError)
-            {
-                _logger?.LogError(
-                    "MANUAL INTERVENTION REQUIRED — exchange {OperationId} failed on chain, its "
-                    + "partition was handed back, but the project's treasury is still short "
-                    + "{Amount} base units: {Detail}.",
-                    operation.Id, legs.PlatformAmount, refunded.Message);
+            if (refund == SettlementEffect.Refused)
                 return false;
-            }
         }
 
         _logger?.LogWarning(
@@ -253,6 +307,34 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
 
     /// <summary>The key suffix a compensating draw carries, matching the in-request unwind.</summary>
     private const string CompensationSuffix = ":compensate";
+
+    // ── The reconciler's own anchors ─────────────────────────────────────────
+    //
+    // Every irreversible thing this file does rides somebody else's replay window, and every one
+    // of those windows is BOUNDED: ProjectTreasuryService.MovementReplayWindowSize and
+    // PlatformReserveService.DrawReplayWindowSize are both 128 keys, evicted oldest-first, and
+    // both services say in as many words that a caller must keep its own anchor because outside
+    // the window a repeated key is unknown and the effect APPLIES. This reconciler is re-entered
+    // by a sweep precisely when a previous pass returned false, and the most ordinary reason it
+    // returns false is that the effect LANDED and the bookkeeping after it did not. So the anchor
+    // has to be the unbounded, insert-wins idempotency ledger, one key per effect.
+
+    /// <summary>Anchors the project credit a confirmed buy still owed.</summary>
+    private const string ReconcileCreditAnchorSuffix = ":reconcile-credit";
+
+    /// <summary>Anchors the partition/hold hand-back a chain-failed group left standing.</summary>
+    private const string ReconcileUnwindAnchorSuffix = ":reconcile-unwind";
+
+    /// <summary>Anchors the treasury refund a chain-failed SELL is owed.</summary>
+    private const string ReconcileRefundAnchorSuffix = ":reconcile-refund";
+
+    /// <summary>
+    /// The ledger's operation type for every anchor above. Distinct from
+    /// <see cref="ReserveExchangeManager.OperationType"/> on purpose: the receipt surface refuses
+    /// a ledger row whose operation type is not the exchange's own, so a settlement anchor can
+    /// never be mistaken for — or replayed as — a caller's receipt.
+    /// </summary>
+    private const string AnchorOperationType = "reserve_exchange_settlement";
 
     private async Task<bool> ReturnToPartitionAsync(ExchangeLegs legs, CancellationToken ct)
     {
@@ -302,6 +384,177 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
             ct);
 
         return !refunded.IsError;
+    }
+
+    /// <summary>How many attempt generations one effect may burn before an operator is needed.</summary>
+    /// <remarks>
+    /// Bounded because each generation is a real ledger row and a real retry of an irreversible
+    /// effect. An effect that has failed cleanly this many times is not having a bad minute.
+    /// </remarks>
+    private const int MaxSettlementAttempts = 8;
+
+    /// <summary>What an anchored effect did, from the ledger's point of view.</summary>
+    private enum SettlementEffect
+    {
+        /// <summary>It ran now and landed.</summary>
+        Applied,
+
+        /// <summary>A previous pass ran it and the ledger recorded that it landed. Not re-run.</summary>
+        AlreadyApplied,
+
+        /// <summary>
+        /// It did not land, or nobody can say whether it did. The caller must not advance.
+        /// </summary>
+        Refused,
+    }
+
+    /// <summary>
+    /// Runs one irreversible settlement effect at most once across every sweep, ever.
+    /// </summary>
+    /// <remarks>
+    /// <para>Each anchor key transitions AT MOST ONCE, because that is all the ledger allows: the
+    /// package issues <c>UPDATE ... SET state = $_next WHERE state = $_expected</c> and throws
+    /// "Cannot complete idempotency key" when the row has moved on. So a retry cannot reuse a key
+    /// it has already settled — it takes the NEXT generation of that key, and "has this effect
+    /// landed?" is answered by walking the generations until one of them says so.</para>
+    /// <para>The states are read as claims about the WORLD, not about this process:</para>
+    /// <list type="bullet">
+    /// <item><c>Won</c> — this generation is unclaimed; run the effect.</item>
+    /// <item><c>Completed</c> — a pass ran it and recorded that it landed. It is NOT run again,
+    /// which is the whole point: the bounded replay windows underneath cannot be trusted to notice
+    /// a repeat once 128 other movements have gone by.</item>
+    /// <item><c>Failed</c> — a pass ran it and recorded that it did NOT land. Retrying is what the
+    /// sweep is for, so this walks on to the next generation.</item>
+    /// <item><c>InProgress</c> and not ours — either another pass holds it right now, or one died
+    /// between claiming and settling. Neither can be told from the other, and nobody can say
+    /// whether the money moved, so this refuses. Crediting a project twice mints value out of
+    /// nothing; leaving it short is visible, flagged, and an operator can finish it.</item>
+    /// </list>
+    /// <para>A generation whose effect THREW is left open rather than marked Failed: "Failed" is a
+    /// claim that the effect did not land, and a throw does not know that.</para>
+    /// </remarks>
+    private async Task<SettlementEffect> OnceAsync(
+        string anchorKey,
+        Guid operationId,
+        string what,
+        Func<Task<bool>> apply,
+        CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= MaxSettlementAttempts; attempt++)
+        {
+            var key = AttemptKey(anchorKey, attempt);
+
+            IdempotencyClaim claim;
+            try
+            {
+                claim = await _anchors.TryClaimAsync(key, AnchorOperationType, ct);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                _logger?.LogError(
+                    exception,
+                    "Exchange {OperationId}: {What} was NOT attempted because its settlement anchor "
+                    + "could not be claimed. Refusing rather than running an irreversible effect no "
+                    + "record would remember.",
+                    operationId, what);
+                return SettlementEffect.Refused;
+            }
+
+            if (!claim.Won)
+            {
+                switch (claim.Record.State)
+                {
+                    case IdempotencyState.Completed:
+                        _logger?.LogInformation(
+                            "Exchange {OperationId}: {What} had already been applied by an earlier "
+                            + "settlement pass; it is NOT applied again.",
+                            operationId, what);
+                        return SettlementEffect.AlreadyApplied;
+
+                    case IdempotencyState.Failed:
+                        // Positively recorded as not-landed. This generation is spent and the
+                        // ledger will not let it be settled twice, so the retry takes the next one.
+                        continue;
+
+                    default:
+                        _logger?.LogError(
+                            "MANUAL INTERVENTION REQUIRED — exchange {OperationId}: {What} has a "
+                            + "settlement anchor that is still open, so either another pass is "
+                            + "running it now or one died mid-effect. Nothing was applied. If no "
+                            + "pass is running, read the project's ledger and then settle anchor "
+                            + "'{Anchor}' Completed or Failed to say whether the effect landed.",
+                            operationId, what, key);
+                        return SettlementEffect.Refused;
+                }
+            }
+
+            bool landed;
+            try
+            {
+                landed = await apply();
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // The effect may or may not have landed, so this generation is left OPEN rather
+                // than marked Failed, and every later pass refuses at it.
+                _logger?.LogError(
+                    exception,
+                    "MANUAL INTERVENTION REQUIRED — exchange {OperationId}: {What} threw. Its anchor "
+                    + "'{Anchor}' is left open so no later pass silently repeats it.",
+                    operationId, what, key);
+                return SettlementEffect.Refused;
+            }
+
+            if (!landed)
+            {
+                // Recorded as not-landed, then refused for THIS sweep: an effect that just failed
+                // is not worth hammering, and the next sweep picks up the next generation.
+                await TrySettleAnchorAsync(key, operationId, what, landedOk: false);
+                return SettlementEffect.Refused;
+            }
+
+            await TrySettleAnchorAsync(key, operationId, what, landedOk: true);
+            return SettlementEffect.Applied;
+        }
+
+        _logger?.LogError(
+            "MANUAL INTERVENTION REQUIRED — exchange {OperationId}: {What} has failed "
+            + "{Attempts} times. It is not being retried again automatically.",
+            operationId, what, MaxSettlementAttempts);
+        return SettlementEffect.Refused;
+    }
+
+    /// <summary>
+    /// The nth generation of an anchor key. The first generation IS the base key, so a row written
+    /// before generations existed keeps its meaning.
+    /// </summary>
+    private static string AttemptKey(string anchorKey, int attempt) =>
+        attempt == 1 ? anchorKey : anchorKey + "#" + attempt.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Records what became of one attempt generation. A settle that itself fails leaves the
+    /// generation open, which is the fail-closed direction: the next pass refuses at it instead of
+    /// repeating the effect.
+    /// </summary>
+    private async Task TrySettleAnchorAsync(
+        string anchorKey, Guid operationId, string what, bool landedOk)
+    {
+        try
+        {
+            if (landedOk)
+                await _anchors.CompleteAsync(anchorKey, "applied", CancellationToken.None);
+            else
+                await _anchors.FailAsync(anchorKey, "not applied", CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogError(
+                exception,
+                "MANUAL INTERVENTION REQUIRED — exchange {OperationId}: {What} finished but its "
+                + "anchor '{Anchor}' could not be settled. Later passes will refuse to touch it "
+                + "until an operator settles it by hand, which is the safe direction.",
+                operationId, what, anchorKey);
+        }
     }
 
     /// <summary>

@@ -106,6 +106,38 @@ idempotency claim and a settled claim is never revisited:
 An operation row only ever exists for a group the rail ACCEPTED — every in-request refusal
 compensates and returns before `BuildOperation` runs — so these paths can never double-unwind.
 
+### Why the reconciler carries its own anchor
+
+Both primitives it drives dedupe on a **bounded** replay window —
+`ProjectTreasuryService.MovementReplayWindowSize` and `PlatformReserveService.DrawReplayWindowSize`
+are 128 keys each, evicted oldest-first — and both say outright that outside the window a repeated
+key is unknown and the effect **applies**. That is not idempotency; it is a grace period.
+
+The reconciler is re-entered by the sweep exactly when a pass returned false, and the ordinary
+reason a pass returns false is that the effect landed and the write after it did not: the credit
+posts, `UpsertAsync` fails, the row still says `ExchangeProjectCreditApplied="false"`. Let 128
+other movements hit that project's treasury in between and the next sweep credits it a second
+time for one exchange. Same shape on the compensation refund and on the partition unwind.
+
+So `OnceAsync` claims each effect in the **unbounded, insert-wins** `IIdempotencyStore` before
+running it, under `<ledgerKey>:reconcile-credit` / `-unwind` / `-refund` and the distinct
+operation type `reserve_exchange_settlement` (distinct so the receipt surface, which refuses a
+ledger row whose operation type is not the exchange's own, can never replay a settlement anchor
+as a caller's receipt). The ledger states are read as claims about the world: `Completed` means a
+pass recorded that the effect landed, so it is **not** run again; `Failed` means a pass recorded
+that it did not; an open `InProgress` that is not ours means nobody can say, so it refuses and
+flags — under-crediting is visible and an operator can finish it, double-crediting mints value out
+of nothing.
+
+**Retries take the next generation of the key, not the same one.** SurrealForge settles a key with
+`UPDATE ... SET state = $_next WHERE state = $_expected` and throws *"Cannot complete idempotency
+key"* when the row has already moved on, so a key is a one-shot: it goes `InProgress` → `Completed`
+or `InProgress` → `Failed`, once. A retry therefore claims `<key>#2`, `#3`, … up to
+`MaxSettlementAttempts` (8), and "has this effect landed?" is answered by walking the generations
+until one says `Completed`. Reusing the base key would have passed against a permissive test double
+and thrown the first time production retried anything, so `ReconciledExchangeTests.StrictAnchorLedger`
+enforces the package's own precondition rather than a friendlier one.
+
 ## §vocabulary
 
 Nothing in this directory's consumer-facing text may name a chain, a token, a wallet or a gas

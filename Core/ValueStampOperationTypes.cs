@@ -13,12 +13,18 @@ namespace AZOA.WebAPI.Core;
 /// The operation types that give up ONE identifiable leg and can therefore carry a value stamp.
 /// </summary>
 /// <remarks>
-/// <para>The WRITE side is <c>BlockchainOperationManager.TryResolveStampableAmount</c>, which
-/// additionally knows WHICH parameter carries the quantity for each type; the READ side is
-/// <c>AnalyticsReadService.IsStampable</c>, which needs only membership and so derives it from
-/// <see cref="All"/> rather than restating it.</para>
-/// <para><c>tests/AZOA.WebAPI.Tests/Analytics/StampableSetDriftTests.cs</c> holds the switch to
-/// this set in both directions, so a type added to one and not the other fails the build.</para>
+/// <para>The WRITE side is <c>BlockchainOperationManager.StampableAmountReaders</c>, a table
+/// keyed by operation type that additionally knows WHICH parameter carries the quantity for each
+/// one; the READ side is <c>AnalyticsReadService.IsStampable</c>, which needs only membership and
+/// so derives it from <see cref="All"/> rather than restating it.</para>
+/// <para>Both directions are held, and by the code rather than by prose. Declared-but-unreadable
+/// is caught by <c>BlockchainOperationManager.BuildStampableAmountReaders</c>, which refuses to
+/// initialise unless the table's keys are exactly this set — so a reader for a type that is not
+/// declared here cannot ship either, which is the direction a switch statement could not hold at
+/// all (a stray <c>case "Foo":</c> was enumerable by nothing).
+/// <c>tests/AZOA.WebAPI.Tests/Analytics/StampableSetDriftTests.cs</c> asserts the same equality
+/// so the disagreement fails the build rather than the boot, and asserts the read surface's
+/// OUTPUT so membership is proved where a sponsor actually reads it.</para>
 /// <para>Membership is NOT direction. A swap and an exchange move two assets, so they carry a
 /// stamp but contribute nothing to a single-asset position; <c>AnalyticsReadService.Direction</c>
 /// is the separate decision.</para>

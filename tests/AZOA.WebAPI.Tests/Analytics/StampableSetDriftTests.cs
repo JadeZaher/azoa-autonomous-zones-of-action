@@ -9,6 +9,13 @@
 //
 // These tests hold the two sides together in BOTH directions, and they assert the OUTPUT of the
 // read surface rather than any property of a fixture.
+//
+// "Both directions" was once only half true. Enumerating ValueStampOperationTypes.All proves every
+// DECLARED type resolves on the write side; nothing enumerated the write side, so a stray
+// `case "Foo":` in BlockchainOperationManager compiled green and reproduced the exact
+// contradiction — which is how Exchange and then IssueUnits drifted. The write side is now a TABLE
+// whose keys are enumerable, so the missing direction is a real assertion below rather than a
+// promise in a comment.
 
 using System.Numerics;
 using System.Reflection;
@@ -31,7 +38,11 @@ public sealed class StampableSetDriftTests
     private static readonly Guid SubjectId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly DateTime Settled = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-    /// <summary>Types the switch deliberately resolves nothing for. Not an exhaustive list.</summary>
+    /// <summary>
+    /// Types the write side deliberately has no reader for. Not an exhaustive list, and it no
+    /// longer needs to be: the table's keys are enumerated above, so an undeclared type gaining a
+    /// reader fails there rather than depending on somebody having listed it here.
+    /// </summary>
     private static readonly string[] DeliberatelyUnstampable =
     {
         "DeployContract",
@@ -40,6 +51,33 @@ public sealed class StampableSetDriftTests
     };
 
     // ── The two sides, held together ──────────────────────────────────────────
+
+    [Fact]
+    public void The_write_sides_table_is_exactly_the_shared_set_in_both_directions()
+    {
+        // The direction a switch statement could not hold at all: a reader taught to the write
+        // side for a type the shared set never learned. The read surface answers membership from
+        // that set, so such a row reads back "pricing": "Priced" beside "isStampable": false —
+        // one row contradicting itself on a financial surface, twice shipped.
+        WriteSideOperationTypes().Should().BeEquivalentTo(
+            ValueStampOperationTypes.All,
+            "the write side's reader table and the shared set are ONE list read from two places; "
+            + "a type on either side alone is the drift this file exists to end");
+    }
+
+    [Fact]
+    public void The_write_sides_table_refuses_to_exist_unless_it_matches_the_set()
+    {
+        // The guard is in the production type, not only here: BuildStampableAmountReaders throws
+        // rather than returning a table that disagrees with the set. This asserts the guard is
+        // reachable and passing — a table that disagreed would surface as a
+        // TypeInitializationException out of the reflection below, not as a green test.
+        var act = () => WriteSideOperationTypes();
+
+        act.Should().NotThrow(
+            "BlockchainOperationManager.BuildStampableAmountReaders refuses to initialise when the "
+            + "write side and the shared set disagree, so this failing means they do");
+    }
 
     [Theory]
     [MemberData(nameof(EveryStampableType))]
@@ -136,8 +174,30 @@ public sealed class StampableSetDriftTests
     }
 
     /// <summary>
-    /// Invokes the write side's own private switch. Reflection is the point: the guard has to read
-    /// the REAL decision, not a copy of it made in a test.
+    /// The operation types the write side actually has a reader for, read off the REAL table.
+    /// </summary>
+    private static IReadOnlyCollection<string> WriteSideOperationTypes()
+    {
+        var field = typeof(BlockchainOperationManager).GetField(
+            "StampableAmountReaders",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        field.Should().NotBeNull(
+            "the write side of the value stamp is the StampableAmountReaders table; if it was "
+            + "renamed or turned back into a switch this guard must be repointed rather than "
+            + "deleted — a switch's arms are enumerable by nothing");
+
+        var table = field!.GetValue(null) as System.Collections.IDictionary;
+        table.Should().NotBeNull(
+            "the table must stay a dictionary keyed by operation type — that is what makes the "
+            + "write side's own vocabulary enumerable, and a switch is not");
+
+        return table!.Keys.Cast<string>().ToList();
+    }
+
+    /// <summary>
+    /// Invokes the write side's own private resolver. Reflection is the point: the guard has to
+    /// read the REAL decision, not a copy of it made in a test.
     /// </summary>
     private static bool WriteSideResolves(BlockchainOperation operation)
     {

@@ -557,34 +557,21 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             return NotFound();
         }
 
-        IBlockchainOperation? operation = null;
-        try
-        {
-            var found = await _operationStore.GetByIdempotencyKeyAsync(identity.Correlation, ct);
-            if (found.Exception is not null)
-                return Unavailable();
-            if (found.IsError && !IsAbsentOperation(found))
-                return Unavailable();
-            if (!found.IsError && found.Result is null)
-                return Unavailable();
-
-            if (!found.IsError && found.Result is not null)
-            {
-                operation = found.Result;
-
-                // Caller scope: the receipt belongs to the API key AND the identity that ran
-                // it. A different key holder never learns that this exchange exists.
-                if (operation.InitiatorApiKeyId != query.ApiKeyId
-                    || operation.InitiatorUserId != query.CallerUserId
-                    || !string.Equals(operation.IdempotencyKey, identity.Correlation, StringComparison.Ordinal))
-                {
-                    return NotFound();
-                }
-            }
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
+        var lookup = await ReadReceiptOperationAsync(identity.Correlation, ct);
+        if (!lookup.IsReadable)
             return Unavailable();
+
+        var operation = lookup.Operation;
+        if (operation is not null)
+        {
+            // Caller scope: the receipt belongs to the API key AND the identity that ran it. A
+            // different key holder never learns that this exchange exists.
+            if (operation.InitiatorApiKeyId != query.ApiKeyId
+                || operation.InitiatorUserId != query.CallerUserId
+                || !string.Equals(operation.IdempotencyKey, identity.Correlation, StringComparison.Ordinal))
+            {
+                return NotFound();
+            }
         }
 
         var stored = string.IsNullOrWhiteSpace(ledger.ResultPayload)
@@ -1255,8 +1242,13 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
     /// the STRONGER statement, so without this a redelivered POST answered <c>Completed</c> for
     /// the same exchange a GET answered <c>AwaitingReconciliation</c> for — and Completed is the
     /// wronger one, because the project's credit never landed. One rule, read at both seams.
-    /// A row that cannot be read leaves the replay exactly as the ledger stated it: this only ever
-    /// weakens a claim, and inventing a weaker one from an unreadable row would be its own lie.
+    /// A row that cannot be READ is not a row that says nothing is outstanding. The stored payload
+    /// states <c>Completed</c>, which is the STRONGER claim, so keeping it on an unreadable row is
+    /// exactly the divergence this method exists to close, just one layer down:
+    /// <see cref="GetReceiptAsync"/> answers <c>Unavailable</c> for a row it cannot read, and this
+    /// seam now answers the same, from the same
+    /// <see cref="ReadReceiptOperationAsync"/>. A transient store failure makes both seams say
+    /// "ask again", and neither one asserts a settlement it cannot see.
     /// </remarks>
     private async Task<AZOAResult<ExchangeReceipt>> ReplayWithOutstandingCreditAsync(
         IdempotencyRecord record, ExchangeIdempotencyValue identity, CancellationToken ct)
@@ -1268,19 +1260,11 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             return replayed;
         }
 
-        IBlockchainOperation? operation = null;
-        try
-        {
-            var found = await _operationStore.GetByIdempotencyKeyAsync(identity.Correlation, ct);
-            if (!found.IsError)
-                operation = found.Result;
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            return replayed;
-        }
+        var lookup = await ReadReceiptOperationAsync(identity.Correlation, ct);
+        if (!lookup.IsReadable)
+            return Unavailable();
 
-        if (!IsProjectCreditOutstanding(operation))
+        if (!IsProjectCreditOutstanding(lookup.Operation))
             return replayed;
 
         replayed.Result.State = ExchangeReceiptState.AwaitingReconciliation;
@@ -1288,6 +1272,56 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         replayed.Result.RequiresReconciliation = true;
         replayed.Result.ProjectCreditAmount = null;
         return replayed;
+    }
+
+    /// <summary>What a receipt seam managed to learn about the operation row behind a receipt.</summary>
+    /// <param name="IsReadable">
+    /// False when the store errored or threw. It is NOT false for a row that is genuinely absent:
+    /// absence is a readable answer, and an exchange whose ledger key exists but whose row does not
+    /// is described from the ledger alone.
+    /// </param>
+    /// <param name="Operation">The row, or null when there provably is not one.</param>
+    private readonly record struct ReceiptOperationLookup(bool IsReadable, IBlockchainOperation? Operation);
+
+    /// <summary>
+    /// Reads the operation row behind a receipt under the ONE readability rule both receipt seams
+    /// obey.
+    /// </summary>
+    /// <remarks>
+    /// Two copies of this lookup is how the seams came to disagree in the first place, and the
+    /// second copy disagreed in the direction that matters: it swallowed an unreadable row and
+    /// went on to serve the stored payload, which is hard-coded to <c>Completed</c>. So a POST
+    /// redelivered during a transient store failure reported an exchange COMPLETE that a GET at
+    /// the same moment refused to describe at all. One method, both callers.
+    /// </remarks>
+    private async Task<ReceiptOperationLookup> ReadReceiptOperationAsync(
+        string correlation, CancellationToken ct)
+    {
+        try
+        {
+            var found = await _operationStore.GetByIdempotencyKeyAsync(correlation, ct);
+
+            if (found.Exception is not null)
+                return new ReceiptOperationLookup(IsReadable: false, Operation: null);
+
+            if (found.IsError)
+            {
+                return IsAbsentOperation(found)
+                    ? new ReceiptOperationLookup(IsReadable: true, Operation: null)
+                    : new ReceiptOperationLookup(IsReadable: false, Operation: null);
+            }
+
+            // A non-error result with no row is the store answering something it should not: it is
+            // not the NotFound code, so it is not the absence signal, and guessing which it meant
+            // is what a seam must not do.
+            return found.Result is null
+                ? new ReceiptOperationLookup(IsReadable: false, Operation: null)
+                : new ReceiptOperationLookup(IsReadable: true, Operation: found.Result);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new ReceiptOperationLookup(IsReadable: false, Operation: null);
+        }
     }
 
     /// <summary>

@@ -18,6 +18,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -93,7 +94,134 @@ public sealed class ReconciledExchangeTests
         world.TreasuryCredits.Should().BeEmpty("only a buy credits a project treasury");
     }
 
+    // ── The bounded windows underneath are not idempotency ───────────────────
+
+    [Fact]
+    public async Task A_stale_flag_and_an_evicted_replay_key_do_not_credit_the_project_twice()
+    {
+        // The compound failure this reconciler is written to survive, and the one its own
+        // bookkeeping used to create. The credit lands, the row write fails, so the row still says
+        // the credit is OUTSTANDING and the next sweep re-enters. The only thing standing between
+        // that sweep and a second credit was the treasury's replay window — 128 keys, evicted
+        // oldest-first. Let 128 other movements hit that project in between and the window has
+        // forgotten this key, so it applies the credit again: the project ends up funded twice for
+        // one exchange, and that balance is what a later sell is paid out against.
+        var world = new ExchangeWorld(declaredPartition: 1000);
+        var operation = world.SeedBuy(creditApplied: false, platformAmount: 700, projectUnits: 350);
+
+        world.OperationWritesFail();
+        (await world.Reconciler().SettleConfirmedAsync(operation)).Should().BeFalse(
+            "the row write failed, so the operation must not be advanced");
+        world.TreasuryCredits.Should().ContainSingle(
+            "the credit itself landed — that is exactly what makes the stale flag dangerous");
+
+        // The row is exactly as the lost write left it, and the window has moved on.
+        operation.Parameters[ReserveExchangeManager.ProjectCreditAppliedParameter] = "false";
+        world.TreasuryForgetsReplayKeys();
+        world.OperationWritesSucceed();
+
+        var second = await world.Reconciler().SettleConfirmedAsync(operation);
+
+        world.TreasuryCredits.Should().ContainSingle(
+            "the money must not move a second time; the reconciler's own durable anchor says the "
+            + "credit already landed, and it does not lean on somebody else's bounded window");
+        world.TreasuryCredits.Single().Should().Be(new BigInteger(700));
+        second.Should().BeTrue(
+            "with the credit provably already applied and the row now writable, the exchange is "
+            + "finished and may advance");
+        operation.Parameters[ReserveExchangeManager.ProjectCreditAppliedParameter].Should().Be(
+            "true", "the flag catches up with money that moved one sweep earlier");
+    }
+
+    [Fact]
+    public async Task A_settlement_another_pass_still_holds_is_refused_rather_than_repeated()
+    {
+        // An anchor that is open and not ours means either a concurrent sweep is mid-credit or one
+        // died mid-credit, and nothing can tell those apart. Under-crediting is visible and an
+        // operator can finish it; crediting twice mints value out of nothing. So this refuses.
+        var world = new ExchangeWorld(declaredPartition: 1000);
+        var operation = world.SeedBuy(creditApplied: false, platformAmount: 700, projectUnits: 350);
+
+        world.Anchors.SeedOpen(LedgerKey + ":reconcile-credit");
+
+        var settled = await world.Reconciler().SettleConfirmedAsync(operation);
+
+        settled.Should().BeFalse("nobody can say whether the held effect landed");
+        world.TreasuryCredits.Should().BeEmpty("no counter moved on an unanswerable question");
+        operation.Parameters[ReserveExchangeManager.ProjectCreditAppliedParameter].Should().Be(
+            "false", "the row keeps stating that the credit is outstanding");
+    }
+
+    [Fact]
+    public async Task A_credit_that_failed_once_is_retried_by_the_next_sweep_and_lands_once()
+    {
+        // The anchor must not turn one transient treasury blip into permanent manual work. The
+        // ledger will not let a settled key be settled again — the package updates WHERE the row
+        // is still InProgress — so a retry takes the NEXT generation of the key rather than
+        // reusing a spent one. Reusing it would throw in production and pass against a permissive
+        // fake, which is why this world's ledger enforces the same precondition.
+        var world = new ExchangeWorld(declaredPartition: 1000);
+        var operation = world.SeedBuy(creditApplied: false, platformAmount: 700, projectUnits: 350);
+
+        world.TreasuryRefusesMovements();
+        (await world.Reconciler().SettleConfirmedAsync(operation)).Should().BeFalse();
+        world.TreasuryCredits.Should().BeEmpty("the treasury refused, so nothing moved");
+
+        world.TreasuryAcceptsMovements();
+
+        var second = await world.Reconciler().SettleConfirmedAsync(operation);
+
+        second.Should().BeTrue("a transient refusal is what the next sweep is for");
+        world.TreasuryCredits.Should().ContainSingle().Which.Should().Be(new BigInteger(700));
+        world.Anchors.Settled.Should().BeTrue(
+            "the retry generation was settled through the ledger's own InProgress precondition, "
+            + "not by re-settling a key the ledger had already closed");
+
+        // And a third sweep, with the window past this key, still moves nothing.
+        world.TreasuryForgetsReplayKeys();
+        operation.Parameters[ReserveExchangeManager.ProjectCreditAppliedParameter] = "false";
+        (await world.Reconciler().SettleConfirmedAsync(operation)).Should().BeTrue();
+        world.TreasuryCredits.Should().ContainSingle("the credit landed once and stays landed");
+    }
+
     // ── An accepted-then-failed group is actually unwound ────────────────────
+
+    [Fact]
+    public async Task A_second_compensation_pass_does_not_hand_the_partition_back_twice()
+    {
+        // CompensateFailedAsync is re-entered whenever ANY step in it returns false, and the
+        // unwind runs BEFORE the treasury refund. So a refund that fails re-runs the unwind next
+        // sweep — and the reserve's replay window is bounded exactly as the treasury's is. Once it
+        // has evicted the key, the partition is handed back a second time for a group that
+        // happened once, and the reserve reports units nobody ever took.
+        var world = new ExchangeWorld(declaredPartition: 1000);
+        var operation = world.SeedSell(platformAmount: 700, projectUnits: 350, treasurySpent: true);
+
+        world.Draw(ReserveDrawKind.Issue, 350);
+        world.Draw(ReserveDrawKind.Return, 350);
+        world.Partition().Available.Should().Be(new BigInteger(1000));
+
+        world.TreasuryRefusesMovements();
+        (await world.Reconciler().CompensateFailedAsync(operation)).Should().BeFalse(
+            "the treasury refund could not be recorded, so the operator still has work to do");
+        world.Partition().Available.Should().Be(
+            new BigInteger(650), "the unwind itself landed before the refund failed");
+
+        // The next sweep, with both bounded windows past this exchange's keys.
+        world.ReserveForgetsReplayKeys();
+        world.TreasuryForgetsReplayKeys();
+        world.TreasuryAcceptsMovements();
+
+        (await world.Reconciler().CompensateFailedAsync(operation)).Should().BeTrue(
+            "the refund is now recordable and the unwind is already done");
+
+        world.Partition().Available.Should().Be(
+            new BigInteger(650),
+            "the units were re-issued ONCE; a second unwind would draw the partition again for a "
+            + "group that only ever happened once");
+        world.TreasuryCredits.Should().ContainSingle().Which.Should().Be(
+            new BigInteger(700), "and the refund lands exactly once");
+    }
 
     [Fact]
     public async Task A_buy_that_failed_on_chain_gives_the_partition_back()
@@ -164,6 +292,8 @@ public sealed class ReconciledExchangeTests
         private readonly Mock<IBlockchainOperationStore> _operations = new();
 
         private bool _treasuryRefuses;
+        private bool _treasuryForgetsKeys;
+        private bool _operationWritesFail;
 
         public ExchangeWorld(long declaredPartition)
         {
@@ -177,9 +307,11 @@ public sealed class ReconciledExchangeTests
                     if (_treasuryRefuses)
                         return AZOAResult<ProjectTreasuryMovementOutcome>.Failure("The ledger is unavailable.");
 
-                    // The real ledger is idempotent on the operation key; a fake that was not
-                    // would let a double-credit pass as a pass.
-                    if (!AppliedKeys.Add(request.OperationKey))
+                    // The real ledger is idempotent on the operation key ONLY inside a bounded
+                    // window (ProjectTreasuryService.MovementReplayWindowSize = 128, evicted
+                    // oldest-first). ForgetsReplayKeys models the key having fallen out of it,
+                    // which is what 128 other movements on one project treasury do.
+                    if (!AppliedKeys.Add(request.OperationKey) && !_treasuryForgetsKeys)
                     {
                         return AZOAResult<ProjectTreasuryMovementOutcome>.Success(
                             new ProjectTreasuryMovementOutcome(
@@ -201,17 +333,39 @@ public sealed class ReconciledExchangeTests
             _operations
                 .Setup(s => s.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((IBlockchainOperation op, CancellationToken _) =>
-                    AZOAResult<IBlockchainOperation>.Success(op));
+                    _operationWritesFail
+                        ? AZOAResult<IBlockchainOperation>.Failure("The operation store is unavailable.")
+                        : AZOAResult<IBlockchainOperation>.Success(op));
         }
 
         public List<BigInteger> TreasuryCredits { get; } = new();
+
+        /// <summary>The durable anchors the reconciler keeps for itself, shared across sweeps.</summary>
+        public StrictAnchorLedger Anchors { get; } = new();
 
         private HashSet<string> AppliedKeys { get; } = new(StringComparer.Ordinal);
 
         public void TreasuryRefusesMovements() => _treasuryRefuses = true;
 
+        public void TreasuryAcceptsMovements() => _treasuryRefuses = false;
+
+        /// <summary>
+        /// Models the bounded replay window having evicted this exchange's key: 128 movements on
+        /// one project treasury and a repeat is no longer recognised as a repeat.
+        /// </summary>
+        public void TreasuryForgetsReplayKeys() => _treasuryForgetsKeys = true;
+
+        /// <summary>The same eviction on the reserve's own window (DrawReplayWindowSize = 128).</summary>
+        public void ReserveForgetsReplayKeys() => _reserve.ForgetReplayKeys();
+
+        /// <summary>The write that leaves the row's flag stale while the money has already moved.</summary>
+        public void OperationWritesFail() => _operationWritesFail = true;
+
+        public void OperationWritesSucceed() => _operationWritesFail = false;
+
+        /// <summary>A NEW reconciler each call, as the scoped registration gives each sweep.</summary>
         public ExchangeSettlementReconciler Reconciler() =>
-            new(_treasury.Object, _reserve, _holds.Object, _operations.Object);
+            new(_treasury.Object, _reserve, _holds.Object, _operations.Object, Anchors);
 
         public ReservePartitionCounters Partition() => _reserve.Counters();
 
@@ -294,6 +448,72 @@ public sealed class ReconciledExchangeTests
     }
 
     /// <summary>
+    /// An idempotency ledger with the PACKAGE's precondition, not a permissive stand-in.
+    /// </summary>
+    /// <remarks>
+    /// SurrealForge's ledger settles a key with
+    /// <c>UPDATE ... SET state = $_next WHERE state = $_expected</c> and throws "Cannot complete
+    /// idempotency key" when the row has already moved on. A fake that quietly allowed
+    /// Failed → Completed would let an anchor design pass here and throw in production the first
+    /// time an effect was retried — the exact shape of defect this wave keeps finding, so this
+    /// world refuses to be that fake.
+    /// </remarks>
+    private sealed class StrictAnchorLedger : IIdempotencyStore
+    {
+        private readonly Dictionary<string, IdempotencyRecord> _records = new(StringComparer.Ordinal);
+
+        /// <summary>True once any key has been settled through the real precondition.</summary>
+        public bool Settled { get; private set; }
+
+        /// <summary>An anchor another pass claimed and never settled.</summary>
+        public void SeedOpen(string key) =>
+            _records[key] = new IdempotencyRecord
+            {
+                Key = key,
+                OperationType = "reserve_exchange_settlement",
+                State = IdempotencyState.InProgress,
+            };
+
+        public Task<IdempotencyClaim> TryClaimAsync(string key, string operationType, CancellationToken ct)
+        {
+            if (_records.TryGetValue(key, out var existing))
+                return Task.FromResult(new IdempotencyClaim(false, existing));
+
+            var mine = new IdempotencyRecord
+            {
+                Key = key,
+                OperationType = operationType,
+                State = IdempotencyState.InProgress,
+            };
+            _records[key] = mine;
+            return Task.FromResult(new IdempotencyClaim(true, mine));
+        }
+
+        public Task CompleteAsync(string key, string resultPayload, CancellationToken ct)
+            => Settle(key, IdempotencyState.Completed, "complete");
+
+        public Task FailAsync(string key, string error, CancellationToken ct)
+            => Settle(key, IdempotencyState.Failed, "fail");
+
+        public Task<IdempotencyRecord?> GetAsync(string key, CancellationToken ct)
+            => Task.FromResult(_records.TryGetValue(key, out var found) ? found : null);
+
+        private Task Settle(string key, IdempotencyState next, string verb)
+        {
+            if (!_records.TryGetValue(key, out var record) || record.State != IdempotencyState.InProgress)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot {verb} idempotency key '{key}': it is not InProgress. The package's "
+                    + "UPDATE carries WHERE state = InProgress, so this is what production does.");
+            }
+
+            record.State = next;
+            Settled = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
     /// A reserve backed by the REAL partition arithmetic and the real replay window, so an
     /// oversubscribed or duplicated draw is refused here for the reason it is refused in
     /// production.
@@ -316,6 +536,11 @@ public sealed class ReconciledExchangeTests
 
         public ReservePartitionCounters Counters() => _counters;
 
+        private bool _forgetsKeys;
+
+        /// <summary>Models PlatformReserveService's 128-key window having evicted this key.</summary>
+        public void ForgetReplayKeys() => _forgetsKeys = true;
+
         public Task<AZOAResult<ReserveDrawOutcome>> DrawAsync(
             ReserveDrawRequest request, CancellationToken ct = default)
         {
@@ -332,7 +557,7 @@ public sealed class ReconciledExchangeTests
                     $"Partition '{partition}' is not declared on asset '{_assetId}'."));
             }
 
-            if (!_appliedKeys.Add(request.OperationKey))
+            if (!_appliedKeys.Add(request.OperationKey) && !_forgetsKeys)
             {
                 return Task.FromResult(AZOAResult<ReserveDrawOutcome>.Success(
                     new ReserveDrawOutcome(

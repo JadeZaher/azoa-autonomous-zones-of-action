@@ -683,34 +683,95 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// </remarks>
     private static bool TryResolveStampableAmount(IBlockchainOperation operation, out RailAmount amount)
     {
-        var parameters = operation.Parameters;
-        switch (operation.OperationType)
-        {
-            // Every arm names a member of ValueStampOperationTypes.All, and the drift guard
-            // (tests/.../Analytics/StampableSetDriftTests.cs) fails the build if this switch and
-            // that set ever disagree in either direction — which is exactly how a stamped
-            // operation came to read back "isStampable": false twice.
-            case ValueStampOperationTypes.Mint when operation is IMintOperation mint:
-                // The typed field already carries the count; name the asset when the row does,
-                // and otherwise leave the caller's own dimension untouched.
-                amount = NameAsset(mint.Amount, MintedAssetId(operation));
-                return true;
-            case ValueStampOperationTypes.Burn:
-                return TryReadRailAmount(
-                    operation, "Amount", parameters.GetValueOrDefault("TokenId", string.Empty), out amount);
-            case ValueStampOperationTypes.Transfer:
-            case ValueStampOperationTypes.IssueUnits:
-                return TryReadRailAmount(operation, "Amount", TransferredAssetId(operation), out amount);
-            case ValueStampOperationTypes.Exchange:
-                return TryReadRailAmount(operation, "Amount", ExchangedAssetId(operation), out amount);
-            case ValueStampOperationTypes.Swap:
-                return TryReadRailAmount(
-                    operation, "AmountIn", parameters.GetValueOrDefault("TokenIn", string.Empty), out amount);
-            default:
-                amount = RailAmount.Zero;
-                return false;
-        }
+        if (StampableAmountReaders.TryGetValue(operation.OperationType ?? string.Empty, out var read))
+            return read(operation, out amount);
+
+        amount = RailAmount.Zero;
+        return false;
     }
+
+    /// <summary>Reads the one quantity a stampable operation moved, dimensioned in its own asset.</summary>
+    private delegate bool StampableAmountReader(IBlockchainOperation operation, out RailAmount amount);
+
+    /// <summary>
+    /// The write side of the value stamp, as a TABLE keyed by operation type rather than a switch.
+    /// </summary>
+    /// <remarks>
+    /// A switch could grow a <c>case "Foo":</c> that no test could enumerate, and that is exactly
+    /// how the read side came to answer <c>"pricing": "Priced"</c> beside <c>"isStampable": false</c>
+    /// twice: the write side learned a type and the shared set never did. A table's keys ARE
+    /// enumerable, so <see cref="BuildStampableAmountReaders"/> below can — and does — refuse to
+    /// build unless they are exactly <see cref="ValueStampOperationTypes.All"/>. There is now no
+    /// way to teach the write side a type without declaring it in the one set the read side reads.
+    /// </remarks>
+    private static readonly IReadOnlyDictionary<string, StampableAmountReader> StampableAmountReaders =
+        BuildStampableAmountReaders();
+
+    /// <summary>
+    /// Builds the reader table and holds it to <see cref="ValueStampOperationTypes.All"/> in BOTH
+    /// directions. A declared type with no reader, or a reader for an undeclared type, refuses to
+    /// initialise rather than shipping a surface that contradicts itself about one row.
+    /// </summary>
+    private static IReadOnlyDictionary<string, StampableAmountReader> BuildStampableAmountReaders()
+    {
+        var readers = new Dictionary<string, StampableAmountReader>(StringComparer.Ordinal)
+        {
+            [ValueStampOperationTypes.Mint] = ReadMintedAmount,
+            [ValueStampOperationTypes.Burn] = ReadBurnedAmount,
+            [ValueStampOperationTypes.Transfer] = ReadTransferredAmount,
+            [ValueStampOperationTypes.IssueUnits] = ReadTransferredAmount,
+            [ValueStampOperationTypes.Exchange] = ReadExchangedAmount,
+            [ValueStampOperationTypes.Swap] = ReadSwappedAmount,
+        };
+
+        var declaredWithoutReader = ValueStampOperationTypes.All.Except(readers.Keys, StringComparer.Ordinal).ToArray();
+        var readerWithoutDeclaration = readers.Keys.Except(ValueStampOperationTypes.All, StringComparer.Ordinal).ToArray();
+
+        if (declaredWithoutReader.Length > 0 || readerWithoutDeclaration.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "The value stamp write side and "
+                + $"{nameof(ValueStampOperationTypes)}.{nameof(ValueStampOperationTypes.All)} disagree. "
+                + $"Declared with no reader: [{string.Join(", ", declaredWithoutReader)}]. "
+                + $"Read here but not declared: [{string.Join(", ", readerWithoutDeclaration)}]. "
+                + "A type present on one side only reads back as priced-and-unstampable at once, "
+                + "which is a contradiction on a financial surface.");
+        }
+
+        return readers;
+    }
+
+    /// <summary>
+    /// The typed field already carries the count; name the asset when the row does, and otherwise
+    /// leave the caller's own dimension untouched. A row typed Mint that is not an
+    /// <see cref="IMintOperation"/> carries no count to stamp.
+    /// </summary>
+    private static bool ReadMintedAmount(IBlockchainOperation operation, out RailAmount amount)
+    {
+        if (operation is not IMintOperation mint)
+        {
+            amount = RailAmount.Zero;
+            return false;
+        }
+
+        amount = NameAsset(mint.Amount, MintedAssetId(operation));
+        return true;
+    }
+
+    private static bool ReadBurnedAmount(IBlockchainOperation operation, out RailAmount amount) =>
+        TryReadRailAmount(
+            operation, "Amount", operation.Parameters.GetValueOrDefault("TokenId", string.Empty), out amount);
+
+    /// <summary>Shared by Transfer and IssueUnits: the same SHAPE, and not the same direction.</summary>
+    private static bool ReadTransferredAmount(IBlockchainOperation operation, out RailAmount amount) =>
+        TryReadRailAmount(operation, "Amount", TransferredAssetId(operation), out amount);
+
+    private static bool ReadExchangedAmount(IBlockchainOperation operation, out RailAmount amount) =>
+        TryReadRailAmount(operation, "Amount", ExchangedAssetId(operation), out amount);
+
+    private static bool ReadSwappedAmount(IBlockchainOperation operation, out RailAmount amount) =>
+        TryReadRailAmount(
+            operation, "AmountIn", operation.Parameters.GetValueOrDefault("TokenIn", string.Empty), out amount);
 
     /// <summary>The asset a mint issued, when the row names one; blank otherwise (an ASA-create names none yet).</summary>
     private static string MintedAssetId(IBlockchainOperation operation) =>

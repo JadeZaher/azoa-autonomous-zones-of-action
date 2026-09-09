@@ -426,6 +426,65 @@ public class ReserveExchangeManagerTests
         receipt.Code.Should().Be(AzoaErrorCodes.NotFound);
     }
 
+    // ── One readability rule, read at BOTH receipt seams ─────────────────────
+
+    [Fact]
+    public async Task A_redelivered_post_does_not_claim_completed_for_a_row_the_receipt_route_refuses_to_read()
+    {
+        // The stored replay payload is hard-coded to Completed, which is the STRONGER claim about
+        // an exchange. When the operation row cannot be READ, the GET seam has always refused to
+        // describe the exchange at all — and the POST replay seam served that stored Completed
+        // anyway. Same exchange, same instant, two answers, and the confident one was the guess.
+        var harness = new ExchangeTestHarness();
+        var manager = harness.Build();
+        await manager.ExchangeAsync(harness.Request(), harness.Caller("sponsorship-9"));
+
+        var submissionsBefore = harness.Submitter.Submitted.Count;
+        var drawsBefore = harness.Draws.Count;
+        var movementsBefore = harness.Movements.Count;
+
+        harness.Operations.ReadsFail = true;
+
+        var redelivered = await manager.ExchangeAsync(harness.Request(), harness.Caller("sponsorship-9"));
+        var read = await manager.GetReceiptAsync(new ExchangeReceiptQuery
+        {
+            ApiKeyId = harness.ApiKeyId,
+            CallerUserId = harness.TenantId,
+            ClientIdempotencyKey = "sponsorship-9",
+        });
+
+        read.Code.Should().Be(
+            AzoaErrorCodes.DependencyUnavailable,
+            "the GET seam has always refused to describe an exchange whose row it cannot read");
+        redelivered.IsError.Should().BeTrue(
+            "the POST replay seam answers the same question and must not answer it more "
+            + "confidently than the seam beside it");
+        redelivered.Code.Should().Be(AzoaErrorCodes.DependencyUnavailable);
+
+        // And nothing moved to produce that answer: a replay is a read, and a refused read is
+        // still a read.
+        harness.Submitter.Submitted.Should().HaveCount(
+            submissionsBefore, "a redelivered request must never re-submit the group");
+        harness.Draws.Should().HaveCount(drawsBefore, "no partition was drawn a second time");
+        harness.Movements.Should().HaveCount(movementsBefore, "no treasury counter moved");
+    }
+
+    [Fact]
+    public async Task A_readable_row_still_replays_the_original_receipt()
+    {
+        // The guard above must not have turned every duplicate POST into an outage. A row that
+        // reads fine still replays exactly as before.
+        var harness = new ExchangeTestHarness();
+        var manager = harness.Build();
+        await manager.ExchangeAsync(harness.Request(), harness.Caller("sponsorship-9"));
+
+        var redelivered = await manager.ExchangeAsync(harness.Request(), harness.Caller("sponsorship-9"));
+
+        redelivered.IsError.Should().BeFalse(redelivered.Message);
+        redelivered.Result!.Replayed.Should().BeTrue();
+        redelivered.Result.State.Should().Be(ExchangeReceiptState.Completed);
+    }
+
     private static string ExchangeLedgerKey(ExchangeTestHarness harness) =>
         $"exchange:{harness.ApiKeyId}:sponsorship-1";
 }
