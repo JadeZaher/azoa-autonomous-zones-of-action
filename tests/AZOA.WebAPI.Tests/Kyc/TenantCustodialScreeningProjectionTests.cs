@@ -194,6 +194,77 @@ public sealed class TenantCustodialScreeningProjectionTests
             "a zero or negative SLA would remove the deadline entirely");
     }
 
+    // ── Recourse: the route to a human (W1.5) ──────────────────────────────
+
+    [Fact]
+    public async Task UnderReviewProjection_CarriesTheOperatorsRouteToAHuman()
+    {
+        // Without this the projection says "support will confirm the outcome" and
+        // names nobody, which is the stranded-forever case this item exists for.
+        const string contact = "compliance@node.example";
+        var tenantId = Guid.NewGuid();
+        var userId = SeedApprovedSubject(tenantId);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.MANUAL_REVIEW);
+
+        var status = await CreateManager(manualReviewContact: contact)
+            .GetStatusAsync(tenantId, ExternalSubject);
+
+        status.Result!.KycStatus.Should().Be(TenantKycStatus.UnderReview);
+        status.Result.ReviewContact.Should().Be(contact);
+        status.Result.UnavailableReason.Should().Contain(
+            contact,
+            "a tenant that renders only unavailableReason must still show a route to a human");
+    }
+
+    [Fact]
+    public async Task UnderReviewProjection_OmitsAContactTheOperatorNeverSet()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = SeedApprovedSubject(tenantId);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.MANUAL_REVIEW);
+
+        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+
+        status.Result!.ReviewContact.Should().BeNull();
+        status.Result.UnavailableReason.Should().Be(KycAmlClearance.UnderReviewReason);
+    }
+
+    [Theory]
+    [InlineData("support@node.example\nX-Injected: header")]
+    [InlineData("   ")]
+    public async Task UnusableManualReviewContact_ProjectsNoRouteRatherThanABrokenOne(
+        string configured)
+    {
+        // A contact a subject cannot use is worse than an absent one: it reads as
+        // recourse that exists. Control characters also travel into headers and logs.
+        var tenantId = Guid.NewGuid();
+        var userId = SeedApprovedSubject(tenantId);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.HIT);
+
+        var status = await CreateManager(manualReviewContact: configured)
+            .GetStatusAsync(tenantId, ExternalSubject);
+
+        status.Result!.KycStatus.Should().Be(TenantKycStatus.UnderReview);
+        status.Result.ReviewContact.Should().BeNull();
+        status.Result.UnavailableReason.Should().Be(KycAmlClearance.UnderReviewReason);
+    }
+
+    [Fact]
+    public async Task ClearedSubject_CarriesNeitherADeadlineNorAContact()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = SeedApprovedSubject(tenantId);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.NO_HIT);
+
+        var status = await CreateManager(manualReviewContact: "compliance@node.example")
+            .GetStatusAsync(tenantId, ExternalSubject);
+
+        status.Result!.Ready.Should().BeTrue();
+        status.Result.ReviewDueAt.Should().BeNull();
+        status.Result.ReviewContact.Should().BeNull(
+            "a cleared subject is not under review and must not be told to contact anyone");
+    }
+
     // ── Custody mode reaches the capability projection (W1.8 adoption) ──────
 
     [Fact]
@@ -223,8 +294,16 @@ public sealed class TenantCustodialScreeningProjectionTests
         var capabilities = manager.GetCapabilities();
 
         capabilities.CustodyAvailable.Should().BeFalse();
-        capabilities.UnavailableReason.Should().Be(
+
+        // The verdict must reach the tenant; the resolver's WORDS must not. That reason names
+        // Blockchain:Mode, so passing it through puts a chain-configuration key on the account
+        // screen of a sponsor who never asked to know a chain exists.
+        capabilities.UnavailableReason.Should().NotBe(
             CustodyModeResolver.PlatformCustodyInSimulatedModeReason);
+        capabilities.UnavailableReason.Should().NotContainEquivalentOf("blockchain");
+        capabilities.UnavailableReason.Should().NotContainEquivalentOf("Blockchain:Mode");
+        capabilities.UnavailableReason.Should().NotContainEquivalentOf("simulated");
+        capabilities.UnavailableReason.Should().Contain("key management");
     }
 
     [Fact]
@@ -303,6 +382,7 @@ public sealed class TenantCustodialScreeningProjectionTests
         string custodyMode = CustodyModeResolver.DevelopmentOnlyMode,
         string environmentName = "Development",
         string? manualReviewSlaHours = null,
+        string? manualReviewContact = null,
         bool registerScreeningStore = true)
     {
         var kycCapabilities = new KycProviderCapabilitiesModel
@@ -331,6 +411,8 @@ public sealed class TenantCustodialScreeningProjectionTests
         };
         if (manualReviewSlaHours is not null)
             settings[KycAmlClearance.ManualReviewSlaHoursConfigurationPath] = manualReviewSlaHours;
+        if (manualReviewContact is not null)
+            settings[KycAmlClearance.ManualReviewContactConfigurationPath] = manualReviewContact;
 
         return new TenantCustodialAccountManager(
             _tenants.Object,

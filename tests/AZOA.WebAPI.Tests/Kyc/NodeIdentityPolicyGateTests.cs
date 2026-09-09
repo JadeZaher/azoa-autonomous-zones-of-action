@@ -256,18 +256,13 @@ public sealed class NodeIdentityPolicyGateTests
     }
 
     [Fact]
-    public async Task RegisterAsync_WhenTheIndexRefusesTheWrite_NamesTheFieldThatCollided()
+    public async Task RegisterAsync_WhenTheWriteIsRefused_SaysSoWithoutReadingTheUserTable()
     {
-        var store = new Mock<IUserStore>();
+        var store = new Mock<IUserStore>(MockBehavior.Strict);
         store.Setup(item => item.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<IUser>.FailureWithCode(
                 "USER_STORE_UNAVAILABLE: Identity persistence is temporarily unavailable.",
                 AzoaErrorCodes.DependencyUnavailable));
-        store.Setup(item => item.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>>
-            {
-                Result = new[] { new User { Username = "someone", Email = "neo@matrix.com" } },
-            });
         var manager = new UserManager(store.Object, new ConfigurationBuilder().Build());
 
         var result = await manager.RegisterAsync(new UserRegisterModel
@@ -278,7 +273,95 @@ public sealed class NodeIdentityPolicyGateTests
         });
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Be("An account with this email already exists.");
+        result.Message.Should().Be(UserManager.RegistrationRefusedMessage);
+        // Strict mock: any read at all on the anonymous failure path throws. Naming
+        // the field that collided used to cost a full scan a stranger could force,
+        // and told that stranger whether the address is registered.
+        store.Verify(
+            item => item.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        store.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task UpdateAsync_PersistsTheSameFoldedFormRegistrationPersists()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "neo",
+            Email = "neo@matrix.com",
+            PasswordHash = "hash",
+        };
+        var store = new Mock<IUserStore>();
+        store.Setup(item => item.GetByIdAsync(user.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser> { Result = user });
+        store.Setup(item => item.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new IUser[] { user } });
+        store.Setup(item => item.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IUser saved, CancellationToken _) => new AZOAResult<IUser> { Result = saved });
+        var manager = new UserManager(store.Object, new ConfigurationBuilder().Build());
+
+        var result = await manager.UpdateAsync(
+            user.Id,
+            new UserUpdateModel { Email = "  Neo@Matrix.COM  ", Username = "  NEO  " },
+            user.Id);
+
+        result.IsError.Should().BeFalse(result.Message);
+        result.Result!.Email.Should().Be(
+            "neo@matrix.com",
+            "user_email is case-sensitive, so a re-cased profile update would otherwise "
+            + "walk straight past the UNIQUE index and leave two rows for one address");
+        result.Result.Username.Should().Be("neo");
+    }
+
+    [Theory]
+    [InlineData("neo@matrix.com", "lower-hash")]
+    [InlineData("Neo@Matrix.com", "upper-hash")]
+    public async Task LoginAsync_WithTwoRowsFoldingToOneAddress_ResolvesTheExactRow(
+        string typedAddress,
+        string password)
+    {
+        var manager = ManagerOverUsers(
+            new User { Id = Guid.NewGuid(), Email = "neo@matrix.com", PasswordHash = Hash("lower-hash") },
+            new User { Id = Guid.NewGuid(), Email = "Neo@Matrix.com", PasswordHash = Hash("upper-hash") });
+
+        var result = await manager.LoginAsync(new UserLoginModel { Email = typedAddress, Password = password });
+
+        result.IsError.Should().BeFalse(result.Message);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithTwoRowsFoldingToOneAddressAndNoExactRow_ResolvesNothing()
+    {
+        var manager = ManagerOverUsers(
+            new User { Id = Guid.NewGuid(), Email = "neo@matrix.com", PasswordHash = Hash("lower-hash") },
+            new User { Id = Guid.NewGuid(), Email = "Neo@Matrix.com", PasswordHash = Hash("upper-hash") });
+
+        var result = await manager.LoginAsync(new UserLoginModel
+        {
+            Email = "NEO@MATRIX.COM",
+            Password = "lower-hash",
+        });
+
+        result.IsError.Should().BeTrue(
+            "row order must never decide which of two password hashes an address authenticates against");
+        result.Message.Should().Be("Invalid credentials.");
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithOneRowWrittenBeforeFolding_StillResolvesCaseInsensitively()
+    {
+        var manager = ManagerOverUsers(
+            new User { Id = Guid.NewGuid(), Email = "Neo@Matrix.com", PasswordHash = Hash("upper-hash") });
+
+        var result = await manager.LoginAsync(new UserLoginModel
+        {
+            Email = "neo@matrix.com",
+            Password = "upper-hash",
+        });
+
+        result.IsError.Should().BeFalse(result.Message);
     }
 
     // ── Identomat return URL ────────────────────────────────────────────────
@@ -370,6 +453,27 @@ public sealed class NodeIdentityPolicyGateTests
 
     private static IHostEnvironment EnvironmentNamed(string environmentName)
         => Mock.Of<IHostEnvironment>(environment => environment.EnvironmentName == environmentName);
+
+    private static string Hash(string password) => BCrypt.Net.BCrypt.HashPassword(password);
+
+    /// <summary>A manager whose only user rows are the ones given, with a signing key.</summary>
+    private static UserManager ManagerOverUsers(params IUser[] users)
+    {
+        var store = new Mock<IUserStore>();
+        store.Setup(item => item.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = users });
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:Key"] = "node-identity-policy-gate-signing-key-for-tests!",
+                ["Jwt:Issuer"] = "test",
+                ["Jwt:Audience"] = "test",
+            })
+            .Build();
+
+        return new UserManager(store.Object, configuration);
+    }
 
     private static HostedSessionRequest BeginRequest() => new()
     {

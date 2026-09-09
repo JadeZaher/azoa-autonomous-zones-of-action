@@ -35,6 +35,9 @@ public sealed record CustodyModeDecision(
 /// DI registration, so every caller inherits one answer instead of re-deriving it.
 /// Custody <em>assurance</em> (boot guard, readiness probe, float caps) consumes this
 /// resolver too rather than restating the predicate.
+/// <see cref="Resolve"/> is deliberately the only entry point: a bool-only accessor
+/// invites a caller to drop <see cref="CustodyModeDecision.UnavailableReason"/>, and an
+/// unexplained refusal is what sends a sponsor into a wall with no route to a human.
 /// </summary>
 public static class CustodyModeResolver
 {
@@ -70,10 +73,6 @@ public static class CustodyModeResolver
     /// <summary>Names an unrecognised configured mode without echoing anything secret.</summary>
     public static string UnrecognisedModeReason(string configuredMode)
         => $"Custodial key management mode '{configuredMode}' is not recognised on this node.";
-
-    /// <summary>True when this node may create and hold a custodial signing key.</summary>
-    public static bool IsAvailable(IConfiguration configuration, IHostEnvironment? environment)
-        => Resolve(configuration, environment).Available;
 
     /// <summary>
     /// Resolves the configured custody mode and whether it is usable here. A null

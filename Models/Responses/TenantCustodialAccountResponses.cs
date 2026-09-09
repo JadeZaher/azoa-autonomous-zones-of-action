@@ -40,6 +40,9 @@ public sealed class TenantCustodialAccountStatusResponse
 
     /// <summary>When an open manual review is due a decision; null unless UnderReview.</summary>
     public DateTimeOffset? ReviewDueAt { get; set; }
+
+    /// <summary>Operator-set route to a human while UnderReview; null when unset.</summary>
+    public string? ReviewContact { get; set; }
 }
 
 /// <summary>Runtime capability report for tenant-managed custody and verification.</summary>

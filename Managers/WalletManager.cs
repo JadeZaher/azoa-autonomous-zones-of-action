@@ -420,6 +420,16 @@ public class WalletManager : IWalletManager
         }
     }
 
+    /// <summary>
+    /// Provisions the deterministic tenant custodial wallet, create-only and idempotent.
+    /// Its custody answer comes from the SAME resolver, one level up: the only caller,
+    /// <c>TenantCustodialAccountManager.ConvergeAccountAsync</c>, provisions solely when
+    /// <c>capabilities.WalletProvisioningReady</c> is true, and that flag is derived from
+    /// <see cref="CustodyModeResolver.Resolve"/>. Moving the check down here (so a direct
+    /// caller cannot bypass it) is the appendix custody-assurance item "CustodyMode=Disabled
+    /// actually disabling", not this one - it also has to reach the wallet fixtures that
+    /// construct this manager with no custody mode configured.
+    /// </summary>
     public async Task<AZOAResult<IWallet>> BootstrapWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null)
     {
         if (userId == Guid.Empty)

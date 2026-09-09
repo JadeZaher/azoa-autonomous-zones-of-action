@@ -429,9 +429,12 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         // Under review comes first: it is the one state the subject cannot resolve
         // themselves, so it is the one they must be told about by name.
         var unavailableReason = capabilities.UnavailableReason
-            ?? (kycStatus == TenantKycStatus.UnderReview ? KycAmlClearance.UnderReviewReason
-                : !walletReady ? "The custodial wallet is not ready."
-                : kycStatus != TenantKycStatus.Approved ? "KYC verification is not approved."
+            ?? (kycStatus == TenantKycStatus.UnderReview
+                    ? KycAmlClearance.ResolveUnderReviewReason(_configuration)
+                : !walletReady
+                    ? "The custodial wallet is not ready."
+                : kycStatus != TenantKycStatus.Approved
+                    ? "KYC verification is not approved."
                 : null);
 
         return AZOAResult<TenantCustodialAccountStatusResponse>.Success(new TenantCustodialAccountStatusResponse
@@ -450,12 +453,16 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 && walletReady
                 && kycStatus == TenantKycStatus.Approved,
             UnavailableReason = unavailableReason,
-            ReviewDueAt = review.Result.ReviewDueAt
+            ReviewDueAt = review.Result.ReviewDueAt,
+            ReviewContact = review.Result.ReviewContact
         });
     }
 
-    /// <summary>Whether an approved identity still owes a sanctions answer, and by when.</summary>
-    private sealed record AmlReviewProjection(bool UnderReview, DateTimeOffset? ReviewDueAt);
+    /// <summary>Whether an approved identity still owes a sanctions answer, by when, and to whom.</summary>
+    private sealed record AmlReviewProjection(
+        bool UnderReview,
+        DateTimeOffset? ReviewDueAt,
+        string? ReviewContact);
 
     /// <summary>
     /// Identity and sanctions are two questions. An approved identity whose AML
@@ -471,7 +478,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         CancellationToken ct)
     {
         if (kycStatus != TenantKycStatus.Approved)
-            return AZOAResult<AmlReviewProjection>.Success(new AmlReviewProjection(false, null));
+            return AZOAResult<AmlReviewProjection>.Success(new AmlReviewProjection(false, null, null));
 
         if (_screening is null)
         {
@@ -492,12 +499,38 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         }
 
         if (KycAmlClearance.IsClear(screening.Result))
-            return AZOAResult<AmlReviewProjection>.Success(new AmlReviewProjection(false, null));
+            return AZOAResult<AmlReviewProjection>.Success(new AmlReviewProjection(false, null, null));
 
         var sla = KycAmlClearance.ResolveManualReviewSla(_configuration);
+        var reviewDueAt = KycAmlClearance.ReviewDueAt(screening.Result, sla);
+        if (screening.Result is null)
+        {
+            // An approved identity with no screening row at all. It projects
+            // UnderReview and every value gate denies it, but it owns no row in the
+            // screening ledger the operator review queue is built over, so no
+            // operator can ever see it waiting. That is the stranded-forever case,
+            // and the log is the only alarm this node currently raises for it.
+            _logger.LogError(
+                "Approved identity {UserId} in tenant {TenantId} has never been AML screened; it is under review "
+                    + "with no deadline and is invisible to the operator review queue until it is screened.",
+                userId,
+                tenantId);
+        }
+        else if (KycAmlClearance.IsOverdue(reviewDueAt, DateTimeOffset.UtcNow))
+        {
+            _logger.LogWarning(
+                "AML manual review for {UserId} in tenant {TenantId} passed its {SlaHours}h decision deadline at "
+                    + "{ReviewDueAt}; the subject stays closed to every value action until an operator decides.",
+                userId,
+                tenantId,
+                sla.TotalHours,
+                reviewDueAt);
+        }
+
         return AZOAResult<AmlReviewProjection>.Success(new AmlReviewProjection(
             true,
-            KycAmlClearance.ReviewDueAt(screening.Result, sla)));
+            reviewDueAt,
+            KycAmlClearance.ResolveManualReviewContact(_configuration)));
     }
 
     private async Task<AZOAResult<IWallet>> FindBootstrapWalletAsync(Guid userId, string chain)
@@ -553,10 +586,19 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
     }
 
     /// <summary>
-    /// The resolver owns the verdict; this owns the wording a TENANT may read. Only
-    /// the key-material and unrecognised-mode reasons are rewritten: one names a node
-    /// configuration path and the other echoes an operator-chosen string, and both are
-    /// operator information rather than tenant information.
+    /// The only resolver reasons a tenant may read verbatim. Everything else the resolver
+    /// can say names node CONFIGURATION - a settings path, a chain mode, a key length, a
+    /// missing HSM adapter - which a tenant can neither act on nor is owed.
+    /// </summary>
+    private static readonly HashSet<string> TenantReadableCustodyReasons =
+        new(StringComparer.Ordinal) { CustodyModeResolver.CustodyDisabledReason };
+
+    /// <summary>
+    /// The resolver owns the verdict; this owns the wording a TENANT may read. It is an
+    /// ALLOW-LIST rather than a list of reasons to rewrite: a reason constant added to the
+    /// resolver later reads as the generic string here on the day it ships, instead of
+    /// leaking operator configuration until someone remembers to add it to a denylist. That
+    /// is the difference that let "Blockchain:Mode is Simulated" reach a tenant screen.
     /// </summary>
     private static string TenantSafeCustodyReason(CustodyModeDecision custody)
     {
@@ -564,12 +606,9 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         if (custody.UnavailableReason is null || custody.Mode == RecognisedCustodyMode.Unrecognised)
             return generic;
 
-        return string.Equals(
-            custody.UnavailableReason,
-            CustodyModeResolver.WalletEncryptionKeyUnusableReason,
-            StringComparison.Ordinal)
-                ? generic
-                : custody.UnavailableReason;
+        return TenantReadableCustodyReasons.Contains(custody.UnavailableReason)
+            ? custody.UnavailableReason
+            : generic;
     }
 
     private static string? ValidateResourceIdentity(Guid tenantId, string externalSubject, string? idempotencyKey)

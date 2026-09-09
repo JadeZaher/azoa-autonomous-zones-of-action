@@ -724,7 +724,12 @@ public sealed class TenantCustodialAccountManagerTests
         capabilities.KycReady.Should().BeTrue();
         capabilities.WalletProvisioningReady.Should().BeFalse();
         capabilities.Ready.Should().BeFalse();
-        capabilities.UnavailableReason.Should().Contain("Development");
+        // The verdict must reach the tenant; the resolver's WORDS must not. That reason
+        // names Blockchain:Mode and the Development custody mode, which is node
+        // configuration a tenant can neither act on nor is owed.
+        capabilities.UnavailableReason.Should().NotContainEquivalentOf("Development");
+        capabilities.UnavailableReason.Should().NotContainEquivalentOf("Blockchain:Mode");
+        capabilities.UnavailableReason.Should().Contain("key management");
     }
 
     private static IdempotencyRecord SnapshotIdempotencyRecord(

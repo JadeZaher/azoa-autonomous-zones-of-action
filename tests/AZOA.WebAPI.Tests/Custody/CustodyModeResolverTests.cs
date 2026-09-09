@@ -59,6 +59,24 @@ public sealed class CustodyModeResolverTests
         decision.UnavailableReason.Should().Be(CustodyModeResolver.WalletEncryptionKeyUnusableReason);
     }
 
+    // The floor is a security constant, so its exact boundary is locked rather than
+    // sampled: an off-by-one would silently accept a 31-character key.
+    [Theory]
+    [InlineData(CustodyModeResolver.MinimumWalletEncryptionKeyLength - 1, false)]
+    [InlineData(CustodyModeResolver.MinimumWalletEncryptionKeyLength, true)]
+    public void The_wallet_encryption_key_floor_is_exactly_thirty_two_characters(
+        int keyLength, bool expectedAvailable)
+    {
+        var decision = CustodyModeResolver.Resolve(
+            Configuration(
+                custodyMode: "Platform",
+                blockchainMode: "Live",
+                encryptionKey: new string('k', keyLength)),
+            EnvironmentNamed(Environments.Production));
+
+        decision.Available.Should().Be(expectedAvailable);
+    }
+
     [Fact]
     public void Non_development_custody_with_no_key_at_all_names_the_key()
     {
@@ -70,15 +88,34 @@ public sealed class CustodyModeResolverTests
         decision.UnavailableReason.Should().Be(CustodyModeResolver.WalletEncryptionKeyUnusableReason);
     }
 
-    [Fact]
-    public void Non_development_custody_refuses_simulated_settlement()
+    // Casing is load-bearing: the resolver compares Blockchain:Mode ordinal-ignore-case,
+    // and a case-sensitive drift here would hand a simulated node a real signing key.
+    [Theory]
+    [InlineData("Simulated")]
+    [InlineData("simulated")]
+    [InlineData("SIMULATED")]
+    public void Non_development_custody_refuses_simulated_settlement(string blockchainMode)
     {
         var decision = CustodyModeResolver.Resolve(
-            Configuration(custodyMode: "Platform", blockchainMode: "Simulated"),
+            Configuration(custodyMode: "Platform", blockchainMode: blockchainMode),
             EnvironmentNamed(Environments.Production));
 
         decision.Available.Should().BeFalse();
         decision.UnavailableReason.Should().Be(CustodyModeResolver.PlatformCustodyInSimulatedModeReason);
+    }
+
+    // An absent Blockchain:Mode is the base-configuration shape once an operator drops
+    // the Development override. It must not read as Simulated, or a correctly configured
+    // node would refuse custody for a setting it never set.
+    [Fact]
+    public void Non_development_custody_treats_an_absent_blockchain_mode_as_not_simulated()
+    {
+        var decision = CustodyModeResolver.Resolve(
+            Configuration(custodyMode: "Platform", blockchainMode: null),
+            EnvironmentNamed(Environments.Production));
+
+        decision.Available.Should().BeTrue();
+        decision.UnavailableReason.Should().BeNull();
     }
 
     [Fact]
@@ -281,7 +318,7 @@ public sealed class CustodyModeResolverTests
 
     private static IConfiguration Configuration(
         string? custodyMode,
-        string blockchainMode,
+        string? blockchainMode,
         string? encryptionKey = UsableEncryptionKey)
         => new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>

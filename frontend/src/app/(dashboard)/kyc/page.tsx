@@ -361,6 +361,32 @@ function formatWhen(value: string | null | undefined) {
     return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
+/** Milliseconds until the operator's own decision deadline; null when there is none. */
+function millisecondsUntilDue(value: string | null | undefined) {
+    if (!value) return null;
+    const due = new Date(value).getTime();
+    return Number.isNaN(due) ? null : due - Date.now();
+}
+
+function isOverdue(item: AmlManualReviewItem) {
+    const remaining = millisecondsUntilDue(item.reviewDueAt);
+    return remaining !== null && remaining < 0;
+}
+
+/**
+ * Nearest deadline first, so the person closest to being stranded is at the top.
+ * A row with no deadline has never been screened at all — a worse state than a
+ * late review, so it sorts to the top rather than out of sight at the bottom.
+ */
+function byUrgency(left: AmlManualReviewItem, right: AmlManualReviewItem) {
+    const a = millisecondsUntilDue(left.reviewDueAt);
+    const b = millisecondsUntilDue(right.reviewDueAt);
+    if (a === null && b === null) return 0;
+    if (a === null) return -1;
+    if (b === null) return 1;
+    return a - b;
+}
+
 /**
  * Lists the AML manual-review queue and records an operator decision.
  *
@@ -387,7 +413,7 @@ function AmlManualReviewQueue() {
             const page = await operatorRequest<CursorPage<AmlManualReviewItem>>(
                 `${AML_REVIEW_PATH}?limit=50`,
             );
-            setQueue(page.items);
+            setQueue([...page.items].sort(byUrgency));
         } catch (reason) {
             if (reason instanceof OperatorRequestError) {
                 if (reason.status === 404 || reason.status === 501) {
@@ -486,11 +512,21 @@ function AmlManualReviewQueue() {
                     <p className="mt-1">
                         The queue and the approve/deny decision are recorded
                         against the screening ledger, which is node-operator
-                        data; the read and write routes are not deployed on this
-                        node. Flagged people still project as{" "}
+                        data. Flagged people still project as{" "}
                         <strong>Under review</strong> and stay closed to value —
                         nothing here fails open — but no operator can clear them
                         until the route ships.
+                    </p>
+                    <p className="mt-2 font-mono text-xs">
+                        GET api/operator/{AML_REVIEW_PATH} · POST
+                        api/operator/{AML_REVIEW_PATH}/{"{userId}"}/decision
+                    </p>
+                    <p className="mt-2">
+                        Both legs are missing: the node routes on{" "}
+                        <code>NodeOperatorController</code>, and the operator BFF
+                        allow-list in{" "}
+                        <code>app/api/operator/[...path]/route.ts</code>, which
+                        refuses any path it does not name.
                     </p>
                 </div>
             )}
@@ -516,10 +552,18 @@ function AmlManualReviewQueue() {
                                         aria-hidden="true"
                                     />
                                     Awaiting a decision
+                                    {isOverdue(item) && (
+                                        <span className="border border-red-700 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-red-800 dark:text-red-300">
+                                            Past the deadline
+                                        </span>
+                                    )}
                                 </CardTitle>
                                 <CardDescription>
                                     Screened {formatWhen(item.screenedAt)} ·
                                     decision due {formatWhen(item.reviewDueAt)}
+                                    {item.reviewDueAt
+                                        ? ""
+                                        : " (never screened — no deadline is running)"}
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4 text-sm">

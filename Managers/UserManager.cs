@@ -62,41 +62,36 @@ public class UserManager : IUserManager
         if (!saved.IsError)
             return saved;
 
-        // Off the happy path only: name which field collided so the caller gets a
-        // usable message instead of an opaque persistence error.
-        return await DescribeRegistrationFailureAsync(user, saved);
+        // Off the happy path only, and deliberately WITHOUT a read. The store maps
+        // every write failure onto one opaque dependency error, so naming which
+        // field collided would need a lookup IUserStore does not expose - and the
+        // lookup that used to be here was GetAllAsync, an unbounded table scan an
+        // anonymous caller could force on every failed registration. That put the
+        // O(n) scan back on the very endpoint it had just been removed from, and it
+        // told a stranger whether an address is registered. One message is true
+        // whether the index refused the write or the database was unreachable, and
+        // it names nobody. A targeted store lookup would restore the field-level
+        // message - see docs/NODE-HOST.md section 8.10.
+        return new AZOAResult<IUser>
+        {
+            IsError = true,
+            Message = RegistrationRefusedMessage,
+            Code = saved.Code,
+        };
     }
+
+    /// <summary>Refusal for a rejected registration write; never names who holds the identity.</summary>
+    public const string RegistrationRefusedMessage =
+        "This account could not be created. The email or username may already be in use.";
 
     /// <summary>Trimmed, lower-invariant identity value; the UNIQUE indexes match exactly.</summary>
     private static string NormalizeIdentityValue(string? value)
         => value?.Trim().ToLowerInvariant() ?? string.Empty;
 
-    /// <summary>Translates a failed registration write into the field that collided.</summary>
-    private async Task<AZOAResult<IUser>> DescribeRegistrationFailureAsync(
-        IUser attempted,
-        AZOAResult<IUser> storeFailure)
-    {
-        var existing = await _userStore.GetAllAsync(default);
-        if (existing.IsError || existing.Result is null)
-            return storeFailure;
-        if (existing.Result.Any(candidate =>
-                string.Equals(candidate.Email, attempted.Email, StringComparison.OrdinalIgnoreCase)))
-        {
-            return new AZOAResult<IUser> { IsError = true, Message = "An account with this email already exists." };
-        }
-        if (existing.Result.Any(candidate =>
-                string.Equals(candidate.Username, attempted.Username, StringComparison.OrdinalIgnoreCase)))
-        {
-            return new AZOAResult<IUser> { IsError = true, Message = "This username is already taken." };
-        }
-
-        return storeFailure;
-    }
-
     public async Task<AZOAResult<string>> LoginAsync(UserLoginModel model, AZOARequest? request = null)
     {
         var all = await _userStore.GetAllAsync(default);
-        var user = all.Result?.FirstOrDefault(a => a.Email.Equals(model.Email, StringComparison.OrdinalIgnoreCase));
+        var user = ResolveLoginSubject(all.Result, model.Email);
 
         if (user == null || !BCrypt.Net.BCrypt.Verify(model.Password, user.PasswordHash))
             return new AZOAResult<string> { IsError = true, Message = "Invalid credentials." };
@@ -105,6 +100,30 @@ public class UserManager : IUserManager
 
         var token = GenerateJwt(user);
         return new AZOAResult<string> { Result = token, Message = "Login successful." };
+    }
+
+    /// <summary>The single row this address may sign in as, or null when it is ambiguous.</summary>
+    /// <remarks>
+    /// <c>user_email</c> is a case-SENSITIVE UNIQUE index and not every writer folds
+    /// case (a tenant-provisioned child user is stored as the tenant sent it), so two
+    /// rows can differ only in case. Taking the first case-insensitive match would
+    /// then let row order decide which of two password hashes an address authenticates
+    /// against. Exact match wins; a lone case-insensitive match still resolves, for
+    /// rows written before folding; two or more resolve to nothing.
+    /// </remarks>
+    private static IUser? ResolveLoginSubject(IEnumerable<IUser>? users, string? email)
+    {
+        var candidate = email?.Trim();
+        if (users is null || string.IsNullOrEmpty(candidate))
+            return null;
+
+        var folded = users
+            .Where(row => string.Equals(row.Email, candidate, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var exact = folded.FirstOrDefault(row =>
+            string.Equals(row.Email, candidate, StringComparison.Ordinal));
+
+        return exact ?? (folded.Count == 1 ? folded[0] : null);
     }
 
     public async Task<AZOAResult<IUser>> GetAsync(Guid id, AZOARequest? request = null)
@@ -135,20 +154,27 @@ public class UserManager : IUserManager
         if (existing.IsError || existing.Result == null) return existing;
 
         var user = existing.Result;
-        if (model.Email is not null)
+        // Normalise BEFORE validating and before persisting. A profile update writes
+        // the same case-SENSITIVE user_email / user_username UNIQUE indexes that
+        // registration writes, so persisting the raw value let a user re-case their
+        // own address straight past the index and leave two rows differing only in
+        // case - exactly the ambiguity ResolveLoginSubject then has to refuse.
+        var requestedEmail = model.Email is null ? null : NormalizeIdentityValue(model.Email);
+        var requestedUsername = model.Username is null ? null : NormalizeIdentityValue(model.Username);
+        if (requestedEmail is not null)
         {
-            var emailValidation = await ValidateEmailUpdateAsync(user, model.Email);
+            var emailValidation = await ValidateEmailUpdateAsync(user, requestedEmail);
             if (emailValidation.IsError)
                 return new AZOAResult<IUser> { IsError = true, Message = emailValidation.Message };
         }
-        if (model.Username is not null)
+        if (requestedUsername is not null)
         {
-            var usernameValidation = await ValidateUsernameUpdateAsync(user, model.Username);
+            var usernameValidation = await ValidateUsernameUpdateAsync(user, requestedUsername);
             if (usernameValidation.IsError)
                 return new AZOAResult<IUser> { IsError = true, Message = usernameValidation.Message };
         }
-        if (model.Username != null) user.Username = model.Username;
-        if (model.Email != null) user.Email = model.Email;
+        if (requestedUsername != null) user.Username = requestedUsername;
+        if (requestedEmail != null) user.Email = requestedEmail;
         if (model.Title != null) user.Title = model.Title;
         if (model.FirstName != null) user.FirstName = model.FirstName;
         if (model.LastName != null) user.LastName = model.LastName;
@@ -296,7 +322,7 @@ public class UserManager : IUserManager
 
     private async Task<AZOAResult<bool>> ValidateUsernameUpdateAsync(IUser user, string requestedUsername)
     {
-        var normalized = requestedUsername.Trim();
+        var normalized = NormalizeIdentityValue(requestedUsername);
         if (string.IsNullOrWhiteSpace(normalized))
             return new AZOAResult<bool> { IsError = true, Message = "Username cannot be empty." };
 

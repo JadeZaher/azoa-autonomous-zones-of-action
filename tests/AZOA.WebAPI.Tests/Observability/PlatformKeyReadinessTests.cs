@@ -4,6 +4,7 @@ using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Observability;
 using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Services.Custody;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -177,6 +178,12 @@ public sealed class PlatformKeyReadinessTests
         ["Kyc:ApprovalPolicy:PolicyVersion"] = "production-v1",
         ["Kyc:ApprovalPolicy:AssuranceLevel"] = "substantial",
         ["Kyc:ApprovalPolicy:TrustedProviderKeys:0"] = "veriff",
+        // Custody is a real-value prerequisite the probe now consumes CustodyModeResolver
+        // for, so an otherwise launch-ready fixture must carry a usable custody mode or
+        // every case here fails on custody rather than on the platform key it is testing.
+        [CustodyModeResolver.CustodyModeConfigurationPath] = CustodyModeResolver.PlatformMode,
+        [CustodyModeResolver.WalletEncryptionKeyConfigurationPath] =
+            "0123456789abcdef0123456789abcdef",
     };
 
     private static IBlockchainProviderFactory ReadyProviderFactory()

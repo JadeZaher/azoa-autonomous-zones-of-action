@@ -67,6 +67,47 @@ public static class KycAmlClearance
     /// <summary>True when a human still owes this subject a decision.</summary>
     public static bool RequiresManualReview(KycScreeningResult? result) => !IsClear(result);
 
+    /// <summary>Where a subject under review reaches a human; node-operator config.</summary>
+    public const string ManualReviewContactConfigurationPath = "Kyc:ManualReviewContact";
+
+    /// <summary>Longest contact string this node will project to a tenant.</summary>
+    public const int MaximumManualReviewContactLength = 200;
+
+    /// <summary>
+    /// The operator's route to a human, sanitised for projection, or null when the
+    /// operator set none. Whitespace-only, control-bearing and over-long values
+    /// resolve to null rather than to a broken route: a contact a subject cannot use
+    /// is worse than an absent one, because it reads as recourse that exists.
+    /// </summary>
+    public static string? ResolveManualReviewContact(IConfiguration? configuration)
+    {
+        var contact = configuration?[ManualReviewContactConfigurationPath]?.Trim();
+        if (string.IsNullOrEmpty(contact) || contact.Length > MaximumManualReviewContactLength)
+            return null;
+
+        return contact.Any(char.IsControl) ? null : contact;
+    }
+
+    /// <summary>
+    /// The wording a subject sees, carrying the operator's contact when one is set.
+    /// The contact is the whole point of this recourse: without it "support will
+    /// confirm the outcome" names nobody, and a legitimate sponsor caught by a
+    /// sanctions-name collision has no one to ask.
+    /// </summary>
+    public static string ResolveUnderReviewReason(IConfiguration? configuration)
+    {
+        var contact = ResolveManualReviewContact(configuration);
+        return contact is null ? UnderReviewReason : $"{UnderReviewReason} Contact {contact}.";
+    }
+
+    /// <summary>
+    /// True once the operator's own SLA for an open review has elapsed. A null due
+    /// date is NOT overdue: it means nothing has been screened yet, which is a
+    /// different failure and carries its own alarm.
+    /// </summary>
+    public static bool IsOverdue(DateTimeOffset? reviewDueAt, DateTimeOffset asOf)
+        => reviewDueAt is not null && asOf > reviewDueAt.Value;
+
     /// <summary>Operator-configured review SLA, clamped so a typo cannot remove it.</summary>
     public static TimeSpan ResolveManualReviewSla(IConfiguration? configuration)
     {

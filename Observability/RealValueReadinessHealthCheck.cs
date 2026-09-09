@@ -60,6 +60,8 @@ public sealed class RealValueReadinessHealthCheck : IHealthCheck
 
         AddKycFailures(failures);
 
+        AddCustodyFailures(failures);
+
         AddPlatformKeyFailures(failures);
 
         var vault = _configuration["Blockchain:Wormhole:BridgeVaults:Algorand:VaultAddress"];
@@ -119,6 +121,24 @@ public sealed class RealValueReadinessHealthCheck : IHealthCheck
         }
 
         return failures;
+    }
+
+    /// <summary>
+    /// Custodial key management is a real-value prerequisite, so the healthy message says so.
+    /// This CONSUMES <see cref="CustodyModeResolver"/> rather than restating its predicate: a probe
+    /// that re-derived the rule would drift from the resolver the wallet path actually obeys, and
+    /// green here would then mean nothing. Without it a node deployed with RealValueEnabled=true,
+    /// CustodyMode=Disabled and a short encryption key reported ready while every wallet
+    /// provisioning attempt failed closed.
+    /// </summary>
+    private void AddCustodyFailures(List<string> failures)
+    {
+        var custody = CustodyModeResolver.Resolve(_configuration, _environment);
+        if (!custody.Available)
+        {
+            failures.Add(custody.UnavailableReason
+                ?? $"{CustodyModeResolver.CustodyModeConfigurationPath} must name a usable custody mode");
+        }
     }
 
     /// <summary>
