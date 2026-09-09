@@ -10,6 +10,42 @@ The platform unit, the project treasuries it moves between, and the policy that 
 one exchange may happen at the rate its consumer declared. AZOA never computes a rate (D7): a
 policy either admits the declaration or refuses it.
 
+## §three-domains — reserve vs. treasury vs. destination (OI-81)
+
+Three things share the word "treasury" in this codebase and must not be conflated:
+
+1. **The platform reserve** (`IPlatformReserve`, `PlatformReserveService.cs`) — the one
+   operator-owned custodial account every unit a sponsor or worker ever receives FROM. It
+   holds the platform unit and every project asset, is the manager/reserve/freeze/clawback
+   authority on assets this node creates, and pays the fees. It keeps NAMED PARTITIONS per
+   asset (`contributor`, `investor`, tenant-declared) so an oversubscription check is
+   possible on the node — see `ReserveDrawAuthority.cs` for who may move a partition's
+   counters, and note the reserve owns no separate secret: its key is the per-chain
+   platform key, so a chain with no configured platform key resolves NO reserve address.
+2. **A project treasury** (`IProjectTreasury`, `ProjectTreasuryService.cs`) — one project's
+   OWN custodial account, the account project funding actually moves TO. A treasury-rate
+   exchange moves the platform-unit leg sponsor → platform reserve and the project-asset
+   leg reserve → project treasury; without a treasury the project receives nothing on
+   chain and its balance would exist only as rows in a tenant's own database — exactly the
+   ledger-of-record shape D47 rejected for stakes. A buy-back is paid FROM this account,
+   which is what makes it the project's promise rather than the platform's (§buy-back
+   below): the platform reserve only ever backstops one with a reversible HOLD, never a
+   transfer, until the sell actually settles.
+3. **`NodeTreasuryDestination`** (`NodeTreasuryManager`, `Persistence/SurrealDb/Models/
+   NodeTreasuryDestination.cs`) — NEITHER a reserve nor a treasury. It is routing policy:
+   the versioned destination address, per chain/network, that the NODE OPERATOR's own
+   governance-fee settlements are sent TO ("routing policy, separate from fee pricing"
+   per its own `SurrealNote`). It holds no balance, backs no draw and funds no buy-back —
+   it only says where the node's own fee revenue lands. `IProjectTreasury.cs` carries the
+   same warning inline: "Not to be confused with `NodeTreasuryManager` /
+   `NodeTreasuryDestination`, which are where the NODE's own fees land. Those belong to
+   the operator; these belong to the projects."
+
+Conflating (1) and (2) reads as "a project can be recapitalised from the platform reserve
+directly" — it cannot; only a backstop HOLD can, and only a SETTLED sell converts it
+(§buy-back). Conflating either with (3) reads as "the node operator's fee address is a
+pool of user funds" — it is a destination the node itself is paid to, nothing more.
+
 ## §buy-back — what makes SELLING possible at all
 
 `TreasuryRateExchangePolicy` refuses every SELL unless an `IExchangeLiquidityPolicy` is in the

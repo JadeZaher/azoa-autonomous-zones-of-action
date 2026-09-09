@@ -2,11 +2,32 @@
 // public node-transparency reads. Lives under src/ (not tests/) because this
 // track owns src/azoa-wallet/src/** only — vitest.config.ts's coverage
 // section already anticipates *.test.ts files here (see its `exclude`).
+//
+// OI-69/OI-70 remediation: this file used to call itself a "parity" guard while
+// stubbing fetch and comparing the produced URL to a string literal typed into
+// this SAME file — renaming a controller route attribute left all 13 tests
+// green, the same shape as a previously-logged "CI grep that existed nowhere".
+// The "controller route parity" suite below instead reads the actual .cs
+// sources under Controllers/ and parses their real [Http*("...")] attributes,
+// so a renamed route fails here. This file also claimed "no token or API key
+// participates in any of these calls" while proving it only against a client
+// fixture that never carried either — true of any route by construction. The
+// "token-less contract" suite below configures a client WITH a token and WITH
+// an API key and asserts AzoaApiClient.requestAnonymous actually strips both.
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AzoaApiClient } from "./client.js";
+import { API_PATHS } from "./api-version.js";
 import { isOk, isErr } from "../core/result.js";
 import { SdkErrorCode } from "../core/errors.js";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** sdk/azoa-wallet/src/api -> the AZOA repository root. */
+const REPO_ROOT = join(HERE, "..", "..", "..", "..");
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -20,6 +41,140 @@ function azoaResponse<T>(result: T, message = "Success") {
 }
 
 const USER_ID = "00000000-0000-4000-8000-00000000000a";
+
+// ─── Real controller-route parsing (OI-69) ───
+
+interface ControllerRoute {
+  httpMethod: "GET" | "POST" | "PUT" | "DELETE";
+  /** Normalized to a leading-slash template with route params replaced by their bare name. */
+  path: string;
+}
+
+/**
+ * Parses a class-level `[Route("prefix")]` plus every `[Http*("sub")]` method
+ * attribute out of one ASP.NET controller source file, combining each into the
+ * full route it produces. Route parameters (`{userId:guid}`, `{idempotencyKey}`)
+ * are normalized to their bare name so they can be compared directly against an
+ * `API_PATHS` function called with that same name as its argument.
+ */
+function parseControllerRoutes(source: string): ControllerRoute[] {
+  const routeMatch = /\[Route\("([^"]*)"\)\]/.exec(source);
+  expect(routeMatch, 'controller must declare a class-level [Route("...")]').not.toBeNull();
+  const prefix = routeMatch![1]!;
+
+  const routes: ControllerRoute[] = [];
+  const httpAttr = /\[Http(Get|Post|Put|Delete)(?:\("([^"]*)"\))?\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = httpAttr.exec(source)) !== null) {
+    const httpMethod = match[1]!.toUpperCase() as ControllerRoute["httpMethod"];
+    const subPath = match[2] ?? "";
+    const combined = subPath ? `${prefix}/${subPath}` : prefix;
+    const normalized = combined.replace(/\{([A-Za-z_][A-Za-z0-9_]*)(?::[^}]+)?\}/g, "$1");
+    routes.push({ httpMethod, path: `/${normalized}` });
+  }
+  return routes;
+}
+
+function readControllerSource(fileName: string): string {
+  return readFileSync(join(REPO_ROOT, "Controllers", fileName), "utf8");
+}
+
+function readControllerRoutes(fileName: string): ControllerRoute[] {
+  return parseControllerRoutes(readControllerSource(fileName));
+}
+
+describe("controller route parity (OI-69)", () => {
+  describe("ExchangeController.cs", () => {
+    const routes = readControllerRoutes("ExchangeController.cs");
+
+    it("declares a non-empty route list — guards against a mis-resolved path passing vacuously", () => {
+      expect(routes.length).toBeGreaterThan(0);
+    });
+
+    it("declares exactly the two routes this SDK section depends on", () => {
+      expect(routes).toHaveLength(2);
+    });
+
+    it("still exposes POST {userId} where API_PATHS.EXCHANGE_RUN expects it", () => {
+      expect(routes).toContainEqual({ httpMethod: "POST", path: API_PATHS.EXCHANGE_RUN("userId") });
+    });
+
+    it("still exposes GET receipt/{idempotencyKey} where API_PATHS.EXCHANGE_RECEIPT expects it", () => {
+      expect(routes).toContainEqual({
+        httpMethod: "GET",
+        path: API_PATHS.EXCHANGE_RECEIPT("idempotencyKey"),
+      });
+    });
+  });
+
+  describe("FiatPayoutController.cs", () => {
+    const routes = readControllerRoutes("FiatPayoutController.cs");
+
+    it("declares a non-empty route list — guards against a mis-resolved path passing vacuously", () => {
+      expect(routes.length).toBeGreaterThan(0);
+    });
+
+    it("declares exactly the five routes this SDK section depends on", () => {
+      expect(routes).toHaveLength(5);
+    });
+
+    it("still exposes GET {userId}/availability — the exact route OI-69 named as renameable unnoticed", () => {
+      expect(routes).toContainEqual({
+        httpMethod: "GET",
+        path: API_PATHS.FIAT_PAYOUT_AVAILABILITY("userId"),
+      });
+    });
+
+    it("still exposes GET and POST {userId}/account at the same path", () => {
+      const accountPath = API_PATHS.FIAT_PAYOUT_ACCOUNT("userId");
+      expect(routes).toContainEqual({ httpMethod: "GET", path: accountPath });
+      expect(routes).toContainEqual({ httpMethod: "POST", path: accountPath });
+    });
+
+    it("still exposes GET and POST {userId} at the same path", () => {
+      const basePath = API_PATHS.FIAT_PAYOUT_BASE("userId");
+      expect(routes).toContainEqual({ httpMethod: "GET", path: basePath });
+      expect(routes).toContainEqual({ httpMethod: "POST", path: basePath });
+    });
+  });
+
+  describe("NodeTransparencyController.cs", () => {
+    const source = readControllerSource("NodeTransparencyController.cs");
+    const routes = parseControllerRoutes(source);
+
+    it("is marked [AllowAnonymous] ahead of the class declaration", () => {
+      // The controller-side half of the token-less contract: the behavioural
+      // suite below proves the SDK strips credentials, this proves the backend
+      // route itself still declares no auth is required in the first place.
+      const classIndex = source.indexOf("class NodeTransparencyController");
+      const allowAnonymousIndex = source.indexOf("[AllowAnonymous]");
+      expect(classIndex).toBeGreaterThan(-1);
+      expect(allowAnonymousIndex).toBeGreaterThan(-1);
+      expect(allowAnonymousIndex).toBeLessThan(classIndex);
+    });
+
+    it("declares exactly the five routes the SDK's node-transparency section depends on", () => {
+      expect(routes).toHaveLength(5);
+    });
+
+    it("still exposes every path API_PATHS.NODE_TRANSPARENCY_* expects", () => {
+      expect(routes).toContainEqual({ httpMethod: "GET", path: API_PATHS.NODE_TRANSPARENCY_CURRENT });
+      expect(routes).toContainEqual({
+        httpMethod: "GET",
+        path: API_PATHS.NODE_TRANSPARENCY_GOVERNANCE_AUDIT,
+      });
+      expect(routes).toContainEqual({ httpMethod: "GET", path: API_PATHS.NODE_TRANSPARENCY_FEE_AUDIT });
+      expect(routes).toContainEqual({
+        httpMethod: "GET",
+        path: API_PATHS.NODE_TRANSPARENCY_TREASURY_AUDIT,
+      });
+      expect(routes).toContainEqual({
+        httpMethod: "GET",
+        path: API_PATHS.NODE_TRANSPARENCY_HISTORY_CHECKPOINT,
+      });
+    });
+  });
+});
 
 describe("AzoaApiClient — W10.3 parity", () => {
   let client: AzoaApiClient;
@@ -247,7 +402,7 @@ describe("AzoaApiClient — W10.3 parity", () => {
   });
 
   describe("node transparency reads (NodeTransparencyController)", () => {
-    it("getNodeTransparencySnapshot GETs /api/node-transparency/current with no auth header", async () => {
+    it("getNodeTransparencySnapshot GETs /api/node-transparency/current", async () => {
       mockFetch.mockReturnValueOnce(azoaResponse({
         governance: { allowedChains: ["Algorand"], allowedAssetTypes: null, version: 1, updatedAt: null },
         feeSchedule: {
@@ -271,8 +426,6 @@ describe("AzoaApiClient — W10.3 parity", () => {
         "http://localhost:5000/api/node-transparency/current",
         expect.objectContaining({ method: "GET" })
       );
-      const headers = mockFetch.mock.calls[0][1].headers as Record<string, string>;
-      expect(headers["Authorization"]).toBeUndefined();
     });
 
     it("listNodeGovernanceAudit appends limit and cursor as query params", async () => {
@@ -347,5 +500,51 @@ describe("AzoaApiClient — W10.3 parity", () => {
       const result = await client.getNodeTransparencySnapshot();
       expect(isErr(result)).toBe(true);
     });
+  });
+
+  // ─── Token-less contract (OI-70) ───
+  // The section above only ever exercised a client with no token and no API key
+  // configured, so "no auth header" was true of any route — it proved nothing
+  // about the endpoints being ANONYMOUS. These configure a token and, separately,
+  // an API key, and assert AzoaApiClient.requestAnonymous strips both, for every
+  // node-transparency method.
+  describe("node transparency reads — token-less contract (OI-70)", () => {
+    const NODE_TRANSPARENCY_CALLS: Array<[string, (c: AzoaApiClient) => Promise<unknown>]> = [
+      ["getNodeTransparencySnapshot", (c) => c.getNodeTransparencySnapshot()],
+      ["listNodeGovernanceAudit", (c) => c.listNodeGovernanceAudit()],
+      ["listNodeFeeAudit", (c) => c.listNodeFeeAudit()],
+      ["listNodeTreasuryAudit", (c) => c.listNodeTreasuryAudit()],
+      ["getNodeTransparencyHistoryCheckpoint", (c) => c.getNodeTransparencyHistoryCheckpoint()],
+    ];
+
+    it.each(NODE_TRANSPARENCY_CALLS)(
+      "%s never attaches Authorization, even when the client carries a bearer token",
+      async (_name, call) => {
+        const tokenClient = new AzoaApiClient({
+          baseUrl: "http://localhost:5000",
+          token: "should-never-be-sent",
+        });
+        mockFetch.mockReturnValueOnce(azoaResponse({}));
+        await call(tokenClient);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const headers = mockFetch.mock.calls[0][1].headers as Record<string, string>;
+        expect(headers["Authorization"]).toBeUndefined();
+      }
+    );
+
+    it.each(NODE_TRANSPARENCY_CALLS)(
+      "%s never attaches X-Api-Key, even when the client carries an API key",
+      async (_name, call) => {
+        const apiKeyClient = new AzoaApiClient({
+          baseUrl: "http://localhost:5000",
+          apiKey: "should-never-be-sent",
+        });
+        mockFetch.mockReturnValueOnce(azoaResponse({}));
+        await call(apiKeyClient);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const headers = mockFetch.mock.calls[0][1].headers as Record<string, string>;
+        expect(headers["X-Api-Key"]).toBeUndefined();
+      }
+    );
   });
 });

@@ -8,7 +8,7 @@ graph LR
     %%   action_templates: action_node_template, action_template
     %%   bridge: action_webhook_event, bridge_tx, consent_webhook_event, consumed_vaa_ledger, idempotency_key_store, node_fee_atomic_group, node_fee_settlement, operation_log, saga_steps, webhook_registration
     %%   dapp_composition: dapp_series, dapp_series_action, ecosystem, ecosystem_node
-    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, fiat_event, fiat_payout, fiat_reversal, hold_ledger, holon, holon_type_registry, hosted_session, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, oauth_exchange_code, on_ramp_lot, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, tenant_price_schedule, user, user_external_login, wallet_auth_challenge, wallet_auth_claim_token
+    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, fiat_event, fiat_payout, fiat_reversal, hold_ledger, holon, holon_type_registry, hosted_session, kyc_authority_guard, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_treasury_audit, node_treasury_destination, oauth_exchange_code, on_ramp_lot, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, tenant_price_schedule, user, user_external_login, wallet_auth_challenge, wallet_auth_claim_token
     %%   wallet_nft: nft_ownership, swap_state, wallet
     %% 
     %% Enums:
@@ -41,6 +41,7 @@ graph LR
     %%   hold_ledger.state: Pending, Held, Releasing, Released, Refunded, ReleasedIntoHold
     %%   hosted_session.state: CLAIMED, AWAITING_SUBJECT, AWAITING_OUTCOME, RESUMING, COMPLETED, FAILED, ABANDONED
     %%   idempotency_key_store.state: InProgress, Completed, Failed  (IdempotencyKeyStore.StateKind)
+    %%   kyc_authority_guard.kind: provider, tenant, attempt
     %%   kyc_document.type: GOVERNMENT_ID, PASSPORT, DRIVERS_LICENSE, SELFIE, PROOF_OF_ADDRESS  (KycDocument.KycDocumentType)
     %%   kyc_identity.provider: MANUAL, VERIFF, GENERIC_HOSTED, IDENTOMAT  (KycIdentity.KycProvider)
     %%   kyc_screening_monitor.state: ACTIVE, REMOVED  (KycScreeningMonitor.KycMonitorState)
@@ -123,6 +124,7 @@ graph LR
         holon["holon: Node"]:::nodeClass
         holon_type_registry["holon_type_registry: Node"]:::nodeClass
         hosted_session["hosted_session: Node"]:::nodeClass
+        kyc_authority_guard["kyc_authority_guard: Node"]:::nodeClass
         kyc_control_audit["kyc_control_audit: Node"]:::nodeClass
         kyc_document["kyc_document: Node"]:::nodeClass
         kyc_identity["kyc_identity: Node"]:::nodeClass

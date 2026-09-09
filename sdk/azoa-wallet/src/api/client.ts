@@ -2740,13 +2740,15 @@ export class AzoaApiClient {
   }
 
   // ─── Node transparency reads (NodeTransparencyController) ───
-  // Public, anonymous, cacheable. No token or API key participates in any of
-  // these calls — what this node discloses about its own policy is the same
-  // answer for every viewer.
+  // Public, anonymous, cacheable. Every call below goes through requestAnonymous(),
+  // which strips both Authorization and X-Api-Key even when this client instance
+  // is configured with one — what this node discloses about its own policy is the
+  // same answer for every viewer. See parity-w10-3.test.ts's "token-less contract"
+  // suite, which configures a token AND an api key and asserts neither is sent.
 
   /** The node's current governance parameters, fee schedule and treasury destinations. */
   async getNodeTransparencySnapshot(): Promise<Result<NodeTransparencySnapshot, SdkError>> {
-    return this.request<NodeTransparencySnapshot>("GET", API_PATHS.NODE_TRANSPARENCY_CURRENT);
+    return this.requestAnonymous<NodeTransparencySnapshot>("GET", API_PATHS.NODE_TRANSPARENCY_CURRENT);
   }
 
   /** Public audit trail of governance-parameter changes, newest first. */
@@ -2754,7 +2756,7 @@ export class AzoaApiClient {
     limit?: number,
     cursor?: string
   ): Promise<Result<NodeTransparencyPage<NodeGovernanceAuditEntry>, SdkError>> {
-    return this.request<NodeTransparencyPage<NodeGovernanceAuditEntry>>(
+    return this.requestAnonymous<NodeTransparencyPage<NodeGovernanceAuditEntry>>(
       "GET",
       withAuditQuery(API_PATHS.NODE_TRANSPARENCY_GOVERNANCE_AUDIT, limit, cursor)
     );
@@ -2765,7 +2767,7 @@ export class AzoaApiClient {
     limit?: number,
     cursor?: string
   ): Promise<Result<NodeTransparencyPage<NodeFeeAuditEntry>, SdkError>> {
-    return this.request<NodeTransparencyPage<NodeFeeAuditEntry>>(
+    return this.requestAnonymous<NodeTransparencyPage<NodeFeeAuditEntry>>(
       "GET",
       withAuditQuery(API_PATHS.NODE_TRANSPARENCY_FEE_AUDIT, limit, cursor)
     );
@@ -2776,7 +2778,7 @@ export class AzoaApiClient {
     limit?: number,
     cursor?: string
   ): Promise<Result<NodeTransparencyPage<NodeTreasuryAuditEntry>, SdkError>> {
-    return this.request<NodeTransparencyPage<NodeTreasuryAuditEntry>>(
+    return this.requestAnonymous<NodeTransparencyPage<NodeTreasuryAuditEntry>>(
       "GET",
       withAuditQuery(API_PATHS.NODE_TRANSPARENCY_TREASURY_AUDIT, limit, cursor)
     );
@@ -2789,7 +2791,7 @@ export class AzoaApiClient {
   async getNodeTransparencyHistoryCheckpoint(): Promise<
     Result<NodeTransparencyHistoryDocument, SdkError>
   > {
-    return this.request<NodeTransparencyHistoryDocument>(
+    return this.requestAnonymous<NodeTransparencyHistoryDocument>(
       "GET",
       API_PATHS.NODE_TRANSPARENCY_HISTORY_CHECKPOINT
     );
@@ -3252,19 +3254,22 @@ export class AzoaApiClient {
     path: string,
     body?: unknown,
     _retried: boolean = false,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
+    anonymous: boolean = false
   ): Promise<Result<T, SdkError>> {
     this.logRequest(method, path, body);
     try {
-      const resp = await this.fetchWithAuth(method, path, body, extraHeaders);
+      const resp = await this.fetchWithAuth(method, path, body, extraHeaders, anonymous);
 
-      if (resp.status === 401 && this.config.onTokenRefresh && !_retried) {
+      // An anonymous call carries no token to refresh, so a 401 falls straight
+      // through to the plain !resp.ok branch below instead of this retry.
+      if (!anonymous && resp.status === 401 && this.config.onTokenRefresh && !_retried) {
         try {
           await this.getOrRefreshToken(true);
         } catch (refreshErr) {
           return this.handleFetchError(method, path, refreshErr);
         }
-        return this.request(method, path, body, true, extraHeaders);
+        return this.request(method, path, body, true, extraHeaders, anonymous);
       }
 
       if (resp.status === 401 && _retried) {
@@ -3290,6 +3295,16 @@ export class AzoaApiClient {
     } catch (e) {
       return this.handleFetchError(method, path, e);
     }
+  }
+
+  /**
+   * Like {@link request}, but never attaches a bearer token or API key, even
+   * when this client is configured with one — for genuinely anonymous routes
+   * such as NodeTransparencyController's `[AllowAnonymous]` reads (OI-70: a
+   * doc-comment asserted this and nothing enforced it).
+   */
+  async requestAnonymous<T>(method: string, path: string): Promise<Result<T, SdkError>> {
+    return this.request<T>(method, path, undefined, false, undefined, true);
   }
 
   /** For endpoints that return bare objects (BridgeController pattern). */
@@ -3392,10 +3407,11 @@ export class AzoaApiClient {
     method: string,
     path: string,
     body?: unknown,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
+    anonymous: boolean = false
   ): Promise<Response> {
-    let token = this.config.token;
-    if (!token && this.config.onTokenRefresh) {
+    let token = anonymous ? undefined : this.config.token;
+    if (!anonymous && !token && this.config.onTokenRefresh) {
       try {
         token = await this.getOrRefreshToken();
       } catch (e) {
@@ -3407,10 +3423,14 @@ export class AzoaApiClient {
 
     const headers: Record<string, string> = {};
     if (body) headers["Content-Type"] = "application/json";
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    } else if (this.config.apiKey) {
-      headers["X-Api-Key"] = this.config.apiKey;
+    // `anonymous` routes (e.g. node transparency) never attach either credential,
+    // even when this client instance is configured with a token or API key.
+    if (!anonymous) {
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      } else if (this.config.apiKey) {
+        headers["X-Api-Key"] = this.config.apiKey;
+      }
     }
     if (extraHeaders) {
       for (const [k, v] of Object.entries(extraHeaders)) {

@@ -38,6 +38,38 @@ public sealed class ExchangeOptions
 
     /// <summary>Clock-skew grace before a rate dated ahead of its own exchange is refused.</summary>
     public TimeSpan FutureRateTolerance { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// The LEAST a platform base unit may be worth, in minor units of the pinned currency, for
+    /// a triple to be worth recording. Non-positive means the operator declared no band, and an
+    /// undeclared band refuses every declared rate rather than admitting any -- the same
+    /// fail-closed reading a blank <see cref="MaxDeclaredRateAge"/> already gets.
+    /// </summary>
+    /// <remarks>
+    /// The shipped pair is deliberately GENEROUS, because the platform unit's value is
+    /// backing-derived and drifts (a quotient of treasury backing over circulating supply, not
+    /// a peg), and a band tighter than that drift would refuse honest money. What it catches is
+    /// an ORDER-OF-MAGNITUDE contradiction -- a whole-unit price sent where a per-base-unit
+    /// rate belongs, a funds amount off by its own decimals, a field copied from the wrong
+    /// place. What it does NOT catch is a merely mispriced trade; that would be pricing, and
+    /// AZOA does not price (D7). An operator who has pinned what their unit is worth narrows
+    /// BOTH bounds to that neighbourhood, which is what turns this into a tight band.
+    /// </remarks>
+    public decimal MinMinorUnitsPerPlatformBaseUnit { get; set; } = 0.0001m;
+
+    /// <summary>
+    /// The MOST a platform base unit may be worth, in minor units of the pinned currency.
+    /// Non-positive, or below <see cref="MinMinorUnitsPerPlatformBaseUnit"/>, is an undeclared
+    /// band and refuses every declared rate. See that property for why the shipped pair is wide.
+    /// </summary>
+    public decimal MaxMinorUnitsPerPlatformBaseUnit { get; set; } = 100m;
+
+    /// <summary>
+    /// Absolute slack in currency minor units, widening the band at BOTH ends so a dust-sized
+    /// exchange is not refused by rounding alone. Negative resolves to zero -- the narrowest
+    /// reading -- because slack only ever admits more.
+    /// </summary>
+    public decimal RateConsistencyDustMinorUnits { get; set; } = 1m;
 }
 
 /// <summary>Everything a rate policy is allowed to see about one exchange.</summary>
@@ -119,6 +151,142 @@ public interface IExchangeLiquidityPolicy
         ExchangeRateEvaluation evaluation, CancellationToken ct = default);
 }
 
+/// <summary>What the consistency band concluded about one (funds, units, rate) triple.</summary>
+public enum RateConsistencyVerdict
+{
+    /// <summary>The three numbers can all be true at once, so the rate is worth recording.</summary>
+    Consistent = 0,
+
+    /// <summary>The rate prices the units ABOVE anything the funds amount could stand for.</summary>
+    PricedAboveTheFunds = 1,
+
+    /// <summary>The rate prices the units BELOW anything the funds amount could stand for.</summary>
+    PricedBelowTheFunds = 2,
+
+    /// <summary>The operator declared no band, so nothing can be checked -- and nothing is recorded.</summary>
+    BandUndeclared = 3,
+}
+
+/// <summary>The band's answer, with every figure as an exact decimal string in currency minor units.</summary>
+/// <param name="Verdict">What the band concluded.</param>
+/// <param name="PricedMinorUnits">The units side, priced at the declared rate.</param>
+/// <param name="LowestAcceptableMinorUnits">The least the units side may come to for this funds amount.</param>
+/// <param name="HighestAcceptableMinorUnits">The most the units side may come to for this funds amount.</param>
+public sealed record RateConsistencyOutcome(
+    RateConsistencyVerdict Verdict,
+    string PricedMinorUnits,
+    string LowestAcceptableMinorUnits,
+    string HighestAcceptableMinorUnits);
+
+/// <summary>
+/// The consistency band on a rate AZOA chooses to RECORD (OI-79): the funds amount, the units
+/// amount and the declared rate all arrive on one consumer-supplied body, and nothing checked
+/// that the three could be true together before the rate was stamped on the receipt and on the
+/// operation row as the audit answer to "what was this worth when it moved".
+/// </summary>
+/// <remarks>
+/// The invariant is stated over the PLATFORM unit's own value, because that is the only side of
+/// the trade this node issues and the only one an operator can declare:
+/// <c>Min x PlatformAmount - dust &lt;= ProjectUnitAmount x rate &lt;= Max x PlatformAmount + dust</c>.
+/// <para>It is deliberately NOT <c>PlatformAmount == ProjectUnitAmount x rate</c>. That identity
+/// would assert one platform base unit is worth exactly one currency minor unit, which is a
+/// PRICE, and AZOA does not price (D7); the platform unit's value is derived from treasury
+/// backing over circulating supply and observably moves. Fixing it here would refuse honest
+/// exchanges the moment the unit drifted.</para>
+/// <para>Pure arithmetic over base units and exact decimals, separated from the policy exactly
+/// as <see cref="BuyBackCaps"/> is, so the numbers can be reasoned about without a container.
+/// Every step is integer arithmetic on a decimal's own mantissa and scale: converting a
+/// BigInteger amount to <see cref="decimal"/> would put a magnitude ceiling on a financial
+/// figure that its own amount type does not have.</para>
+/// </remarks>
+public static class ExchangeRateConsistencyBand
+{
+    /// <summary>Decides whether one triple contradicts itself, and by how much.</summary>
+    /// <param name="platformAmount">Platform-unit base units moving.</param>
+    /// <param name="projectUnitAmount">Project-unit base units moving.</param>
+    /// <param name="minorUnitsPerProjectBaseUnit">The declared rate, per ONE project base unit.</param>
+    /// <param name="minMinorUnitsPerPlatformBaseUnit">Least a platform base unit may be worth; non-positive is undeclared.</param>
+    /// <param name="maxMinorUnitsPerPlatformBaseUnit">Most a platform base unit may be worth; non-positive is undeclared.</param>
+    /// <param name="dustMinorUnits">Absolute slack at both ends; negative resolves to zero.</param>
+    public static RateConsistencyOutcome Decide(
+        BigInteger platformAmount,
+        BigInteger projectUnitAmount,
+        decimal minorUnitsPerProjectBaseUnit,
+        decimal minMinorUnitsPerPlatformBaseUnit,
+        decimal maxMinorUnitsPerPlatformBaseUnit,
+        decimal dustMinorUnits)
+    {
+        // An absent, negative or inverted bound is an UNDECLARED band, never an unbounded one.
+        // A blank environment variable replaces the C# default rather than leaving it, so the
+        // empty case has to resolve to the narrowest setting here, in code, or the shape a
+        // deploy produces most easily is the one that checks nothing.
+        if (minMinorUnitsPerPlatformBaseUnit <= 0m
+            || maxMinorUnitsPerPlatformBaseUnit <= 0m
+            || minMinorUnitsPerPlatformBaseUnit > maxMinorUnitsPerPlatformBaseUnit)
+        {
+            return new RateConsistencyOutcome(RateConsistencyVerdict.BandUndeclared, "0", "0", "0");
+        }
+
+        var slackDeclared = dustMinorUnits > 0m ? dustMinorUnits : 0m;
+
+        var (rateMantissa, rateScale) = PartsOf(minorUnitsPerProjectBaseUnit);
+        var (lowestMantissa, lowestScale) = PartsOf(minMinorUnitsPerPlatformBaseUnit);
+        var (highestMantissa, highestScale) = PartsOf(maxMinorUnitsPerPlatformBaseUnit);
+        var (slackMantissa, slackScale) = PartsOf(slackDeclared);
+
+        var scale = Math.Max(
+            Math.Max(rateScale, slackScale), Math.Max(lowestScale, highestScale));
+
+        var priced = Rescale(projectUnitAmount * rateMantissa, rateScale, scale);
+        var slack = Rescale(slackMantissa, slackScale, scale);
+        var lowest = Rescale(platformAmount * lowestMantissa, lowestScale, scale) - slack;
+        var highest = Rescale(platformAmount * highestMantissa, highestScale, scale) + slack;
+
+        var verdict = priced < lowest
+            ? RateConsistencyVerdict.PricedBelowTheFunds
+            : priced > highest
+                ? RateConsistencyVerdict.PricedAboveTheFunds
+                : RateConsistencyVerdict.Consistent;
+
+        return new RateConsistencyOutcome(
+            verdict, Format(priced, scale), Format(lowest, scale), Format(highest, scale));
+    }
+
+    /// <summary>A decimal's exact mantissa and scale, so no comparison ever rounds.</summary>
+    private static (BigInteger Mantissa, int Scale) PartsOf(decimal value)
+    {
+        var bits = decimal.GetBits(value);
+        var scale = (bits[3] >> 16) & 0xFF;
+        var mantissa = (new BigInteger((uint)bits[2]) << 64)
+                     | (new BigInteger((uint)bits[1]) << 32)
+                     | new BigInteger((uint)bits[0]);
+
+        return (value < 0m ? -mantissa : mantissa, scale);
+    }
+
+    /// <summary>Moves a scaled integer onto a wider common scale; never narrows, so never rounds.</summary>
+    private static BigInteger Rescale(BigInteger scaled, int fromScale, int toScale) =>
+        toScale == fromScale ? scaled : scaled * BigInteger.Pow(10, toScale - fromScale);
+
+    /// <summary>The exact decimal a scaled integer stands for, with no trailing-zero noise.</summary>
+    private static string Format(BigInteger scaled, int scale)
+    {
+        if (scale <= 0)
+            return scaled.ToString(CultureInfo.InvariantCulture);
+
+        var negative = scaled.Sign < 0;
+        var digits = BigInteger.Abs(scaled)
+            .ToString(CultureInfo.InvariantCulture)
+            .PadLeft(scale + 1, '0');
+
+        var whole = digits[..^scale];
+        var fraction = digits[^scale..].TrimEnd('0');
+        var text = fraction.Length == 0 ? whole : whole + "." + fraction;
+
+        return negative ? "-" + text : text;
+    }
+}
+
 /// <summary>
 /// The default rate policy: the consumer's declaration is admitted when it is present, fresh,
 /// in the pinned currency and about the asset actually moving; the reverse direction is
@@ -143,6 +311,19 @@ public sealed class TreasuryRateExchangePolicy : IExchangeRatePolicy
     /// </summary>
     public const string SellUnavailableMessage =
         "Selling project units back is not available on this node yet. Nothing was moved.";
+
+    /// <summary>
+    /// The one refusal a consumer sees when the operator declared no consistency band. Kept
+    /// beside <see cref="SellUnavailableMessage"/> for the same reason: the wording callers and
+    /// tests key on must not drift.
+    /// </summary>
+    public const string BandUndeclaredMessage =
+        "This node is not configured with the bounds a recorded price has to fall inside, so it "
+        + "cannot record one. Nothing was moved.";
+
+    /// <summary>The opening sentence every band refusal shares; the rest names the three figures.</summary>
+    public const string InconsistentTripleMessage =
+        "The two amounts and the supplied rate contradict each other.";
 
     private readonly ExchangeOptions _options;
     private readonly IExchangeLiquidityPolicy? _liquidity;
@@ -238,9 +419,72 @@ public sealed class TreasuryRateExchangePolicy : IExchangeRatePolicy
         if (maxAge <= TimeSpan.Zero)
             return "This node is not configured to accept declared rates, so it cannot price an exchange.";
 
-        return evaluation.Now - declared.DeclaredAt > maxAge
-            ? "The supplied rate is older than this node accepts; re-declare it and try again."
-            : null;
+        if (evaluation.Now - declared.DeclaredAt > maxAge)
+            return "The supplied rate is older than this node accepts; re-declare it and try again.";
+
+        return DescribeConsistencyRefusal(evaluation, declared);
+    }
+
+    /// <summary>
+    /// Why the two amounts and the rate on this one body cannot all be true at once, or null
+    /// when they can. This is the LAST refusal on purpose: a rate for the wrong asset, the
+    /// wrong rail or the wrong day is a plainer answer than an arithmetic one, and a consumer
+    /// should read that first.
+    /// </summary>
+    /// <remarks>
+    /// It is a control on what this node RECORDS, not on what anything costs (D7). AZOA still
+    /// records the rate its consumer declared; it refuses to record a triple that contradicts
+    /// itself, because such a record is the audit answer to "what was this worth when it moved"
+    /// and a self-contradicting one answers nothing.
+    /// </remarks>
+    private string? DescribeConsistencyRefusal(
+        ExchangeRateEvaluation evaluation, TenantDeclaredRate declared)
+    {
+        var outcome = ExchangeRateConsistencyBand.Decide(
+            evaluation.PlatformAmount,
+            evaluation.ProjectUnitAmount,
+            declared.MinorUnitsPerBaseUnit,
+            _options.MinMinorUnitsPerPlatformBaseUnit,
+            _options.MaxMinorUnitsPerPlatformBaseUnit,
+            _options.RateConsistencyDustMinorUnits);
+
+        return outcome.Verdict switch
+        {
+            RateConsistencyVerdict.Consistent => null,
+            RateConsistencyVerdict.PricedAboveTheFunds => DescribeBandRefusal(
+                evaluation, declared, outcome, pricedAbove: true),
+            RateConsistencyVerdict.PricedBelowTheFunds => DescribeBandRefusal(
+                evaluation, declared, outcome, pricedAbove: false),
+
+            // Undeclared, and anything a later verdict adds: refuse. A band nobody declared
+            // cannot admit a triple, and a verdict this method does not recognise is not an
+            // admission either.
+            _ => BandUndeclaredMessage,
+        };
+    }
+
+    /// <summary>
+    /// Names all three figures and the end of the band the triple fell out of, so the caller
+    /// learns WHICH of the units, the funds or the rate has to be restated.
+    /// </summary>
+    private static string DescribeBandRefusal(
+        ExchangeRateEvaluation evaluation,
+        TenantDeclaredRate declared,
+        RateConsistencyOutcome outcome,
+        bool pricedAbove)
+    {
+        var units = evaluation.ProjectUnitAmount.ToString(CultureInfo.InvariantCulture);
+        var funds = evaluation.PlatformAmount.ToString(CultureInfo.InvariantCulture);
+        var comparison = pricedAbove
+            ? $"more than a funds amount of {funds} can stand for on this node "
+              + $"(at most {outcome.HighestAcceptableMinorUnits})"
+            : $"less than a funds amount of {funds} stands for on this node "
+              + $"(at least {outcome.LowestAcceptableMinorUnits})";
+
+        return $"{InconsistentTripleMessage} {units} units at the supplied rate come to "
+            + $"{outcome.PricedMinorUnits} minor units of {declared.CurrencyCode}, which is "
+            + $"{comparison}. Re-state the units, the funds amount or the rate so the three "
+            + "agree; nothing was moved.";
     }
 
     /// <summary>Refuses an exchange at admission, before anything is committed or moved.</summary>

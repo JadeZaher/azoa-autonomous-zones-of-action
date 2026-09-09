@@ -264,7 +264,8 @@ export const API_PATHS = {
   DAPP_SERIES_ACTION_MAPPINGS: (seriesId: string, actionId: string) => `/api/dapp-series/${seriesId}/actions/${actionId}/mappings`,
 
   // Public node transparency reads (NodeTransparencyController). Anonymous,
-  // cacheable; no token or API key is ever sent with these.
+  // cacheable; no token or API key is ever sent with these — enforced by
+  // AzoaApiClient.requestAnonymous (client.ts), not merely asserted (OI-70).
   NODE_TRANSPARENCY_CURRENT: "/api/node-transparency/current",
   NODE_TRANSPARENCY_GOVERNANCE_AUDIT: "/api/node-transparency/audit/governance",
   NODE_TRANSPARENCY_FEE_AUDIT: "/api/node-transparency/audit/fees",

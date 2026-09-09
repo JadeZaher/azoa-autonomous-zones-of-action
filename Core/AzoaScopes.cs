@@ -47,6 +47,19 @@ public static class AzoaScopes
     public const string NftMint = "nft:mint";
 
     /// <summary>
+    /// OI-73: a BURN destroys an asset the holder already has, so it gets its own scope
+    /// rather than riding on <see cref="NftMint"/>. The tenant-provisioned implied grant
+    /// carries <c>nft:mint</c> (an inbound credit), and while <c>Burn</c> shared that entry
+    /// in the operation-scope map the same grant would have authorised a tenant-driven
+    /// burn. It is deliberately absent from the self-issuable vocabulary: no credential can
+    /// carry it today, so a tenant-driven burn fails closed at the dispatch seam until a
+    /// deliberate item decides who may hold it. It also sits in
+    /// <see cref="ValueSigningScopes"/>, so it can never arrive through a no-UX
+    /// <c>Participation</c> grant.
+    /// </summary>
+    public const string NftBurn = "nft:burn";
+
+    /// <summary>
     /// Coarse dApp-developer capability: an API key carrying this scope may perform
     /// the authoring/edit surfaces across the owner's holons, actions and dapp-series
     /// (the write actions gated by the <c>DappDevelop</c> authorization policy).
@@ -118,6 +131,10 @@ public static class AzoaScopes
             // clawback key. Like TokenCreateSign it is platform-SIGNED but may be
             // tenant-DRIVEN, so it must never arrive through a no-UX Participation grant.
             CredentialRevokeSign,
+            // OI-73. A burn destroys an asset the holder already has -- strictly more
+            // destructive than a transfer -- so it belongs here for the same reason
+            // CredentialRevokeSign does: a standing, no-UX grant must never reach it.
+            NftBurn,
         };
 
     /// <summary>
@@ -129,9 +146,10 @@ public static class AzoaScopes
     /// later participation caller all inherit it without each having to remember to list it.
     ///
     /// <para>It carries <see cref="UnitsIssue"/> and nothing else. <see cref="NftMint"/> is
-    /// also inbound, but the operation-scope map below lets it sign a <c>Burn</c> as well,
-    /// so handing it to every participation grant would widen more than a credit; the
-    /// tenant-provisioned implied grant names it explicitly instead.</para>
+    /// also inbound, but it signs every <c>Mint</c> this node performs, which is wider than
+    /// a credit, so the tenant-provisioned implied grant names it explicitly rather than
+    /// every participation grant inheriting it. Until OI-73 it signed a <c>Burn</c> too;
+    /// that entry now demands <see cref="NftBurn"/> instead.</para>
     ///
     /// <para>The H4 exclusion in <c>ConsentManager.GrantAsync</c> runs over the UNION, so a
     /// value-signing scope smuggled in here would refuse every participation grant outright
@@ -171,7 +189,13 @@ public static class AzoaScopes
         new System.Collections.Generic.Dictionary<string, System.Collections.Generic.IReadOnlySet<string>>(StringComparer.Ordinal)
         {
             ["Mint"]                  = Set(NftMint, GrantSign),
-            ["Burn"]                  = Set(NftMint),
+            // OI-73. A burn signs under nft:burn and nothing else. nft:mint used to sit
+            // here, which meant the nft:mint in the tenant-provisioned implied grant would
+            // have authorised a tenant-driven BURN as well as the inbound credit it is
+            // there for. No credential can carry nft:burn today (it is not self-issuable
+            // and no grant path adds it), so a tenant-driven burn is refused at the
+            // dispatch seam rather than signed under a capability nobody granted.
+            ["Burn"]                  = Set(NftBurn),
             ["Transfer"]              = Set(TransferSign),
             // An issuance is a reserve-funded CREDIT, so it signs under units:issue only —
             // and units:issue is absent from every other entry, so it can sign nothing else.
@@ -286,7 +310,7 @@ public static class AzoaScopes
             [WalletManage]    = "Create and manage wallets.",
             [KycRead]         = "Read a minimal authoritative KYC status.",
             [KycSubmit]       = "Begin and submit identity verification.",
-            [NftMint]         = "Mint, transfer, and burn NFTs.",
+            [NftMint]         = "Mint and transfer NFTs, and burn your own.",
             [ActionExecute]    = "Execute actions (non-value participation).",
             [UnitsIssue]      = "Have units credited into an account from the platform reserve.",
             [SwapSign]        = "Sign a token swap with the user's key.",

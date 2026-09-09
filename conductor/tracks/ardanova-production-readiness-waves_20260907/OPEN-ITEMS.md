@@ -700,13 +700,17 @@ or the word "token" where "funds"/"stake"/"units" would do is a **defect**.
 - [ ] **OI-78** `LOW` `ardanova` — `ardanova-client/prisma/schema.prisma` is not synced with the
   Wave-5 and Wave-6 migrations; the next `prisma migrate dev` reports drift and offers to drop
   the columns. One sync pass covers both.
-- [ ] **OI-79** `MEDIUM` `azoa` — **The declared rate is recorded and never checked against the
+- [x] **OI-79** `MEDIUM` `azoa` — **The declared rate is recorded and never checked against the
   amounts it priced.** `Services/Reserve/ExchangeRatePolicy.cs` `DescribeRateRefusal`
-  (:167-199) checks currency, asset identity, rail, positivity and freshness, and never that
+  (:391-426 at this HEAD; the row originally cited :167-199) checks currency, asset identity, rail, positivity and freshness, and never that
   `PlatformAmount ≈ ProjectUnitAmount × rate` — while all three are consumer-supplied on the
   same body. The value is then stamped on the receipt and on `BlockchainOperation.ExchangeRate`
   as the audit record of the price. AZOA deliberately does not *price* (D7); a consistency band
   on a rate it chooses to *record* is a different control, and it is absent.
+  **CLOSED (L4):** `ExchangeRatePolicy` now refuses a declared rate outside the operator's
+  band over the platform base unit (`Exchange:Min/MaxMinorUnitsPerPlatformBaseUnit`, dust
+  `RateConsistencyDustMinorUnits`); blank or inverted bounds refuse every rate. Proven by
+  `tests/AZOA.WebAPI.Tests/Exchange/ExchangeRateConsistencyBandTests.cs`.
 - [ ] **OI-80** `HIGH` `ardanova` — **The guard that should have caught OI-36/OI-37 cannot.**
   `tests/ArdaNova.Application.Tests/Policies/EconomicSettlementPersistenceContractTests.cs` is
   named a persistence contract test and is entirely C# reflection over attributes; nothing in

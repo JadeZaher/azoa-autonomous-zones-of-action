@@ -27,11 +27,36 @@ public sealed class ReserveOptions
 
     /// <summary>
     /// Chains the reserve is expected to operate on. A reserve operation on a chain
-    /// absent from a NON-EMPTY list is refused before any key is touched, so a node
-    /// cannot quietly start holding value on a chain its operator never approved. An
-    /// empty list means "no restriction" and is the unconfigured default.
+    /// absent from this list is refused before any key is touched, so a node cannot
+    /// quietly start holding value on a chain its operator never approved.
+    ///
+    /// <para>OI-74: an EMPTY list used to mean "no restriction", which is the shape a
+    /// deployment produces most easily -- a container with no appsettings, or a
+    /// <c>Reserve</c> section that omits the key, binds to <c>new()</c> and every chain
+    /// string on earth was then approved. Empty now falls back to
+    /// <see cref="ShippedChains"/>, the one chain this node actually ships a reserve for,
+    /// and never to "everything". Read it through <see cref="PermitsChain"/>, never
+    /// directly, so the fallback cannot be forgotten at a new call site.</para>
     /// </summary>
     public List<string> Chains { get; set; } = new();
+
+    /// <summary>
+    /// The chains a node that declared none is nonetheless permitted to operate the
+    /// reserve on. This is the fail-closed fallback for an empty <see cref="Chains"/>: the
+    /// narrowest set that keeps an unconfigured node working, never "no restriction".
+    /// Adding a chain here is a deliberate act with the same weight as declaring one.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ShippedChains = new[] { "Algorand" };
+
+    /// <summary>
+    /// OI-74: the operator's deliberate opt-out of the per-chain address assertion. Leave
+    /// it false. While it is false, a chain the operator DECLARED in <see cref="Chains"/>
+    /// must also carry an <see cref="ExpectedAddresses"/> entry or every reserve operation
+    /// on that chain is refused -- the guard is a refusal instead of an inert setting. It
+    /// is a bool rather than an environment probe on purpose: a blank env var will not bind
+    /// to one, so there is no value a deployment can produce by accident that widens this.
+    /// </summary>
+    public bool AllowUndeclaredReserveAddress { get; set; }
 
     /// <summary>
     /// Where a fungible token this node creates is minted. <c>PlatformReserve</c> (the
@@ -43,11 +68,16 @@ public sealed class ReserveOptions
     public string FungibleMintTarget { get; set; } = ReserveMintTargets.PlatformReserve;
 
     /// <summary>
-    /// Optional per-chain operator assertion of the reserve address. When an entry is
-    /// present and non-blank, the address DERIVED from that chain's platform key must
-    /// equal it exactly or every reserve operation on that chain fails closed. This is
-    /// how a swapped or mistyped mnemonic is caught at first use rather than after value
-    /// has moved to an account nobody expected.
+    /// Per-chain operator assertion of the reserve address. The address DERIVED from that
+    /// chain's platform key must equal the entry exactly or every reserve operation on
+    /// that chain fails closed. This is how a swapped or mistyped mnemonic is caught at
+    /// first use rather than after value has moved to an account nobody expected.
+    ///
+    /// <para>OI-74: it is REQUIRED, not optional, for every chain named in
+    /// <see cref="Chains"/> -- a missing entry there is a refusal
+    /// (<see cref="RefuseUndeclaredReserveAddress"/>), not an inert guard. Only a node that
+    /// declared no chain at all, or one whose operator deliberately set
+    /// <see cref="AllowUndeclaredReserveAddress"/>, may run without it.</para>
     /// </summary>
     public Dictionary<string, string> ExpectedAddresses { get; set; } = new();
 
@@ -73,6 +103,96 @@ public sealed class ReserveOptions
     /// <see cref="PlatformUnitDrawPolicy"/> is <c>DeclaredTenants</c>. Ignored otherwise.
     /// </summary>
     public List<string> PlatformUnitDrawTenants { get; set; } = new();
+
+    /// <summary>
+    /// True iff the reserve may operate on <paramref name="chain"/> (OI-74). The single
+    /// reader of <see cref="Chains"/>: a declared list is authoritative, and an empty one
+    /// falls back to <see cref="ShippedChains"/> rather than to every chain.
+    /// </summary>
+    /// <summary>
+    /// The chains the reserve actually permits, deduplicated and trimmed: the operator's
+    /// declared list when there is one, otherwise <see cref="ShippedChains"/>. Doors that
+    /// need to ENUMERATE the permitted rails (rather than test one) read this, so a door
+    /// and the counter can never disagree about what "one chain" means (OI-74).
+    /// </summary>
+    public IReadOnlyList<string> EffectiveChains
+    {
+        get
+        {
+            var declared = Chains
+                .Where(entry => !string.IsNullOrWhiteSpace(entry))
+                .Select(entry => entry.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return declared.Count > 0 ? declared : ShippedChains;
+        }
+    }
+
+    public bool PermitsChain(string? chain)
+    {
+        var candidate = chain?.Trim();
+        if (string.IsNullOrEmpty(candidate))
+            return false;
+
+        var declared = Chains.Count > 0 ? Chains.AsEnumerable() : ShippedChains.AsEnumerable();
+        return declared.Any(entry =>
+            string.Equals(entry?.Trim(), candidate, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The operator's declared reserve address for <paramref name="chain"/>, or empty when
+    /// none was declared. Trimmed; a whitespace-only entry counts as none.
+    /// </summary>
+    public string DeclaredAddressFor(string? chain)
+    {
+        var candidate = chain?.Trim();
+        if (string.IsNullOrEmpty(candidate))
+            return string.Empty;
+
+        var declared = ExpectedAddresses
+            .FirstOrDefault(entry =>
+                string.Equals(entry.Key?.Trim(), candidate, StringComparison.OrdinalIgnoreCase))
+            .Value;
+        return string.IsNullOrWhiteSpace(declared) ? string.Empty : declared.Trim();
+    }
+
+    /// <summary>
+    /// Null when the operator's address declaration for <paramref name="chain"/> is
+    /// complete; the refusal otherwise (OI-74).
+    ///
+    /// <para>Declaring a chain in <see cref="Chains"/> is a positive statement that this
+    /// node holds value there, and a positive statement has to be complete: without an
+    /// <see cref="ExpectedAddresses"/> entry the mismatch guard is inert, so a swapped or
+    /// mistyped mnemonic is caught only after value has moved to an account nobody
+    /// expected. A node that declared no chain at all is running on
+    /// <see cref="ShippedChains"/> and is not making that statement, so it is not held to
+    /// it -- and OI-74 already narrowed that path from every chain to one.</para>
+    ///
+    /// <para><paramref name="derivedAddress"/>, when the caller has one, is echoed into the
+    /// refusal so the operator can paste the value straight into the setting instead of
+    /// deriving it themselves. Nothing about the refusal depends on it.</para>
+    /// </summary>
+    public string? RefuseUndeclaredReserveAddress(string? chain, string? derivedAddress = null)
+    {
+        if (AllowUndeclaredReserveAddress)
+            return null;
+        if (Chains.Count == 0)
+            return null;
+
+        var candidate = chain?.Trim() ?? string.Empty;
+        if (!string.IsNullOrEmpty(DeclaredAddressFor(candidate)))
+            return null;
+
+        var hint = string.IsNullOrWhiteSpace(derivedAddress)
+            ? "the address this node's platform key derives"
+            : $"'{derivedAddress.Trim()}' (the address this node's platform key derives)";
+
+        return
+            $"Chain '{candidate}' is declared under {SectionName}:Chains but no reserve address is declared " +
+            $"under {SectionName}:ExpectedAddresses:{candidate}, so the address-mismatch guard would be inert " +
+            $"there. Set {SectionName}__ExpectedAddresses__{candidate} to {hint}. Refusing every reserve " +
+            "operation on this chain until it is declared.";
+    }
 }
 
 /// <summary>Accepted values for <see cref="ReserveOptions.FungibleMintTarget"/>.</summary>
@@ -92,7 +212,23 @@ public static class ReserveMintTargets
 /// </summary>
 public sealed class PlatformReserveService : IPlatformReserve
 {
-    /// <summary>How many applied draw keys the replay window keeps, oldest evicted first.</summary>
+    /// <summary>
+    /// How many applied draw keys the replay window keeps, oldest evicted first.
+    ///
+    /// <para>OI-75 -- the exact guarantee, because a looser one was being repeated as if it
+    /// were unconditional. The window is ONE bounded FIFO per asset ledger row, shared by
+    /// every partition and every draw kind on that asset. A retried draw whose key is still
+    /// in the window replays and moves nothing. A retried draw whose key has been pushed
+    /// out by <see cref="DrawReplayWindowSize"/> newer draws on the same asset is APPLIED A
+    /// SECOND TIME. So this is a cheap guard against a fast retry, not an idempotency
+    /// ledger, and every caller must carry a durable anchor of its own.</para>
+    ///
+    /// <para>The two live callers do. A hold draws exactly once per stage because its row's
+    /// state is the anchor -- see <c>PlatformHoldService.DrawsFrom</c>, which is why a hold
+    /// parked in <c>Releasing</c> never re-draws its release. Allocation issuance draws
+    /// under the request's outer idempotency key. A new draw seam that has neither must
+    /// bring one; this window will not supply it.</para>
+    /// </summary>
     public const int DrawReplayWindowSize = 128;
 
     /// <summary>Attempts a partition move makes before giving up on a compare-and-swap race.</summary>
@@ -150,6 +286,14 @@ public sealed class PlatformReserveService : IPlatformReserve
                 $"No reserve address could be derived for chain '{chain}'. " +
                 PlatformReserveAddressDerivation.SupportedChainsMessage);
 
+        // OI-74. The mismatch guard below only fires when an address WAS declared, so a
+        // blank ExpectedAddresses left it inert on exactly the chains the operator meant to
+        // be deliberate about. Refuse instead, and name the derived address so declaring it
+        // is one paste rather than a derivation the operator has to reproduce.
+        var undeclared = _options.RefuseUndeclaredReserveAddress(chain, address);
+        if (undeclared is not null)
+            return AZOAResult<ReserveAccount>.Failure(undeclared);
+
         if (!MatchesExpectedAddress(chain, address!, out var mismatch))
             return AZOAResult<ReserveAccount>.Failure(mismatch);
 
@@ -191,6 +335,13 @@ public sealed class PlatformReserveService : IPlatformReserve
         if (!IsChainApproved(chain))
             return AZOAResult<T>.Failure(
                 $"Chain '{chain}' is not listed under {ReserveOptions.SectionName}:Chains; refusing to sign as the reserve there.");
+
+        // OI-74, at the counter rather than at the door: a signature is the act that moves
+        // value, so it is refused on a declared chain whose reserve address was never
+        // declared. This runs BEFORE custody, so no key is decrypted to produce the refusal.
+        var undeclaredAddress = _options.RefuseUndeclaredReserveAddress(chain);
+        if (undeclaredAddress is not null)
+            return AZOAResult<T>.Failure(undeclaredAddress);
 
         // The reserve is a platform-authority account. A caller-supplied context may still
         // carry an acting tenant + scope so the custody seam runs the live consent check
@@ -419,7 +570,8 @@ public sealed class PlatformReserveService : IPlatformReserve
 
             // Replay guard: a retried draw inside the window returns the counters as they
             // already stand and moves nothing. Outside the window the key is unknown and
-            // the draw is applied, which is why callers keep their own idempotency anchor.
+            // the draw IS applied a second time, which is why every caller keeps a durable
+            // anchor of its own -- see DrawReplayWindowSize for the exact boundary.
             if (window.Contains(operationKey, StringComparer.Ordinal))
             {
                 var replayed = partitions.TryGetValue(partitionName, out var known)
@@ -470,21 +622,23 @@ public sealed class PlatformReserveService : IPlatformReserve
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private bool IsChainApproved(string chain) =>
-        _options.Chains.Count == 0 ||
-        _options.Chains.Any(candidate => string.Equals(candidate?.Trim(), chain, StringComparison.OrdinalIgnoreCase));
+    private bool IsChainApproved(string chain) => _options.PermitsChain(chain);
 
     private bool MatchesExpectedAddress(string chain, string derived, out string mismatch)
     {
         mismatch = string.Empty;
-        var expected = _options.ExpectedAddresses
-            .FirstOrDefault(entry => string.Equals(entry.Key?.Trim(), chain, StringComparison.OrdinalIgnoreCase))
-            .Value;
 
-        if (string.IsNullOrWhiteSpace(expected))
+        // One reader of ExpectedAddresses (ReserveOptions.DeclaredAddressFor), shared with
+        // the undeclared-address refusal, so "was an address declared?" cannot be answered
+        // two different ways by two call sites.
+        var expected = _options.DeclaredAddressFor(chain);
+
+        // Blank reaches here only on a node that declared no chain at all; a declared chain
+        // with no declared address was already refused (OI-74).
+        if (string.IsNullOrEmpty(expected))
             return true;
 
-        if (string.Equals(expected.Trim(), derived, StringComparison.Ordinal))
+        if (string.Equals(expected, derived, StringComparison.Ordinal))
             return true;
 
         mismatch =

@@ -23,14 +23,42 @@ namespace AZOA.WebAPI.Services.Actions;
 public static class NotEnabledActionNodeTypes
 {
     /// <summary>
-    /// Governance cannot be trusted to count (its tally reads raw holons, so a ballot
-    /// created outside the handler is counted without ever taking a uniqueness claim),
-    /// and the credential rail cannot authorize (the only mint path stamps
-    /// issuer = holder, making the issuer check vacuous). Tracked by
-    /// <c>governance-vote-of-record_20260906</c> and
+    /// Governance cannot be trusted to hold a franchise, and the credential rail cannot
+    /// authorize (the only mint path stamps issuer = holder, making the issuer check
+    /// vacuous). Tracked by <c>governance-vote-of-record_20260906</c> and
     /// <c>credential-third-party-issuance_20260906</c>; remove a member from this set
     /// only when its track closes.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The governance reason CHANGED, and saying so is the point. It used to be "the
+    /// tally reads raw holons, so a ballot created outside the handler is counted
+    /// without ever taking a uniqueness claim". That defect is FIXED — <c>fa2dfcf</c>
+    /// moved the vote of record onto <c>person_operation_claim</c> (D39), and the
+    /// independent review re-proved it: <c>GovernanceVoteNodeHandler</c> is the only
+    /// production caller of <c>IPersonUniquenessGate.TryClaimAsync</c> in the tree, and
+    /// <c>GovernanceClaimLedgerTally</c> reads that ledger and nothing else. A gate
+    /// left standing on a reason that has stopped being true is itself the defect class
+    /// this file exists to end, so the reason is restated rather than inherited.
+    /// </para>
+    /// <para>
+    /// The three governance types stay blocked on the CURRENT findings, recorded in
+    /// <c>conductor/tracks/ardanova-production-readiness-waves_20260907/REVIEW-GOVERNANCE-VERDICT.md</c>
+    /// (verdict FAIL): the electorate is bound to nobody — <c>ProposalElectorateRejection</c>
+    /// checks only that the declared <c>electorateTenant</c> parses as a tenant Guid, and
+    /// <c>HolonManager</c> has no tenant context with which to check WHOSE, so any dApp
+    /// developer may raise a proposal naming another tenant's members; and there is no
+    /// close authority at all — <c>closesAt</c> is optional at creation and frozen from
+    /// the first ballot, so a proposal raised without one accepts ballots forever and can
+    /// be neither closed nor deleted.
+    /// </para>
+    /// <para>
+    /// This set and that verdict file are held together by
+    /// <c>tests/AZOA.WebAPI.Tests/Actions/NotEnabledActionNodeTypesTests.cs</c>: flipping
+    /// one without the other goes red. Lift the gate by fixing the findings, changing the
+    /// verdict line, and removing the members — in one change.
+    /// </para>
+    /// </remarks>
     private static readonly HashSet<ActionNodeType> Blocked = new()
     {
         ActionNodeType.GovernanceProposalCreate,

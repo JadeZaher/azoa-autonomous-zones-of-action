@@ -255,10 +255,24 @@ audience notices first.
 **The rule.** From the first live vote of record, a `GovernanceProposal` holon's
 decision-bearing surface is frozen:
 `ConsumerGovernanceHolonTypes.FrozenProposalMetadataKeys` (status, options, opensAt,
-closesAt, uniquenessOperationKey, uniquenessScope, electorateTenant), plus the asset
-type and the publication flag, plus deletion. `name` and `description` stay editable on
-purpose: fixing a typo moves no outcome, and a freeze that blocked ordinary drafting
-would be routed around inside a week.
+closesAt, uniquenessOperationKey, uniquenessScope, electorateTenant), the QUESTION itself
+(`Holon.Name` and `Holon.Description`, through
+`FrozenProposalQuestion.DescribeQuestionRewrite` in
+`Services/Governance/FrozenProposalMetadataKeys.cs`), plus the asset type and the
+publication flag, plus deletion.
+
+**The question was the last thing still moving (L4.3, OI-48).** `name` and `description`
+used to be editable on purpose — fixing a typo moves no outcome, and a freeze that blocked
+ordinary drafting would be routed around inside a week — and a test in
+`GovernanceProposalRewriteTests` PINNED that as intended. The argument was true and the
+conclusion was wrong: the same edit that fixes a typo turns "Should we fund the roof
+repair?" into "Should we dissolve the co-op?" over a count nobody re-took, and it needs no
+metadata at all, so it walked past every frozen key. The two fields are COLUMNS on the
+holon, which is precisely why a metadata freeze could never see them. A late correction is
+now a new proposal; before the first vote the author still owns the wording outright, which
+is the drafting freedom the old pin was really defending
+(`Proposal_WordingIsStillEditable_BeforeTheFirstVoteOfRecord`). Re-sending the recorded
+wording is still not a rewrite, so an echoing client is not turned into a refusal.
 
 **Where it is enforced, and why there.** `HolonManager.UpdateAsync`,
 `HolonManager.InteractAsync` and `HolonManager.DeleteAsync`, all three through
@@ -271,7 +285,11 @@ metadata-mutation seam and it also DELETES keys — dropping `closesAt` off a pr
 opens the poll forever, which a value-only comparison would never notice, so
 `DescribeDecisionBearingRewrite` takes the removal list too. `PropagateAsync` is not on
 the list and does not need to be: it writes only `IsActive` and keys it prefixes with
-`propagated_`, neither of which any governance node reads.
+`propagated_`, neither of which any governance node reads. `CloneAsync` is not on it
+either, and for a stronger reason than a naming convention: the clone carries the SOURCE's
+`uniquenessOperationKey`, which no longer derives from the clone's own id, so
+`TryResolveClaimDomain` fails on it by construction — the copy can hold no vote, and there
+is nothing on it to freeze.
 
 **It runs before the merge.** `HolonManager.UpdateAsync` mutates the holon in place and
 then upserts, so the freeze is evaluated on the PRE-merge state. That is not a style
@@ -321,10 +339,24 @@ take the sentence on trust.
 names a tenant: `ConsumerGovernanceHolonTypes.IsUsableElectorateValue`. `node`, a blank
 value, and anything that is not a `Guid("N")` are refused by
 `ProposalElectorateRejection`, which `HolonManager` applies on `CreateAsync`, on
-`UpdateAsync` (post-merge, so an update cannot widen a good electorate), on `GetAsync`
-and in `ScopeReadable`. A proposal recording NO electorate is left alone: it is already
-inert, because `IsInElectorate` and `TryResolveUniquenessScopeValue` both fail closed on
-it, so nobody can enter or observe its vote.
+`UpdateAsync` (post-merge, so an update cannot widen a good electorate), on `InteractAsync`
+(on the metadata the interaction WOULD leave behind, projected before the merge so a refusal
+writes nothing), on `GetAsync` and in `ScopeReadable`. A proposal recording NO electorate is
+left alone: it is already inert, because `IsInElectorate` and
+`TryResolveUniquenessScopeValue` both fail closed on it, so nobody can enter or observe its
+vote.
+
+**The fifth door, and why the freeze was not already holding it (L4.3, OI-47).**
+`InteractAsync` carried the proposal freeze and nothing else, and the freeze answers
+`Unclaimed` on a proposal nobody has voted on yet — so `POST /api/holon/{id}/interact` with
+`SetMetadata { electorateTenant: "node" }` wrote exactly the row this section says cannot
+exist, on the one seam the other four rules did not reach. That is the recurring defect in
+its usual shape: two controls that each assume the other is holding the case where both
+happen to be quiet. Pinned from the outside by
+`Proposal_ElectorateCannotBeWidenedToTheNode_ThroughTheInteractionSeam`, which asserts at the
+counter — the recorded electorate, a caller whose acting tenant is empty (the value
+`ElectorateValueFor` mints `node` from) still refused, and the real electorate still voting —
+rather than at the door.
 
 **Refused on the read as well as the write** because the write rule only governs rows
 written after it. A row that predates it is not handed back as a live notice, so it can
@@ -379,6 +411,8 @@ does not have to be miscounted to be moved — it is enough to move the QUESTION
 | The proposal author could rewrite options, scope, electorate, status and the window after ballots were cast; rewriting the scope silently emptied the count while `tallyHash` still verified | CLOSED — the proposal freeze above, with 20 attack tests in `GovernanceProposalRewriteTests` |
 | A proposal raised on a plain user JWT recorded the `node` electorate and enfranchised every tenant-less verified human, in the same person-key domain node-global claims use | CLOSED at the write and read chokepoint — see §electorate-must-name-a-tenant, and the named residue |
 | The gate's node-global audit warning fired on the DECLARED scope, so a tenant-less caller resolving into the node-global domain was not audited at all | CLOSED — `PersonUniquenessGate.ResolveAsync` now logs on the RESOLVED scope and carries the declared one beside it |
+| The author could still move the QUESTION — `name` and `description` are holon columns, so no metadata freeze reached them, and a test pinned that as deliberate | CLOSED (L4.3, OI-48) — the freeze covers the question, and the pin now asserts the opposite |
+| `InteractAsync` had the freeze but not the electorate rule, and the freeze stands aside on an unvoted proposal, so the interaction seam could still mint the `node` electorate | CLOSED (L4.3, OI-47) — `ProposalElectorateRejection` runs on the projected interaction metadata |
 
 **Still open, and none of it is closed by this item:** `HolonManager.CanRead` remains
 owner-or-public with no tenant term, so a published proposal is legible node-wide even

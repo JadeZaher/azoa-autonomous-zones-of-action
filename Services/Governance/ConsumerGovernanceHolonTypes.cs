@@ -229,9 +229,12 @@ public static class ConsumerGovernanceHolonTypes
     /// <c>Services/Governance/AGENTS.md</c> §proposal-freeze.
     /// </summary>
     /// <remarks>
-    /// <c>name</c> and <c>description</c> are deliberately ABSENT: fixing a typo in the
-    /// title moves no outcome, and a freeze that blocked it would be dropped the first
-    /// time it got in somebody's way.
+    /// <c>name</c> and <c>description</c> are absent from THIS set because this set is
+    /// metadata-only. They are frozen too, by a separate control: see
+    /// <c>Services/Governance/FrozenProposalMetadataKeys.cs</c>
+    /// (<c>FrozenProposalQuestion</c>), enforced at <c>Managers/HolonManager.cs</c>.
+    /// The earlier rationale here -- that a title change moves no outcome -- was wrong:
+    /// the question a vote of record answered is exactly what must not move.
     /// </remarks>
     public static readonly IReadOnlySet<string> FrozenProposalMetadataKeys =
         new HashSet<string>(StringComparer.Ordinal)

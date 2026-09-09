@@ -18,6 +18,19 @@ using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Services.Hold;
 
+/// <summary>The three points in a hold's life at which it draws the reserve partition.</summary>
+public enum HoldDrawStage
+{
+    /// <summary>Opening: the commitment is taken out of the partition's availability.</summary>
+    Open = 0,
+
+    /// <summary>Releasing: held units become issued units and leave for the beneficiary.</summary>
+    Release = 1,
+
+    /// <summary>Refunding: held units go back to the partition's availability.</summary>
+    Refund = 2,
+}
+
 /// <summary>
 /// The HOLD primitive over the platform reserve's named-partition ledger. See
 /// <c>Services/Hold/IPlatformHold.cs</c> for what a hold is and
@@ -25,6 +38,36 @@ namespace AZOA.WebAPI.Services.Hold;
 /// </summary>
 public sealed class PlatformHoldService : IPlatformHold
 {
+    /// <summary>
+    /// OI-75: the hold's own durable anchor against a repeated reserve draw. Each stage may
+    /// draw from exactly ONE state, and every draw is followed by a transition out of it,
+    /// so a retry finds the row already moved and never asks the reserve twice.
+    ///
+    /// <para>This has to be the anchor because the reserve's replay window cannot be. That
+    /// window is a bounded FIFO shared by every draw against one asset
+    /// (<c>PlatformReserveService.DrawReplayWindowSize</c>): a retry whose key has aged out
+    /// is applied a second time. Before this predicate existed, a hold parked in
+    /// <see cref="HoldState.Releasing"/> -- the state a failed payout leaves behind -- was
+    /// re-drawn on every retry, and only the window stood between that and a partition
+    /// counted twice.</para>
+    ///
+    /// <para>Every terminal state draws from nothing, under every stage.</para>
+    /// </summary>
+    public static bool DrawsFrom(HoldDrawStage stage, HoldState state) => stage switch
+    {
+        // A row is created Pending and moves to Held the moment its opening draw lands.
+        HoldDrawStage.Open => state == HoldState.Pending,
+
+        // Held only. Releasing already drew; Released, Refunded and ReleasedIntoHold are terminal.
+        HoldDrawStage.Release => state == HoldState.Held,
+
+        // Held only. Pending never drew, so a refund from Pending has nothing to give back,
+        // and Releasing's units are already counted as issued.
+        HoldDrawStage.Refund => state == HoldState.Held,
+
+        _ => false,
+    };
+
     /// <summary>Largest page any list call will return.</summary>
     public const int MaxListLimit = 500;
 
@@ -170,8 +213,9 @@ public sealed class PlatformHoldService : IPlatformHold
                 return Fail(mismatch);
 
             // The first attempt may have died between the claim and the draw. Finish it
-            // rather than returning a permanently Pending hold.
-            if (ParseState(persisted.State) != HoldState.Pending)
+            // rather than returning a permanently Pending hold -- but only from the one
+            // state the opening draw is still owed from (OI-75).
+            if (!DrawsFrom(HoldDrawStage.Open, ParseState(persisted.State)))
                 return Ok(persisted, null, null, replayed: true, "This hold was already open.");
         }
 
@@ -307,27 +351,34 @@ public sealed class PlatformHoldService : IPlatformHold
                 ConsumerSafeErrorCodes.SettlementPending);
 
         // The partition draw commits BEFORE the move, and the row parks in Releasing so a
-        // refund cannot take back units the ledger has already counted as issued. The draw
-        // is keyed on the hold id, so a retry replays instead of double-counting. Exactly
+        // refund cannot take back units the ledger has already counted as issued. Exactly
         // one row in a parent/child chain reaches here, because chaining leaves the parent
         // terminal in ReleasedIntoHold.
-        var draw = await _reserve.DrawAsync(
-            new ReserveDrawRequest(
-                row.Chain,
-                row.AssetId,
-                row.ReservePartition,
-                ReserveDrawKind.ReleaseHold,
-                amount,
-                OperationKey("release", row.HoldId),
-                // Settling a commitment the opening draw already scope-checked: chain, asset
-                // and partition all come off this persisted row, so no caller names them.
-                ReserveDrawAuthority.SettlingGuardedCommitment),
-            ct);
-        if (draw.IsError || draw.Result is null)
-            return Fail(draw.Message);
-
-        if (state != HoldState.Releasing)
+        //
+        // OI-75: the draw runs from Held and only from Held. A row already in Releasing has
+        // drawn -- that is what parked it there -- so re-drawing on a retry would be caught
+        // only while the key was still inside the reserve's bounded replay window
+        // (PlatformReserveService.DrawReplayWindowSize), which ages out under load on a busy
+        // asset. A failed payout leaves the row in Releasing and the sweep retries it, so
+        // that was the reachable path, not a theoretical one. The row's own state is the
+        // durable anchor the window is not.
+        if (DrawsFrom(HoldDrawStage.Release, state))
         {
+            var draw = await _reserve.DrawAsync(
+                new ReserveDrawRequest(
+                    row.Chain,
+                    row.AssetId,
+                    row.ReservePartition,
+                    ReserveDrawKind.ReleaseHold,
+                    amount,
+                    OperationKey("release", row.HoldId),
+                    // Settling a commitment the opening draw already scope-checked: chain, asset
+                    // and partition all come off this persisted row, so no caller names them.
+                    ReserveDrawAuthority.SettlingGuardedCommitment),
+                ct);
+            if (draw.IsError || draw.Result is null)
+                return Fail(draw.Message);
+
             var releasing = await TransitionAsync(row, HoldState.Releasing, mutate: null, ct: ct);
             if (releasing.IsError || releasing.Result is null)
                 return Fail(releasing.Message);
@@ -468,7 +519,7 @@ public sealed class PlatformHoldService : IPlatformHold
         if (state is not (HoldState.Pending or HoldState.Held))
             return Fail(RefuseTransition(row, state, "given back"));
 
-        if (state == HoldState.Held)
+        if (DrawsFrom(HoldDrawStage.Refund, state))
         {
             if (!BigInteger.TryParse(
                     row.Amount, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var amount)
@@ -711,10 +762,10 @@ public sealed class PlatformHoldService : IPlatformHold
         return null;
     }
 
-    private bool IsChainApproved(string chain) =>
-        _reserveOptions.Chains.Count == 0 ||
-        _reserveOptions.Chains.Any(candidate =>
-            string.Equals(candidate?.Trim(), chain, StringComparison.OrdinalIgnoreCase));
+    // OI-74: one reader of Reserve:Chains, shared with the reserve itself, so an empty
+    // list can never mean "no restriction" on one side of the pair and "the shipped chain"
+    // on the other.
+    private bool IsChainApproved(string chain) => _reserveOptions.PermitsChain(chain);
 
     /// <summary>Null when a replayed open carries the same terms; the refusal otherwise.</summary>
     private static string? DescribeTermsMismatch(HoldLedger persisted, HoldLedger requested)

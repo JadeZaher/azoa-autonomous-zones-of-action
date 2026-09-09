@@ -172,9 +172,11 @@ public class HolonManager : IHolonManager
 
         // W9.2 - the proposal freeze. Runs on the PRE-MERGE state, so an author cannot
         // dodge it by rewriting the uniqueness domain in the same request that moves the
-        // question. See Services/Governance/AGENTS.md #proposal-freeze.
+        // question. Name and Description are part of that state: they ARE the question,
+        // and this merge writes them. See Services/Governance/AGENTS.md #proposal-freeze.
         var freezeError = await FrozenProposalRewriteErrorAsync(
-            existing.Result, model.Metadata, model.IsPublic, model.AssetType);
+            existing.Result, model.Metadata, model.IsPublic, model.AssetType,
+            model.Name, model.Description);
         if (freezeError != null)
             return new AZOAResult<IHolon> { IsError = true, Message = freezeError };
 
@@ -270,9 +272,26 @@ public class HolonManager : IHolonManager
             request.SetMetadata,
             incomingIsPublic: null,
             incomingAssetType: null,
-            request.RemoveMetadataKeys);
+            // HolonInteractionRequest carries no Name or Description, so this seam cannot
+            // move the question directly. Passed explicitly rather than defaulted so the
+            // day the request grows those fields the freeze is not silently skipped.
+            incomingName: null,
+            incomingDescription: null,
+            removedMetadataKeys: request.RemoveMetadataKeys);
         if (interactionFreezeError != null)
             return new AZOAResult<IHolon> { IsError = true, Message = interactionFreezeError };
+
+        // L4.3 (OI-47). The same electorate rule CreateAsync, UpdateAsync, GetAsync and
+        // ScopeReadable enforce, now on the fifth seam. The freeze above did not cover
+        // this: on an UNVOTED proposal it answers Unclaimed, so this route was writing
+        // exactly the node-wide electorate the other four refuse. Evaluated on the
+        // metadata the interaction WOULD leave behind, before anything is merged, so a
+        // refusal leaves the recorded proposal untouched.
+        var interactionElectorateError = ConsumerGovernanceHolonTypes.ProposalElectorateRejection(
+            existing.Result.AssetType,
+            ProjectInteractionMetadata(existing.Result.Metadata, request.SetMetadata, request.RemoveMetadataKeys));
+        if (interactionElectorateError != null)
+            return new AZOAResult<IHolon> { IsError = true, Message = interactionElectorateError };
 
         var holon = (Holon)existing.Result;
 
@@ -741,6 +760,8 @@ public class HolonManager : IHolonManager
         IReadOnlyDictionary<string, string>? incomingMetadata,
         bool? incomingIsPublic,
         string? incomingAssetType,
+        string? incomingName,
+        string? incomingDescription,
         IEnumerable<string>? removedMetadataKeys = null)
     {
         if (!string.Equals(existing.AssetType, ConsumerGovernanceHolonTypes.ProposalAssetType, StringComparison.Ordinal))
@@ -755,9 +776,42 @@ public class HolonManager : IHolonManager
             incomingAssetType,
             removedMetadataKeys);
 
+        // L4.3 (OI-48). The question lives in the holon's own columns, not in metadata,
+        // so the metadata freeze set could never reach it - and rewriting "fund the roof
+        // repair" into "dissolve the co-op" moves the outcome further than any option
+        // list can.
+        var question = FrozenProposalQuestion.DescribeQuestionRewrite(
+            existing.Name, existing.Description, incomingName, incomingDescription);
+
+        var moved = string.Join(", ", new[] { rewrite, question }.Where(part => part is not null));
+
         return await FrozenProposalErrorAsync(
             existing,
-            rewrite is null ? null : $"a recorded vote already depends on {rewrite}");
+            moved.Length == 0 ? null : $"a recorded vote already depends on {moved}");
+    }
+
+    /// <summary>
+    /// The metadata an interaction WOULD leave behind, computed without touching the
+    /// recorded holon so a refusal is a refusal rather than a half-applied write.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> ProjectInteractionMetadata(
+        IReadOnlyDictionary<string, string> recorded,
+        IReadOnlyDictionary<string, string>? setMetadata,
+        IEnumerable<string>? removeMetadataKeys)
+    {
+        var projected = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kv in recorded)
+            projected[kv.Key] = kv.Value;
+
+        if (setMetadata != null)
+            foreach (var kv in setMetadata)
+                projected[kv.Key] = kv.Value;
+
+        if (removeMetadataKeys != null)
+            foreach (var key in removeMetadataKeys)
+                projected.Remove(key);
+
+        return projected;
     }
 
     /// <summary>

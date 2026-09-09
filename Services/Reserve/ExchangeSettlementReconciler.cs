@@ -140,7 +140,7 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
         // window credits the project TWICE for one exchange. So the reconciler keeps its own
         // anchor, in the unbounded insert-wins ledger, and never leans on somebody else's window.
         var credit = await OnceAsync(
-            legs.LedgerKey + ReconcileCreditAnchorSuffix,
+            SettlementAnchor(legs.LedgerKey, ReconcileCreditAnchorSuffix),
             operation.Id,
             "the project credit",
             async () =>
@@ -233,7 +233,7 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
         // window is not enough on its own: 128 draws later the partition would be handed back a
         // second time, on top of a group that never happened. The anchor is what makes it once.
         var handedBack = await OnceAsync(
-            legs.LedgerKey + ReconcileUnwindAnchorSuffix,
+            SettlementAnchor(legs.LedgerKey, ReconcileUnwindAnchorSuffix),
             operation.Id,
             "the " + kind + " unwind",
             () => kind switch
@@ -267,7 +267,7 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
                 StringComparison.Ordinal))
         {
             var refund = await OnceAsync(
-                legs.LedgerKey + ReconcileRefundAnchorSuffix,
+                SettlementAnchor(legs.LedgerKey, ReconcileRefundAnchorSuffix),
                 operation.Id,
                 "the treasury refund",
                 async () =>
@@ -319,14 +319,27 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
     // returns false is that the effect LANDED and the bookkeeping after it did not. So the anchor
     // has to be the unbounded, insert-wins idempotency ledger, one key per effect.
 
+    /// <summary>
+    /// Reserves the settlement key space away from callers. An exchange's ledger key is
+    /// <c>exchange:{apiKeyId}:{clientIdempotencyKey}</c> (ReserveExchangeManager.CreateFromClientKey),
+    /// so before this prefix existed a caller who sent <c>Idempotency-Key: foo:reconcile-credit</c>
+    /// produced, byte for byte, the anchor of the exchange whose client key was <c>foo</c>. The
+    /// idempotency ledger guarantees uniqueness on the KEY ALONE (Models/Idempotency/IdempotencyRecord.cs),
+    /// so that row is the row this reconciler then reads: it sees Completed, reports the effect
+    /// already applied, and silently skips a credit, an unwind or a refund that never happened.
+    /// Every anchor is prefixed instead of suffixed because a caller controls only the TAIL of its
+    /// own ledger key, never the head -- so no caller-reachable key can begin with this.
+    /// </summary>
+    public const string SettlementAnchorPrefix = "settlement:";
+
     /// <summary>Anchors the project credit a confirmed buy still owed.</summary>
-    private const string ReconcileCreditAnchorSuffix = ":reconcile-credit";
+    public const string ReconcileCreditAnchorSuffix = ":reconcile-credit";
 
     /// <summary>Anchors the partition/hold hand-back a chain-failed group left standing.</summary>
-    private const string ReconcileUnwindAnchorSuffix = ":reconcile-unwind";
+    public const string ReconcileUnwindAnchorSuffix = ":reconcile-unwind";
 
     /// <summary>Anchors the treasury refund a chain-failed SELL is owed.</summary>
-    private const string ReconcileRefundAnchorSuffix = ":reconcile-refund";
+    public const string ReconcileRefundAnchorSuffix = ":reconcile-refund";
 
     /// <summary>
     /// The ledger's operation type for every anchor above. Distinct from
@@ -334,7 +347,7 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
     /// a ledger row whose operation type is not the exchange's own, so a settlement anchor can
     /// never be mistaken for — or replayed as — a caller's receipt.
     /// </summary>
-    private const string AnchorOperationType = "reserve_exchange_settlement";
+    public const string AnchorOperationType = "reserve_exchange_settlement";
 
     private async Task<bool> ReturnToPartitionAsync(ExchangeLegs legs, CancellationToken ct)
     {
@@ -462,6 +475,23 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
 
             if (!claim.Won)
             {
+                // Whose row is this? The ledger's uniqueness is on the KEY ALONE, so a row at this
+                // key is not proof it is OURS. SettlementAnchorPrefix makes a collision unreachable
+                // from a caller today; this check is what keeps that true if the key derivation ever
+                // moves again. Reading a foreign Completed row as "already applied" is precisely how
+                // an unmade credit gets reported as handed back, so a stranger's row refuses.
+                if (!string.Equals(
+                        claim.Record.OperationType, AnchorOperationType, StringComparison.Ordinal))
+                {
+                    _logger?.LogError(
+                        "MANUAL INTERVENTION REQUIRED — exchange {OperationId}: {What} was NOT applied "
+                        + "because its settlement anchor '{Anchor}' is held by a '{Foreign}' record, "
+                        + "not this reconciler's '{Expected}'. Nothing was applied. Two key spaces "
+                        + "have collided; do not settle this anchor until you know which effect owns it.",
+                        operationId, what, key, claim.Record.OperationType, AnchorOperationType);
+                    return SettlementEffect.Refused;
+                }
+
                 switch (claim.Record.State)
                 {
                     case IdempotencyState.Completed:
@@ -530,6 +560,13 @@ public sealed class ExchangeSettlementReconciler : IExchangeSettlementReconciler
     /// </summary>
     private static string AttemptKey(string anchorKey, int attempt) =>
         attempt == 1 ? anchorKey : anchorKey + "#" + attempt.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Builds a settlement anchor in the reserved key space. See <see cref="SettlementAnchorPrefix"/>
+    /// for why the namespace leads rather than trails.
+    /// </summary>
+    public static string SettlementAnchor(string ledgerKey, string suffix) =>
+        SettlementAnchorPrefix + ledgerKey + suffix;
 
     /// <summary>
     /// Records what became of one attempt generation. A settle that itself fails leaves the

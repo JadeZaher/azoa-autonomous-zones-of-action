@@ -133,9 +133,12 @@ public enum ReserveDrawKind
 }
 
 /// <summary>
-/// One partition draw. <c>OperationKey</c> is required and is the replay anchor: the
-/// ledger keeps a bounded window of recently applied keys so a retried draw cannot
-/// double-count a partition. <c>Authority</c> is required and positional on purpose —
+/// One partition draw. <c>OperationKey</c> is required and is the replay anchor, but the
+/// window it is checked against is BOUNDED: a key pushed out by
+/// <see cref="PlatformReserveService.DrawReplayWindowSize"/> newer draws IS applied
+/// again. Callers must bring a durable anchor of their own; this window will not supply
+/// one (OI-75) -- see <c>PlatformReserveService.DrawReplayWindowSize</c> for the two live
+/// callers that do. <c>Authority</c> is required and positional on purpose —
 /// a new draw seam cannot be written without stating on whose authority it draws
 /// (OI-20 / OI-21); see <see cref="ReserveDrawAuthority"/>.
 /// </summary>

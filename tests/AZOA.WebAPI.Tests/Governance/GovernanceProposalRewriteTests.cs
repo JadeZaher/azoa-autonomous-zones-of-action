@@ -75,6 +75,67 @@ public class GovernanceProposalRewriteTests
         tally.Counts["yes"].Should().Be(1);
     }
 
+    /// <summary>
+    /// The question is <c>Holon.Name</c>, and a holon column is not metadata — so the
+    /// metadata freeze never reached it and the author could still rewrite it after the
+    /// ballots were in. A test in this very file used to PIN that as intended, on the
+    /// argument that fixing a typo moves no outcome. The same edit turns "Should we fund
+    /// the roof repair?" into "Should we dissolve the co-op?" over a count nobody re-took,
+    /// which is the sharpest rewrite in the file: it needs no metadata at all.
+    /// </summary>
+    [Fact]
+    public async Task Proposal_NameCannotBeRewritten_AfterTheFirstVoteOfRecord()
+    {
+        var world = new GovernanceWorld();
+        var author = world.VerifiedUser();
+        var member = world.VerifiedUser();
+        var proposal = await world.CreateProposalAsync(
+            author, new[] { "yes", "no" }, closesAt: GovernanceWorld.Start.AddDays(1));
+        var asked = world.ProposalHolon(proposal).Name;
+
+        (await world.VoteAsync(member, proposal, "yes")).IsError.Should().BeFalse();
+
+        var rewrite = await world.RewriteProposalAsync(
+            proposal, author, name: "Should we dissolve the co-op?");
+
+        rewrite.IsError.Should().BeTrue();
+        rewrite.Message.Should().StartWith(FrozenPrefix);
+        world.ProposalHolon(proposal).Name.Should()
+            .Be(asked, "the members answered the question they were shown");
+
+        var tally = GovernanceWorld.ReadTally(await world.TallyAsync(author, proposal));
+        tally.TotalVotes.Should().Be(1);
+        tally.Counts["yes"].Should().Be(1);
+    }
+
+    /// <summary>
+    /// The body is where the case actually lives — the amount, the contractor, the terms —
+    /// so it is frozen beside the title. <c>RewriteProposalAsync</c> takes no description,
+    /// so this goes at the manager directly, which is the same <c>PUT /api/holon/{id}</c>.
+    /// </summary>
+    [Fact]
+    public async Task Proposal_DescriptionCannotBeRewritten_AfterTheFirstVoteOfRecord()
+    {
+        var world = new GovernanceWorld();
+        var author = world.VerifiedUser();
+        var member = world.VerifiedUser();
+        var proposal = await world.CreateProposalAsync(
+            author, new[] { "yes", "no" }, closesAt: GovernanceWorld.Start.AddDays(1));
+        var stated = world.ProposalHolon(proposal).Description;
+
+        (await world.VoteAsync(member, proposal, "yes")).IsError.Should().BeFalse();
+
+        var rewrite = await world.Manager.UpdateAsync(
+            proposal,
+            new HolonUpdateModel { Description = "Also authorises selling the building." },
+            author);
+
+        rewrite.IsError.Should().BeTrue();
+        rewrite.Message.Should().StartWith(FrozenPrefix);
+        world.ProposalHolon(proposal).Description.Should().Be(stated);
+        GovernanceWorld.ReadTally(await world.TallyAsync(author, proposal)).TotalVotes.Should().Be(1);
+    }
+
     // ── the domain the votes live in ────────────────────────────────────────
 
     /// <summary>
@@ -373,6 +434,79 @@ public class GovernanceProposalRewriteTests
             .BeTrue("the close time the members were shown is still there");
     }
 
+    /// <summary>
+    /// The freeze was the ONLY governance rule on this seam, and on a proposal nobody has
+    /// voted on yet the freeze answers "unclaimed" and stands aside. So
+    /// <c>POST /api/holon/{id}/interact</c> wrote the one row the electorate rule exists to
+    /// forbid — a proposal whose recorded electorate is the whole node — through the one
+    /// write path <c>CreateAsync</c>, <c>UpdateAsync</c>, <c>GetAsync</c> and
+    /// <c>ScopeReadable</c> did not cover.
+    /// </summary>
+    [Fact]
+    public async Task Proposal_ElectorateCannotBeWidenedToTheNode_ThroughTheInteractionSeam()
+    {
+        var world = new GovernanceWorld();
+        var author = world.VerifiedUser();
+        var member = world.VerifiedUser();
+        var proposal = await world.CreateProposalAsync(
+            author, new[] { "yes", "no" }, closesAt: GovernanceWorld.Start.AddDays(1));
+
+        // Nobody has voted, so the freeze deliberately has nothing to say here.
+        var interaction = await world.InteractWithProposalAsync(
+            proposal,
+            author,
+            setMetadata: new Dictionary<string, string>
+            {
+                [ConsumerGovernanceHolonTypes.ProposalMetadata.ElectorateTenant] =
+                    ConsumerGovernanceHolonTypes.NodeElectorate,
+            });
+
+        interaction.IsError.Should().BeTrue();
+        interaction.Message.Should().StartWith(ElectoratePrefix);
+        world.ProposalHolon(proposal).Metadata[ConsumerGovernanceHolonTypes.ProposalMetadata.ElectorateTenant]
+            .Should().Be(world.Tenant.ToString("N"), "a refused interaction leaves the recorded proposal alone");
+
+        // At the counter, not the door: the franchise itself did not move. An empty acting
+        // tenant is what ElectorateValueFor mints the node electorate FROM, so this is
+        // precisely the caller a "node" row would have enfranchised — and the vote node
+        // checks the electorate before the window, the option and the uniqueness gate.
+        (await world.VoteAsync(world.VerifiedUser(), proposal, "yes", tenant: Guid.Empty))
+            .IsError.Should().BeTrue("the node electorate was never minted");
+        (await world.VoteAsync(member, proposal, "yes")).IsError.Should().BeFalse();
+        GovernanceWorld.ReadTally(await world.TallyAsync(author, proposal)).TotalVotes.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The same seam once the ballots are in. Two rules refuse it now and both are
+    /// load-bearing: the freeze answers for a voted proposal, the electorate rule for an
+    /// unvoted one, and neither covers the other's case.
+    /// </summary>
+    [Fact]
+    public async Task Proposal_ElectorateCannotBeWidenedToTheNode_ThroughTheInteractionSeam_AfterTheFirstVote()
+    {
+        var world = new GovernanceWorld();
+        var author = world.VerifiedUser();
+        var member = world.VerifiedUser();
+        var proposal = await world.CreateProposalAsync(
+            author, new[] { "yes", "no" }, closesAt: GovernanceWorld.Start.AddDays(1));
+
+        (await world.VoteAsync(member, proposal, "yes")).IsError.Should().BeFalse();
+
+        var interaction = await world.InteractWithProposalAsync(
+            proposal,
+            author,
+            setMetadata: new Dictionary<string, string>
+            {
+                [ConsumerGovernanceHolonTypes.ProposalMetadata.ElectorateTenant] =
+                    ConsumerGovernanceHolonTypes.NodeElectorate,
+            });
+
+        interaction.IsError.Should().BeTrue();
+        world.ProposalHolon(proposal).Metadata[ConsumerGovernanceHolonTypes.ProposalMetadata.ElectorateTenant]
+            .Should().Be(world.Tenant.ToString("N"));
+        GovernanceWorld.ReadTally(await world.TallyAsync(author, proposal)).TotalVotes.Should().Be(1);
+    }
+
     // ── the freeze is a freeze, not a write lock ────────────────────────────
 
     /// <summary>
@@ -399,9 +533,39 @@ public class GovernanceProposalRewriteTests
         rewrite.IsError.Should().BeFalse(rewrite.Message);
     }
 
-    /// <summary>Fixing a typo in the title moves no outcome, so it stays allowed.</summary>
+    /// <summary>
+    /// The wording is the author's outright until somebody votes — typos included. What
+    /// the freeze costs is the LATE correction, which is now a new proposal rather than a
+    /// silent edit to a decided one.
+    /// </summary>
     [Fact]
-    public async Task Proposal_TitleStaysEditable_AfterTheFirstVoteOfRecord()
+    public async Task Proposal_WordingIsStillEditable_BeforeTheFirstVoteOfRecord()
+    {
+        var world = new GovernanceWorld();
+        var author = world.VerifiedUser();
+        var proposal = await world.CreateProposalAsync(
+            author, new[] { "yes", "no" }, closesAt: GovernanceWorld.Start.AddDays(1));
+
+        var renamed = await world.Manager.UpdateAsync(
+            proposal,
+            new HolonUpdateModel
+            {
+                Name = "Budget 2027 (corrected)",
+                Description = "Corrected before anybody voted.",
+            },
+            author);
+
+        renamed.IsError.Should().BeFalse(renamed.Message);
+        world.ProposalHolon(proposal).Name.Should().Be("Budget 2027 (corrected)");
+        world.ProposalHolon(proposal).Description.Should().Be("Corrected before anybody voted.");
+    }
+
+    /// <summary>
+    /// Re-sending the recorded wording is not a rewrite either, so a client that echoes the
+    /// whole proposal back on every save is not turned into a refusal.
+    /// </summary>
+    [Fact]
+    public async Task Proposal_ResendingTheRecordedWording_IsNotARewrite()
     {
         var world = new GovernanceWorld();
         var author = world.VerifiedUser();
@@ -411,10 +575,13 @@ public class GovernanceProposalRewriteTests
 
         (await world.VoteAsync(member, proposal, "yes")).IsError.Should().BeFalse();
 
-        var renamed = await world.RewriteProposalAsync(proposal, author, name: "Budget 2027 (corrected)");
+        var recorded = world.ProposalHolon(proposal);
+        var replay = await world.Manager.UpdateAsync(
+            proposal,
+            new HolonUpdateModel { Name = recorded.Name, Description = recorded.Description },
+            author);
 
-        renamed.IsError.Should().BeFalse(renamed.Message);
-        world.ProposalHolon(proposal).Name.Should().Be("Budget 2027 (corrected)");
+        replay.IsError.Should().BeFalse(replay.Message);
     }
 
     /// <summary>

@@ -265,6 +265,13 @@ public sealed class PlatformReserveControllerTests
     public async Task Declare_NoRailNamedAndNoSingleApprovedChain_IsRefusedRatherThanGuessed()
     {
         var harness = ReserveRouteHarness.WithTenantAsset(out var owner);
+
+        // Two DECLARED rails is the only way this node is genuinely ambiguous: OI-74 made the
+        // door read EffectiveChains, which falls back to the single shipped chain, so declaring
+        // none resolves rather than refuses. That fallback is pinned by the test below.
+        harness.Options.Chains.Add(Chain);
+        harness.Options.Chains.Add("Solana");
+
         var controller = harness.ControllerFor(ApiKeyPrincipal(owner, AzoaScopes.TokenCreateSign));
 
         var response = await controller.Declare(
@@ -272,6 +279,27 @@ public sealed class PlatformReserveControllerTests
 
         BadRequest(response).Message.Should().Contain("must name the rail");
         harness.DeclaredFor(ContributorPartition).Should().Be(BigInteger.Zero);
+    }
+
+    [Fact]
+    public async Task Declare_NoRailNamedAndNoChainDeclared_ResolvesTheOneChainTheCounterPermits()
+    {
+        // OI-74's actual contract, which the change shipped without a test: on a node that
+        // declared no chains this door must choose the same rail PlatformReserveService.PermitsChain
+        // would accept. If the two ever disagree, a declaration lands on a ledger row the counter
+        // then refuses to draw -- budget recorded, nothing drawable.
+        var harness = ReserveRouteHarness.WithTenantAsset(out var owner);
+        harness.Options.Chains.Should().BeEmpty("this test is about the undeclared node");
+
+        var controller = harness.ControllerFor(ApiKeyPrincipal(owner, AzoaScopes.TokenCreateSign));
+
+        var response = await controller.Declare(
+            AssetId, chain: null, Budget((ContributorPartition, "400")), CancellationToken.None);
+
+        Succeeded(response);
+        harness.DeclaredFor(ContributorPartition).Should().Be(new BigInteger(400));
+        harness.Options.PermitsChain(ReserveOptions.ShippedChains[0])
+            .Should().BeTrue("the door resolved the rail the counter must also permit");
     }
 
     // ── The valve itself: a declaration is what opens the draw ────────────────

@@ -133,6 +133,71 @@ public sealed class ReconciledExchangeTests
             "true", "the flag catches up with money that moved one sweep earlier");
     }
 
+    // ── The settlement key space is the node's, not the caller's ─────────────
+
+    [Fact]
+    public async Task A_caller_cannot_reach_a_settlement_anchor_with_its_own_idempotency_key()
+    {
+        // An exchange ledger key is "exchange:{apiKeyId}:{clientIdempotencyKey}", so before the
+        // anchors were namespaced a caller who sent Idempotency-Key "client-1:reconcile-credit"
+        // produced the anchor of the exchange whose client key was "client-1", byte for byte. The
+        // ledger's uniqueness is on the key ALONE, so the reconciler read the caller's Completed
+        // row, called the credit already applied, and the project was never credited while the
+        // node reported it settled. The prefix is what makes that key unreachable.
+        var world = new ExchangeWorld(declaredPartition: 1000);
+        var operation = world.SeedBuy(creditApplied: false, platformAmount: 700, projectUnits: 350);
+
+        world.Anchors.SeedForeignCompleted(
+            LedgerKey + ExchangeSettlementReconciler.ReconcileCreditAnchorSuffix,
+            "reserve_exchange");
+
+        var settled = await world.Reconciler().SettleConfirmedAsync(operation);
+
+        settled.Should().BeTrue();
+        world.TreasuryCredits.Should().ContainSingle().Which.Should().Be(
+            new BigInteger(700),
+            "a row a caller can author must not be mistaken for this reconciler's anchor");
+    }
+
+    [Fact]
+    public void A_settlement_anchor_lives_where_no_caller_ledger_key_can_reach()
+    {
+        // The structural half of the fix, kept as a statement rather than a comment: a caller
+        // controls only the TAIL of its own ledger key, so an anchor whose namespace LEADS is
+        // unreachable no matter what the caller sends.
+        var anchor = ExchangeSettlementReconciler.SettlementAnchor(
+            LedgerKey, ExchangeSettlementReconciler.ReconcileCreditAnchorSuffix);
+
+        anchor.Should().StartWith(ExchangeSettlementReconciler.SettlementAnchorPrefix);
+        ExchangeSettlementReconciler.SettlementAnchorPrefix.Should().NotStartWith(
+            "exchange:", "every caller-derived ledger key begins with the exchange namespace");
+        anchor.Should().NotBe(
+            LedgerKey + ExchangeSettlementReconciler.ReconcileCreditAnchorSuffix,
+            "concatenating the suffix alone is the shape a caller could forge");
+    }
+
+    [Fact]
+    public async Task A_settlement_anchor_held_by_a_foreign_record_refuses_instead_of_skipping()
+    {
+        // Defence in depth behind the prefix: if the key derivation ever moves again and a
+        // stranger's row does land on an anchor, reading its Completed as "already applied" is
+        // exactly how an unmade credit gets reported as handed back. A foreign holder refuses.
+        var world = new ExchangeWorld(declaredPartition: 1000);
+        var operation = world.SeedBuy(creditApplied: false, platformAmount: 700, projectUnits: 350);
+
+        world.Anchors.SeedForeignCompleted(
+            ExchangeSettlementReconciler.SettlementAnchor(
+                LedgerKey, ExchangeSettlementReconciler.ReconcileCreditAnchorSuffix),
+            "some_other_effect");
+
+        var settled = await world.Reconciler().SettleConfirmedAsync(operation);
+
+        settled.Should().BeFalse("a key space collision is unanswerable, so it goes to an operator");
+        world.TreasuryCredits.Should().BeEmpty("nothing moved on an unanswerable question");
+        operation.Parameters[ReserveExchangeManager.ProjectCreditAppliedParameter].Should().Be(
+            "false", "the row keeps stating that the credit is outstanding");
+    }
+
     [Fact]
     public async Task A_settlement_another_pass_still_holds_is_refused_rather_than_repeated()
     {
@@ -142,7 +207,8 @@ public sealed class ReconciledExchangeTests
         var world = new ExchangeWorld(declaredPartition: 1000);
         var operation = world.SeedBuy(creditApplied: false, platformAmount: 700, projectUnits: 350);
 
-        world.Anchors.SeedOpen(LedgerKey + ":reconcile-credit");
+        world.Anchors.SeedOpen(ExchangeSettlementReconciler.SettlementAnchor(
+            LedgerKey, ExchangeSettlementReconciler.ReconcileCreditAnchorSuffix));
 
         var settled = await world.Reconciler().SettleConfirmedAsync(operation);
 
@@ -464,6 +530,18 @@ public sealed class ReconciledExchangeTests
 
         /// <summary>True once any key has been settled through the real precondition.</summary>
         public bool Settled { get; private set; }
+
+        /// <summary>
+        /// A row at <paramref name="key"/> that belongs to somebody else — the shape a caller
+        /// produces when its own idempotency key lands in the settlement key space.
+        /// </summary>
+        public void SeedForeignCompleted(string key, string operationType) =>
+            _records[key] = new IdempotencyRecord
+            {
+                Key = key,
+                OperationType = operationType,
+                State = IdempotencyState.Completed,
+            };
 
         /// <summary>An anchor another pass claimed and never settled.</summary>
         public void SeedOpen(string key) =>

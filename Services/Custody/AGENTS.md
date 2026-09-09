@@ -192,9 +192,31 @@ instead of the first value operation. It reads config rather than instantiating
 providers: `BlockchainProviderFactory.GuardAgainstUnregisteredEnabledChains` already
 makes enabled-implies-registered a boot invariant.
 
+### `CustodyModeResolver` — the one predicate every custody caller now shares (OI-81)
+
+The "still out of scope" claim below is stale as written: a real, production-usable
+custody mode exists now. `Services/Custody/CustodyModeResolver.cs` resolves
+`CustodialAccounts:CustodyMode` into one `RecognisedCustodyMode` — `Disabled`,
+`DevelopmentOnly` (simulated-chain-only, Development host only), `PlatformManaged`
+(config values `Platform`/`Node`: node-held custody under the boot-validated
+`AZOA:WalletEncryptionKey`, usable on a live, non-Simulated chain), or `KmsHsm` — and is
+the single place `TenantCustodialAccountManager`, `WalletManager`, and
+`RealValueReadinessHealthCheck` all ask "may this node hold a signing key right now?"
+rather than each re-deriving the predicate. An absent or blank configured value resolves
+to `Disabled`, and `PlatformManaged` still fails closed if the wallet encryption key is
+missing/short or the chain is `Simulated` — every rung returns a caller-safe
+`UnavailableReason`, never a silent no.
+
+The shipped default is still `CustodyMode: "Disabled"` (`appsettings.json`), with
+`DevelopmentOnly` only in `appsettings.Development.json` — enabling `Platform`/`Node`
+custody in a real environment is a deliberate operator config change, not a code change.
+
 ### Still out of scope
 
-`CustodialAccounts:CustodyMode` remains `Disabled` and there is no KMS/HSM adapter.
-`IKeyCustodyService` is still the swap seam for one. Absent an adapter, every platform
-path here fails closed on a missing/malformed config secret rather than degrading to a
-weaker key source.
+`RecognisedCustodyMode.KmsHsm` is recognised but never available:
+`CustodyModeResolver` always returns `KmsHsmAdapterMissingReason` for it, because no
+external KMS/HSM adapter is registered. `IKeyCustodyService` is still the swap seam for
+one — the interface node-held custody already satisfies would be implemented by an
+adapter the same way. Absent that adapter, every platform path here fails closed on a
+missing/malformed config secret or an unrecognised/unavailable mode rather than degrading
+to a weaker key source.

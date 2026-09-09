@@ -1,0 +1,115 @@
+using System.Text.RegularExpressions;
+using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Services.Actions;
+using FluentAssertions;
+using Xunit;
+
+namespace AZOA.WebAPI.Tests.Actions;
+
+/// <summary>
+/// Binds the governance half of <see cref="NotEnabledActionNodeTypes"/> to the
+/// INDEPENDENT review verdict that is allowed to lift it (L4.1 / OI-50).
+/// </summary>
+/// <remarks>
+/// <para>
+/// Phase 4 of <c>governance-vote-of-record_20260906</c> says a phase with no recorded
+/// verdict is unreviewed rather than done. That was a sentence in a plan, and a
+/// sentence in a plan is the exact thing this repo keeps mistaking for a control — so
+/// here it is as one. The blocked-state of the three governance node types must agree
+/// with the single <c>VERDICT:</c> line in the review file; flipping either alone goes
+/// red, and the reviewer's findings and the gate can no longer drift apart.
+/// </para>
+/// <para>
+/// Deliberately NOT a second copy of <c>NotEnabledNodeTypeGateTests</c>, which already
+/// covers the blocked set, both dispatch seams and the publish refusal. This file
+/// covers only the one thing that file cannot: whether the gate still matches the
+/// reason it is standing on.
+/// </para>
+/// </remarks>
+public sealed class NotEnabledActionNodeTypesTests
+{
+    /// <summary>The node types whose gate this particular verdict governs. CredentialRevoke has its own track.</summary>
+    public static TheoryData<ActionNodeType> GovernanceNodeTypes =>
+        new()
+        {
+            ActionNodeType.GovernanceProposalCreate,
+            ActionNodeType.GovernanceVote,
+            ActionNodeType.GovernanceTally,
+        };
+
+    private static readonly string[] VerdictRelativePath =
+    {
+        "conductor", "tracks", "ardanova-production-readiness-waves_20260907", "REVIEW-GOVERNANCE-VERDICT.md",
+    };
+
+    // Line-anchored, and tolerant of this tree's mixed CRLF/LF: Multiline '^' matches
+    // after either ending. The file is written so exactly ONE line starts with VERDICT:.
+    private static readonly Regex VerdictMarker =
+        new(@"^VERDICT:[ \t]*(PASS|FAIL)\b", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    [Fact]
+    public void TheIndependentVerdict_IsRecordedExactlyOnce()
+    {
+        var matches = VerdictMarker.Matches(VerdictText());
+
+        matches.Count.Should().Be(
+            1,
+            "a review whose verdict cannot be read off unambiguously has not recorded one; "
+            + "write exactly one line starting 'VERDICT: PASS' or 'VERDICT: FAIL'");
+    }
+
+    [Theory]
+    [MemberData(nameof(GovernanceNodeTypes))]
+    public void GovernanceTypes_AreBlocked_ExactlyWhileTheIndependentVerdictIsFail(ActionNodeType nodeType)
+    {
+        var verdictIsPass = RecordedVerdict() == "PASS";
+
+        NotEnabledActionNodeTypes.IsBlocked(nodeType).Should().Be(
+            !verdictIsPass,
+            "the governance gate lifts on the recorded independent verdict and on nothing else — "
+            + "the verdict says {0}, so {1} must be {2}",
+            RecordedVerdict(),
+            nodeType,
+            verdictIsPass ? "enabled" : "blocked");
+    }
+
+    [Fact]
+    public void TheGateSourceNamesTheVerdictFileItIsStandingOn()
+    {
+        var gateSource = SourceOf("Services", "Actions", "NotEnabledActionNodeTypes.cs");
+
+        gateSource.Should().Contain(
+            "REVIEW-GOVERNANCE-VERDICT.md",
+            "a gate that stops naming its verdict is a gate whose reason has gone folkloric — "
+            + "the previous reason (a tally that read raw holons) was already stale when L4.1 read it");
+    }
+
+    private static string RecordedVerdict()
+    {
+        var match = VerdictMarker.Match(VerdictText());
+        return match.Success
+            ? match.Groups[1].Value
+            : throw new InvalidOperationException(
+                "REVIEW-GOVERNANCE-VERDICT.md records no 'VERDICT: PASS|FAIL' line.");
+    }
+
+    private static string VerdictText() => SourceOf(VerdictRelativePath);
+
+    /// <summary>
+    /// Reads a repo file by walking up to the solution. Probes the SOLUTION FILE, not a
+    /// directory name: the test project mirrors several source paths, so a directory
+    /// probe resolves the repo root to tests/AZOA.WebAPI.Tests.
+    /// </summary>
+    private static string SourceOf(params string[] relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "azoa.sln")))
+                return File.ReadAllText(Path.Combine(new[] { directory.FullName }.Concat(relativePath).ToArray()));
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate the AZOA repository root.");
+    }
+}

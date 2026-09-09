@@ -226,11 +226,10 @@ public sealed class PlatformReserveController : ControllerBase
         if (!string.IsNullOrEmpty(chosen))
             return new RailChoice(chosen, null);
 
-        var approved = _options.Chains
-            .Where(candidate => !string.IsNullOrWhiteSpace(candidate))
-            .Select(candidate => candidate.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        // OI-74: the same effective set the reserve counter enforces, never Chains raw --
+        // otherwise this door and PlatformReserveService.PermitsChain disagree about what
+        // "exactly one chain" means on a node that declared none.
+        var approved = _options.EffectiveChains;
 
         if (approved.Count == 1)
             return new RailChoice(approved[0], null);

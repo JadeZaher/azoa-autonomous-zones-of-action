@@ -509,9 +509,8 @@ public sealed class ProjectTreasuryService : IProjectTreasury
             reference.TenantIdText,
             reference.NormalizedProjectReference);
 
-    private bool IsChainApproved(string chain) =>
-        _options.Chains.Count == 0 ||
-        _options.Chains.Any(candidate => string.Equals(candidate?.Trim(), chain, StringComparison.OrdinalIgnoreCase));
+    /// <summary>The third door onto the same counter: read the effective set, never <c>Chains</c> raw (OI-74).</summary>
+    private bool IsChainApproved(string chain) => _options.PermitsChain(chain);
 
     /// <summary>An unreadable status is treated as CLOSED, never as open.</summary>
     private static bool IsOpen(ProjectTreasuryLedger row) =>
