@@ -173,7 +173,14 @@ public class FungibleTokenManagerTests
             _userId, CreateRequest(), _callerUserId, "blocked", ApiKeyId);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("Node governance disallows fungible-token:create on asset type 'FungibleToken'");
+        // REWRITTEN, not relaxed: this asserted the leak OI-30 was raised about - the guard's own
+        // sentence, which names the action, the dimension and the allowlist, reaching the caller
+        // verbatim. The scrub now happens inside the guard, so the contract to assert is the
+        // scrubbed prose and the code. Every side-effect verification below is untouched.
+        ConsumerSafeErrors.LeaksRailDetail(result.Message).Should().BeFalse();
+        result.Message.Should().NotContain("Node governance disallows");
+        result.Message.Should().NotContain("FungibleToken");
+        result.Code.Should().Be(ConsumerSafeErrorCodes.NotPermitted);
         _valueAccess.Verify(k => k.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
         _walletStore.Verify(s => s.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _factory.Verify(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()), Times.Never);

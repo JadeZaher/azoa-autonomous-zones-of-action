@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using System.Reflection;
+using System.Text.RegularExpressions;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using AZOA.WebAPI.Core;
@@ -23,6 +26,14 @@ namespace AZOA.WebAPI.Tests.Allocation;
 /// either leaves through the scrubber - bumping the count and failing the pin until it is
 /// deliberately updated - or builds its own failure result and fails the structural test.
 /// Neither can leak quietly.
+/// </para>
+/// <para>
+/// The structural half used to rest on three LITERAL substring scans and a line count, which a
+/// refusal written with its initializer members in the other order, or assembled over two
+/// statements, satisfied while reaching the wire unscrubbed - and two scrubber calls on one
+/// line counted as one. The scans are now regexes over offsets: the pinned count counts CALLS,
+/// and the load-bearing rule is that an error flag is only ever WRITTEN at or after the
+/// scrubber, which no ordering or splitting evades.
 /// </para>
 /// <para>
 /// They then prove the sentence itself at the seam the ledger named: node governance, whose
@@ -48,12 +59,12 @@ public class ConsumerSafeExitCoverageTests
     [Fact]
     public void EveryFailureExitLeavesThroughTheScrubberAndTheCountIsPinned()
     {
-        var lines = ReadAllocationManagerLines();
-        var scrubberDeclaration = IndexOfScrubberDeclaration(lines);
+        var source = ReadAllocationManagerSource();
+        var scrubberAt = OffsetOfScrubberDeclaration(source);
 
-        var exits = lines
-            .Take(scrubberDeclaration)
-            .Count(line => line.Contains("ToConsumerSafeFailure(", StringComparison.Ordinal));
+        // CALLS, not lines. Two calls written on one line used to count as one, so a refusal
+        // could be added beside an existing one without moving the pin.
+        var exits = CountBefore(source, ScrubberCall, scrubberAt);
 
         exits.Should().Be(
             ScrubbedExitCount,
@@ -66,35 +77,39 @@ public class ConsumerSafeExitCoverageTests
     public void NoAllocationFailureIsBuiltOutsideTheScrubber()
     {
         var source = ReadAllocationManagerSource();
+        var scrubberAt = OffsetOfScrubberDeclaration(source);
 
-        source.Should().NotContain(
-            "AZOAResult<AllocationResult>.Failure(",
-            "a failure built by the public factory bypasses the scrubber entirely");
-        source.Should().NotContain(
-            "AZOAResult<AllocationResult>.FailureWithCode(",
-            "a failure built by the public factory bypasses the scrubber entirely");
-        source.Should().NotContain(
-            "new AZOAResult<AllocationResult> { IsError",
-            "a failure built inline bypasses the scrubber entirely");
+        // The public failure factories, whitespace-tolerant: a generic name may legally carry
+        // spaces inside its angle brackets and around the dot, which a literal scan misses.
+        FailureFactoryCall.Matches(source).Should().BeEmpty(
+            "a failure built by a public factory bypasses the scrubber entirely");
+
+        // The real rule, and the one a reordered or split construction cannot slip past: an
+        // error flag is only ever WRITTEN at or after the scrubber. This covers a member-
+        // reordered object initializer, a target-typed new(), and a refusal assembled over two
+        // statements - none of which the three literal substring scans this replaces saw.
+        var writesAhead = ErrorFlagAssignment.Matches(source)
+            .Where(match => match.Index < scrubberAt)
+            .Select(match => LineOf(source, match.Index))
+            .ToArray();
+
+        writesAhead.Should().BeEmpty(
+            "a failure whose IsError is set ahead of the scrubber is an exit that skipped it");
     }
 
     [Fact]
     public void TheOnlyFailureFactoryIsReachedOnlyFromTheScrubber()
     {
-        var lines = ReadAllocationManagerLines();
-        var scrubberDeclaration = IndexOfScrubberDeclaration(lines);
+        var source = ReadAllocationManagerSource();
+        var scrubberAt = OffsetOfScrubberDeclaration(source);
 
-        var mentionedAt = lines
-            .Select((line, index) => new { Line = line, Index = index })
-            .Where(entry => entry.Line.Contains("Refused(", StringComparison.Ordinal))
-            .Select(entry => entry.Index)
-            .ToArray();
+        var mentions = RefusedFactoryCall.Matches(source).ToArray();
 
-        mentionedAt.Should().HaveCount(
+        mentions.Should().HaveCount(
             RefusedFactoryMentions,
             "Refused is declared once and called twice, both times inside ToConsumerSafeFailure");
-        mentionedAt.Should().OnlyContain(
-            index => index >= scrubberDeclaration,
+        mentions.Should().OnlyContain(
+            match => match.Index >= scrubberAt,
             "a call to the failure factory ahead of the scrubber would be an exit that skipped it");
     }
 
@@ -138,34 +153,63 @@ public class ConsumerSafeExitCoverageTests
     }
 
     [Fact]
-    public async Task NodeGovernanceGuard_KeepsItsDetailForTheOperatorLog()
+    public async Task NodeGovernanceGuard_ScrubsAtTheCounterAndLogsTheDetail()
     {
-        var denial = await RestrictedToSolana().EnsureAllowedAsync(
+        var log = new RecordingLogger();
+        var denial = await RestrictedToSolana(log).EnsureAllowedAsync(
             AllocationTestHarness.ChainType, "Riverbank cleanup", "allocation:IssueUnits");
 
-        denial.IsError.Should().BeTrue();
-        denial.Message.Should().Contain("Algorand", "an operator reading the log needs the detail");
-        ConsumerSafeErrors.LeaksRailDetail(denial.Message).Should().BeTrue(
-            "this is exactly the sentence that must never cross the API boundary unscrubbed");
+        denial.IsRefused.Should().BeTrue();
+        ConsumerSafeErrors.LeaksRailDetail(denial.ConsumerMessage).Should().BeFalse(
+            "the guard's own wording names the action, the chain and the allowlist, and the "
+            + "decision is the only thing a caller can reach");
+        denial.ConsumerMessage.Should().NotContain("Algorand").And.NotContain("Solana");
         denial.Code.Should().Be(ConsumerSafeErrorCodes.NotPermitted);
+
+        // The detail is not lost - it goes where an operator reads it, and nowhere else.
+        log.Entries.Should().ContainSingle().Which.Should().Contain("Algorand");
     }
 
     [Fact]
-    public async Task TheGuardsCodeAndTheScrubbedProseSayTheSameThing()
+    public void NodeGovernanceDecision_HasNoMemberThatCouldCarryRailDetail()
     {
-        var denial = await RestrictedToSolana().EnsureAllowedAsync(
-            AllocationTestHarness.ChainType, "Riverbank cleanup", "allocation:IssueUnits");
+        // The structural half of the counter-side fix: a door cannot leak what the type it is
+        // handed does not hold. If a future edit adds an OperatorDetail/RawMessage member back,
+        // this fails before any door can start returning it.
+        // INSTANCE members only: what one decision VALUE can hold is what a door can read out
+        // of it. The static factories are the constructors, not carriers.
+        var readable = typeof(NodeGovernanceDecision)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Select(property => property.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
 
-        var redacted = ConsumerSafeErrors.Redact(denial.Message);
+        readable.Should().BeEquivalentTo(
+            new[] { "Code", "ConsumerMessage", "IsAllowed", "IsRefused" },
+            "every door in the codebase reads this type, so what it can hold is what can leak");
+    }
 
-        redacted.HasValue.Should().BeTrue("the guard's wording carries rail detail");
-        var scrubbed = redacted!.Value;
+    [Theory]
+    [InlineData("Algorand", "an allowlisted rail name")]
+    [InlineData("Solana", "an allowlisted rail name")]
+    [InlineData("chain", "the dimension the guard refuses on")]
+    public async Task EveryGuardEntryPoint_RefusesWithoutNamingTheRail(string forbidden, string why)
+    {
+        var guard = RestrictedToSolana();
 
-        scrubbed.Code.Should().Be(
-            denial.Code,
-            "a code that says NOT_PERMITTED beside prose that says 'try again shortly' is a "
-            + "contradiction the member has to resolve");
-        ConsumerSafeErrors.LeaksRailDetail(scrubbed.Message).Should().BeFalse();
+        var decisions = new[]
+        {
+            await guard.EnsureAllowedAsync(
+                AllocationTestHarness.ChainType, "Riverbank cleanup", "allocation:IssueUnits"),
+            await guard.EnsureChainAllowedAsync(AllocationTestHarness.ChainType, "nft:mint"),
+        };
+
+        foreach (var decision in decisions)
+        {
+            decision.IsRefused.Should().BeTrue();
+            decision.ConsumerMessage.Should().NotContainEquivalentOf(forbidden, because: why);
+            ConsumerSafeErrors.LeaksRailDetail(decision.ConsumerMessage).Should().BeFalse();
+        }
     }
 
     // -- Rail text injected at exits that used to pass it straight through -----
@@ -269,8 +313,30 @@ public class ConsumerSafeExitCoverageTests
 
     // -- Wiring ---------------------------------------------------------------
 
-    private static NodeGovernanceGuard RestrictedToSolana()
-        => new(Options.Create(new NodeGovernanceOptions { AllowedChains = new[] { "Solana" } }));
+    private static NodeGovernanceGuard RestrictedToSolana(
+        ILogger<NodeGovernanceGuard>? logger = null)
+        => new(
+            Options.Create(new NodeGovernanceOptions { AllowedChains = new[] { "Solana" } }),
+            store: null,
+            logger: logger);
+
+    /// <summary>Captures the operator wording the guard writes instead of returning.</summary>
+    private sealed class RecordingLogger : ILogger<NodeGovernanceGuard>
+    {
+        public List<string> Entries { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Entries.Add(formatter(state, exception));
+    }
 
     /// <summary>The harness's own wiring, with a real governance guard in place of its null.</summary>
     private static AllocationManager BuildWithGovernance(
@@ -293,21 +359,42 @@ public class ConsumerSafeExitCoverageTests
             providers: harness.Providers.Object,
             logger: null);
 
-    private static int IndexOfScrubberDeclaration(string[] lines)
+    /// <summary>A call to the scrubber, however the call is spaced.</summary>
+    private static readonly Regex ScrubberCall = new(
+        @"\bToConsumerSafeFailure\s*\(", RegexOptions.Compiled);
+
+    /// <summary>A call to the one failure factory, or its declaration.</summary>
+    private static readonly Regex RefusedFactoryCall = new(
+        @"\bRefused\s*\(", RegexOptions.Compiled);
+
+    /// <summary>
+    /// A public failure factory on the allocation result, tolerant of the whitespace C#
+    /// allows inside a generic name and around a member access.
+    /// </summary>
+    private static readonly Regex FailureFactoryCall = new(
+        @"AZOAResult\s*<\s*AllocationResult\s*>\s*\.\s*Failure(WithCode)?\s*\(",
+        RegexOptions.Compiled);
+
+    /// <summary>Any WRITE of an error flag, never a read (which is followed by a second =).</summary>
+    private static readonly Regex ErrorFlagAssignment = new(
+        @"\bIsError\s*=(?!=)", RegexOptions.Compiled);
+
+    private static int CountBefore(string source, Regex pattern, int offset)
+        => pattern.Matches(source).Count(match => match.Index < offset);
+
+    private static int LineOf(string source, int offset)
+        => source.Take(offset).Count(character => character == '\n') + 1;
+
+    private static int OffsetOfScrubberDeclaration(string source)
     {
-        var index = Array.FindIndex(
-            lines,
-            line => line.Contains(
-                "private AZOAResult<AllocationResult> ToConsumerSafeFailure(string? message",
-                StringComparison.Ordinal));
+        var offset = source.IndexOf(
+            "private AZOAResult<AllocationResult> ToConsumerSafeFailure(string? message",
+            StringComparison.Ordinal);
 
-        index.Should().BeGreaterThan(
+        offset.Should().BeGreaterThan(
             0, "the scrubber must exist and be declared after the exits that call it");
-        return index;
+        return offset;
     }
-
-    private static string[] ReadAllocationManagerLines()
-        => File.ReadAllLines(AllocationManagerFile());
 
     private static string ReadAllocationManagerSource()
         => File.ReadAllText(AllocationManagerFile());

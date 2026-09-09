@@ -882,3 +882,90 @@ or the word "token" where "funds"/"stake"/"units" would do is a **defect**.
 - No React component test harness exists in `ardanova-client` (`vitest.config.ts` is
   `environment: 'node'`, `src/app/**` excluded, zero `.test.tsx`, no
   `@testing-library/react`), so no client component in this program has a component test.
+
+
+---
+
+## L3 remediation — corrections to the record (2026-09-09)
+
+The L3 review returned PASS-WITH-DEBT. Six of its eight findings were fixed, one was fixed
+with a correction to the finding itself, and one is partly refuted. These lines exist because
+the wave's commit messages are the text this ledger and RUNBOOK §2 get written from, and three
+sentences in ArdaNova `263c837` assert controls that commit did not contain.
+
+**CORRECTION to ArdaNova `263c837` (OI-54 / OI-85).** Its body reads *"the identifier lives in
+a href, never in visible text"*. **There is no href.** `credentials/credential-card.tsx:98-141`
+and `credentials/[id]/page.tsx` contain neither a link nor an identifier: L3.2 deliberately
+built none, on the reasoning recorded in that file's own doc-comment (*"a credential is a
+certificate, not a receipt"*). The credential surface IS clean of the identifiers OI-54/OI-85
+named; the sentence describing HOW is false. Not repaired by building an href — that would put
+a quotable identifier back on a member-facing screen. **The record is corrected instead.**
+
+**CORRECTION-AND-FIX to ArdaNova `263c837` (OI-88).** Its body reads *"'API: liquid' / 'API:
+time-locked' become 'Available now' / 'Available from &lt;date&gt;'"*. At `263c837` the badge read
+**"Not available yet"** with no date, because `TokenBalanceDto` carried no release date — a fact
+the same commit disclosed four paragraphs later, contradicting itself. The date was real all
+along (`TokenAllocation.workerHoldReleasesAt`, already summed by `UnitWindow.Restrict`); it was
+never carried to the wire. **Now built:** `TokenBalanceDto.RestrictedUntil`, populated in
+`TokenBalanceService.WithLiveLiquidityAsync`, rendered by `portfolio-holding-card.tsx`
+`describeAvailability`. A hold with no date still reads "Not available yet" — a promise nobody
+can date is one nobody may spend.
+
+**PARTLY REFUTED (OI-19, the test claim).** `263c837` reads *"entering 5000 yields a goal of
+500,000 base units"*. That sentence is **wrong about what the goal is**: the stored goal is
+**5,000 dollars** (`PROJECT_FUNDING_UNIT = 'USD'`), and 500,000 is the derived ARDA caption.
+The reviewer added that 500,000 "is only the derived caption figure" and is **not asserted** by
+a test — that half is refuted: `project-create-contract.test.ts:376` asserts
+`convertDollarsToPlatformUnits(5000, null) === 500_000` and `:392` asserts the caption reads
+`500,000 ARDA`. The figure is tested; the commit sentence mislabels it.
+
+- [x] **OI-30** — **RE-CLOSED at the counter.** The first closure guarded `AllocationManager`,
+  the join added `ReserveExchangeManager`, and **five** further call sites of the same
+  `NodeGovernanceGuard` still returned `governance.Message` verbatim:
+  `Managers/FungibleTokenManager.cs:125`, `Managers/NftManager.cs:94/:160/:236`,
+  `Managers/HolonManager.cs:709-710`. Guarding doors one at a time is how OI-20/21 were falsely
+  closed in L0. The guard's return type is now `NodeGovernanceDecision`
+  (`Services/Governance/NodeGovernanceDecision.cs`), whose `ConsumerMessage` is scrubbed **at
+  construction** and which has **no member that could carry rail detail**; the operator wording
+  goes to the guard's own `ILogger` and is dropped. Changing the type made the compiler walk all
+  six doors. `ConsumerSafeExitCoverageTests` pins the member list by reflection.
+
+- [x] **OI-86** — **the mirror closed too.** The C# record dropped `Chain`/`AssetId`; the SDK's
+  `HoldView` kept both as REQUIRED `string`, so a consumer trusting the type got `undefined`.
+  Removed, and `sdk/azoa-wallet/src/api/hold-view-parity.test.ts` now compares the interface's
+  keys to the controller record's parameters by reading `Controllers/HoldController.cs` — the
+  cross-boundary check OI-69 said a "parity" test must be. The controller doc-comment no longer
+  claims "no rail reference": `ReservePartition` and `FundingSource` remain, and it says so.
+
+- [x] **OI-96** `MEDIUM` `ardanova` — **NEW, opened by the L3 review, fixed in this remediation.**
+  The sponsor's spend surface was ARDA-denominated while the founder's ask was inverted to
+  dollars, so the two halves of the money story disagreed (D52). Now dollars end to end:
+  `lib/commerce/sponsor-amount-contract.ts` (parse / convert / format, 9 tests), the invest page,
+  its success receipt, `equity-preview.tsx` and `ConversionChain`. The `?amount=` handoff is
+  dollars. The wire contract is UNCHANGED — the route still settles in platform units, which is
+  now a caption ('Settles as … ARDA from your balance'), never a thing anyone types.
+  `sponsor-surface-denomination.test.ts` pins it: the ticker may appear only in two named
+  settlement captions across the four files, and no label, chip, affix or refusal may name it.
+
+- [x] **OI-97** `MEDIUM` `ardanova` — **NEW, opened and fixed.** "Dollar min/max validation is
+  enforced" was true of one client path. `funding-tab.tsx:198` was a second funding-goal field
+  parsing with a bare `Number()` and checking only `goal > 0`; the tRPC boundary was
+  `z.number().positive()` with no ceiling and no cent rule; `ProjectTokenService.ValidateDeclaration`
+  validated the UNIT and never the magnitude. Now `ProjectFundingLedger.DescribeUnusableGoalAmount`
+  states the rule once and every writing door calls it — `ValidateDeclaration`,
+  `CreateConfigAsync`, `ProjectServices.CreateAsync`/`UpdateAsync` — with the two client schemas
+  and the second field mirroring it. `ProjectFundingDeclarationTests` proves the counter does not
+  move: no config row, no save.
+
+- [x] **OI-98** `MEDIUM` `azoa` — **NEW, opened and fixed.** The frontend vocabulary ratchet was
+  keyed on `(file, word)`, so "the list can only shrink" was true of the pair list and false of
+  the violation count: any amount of new seed-phrase copy could be added to a file already
+  recorded for it. `known-debt.json` now records a COUNT per pair (28 files / 78 pairs / **139**
+  spans, the same coverage), and the gate fails both when a count rises and when it is not
+  lowered after a clean. Proven to bite on a real probe: *"1 recorded, 2 found"*.
+
+- [x] **OI-99** `LOW` `azoa` — **NEW, opened and fixed.** `ConsumerSafeExitCoverageTests` proved
+  its funnel with three literal substring scans and a LINE count, so a refusal with its
+  initializer members reordered, or assembled over two statements, satisfied all three, and two
+  scrubber calls on one line counted as one. The scans are regexes over offsets now, and the
+  load-bearing rule is that `IsError` is only ever WRITTEN at or after the scrubber.

@@ -704,10 +704,15 @@ public class HolonManager : IHolonManager
         return result.IsError ? result.Message : null;
     }
 
+    /// <summary>
+    /// OI-30 (remediation): this used to hand back the guard's own sentence, which names the
+    /// action and the allowlist. The decision now arrives already scrubbed from the counter,
+    /// so the only wording this can return is the consumer-safe one.
+    /// </summary>
     private async Task<string?> EnsureGovernedAssetTypeAllowedAsync(string? assetType, string action)
     {
-        var result = await _nodeGovernance.EnsureAssetTypeAllowedAsync(assetType, action);
-        return result.IsError ? result.Message : null;
+        var decision = await _nodeGovernance.EnsureAssetTypeAllowedAsync(assetType, action);
+        return decision.IsRefused ? decision.ConsumerMessage : null;
     }
 
     /// <summary>What the vote-of-record ledger says about a governance proposal.</summary>

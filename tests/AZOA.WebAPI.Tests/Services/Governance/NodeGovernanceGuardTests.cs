@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -14,8 +15,8 @@ public class NodeGovernanceGuardTests
     {
         var guard = Build(new NodeGovernanceOptions());
 
-        (await guard.EnsureAllowedAsync("Algorand", "Song", "holon:create")).IsError.Should().BeFalse();
-        (await guard.EnsureAllowedAsync(null, null, "internal")).IsError.Should().BeFalse();
+        (await guard.EnsureAllowedAsync("Algorand", "Song", "holon:create")).IsAllowed.Should().BeTrue();
+        (await guard.EnsureAllowedAsync(null, null, "internal")).IsAllowed.Should().BeTrue();
     }
 
     [Fact]
@@ -27,7 +28,7 @@ public class NodeGovernanceGuardTests
             AllowedAssetTypes = new[] { " Song " }
         });
 
-        (await guard.EnsureAllowedAsync("ALGORAND", "song", "allocation:Mint")).IsError.Should().BeFalse();
+        (await guard.EnsureAllowedAsync("ALGORAND", "song", "allocation:Mint")).IsAllowed.Should().BeTrue();
     }
 
     [Fact]
@@ -37,8 +38,12 @@ public class NodeGovernanceGuardTests
 
         var result = await guard.EnsureChainAllowedAsync("Algorand", "allocation:Mint");
 
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("Allowed chains: <none>");
+        result.IsRefused.Should().BeTrue();
+        // The allowlist itself is operator detail: it names rails. What comes back is the
+        // policy refusal, and the wording that names "<none>" goes to the guard's log.
+        result.ConsumerMessage.Should().NotContain("chain");
+        ConsumerSafeErrors.LeaksRailDetail(result.ConsumerMessage).Should().BeFalse();
+        result.Code.Should().Be(ConsumerSafeErrorCodes.NotPermitted);
     }
 
     [Fact]
@@ -48,8 +53,11 @@ public class NodeGovernanceGuardTests
 
         var result = await guard.EnsureAssetTypeAllowedAsync(" ", "holon:create");
 
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("requires an asset type");
+        result.IsRefused.Should().BeTrue();
+        // "asset type" is not rail vocabulary, so this wording survives the scrub intact -
+        // proof the counter redacts what leaks and passes through what does not.
+        result.ConsumerMessage.Should().Contain("requires an asset type");
+        result.Code.Should().Be(ConsumerSafeErrorCodes.NotPermitted);
     }
 
     [Fact]
@@ -69,9 +77,10 @@ public class NodeGovernanceGuardTests
         var allowed = await guard.EnsureAllowedAsync("Algorand", "Song", "allocation:Mint");
         var denied = await guard.EnsureAllowedAsync("Solana", "Badge", "allocation:Mint");
 
-        allowed.IsError.Should().BeFalse();
-        denied.IsError.Should().BeTrue();
-        denied.Message.Should().Contain("Allowed chains: Algorand");
+        allowed.IsAllowed.Should().BeTrue();
+        denied.IsRefused.Should().BeTrue();
+        denied.ConsumerMessage.Should().NotContain("Algorand");
+        ConsumerSafeErrors.LeaksRailDetail(denied.ConsumerMessage).Should().BeFalse();
     }
 
     [Fact]
@@ -81,9 +90,13 @@ public class NodeGovernanceGuardTests
 
         var result = await guard.EnsureAllowedAsync("Algorand", "Song", "allocation:Mint");
 
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("parameters unavailable");
-        result.Message.Should().Contain("store offline");
+        result.IsRefused.Should().BeTrue();
+        result.Code.Should().Be(
+            ConsumerSafeErrorCodes.RailUnavailable,
+            "an unreadable policy store is a dependency failure, not a policy one");
+        ConsumerSafeErrors.LeaksRailDetail(result.ConsumerMessage).Should().BeFalse();
+        result.ConsumerMessage.Should().NotContain(
+            "store offline", "the store's own words are operator detail, not a member's sentence");
     }
 
     private static NodeGovernanceGuard Build(NodeGovernanceOptions options)

@@ -144,11 +144,12 @@ public sealed class AllocationManager : IAllocationManager
             request.ChainType,
             ResolveGovernedAssetType(request),
             $"allocation:{request.Kind}");
-        // OI-30: the guard names the action, the chain and the allowlist so an operator can
-        // read the log. None of that may reach a member, so the refusal leaves through the
-        // scrubber carrying only the code the guard itself decided.
-        if (governance.IsError)
-            return ToConsumerSafeFailure(governance.Message, governance.Code);
+        // OI-30: the guard's own wording names the action, the chain and the allowlist. It never
+        // reaches here any more - NodeGovernanceDecision scrubs at the counter and keeps the
+        // detail in the guard's log - so this exit passes an already-safe sentence through the
+        // scrubber a second time, which is a no-op, rather than trusting this door to remember.
+        if (governance.IsRefused)
+            return ToConsumerSafeFailure(governance.ConsumerMessage, governance.Code);
 
         // ── Step 1: idempotency key ───────────────────────────────────────────
         var allocationIdempotency = AllocationIdempotency.Create(

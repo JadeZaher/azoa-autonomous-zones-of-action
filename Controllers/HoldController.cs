@@ -426,10 +426,17 @@ public sealed class HoldChainBody
 }
 
 /// <summary>
-/// Wire view of a hold. It deliberately carries NO address and NO rail reference: the
-/// person a hold is for needs to know how much is theirs and when, not which account it
-/// is parked in or what the chain called the payment.
+/// Wire view of a hold. It deliberately carries NO wallet address, NO chain and NO asset
+/// identifier: the person a hold is for needs to know how much is theirs and when, not which
+/// account it is parked in or what the chain called the payment.
 /// </summary>
+/// <remarks>
+/// It is NOT identifier-free, and saying so would be the same overstatement OI-86 was raised
+/// about. <c>ReservePartition</c> and <c>FundingSource</c> are node-internal book names - which
+/// ledger the units sit under and where they came from - and a reserve partition is a rail-side
+/// identifier by any fair reading. They stay because the tenant developer reconciling a hold
+/// needs them; they are never rendered to a member, and the frontend reads neither.
+/// </remarks>
 public sealed record HoldView(
     string HoldId,
     string Amount,

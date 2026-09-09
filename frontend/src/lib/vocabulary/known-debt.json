@@ -1,139 +1,139 @@
 {
-  "_readme": "Chain vocabulary that reaches rendered copy on AZOA's console and is NOT yet fixed. This is recorded DEBT, not permission: unlike allowlist.json, no entry here claims the word is justified. The gate fails on any hit outside this list, and fails again once a listed hit is cleaned, so the list can only shrink. Regenerate with AZOA_REGENERATE_VOCABULARY_DEBT=1 npx vitest run src/lib/vocabulary",
+  "_readme": "Chain vocabulary that reaches rendered copy on AZOA's console and is NOT yet fixed. This is recorded DEBT, not permission: unlike allowlist.json, no entry here claims the word is justified. Each entry is a COUNT: how many hits of that word that file still has. The gate fails on any hit outside this list, on any count above the recorded one, and again once a listed hit is cleaned and the number is not lowered - so the numbers can only go down. Regenerate with AZOA_REGENERATE_VOCABULARY_DEBT=1 npx vitest run src/lib/vocabulary",
   "files": {
-    "src/app/(auth)/layout.tsx": [
-      "chain"
-    ],
-    "src/app/(dashboard)/action-graph-bundle/page.tsx": [
-      "algorand",
-      "chain",
-      "on-chain"
-    ],
-    "src/app/(dashboard)/actions/page.tsx": [
-      "blockchain"
-    ],
-    "src/app/(dashboard)/analytics/page.tsx": [
-      "chain"
-    ],
-    "src/app/(dashboard)/blockchain/page.tsx": [
-      "algorand",
-      "blockchain",
-      "chain",
-      "token",
-      "transaction-hash",
-      "wallet-address"
-    ],
-    "src/app/(dashboard)/bridge/page.tsx": [
-      "algorand",
-      "chain",
-      "mint",
-      "token",
-      "wallet-address"
-    ],
-    "src/app/(dashboard)/fungible-mint/page.tsx": [
-      "asa",
-      "chain",
-      "mint"
-    ],
-    "src/app/(dashboard)/holon-query/page.tsx": [
-      "algorand",
-      "chain"
-    ],
-    "src/app/(dashboard)/holons/page.tsx": [
-      "algorand",
-      "chain"
-    ],
-    "src/app/(dashboard)/nfts/page.tsx": [
-      "algorand",
-      "chain",
-      "mint",
-      "token"
-    ],
-    "src/app/(dashboard)/node-transparency/page.tsx": [
-      "chain",
-      "mint"
-    ],
-    "src/app/(dashboard)/overview/page.tsx": [
-      "chain"
-    ],
-    "src/app/(dashboard)/search/page.tsx": [
-      "blockchain",
-      "chain"
-    ],
-    "src/app/(dashboard)/swap/page.tsx": [
-      "algorand",
-      "wallet-address"
-    ],
-    "src/app/(dashboard)/tests/page.tsx": [
-      "chain"
-    ],
-    "src/app/(dashboard)/user-nfts/page.tsx": [
-      "algorand",
-      "chain",
-      "mint",
-      "token"
-    ],
-    "src/app/(dashboard)/wallets/page.tsx": [
-      "chain",
-      "private-key",
-      "seed-phrase"
-    ],
-    "src/app/architecture/page.tsx": [
-      "blockchain",
-      "chain",
-      "on-chain",
-      "rail",
-      "token"
-    ],
-    "src/components/action-builder/node-catalog.ts": [
-      "chain",
-      "mint",
-      "on-chain",
-      "token"
-    ],
-    "src/components/action-builder/node-template-creator.tsx": [
-      "mint"
-    ],
-    "src/components/action-builder/panels/canvas-toolbar.tsx": [
-      "chain",
-      "on-chain"
-    ],
-    "src/components/action-builder/panels/node-inspector.tsx": [
-      "chain",
-      "on-chain"
-    ],
-    "src/components/action-builder/presets.ts": [
-      "mint",
-      "minted",
-      "token"
-    ],
-    "src/components/action-builder/run-panel.tsx": [
-      "chain",
-      "mint",
-      "on-chain"
-    ],
-    "src/components/browser-wallet-connect.tsx": [
-      "algorand",
-      "chain",
-      "wallet-address"
-    ],
-    "src/components/layout/sidebar.tsx": [
-      "blockchain",
-      "defi",
-      "mint",
-      "node"
-    ],
-    "src/components/platform-wallet-generate.tsx": [
-      "algorand",
-      "chain",
-      "private-key",
-      "seed-phrase"
-    ],
-    "src/components/wallet-export-dialog.tsx": [
-      "chain",
-      "mnemonic",
-      "private-key",
-      "seed-phrase"
-    ]
+    "src/app/(auth)/layout.tsx": {
+      "chain": 1
+    },
+    "src/app/(dashboard)/action-graph-bundle/page.tsx": {
+      "algorand": 1,
+      "chain": 3,
+      "on-chain": 1
+    },
+    "src/app/(dashboard)/actions/page.tsx": {
+      "blockchain": 1
+    },
+    "src/app/(dashboard)/analytics/page.tsx": {
+      "chain": 2
+    },
+    "src/app/(dashboard)/blockchain/page.tsx": {
+      "algorand": 1,
+      "blockchain": 1,
+      "chain": 1,
+      "token": 6,
+      "transaction-hash": 2,
+      "wallet-address": 1
+    },
+    "src/app/(dashboard)/bridge/page.tsx": {
+      "algorand": 2,
+      "chain": 5,
+      "mint": 1,
+      "token": 1,
+      "wallet-address": 1
+    },
+    "src/app/(dashboard)/fungible-mint/page.tsx": {
+      "asa": 1,
+      "chain": 3,
+      "mint": 5
+    },
+    "src/app/(dashboard)/holon-query/page.tsx": {
+      "algorand": 1,
+      "chain": 2
+    },
+    "src/app/(dashboard)/holons/page.tsx": {
+      "algorand": 2,
+      "chain": 3
+    },
+    "src/app/(dashboard)/nfts/page.tsx": {
+      "algorand": 1,
+      "chain": 1,
+      "mint": 3,
+      "token": 1
+    },
+    "src/app/(dashboard)/node-transparency/page.tsx": {
+      "chain": 1,
+      "mint": 1
+    },
+    "src/app/(dashboard)/overview/page.tsx": {
+      "chain": 1
+    },
+    "src/app/(dashboard)/search/page.tsx": {
+      "blockchain": 2,
+      "chain": 1
+    },
+    "src/app/(dashboard)/swap/page.tsx": {
+      "algorand": 1,
+      "wallet-address": 1
+    },
+    "src/app/(dashboard)/tests/page.tsx": {
+      "chain": 1
+    },
+    "src/app/(dashboard)/user-nfts/page.tsx": {
+      "algorand": 2,
+      "chain": 5,
+      "mint": 3,
+      "token": 6
+    },
+    "src/app/(dashboard)/wallets/page.tsx": {
+      "chain": 2,
+      "private-key": 2,
+      "seed-phrase": 2
+    },
+    "src/app/architecture/page.tsx": {
+      "blockchain": 2,
+      "chain": 3,
+      "on-chain": 2,
+      "rail": 3,
+      "token": 1
+    },
+    "src/components/action-builder/node-catalog.ts": {
+      "chain": 1,
+      "mint": 1,
+      "on-chain": 1,
+      "token": 1
+    },
+    "src/components/action-builder/node-template-creator.tsx": {
+      "mint": 1
+    },
+    "src/components/action-builder/panels/canvas-toolbar.tsx": {
+      "chain": 1,
+      "on-chain": 1
+    },
+    "src/components/action-builder/panels/node-inspector.tsx": {
+      "chain": 1,
+      "on-chain": 1
+    },
+    "src/components/action-builder/presets.ts": {
+      "mint": 3,
+      "minted": 1,
+      "token": 7
+    },
+    "src/components/action-builder/run-panel.tsx": {
+      "chain": 1,
+      "mint": 1,
+      "on-chain": 1
+    },
+    "src/components/browser-wallet-connect.tsx": {
+      "algorand": 2,
+      "chain": 1,
+      "wallet-address": 1
+    },
+    "src/components/layout/sidebar.tsx": {
+      "blockchain": 1,
+      "defi": 1,
+      "mint": 1,
+      "node": 1
+    },
+    "src/components/platform-wallet-generate.tsx": {
+      "algorand": 1,
+      "chain": 1,
+      "private-key": 2,
+      "seed-phrase": 2
+    },
+    "src/components/wallet-export-dialog.tsx": {
+      "chain": 1,
+      "mnemonic": 1,
+      "private-key": 2,
+      "seed-phrase": 2
+    }
   }
 }

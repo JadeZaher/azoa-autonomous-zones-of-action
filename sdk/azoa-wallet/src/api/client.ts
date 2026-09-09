@@ -1355,14 +1355,20 @@ export interface HoldChainParams {
 }
 
 /**
- * Wire view of a hold. Deliberately carries NO address and NO rail reference —
- * the person a hold is for needs to know how much is theirs and when, not which
- * account it is parked in or what the chain called the payment.
+ * Wire view of a hold. Carries NO wallet address, NO chain and NO asset identifier — the
+ * person a hold is for needs to know how much is theirs and when, not which account it is
+ * parked in or what the chain called the payment.
+ *
+ * `chain` and `assetId` used to be declared here as REQUIRED strings while
+ * `HoldController.HoldView` had already stopped sending either, so a consumer that trusted
+ * the type got `undefined` where it had typed `string` — the doc-comment-contradicts-the-type
+ * defect OI-86 was raised about, reproduced in the mirror by OI-86's own fix. They are gone.
+ *
+ * `reservePartition` and `fundingSource` DO remain: node-internal book names a tenant
+ * developer reconciling a hold needs, and never member-facing copy.
  */
 export interface HoldView {
   holdId: string;
-  chain: string;
-  assetId: string;
   amount: string;
   reservePartition: string;
   fundingSource: string;

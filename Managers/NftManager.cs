@@ -90,8 +90,13 @@ public class NftManager : INftManager
         Guid? actingTenantId)
     {
         var governance = await _nodeGovernance.EnsureAllowedAsync(request.ChainId, "NFT", "nft:mint");
-        if (governance.IsError)
-            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = governance.Message };
+        if (governance.IsRefused)
+            return new AZOAResult<IBlockchainOperation>
+            {
+                IsError = true,
+                Message = governance.ConsumerMessage,
+                Code = governance.Code,
+            };
 
         var mintFeeBlocker = await GetDirectFeeBlockerAsync(NodeFeeOperation.Mint);
         if (mintFeeBlocker is not null)
@@ -156,8 +161,13 @@ public class NftManager : INftManager
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Holon is not an NFT." };
 
         var governance = await _nodeGovernance.EnsureAllowedAsync(holon.ChainId, "NFT", "nft:transfer");
-        if (governance.IsError)
-            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = governance.Message };
+        if (governance.IsRefused)
+            return new AZOAResult<IBlockchainOperation>
+            {
+                IsError = true,
+                Message = governance.ConsumerMessage,
+                Code = governance.Code,
+            };
 
         if (holon.UserId != userId)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };
@@ -232,8 +242,13 @@ public class NftManager : INftManager
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Holon is not an NFT." };
 
         var governance = await _nodeGovernance.EnsureAllowedAsync(holon.ChainId, "NFT", "nft:burn");
-        if (governance.IsError)
-            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = governance.Message };
+        if (governance.IsRefused)
+            return new AZOAResult<IBlockchainOperation>
+            {
+                IsError = true,
+                Message = governance.ConsumerMessage,
+                Code = governance.Code,
+            };
 
         if (holon.UserId != userId)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "You do not own this NFT." };

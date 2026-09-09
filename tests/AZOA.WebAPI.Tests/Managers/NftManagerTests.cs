@@ -6,7 +6,9 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Governance;
 
 namespace AZOA.WebAPI.Tests.Managers;
 
@@ -39,7 +41,7 @@ public class NftManagerTests
             });
         _nodeGovernance.Setup(g => g.EnsureAllowedAsync(
                 It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<bool> { Result = true });
+            .ReturnsAsync(NodeGovernanceDecision.Allowed);
         _manager = new NftManager(
             _holonStore.Object,
             _blockchainOperationStore.Object,
@@ -256,11 +258,16 @@ public class NftManagerTests
     {
         _nodeGovernance.Setup(g => g.EnsureAllowedAsync(
                 "Algorand", "NFT", "nft:mint", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<bool> { IsError = true, Message = "Node governance disallows nft:mint." });
+            .ReturnsAsync(NodeGovernanceDecision.RefusePolicy(
+                "Node governance disallows nft:mint on chain 'Algorand'. Allowed chains: Solana."));
 
         var result = await _manager.MintAsync(new NftMintRequest { ChainId = "Algorand" }, Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
+        // OI-30 remediation: this door used to hand the guard's own sentence straight back.
+        ConsumerSafeErrors.LeaksRailDetail(result.Message).Should().BeFalse();
+        result.Message.Should().NotContain("Algorand").And.NotContain("Solana");
+        result.Code.Should().Be(ConsumerSafeErrorCodes.NotPermitted);
         _valueAccess.Verify(g => g.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
         VerifyNoMintSideEffect();
     }

@@ -277,7 +277,7 @@ Recorded because each recurred; check for them in every new pass.
    idempotency test ran its five redeliveries **sequentially** and passed
    trivially.
 
-### The "a claim in prose is not a control in code" ledger — now **22** instances
+### The "a claim in prose is not a control in code" ledger — now **29** instances
 
 This is the class this codebase reproduces faster than it fixes. It stood at **six** before the
 ArdaNova production-readiness program; that program's eleven adversarial reviews found **sixteen
@@ -320,6 +320,30 @@ green over three stale `record<star_odk>` FKs (**fixed** — a missing golden is
 | 20 | `ReconcileAsync` reports success and stamps a timestamp having reconciled nothing, because the set it iterates is always empty | `OI-35` |
 | 21 | The worker's restriction window is written to a field no spend path reads; every liquidity decision reads a different field recomputed from the gate alone | `OI-41` |
 | 22 | An SDK "parity" guard that asserts the SDK against string literals in its own file, never against a controller — the same shape as the CI grep that existed nowhere | `OI-69` |
+
+**23-24, found 2026-09-09 by wave L0's own gates** (recorded in prose at ▶ RESUME HERE): the
+OI-12 "fix" was a doc-comment arguing the custody gate belongs at the caller while
+`BootstrapWalletAsync` still minted unguarded · a doc-comment promised "the DEFAULT fails
+closed", but the options object is instance-bound, so a blank env var REPLACED the C# default
+and the predicate resolved blank to the WIDEST setting — the shape a deploy produces most
+easily. **A default is only a control if the code resolves the empty case.**
+
+**25-29, found 2026-09-09 by the wave L3 review.** All five fixed in the L3 remediation; each
+resolves in the same OPEN-ITEMS file, under *L3 remediation — corrections to the record*.
+
+| # | Instance | Id |
+|---|---|---|
+| 25 | A commit message asserts three controls its own diff does not contain — an `href` that exists nowhere, a date the DTO had no field for (disclosed as absent four paragraphs later in the same message), and a test asserting a different figure than the sentence names | `263c837` |
+| 26 | The rail-vocabulary leak class closed at TWO doors of seven; the same guard's sentence returned verbatim at five siblings, whose own commit body says closing one door while another stays open "is precisely how OI-20/21 were falsely closed" | `OI-30` |
+| 27 | "Dollar min/max validation is enforced" — enforced in one client path, with a second client field parsing the same value with a bare `Number()`, no ceiling at the tRPC boundary, and no magnitude rule at the server door that writes the column | `OI-97` |
+| 28 | A ratchet keyed on `(file, word)` claims "the list can only shrink" — true of the pair list, false of the violation count it was built to hold down | `OI-98` |
+| 29 | A doc-comment stating a type "carries NO rail reference" beside two REQUIRED fields the producer had already stopped sending — OI-86's own defect, reproduced in the SDK mirror by OI-86's fix | `OI-86` |
+
+**The lesson this batch adds:** *enforce where the counter moves, and prove the proof.* Two of
+the five (26, 28) were closures whose EVIDENCE was the weak part, not the code — a funnel proved
+by literal substring scans, and a ratchet whose key could not see the thing it ratcheted. When
+you write a structural guard, ask what shape of the defect it would still pass green over, and
+run that shape against it before recording the item closed.
 
 **Two structural lessons from this batch, worth more than the individual rows.**
 

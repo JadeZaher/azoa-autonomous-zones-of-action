@@ -121,8 +121,13 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             request.ChainType,
             NodeGovernanceAssetTypes.FungibleToken,
             "fungible-token:create");
-        if (governance.IsError)
-            return AZOAResult<FungibleTokenResult>.Failure(governance.Message);
+        // OI-30 (remediation): this used to return the guard's raw sentence - "Node governance
+        // disallows fungible-token:create on chain 'Algorand'. Allowed chains: ..." - which is
+        // the exact wording the rail-vocabulary guard flags on three terms. The decision now
+        // arrives scrubbed from the counter, so there is nothing here left to forget.
+        if (governance.IsRefused)
+            return AZOAResult<FungibleTokenResult>.FailureWithCode(
+                governance.ConsumerMessage, governance.Code ?? ConsumerSafeErrorCodes.NotPermitted);
 
         // ── Step 1: idempotency key ───────────────────────────────────────────
         // Client key wins; absent ⇒ deterministic content key over the token
