@@ -277,7 +277,7 @@ Recorded because each recurred; check for them in every new pass.
    idempotency test ran its five redeliveries **sequentially** and passed
    trivially.
 
-### The "a claim in prose is not a control in code" ledger — now **29** instances
+### The "a claim in prose is not a control in code" ledger — now **32** instances
 
 This is the class this codebase reproduces faster than it fixes. It stood at **six** before the
 ArdaNova production-readiness program; that program's eleven adversarial reviews found **sixteen
@@ -338,6 +338,28 @@ resolves in the same OPEN-ITEMS file, under *L3 remediation — corrections to t
 | 27 | "Dollar min/max validation is enforced" — enforced in one client path, with a second client field parsing the same value with a bare `Number()`, no ceiling at the tRPC boundary, and no magnitude rule at the server door that writes the column | `OI-97` |
 | 28 | A ratchet keyed on `(file, word)` claims "the list can only shrink" — true of the pair list, false of the violation count it was built to hold down | `OI-98` |
 | 29 | A doc-comment stating a type "carries NO rail reference" beside two REQUIRED fields the producer had already stopped sending — OI-86's own defect, reproduced in the SDK mirror by OI-86's fix | `OI-86` |
+
+**30-32, found 2026-09-09 by the wave L3 REMEDIATION review** — that is, found in the fixes for
+25-29. All three fixed in L3 remediation #2; they resolve in OPEN-ITEMS as OI-100 / OI-101 / OI-102.
+
+| # | Instance | Id |
+|---|---|---|
+| 30 | The fix for instance 25's false "Available from &lt;date&gt;" **reproduced the claim in code**: the new DTO field was rendered only by a component **no route imports**, and where it would have rendered it dated a hold the project's gate also holds — a date the platform cannot keep | `OI-100` |
+| 31 | A door enumerated as one that WRITES the ask validated the field and never assigned it, while the UNIT beside it was written on the same request — so the refusal cost a round trip and the acceptance changed nothing | `OI-101` |
+| 32 | The class-level remarks of the type written to END this class overstated their own control: "there is no member that could carry rail detail" beside a factory that passes the operator's sentence through verbatim whenever it happens not to trip the vocabulary | `OI-102` |
+
+**And one REFUTATION worth keeping, because it cuts the other way.** The same review reported a
+comment contradicting its code: `vocabulary.test.ts` says "the separator is a NUL" while
+`DEBT_KEY_SEPARATOR` "is a single SPACE". The source held a raw `0x00` byte — invisible in most
+readers, and the reason `grep` calls that file binary. The comment was right. **A reviewer reading
+rendered text is reading a rendering.** The byte is now written as the escape `'\0'` so the next
+reader sees the character; the finding is recorded as refuted-on-fact, fixed-on-hazard.
+
+**The lesson THIS batch adds:** *a fix for a prose-vs-code defect is itself prose until something
+renders it.* Instance 30 passed every check the programme had — the field exists, the service
+populates it, a component reads it — and still shipped nothing, because no route mounts that
+component. When you close an item by adding a field, name the ROUTE it appears on, and grep that
+the component is imported.
 
 **The lesson this batch adds:** *enforce where the counter moves, and prove the proof.* Two of
 the five (26, 28) were closures whose EVIDENCE was the weak part, not the code — a funnel proved

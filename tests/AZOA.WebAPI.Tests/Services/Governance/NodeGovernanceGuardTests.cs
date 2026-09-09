@@ -99,6 +99,43 @@ public class NodeGovernanceGuardTests
             "store offline", "the store's own words are operator detail, not a member's sentence");
     }
 
+    [Theory]
+    // The pass-through branch: no rail vocabulary anywhere, so the guard's own sentence survives
+    // and reaches the caller verbatim. The type's remarks used to claim it never could.
+    [InlineData("Node governance disallows holon:create on asset type Badge. Allowed asset types: Song.")]
+    // The replacement branch: the same shape of sentence, naming a rail.
+    [InlineData("Node governance disallows allocation:Mint on chain 'Algorand'. Allowed chains: Solana.")]
+    [InlineData("The asset id 12345678 is not opted in; min balance is short by 100000 microalgo.")]
+    public void RefusePolicy_NeverLetsRailDetailThroughEitherBranch(string operatorDetail)
+    {
+        // The invariant is a property of the OUTPUT, not of the input: whether the wording is
+        // kept or replaced, what a member can read carries no rail detail. Asserting it on the
+        // constructed value is the difference between pinning the rule and restating it.
+        var decision = NodeGovernanceDecision.RefusePolicy(operatorDetail);
+
+        decision.IsRefused.Should().BeTrue();
+        decision.Code.Should().Be(ConsumerSafeErrorCodes.NotPermitted);
+        ConsumerSafeErrors.LeaksRailDetail(decision.ConsumerMessage).Should().BeFalse(
+            "the sentence a member reads is the one thing this type may hand out");
+    }
+
+    [Fact]
+    public void RefusePolicy_KeepsRailFreeWordingAndReplacesTheRest()
+    {
+        // Both halves in one place, so the class-level remarks can be checked against behaviour
+        // rather than against a second paragraph of prose.
+        const string railFree =
+            "Node governance requires an asset type on holon:create. Allowed asset types: Song.";
+        const string leaking =
+            "Node governance disallows allocation:Mint on chain 'Algorand'. Allowed chains: Solana.";
+
+        NodeGovernanceDecision.RefusePolicy(railFree).ConsumerMessage.Should().Be(railFree);
+
+        var replaced = NodeGovernanceDecision.RefusePolicy(leaking);
+        replaced.ConsumerMessage.Should().NotContain("Algorand").And.NotContain("Solana");
+        replaced.ConsumerMessage.Should().NotBe(leaking);
+    }
+
     private static NodeGovernanceGuard Build(NodeGovernanceOptions options)
         => new(Options.Create(options));
 

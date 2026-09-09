@@ -19,9 +19,20 @@ namespace AZOA.WebAPI.Services.Governance;
 /// <para>
 /// So the refusal is scrubbed AT THE COUNTER instead. Both factories below run the operator
 /// wording through <see cref="ConsumerSafeErrors"/> before the value exists, so
-/// <see cref="ConsumerMessage"/> is consumer-safe BY CONSTRUCTION - there is no member on this
-/// type that could carry rail detail, and therefore nothing a door can forget to scrub. The
-/// operator wording never leaves the guard: it is written to the guard's log and dropped.
+/// <see cref="ConsumerMessage"/> is consumer-safe BY CONSTRUCTION and there is no SEPARATE
+/// member holding the raw sentence for a door to return by mistake.
+/// </para>
+/// <para>
+/// Precisely: the scrub is a REPLACEMENT, not a deletion.
+/// <see cref="RefusePolicy(string)"/> keeps the guard's own sentence verbatim when it carries no
+/// rail detail - "Node governance requires an asset type ..." is the guard telling a tenant
+/// developer what to send, and replacing it with a generic refusal would be a loss, not a
+/// safeguard - and replaces it wholesale when it does. So the operator wording CAN reach a
+/// caller; what cannot reach a caller is rail detail, which is the property
+/// <c>NodeGovernanceGuardTests.RefusePolicy_NeverLetsRailDetailThroughEitherBranch</c> pins by
+/// running <see cref="ConsumerSafeErrors.LeaksRailDetail"/> over the constructed value rather
+/// than over the input. <see cref="Unavailable(string)"/> is the stricter one: a dependency's own
+/// prose is mapped onto a compile-time constant unconditionally.
 /// </para>
 /// <para>
 /// Changing the guard's return type from <c>AZOAResult&lt;bool&gt;</c> to this is what made the
@@ -58,7 +69,8 @@ public readonly record struct NodeGovernanceDecision
     /// <summary>
     /// A POLICY refusal: this node will never run this request as asked. The guard writes this
     /// sentence itself, so wording that carries no rail detail ("Node governance requires an
-    /// asset type ...") is kept as written and wording that does is replaced.
+    /// asset type ...") is kept as written and wording that does is replaced. The invariant is
+    /// the OUTPUT, never the input: whichever branch runs, what comes back does not leak.
     /// </summary>
     public static NodeGovernanceDecision RefusePolicy(string operatorDetail)
     {

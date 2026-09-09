@@ -969,3 +969,74 @@ a test — that half is refuted: `project-create-contract.test.ts:376` asserts
   initializer members reordered, or assembled over two statements, satisfied all three, and two
   scrubber calls on one line counted as one. The scans are regexes over offsets now, and the
   load-bearing rule is that `IsError` is only ever WRITTEN at or after the scrubber.
+
+
+---
+
+## L3 remediation #2 — the badge that dated a promise the gate does not honour (2026-09-09)
+
+The L3 remediation review returned PASS-WITH-DEBT: seven of eight findings fixed at the counter,
+finding 1(c)'s partial refutation upheld, and **one new MEDIUM introduced by the 1(b) fix** plus
+three prose-vs-code nits. All four are closed here.
+
+**CORRECTION to the OI-88 line above.** It records the release date as *"rendered by
+`portfolio-holding-card.tsx` `describeAvailability`"*. **That component was imported by nothing.**
+A repo-wide grep for `PortfolioHoldingCard` matched only its own declaration; the live portfolio
+renders `components/portfolio/holdings.tsx`, and `portfolio/page.tsx:308-311` says in its own
+comment that it *replaced* the card because the card abbreviated a database id like a wallet
+address. So the field OI-88 added had no reader on any route. Instance 25 of RUNBOOK §2: a
+control wired to a component no route mounts is a control nobody has.
+
+- [x] **OI-100** `MEDIUM` `ardanova` — **NEW, opened by the L3 remediation review, fixed here.**
+  The new `TokenBalanceDto.RestrictedUntil` was stamped on **every** held holding, whatever was
+  holding it. `IsBalanceLiquidAsync` returned false at `TokenBalanceService.cs:457` when
+  `TokenLiquidityPolicy.IsLiquid(holderClass, gateStatus)` failed — *before* the window was read —
+  while `WithLiveLiquidityAsync` then read the window anyway and dated the refusal. Since
+  `workerHoldReleasesAt` is stamped at award approval (`ProjectTokenService.cs:1350`) and knows
+  nothing about the gate, and CONTRIBUTOR units are illiquid at gate FUNDING
+  (`TokenLiquidityPolicy.cs:8-16`), **a worker on a still-funding project is the ordinary case**:
+  the badge would have read *"Available from 14 March"* for units whose release also needs an
+  undated gate transition that may never happen.
+  **Fixed at the counter.** The flag and the date now come out of ONE reading,
+  `TokenBalanceService.ReadLiquidityAsync`, and the date goes through
+  `UnitWindow.DatedReleaseFor(holderClass, gateStatus, restriction)` — null whenever the gate is
+  part of the hold. `PayoutService.DescribeIlliquidity` reads the same rule, so the sentence and
+  the badge cannot drift. The inert `equity/portfolio-holding-card.tsx` is **deleted**; the live
+  `components/portfolio/holdings.tsx` renders the date through `describeHoldRelease`
+  (`lib/commerce/portfolio-contract.ts`), which refuses to invent one. Proof at the counter:
+  `TokenLiquidityPolicyTests` — a gate-held holding with a dated award publishes **no** date, the
+  same rows with only the gate moved publish the date, and an undated hold publishes none.
+
+- [x] **OI-101** `LOW` `ardanova` — **NEW, opened and fixed.** OI-97 enumerated
+  `ProjectServices.UpdateAsync` among the doors that write an ask. It validated `dto.FundingGoal`
+  at `:531` and **never assigned it**: `:544-560` assigned every other field including
+  `fundingGoalUnit`, so an owner could edit their ask, be told it saved, and find the column
+  unmoved while the unit beside it changed. Rather than narrow the claim, the door is now a real
+  writing door (`ProjectServices.cs:562`), which is what makes the validation above it
+  load-bearing. `ProjectServiceTests` proves both sides at the counter: an unusable ask leaves
+  `fundingGoal` **and** the title unchanged with no `UpdateAsync`/`SaveChangesAsync`, an edited
+  ask reaches the column, and an omitted ask leaves it alone.
+
+- [x] **OI-102** `LOW` `azoa` — **NEW, opened and fixed.** `NodeGovernanceDecision`'s class-level
+  remarks claimed *"there is no member on this type that could carry rail detail"* and *"the
+  operator wording never leaves the guard"*. `RefusePolicy` is
+  `ConsumerSafeErrors.Redact(operatorDetail)` with `redacted?.Message ?? operatorDetail`, and
+  `Redact` returns null for any sentence `LeaksRailDetail` does not flag — so the guard's own
+  wording DOES reach the caller whenever it happens to carry no rail term, which is deliberate
+  and which the wave's own test asserts (`NodeGovernanceGuardTests:56`). OI-30 stands closed: the
+  invariant that holds is about rail detail, not about the wording. The remarks now say so, and
+  `RefusePolicy_NeverLetsRailDetailThroughEitherBranch` pins the real invariant by running
+  `LeaksRailDetail` over the **constructed value** on both branches rather than over the input.
+
+- [x] **OI-103** `LOW` `azoa` — **REFUTED on the fact, fixed on the hazard.** The review reported
+  that `vocabulary.test.ts:487` says *"the separator is a NUL"* while `DEBT_KEY_SEPARATOR` is *"a
+  single SPACE"*. It was **not** a space: the source held a raw `0x00` byte, which is why `grep`
+  reported the file as binary and why a reader saw a space. The comment was right and the key was
+  never ambiguous. The raw byte is nevertheless a hazard — it makes the file binary to git and
+  grep and invites exactly this misreading — so it is now written as the escape `'\0'`: same
+  character, no binary byte, and both comments true.
+
+**Also corrected in the L3 record:** `ProvisionAsync_AnAskAtTheExactBounds` was named for
+`ProvisionAsync` and never called it — it asserted `DescribeUnusableGoalAmount` directly, which
+restates the rule to itself. It now drives the door for each bound and asserts the ask reached
+the column the price divides (`ProjectFundingDeclarationTests`).
