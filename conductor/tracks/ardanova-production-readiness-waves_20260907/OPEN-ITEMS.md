@@ -733,12 +733,29 @@ or the word "token" where "funds"/"stake"/"units" would do is a **defect**.
   `CreateFundingIntentDto` has no `displayNameConsent` field (**OI-53**), and a
   `SETTLEMENT_PENDING` intent is promoted to SETTLED only when somebody reads it — there is no
   hosted promoter.
-- [ ] **OI-89b** `MEDIUM` `ardanova` — **The first sponsorship of any project is unpriceable.**
+- [x] **OI-89b** `MEDIUM` `ardanova` — **The first sponsorship of any project is unpriceable.**
   `ExchangeService.GetProjectUnitValueExactAsync` computes `fundingRaised / totalSupply`, which
   is 0 before anyone has sponsored, so `TryQuote` refuses at `FundingIntentService.cs:373`
   ("This project has no price yet, so nothing was taken.") and no row or node call happens.
   Correct refusal, missing feature. *Unblocks with:* an offering price (e.g.
   `fundingGoal / totalSupply` when `fundingRaised == 0`).
+  **CLOSED 2026-09-09, and the *Unblocks with* line above was WRONG on units.**
+  `ProjectTokenConfig.fundingGoal` carried the founder's ARDA figure (the create wizard
+  badged its input `ARDA`) while `fundingRaised` accumulates the sponsorship's DOLLAR
+  reference, so `fundingGoal / totalSupply` divided ARDA into a field declared as USD: the
+  first sponsor of every project was charged about a hundred times the founder's price and
+  received about a hundredth of the promised units. Fixed by making the ask DOLLARS end to
+  end (D52): the wizard asks in dollars, `ProvisionProjectFundingRequest.FundingGoalUnit` is
+  required on the wire and refused unless it is `ProjectFundingUnits.Ledger`, and every read
+  of the pair goes through `ArdaNova.Domain/Policies/ProjectFundingLedger.cs` - including
+  Gate 1, which had the same mismatched comparison. The whole read side already rendered the
+  goal with `formatUSD`, so the wizard was the only surface in the other unit.
+  The offering price now holds for the WHOLE primary raise (`RaiseIsOpen`), because
+  `raised / totalSupply` collapses the price the moment one sponsorship settles; the
+  backer-set price takes over only once the ask is MET, where the two formulas are equal.
+  Sponsorship also gained a supply ceiling and now counts its units
+  (`ProjectStakePartitions.DescribeSponsorDraw`; `investorSupply`/`allocatedSupply` move at
+  settlement) - it previously bounded nothing at all.
 - [ ] **OI-91** `MEDIUM` `both` — **Owed tests, named.** No test file was inside any wave's owns
   list, so several controls ship unpinned: viewer-scoped `ProjectService` cases (anonymous
   search excludes a DRAFT; non-member gets NotFound not Forbidden by id AND slug; double
