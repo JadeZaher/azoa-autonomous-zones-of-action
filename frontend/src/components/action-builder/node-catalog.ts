@@ -133,10 +133,23 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   // Hold rails (D14 / W3.4): funds are set aside in the platform's holding account and
   // paid out only when the window elapses. Sponsor-facing copy says "set aside" / "pay
   // out" / "give back" -- never "hold on chain", never "token".
-  { type: 'Hold', category: 'Escrow', label: 'Set Funds Aside', description: 'Set an amount aside for someone until a release date', defaultConfig: J({ chainType: 'Algorand', holdId: null, assetId: '', amount: '0', reservePartition: '', beneficiaryUserId: null, releaseNotBefore: null, autoRelease: true, purpose: null }), requiresChain: true },
-  { type: 'Release', category: 'Escrow', label: 'Pay Out', description: 'Pay a due set-aside to the person it was set aside for', defaultConfig: J({ chainType: 'Algorand', holdId: null, holdNodeName: null, reason: null }), requiresChain: true },
-  { type: 'HoldRefund', category: 'Escrow', label: 'Give Back', description: 'Abandon a set-aside; the funds return to available', defaultConfig: J({ chainType: 'Algorand', holdId: null, holdNodeName: null, reason: null }), requiresChain: true },
-  { type: 'ReleaseIntoHold', category: 'Escrow', label: 'Hand On', description: 'Close a set-aside by opening the next one over the same funds', defaultConfig: J({ chainType: 'Algorand', holdId: null, holdNodeName: null, nextHoldId: null, nextBeneficiaryUserId: null, releaseNotBefore: null, autoRelease: true, purpose: null }), requiresChain: true },
+  //
+  // OI-87: `chainType`/`assetId`/`reservePartition` are left OUT of these seeded configs on
+  // purpose so a project owner opening a fresh node never sees a chain name or a rail id.
+  // `beneficiaryUserId`/`nextBeneficiaryUserId` are left out too because omitting them is
+  // already the safe default: the handlers fall back to the run actor
+  // (Services/Actions/Handlers/HoldNodeHandler.cs "Beneficiary:" comment;
+  // Services/Actions/Handlers/ReleaseNodeHandler.cs "Beneficiary of the NEXT hold:" comment) —
+  // a real person picker still owes the UI that lets an author name someone else.
+  // CROSS-BOUNDARY: chainType/assetId/reservePartition have NO such fallback — every one of
+  // HoldNodeHandler.cs/ReleaseNodeHandler.cs/RefundNodeHandler.cs returns `Invalid` when they're
+  // blank, and none of the three resolves a tenant's configured rail today. Until that
+  // resolution is built server-side, a node seeded from this default will refuse to run until
+  // an author (or operator) supplies all three directly on the node's config.
+  { type: 'Hold', category: 'Escrow', label: 'Set Funds Aside', description: 'Set an amount aside for someone until a release date', defaultConfig: J({ holdId: null, amount: '0', releaseNotBefore: null, autoRelease: true, purpose: null }), requiresChain: true },
+  { type: 'Release', category: 'Escrow', label: 'Pay Out', description: 'Pay a due set-aside to the person it was set aside for', defaultConfig: J({ holdId: null, holdNodeName: null, reason: null }), requiresChain: true },
+  { type: 'HoldRefund', category: 'Escrow', label: 'Give Back', description: 'Abandon a set-aside; the funds return to available', defaultConfig: J({ holdId: null, holdNodeName: null, reason: null }), requiresChain: true },
+  { type: 'ReleaseIntoHold', category: 'Escrow', label: 'Hand On', description: 'Close a set-aside by opening the next one over the same funds', defaultConfig: J({ holdId: null, holdNodeName: null, nextHoldId: null, releaseNotBefore: null, autoRelease: true, purpose: null }), requiresChain: true },
 ]
 
 export const NODE_CATALOG_BY_TYPE: Record<string, NodeTypeMeta> = Object.fromEntries(

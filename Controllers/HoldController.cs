@@ -432,8 +432,6 @@ public sealed class HoldChainBody
 /// </summary>
 public sealed record HoldView(
     string HoldId,
-    string Chain,
-    string AssetId,
     string Amount,
     string ReservePartition,
     string FundingSource,
@@ -453,8 +451,6 @@ public sealed record HoldView(
     /// <summary>Projects a persisted row onto the wire shape.</summary>
     public static HoldView From(HoldLedger row) =>
         new(row.HoldId,
-            row.Chain,
-            row.AssetId,
             row.Amount,
             row.ReservePartition,
             row.FundingSource,

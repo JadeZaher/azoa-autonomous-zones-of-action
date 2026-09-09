@@ -189,7 +189,11 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         var governance = await _nodeGovernance.EnsureAllowedAsync(
             chainType, projectAssetId, $"exchange:{request.Direction}", ct);
         if (governance.IsError)
-            return NotAllowed(governance.Message);
+            // The guard names the action, the rail and the allowlist so an operator can read the
+            // log; a member exchanging stake for funds must not. Same seam OI-30 closed in
+            // AllocationManager -- this is the sibling door on the exchange path, and closing one
+            // without the other is how a leak class gets falsely reported closed.
+            return NotAllowed(ConsumerSafeErrors.Redact(governance.Message)?.Message ?? governance.Message);
 
         // ── Step 3: the platform unit this node actually issues ───────────────
         // Read, never taken from the request: a caller that could name the funds asset could

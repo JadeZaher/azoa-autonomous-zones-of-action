@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using System.Text.RegularExpressions;
+using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Core;
@@ -74,8 +75,30 @@ public static class ConsumerSafeErrors
     private const string NotPermittedMessage =
         "This account is not permitted to send or receive these funds.";
 
+    /// <remarks>
+    /// Carried under <see cref="ConsumerSafeErrorCodes.NotPermitted"/> but worded for a
+    /// PERMANENT refusal. Telling a member to "try again shortly" when the node will never
+    /// allow the request is a false statement, not a vague one.
+    /// </remarks>
+    private const string PolicyRefusedMessage =
+        "This node does not allow this kind of request. Nothing was moved, and retrying will " +
+        "not change the answer - ask the node operator if you believe it should be allowed.";
+
     private const string TemporarilyUnavailableMessage =
         "This request could not be completed right now. Nothing was moved; try again shortly.";
+
+    /// <summary>
+    /// Message prefixes the API layer routes an HTTP status off (AllocationController maps
+    /// KYC_FORBIDDEN to 403). Replacing a leaking message wholesale would silently downgrade
+    /// that 403 to a 400, so the prefix is split off, kept, and re-attached.
+    /// </summary>
+    private static readonly string[] RoutingPrefixes =
+    {
+        KycAuthorizationError.Forbidden,
+        KycAuthorizationError.NotFound,
+        TenantAuthorizationError.Forbidden,
+        TenantAuthorizationError.NotFound,
+    };
 
     /// <summary>
     /// Vocabulary a non-crypto sponsor must never see. Used both to classify a raw
@@ -121,6 +144,11 @@ public static class ConsumerSafeErrors
                 "minimum balance", "below the minimum", "min-balance", "account not found",
                 "was not found on"))
             return new ConsumerSafeError(ConsumerSafeErrorCodes.RecipientNotReady, RecipientNotReadyMessage);
+
+        // A node-governance refusal is policy, not weather. It is NOT_PERMITTED like a frozen
+        // holding, but it gets its own prose because "try again shortly" would be a lie.
+        if (Mentions(raw, "governance disallows", "governance requires", "allowlist is configured"))
+            return new ConsumerSafeError(ConsumerSafeErrorCodes.NotPermitted, PolicyRefusedMessage);
 
         if (Mentions(raw, "frozen", "not authorised", "not authorized", "forbidden", "consent",
                 "scope", "clawback", "refusing to fall back"))
@@ -174,6 +202,41 @@ public static class ConsumerSafeErrors
         }
 
         return RailTokenOrIdentifier.IsMatch(text);
+    }
+
+    /// <summary>
+    /// The routing prefix <paramref name="message"/> opens with, or empty when it carries none.
+    /// </summary>
+    public static string RoutingPrefixOf(string? message)
+    {
+        if (string.IsNullOrEmpty(message)) return string.Empty;
+
+        foreach (var prefix in RoutingPrefixes)
+        {
+            if (message.StartsWith(prefix, StringComparison.Ordinal))
+                return prefix;
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// The consumer-safe replacement for a message that carries rail detail, or null when the
+    /// message may leave as written. A routing prefix survives the replacement, so a refusal
+    /// that the API layer turns into a 403 does not quietly become a 400.
+    /// </summary>
+    public static ConsumerSafeError? Redact(string? message)
+    {
+        var raw = message ?? string.Empty;
+        var prefix = RoutingPrefixOf(raw);
+
+        // The LEAK test reads the body alone, so a routing prefix can never itself force a
+        // scrub. The CLASSIFICATION reads the whole thing, because "KYC_FORBIDDEN" is the
+        // strongest signal there is about what the refusal means.
+        if (!LeaksRailDetail(raw[prefix.Length..])) return null;
+
+        var mapped = Map(raw);
+        return new ConsumerSafeError(mapped.Code, prefix + mapped.Message);
     }
 
     private static bool Mentions(string raw, params string[] needles)

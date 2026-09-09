@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
@@ -28,7 +29,7 @@ public sealed class NodeGovernanceGuard : INodeGovernanceGuard
     {
         var parameters = await ResolveParametersAsync(ct);
         if (parameters.IsError || parameters.Result is null)
-            return Deny(parameters.Message);
+            return Unavailable(parameters.Message);
 
         var chain = EnsureListed(parameters.Result.AllowedChains, "chain", chainType, action);
         if (chain.IsError) return chain;
@@ -42,7 +43,7 @@ public sealed class NodeGovernanceGuard : INodeGovernanceGuard
     {
         var parameters = await ResolveParametersAsync(ct);
         return parameters.IsError || parameters.Result is null
-            ? Deny(parameters.Message)
+            ? Unavailable(parameters.Message)
             : EnsureListed(parameters.Result.AllowedChains, "chain", chainType, action);
     }
 
@@ -53,7 +54,7 @@ public sealed class NodeGovernanceGuard : INodeGovernanceGuard
     {
         var parameters = await ResolveParametersAsync(ct);
         return parameters.IsError || parameters.Result is null
-            ? Deny(parameters.Message)
+            ? Unavailable(parameters.Message)
             : EnsureListed(parameters.Result.AllowedAssetTypes, "asset type", assetType, action);
     }
 
@@ -125,8 +126,30 @@ public sealed class NodeGovernanceGuard : INodeGovernanceGuard
     private static AZOAResult<bool> Allow()
         => new() { Result = true };
 
+    /// <summary>
+    /// A POLICY refusal. The message keeps its operator detail on purpose - it names the
+    /// action, the dimension and the allowlist, which is what an operator reading the log
+    /// needs. It must never reach a member unscrubbed; the code is what the tenant boundary
+    /// carries out instead (see <c>AllocationManager.ToConsumerSafeFailure</c>).
+    /// </summary>
     private static AZOAResult<bool> Deny(string message)
-        => new() { IsError = true, Result = false, Message = message };
+        => new()
+        {
+            IsError = true,
+            Result = false,
+            Message = message,
+            Code = ConsumerSafeErrorCodes.NotPermitted,
+        };
+
+    /// <summary>The governance parameters could not be read - a dependency failure, not a policy one.</summary>
+    private static AZOAResult<bool> Unavailable(string message)
+        => new()
+        {
+            IsError = true,
+            Result = false,
+            Message = message,
+            Code = ConsumerSafeErrorCodes.RailUnavailable,
+        };
 
     private sealed class AllowAllNodeGovernanceGuard : INodeGovernanceGuard
     {

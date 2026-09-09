@@ -1,0 +1,59 @@
+{
+  "_readme": "Committed exceptions for vocabulary.test.ts. Every entry needs a non-empty `reason` or the loader test fails. `paths` exempts a whole subtree (glob, `**` = any depth, `*` = one segment); `strings` exempts one chain-word `id` in one `file` (optionally narrowed to a `pathPrefix` instead of an exact file, and/or to hits whose copy contains `text`). Do not widen `strings` entries to a whole directory unless every word in that directory is genuinely the justified sense -- action-builder's `node` entries below deliberately do not cover `mint`/`chain`/`token`, because those are real hits in the same files.",
+  "paths": [
+    {
+      "pattern": "src/app/operator/**",
+      "reason": "Operator console: gated by the operator session cookie (src/app/operator/(console)/layout.tsx), never reached by a member or sponsor."
+    },
+    {
+      "pattern": "src/app/(dashboard)/admin/**",
+      "reason": "Admin console: src/app/(dashboard)/admin/layout.tsx redirects any session that is not an operator before a page under it renders."
+    },
+    {
+      "pattern": "src/components/operator/**",
+      "reason": "Shared chrome rendered only inside src/app/operator/** (same operator-only audience as that route group)."
+    }
+  ],
+  "strings": [
+    {
+      "word": "node",
+      "file": "src/app/(auth)/linked-accounts/page.tsx",
+      "reason": "'node' names this Azoa deployment instance (federation terminology, see the node-transparency page and /.well-known/azoa-node.json), not a blockchain node."
+    },
+    {
+      "word": "node",
+      "file": "src/app/(auth)/login/page.tsx",
+      "reason": "'node' names this Azoa deployment instance (federation terminology), not a blockchain node -- see the 'Running this node?' link to /operator/login."
+    },
+    {
+      "word": "node",
+      "file": "src/app/(dashboard)/kyc/page.tsx",
+      "reason": "'node' names the Azoa deployment instance a tenant is configured against (federation terminology), not a blockchain node."
+    },
+    {
+      "word": "node",
+      "file": "src/app/(dashboard)/node-transparency/page.tsx",
+      "reason": "This page's whole subject is federation-node transparency (its own governance/fee/treasury disclosure for this Azoa deployment instance) -- every 'node' on it is that sense, not a blockchain node."
+    },
+    {
+      "word": "node",
+      "file": "src/app/(dashboard)/actions/page.tsx",
+      "reason": "'node'/'nodes' here mean a step in the action/workflow graph (the DAG builder's own vocabulary, same sense as a tree or flowchart node), not a blockchain node. The real 'blockchain' hit on this page is not covered by this entry and must still be fixed or separately justified."
+    },
+    {
+      "word": "node",
+      "file": "src/app/(dashboard)/action-graph-bundle/page.tsx",
+      "reason": "'node' here means a step in the action/workflow graph, not a blockchain node. The real 'algorand'/'on-chain'/'chain' hits on this page are not covered by this entry."
+    },
+    {
+      "word": "node",
+      "pathPrefix": "src/components/action-builder/",
+      "reason": "The action/workflow DAG builder's own vocabulary: a 'node' is one step in the graph (add/delete/search/resume a node), the same sense as a tree or flowchart node -- not a blockchain node. This entry covers only the word 'node'; the real 'mint'/'on-chain'/'chain'/'token' hits elsewhere in this directory (node-catalog.ts, presets.ts, canvas-toolbar.tsx, run-panel.tsx) are not covered and must still be fixed or separately justified."
+    },
+    {
+      "word": "token",
+      "file": "src/app/(dashboard)/settings/page.tsx",
+      "reason": "This SDK-debug panel's 'Token' / 'session token' name the signed-in auth/session credential (masked via maskToken, next to the raw User ID), not the platform's asset token."
+    }
+  ]
+}

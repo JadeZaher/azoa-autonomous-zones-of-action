@@ -207,7 +207,8 @@ public class AllocationManagerTests
             _userId, MintRequest(), _callerUserId, "blocked", ApiKeyId);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("Node governance disallows allocation:Mint on chain 'Algorand'");
+        ConsumerSafeErrors.LeaksRailDetail(result.Message).Should().BeFalse();
+        result.Code.Should().Be(ConsumerSafeErrorCodes.NotPermitted);
         _valueAccess.Verify(k => k.RequireValueAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
         _walletStore.Verify(s => s.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _holonStore.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);

@@ -119,9 +119,9 @@ public sealed class AllocationManager : IAllocationManager
         ReserveDrawAuthority? drawAuthority = null)
     {
         if (request is null)
-            return AZOAResult<AllocationResult>.Failure("Allocation request is required.");
+            return ToConsumerSafeFailure("Allocation request is required.");
         if (string.IsNullOrWhiteSpace(request.ChainType))
-            return AZOAResult<AllocationResult>.Failure("ChainType is required.");
+            return ToConsumerSafeFailure("ChainType is required.");
 
         // On whose authority a reserve partition may be drawn. It DEFAULTS to the acting
         // tenant, so a caller that says nothing gets the narrow answer and a caller with no
@@ -129,14 +129,14 @@ public sealed class AllocationManager : IAllocationManager
         // OnRampSettlementHandler — passes NodeOperator, and it does so positively.
         var authority = drawAuthority ?? ReserveDrawAuthority.ForTenant(actingTenantId);
         if (!Guid.TryParse(apiKeyId, out var callerApiKeyId) || callerApiKeyId == Guid.Empty)
-            return AZOAResult<AllocationResult>.Failure("Caller API key context is invalid.");
+            return ToConsumerSafeFailure("Caller API key context is invalid.");
         if (actingTenantId is { } tenantId)
         {
             if (tenantId != callerUserId || _users is null)
-                return AZOAResult<AllocationResult>.Failure("Tenant allocation authority is unavailable.");
+                return ToConsumerSafeFailure("Tenant allocation authority is unavailable.");
             var target = await _users.GetByIdAsync(userId);
             if (target.IsError || target.Result is null || target.Result.OwnerTenantId != tenantId)
-                return AZOAResult<AllocationResult>.Failure(
+                return ToConsumerSafeFailure(
                     TenantAuthorizationError.NotFound + "Custodial user not found.");
         }
 
@@ -144,8 +144,11 @@ public sealed class AllocationManager : IAllocationManager
             request.ChainType,
             ResolveGovernedAssetType(request),
             $"allocation:{request.Kind}");
+        // OI-30: the guard names the action, the chain and the allowlist so an operator can
+        // read the log. None of that may reach a member, so the refusal leaves through the
+        // scrubber carrying only the code the guard itself decided.
         if (governance.IsError)
-            return AZOAResult<AllocationResult>.Failure(governance.Message);
+            return ToConsumerSafeFailure(governance.Message, governance.Code);
 
         // ── Step 1: idempotency key ───────────────────────────────────────────
         var allocationIdempotency = AllocationIdempotency.Create(
@@ -166,7 +169,7 @@ public sealed class AllocationManager : IAllocationManager
         // stored original result and perform NO second issue/transfer.
         var claim = await _idempotencyStore.TryClaimAsync(ledgerKey, OperationType, CancellationToken.None);
         if (!claim.Won)
-            return ReplayFromRecord(claim.Record);
+            return ToConsumerSafeFailure(ReplayFromRecord(claim.Record));
 
         var effectMayHaveStarted = false;
         try
@@ -178,16 +181,18 @@ public sealed class AllocationManager : IAllocationManager
             var gate = await _valueAccess.RequireValueAccessAsync(userId, actingTenantId);
             if (gate.IsError)
             {
-                await _idempotencyStore.FailAsync(ledgerKey, gate.Message, CancellationToken.None);
-                return AZOAResult<AllocationResult>.Failure(gate.Message);
+                var refusal = ToConsumerSafeFailure(gate.Message);
+                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                return refusal;
             }
 
             // ── Step 3b: is this kind admissible for this caller? ─────────────
             var admissible = ValidateKind(request, clientIdempotencyKey, actingTenantId);
             if (admissible is not null)
             {
-                await _idempotencyStore.FailAsync(ledgerKey, admissible, CancellationToken.None);
-                return AZOAResult<AllocationResult>.Failure(admissible);
+                var refusal = ToConsumerSafeFailure(admissible);
+                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                return refusal;
             }
 
             // ── Step 4: parse the amount (H4) — reject BEFORE any broadcast ───
@@ -197,16 +202,18 @@ public sealed class AllocationManager : IAllocationManager
             // terminal (Failed), never leaked InProgress, and nothing is broadcast.
             if (!TryParseAmount(request.Amount, out var amount, out var amountError))
             {
-                await _idempotencyStore.FailAsync(ledgerKey, amountError, CancellationToken.None);
-                return AZOAResult<AllocationResult>.Failure(amountError);
+                var refusal = ToConsumerSafeFailure(amountError);
+                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                return refusal;
             }
 
             var feeQuoteResult = await QuoteAllocationFeeAsync(request, amount);
             if (feeQuoteResult.IsError || feeQuoteResult.Result is null)
             {
                 var msg = feeQuoteResult.IsError ? feeQuoteResult.Message : "Node fee quote produced no result.";
-                await _idempotencyStore.FailAsync(ledgerKey, msg, CancellationToken.None);
-                return AZOAResult<AllocationResult>.Failure(msg);
+                var refusal = ToConsumerSafeFailure(msg);
+                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                return refusal;
             }
             var feeQuote = feeQuoteResult.Result;
 
@@ -218,16 +225,18 @@ public sealed class AllocationManager : IAllocationManager
             var feeObligation = await AdmitFeeObligationAsync(request, feeQuote, ledgerKey);
             if (feeObligation is not null)
             {
-                await _idempotencyStore.FailAsync(ledgerKey, feeObligation, CancellationToken.None);
-                return AZOAResult<AllocationResult>.Failure(feeObligation);
+                var refusal = ToConsumerSafeFailure(feeObligation);
+                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                return refusal;
             }
 
             // ── Step 5: provision-if-absent ───────────────────────────────────
             var (wallet, provisioned, walletError) = await EnsureWalletAsync(userId, request.ChainType);
             if (wallet is null)
             {
-                await _idempotencyStore.FailAsync(ledgerKey, walletError, CancellationToken.None);
-                return AZOAResult<AllocationResult>.Failure(walletError);
+                var refusal = ToConsumerSafeFailure(walletError);
+                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                return refusal;
             }
 
             // ── Step 6: execute allocation (D4 discriminator) ─────────────────
@@ -253,11 +262,11 @@ public sealed class AllocationManager : IAllocationManager
 
             if (opResult.IsError || opResult.Result is null)
             {
-                var failure = ToConsumerSafeFailure(
+                var refusal = ToConsumerSafeFailure(
                     opResult.IsError ? opResult.Message : "Allocation produced no operation.",
                     opResult.Code);
-                await _idempotencyStore.FailAsync(ledgerKey, failure.Message, CancellationToken.None);
-                return failure;
+                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                return refusal;
             }
 
             var op = opResult.Result;
@@ -276,7 +285,7 @@ public sealed class AllocationManager : IAllocationManager
                 // Broadcast did not (yet) record a settlement reference. Do NOT
                 // Complete the key — leave it InProgress so reconciliation/replay can
                 // settle it from chain truth. Surface a retryable in-progress state.
-                return AZOAResult<AllocationResult>.FailureWithCode(
+                return ToConsumerSafeFailure(
                     "This allocation is still settling and has not yet been confirmed. " +
                     "Retry once it settles; do not raise a second one.",
                     ConsumerSafeErrorCodes.SettlementPending);
@@ -309,20 +318,20 @@ public sealed class AllocationManager : IAllocationManager
     {
         var gate = await _valueAccess.RequireValueAccessAsync(userId, actingTenantId);
         if (gate.IsError)
-            return AZOAResult<AllocationResult>.Failure(gate.Message);
+            return ToConsumerSafeFailure(gate.Message);
 
         // A preview is exempt from the client-key requirement: it claims no key.
         var admissible = ValidateKind(request, "preview", actingTenantId);
         if (admissible is not null)
-            return AZOAResult<AllocationResult>.Failure(admissible);
+            return ToConsumerSafeFailure(admissible);
 
         if (!TryParseAmount(request.Amount, out var amount, out var amountError))
-            return AZOAResult<AllocationResult>.Failure(amountError);
+            return ToConsumerSafeFailure(amountError);
 
         var quote = await QuoteAllocationFeeAsync(request, amount);
         if (quote.IsError || quote.Result is null)
         {
-            return AZOAResult<AllocationResult>.Failure(
+            return ToConsumerSafeFailure(
                 quote.IsError ? quote.Message : "Node fee quote produced no result.");
         }
 
@@ -330,7 +339,7 @@ public sealed class AllocationManager : IAllocationManager
         // must say so now rather than let a caller lock terms it cannot honour.
         var settlementRefusal = await DescribeFeeSettlementAvailabilityAsync(request, quote.Result);
         if (settlementRefusal is not null)
-            return AZOAResult<AllocationResult>.Failure(settlementRefusal);
+            return ToConsumerSafeFailure(settlementRefusal);
 
         var (wallet, _) = await FindWalletAsync(userId, request.ChainType);
         return new AZOAResult<AllocationResult>
@@ -1026,23 +1035,41 @@ public sealed class AllocationManager : IAllocationManager
     }
 
     /// <summary>
-    /// Last gate before a failure leaves for a tenant. A message carrying rail detail is
-    /// REPLACED by its consumer-safe equivalent; one that does not is passed through so the
-    /// node's own plain-language refusals keep their meaning. An already-assigned code
-    /// (a rail refusal that mapped itself upstream) always wins.
+    /// The ONE exit an allocation failure leaves through (OI-30). A message carrying rail
+    /// detail is REPLACED by its consumer-safe equivalent and the original is logged for the
+    /// operator; one that does not is passed through so the node's own plain-language refusals
+    /// keep their meaning. A routing prefix such as KYC_FORBIDDEN survives the replacement,
+    /// because the controller reads the HTTP status off it. An already-assigned code (a rail
+    /// refusal that mapped itself upstream, or a guard that named its own) always wins.
+    /// <para>
+    /// Every failure return in this class calls this. <c>ConsumerSafeExitCoverageTests</c>
+    /// counts those calls and pins the number, so a refusal added later either goes through
+    /// here or fails the build.
+    /// </para>
     /// </summary>
-    private static AZOAResult<AllocationResult> ToConsumerSafeFailure(string? message, string? code)
+    private AZOAResult<AllocationResult> ToConsumerSafeFailure(string? message, string? code = null)
     {
-        if (!ConsumerSafeErrors.LeaksRailDetail(message))
-        {
-            return code is null
-                ? AZOAResult<AllocationResult>.Failure(message ?? string.Empty)
-                : AZOAResult<AllocationResult>.FailureWithCode(message ?? string.Empty, code);
-        }
+        var redacted = ConsumerSafeErrors.Redact(message);
+        if (redacted is null)
+            return Refused(message ?? string.Empty, code);
 
-        var mapped = ConsumerSafeErrors.Map(message);
-        return AZOAResult<AllocationResult>.FailureWithCode(mapped.Message, code ?? mapped.Code);
+        _logger?.LogWarning(
+            "An allocation refusal was redacted at the tenant boundary as {Code}: {RailDetail}",
+            redacted.Value.Code, message);
+        return Refused(redacted.Value.Message, code ?? redacted.Value.Code);
     }
+
+    /// <summary>Scrubs an already-built failure - a replayed original - on its way out.</summary>
+    private AZOAResult<AllocationResult> ToConsumerSafeFailure(AZOAResult<AllocationResult> failure)
+        => failure.IsError ? ToConsumerSafeFailure(failure.Message, failure.Code) : failure;
+
+    /// <summary>
+    /// The only place a failed allocation result is constructed. Keeping the factory calls out
+    /// of the rest of the class is what lets the coverage test prove, by a source scan, that no
+    /// refusal is built anywhere else.
+    /// </summary>
+    private static AZOAResult<AllocationResult> Refused(string message, string? code)
+        => new() { IsError = true, Message = message, Code = code };
 
     private static AllocationResult BuildAllocationResult(
         Guid userId,
