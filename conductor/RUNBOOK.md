@@ -1354,7 +1354,51 @@ the lucide-react `<Star>` icon is an unrelated third-party symbol. Both intact.
 
 ---
 
-### ▶ RESUME HERE (state as of 2026-09-08)
+### ▶ RESUME HERE (state as of 2026-09-09 — launch-readiness program)
+
+**AZOA:** branch `feat/kyc-aml-providers-value-rail`, HEAD **`9017910`**, tree clean, 33 commits ahead of
+`9f4e026`, nothing pushed. **ArdaNova:** branch `codex/azoa-security-hardening`, HEAD **`5370e3a`**, clean.
+Second ArdaNova worktree: `ardanova-financial-domain` on `codex/financial-engine-domain` (26810a2), clean.
+
+**Gates at these HEADs (full sweep, both repos, 2026-09-09):** AZOA build 0 errors / 23 warnings ·
+`AZOA.WebAPI.Tests` **3308 passed, 0 failed, 1 skipped** · SDK tsc 0 + 205 · frontend 78 + `next build` clean.
+ArdaNova build 0/0 · **1136 .NET tests** · client 254 vitest / 37 files · `SKIP_ENV_VALIDATION=1 npm run build` 45/45.
+⚠ ArdaNova's solution is `ardanova-backend-api-mcp/ardanova.sln` (not `api-server/ArdaNova.sln`).
+
+**What happened since the 2026-09-08 closeout, in order:**
+1. A remediation loop was appended to the production-readiness workflow and the run was *resumed*.
+   Resume caches only the longest unchanged **prefix** of agent() calls, so the insertion after Wave 0
+   re-ran Waves 1–10 live. Stopped at the Wave 1 join gate (`w73o0y8d4`). Lesson recorded in memory
+   `workflow-resume-prefix-cache`; remediation is in the new script from line one.
+2. Wave 0's remediation DID land before the stop: AZOA `206e3c9`, ArdaNova `d9f27b6` + `f71e115`.
+3. The stopped run's in-flight Wave 1 re-run was gated solo and committed: AZOA `9017910`, ArdaNova `5370e3a`.
+   Verdicts from that gate — **OI-10 closed** for its named sites (residual: five surfaces still branch on
+   the boolean `isValueActionAccountReady`); **OI-11 partial** (`TenantManager.cs:142` still unfolded);
+   **OI-12 NOT closed — instance 23 of the class:** the re-run's entire change to `WalletManager.cs` is a
+   doc-comment arguing the gate belongs at the caller, while `BootstrapWalletAsync:438` still mints with no
+   custody check; **OI-07 no backend**. Two wins rode along: `RealValueReadinessHealthCheck` now *consumes*
+   `CustodyModeResolver`; `TenantSafeCustodyReason` is an allow-list.
+4. `azoa-sdk@0.4.0` publish is gated and staged (build clean, tsc 0, 17 files, dry-run packs) and needs the
+   owner's npm **2FA one-time password** (`npm publish --access public --otp=<code>` in `sdk/azoa-wallet`).
+   `npm whoami` = `jadeoni-az`. Registry still tops out at 0.2.2.
+
+**→ THE NEXT ACTION:** launch the **launch-readiness program** —
+[`tracks/launch-readiness_20260909/spec.md`](tracks/launch-readiness_20260909/spec.md) (D52–D55; 8 waves
+L0–L7; every one of the predecessor's 95 OI ids placed or listed unplaceable). Its `plan.md` is being
+itemised from `OPEN-ITEMS.md`. L7 is the **merge-to-main sweep on both repos** — AZOA `--no-ff`; ArdaNova
+hardening fast-forward then the financial branch by **cherry-pick `0bb1ec3` `a6c3ecc` + DBML regeneration,
+never merge** (D53, per its `PASSOFF.md`). After L7, `main` is the integration branch in both repos.
+
+**Re-entry if this session dies before L7:**
+```
+cd conductor/tracks/launch-readiness_20260909 && cat plan.md | grep -c '\[x\]'   # items landed
+git log --oneline 9017910..HEAD                                                # waves committed since
+```
+
+---
+
+### ⚠ SUPERSEDED 2026-09-09 — the block below is the 2026-09-08 closeout state, kept for the record
+#### (was) ▶ RESUME HERE (state as of 2026-09-08)
 
 **AZOA:** branch `feat/kyc-aml-providers-value-rail`, tree CLEAN, nothing pushed. Last **code**
 commit `8328c07` — **29 code commits ahead of `9f4e026`** — with the closeout doc commits
