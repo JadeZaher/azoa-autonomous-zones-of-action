@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Globalization;
 using System.Numerics;
@@ -121,8 +121,9 @@ public sealed class PlatformHoldService : IPlatformHold
         // hold driven by another, and the platform's OWN unit — which carries no tenant at
         // all — is the operator's, not every tenant's. Without it, tenant B's action could
         // quietly consume the budget tenant A declared out of the shared reserve.
+        var drawAuthority = request.ResolvedDrawAuthority;
         var tenantGuard = ReservePartitionScope.Refuse(
-            reserveLedger.Result, request.ActingTenantId, assetId);
+            reserveLedger.Result, drawAuthority, assetId, _reserveOptions);
         if (tenantGuard is not null)
             return Fail(tenantGuard);
 
@@ -174,7 +175,7 @@ public sealed class PlatformHoldService : IPlatformHold
                 return Ok(persisted, null, null, replayed: true, "This hold was already open.");
         }
 
-        return await CommitOpeningDrawAsync(persisted, request.Amount, ct);
+        return await CommitOpeningDrawAsync(persisted, request.Amount, drawAuthority, ct);
     }
 
     /// <summary>
@@ -183,8 +184,10 @@ public sealed class PlatformHoldService : IPlatformHold
     /// half-opened hold replays rather than double-counting the partition.
     /// </summary>
     private async Task<AZOAResult<HoldOutcome>> CommitOpeningDrawAsync(
-        HoldLedger row, BigInteger amount, CancellationToken ct)
+        HoldLedger row, BigInteger amount, ReserveDrawAuthority authority, CancellationToken ct)
     {
+        // The OPENING draw carries the opener's own authority, not a settlement pass: the
+        // asset and the partition on this row arrived off the caller's request.
         var draw = await _reserve.DrawAsync(
             new ReserveDrawRequest(
                 row.Chain,
@@ -192,7 +195,8 @@ public sealed class PlatformHoldService : IPlatformHold
                 row.ReservePartition,
                 ReserveDrawKind.Hold,
                 amount,
-                OperationKey("hold", row.HoldId)),
+                OperationKey("hold", row.HoldId),
+                authority),
             ct);
 
         if (draw.IsError || draw.Result is null)
@@ -314,7 +318,10 @@ public sealed class PlatformHoldService : IPlatformHold
                 row.ReservePartition,
                 ReserveDrawKind.ReleaseHold,
                 amount,
-                OperationKey("release", row.HoldId)),
+                OperationKey("release", row.HoldId),
+                // Settling a commitment the opening draw already scope-checked: chain, asset
+                // and partition all come off this persisted row, so no caller names them.
+                ReserveDrawAuthority.SettlingGuardedCommitment),
             ct);
         if (draw.IsError || draw.Result is null)
             return Fail(draw.Message);
@@ -482,7 +489,9 @@ public sealed class PlatformHoldService : IPlatformHold
                     row.ReservePartition,
                     ReserveDrawKind.CancelHold,
                     amount,
-                    OperationKey("refund", row.HoldId)),
+                    OperationKey("refund", row.HoldId),
+                    // As with release: the row, not a caller, names what is being given back.
+                    ReserveDrawAuthority.SettlingGuardedCommitment),
                 ct);
             if (draw.IsError || draw.Result is null)
                 return Fail(draw.Message);
@@ -832,67 +841,6 @@ public sealed class PlatformHoldService : IPlatformHold
     private static AZOAResult<HoldOutcome> Ok(
         HoldLedger hold, HoldLedger? next, string? transactionId, bool replayed, string message) =>
         AZOAResult<HoldOutcome>.Success(new HoldOutcome(hold, next, transactionId, replayed), message);
-}
-
-/// <summary>
-/// Who may draw a declared reserve partition. The ONE predicate both draw seams ask —
-/// <see cref="PlatformHoldService.OpenAsync"/> and
-/// <c>AllocationManager.IssueUnitsAsync</c> — so the two can never drift apart. Colocated
-/// with the hold service because <c>Services/Reserve/</c> is outside this change's file
-/// boundary; it belongs beside <c>IPlatformReserve</c> and moving it later is a file move.
-/// </summary>
-internal static class ReservePartitionScope
-{
-    /// <summary>
-    /// Null when this caller may draw the asset's declared partitions; the refusal
-    /// otherwise. An asset registered by a tenant is that tenant's budget, so a draw
-    /// driven by another tenant would consume it out of the shared reserve.
-    /// </summary>
-    /// <param name="reserveRow">
-    /// The reserve's own row for the asset, or null when this seam could not read one. A
-    /// row that is absent carries no tenant and is therefore treated exactly like the
-    /// platform's own unit — a tenant-driven draw is refused, and an operator-driven draw
-    /// of an unregistered asset is refused a moment later by
-    /// <c>PlatformReserveService.DrawAsync</c>, which reads the same row before it moves
-    /// any counter.
-    /// </param>
-    internal static string? Refuse(
-        PlatformReserveLedger? reserveRow, Guid? actingTenantId, string assetId)
-    {
-        var owner = ParseRowUserId(reserveRow?.TenantId);
-        var acting = actingTenantId ?? Guid.Empty;
-
-        // An untenanted row is NOT ownerless. It is the platform's own unit —
-        // PlatformTokenGenesis mints it with no acting tenant — so its declared partitions
-        // belong to the node operator. Reading "no tenant" as "any tenant" would hand every
-        // holder of a value-signing key the whole of this node's own supply.
-        if (owner == Guid.Empty)
-        {
-            return acting == Guid.Empty
-                ? null
-                : $"Asset '{assetId}' is this node's own unit, so its declared partitions are the " +
-                  "operator's to draw from and not a tenant's. Nothing was drawn.";
-        }
-
-        return acting == owner
-            ? null
-            : $"Asset '{assetId}' was registered with the reserve by another tenant, so its declared " +
-              "partitions are not this caller's to draw from. Nothing was drawn.";
-    }
-
-    /// <summary>A user id off a row; a record link keeps its <c>user:</c> prefix, so strip it.</summary>
-    internal static Guid ParseRowUserId(string? userId)
-    {
-        if (string.IsNullOrWhiteSpace(userId))
-            return Guid.Empty;
-
-        var text = userId.Trim();
-        var colon = text.LastIndexOf(':');
-        if (colon >= 0 && colon < text.Length - 1)
-            text = text[(colon + 1)..];
-
-        return Guid.TryParseExact(text, "N", out var parsed) ? parsed : Guid.Empty;
-    }
 }
 
 /// <summary>

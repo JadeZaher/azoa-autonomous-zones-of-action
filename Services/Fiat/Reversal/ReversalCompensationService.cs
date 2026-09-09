@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Globalization;
 using System.Numerics;
@@ -485,7 +485,9 @@ public sealed class ReversalCompensationService : IReversalCompensation
                 _onRamp.ReservePartition,
                 ReserveDrawKind.Return,
                 recoverable,
-                key),
+                key,
+                // The node's own chargeback-recovery rail; the partition is node configuration.
+                ReserveDrawAuthority.NodeOperator),
             ct);
 
         if (draw.IsError)

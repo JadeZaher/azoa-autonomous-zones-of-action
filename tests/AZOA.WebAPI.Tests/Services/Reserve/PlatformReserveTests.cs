@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 // W3.1 — the platform reserve: address resolution, the named-partition
 // oversubscription check, and the mint-into-reserve target on the fungible-token seam.
 
@@ -223,7 +223,8 @@ public class PlatformReserveTests
         await harness.DeclareAsync((ContributorPartition, 400));
 
         var draw = await harness.Reserve.DrawAsync(new ReserveDrawRequest(
-            Chain, AssetId, ContributorPartition, ReserveDrawKind.Issue, new BigInteger(10), "  "));
+            Chain, AssetId, ContributorPartition, ReserveDrawKind.Issue, new BigInteger(10), "  ",
+            ReserveDrawAuthority.NodeOperator));
 
         draw.IsError.Should().BeTrue();
         draw.Message.Should().Contain("operation key");
@@ -346,6 +347,132 @@ public class PlatformReserveTests
 
     // ── Harnesses ─────────────────────────────────────────────────────────────
 
+    // ── Draw authority (OI-20 / OI-21, re-opened) ────────────────────────────
+    //
+    // The first pass asked the ownership question at two of the SEVEN doors that reach
+    // these counters, and answered it with "no acting tenant means the operator" — which
+    // is exactly the shape a user-driven quest run arrives in (ActionNodeStepHandler
+    // builds its context with ActingTenantId = null). The question is now asked HERE,
+    // where the counter actually moves, so no door can skip it.
+
+    private static readonly Guid TenantOne = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
+    private static readonly Guid TenantTwo = Guid.Parse("bbbbbbbb-0000-0000-0000-000000000002");
+
+    [Fact]
+    public async Task DrawAsync_refuses_a_caller_with_no_tenant_on_the_nodes_own_unit()
+    {
+        var harness = await AuthorityHarnessAsync(tenantId: null);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "no-tenant-platform-unit", ReserveDrawAuthority.ForTenant(null));
+
+        draw.IsError.Should().BeTrue(
+            "a missing acting tenant is not an operator signal; reading it as one hands every "
+            + "holder of a value-signing key the whole of this node's own supply");
+        draw.Message.Should().Contain("this node's own unit");
+        (await harness.CountersAsync(ContributorPartition)).Committed.Should().Be(BigInteger.Zero);
+    }
+
+    [Fact]
+    public async Task DrawAsync_refuses_a_tenant_on_the_nodes_own_unit()
+    {
+        var harness = await AuthorityHarnessAsync(tenantId: null);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "tenant-platform-unit", ReserveDrawAuthority.ForTenant(TenantOne));
+
+        draw.IsError.Should().BeTrue();
+        draw.Message.Should().Contain("this node's own unit");
+        (await harness.CountersAsync(ContributorPartition)).Committed.Should().Be(BigInteger.Zero);
+    }
+
+    [Fact]
+    public async Task DrawAsync_lets_the_node_operator_draw_the_nodes_own_unit()
+    {
+        var harness = await AuthorityHarnessAsync(tenantId: null);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "operator-platform-unit", ReserveDrawAuthority.NodeOperator);
+
+        draw.IsError.Should().BeFalse(draw.Message);
+        draw.Result!.Counters.Issued.Should().Be(new BigInteger(10));
+    }
+
+    [Fact]
+    public async Task DrawAsync_refuses_a_tenant_drawing_a_partition_another_tenant_registered()
+    {
+        var harness = await AuthorityHarnessAsync(tenantId: TenantOne);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "cross-tenant", ReserveDrawAuthority.ForTenant(TenantTwo));
+
+        draw.IsError.Should().BeTrue();
+        draw.Message.Should().Contain("another tenant");
+        (await harness.CountersAsync(ContributorPartition)).Committed.Should().Be(BigInteger.Zero);
+    }
+
+    [Fact]
+    public async Task DrawAsync_lets_the_registering_tenant_draw_its_own_partition()
+    {
+        var harness = await AuthorityHarnessAsync(tenantId: TenantOne);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "own-tenant", ReserveDrawAuthority.ForTenant(TenantOne));
+
+        draw.IsError.Should().BeFalse(draw.Message);
+    }
+
+    [Fact]
+    public async Task DrawAsync_refuses_an_operator_signal_on_a_tenants_asset()
+    {
+        // The node's own rails (on-ramp, off-ramp, chargeback recovery) never name a
+        // tenant's asset. One that did would be a miswired seam, not a privilege.
+        var harness = await AuthorityHarnessAsync(tenantId: TenantOne);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "operator-on-tenant-asset", ReserveDrawAuthority.NodeOperator);
+
+        draw.IsError.Should().BeTrue();
+        (await harness.CountersAsync(ContributorPartition)).Committed.Should().Be(BigInteger.Zero);
+    }
+
+    [Fact]
+    public async Task DrawAsync_refuses_a_tenantless_caller_on_a_tenants_asset()
+    {
+        var harness = await AuthorityHarnessAsync(tenantId: TenantOne);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "no-tenant-tenant-asset", ReserveDrawAuthority.ForTenant(null));
+
+        draw.IsError.Should().BeTrue();
+        draw.Message.Should().Contain("resolvable acting tenant");
+        (await harness.CountersAsync(ContributorPartition)).Committed.Should().Be(BigInteger.Zero);
+    }
+
+    [Fact]
+    public async Task DrawAsync_never_strands_a_settlement_of_an_already_guarded_commitment()
+    {
+        // A hold's release, cancel and refund draws read chain, asset and partition off the
+        // persisted row. Nothing there was named by a caller, and refusing them would
+        // strand value the opening draw already committed.
+        var harness = await AuthorityHarnessAsync(tenantId: TenantOne);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "settlement", ReserveDrawAuthority.SettlingGuardedCommitment);
+
+        draw.IsError.Should().BeFalse(draw.Message);
+    }
+
+    private static async Task<ReserveHarness> AuthorityHarnessAsync(Guid? tenantId)
+    {
+        var harness = ReserveHarness.WithPlatformKey();
+        var registered = await harness.RegisterAsync(totalSupply: 1_000, tenantId);
+        registered.IsError.Should().BeFalse(registered.Message);
+        var declared = await harness.DeclareAsync((ContributorPartition, 400));
+        declared.IsError.Should().BeFalse(declared.Message);
+        return harness;
+    }
+
     /// <summary>
     /// A reserve wired to an in-memory ledger and a custody double that hands back a real
     /// Algorand key, so the address under test is genuinely derived rather than asserted.
@@ -398,9 +525,9 @@ public class PlatformReserveTests
             return new ReserveHarness(reserve, ledger, options, expectedAddress, factory.Object);
         }
 
-        public Task<AZOAResult<PlatformReserveLedger>> RegisterAsync(long totalSupply) =>
+        public Task<AZOAResult<PlatformReserveLedger>> RegisterAsync(long totalSupply, Guid? tenantId = null) =>
             Reserve.RegisterAssetAsync(new ReserveAssetRegistration(
-                Chain, AssetId, "UNIT", 2, new BigInteger(totalSupply)));
+                Chain, AssetId, "UNIT", 2, new BigInteger(totalSupply), tenantId));
 
         public Task<AZOAResult<PlatformReserveLedger>> DeclareAsync(
             params (string Name, long Declared)[] partitions) =>
@@ -410,13 +537,15 @@ public class PlatformReserveTests
                 partitions.ToDictionary(p => p.Name, p => new BigInteger(p.Declared)));
 
         public Task<AZOAResult<ReserveDrawOutcome>> IssueAsync(
-            string partition, long amount, string operationKey) =>
-            DrawAsync(partition, ReserveDrawKind.Issue, amount, operationKey);
+            string partition, long amount, string operationKey, ReserveDrawAuthority? authority = null) =>
+            DrawAsync(partition, ReserveDrawKind.Issue, amount, operationKey, authority);
 
         public Task<AZOAResult<ReserveDrawOutcome>> DrawAsync(
-            string partition, ReserveDrawKind kind, long amount, string operationKey) =>
+            string partition, ReserveDrawKind kind, long amount, string operationKey,
+            ReserveDrawAuthority? authority = null) =>
             Reserve.DrawAsync(new ReserveDrawRequest(
-                Chain, AssetId, partition, kind, new BigInteger(amount), operationKey));
+                Chain, AssetId, partition, kind, new BigInteger(amount), operationKey,
+                authority ?? ReserveDrawAuthority.NodeOperator));
 
         public async Task<ReservePartitionCounters> CountersAsync(string partition)
         {

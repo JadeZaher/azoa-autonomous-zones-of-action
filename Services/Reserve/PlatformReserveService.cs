@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Globalization;
 using System.Numerics;
@@ -56,6 +56,21 @@ public sealed class ReserveOptions
     /// separate fee-payer key exists, so the reserve itself pays fees.
     /// </summary>
     public bool SeparateFeePayerAccount { get; set; }
+
+    /// <summary>
+    /// Who — besides the node's own rails — may draw a declared partition of the node's OWN
+    /// unit, whose ledger row carries no tenant because the node minted it. One of
+    /// <see cref="ReservePlatformUnitDrawPolicies"/>; an unrecognised value fails closed, and
+    /// so does the DEFAULT — a node that says nothing keeps its own supply to its own rails.
+    /// Under EVERY value a caller with no resolvable tenant is refused (OI-21).
+    /// </summary>
+    public string PlatformUnitDrawPolicy { get; set; } = ReservePlatformUnitDrawPolicies.OperatorOnly;
+
+    /// <summary>
+    /// The tenants admitted to draw the node's own unit when
+    /// <see cref="PlatformUnitDrawPolicy"/> is <c>DeclaredTenants</c>. Ignored otherwise.
+    /// </summary>
+    public List<string> PlatformUnitDrawTenants { get; set; } = new();
 }
 
 /// <summary>Accepted values for <see cref="ReserveOptions.FungibleMintTarget"/>.</summary>
@@ -347,6 +362,16 @@ public sealed class PlatformReserveService : IPlatformReserve
                 return AZOAResult<ReserveDrawOutcome>.Failure(current.Message);
 
             var row = current.Result;
+
+            // OI-20 / OI-21 — the ownership question, asked HERE because this is the one
+            // place a partition counter moves. Seven seams reach this method; asking it at
+            // each door instead left the exchange seam uncovered after two were fixed. The
+            // row is the authority on who registered the asset, so the answer is read from
+            // the ledger and never trusted off the request.
+            var scopeRefusal = ReservePartitionScope.Refuse(row, request.Authority, row.AssetId, _options);
+            if (scopeRefusal is not null)
+                return AZOAResult<ReserveDrawOutcome>.Failure(scopeRefusal);
+
             var partitions = ReservePartitionCodec.Decode(row.Partitions, out var decodeError);
             if (partitions is null)
                 return AZOAResult<ReserveDrawOutcome>.Failure(decodeError);

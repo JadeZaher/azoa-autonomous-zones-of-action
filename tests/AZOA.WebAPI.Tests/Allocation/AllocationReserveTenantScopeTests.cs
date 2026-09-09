@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 // OI-20 / OI-21 — who may draw a declared reserve partition. Both draw seams ask the ONE
 // predicate (ReservePartitionScope.Refuse), so both are proved here: the allocation seam,
 // where the asset AND the partition arrive off the caller's body, and the hold seam, whose
@@ -85,14 +85,39 @@ public class AllocationReserveTenantScopeTests
         StubReserveLedger(harness, tenantId: null);
         var manager = harness.Build();
 
-        // No acting tenant is the node's own path — the on-ramp settlement handler is the
-        // production caller — and both external write surfaces stamp a tenant unconditionally.
+        // The node's own path — OnRampSettlementHandler is the production caller — and it
+        // now carries a POSITIVE operator signal. The missing acting tenant grants nothing
+        // on its own; see the sibling test below.
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "operator-draws-platform-unit", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "operator-draws-platform-unit", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeFalse(result.Message);
         harness.Steps.Should().Equal("prepare", "draw", "broadcast");
+    }
+
+    [Fact]
+    public async Task IssueUnits_refuses_a_caller_that_has_neither_an_operator_signal_nor_a_tenant()
+    {
+        // OI-21, re-opened. The old predicate read "no acting tenant" as "the operator", and
+        // a user-driven quest run reaches the draw seams with exactly that: ActionManager
+        // and ActionNodeStepHandler both build the node context from run.ActingTenantId,
+        // which is null for a run nobody's tenant drove.
+        var harness = new AllocationTestHarness();
+        StubReserveLedger(harness, tenantId: null);
+        var manager = harness.Build();
+
+        var result = await manager.AllocateAsync(
+            harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
+            harness.CallerUserId, "no-signal-no-tenant", AllocationTestHarness.ApiKeyId);
+
+        result.IsError.Should().BeTrue(
+            "the absence of a tenant is not an operator signal");
+        harness.Steps.Should().BeEmpty();
+        harness.Reserve.Verify(
+            reserve => reserve.DrawAsync(It.IsAny<ReserveDrawRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Theory]
@@ -137,12 +162,29 @@ public class AllocationReserveTenantScopeTests
     {
         var world = new HoldWorld(reserveRowTenantId: null);
 
-        var opened = await world.OpenAsync(actingTenantId: null);
+        var opened = await world.OpenAsync(
+            actingTenantId: null, drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         opened.IsError.Should().BeFalse(opened.Message);
         world.Reserve.Verify(
             reserve => reserve.DrawAsync(It.IsAny<ReserveDrawRequest>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task OpenAsync_refuses_a_hold_that_has_neither_an_operator_signal_nor_a_tenant()
+    {
+        // The shape HoldNodeHandler forwards for a user-driven run, with cfg.AssetId and
+        // cfg.ReservePartition both taken from author-supplied action config.
+        var world = new HoldWorld(reserveRowTenantId: null);
+
+        var opened = await world.OpenAsync(actingTenantId: null);
+
+        opened.IsError.Should().BeTrue("a run with no tenant is not the node operator");
+        world.Ledger.CreateCalls.Should().Be(0);
+        world.Reserve.Verify(
+            reserve => reserve.DrawAsync(It.IsAny<ReserveDrawRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -267,7 +309,8 @@ public class AllocationReserveTenantScopeTests
                 Mock.Of<ILogger<PlatformHoldService>>());
         }
 
-        public Task<AZOAResult<HoldOutcome>> OpenAsync(Guid? actingTenantId) =>
+        public Task<AZOAResult<HoldOutcome>> OpenAsync(
+            Guid? actingTenantId, ReserveDrawAuthority? drawAuthority = null) =>
             _holds.OpenAsync(new HoldOpenRequest(
                 new HoldReference(Chain, "hold-scope"),
                 AssetId,
@@ -278,7 +321,9 @@ public class AllocationReserveTenantScopeTests
                 FunderUserId: Guid.Empty,
                 ReleaseNotBefore: null,
                 AutoRelease: true,
-                ActingTenantId: actingTenantId));
+                ActingTenantId: actingTenantId,
+                Purpose: null,
+                DrawAuthority: drawAuthority));
     }
 
     /// <summary>Claim-once hold ledger; counts creates so "nothing was held" is checkable.</summary>

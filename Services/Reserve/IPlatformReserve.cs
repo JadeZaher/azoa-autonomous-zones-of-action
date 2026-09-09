@@ -125,7 +125,9 @@ public enum ReserveDrawKind
 /// <summary>
 /// One partition draw. <c>OperationKey</c> is required and is the replay anchor: the
 /// ledger keeps a bounded window of recently applied keys so a retried draw cannot
-/// double-count a partition.
+/// double-count a partition. <c>Authority</c> is required and positional on purpose —
+/// a new draw seam cannot be written without stating on whose authority it draws
+/// (OI-20 / OI-21); see <see cref="ReserveDrawAuthority"/>.
 /// </summary>
 public sealed record ReserveDrawRequest(
     string ChainType,
@@ -133,7 +135,8 @@ public sealed record ReserveDrawRequest(
     string Partition,
     ReserveDrawKind Kind,
     BigInteger Amount,
-    string OperationKey);
+    string OperationKey,
+    ReserveDrawAuthority Authority);
 
 /// <summary>What a draw did, and the partition's counters afterwards.</summary>
 public sealed record ReserveDrawOutcome(

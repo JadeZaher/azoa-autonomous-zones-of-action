@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Globalization;
 using AZOA.WebAPI.Core;
@@ -386,7 +386,12 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
             callerUserId: subjectUserId,
             clientIdempotencyKey: IssuanceIdempotencyKey(intentKey),
             apiKeyId: OnRampSystemIdentity.SettlementAuthorityId.ToString(),
-            actingTenantId: null);
+            actingTenantId: null,
+            // The node's OWN on-ramp rail: the asset comes off the platform token
+            // definition and the partition off node configuration, so neither can be named
+            // by a caller. This is the POSITIVE operator signal the reserve now requires —
+            // the missing tenant above grants nothing on its own (OI-21).
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         if (allocation.IsError || allocation.Result is null)
         {

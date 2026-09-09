@@ -1,4 +1,10 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
+//
+// These drive issuance the way the node's OWN on-ramp rail does — no acting tenant, and
+// therefore an explicit ReserveDrawAuthority.NodeOperator. The reserve refuses a partition
+// draw that carries neither an operator signal nor a resolvable tenant (OI-21), so a test
+// that omitted the authority here would be testing a refusal, not the issuance mechanics.
+// The tenant-driven door is proved in AllocationReserveTenantScopeTests.
 
 using FluentAssertions;
 using Moq;
@@ -31,7 +37,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-1", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-1", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeFalse(result.Message);
         harness.Steps.Should().Equal("prepare", "draw", "broadcast");
@@ -46,7 +53,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-prep-fail", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-prep-fail", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         harness.Steps.Should().Equal("prepare");
@@ -67,7 +75,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-pending", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-pending", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         harness.Steps.Should().Equal("prepare");
@@ -94,7 +103,8 @@ public class IssueUnitsAllocationTests
 
         await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-ctx", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-ctx", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         captured.Should().NotBeNull();
         captured!.RecipientAddress.Should().Be(AllocationTestHarness.RecipientAddress);
@@ -126,7 +136,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(amount: "1000"),
-            harness.CallerUserId, "issue-draw", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-draw", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeFalse(result.Message);
         captured.Should().NotBeNull();
@@ -151,7 +162,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-oversub", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-oversub", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         harness.Steps.Should().Equal("prepare", "draw");
@@ -168,7 +180,8 @@ public class IssueUnitsAllocationTests
 
         await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-sender", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-sender", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         harness.BroadcastOp.Should().NotBeNull();
         harness.BroadcastOp!.OperationType.Should().Be("Transfer");
@@ -192,7 +205,8 @@ public class IssueUnitsAllocationTests
         await manager.AllocateAsync(
             harness.UserId,
             AllocationTestHarness.IssueUnitsRequest(purpose: "  milestone-2 contributor stake  "),
-            harness.CallerUserId, "issue-purpose", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-purpose", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         harness.BroadcastOp.Should().NotBeNull();
         harness.BroadcastOp!.Parameters.Should().ContainKey("Purpose");
@@ -210,7 +224,8 @@ public class IssueUnitsAllocationTests
         var result = await manager.AllocateAsync(
             harness.UserId,
             AllocationTestHarness.IssueUnitsRequest(purpose: new string('p', 257)),
-            harness.CallerUserId, "issue-long-purpose", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-long-purpose", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         harness.Steps.Should().BeEmpty();
@@ -231,7 +246,8 @@ public class IssueUnitsAllocationTests
         var result = await manager.AllocateAsync(
             harness.UserId,
             AllocationTestHarness.IssueUnitsRequest(assetId: assetId, partition: partition),
-            harness.CallerUserId, idempotencyKey, AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, idempotencyKey, AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         harness.Steps.Should().BeEmpty();
@@ -249,7 +265,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, clientIdempotencyKey: null, AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, clientIdempotencyKey: null, AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Idempotency-Key");
@@ -264,7 +281,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-no-reserve", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-no-reserve", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         harness.Steps.Should().BeEmpty();
@@ -283,10 +301,12 @@ public class IssueUnitsAllocationTests
 
         var first = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-once", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-once", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
         var second = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-once", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-once", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         first.IsError.Should().BeFalse(first.Message);
         second.IsError.Should().BeFalse(second.Message);
@@ -358,7 +378,8 @@ public class IssueUnitsAllocationTests
         request.PreviewOnly = true;
 
         var result = await manager.AllocateAsync(
-            harness.UserId, request, harness.CallerUserId, "quote-1", AllocationTestHarness.ApiKeyId);
+            harness.UserId, request, harness.CallerUserId, "quote-1", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeFalse(result.Message);
         result.Result!.GrossAmount.Should().Be("1000");
@@ -381,11 +402,13 @@ public class IssueUnitsAllocationTests
         var preview = AllocationTestHarness.IssueUnitsRequest();
         preview.PreviewOnly = true;
         await manager.AllocateAsync(
-            harness.UserId, preview, harness.CallerUserId, "quote-then-issue", AllocationTestHarness.ApiKeyId);
+            harness.UserId, preview, harness.CallerUserId, "quote-then-issue", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         var real = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "quote-then-issue", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "quote-then-issue", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         real.IsError.Should().BeFalse(real.Message);
         real.Result!.Replayed.Should().BeFalse();
@@ -404,7 +427,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, request, harness.CallerUserId, "issue-stale-terms",
-            AllocationTestHarness.ApiKeyId);
+            AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Re-quote");
@@ -492,7 +516,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-fee", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-fee", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeFalse(result.Message);
         result.Result!.NodeFeeAmount.Should().Be("10");
@@ -513,7 +538,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-leak", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-leak", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         ConsumerSafeErrors.LeaksRailDetail(result.Message).Should().BeFalse(
@@ -534,7 +560,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-oversub-safe", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-oversub-safe", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         ConsumerSafeErrors.LeaksRailDetail(result.Message).Should().BeFalse();
@@ -556,7 +583,8 @@ public class IssueUnitsAllocationTests
 
         var result = await manager.AllocateAsync(
             harness.UserId, AllocationTestHarness.IssueUnitsRequest(),
-            harness.CallerUserId, "issue-unconfirmed", AllocationTestHarness.ApiKeyId);
+            harness.CallerUserId, "issue-unconfirmed", AllocationTestHarness.ApiKeyId,
+            drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         result.IsError.Should().BeTrue();
         result.Code.Should().Be(ConsumerSafeErrorCodes.SettlementPending);

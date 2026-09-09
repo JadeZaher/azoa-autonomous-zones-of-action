@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 // W3.4 — the HOLD primitive: the window that makes "this is yours in N days" true, the
 // reserve-partition arithmetic behind it, and the controls that keep a graph from
 // routing around either.
@@ -553,13 +553,21 @@ public class PlatformHoldTests
             return harness;
         }
 
+        /// <summary>
+        /// Opens a hold on the node's OWN rail unless a test says otherwise: the harness
+        /// asset is untenanted by default, and the reserve refuses a draw on the node's own
+        /// unit that carries neither an operator signal nor a resolvable tenant (OI-21).
+        /// That refusal is proved on purpose in AllocationReserveTenantScopeTests and
+        /// PlatformReserveTests; these fixtures are about the hold lifecycle.
+        /// </summary>
         public Task<AZOAResult<HoldOutcome>> OpenAsync(
             string holdId,
             long amount,
             string assetId = AssetId,
             DateTimeOffset? releaseNotBefore = null,
             bool autoRelease = true,
-            Guid? actingTenantId = null) =>
+            Guid? actingTenantId = null,
+            ReserveDrawAuthority? drawAuthority = null) =>
             Holds.OpenAsync(new HoldOpenRequest(
                 new HoldReference(Chain, holdId),
                 assetId,
@@ -570,7 +578,10 @@ public class PlatformHoldTests
                 FunderUserId: Guid.Empty,
                 ReleaseNotBefore: releaseNotBefore,
                 AutoRelease: autoRelease,
-                ActingTenantId: actingTenantId));
+                ActingTenantId: actingTenantId,
+                Purpose: null,
+                DrawAuthority: drawAuthority
+                    ?? (actingTenantId is null ? ReserveDrawAuthority.NodeOperator : null)));
 
         public Task<AZOAResult<HoldOutcome>> ReleaseAsync(string holdId) =>
             Holds.ReleaseAsync(new HoldSettlementRequest(new HoldReference(Chain, holdId)));

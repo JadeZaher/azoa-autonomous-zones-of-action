@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Globalization;
 using System.Numerics;
@@ -731,11 +731,14 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             if (spend.IsError)
                 return RailRefusal<ExchangeCommitment>(spend.Message);
 
-            // Units coming back restore the partition's availability.
+            // Units coming back restore the partition's availability. Both the asset and the
+            // partition arrived off the caller's body, so the draw carries the caller's own
+            // tenant and PlatformReserveService refuses it if the asset is another tenant's
+            // (or this node's own unit) — OI-20's harm, reached through the exchange door.
             var returned = await _reserve.DrawAsync(
                 new ReserveDrawRequest(
                     chainType, projectAssetId, partition, ReserveDrawKind.Return,
-                    projectUnitAmount, ledgerKey),
+                    projectUnitAmount, ledgerKey, ReserveDrawAuthority.ForTenant(caller.ActingTenantId)),
                 ct);
             if (returned.IsError)
             {
@@ -779,10 +782,11 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         }
 
         // Straight delivery: the node-side oversubscription check, before any value moves.
+        // Same caller-named asset and partition as the Sell leg, so the same tenant authority.
         var issued = await _reserve.DrawAsync(
             new ReserveDrawRequest(
                 chainType, projectAssetId, partition, ReserveDrawKind.Issue,
-                projectUnitAmount, ledgerKey),
+                projectUnitAmount, ledgerKey, ReserveDrawAuthority.ForTenant(caller.ActingTenantId)),
             ct);
         if (issued.IsError)
         {
@@ -825,11 +829,15 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
                         ct);
                     break;
 
+                // Compensation carries the SAME authority the committing draw carried, never a
+                // settlement pass: a commitment only exists because that authority passed, so
+                // this can never be refused for scope, and no bypass is introduced.
                 case ExchangeCommitmentKind.PartitionIssue:
                     await _reserve.DrawAsync(
                         new ReserveDrawRequest(
                             chainType, projectAssetId, partition, ReserveDrawKind.Return,
-                            projectUnitAmount, ledgerKey + ":compensate"),
+                            projectUnitAmount, ledgerKey + ":compensate",
+                            ReserveDrawAuthority.ForTenant(caller.ActingTenantId)),
                         ct);
                     break;
 
@@ -837,7 +845,8 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
                     await _reserve.DrawAsync(
                         new ReserveDrawRequest(
                             chainType, projectAssetId, partition, ReserveDrawKind.Issue,
-                            projectUnitAmount, ledgerKey + ":compensate"),
+                            projectUnitAmount, ledgerKey + ":compensate",
+                            ReserveDrawAuthority.ForTenant(caller.ActingTenantId)),
                         ct);
                     break;
             }

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 // W5.1 — every collaborator the exchange takes, pre-set to the happy path, plus faithful
 // in-memory stores so the "moved exactly once" and "nothing stranded" assertions are real
 // rather than mock-scripted.
@@ -55,11 +55,17 @@ internal sealed class ExchangeTestHarness
     /// <summary>Every reserve draw the exchange asked for, in order, as (kind, amount, key).</summary>
     public List<(ReserveDrawKind Kind, BigInteger Amount, string OperationKey)> Draws { get; } = new();
 
+    /// <summary>Every reserve draw in full, so a test can read the authority the seam stated (OI-20).</summary>
+    public List<ReserveDrawRequest> DrawRequests { get; } = new();
+
     /// <summary>Every treasury movement the exchange asked for, in order.</summary>
     public List<(ProjectTreasuryMovementKind Kind, BigInteger Amount, string OperationKey)> Movements { get; } = new();
 
     /// <summary>Every hold the exchange opened or refunded, in order, as (verb, holdId).</summary>
     public List<(string Verb, string HoldId)> HoldCalls { get; } = new();
+
+    /// <summary>Every hold-open in full, so a test can read the acting tenant the seam handed on (OI-21).</summary>
+    public List<HoldOpenRequest> HoldOpens { get; } = new();
 
     public ExchangeTestHarness()
     {
@@ -92,6 +98,7 @@ internal sealed class ExchangeTestHarness
             .ReturnsAsync((ReserveDrawRequest request, CancellationToken _) =>
             {
                 Draws.Add((request.Kind, request.Amount, request.OperationKey));
+                DrawRequests.Add(request);
                 return AZOAResult<ReserveDrawOutcome>.Success(new ReserveDrawOutcome(
                     request.AssetId, request.Partition, request.Kind, request.Amount,
                     ReservePartitionCounters.Declaring(new BigInteger(1_000_000)), 1, Replayed: false));
@@ -121,6 +128,7 @@ internal sealed class ExchangeTestHarness
             .ReturnsAsync((HoldOpenRequest request, CancellationToken _) =>
             {
                 HoldCalls.Add(("open", request.Reference.NormalizedHoldId));
+                HoldOpens.Add(request);
                 return AZOAResult<HoldOutcome>.Success(new HoldOutcome(
                     HoldRow(request), NextHold: null, TransactionId: null, Replayed: false));
             });
@@ -209,6 +217,7 @@ internal sealed class ExchangeTestHarness
             .ReturnsAsync((ReserveDrawRequest request, CancellationToken _) =>
             {
                 Draws.Add((request.Kind, request.Amount, request.OperationKey));
+                DrawRequests.Add(request);
                 return AZOAResult<ReserveDrawOutcome>.Failure(
                     $"Partition '{request.Partition}' would be oversubscribed: {request.Amount} base "
                     + "units requested, 0 available (declared 10, issued 10, held 0, returned 0).");

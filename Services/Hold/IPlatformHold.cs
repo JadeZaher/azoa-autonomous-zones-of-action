@@ -1,8 +1,10 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Numerics;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+
+using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Services.Hold;
 
@@ -191,7 +193,19 @@ public sealed record HoldOpenRequest(
     DateTimeOffset? ReleaseNotBefore = null,
     bool AutoRelease = true,
     Guid? ActingTenantId = null,
-    string? Purpose = null);
+    string? Purpose = null,
+    ReserveDrawAuthority? DrawAuthority = null)
+{
+    /// <summary>
+    /// On whose authority the reserve partition behind this hold is drawn. Defaults to the
+    /// acting tenant, so a seam that says nothing gets the NARROW answer: the node's own
+    /// unit stays out of reach, and a caller with no resolvable tenant — the shape a
+    /// user-driven quest run arrives in — is refused outright (OI-21). Only a node-internal
+    /// rail may pass <see cref="ReserveDrawAuthority.NodeOperator"/>.
+    /// </summary>
+    internal ReserveDrawAuthority ResolvedDrawAuthority =>
+        DrawAuthority ?? ReserveDrawAuthority.ForTenant(ActingTenantId);
+}
 
 /// <summary>A release or a refund of one existing hold.</summary>
 public sealed record HoldSettlementRequest(

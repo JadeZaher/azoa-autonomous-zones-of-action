@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -75,5 +75,6 @@ public interface IAllocationManager
         Guid callerUserId,
         string? clientIdempotencyKey,
         string apiKeyId,
-        Guid? actingTenantId = null);
+        Guid? actingTenantId = null,
+        AZOA.WebAPI.Services.Reserve.ReserveDrawAuthority? drawAuthority = null);
 }

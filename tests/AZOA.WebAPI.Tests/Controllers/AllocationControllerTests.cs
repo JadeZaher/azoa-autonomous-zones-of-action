@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Security.Claims;
 using AZOA.WebAPI.Controllers;
@@ -10,6 +10,8 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
+
+using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Tests.Controllers;
 
@@ -35,7 +37,8 @@ public sealed class AllocationControllerTests
             It.IsAny<Guid>(),
             It.IsAny<string?>(),
             It.IsAny<string>(),
-            It.IsAny<Guid?>()), Times.Never);
+            It.IsAny<Guid?>(),
+            It.IsAny<ReserveDrawAuthority?>()), Times.Never);
     }
 
     [Fact]
@@ -51,9 +54,10 @@ public sealed class AllocationControllerTests
                 It.IsAny<Guid>(),
                 It.IsAny<string?>(),
                 It.IsAny<string>(),
-                It.IsAny<Guid?>()))
-            .Callback<Guid, AllocationRequest, Guid, string?, string, Guid?>(
-                (_, _, caller, _, _, _) => capturedCaller = caller)
+                It.IsAny<Guid?>(),
+                It.IsAny<ReserveDrawAuthority?>()))
+            .Callback<Guid, AllocationRequest, Guid, string?, string, Guid?, ReserveDrawAuthority?>(
+                (_, _, caller, _, _, _, _) => capturedCaller = caller)
             .ReturnsAsync(AZOAResult<AllocationResult>.Success(new AllocationResult()));
         var controller = CreateController(
             manager.Object,

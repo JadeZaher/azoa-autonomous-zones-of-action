@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Numerics;
 using AZOA.WebAPI.Core;
@@ -500,7 +500,10 @@ public sealed class OffRampService : IOffRamp
         var draw = await _reserve.DrawAsync(
             new ReserveDrawRequest(
                 row.ChainType, row.AssetId, _options.ReservePartition,
-                ReserveDrawKind.Return, quantity, key),
+                ReserveDrawKind.Return, quantity, key,
+                // The node's own off-ramp rail: neither the asset (a node-written payout row)
+                // nor the partition (node configuration) can be named by a caller.
+                ReserveDrawAuthority.NodeOperator),
             ct);
 
         if (draw.IsError)
@@ -966,7 +969,8 @@ public sealed class OffRampService : IOffRamp
         var draw = await _reserve.DrawAsync(
             new ReserveDrawRequest(
                 row.ChainType, row.AssetId, _options.ReservePartition,
-                ReserveDrawKind.Issue, quantity, key),
+                ReserveDrawKind.Issue, quantity, key,
+                ReserveDrawAuthority.NodeOperator),
             ct);
 
         if (draw.IsError)

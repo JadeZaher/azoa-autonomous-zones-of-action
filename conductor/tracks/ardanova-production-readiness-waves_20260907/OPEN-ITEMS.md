@@ -55,8 +55,21 @@ account has to act.
   of `GetProjectFieldNotesAsync`, and the same guard on the five sibling sub-resource GETs
   (**OI-16**).
 
-- [ ] **OI-20** `CRITICAL` `azoa` — **The allocation seam draws a named reserve partition with
-  no tenant-ownership guard.** *Where:* `Managers/AllocationManager.cs:636` —
+- [x] **OI-20** `CRITICAL` `azoa` — **The allocation seam draws a named reserve partition with
+  no tenant-ownership guard.** *Closed 2026-09-08 (L0 remediation).* The first pass asked the
+  question at two of the SEVEN doors and left the EXCHANGE door open — `ReserveExchangeManager`
+  lifts `ProjectAssetId` and `ReservePartition` straight off the request body and hands both to
+  `DrawAsync`. Fixed by moving the question to the one place a partition counter MOVES:
+  `Services/Reserve/PlatformReserveService.cs:371` asks `ReservePartitionScope.Refuse` on the
+  row it has already read, and `ReserveDrawRequest` now carries a REQUIRED positional
+  `ReserveDrawAuthority` (`Services/Reserve/IPlatformReserve.cs:132-139`), so a new draw seam
+  cannot compile without saying on whose authority it draws. All seven seams state one:
+  `AllocationManager.cs:130,676`, `ReserveExchangeManager.cs:741,789,840,849`,
+  `PlatformHoldService.cs:199,324,494`, `OffRampService.cs:506,973`,
+  `ReversalCompensationService.cs:490`. Proofs: `PlatformReserveTests` "Draw authority" (8
+  cases) and `ExchangeDrawAuthorityTests`.
+
+  *Original finding:* *Where:* `Managers/AllocationManager.cs:636` —
   `_reserve.DrawAsync(new ReserveDrawRequest(chain, assetId, partition, …))` where BOTH
   `assetId` and `partition` come straight off the client body. The identical hold seam DOES
   guard it (`Services/Hold/PlatformHoldService.cs:125` → `GuardTenantScope`, :712-725). The
@@ -65,8 +78,24 @@ account has to act.
   budget out of the shared reserve. *Unblocks with:* call `GuardTenantScope` (or the same
   predicate) from `AllocationManager` before the draw.
 
-- [ ] **OI-21** `CRITICAL` `azoa` — **`GuardTenantScope` fails OPEN on the platform unit
-  itself.** *Where:* `Services/Hold/PlatformHoldService.cs:717-718` — `if (owner ==
+- [x] **OI-21** `CRITICAL` `azoa` — **`GuardTenantScope` fails OPEN on the platform unit
+  itself.** *Closed 2026-09-08 (L0 remediation).* The first pass implemented "anyone whose
+  acting tenant is absent", which is the same hole one step over: a user-driven quest run
+  reaches the hold seam with `ActingTenantId = null` (`ActionNodeStepHandler.cs:212`,
+  `ActionManager.cs:834,956` → `HoldNodeHandler.cs:100`) carrying an author-supplied asset id and
+  partition name. The predicate now needs a POSITIVE operator signal
+  (`ReserveDrawAuthority.NodeOperator`, `Services/Reserve/ReserveDrawAuthority.cs:50`) and
+  refuses a caller with no resolvable tenant under EVERY policy
+  (`ReserveDrawAuthority.cs:173-179`). Who else may draw the node's own unit is now an operator
+  setting — `Reserve:PlatformUnitDrawPolicy`, defaulting to `OperatorOnly`
+  (`PlatformReserveService.cs:67`, `appsettings.json:243-245`). The one production rail that
+  legitimately draws with no tenant says so explicitly: `OnRampSettlementHandler.cs:388-394`.
+  `HoldOpenRequest.DrawAuthority` and `IAllocationManager.AllocateAsync`'s `drawAuthority` both
+  DEFAULT to the acting tenant, so a seam that says nothing gets the narrow answer. Proofs:
+  `AllocationReserveTenantScopeTests` (both seams, both directions) and `OnRampSagaTests`
+  "The_issuance_asks_the_reserve_on_the_operators_authority_and_not_on_a_missing_tenant".
+
+  *Original finding:* *Where:* `Services/Hold/PlatformHoldService.cs:717-718` — `if (owner ==
   Guid.Empty) return null;`. ARDA is minted with `actingTenantId: null`
   (`Services/Reserve/PlatformTokenGenesis.cs:206-212`), so its ledger row has no tenant and
   every tenant holding `transfer:sign` may draw every declared partition of the node's own
@@ -138,8 +167,10 @@ account has to act.
   "where is my money". *Unblocks with:* **OI-24**'s tenant-scoped balance route; until then,
   render a plain "Not available yet" and keep the diagnostic server-side.
 
-- [ ] **OI-52** `HIGH` `ardanova` — **The project ledger gates NAMES on membership, never
-  DATA.** *Where:* `ArdaNova.Application/Services/Implementations/ProjectLedgerService.cs:209`
+- [x] **OI-52** `HIGH` `ardanova` — **The project ledger gates NAMES on membership, never
+  DATA.** *Closed in L0.3; the sibling leak it left open is **OI-92**.*
+
+  *Original finding:* *Where:* `ArdaNova.Application/Services/Implementations/ProjectLedgerService.cs:209`
   uses `IsProjectMemberAsync` solely to set `mayShowNames`; no entry is withheld.
   `ProjectLedgerController.cs:63` requires only an actor assertion. So any signed-in stranger
   receives every settled sponsorship amount and its USD reference, the units each sponsor
@@ -719,6 +750,61 @@ or the word "token" where "funds"/"stake"/"units" would do is a **defect**.
   need updating, not relaxing: `GovernanceServiceTests` (no electorate mock → Forbidden),
   `ProjectMemberValueBoundaryTests` (voting-power update is now 400, not 501), and
   `AllocationControllerTests` (an API-key allocation with no consent grant now fails).
+
+
+---
+
+## G2. Found during the L0 remediation review (2026-09-08)
+
+- [x] **OI-92** `HIGH` `ardanova` — **OI-52's harm survived one route over, unauthenticated.**
+  *Where:* `ProjectTokensController.GetAllocations` (`{configId}/allocations`) and
+  `GetAllocationsByPbi` (`allocations/by-pbi/{pbiId}`) carried NO `[Authorize]` and no membership
+  check — the class declares only `[ApiController]`/`[Route]` — and returned `TokenAllocationDto`
+  with `RecipientUserId`, `TokenAmount`, `EquityPercentage`, `DistributionTxHash` and
+  `DistributedAt` for every allocation on a project. So L0.3 stopped a signed-in non-member
+  reading per-worker award sizes at `/money` while an ANONYMOUS caller read the same facts, plus
+  raw internal user ids and a settlement reference, here. *Closed 2026-09-08:* both routes now
+  carry `[Authorize(Policy = ActorAssertion)]` and branch the PAYLOAD on `IsProjectMemberAsync`
+  — the `GetInvestors` precedent in the same file — answering a non-member with
+  `ProjectAllocationSummaryDto` (count, total units, total equity, distributed count) and
+  nobody's identity. The client discriminates the two shapes (`tokenAllocationViewSchema`,
+  `equity-tab.tsx` `AllocationSummary`). Proof: `ProjectAllocationDisclosureTests`.
+
+- [x] **OI-93** `HIGH` `ardanova` — **The money page told sponsors a funded project had raised
+  nothing.** *Where:* `projectMoneyViewSchema` omitted `summary`, `entriesVisible` and
+  `entriesHiddenNote`, so `z.object` stripped all three off a correct server response
+  (`ProjectLedgerService.cs:254-264` builds them). `money-tab.tsx` then saw
+  `entries.length === 0` and rendered "NOTHING HAS MOVED YET" on a sponsored project, while
+  printing the names note in the same view — two statements contradicting each other on the one
+  screen a sponsor is asked to act on. *Closed 2026-09-08:* the contract moved to
+  `ardanova-client/src/lib/contracts/project-money-contract.ts` (so it is testable at all) and
+  carries all three fields; the tab renders a `SupportSummary` card and, for a non-member, an
+  `EntriesWithheld` state that says the movements are private rather than absent. Proof:
+  `project-money-contract.test.ts` — including a case that REFUSES a response with no summary
+  rather than defaulting one.
+
+- [x] **OI-94** `MEDIUM` `ardanova` — **The credential proof was gated at one screen of two, and
+  had no producer at all.** *Where:* `credential-card.tsx` gated on
+  `isIndependentlyVerifiable === true` while `app/credentials/[id]/page.tsx:83-95` still built
+  its report from identifier PRESENCE, so a row carrying a Simulated-fabricated `assetId` read
+  "Verification pending" on the card and "Verified" on the detail page — the card's own
+  doc-comment promising they could not drift was false as written. And the flag had ZERO
+  producers: three repo-wide hits, all inside the card. *Closed 2026-09-08:* the gate moved INTO
+  the shared translator (`credential-proof.ts` `wasIndependentlyIssued`), which now refuses every
+  proof reading and every quotable reference unless the flag is `=== true`, so a third screen
+  cannot drift either. The producer is the issuance reference, never `AssetId`:
+  `MembershipCredentialDto.IsIndependentlyVerifiable` maps from `mintTxHash`
+  (`MappingProfile.cs:431-433`), a column written in exactly one place whose only production
+  caller is `CredentialUtilityService.IssueThroughNodeAsync:367`. Proofs:
+  `CredentialIssuancePathMappingTests` and `credential-proof.test.ts`
+  "refuses every proof reading for a credential the node did not issue".
+
+- [ ] **OI-95** `LOW` `ardanova` — **Four sibling reads on `ProjectTokensController` remain
+  unauthenticated.** *Where:* `config/{id}`, `config/by-project/{projectId}`,
+  `{configId}/supply`, `{configId}/gate`. Unlike the allocation routes these carry only
+  project-level facts — supply, funding goal, gate state — which a public sponsorship page
+  legitimately shows, so they were left open DELIBERATELY rather than by omission. Recorded so
+  the decision is visible: if the project page ever stops being public, these four move with it.
 
 ---
 

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Globalization;
 using System.Numerics;
@@ -91,6 +91,12 @@ public sealed class HoldNodeHandler : IActionNodeHandler
             // tenant-consent-delegation AC4: forward the run's acting tenant so the
             // partition's tenant scope is checked against the tenant that actually drove
             // the run, and so the custody seam's live consent gate fires on the release.
+            //
+            // OI-21: NO DrawAuthority is passed on purpose. A user-driven run reaches both
+            // dispatch seams with ActingTenantId = null, and the reserve refuses a draw
+            // with no resolvable tenant outright — cfg.AssetId and cfg.ReservePartition are
+            // author-supplied, so the alternative is an action author naming the node's own
+            // unit and a declared partition of it.
             ActingTenantId: context.ActingTenantId,
             Purpose: cfg.Purpose);
 

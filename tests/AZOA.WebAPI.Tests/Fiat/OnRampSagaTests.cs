@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 // W4.2 -- the fiat on-ramp saga: a cleared card payment becomes units, at a price this node
 // registered beforehand, with a lot row that records which units that money bought.
 //
@@ -246,6 +246,22 @@ public class OnRampSagaTests
 
         harness.CapturedIdempotencyKey
             .Should().Be(OnRampSettlementHandler.IssuanceIdempotencyKey(IntentId.ToString("N")));
+    }
+
+    [Fact]
+    public async Task The_issuance_asks_the_reserve_on_the_operators_authority_and_not_on_a_missing_tenant()
+    {
+        // OI-21. This rail draws the node's OWN unit with no acting tenant. The reserve no
+        // longer reads that absence as the operator, so the rail has to SAY so: without the
+        // positive signal the draw is refused, and with it no user-driven run can borrow the
+        // same privilege by simply having no tenant either.
+        var harness = new Harness();
+
+        await harness.ApplyAsync();
+
+        harness.CapturedDrawAuthority.Should().NotBeNull();
+        harness.CapturedDrawAuthority!.IsNodeOperator.Should().BeTrue();
+        harness.CapturedDrawAuthority.ActingTenantId.Should().BeNull();
     }
 
     // ── The recipient is the intent's, never the webhook's ──
@@ -843,6 +859,9 @@ public class OnRampSagaTests
 
         public string? CapturedIdempotencyKey { get; private set; }
 
+        /// <summary>On whose authority the rail asked the reserve to be drawn (OI-21).</summary>
+        public ReserveDrawAuthority? CapturedDrawAuthority { get; private set; }
+
         public IReadOnlyCollection<OnRampLot> Lots => Ledger.Rows;
 
         public Task<FiatEventOutcome> ApplyAsync() => BuildHandler().ApplyAsync(BuildContext());
@@ -897,11 +916,15 @@ public class OnRampSagaTests
             allocations
                 .Setup(a => a.AllocateAsync(
                     It.IsAny<Guid>(), It.IsAny<AllocationRequest>(), It.IsAny<Guid>(),
-                    It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<Guid?>()))
-                .Returns((Guid _, AllocationRequest request, Guid _, string? key, string _, Guid? _) =>
+                    It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<Guid?>(),
+                    It.IsAny<ReserveDrawAuthority?>()))
+                .Returns((
+                    Guid _, AllocationRequest request, Guid _, string? key, string _, Guid? _,
+                    ReserveDrawAuthority? authority) =>
                 {
                     CapturedRequest = request;
                     CapturedIdempotencyKey = key;
+                    CapturedDrawAuthority = authority;
 
                     if (AllocationFailure is { } failure)
                         return Task.FromResult(failure);

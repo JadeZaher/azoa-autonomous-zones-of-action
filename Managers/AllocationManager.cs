@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Numerics;
 using AZOA.WebAPI.Core;
@@ -14,10 +14,9 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Governance;
-// ReservePartitionScope: the one who-may-draw-this-partition predicate, shared with the
-// hold seam so the two draw paths cannot drift. It lives beside PlatformHoldService only
-// because Services/Reserve/ was outside that change's file boundary.
 using AZOA.WebAPI.Services.Hold;
+// ReserveDrawAuthority / ReservePartitionScope: the one who-may-draw-this-partition
+// predicate, enforced inside PlatformReserveService.DrawAsync so every draw seam asks it.
 using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Managers;
@@ -52,6 +51,7 @@ public sealed class AllocationManager : IAllocationManager
     private readonly INodeFeeSettlementManager? _feeSettlement;
     private readonly INodeTreasuryManager? _treasury;
     private readonly IBlockchainProviderFactory? _providers;
+    private readonly ReserveOptions _reserveOptions;
     private readonly ILogger<AllocationManager>? _logger;
 
     /// <param name="reserve">
@@ -82,6 +82,7 @@ public sealed class AllocationManager : IAllocationManager
         INodeFeeSettlementManager? feeSettlement = null,
         INodeTreasuryManager? treasury = null,
         IBlockchainProviderFactory? providers = null,
+        ReserveOptions? reserveOptions = null,
         ILogger<AllocationManager>? logger = null)
     {
         _valueAccess = valueAccess ?? throw new ArgumentNullException(nameof(valueAccess));
@@ -99,6 +100,11 @@ public sealed class AllocationManager : IAllocationManager
         _feeSettlement = feeSettlement;
         _treasury = treasury;
         _providers = providers;
+        // The operator's platform-unit draw policy. The AUTHORITATIVE check runs at the
+        // counter (PlatformReserveService.DrawAsync); this pre-check exists only so a
+        // refusal precedes the recipient preparation it would otherwise pay for, and it
+        // asks the very same predicate with the very same options.
+        _reserveOptions = reserveOptions ?? new ReserveOptions();
         _logger = logger;
     }
 
@@ -109,12 +115,19 @@ public sealed class AllocationManager : IAllocationManager
         Guid callerUserId,
         string? clientIdempotencyKey,
         string apiKeyId,
-        Guid? actingTenantId = null)
+        Guid? actingTenantId = null,
+        ReserveDrawAuthority? drawAuthority = null)
     {
         if (request is null)
             return AZOAResult<AllocationResult>.Failure("Allocation request is required.");
         if (string.IsNullOrWhiteSpace(request.ChainType))
             return AZOAResult<AllocationResult>.Failure("ChainType is required.");
+
+        // On whose authority a reserve partition may be drawn. It DEFAULTS to the acting
+        // tenant, so a caller that says nothing gets the narrow answer and a caller with no
+        // resolvable tenant is refused at the counter (OI-21). Only a node-internal rail —
+        // OnRampSettlementHandler — passes NodeOperator, and it does so positively.
+        var authority = drawAuthority ?? ReserveDrawAuthority.ForTenant(actingTenantId);
         if (!Guid.TryParse(apiKeyId, out var callerApiKeyId) || callerApiKeyId == Guid.Empty)
             return AZOAResult<AllocationResult>.Failure("Caller API key context is invalid.");
         if (actingTenantId is { } tenantId)
@@ -233,7 +246,8 @@ public sealed class AllocationManager : IAllocationManager
                     ledgerKey, allocationIdempotency.Correlation, callerUserId, callerApiKeyId, actingTenantId),
                 AllocationKind.IssueUnits => await IssueUnitsAsync(
                     userId, wallet, provisioned, request, feeQuote, ledgerKey,
-                    allocationIdempotency.Correlation, callerUserId, callerApiKeyId, actingTenantId),
+                    allocationIdempotency.Correlation, callerUserId, callerApiKeyId, actingTenantId,
+                    authority),
                 _ => Operation.Invalid($"Unsupported allocation kind: {request.Kind}.")
             };
 
@@ -585,7 +599,8 @@ public sealed class AllocationManager : IAllocationManager
         string correlation,
         Guid callerUserId,
         Guid callerApiKeyId,
-        Guid? actingTenantId)
+        Guid? actingTenantId,
+        ReserveDrawAuthority authority)
     {
         // ValidateKind has already refused when either is absent; these are the
         // compiler's proof, not a second policy.
@@ -600,7 +615,7 @@ public sealed class AllocationManager : IAllocationManager
         // another tenant's asset — or the node's own unit — and draw down a budget it never
         // declared. It runs FIRST: a refusal must not cost the recipient's account the
         // minimum that preparation advances.
-        var tenantRefusal = await RefuseOutOfScopeDrawAsync(request.ChainType, assetId, actingTenantId);
+        var tenantRefusal = await RefuseOutOfScopeDrawAsync(request.ChainType, assetId, authority);
         if (tenantRefusal is not null)
         {
             _logger?.LogWarning(
@@ -657,7 +672,8 @@ public sealed class AllocationManager : IAllocationManager
             partition,
             ReserveDrawKind.Issue,
             new BigInteger(feeQuote.NetAmount),
-            ledgerKey));
+            ledgerKey,
+            authority));
         if (draw.IsError || draw.Result is null)
         {
             _logger?.LogWarning(
@@ -701,10 +717,10 @@ public sealed class AllocationManager : IAllocationManager
     /// the ledger rather than trusted off the request.
     /// </summary>
     private async Task<string?> RefuseOutOfScopeDrawAsync(
-        string chainType, string assetId, Guid? actingTenantId)
+        string chainType, string assetId, ReserveDrawAuthority authority)
     {
         var reserveLedger = await _reserve!.GetLedgerAsync(chainType, assetId);
-        return ReservePartitionScope.Refuse(reserveLedger?.Result, actingTenantId, assetId);
+        return ReservePartitionScope.Refuse(reserveLedger?.Result, authority, assetId, _reserveOptions);
     }
 
     /// <summary>
