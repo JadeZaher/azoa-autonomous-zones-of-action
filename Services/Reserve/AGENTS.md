@@ -25,11 +25,15 @@ per-request (`MaxUnitsPerRequest`) and proportional (`MaxRequestShareOfTreasuryP
 `TreasuryFloorBaseUnits` the treasury may not be drained below — so one large seller cannot empty
 the pot ahead of everyone who comes after.
 
-**The backstop is a declared partition, not a movement.** When the treasury is short, the platform
-reserve backs the difference by DECLARING a partition against itself, never by transferring into
-the project. A transfer would silently recapitalise the project and make the platform the
-counterparty of record for a promise it never made. A declaration keeps the exposure visible,
-bounded (`MaxBackstopUnitsPerRequest`), and reversible.
+**The backstop is a declaration first, and a movement only on settlement.** When the treasury is
+short, the promise made to a queued seller is a HOLD on the platform reserve's declared partition
+(`ReserveToTreasuryBuyBackBackstop.ReserveAsync`) — visible, bounded by
+`MaxBackstopUnitsPerRequest`, and reversible. Declaring rather than transferring is what stops the
+platform becoming the counterparty of record for a promise it never made.
+
+Only a sell that actually SETTLES converts that hold into a real reserve->treasury transfer
+(`TopUpAsync`). A project that has already handed a seller their units has been recapitalised in
+fact, and a partition that says otherwise is a number nobody stands behind.
 
 **Head-of-line FIFO.** When even the backstop cannot fill a sell, the seller takes a PLACE rather
 than a refusal, and is told the place. The queue is strictly first-come: a later-but-larger seller
