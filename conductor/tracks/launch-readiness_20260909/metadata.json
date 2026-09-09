@@ -57,6 +57,10 @@
     {
       "date": "2026-09-09",
       "what": "Track created. Spec + wave design by the orchestrator; itemization delegated to a planner over OPEN-ITEMS.md. M2 corrected mid-planning from 'merge financial branch' to 'cherry-pick two implementation commits + regenerate from DBML' after reading the financial worktree's PASSOFF.md."
+    },
+    {
+      "date": "2026-09-09",
+      "what": "L0 executed and closed; program stopped after L0 for a machine-lag handoff; RUNBOOK ▶ RESUME carries the packet. First launch blocked by the classifier (push + blanket kill); relaunched with a NETWORK OVERRIDE."
     }
   ],
   "items_per_wave": {
@@ -68,5 +72,46 @@
     "L5": 6,
     "L6": 3,
     "L7": 4
-  }
+  },
+  "progress": "L0 closed 2026-09-09 (PASS-WITH-DEBT after 1 remediation cycle); L1–L7 not started",
+  "run": {
+    "workflow": "wf_22a2ed71-c10",
+    "task": "w5x5tnqbn",
+    "stopped": "2026-09-09 by owner (machine lag) after L0 remediation #1 + re-review; remediation #2 in flight, gated solo",
+    "resume_guidance": "fresh run over L1–L7 (copy script, WAVES=L1..L7); do NOT resume with an edited script (prefix cache)"
+  },
+  "wave_commits": {
+    "L0": "b5e21fc, 471a955, be055d2 (azoa); 4eb8f1e, 41edf9e (ardanova); + solo gate commit for remediation #2 (see RUNBOOK)"
+  },
+  "review_verdicts": {
+    "L0": {
+      "original": "PASS-WITH-DEBT (10 findings, 0 crit, 5 claim-not-control)",
+      "after_remediation_1": "PASS-WITH-DEBT (10, 0, 4; all 6 actionable FIXED)",
+      "remediation_cycles": "1 complete, 1 interrupted"
+    }
+  },
+  "gates_at_L0_close": {
+    "azoa": "build 0 err / 22 warn; 3321 unit tests; SDK tsc 0 + 205; frontend 78 + build",
+    "ardanova": "build 0 err / 61 warn; 1170 tests; client build"
+  },
+  "oi_closed_L0": [
+    "OI-02",
+    "OI-03",
+    "OI-13",
+    "OI-14",
+    "OI-16",
+    "OI-20",
+    "OI-21",
+    "OI-36",
+    "OI-37",
+    "OI-40",
+    "OI-43",
+    "OI-52",
+    "OI-57",
+    "OI-78",
+    "OI-80",
+    "OI-92 (new)",
+    "OI-93 (new)",
+    "OI-94 (new)"
+  ]
 }

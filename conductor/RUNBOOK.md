@@ -1354,7 +1354,108 @@ the lucide-react `<Star>` icon is an unrelated third-party symbol. Both intact.
 
 ---
 
-### ▶ RESUME HERE (state as of 2026-09-09 — launch-readiness program)
+### ▶ RESUME HERE (state as of 2026-09-09, end of session — L0 closed, L1–L7 pending)
+
+**Goal.** Make the product QA-ready and land it on `main` in both repos — the launch-readiness
+program ([`tracks/launch-readiness_20260909/`](tracks/launch-readiness_20260909/spec.md): 8 waves
+L0–L7, 62 items, D52–D55). Constraints that stand: a non-crypto sponsor never meets the chain; ARDA is
+backing-derived, 1 ARDA = $0.01 at genesis, amounts shown in dollars (D52); **no `git push` from a
+workflow** (classifier) — L7 records `READY TO PUSH`, the push is an explicit operator step; the
+financial-domain worktree lands by **cherry-pick, never merge** (D53).
+
+**State.** Program launched as `wf_22a2ed71-c10` and **stopped by the owner after L0** (machine
+lag; ~3.3 GB of orphaned MSBuild/Roslyn/tsserver processes were the cause and were cleared).
+- **L0 CLOSED — PASS-WITH-DEBT after one remediation cycle.** AZOA `b5e21fc` (wave) + `471a955`
+  (remediation #1) + `be055d2` (ledger docs); ArdaNova `4eb8f1e` + `41edf9e`. Gate at close: AZOA
+  build 0 err / **22 warnings** · **3321 unit tests** · SDK tsc 0 + 205 · frontend 78 + build; ArdaNova
+  build 0 err / 61 warnings · **1170 tests** · client build. Review 10 findings / 0 critical / 5
+  claim-not-control → remediation fixed all six actionable → re-review 10 / 0 / 4 (all six FIXED at
+  real enforcement points; residue is MEDIUM debt). Closed with citations: OI-02 03 13 14 16 20 21
+  36 37 40 43 52 57 78 80, plus three NEW rows the review opened and remediation closed in the same
+  cycle (OI-92 `/allocations` unauthenticated; OI-93 money-tab false statement; OI-94 credential
+  proof gated on one screen of two). Still blocked: **OI-01/OI-04** (registry returns 404 for
+  `azoa-sdk@0.4.0`; needs the owner's npm 2FA code).
+- **Remediation #2 was in flight at the stop** (working the re-review's one new MEDIUM: the
+  `isIndependentlyVerifiable` producer reads a column a removed path also wrote). Its dirty files
+  (AZOA 4: `PlatformReserveService.cs`, `ReserveDrawAuthority.cs`, `PlatformReserveTests.cs`,
+  `OPEN-ITEMS.md`; ArdaNova 18: a `MembershipCredential` issuance-path column + migration
+  `20260909002000_credential_issuance_path_column`, `money-figures.ts`, `money-tab.tsx`, tests)
+  were handed to a **solo gate agent** to complete-or-revert, build, test and commit — **its SHA is
+  recorded below this line when it lands; if there is no such line, run `git status` in both repos
+  first and gate any dirty files solo before anything else.**
+- **L1–L7: not started.** Nothing from them is on disk.
+- Review ledger: L0 reviewed (verdict above). Everything else in this track is unreviewed.
+
+**Key context — what a fresh read would not surface.**
+- **Enforce where the counter moves, not at the doors.** L0's OI-20/21 were first "closed" by
+  guarding 2 of 7 reserve-draw call sites; the reviewer found the third door in
+  `ReserveExchangeManager`. Remediation moved the ownership predicate INTO
+  `PlatformReserveService.DrawAsync:371` behind a compiler-required `ReserveDrawAuthority`
+  (`Services/Reserve/ReserveDrawAuthority.cs`) — a null tenant on the platform unit is now
+  **operator-only by positive signal**, and every door inherits it. Two L0 tests that asserted the
+  old fail-open rule were rewritten, not relaxed. This is the pattern for every remaining gate.
+- **Workflow resume caches the longest unchanged PREFIX** (memory `workflow-resume-prefix-cache`).
+  Do not resume `wf_22a2ed71-c10` with an edited script. Preferred: a **fresh run over L1–L7** —
+  copy `launch-readiness-wf_22a2ed71-c10.js`, set `WAVES` to L1…L7, launch as a new workflow.
+  Acceptable: resume UNEDITED (L0 replays from cache; remediation #2 re-runs live and will mostly
+  refute already-landed fixes — ~1 wasted agent).
+- The first launch was **blocked by the auto-mode classifier** for `git push origin main` +
+  blanket `taskkill`. The script now carries a NETWORK OVERRIDE (no remote writes) and uses
+  `dotnet build-server shutdown` for lock cleanup. Keep both or it will be blocked again.
+- ArdaNova's solution is `ardanova-backend-api-mcp/ardanova.sln` (not `api-server/ArdaNova.sln`).
+  L0.7 populated `ardanova-client/.env` with generated secrets; the client build should now pass
+  **without** `SKIP_ENV_VALIDATION` — L5.5 proves it; do not re-add the flag.
+- L0.1 found `OPEN-ITEMS.md` stale in four places at HEAD (OI-57 already done; OI-58's targets
+  renamed; OI-40's guard lives in DI; no `AzoaErrorCodes.cs`). Re-grep every cited line before
+  acting on a row; the plan items already say which are stale.
+
+**Decisions (this session).** D52 dollars primary / ARDA caption · D53 financial branch by
+cherry-pick of `0bb1ec3` `a6c3ecc` + DBML regeneration, no financial migration · D54 governance
+node types lift only on an independent PASS · D55 operator actions ship as `scripts/ops/*.ps1`.
+Orchestration: remediate→re-review inside every wave before it closes; fresh run over L1–L7
+rather than resume-with-insertion.
+
+**Assumptions (highest reversal cost first).**
+- Remediation #2's dirty work was coherent and the gate landed it · default: landed · to reverse:
+  the issuance-path column reopens under L2.1 (OI-55) — one targeted agent.
+- L0's PASS-WITH-DEBT residue (4 medium claim-not-control) is acceptable to carry into L1 ·
+  default: carried, listed in `OPEN-ITEMS.md` · to reverse: one remediation agent on L0.
+- Simulated providers suffice for QA-ready · default: yes · to reverse: a devnet track later.
+
+**Relevant files.** `tracks/launch-readiness_20260909/plan.md` (L1 starts at `## L1 —`; L1.5 is
+the keystone — real `IExchangeGroupSubmitter`) · `Services/Reserve/ReserveDrawAuthority.cs` (the
+pattern) · `tracks/ardanova-production-readiness-waves_20260907/OPEN-ITEMS.md` (input ledger, L0
+rows annotated) · workflow script
+`~/.claude/projects/C--Users-atooz-Programming-Projects-oasis-sleek/5813771f-6236-43fc-aa77-9cd798f023e5/workflows/scripts/launch-readiness-wf_22a2ed71-c10.js`.
+
+**Environment.** AZOA `feat/kyc-aml-providers-value-rail` (37 ahead of `9f4e026`, nothing
+pushed); ArdaNova `codex/azoa-security-hardening`; second worktree
+`ardanova-financial-domain` untouched (26810a2). `main` untouched in both. npm logged in as
+`jadeoni-az`; publish needs a 2FA OTP. Railway CLI linked (project ardanova). Podman/WSL up. No
+builds running. Seven `claude` processes were alive at handoff (some from 9/2–9/3, likely stale) plus
+~80 MCP/Codex node processes — the owner's call whether to kill other sessions.
+
+**Continuation plan.**
+1. `git status --short` in both repos. If dirty: gate solo (build, test, commit explicit paths)
+   before anything else. If clean: confirm the gate commit above `be055d2` / `41edf9e` exists.
+2. If the owner supplies the npm OTP: `cd sdk/azoa-wallet && npm publish --access public
+   --otp=<code>`; then in `ardanova-client`: `npm install azoa-sdk@^0.4.0 && npm run verify:sdk-pin`
+   (closes OI-01/OI-04). Otherwise skip; L0.7 already recorded them blocked.
+3. Launch the fresh run: copy the script above, set `WAVES` to `L1`…`L7` only, keep the NETWORK
+   OVERRIDE and the remediation loop, pass it inline to `Workflow`. ~55 items, ~45 opus.
+4. At each wave barrier: report commits, verdicts, remediation outcomes, stubs. Do not edit the
+   tree while it runs.
+5. After L7: read `tracks/launch-readiness_20260909/MERGE-*.md`; on the owner's word run
+   `git push origin main` in each repo. Then the closeout's doc commits.
+
+**Open questions.** Kill the other six `claude` sessions and the Codex runtime? — live when the
+owner decides; default is leave them. Financial-domain migration — live only after L7, as an
+operator-approved track (D53).
+
+---
+
+#### (was) ▶ RESUME HERE (state as of 2026-09-09 — launch-readiness program) — superseded above
+
 
 **AZOA:** branch `feat/kyc-aml-providers-value-rail`, HEAD **`9017910`**, tree clean, 33 commits ahead of
 `9f4e026`, nothing pushed. **ArdaNova:** branch `codex/azoa-security-hardening`, HEAD **`5370e3a`**, clean.
