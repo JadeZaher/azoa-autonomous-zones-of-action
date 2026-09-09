@@ -184,7 +184,10 @@ public class IssueUnitsAllocationTests
             drawAuthority: ReserveDrawAuthority.NodeOperator);
 
         harness.BroadcastOp.Should().NotBeNull();
-        harness.BroadcastOp!.OperationType.Should().Be("Transfer");
+        // OI-25. An issuance is NOT an outbound transfer: it carries its own operation type so
+        // the S6 scope map can demand units:issue for it and refuse transfer:sign, and so the
+        // idempotency key is derived per recipient rather than collapsing onto the type alone.
+        harness.BroadcastOp!.OperationType.Should().Be(AzoaScopes.IssueUnitsOperationType);
         harness.BroadcastOp.Parameters["WalletAddress"].Should().Be(AllocationTestHarness.ReserveAddress);
         ((ITransferOperation)harness.BroadcastOp).RecipientAddress
             .Should().Be(AllocationTestHarness.RecipientAddress);

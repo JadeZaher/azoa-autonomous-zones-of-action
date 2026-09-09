@@ -27,10 +27,16 @@ public static class OnRampLotStatuses
     /// <summary>A refund or dispute took the money back and the units with it (W4.3).</summary>
     public const string Reversed = "Reversed";
 
+    /// <summary>
+    /// The statuses that will never become <see cref="Issued"/> without a person acting.
+    /// </summary>
+    /// <remarks>Exposed read-only: a shared mutable array would let one caller silently widen or
+    /// narrow what the settlement handler's short-circuit and the operator read agree on.</remarks>
+    public static readonly IReadOnlyList<string> NeedingOperatorStatuses = new[] { Refused, Stuck };
+
     /// <summary>True for a status that will never become <see cref="Issued"/> without a person acting.</summary>
     public static bool NeedsOperator(string? status) =>
-        string.Equals(status, Refused, StringComparison.Ordinal)
-        || string.Equals(status, Stuck, StringComparison.Ordinal);
+        status is not null && NeedingOperatorStatuses.Contains(status, StringComparer.Ordinal);
 }
 
 /// <summary>Outcome of a create-if-absent claim: the row, plus whether this caller created it.</summary>
@@ -64,9 +70,20 @@ public interface IOnRampLotLedger
         Guid userId, CancellationToken ct = default);
 
     /// <summary>
-    /// Lots that need a person: refused or stuck, newest first. The operator surface for
-    /// "somebody was charged and not credited".
+    /// Lots that need a person, newest first: refused, stuck, or still pending after the
+    /// provider's own retry budget has run out. The operator surface for "somebody was charged
+    /// and not credited".
     /// </summary>
+    /// <remarks>
+    /// The pending arm is not decoration. A lot is CREATED the moment the payment is confirmed
+    /// cleared, so every row here means money was taken; an attempt that fails without reaching a
+    /// decision leaves the lot Pending and answers the provider 500, and once the provider stops
+    /// retrying that lot never becomes Refused or Stuck on its own. Listing only
+    /// <see cref="OnRampLotStatuses.NeedsOperator"/> would therefore hide the most common way a
+    /// charge goes uncredited. The two ideas stay separate on purpose: NeedsOperator drives the
+    /// settlement handler's stop-retrying short-circuit and must stay narrow, while this list is
+    /// the board and has to be complete.
+    /// </remarks>
     Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListNeedingOperatorAsync(
         int limit, CancellationToken ct = default);
 }
@@ -86,6 +103,20 @@ public sealed class SurrealOnRampLotLedger : IOnRampLotLedger
 
     private const string NeedingOperatorStatement =
         "SELECT * FROM on_ramp_lot WHERE status INSIDE $_statuses ORDER BY created_at DESC LIMIT $_limit";
+
+    private const string StrandedPendingStatement =
+        "SELECT * FROM on_ramp_lot WHERE status = $_status AND updated_at < $_before "
+        + "ORDER BY created_at DESC LIMIT $_limit";
+
+    /// <summary>
+    /// How long a lot may sit Pending before it is a person's problem rather than a retry's.
+    /// </summary>
+    /// <remarks>
+    /// Sized to outlast the payment provider's own webhook retry budget (Stripe retries a failed
+    /// delivery for about three days). Past it nothing will bring the delivery back on its own, so
+    /// a lot still Pending is money the node took and never credited.
+    /// </remarks>
+    public static readonly TimeSpan StrandedPendingAfter = TimeSpan.FromHours(72);
 
     private readonly ISurrealExecutor _executor;
 
@@ -209,22 +240,57 @@ public sealed class SurrealOnRampLotLedger : IOnRampLotLedger
     public async Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListNeedingOperatorAsync(
         int limit, CancellationToken ct = default)
     {
+        var capped = Math.Clamp(limit, 1, 500);
+
         try
         {
-            var query = SurrealQuery
+            // Two literal statements rather than one OR: each arm keeps its own LIMIT (so a flood
+            // of one kind cannot crowd the other off the board) and each keeps a statement shape
+            // this file already proves elsewhere.
+            var decidedQuery = SurrealQuery
                 .Of(NeedingOperatorStatement)
-                .WithParam("_statuses", new[] { OnRampLotStatuses.Refused, OnRampLotStatuses.Stuck })
-                .WithParam("_limit", Math.Clamp(limit, 1, 500));
+                .WithParam("_statuses", OnRampLotStatuses.NeedingOperatorStatuses.ToArray())
+                .WithParam("_limit", capped);
+            var decided = (await _executor.QueryAsync<OnRampLot>(decidedQuery, ct))?.ToList()
+                ?? new List<OnRampLot>();
 
-            var rows = await _executor.QueryAsync<OnRampLot>(query, ct);
+            var strandedQuery = SurrealQuery
+                .Of(StrandedPendingStatement)
+                .WithParam("_status", OnRampLotStatuses.Pending)
+                .WithParam("_before", DateTimeOffset.UtcNow - StrandedPendingAfter)
+                .WithParam("_limit", capped);
+            var stranded = (await _executor.QueryAsync<OnRampLot>(strandedQuery, ct))?.ToList()
+                ?? new List<OnRampLot>();
+
             return AZOAResult<IReadOnlyList<OnRampLot>>.Success(
-                rows?.ToList() ?? new List<OnRampLot>(), "Success");
+                MergeOperatorReads(decided, stranded, capped), "Success");
         }
         catch (Exception ex)
         {
+            // A read that cannot answer must say so. Returning an empty board here would tell an
+            // operator that nobody is owed money, which is the one answer that must never be a
+            // guess.
             return new AZOAResult<IReadOnlyList<OnRampLot>>()
                 .CaptureException(ex, $"On-ramp lot read failed: {ex.Message}");
         }
+    }
+
+    /// <summary>Folds the two operator reads into one board: newest first, one row per lot.</summary>
+    public static IReadOnlyList<OnRampLot> MergeOperatorReads(
+        IEnumerable<OnRampLot> decided, IEnumerable<OnRampLot> strandedPending, int limit)
+    {
+        ArgumentNullException.ThrowIfNull(decided);
+        ArgumentNullException.ThrowIfNull(strandedPending);
+
+        // A lot can only satisfy one arm at a time, but the two reads are not one transaction: a
+        // lot parked between them would otherwise appear twice on the board.
+        return decided
+            .Concat(strandedPending)
+            .GroupBy(row => row.Id, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderByDescending(row => row.CreatedAt)
+            .Take(Math.Max(limit, 1))
+            .ToList();
     }
 
     private async Task<AZOAResult<OnRampLot?>> GetAsync(string recordId, CancellationToken ct)

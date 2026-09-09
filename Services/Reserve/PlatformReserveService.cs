@@ -266,8 +266,9 @@ public sealed class PlatformReserveService : IPlatformReserve
         if (row.IsError)
             return AZOAResult<PlatformReserveLedger>.Failure(row.Message);
         if (row.Result is null)
-            return AZOAResult<PlatformReserveLedger>.Failure(
-                $"No reserve ledger row exists for asset '{assetId}' on '{chainType}'.");
+            return AZOAResult<PlatformReserveLedger>.FailureWithCode(
+                $"No reserve ledger row exists for asset '{assetId}' on '{chainType}'.",
+                AzoaErrorCodes.NotFound);
 
         return AZOAResult<PlatformReserveLedger>.Success(row.Result, "Success");
     }
@@ -277,10 +278,31 @@ public sealed class PlatformReserveService : IPlatformReserve
         string chainType,
         string assetId,
         IReadOnlyDictionary<string, BigInteger> declaredByPartition,
+        ReserveDrawAuthority authority,
         CancellationToken ct = default)
     {
         if (declaredByPartition is null || declaredByPartition.Count == 0)
             return AZOAResult<PlatformReserveLedger>.Failure("At least one partition declaration is required.");
+
+        // OI-22. Declaring is the act that CARVES the shared supply, so the ownership
+        // question is asked here — the one place a partition's declared budget moves — and
+        // never only at the REST door. It is deliberately the SAME predicate the draw side
+        // asks (ReservePartitionScope.Refuse), so "who may declare" and "who may draw" can
+        // never drift apart.
+        if (authority is null)
+            return AZOAResult<PlatformReserveLedger>.FailureWithCode(
+                $"A partition declaration on asset '{assetId}' arrived with no stated authority. " +
+                "Nothing was declared.",
+                AzoaErrorCodes.Forbidden);
+
+        // A settlement authority is valid only where the asset and partition come off an
+        // already-guarded row. A declaration NAMES a partition, so there is nothing guarded
+        // about it and the settlement lane must not reach here.
+        if (authority.IsSettlingGuardedCommitment)
+            return AZOAResult<PlatformReserveLedger>.FailureWithCode(
+                $"Settling a commitment cannot declare a partition on asset '{assetId}'. " +
+                "Nothing was declared.",
+                AzoaErrorCodes.Forbidden);
 
         for (var attempt = 1; attempt <= MaxCasAttempts; attempt++)
         {
@@ -289,9 +311,17 @@ public sealed class PlatformReserveService : IPlatformReserve
                 return current;
 
             var row = current.Result;
+
+            var scopeRefusal = ReservePartitionScope.Refuse(row, authority, row.AssetId, _options);
+            if (scopeRefusal is not null)
+                return AZOAResult<PlatformReserveLedger>.FailureWithCode(
+                    scopeRefusal, AzoaErrorCodes.Forbidden);
+
             var partitions = ReservePartitionCodec.Decode(row.Partitions, out var decodeError);
             if (partitions is null)
                 return AZOAResult<PlatformReserveLedger>.Failure(decodeError);
+
+            var before = new Dictionary<string, ReservePartitionCounters>(partitions, StringComparer.Ordinal);
 
             foreach (var (rawName, declared) in declaredByPartition)
             {
@@ -317,6 +347,13 @@ public sealed class PlatformReserveService : IPlatformReserve
                     partitions[name] = ReservePartitionCounters.Declaring(declared);
                 }
             }
+
+            // Re-declaring SETS a budget rather than adding to it (above), so a redelivered
+            // declaration is already idempotent on the numbers. Short-circuiting it here also
+            // stops a retry loop from burning CAS versions on a row nothing is changing.
+            if (SamePartitions(before, partitions))
+                return AZOAResult<PlatformReserveLedger>.Success(
+                    row, "Partitions already stand at these amounts; nothing was changed.");
 
             var totalDeclared = partitions.Values.Aggregate(BigInteger.Zero, (sum, p) => sum + p.Declared);
             var totalSupply = ParseBaseUnits(row.TotalSupply);
@@ -455,6 +492,23 @@ public sealed class PlatformReserveService : IPlatformReserve
             $"declared under {ReserveOptions.SectionName}:ExpectedAddresses:{chain}. Refusing every reserve " +
             "operation on this chain until the configured key and the declared address agree.";
         return false;
+    }
+
+    /// <summary>True when a declaration left every partition's counters exactly as they were.</summary>
+    private static bool SamePartitions(
+        IReadOnlyDictionary<string, ReservePartitionCounters> before,
+        IReadOnlyDictionary<string, ReservePartitionCounters> after)
+    {
+        if (before.Count != after.Count)
+            return false;
+
+        foreach (var (name, counters) in after)
+        {
+            if (!before.TryGetValue(name, out var previous) || previous != counters)
+                return false;
+        }
+
+        return true;
     }
 
     private static BigInteger ParseBaseUnits(string? value) =>

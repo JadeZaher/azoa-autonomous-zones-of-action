@@ -591,7 +591,7 @@ public class OnRampSagaTests
     }
 
     [Fact]
-    public async Task Two_scopes_pricing_one_asset_leaves_the_operation_unpriced_rather_than_guessed()
+    public async Task Two_scopes_pricing_one_asset_resolve_to_the_node_wide_price()
     {
         var store = new PriceScheduleDeclaredRateStore(
             FakeScheduleStore.With(
@@ -600,8 +600,13 @@ public class OnRampSagaTests
             NeverDeclares.Instance,
             NullLogger<PriceScheduleDeclaredRateStore>.Instance);
 
-        // Which of them priced a given operation is not knowable from a chain and an asset alone.
-        (await store.TryGetLatestAsync(ChainType, AssetId)).Should().BeNull();
+        // OI-64. A scope-less read is a NODE-level read, so the operator's own price is the one
+        // it can name; a tenant's override does not blind the node to its own schedule. The
+        // genuinely unresolvable case (two tenant scopes, no node-wide price) is pinned in
+        // Fiat/TenantPriceScheduleStoreTests.
+        var resolved = await store.TryGetLatestAsync(ChainType, AssetId);
+        resolved!.MinorUnitsPerBaseUnit.Should().Be(0.01m);
+        resolved.Version.Should().Be("3");
     }
 
     [Fact]

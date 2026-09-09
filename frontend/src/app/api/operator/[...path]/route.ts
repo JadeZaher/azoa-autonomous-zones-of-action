@@ -17,6 +17,7 @@ const GET_PATHS = new Set(['overview', 'kyc/providers'])
 const PROVIDER_PATH = /^kyc\/providers\/[a-z0-9][a-z0-9_-]{0,63}$/
 const TENANT_PROVIDER_PATH = /^tenants\/[0-9a-f-]{36}\/kyc-provider$/i
 const DECISION_PATH = /^kyc\/submissions\/[0-9a-f-]{36}\/decision$/i
+const AML_REVIEW_DECISION_PATH = /^kyc\/aml-reviews\/[0-9a-f-]{36}\/decision$/i
 const SESSION_REVOKE_PATH = /^session\/revoke$/
 const TENANT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const EMPTY_TENANT_ID = '00000000-0000-0000-0000-000000000000'
@@ -39,11 +40,19 @@ function resolvePath(parts: string[], request: NextRequest, method: string): str
     if (!['pending', 'approved', 'rejected'].includes(status)) return null
     return withPaging(`${path}?status=${encodeURIComponent(status)}`, request, false)
   }
+  if (method === 'GET' && path === 'kyc/aml-reviews') {
+    return withPaging(path, request, false)
+  }
   if (method === 'GET' && path === 'kyc/audit') {
     return withAuditFilters(path, request)
   }
   if (method === 'PUT' && (PROVIDER_PATH.test(path) || TENANT_PROVIDER_PATH.test(path))) return path
-  if (method === 'POST' && (DECISION_PATH.test(path) || SESSION_REVOKE_PATH.test(path))) return path
+  if (
+    method === 'POST' &&
+    (DECISION_PATH.test(path) || AML_REVIEW_DECISION_PATH.test(path) || SESSION_REVOKE_PATH.test(path))
+  ) {
+    return path
+  }
   return null
 }
 
@@ -141,6 +150,19 @@ function sanitizeMutationBody(
     if (decision !== 'approve' && decision !== 'reject') return null
     if (decision === 'reject' && !reason) return null
     return { decision, notes, reason }
+  }
+  if (AML_REVIEW_DECISION_PATH.test(path)) {
+    // Deliberately distinct from the submission queue above: the verbs are clear/deny and
+    // the free-text field is `reason`, not `notes`. A reason is required either way, because
+    // both outcomes are a human decision someone may later have to answer for.
+    const decision = body.decision
+    const reason = stringField(body, 'reason', 2_000)
+    const expectedScreeningId = stringField(body, 'expectedScreeningId', 128)
+    if (decision !== 'clear' && decision !== 'deny') return null
+    if (!reason || !expectedScreeningId) return null
+    const tenantId = stringField(body, 'tenantId', 36)
+    if (tenantId !== undefined && !TENANT_ID.test(tenantId)) return null
+    return tenantId ? { decision, reason, expectedScreeningId, tenantId } : { decision, reason, expectedScreeningId }
   }
   if (SESSION_REVOKE_PATH.test(path)) {
     return Object.keys(body).length === 0 ? {} : null

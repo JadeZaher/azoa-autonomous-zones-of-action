@@ -30,6 +30,10 @@ namespace AZOA.WebAPI.Managers;
 ///    the crypto-free join-driven standing grant — MUST exclude every
 ///    value-signing scope (<see cref="AzoaScopes.ValueSigningScopes"/>); a value
 ///    action requires a deliberate <c>UserExplicit</c>, user-authenticated grant.
+///    It MUST, symmetrically, include
+///    <see cref="AzoaScopes.ParticipationInboundCreditFloor"/> (OI-23) — being paid is
+///    not spending, and a person who can never click "allow" must still be creditable
+///    from the moment they exist.
 ///
 /// Every grant and revoke writes an immutable audit row (AC10/L1) independent of
 /// the best-effort webhook: a failed audit write is surfaced as an error result
@@ -177,11 +181,34 @@ public class ConsentManager : IConsentManager
         => GrantAsync(
             grantorUserId,
             tenantId,
-            scopes,
+            WithInboundCreditFloor(scopes),
             GrantOrigin.Participation,
             participationRef,
             expiresAt: null,
             ct);
+
+    /// <summary>
+    /// OI-23 — the requested scopes plus
+    /// <see cref="AzoaScopes.ParticipationInboundCreditFloor"/>, the inbound-credit
+    /// capabilities every participation grant carries.
+    ///
+    /// <para>It is applied HERE, where the grant row is written, rather than in each
+    /// caller's scope list. A custodially onboarded person holds no AZOA credential, so
+    /// the implied participation grant is the ONLY grant they will ever have; if being
+    /// credited needed a scope some caller forgot to name, that person is 403'd out of
+    /// the product on the default allocation kind. Every door into the participation
+    /// path — the tenant-provisioning issuer, the join flow, anything added later —
+    /// inherits the floor because they all end up on this one line.</para>
+    ///
+    /// <para>The floor is a CREDIT, never a spend: <c>units:issue</c> draws the node's
+    /// own reserve and signs with the platform key. And it is not exempt from H4 — the
+    /// union below flows through <see cref="GrantAsync"/>'s value-scope rejection, so a
+    /// value-signing scope added to the floor would refuse EVERY participation grant
+    /// rather than quietly widening one.</para>
+    /// </summary>
+    private static IEnumerable<string> WithInboundCreditFloor(IEnumerable<string> scopes)
+        => (scopes ?? Enumerable.Empty<string>())
+            .Concat(AzoaScopes.ParticipationInboundCreditFloor);
 
     public async Task<AZOAResult<bool>> RevokeAsync(Guid grantorUserId, Guid grantId, CancellationToken ct = default)
     {

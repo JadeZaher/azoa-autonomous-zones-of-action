@@ -51,6 +51,14 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
     /// </summary>
     public const string ExchangeSigningScope = AzoaScopes.SwapSign;
 
+    /// <summary>
+    /// Operation-row parameter stating whether the project treasury's ledger was actually moved
+    /// for this exchange. Stamped on a BUY only, and READ by <see cref="GetReceiptAsync"/>: a
+    /// buy whose credit is still outstanding never reports as terminal, because the treasury
+    /// balance is the availability control a later sell is paid out against.
+    /// </summary>
+    public const string ProjectCreditAppliedParameter = "ExchangeProjectCreditApplied";
+
     private const string ExchangeFailedCode = "EXCHANGE_FAILED";
     private const string UnexpectedFailureMessage = "The exchange failed unexpectedly.";
     private const string UnavailableMessage =
@@ -359,9 +367,31 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
                 return await FailAndReturnRailAsync(ledgerKey, submission.Message, submission.Code);
             }
 
+            // ── Step 14b: accepted by the rail, and then dropped ──────────────
+            // The accepted-then-failed path (OI-33). Reached ONLY when the submitter has proved
+            // the group can never commit — a group whose fate is merely unknown reports
+            // Accepted and is left to reconciliation — so this unwind can never undo a
+            // settlement. Without it a dropped group leaves the partition permanently drawn and,
+            // on a sell, the project's treasury permanently short.
+            if (submission.Result.DroppedAfterAcceptance)
+            {
+                await CompensateAsync(commitment, chainType, projectAssetId, partition, projectReference,
+                    caller, projectUnitAmount, platformAmount, ledgerKey, ct);
+                _logger?.LogError(
+                    "Exchange {Receipt} was accepted by the rail and then dropped; every commitment "
+                    + "it had taken has been handed back.",
+                    identity.Correlation);
+                return await FailAndReturnRailAsync(
+                    ledgerKey, submission.Message, ConsumerSafeErrorCodes.RailUnavailable);
+            }
+
             // ── Step 15: record what the project actually received ────────────
+            // ONLY once the group is CONFIRMED (OI-33). Crediting on mere acceptance makes the
+            // project spendably richer on a settlement chain truth has not agreed to, and that
+            // same treasury balance is the availability control a later sell pays real units out
+            // against — so an accepted-then-dropped group would fund a phantom sell.
             string? projectCredit = null;
-            if (request.Direction == ExchangeDirection.Buy)
+            if (request.Direction == ExchangeDirection.Buy && submission.Result.Confirmed)
             {
                 var credited = await _treasury.RecordMovementAsync(
                     new ProjectTreasuryMovementRequest(
@@ -393,10 +423,36 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
                 request.Direction, chainType, platformAssetId, projectAssetId,
                 platformAmount, projectUnitAmount, settledAt);
 
+            // The receipt is built BEFORE the row so the row can carry it. The operation id is
+            // the bundle id by construction, so building it early costs nothing and invents
+            // nothing.
+            var receipt = BuildReceipt(
+                identity.Correlation,
+                bundle.Result.Bundle.Id,
+                submission.Result.Confirmed
+                    ? ExchangeReceiptState.Completed
+                    : ExchangeReceiptState.AwaitingReconciliation,
+                request, caller, platformAssetId, platformAmount, projectUnitAmount,
+                decision.Result.DeclaredRate, submission.Result, commitment.HoldId, projectCredit,
+                valueStamp?.MinorUnits, settledAt.UtcDateTime);
+
+            // OI-32: the durable handoff to reconciliation. A reconciler only ever replays this
+            // payload to COMPLETE a confirmed exchange, so it states the terminal shape — while
+            // still carrying the credit exactly as it was recorded, which is null when the
+            // project's ledger has not moved.
+            var replayPayload = IdempotencyReplay.SerializeForReplay(BuildReceipt(
+                identity.Correlation,
+                bundle.Result.Bundle.Id,
+                ExchangeReceiptState.Completed,
+                request, caller, platformAssetId, platformAmount, projectUnitAmount,
+                decision.Result.DeclaredRate, submission.Result, commitment.HoldId, projectCredit,
+                valueStamp?.MinorUnits, settledAt.UtcDateTime));
+
             var operation = BuildOperation(
                 request, caller, resolved, chainType, platformAssetId, projectAssetId, partition,
                 projectReference, platformAmount, projectUnitAmount, ledgerKey, identity.Correlation,
-                bundle.Result, submission.Result, decision.Result, valueStamp, settledAt);
+                bundle.Result, submission.Result, decision.Result, valueStamp, settledAt,
+                replayPayload, projectCredit);
 
             var persisted = await _operationStore.UpsertAsync(operation, ct);
             if (persisted.IsError)
@@ -408,16 +464,6 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
                     "This exchange has settled and is still being recorded. Do not raise a second one.",
                     ConsumerSafeErrorCodes.SettlementPending);
             }
-
-            var receipt = BuildReceipt(
-                identity.Correlation,
-                operation.Id,
-                submission.Result.Confirmed
-                    ? ExchangeReceiptState.Completed
-                    : ExchangeReceiptState.AwaitingReconciliation,
-                request, caller, platformAssetId, platformAmount, projectUnitAmount,
-                decision.Result.DeclaredRate, submission.Result, commitment.HoldId, projectCredit,
-                valueStamp?.MinorUnits, settledAt.UtcDateTime);
 
             // A group the rail accepted but has not confirmed is NOT terminal: completing the
             // key here would make a redelivered request replay a success the chain has not
@@ -513,6 +559,17 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             : IdempotencyReplay.DeserializeForReplay<ExchangeReceipt>(ledger.ResultPayload!);
 
         var state = ResolveState(ledger.State, operation?.Status);
+
+        // A buy whose project credit was never recorded is not a finished exchange, whatever the
+        // ledger and the chain say. The treasury balance is the availability control a later
+        // sell pays real units out against, so reporting this one terminal is how a phantom
+        // credit would come back through the front door.
+        var creditOutstanding = operation is not null
+            && operation.Parameters.TryGetValue(ProjectCreditAppliedParameter, out var creditApplied)
+            && string.Equals(creditApplied, "false", StringComparison.Ordinal);
+        if (creditOutstanding && state == ExchangeReceiptState.Completed)
+            state = ExchangeReceiptState.AwaitingReconciliation;
+
         var receipt = stored ?? new ExchangeReceipt { ReceiptReference = identity.Correlation };
         receipt.ReceiptReference = identity.Correlation;
         receipt.OperationId = operation?.Id ?? receipt.OperationId;
@@ -525,6 +582,8 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             ? completedAt
             : ledger.UpdatedAt;
         receipt.FailureCode = state == ExchangeReceiptState.Failed ? ExchangeFailedCode : null;
+        if (creditOutstanding)
+            receipt.ProjectCreditAmount = null;
 
         return AZOAResult<ExchangeReceipt>.Success(receipt, "Exchange receipt found.");
     }
@@ -950,7 +1009,9 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         ExchangeGroupSubmission submission,
         ExchangeRateDecision decision,
         ValueStamp? valueStamp,
-        DateTimeOffset settledAt)
+        DateTimeOffset settledAt,
+        string replayPayload,
+        string? projectCreditAmount)
     {
         var buying = request.Direction == ExchangeDirection.Buy;
         var spentAssetId = buying ? platformAssetId : projectAssetId;
@@ -1005,8 +1066,24 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
                 // Internal reconciliation state; the durable field above holds only the opaque
                 // correlation that is safe to return in a receipt.
                 ["IdempotencyKey"] = ledgerKey,
+                // OI-32. Every sibling manager (AllocationManager, CredentialManager) carries
+                // this, and reconciliation completes the outer claim with it after chain
+                // confirmation. Without it ReconciliationService falls back to the raw
+                // transaction hash and the receipt route answers Completed with every money
+                // field null for an exchange that succeeded.
+                [IdempotencyParameterNames.ResultPayload] = replayPayload,
             },
         };
+
+        // Only a buy credits a project treasury, so only a buy states whether that credit
+        // happened. GetReceiptAsync reads this back: an outstanding credit keeps the receipt
+        // non-terminal rather than presenting a project as funded on this node's own ledger
+        // when it is not.
+        if (buying)
+        {
+            operation.Parameters[ProjectCreditAppliedParameter] =
+                projectCreditAmount is null ? "false" : "true";
+        }
 
         // A reconciler observes a TRANSACTION, not a group: a group reference is not something
         // GetTransactionConfirmationAsync can look up. The first leg is the transaction that

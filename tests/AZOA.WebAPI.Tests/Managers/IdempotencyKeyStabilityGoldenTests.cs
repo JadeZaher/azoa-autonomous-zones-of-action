@@ -26,10 +26,21 @@ namespace AZOA.WebAPI.Tests.Managers;
 /// <c>ToBaseUnitString()</c>; this file is the proof that it is equivalent.</para>
 ///
 /// <para><b>What the goldens are.</b> The expected digests are NOT captured from a build
-/// of this code. They are computed independently from the pre-change specification —
-/// SHA-256 over <c>Uri.EscapeDataString</c>-escaped components joined with <c>|</c>, with
-/// the amount rendered by <c>ulong.ToString()</c> — so the assertion is against the old
-/// contract rather than against whatever the new code happens to produce.</para>
+/// of this code. They are computed independently from the specification — SHA-256 over
+/// <c>Uri.EscapeDataString</c>-escaped components joined with <c>|</c>, formatted
+/// <c>op_{chain}_{opType}_{hex}</c> — so each assertion is against the contract rather than
+/// against whatever the code happens to produce. The Mint/Burn/Transfer digests are computed
+/// from the PRE-widening spelling (the amount rendered by <c>ulong.ToString()</c>); the
+/// Exchange digests are computed from the OI-63 spelling that adds the size. Regenerate them
+/// from the spec, never by pasting what a failing run printed.</para>
+///
+/// <para><b>OI-63.</b> The Exchange arm hashed source asset, target asset and rate but not the
+/// SIZE, so two exchanges of different sizes at one rate between one pair of assets collapsed
+/// onto a single key — and the second one replayed the first's result without ever executing.
+/// The size is now a component, which necessarily moves every Exchange key; the goldens below
+/// pin the new spelling, and
+/// <see cref="Two_exchanges_of_different_sizes_at_one_rate_do_not_collapse"/> pins the property
+/// the change exists for.</para>
 ///
 /// <para>Reflection is used deliberately: the derivation is a private implementation
 /// detail and should stay one, but its OUTPUT is a durable cross-process contract, so it
@@ -200,4 +211,144 @@ public sealed class IdempotencyKeyStabilityGoldenTests
         Amount = RailAmount.OfChainAsset(baseUnits),
         Parameters = new Dictionary<string, string> { ["WalletAddress"] = "0xabc" },
     };
+
+    // ── OI-63: the Exchange arm now carries the size ──────────────────────
+
+    /// <summary>
+    /// Components, in order: <c>"exchange" | SourceTokenId | TargetTokenId | ExchangeRate |
+    /// Amount</c>, then <c>"parent" | key</c> when the row names one, then
+    /// <c>"network" | network</c>. The size is APPENDED so the three components that were
+    /// already there keep their positions.
+    /// </summary>
+    [Theory]
+    [InlineData("1001", "2002", "100 USD", "1000", "Algorand", ChainNetwork.Devnet, "ALGOWALLET1",
+        "op_algorand_exchange_28c16ff93a324d4daebe97b071ffb79a89638b7e723ef8d5c6b76b158edb9a08")]
+    [InlineData("1001", "2002", "100 USD", "2000", "Algorand", ChainNetwork.Devnet, "ALGOWALLET1",
+        "op_algorand_exchange_3b51eb73e9a87814d4091cf2647c9a836f13de5fea5a0bba3b8cc5050e994881")]
+    // A row that states no size at all falls to the typed RailAmount, whose default renders "0".
+    [InlineData("1001", "2002", "100 USD", null, "Algorand", ChainNetwork.Devnet, "ALGOWALLET1",
+        "op_algorand_exchange_1be43249456c85caa505732b222e33fb7b4556f75ae8aefb95d85d89eff94a0b")]
+    [InlineData("usdc", "arda", "1 USD", "340282366920938463463374607431768211456", "Ethereum",
+        ChainNetwork.Mainnet, "0xabc",
+        "op_ethereum_exchange_51adfbaf164503232d8d5785a6f9eca84f194676816858b30ef784adf37f15ee")]
+    public void ExchangeKey_MatchesTheSpecifiedGolden(
+        string sourceTokenId,
+        string targetTokenId,
+        string exchangeRate,
+        string? amount,
+        string chainType,
+        ChainNetwork network,
+        string walletAddress,
+        string expectedKey)
+    {
+        var operation = ExchangeOpWith(sourceTokenId, targetTokenId, exchangeRate, amount, walletAddress);
+
+        Derive(operation, chainType, network).Should().Be(expectedKey);
+    }
+
+    [Fact]
+    public void ExchangeKey_WithAParentKey_MatchesTheSpecifiedGolden()
+    {
+        var operation = ExchangeOpWith("1001", "2002", "100 USD", "1000", "ALGOWALLET1");
+        operation.Parameters["IdempotencyKey"] = "parent-key-1";
+
+        Derive(operation, "Algorand", ChainNetwork.Testnet).Should().Be(
+            "op_algorand_exchange_68042fbf410c8b81e3b4c6bbc1cec9a9663f42e5152d26cf7d31db47935b64f7");
+    }
+
+    /// <summary>
+    /// OI-63 stated as the property rather than as a digest: a sponsor exchanging 1 000 units and
+    /// a sponsor exchanging 2 000 units at the same rate between the same pair of assets are two
+    /// operations. Under the pre-fix components they were one, and the second was answered from
+    /// the first's idempotency record without ever executing.
+    /// </summary>
+    [Fact]
+    public void Two_exchanges_of_different_sizes_at_one_rate_do_not_collapse()
+    {
+        var smaller = ExchangeOpWith("1001", "2002", "100 USD", "1000", "ALGOWALLET1");
+        var larger = ExchangeOpWith("1001", "2002", "100 USD", "2000", "ALGOWALLET1");
+
+        Derive(smaller, "Algorand", ChainNetwork.Devnet).Should().NotBe(
+            Derive(larger, "Algorand", ChainNetwork.Devnet),
+            "an exchange of a different size is a different operation, not a duplicate of the first");
+    }
+
+    /// <summary>
+    /// The RED side, kept as a document: the pre-fix component list, driven through the real
+    /// generator, really did collapse those two onto one key. Do NOT "fix" this helper — its job
+    /// is to show the collision the goldens above now make impossible.
+    /// </summary>
+    [Fact]
+    public void ThePreFixExchangeComponents_CollapsedThoseTwoExchangesOntoOneKey()
+    {
+        var smaller = ExchangeOpWith("1001", "2002", "100 USD", "1000", "ALGOWALLET1");
+        var larger = ExchangeOpWith("1001", "2002", "100 USD", "2000", "ALGOWALLET1");
+
+        PreFixExchangeKey(smaller).Should().Be(
+            PreFixExchangeKey(larger),
+            "this is the defect: two exchanges that differ ONLY in size derived one key, and the "
+            + "second was answered from the first's idempotency record");
+
+        Derive(smaller, "Algorand", ChainNetwork.Devnet).Should().NotBe(
+            PreFixExchangeKey(smaller),
+            "the size is now a component, so no exchange claims the pre-fix key any more");
+    }
+
+    /// <summary>
+    /// The pre-fix Exchange components, verbatim: source, target, rate, network. The row's own
+    /// <c>Parameters["Amount"]</c> is in reach and is simply never read — which is precisely what
+    /// made two different-sized exchanges one operation.
+    /// </summary>
+    private static string PreFixExchangeKey(BlockchainOperation operation) =>
+        OperationIdGenerator.Generate(
+            "Algorand", "Exchange", operation.Parameters["WalletAddress"],
+            [
+                "exchange",
+                operation.Parameters["SourceTokenId"],
+                operation.Parameters["TargetTokenId"],
+                operation.ExchangeRate ?? string.Empty,
+                "network",
+                nameof(ChainNetwork.Devnet),
+            ]);
+
+    /// <summary>
+    /// The row the exchange writer produces carries the size TWICE — as
+    /// <c>Parameters["Amount"]</c> and as the typed <see cref="RailAmount"/> — and both render
+    /// bare invariant base-unit digits, so a row carrying only the typed field hashes identically.
+    /// </summary>
+    [Fact]
+    public void ExchangeKey_ReadsTheTypedAmount_WhenTheRowCarriesNoAmountParameter()
+    {
+        var withParameter = ExchangeOpWith("1001", "2002", "100 USD", "1000", "ALGOWALLET1");
+        var typedOnly = ExchangeOpWith("1001", "2002", "100 USD", amount: null, "ALGOWALLET1");
+        typedOnly.Amount = RailAmount.OfChainAsset(1000);
+
+        Derive(typedOnly, "Algorand", ChainNetwork.Devnet).Should().Be(
+            Derive(withParameter, "Algorand", ChainNetwork.Devnet));
+    }
+
+    private static BlockchainOperation ExchangeOpWith(
+        string sourceTokenId,
+        string targetTokenId,
+        string exchangeRate,
+        string? amount,
+        string walletAddress)
+    {
+        var operation = new BlockchainOperation
+        {
+            OperationType = "Exchange",
+            ExchangeRate = exchangeRate,
+            Parameters = new Dictionary<string, string>
+            {
+                ["WalletAddress"] = walletAddress,
+                ["SourceTokenId"] = sourceTokenId,
+                ["TargetTokenId"] = targetTokenId,
+            },
+        };
+
+        if (amount is not null)
+            operation.Parameters["Amount"] = amount;
+
+        return operation;
+    }
 }

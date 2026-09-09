@@ -367,12 +367,22 @@ public sealed class SurrealTenantPriceScheduleStore : ITenantPriceScheduleStore
 /// <para>This is the read side of the control. Without it the schedule would decide quantities
 /// while the stamp read <c>ValueRates:Declared</c>, and the two could drift silently on a
 /// financial record.</para>
-/// <para>It refuses in three cases rather than guessing, because the stamp is handed a chain and
-/// an asset and no scope: when the latest version of the only scope that priced the asset is
-/// RETIRED; when TWO OR MORE scopes have a current price for one asset (which of them priced a
-/// given operation is not knowable from a chain and an asset alone); and when the store cannot
-/// be read. In every one of those the inner store is consulted, and if it declares nothing the
-/// operation is recorded unpriced — the honest answer D16 requires.</para>
+/// <para><b>Scope precedence (OI-64).</b> When several scopes hold a current price for one asset
+/// this store RESOLVES rather than going dark. The on-ramp's own order is the driving tenant's
+/// schedule first and the operator's node-wide default second
+/// (<c>OnRampSettlementHandler.ResolveScheduleAsync</c>); this seam is handed a chain and an asset
+/// and NO tenant, so it can only apply the second half — the node-wide default — and that is exactly
+/// what it does. Naming it is what keeps the platform unit priced: previously ANY second scope
+/// blanked every stamp node-wide, which made "the price that sold the units stamps the operation"
+/// true only on a single-tenant node. Stamping a tenant's own sale with its OWN price needs the
+/// tenant threaded through <c>ITenantDeclaredRateStore</c>, which is a separate change to a shared
+/// interface; until then a node-wide read stamps the node-wide price, and says so in the log.</para>
+/// <para>It still refuses rather than guessing when the answer is genuinely not knowable: when the
+/// latest version of the only scope that priced the asset is RETIRED; when two or more TENANT
+/// scopes price one asset and the operator has declared no node-wide price to break the tie (that
+/// case raises an operator alert, not a warning); and when the store cannot be read. In every one
+/// of those the inner store is consulted, and if it declares nothing the operation is recorded
+/// unpriced — the honest answer D16 requires.</para>
 /// </remarks>
 public sealed class PriceScheduleDeclaredRateStore : ITenantDeclaredRateStore
 {
@@ -419,17 +429,9 @@ public sealed class PriceScheduleDeclaredRateStore : ITenantDeclaredRateStore
         if (current.Count == 0)
             return await _fallback.TryGetLatestAsync(chainType, assetId, ct);
 
-        if (current.Count > 1)
-        {
-            _logger?.LogWarning(
-                "{ScopeCount} scopes have a current price for {ChainType}/{AssetId}; which one priced a "
-                + "given operation is not knowable from the chain and asset alone, so the operation is "
-                + "recorded unpriced.",
-                current.Count, chainType, assetId);
+        if (!TryChooseScope(current, chainType, assetId, out var schedule))
             return null;
-        }
 
-        var schedule = current[0];
         if (!PriceScheduleMath.TryDeriveMinorUnitsPerBaseUnit(
                 schedule.UnitsPerMinorUnit, out var minorUnitsPerBaseUnit))
         {
@@ -444,5 +446,56 @@ public sealed class PriceScheduleDeclaredRateStore : ITenantDeclaredRateStore
             schedule.DeclaredAt,
             schedule.Source,
             schedule.Version.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Picks the one scope a scope-less read may stamp with, or refuses when no rule can name one.
+    /// </summary>
+    /// <remarks>
+    /// OI-64. One scope is unambiguous. Several are resolved by the node-wide default, which is
+    /// the operator's own declaration and the price the on-ramp falls back to — a scope-less read
+    /// is a node-level read, so that is the scope it can honestly name. Several TENANT scopes with
+    /// no node-wide price left to break the tie is the one case that is genuinely unknowable from
+    /// a chain and an asset, and it is an operator alert rather than a warning: until the operator
+    /// registers a node-wide price, every operation on that asset is recorded unpriced.
+    /// </remarks>
+    private bool TryChooseScope(
+        IReadOnlyList<RegisteredPriceSchedule> current,
+        string chainType,
+        string assetId,
+        out RegisteredPriceSchedule chosen)
+    {
+        if (current.Count == 1)
+        {
+            chosen = current[0];
+            return true;
+        }
+
+        // Highest version, so a store that ever hands back two rows for one scope still resolves
+        // deterministically instead of depending on enumeration order.
+        var nodeScoped = current
+            .Where(schedule => PriceScheduleScope.IsNode(schedule.ScopeKey))
+            .OrderByDescending(schedule => schedule.Version)
+            .FirstOrDefault();
+
+        if (nodeScoped is not null)
+        {
+            _logger?.LogWarning(
+                "{ScopeCount} scopes have a current price for {ChainType}/{AssetId}; the operation is "
+                + "stamped with the node-wide price (version {Version}), which is the scope a read that "
+                + "names no tenant can resolve.",
+                current.Count, chainType, assetId, nodeScoped.Version);
+            chosen = nodeScoped;
+            return true;
+        }
+
+        _logger?.LogError(
+            "MANUAL INTERVENTION REQUIRED: {ScopeCount} tenant scopes have a current price for "
+            + "{ChainType}/{AssetId} and this node has no node-wide price to resolve them, so every "
+            + "operation on this asset is being recorded UNPRICED. Register a node-wide price for "
+            + "this asset.",
+            current.Count, chainType, assetId);
+        chosen = null!;
+        return false;
     }
 }

@@ -203,11 +203,34 @@ public sealed class KeyCustodyService : IKeyCustodyService
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// OI-72. This overload carries no <see cref="SigningContext"/>, so unlike its three
+    /// siblings it reached the platform key with no consent check at all. It is operator-only
+    /// BY CONSTRUCTION - with no context it cannot express an acting tenant, a grantor or a
+    /// scope - and a grep of the tree at 195c266 found NO production caller: every value path
+    /// (AlgorandProvider:2471, EthereumProvider:1611, SolanaProvider:989,
+    /// PlatformReserveService:137/203, ProjectTreasuryService:176/427) already uses a
+    /// ctx-carrying sibling. Rather than leave one door with a different rule, it now runs
+    /// the SAME live gate against an explicit operator context, so the seam is uniform in
+    /// code and not merely in this comment.
+    /// </remarks>
     public async Task<AZOAResult<T>> WithPlatformSigningKeyAsync<T>(bool isPlatformContext, Func<byte[], Task<T>> sign)
     {
         ArgumentNullException.ThrowIfNull(sign);
+
+        var gate = await _consentGate.EnsureAllowedAsync(OperatorOnlyContext);
+        if (gate.IsError)
+            return new AZOAResult<T> { IsError = true, Message = gate.Message };
+
         return await ResolvePlatformKeyAsync(LegacyPlatformChainType, isPlatformContext, sign);
     }
+
+    /// <summary>
+    /// The operator context the context-less platform overload is pinned to (OI-72): no
+    /// acting tenant, no grantor, no scope, so that door can never carry tenant authority.
+    /// </summary>
+    public static SigningContext OperatorOnlyContext { get; } =
+        SigningContext.PlatformFor(LegacyPlatformChainType);
 
     /// <summary>
     /// The chain-aware platform door. Authority → chain → that chain's derivation →

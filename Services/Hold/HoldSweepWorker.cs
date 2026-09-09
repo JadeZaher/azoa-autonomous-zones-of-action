@@ -14,6 +14,11 @@ namespace AZOA.WebAPI.Services.Hold;
 /// <para><b>Lifetime and scoping.</b> A <see cref="BackgroundService"/> is a singleton, so
 /// every cycle opens its own scope and resolves the scoped hold service inside it — a
 /// captured scoped dependency would be disposed after the first cycle.</para>
+/// <para><b>Consent (OI-25).</b> The sweep is not a consent bypass and does not want to be.
+/// It releases under the hold row's own tenant, so the beneficiary's leg is checked against
+/// the grant that person made to that tenant — the same check the tenant-driven release
+/// path runs. It therefore inherits whatever scope the hold seam declares, and is fixed by
+/// fixing that scope rather than by giving the worker a private exemption.</para>
 /// </summary>
 public sealed class HoldSweepWorker : BackgroundService
 {
@@ -121,9 +126,14 @@ public sealed class HoldSweepWorker : BackgroundService
                 var released = await holds.ReleaseAsync(
                     new HoldSettlementRequest(
                         new HoldReference(hold.Chain, hold.HoldId),
-                        // The sweep is the NODE acting on its own timer, not a tenant
-                        // acting on a person's behalf, so it stamps no acting tenant and
-                        // asks the custody seam for no consent grant it does not have.
+                        // OI-25 — read this with PlatformHoldService.BuildContexts. Passing
+                        // null does NOT mean "no tenant": the release falls back to the HOLD
+                        // ROW's own tenant, so the payout is checked against that tenant's
+                        // live grant from the beneficiary. That is deliberate and stays that
+                        // way — the sweep must not be a second, quieter door that signs on a
+                        // person's behalf with no grant behind it. Null is the sweep saying
+                        // "I am nobody new"; the hold's own tenant remains the acting party,
+                        // exactly as it was when the hold was opened.
                         ActingTenantId: null,
                         Reason: "the hold window elapsed and the hosted sweep released it"),
                     ct);

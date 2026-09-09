@@ -13,6 +13,13 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Fiat;
 using Microsoft.Extensions.DependencyInjection;
 
+// The credit-capability probe reads the reserve ledger and the on-ramp's own options.
+// Aliased rather than imported wholesale so this file's type names stay unambiguous.
+using IPlatformReserve = AZOA.WebAPI.Services.Reserve.IPlatformReserve;
+using IPlatformTokenGenesis = AZOA.WebAPI.Services.Reserve.IPlatformTokenGenesis;
+using OnRampOptions = AZOA.WebAPI.Services.Fiat.OnRamp.OnRampOptions;
+using ReservePartitionCodec = AZOA.WebAPI.Services.Reserve.ReservePartitionCodec;
+
 namespace AZOA.WebAPI.Providers.Fiat;
 
 /// <summary>Stable ids for the non-chain value rails this node settles on.</summary>
@@ -479,6 +486,25 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
                 "This account has to finish identity verification before adding funds.",
                 AzoaErrorCodes.Forbidden);
+
+        // OI-29: a registered IFiatSettlementHandler proves a TYPE is in the container, not that
+        // this node can credit anything. The two facts that decide creditability live in data --
+        // the declared on-ramp partition and the registered price -- so they are proved HERE, at
+        // the counter, immediately before a real card is charged, and not only at boot. Nothing
+        // durable has been written yet, so a refusal leaves no claimed intent behind.
+        if (_environment.Kind == RailEnvironmentKind.Live)
+        {
+            var capability = await FiatCreditCapabilityProbe.ProbeAsync(
+                scope.ServiceProvider, _clock.GetUtcNow(), ct);
+            if (!capability.CanCredit)
+            {
+                _logger.LogError(
+                    "A live funding checkout was refused because this node cannot credit a cleared "
+                    + "payment: {Detail}. {OperatorAction}.",
+                    capability.Detail, capability.OperatorAction);
+                return FiatConsumerErrors.RailUnavailable<FiatCheckoutIntent>();
+            }
+        }
 
         var store = scope.ServiceProvider.GetRequiredService<IHostedSessionStore>();
         var now = _clock.GetUtcNow();
@@ -953,18 +979,28 @@ public static class FiatReturnUrlPolicy
 /// <c>BlockchainProviderFactory</c>: a node that advertises a money path it cannot complete must
 /// fail at startup, not at the moment a person's card is charged.
 /// </summary>
+/// <remarks>
+/// Two guards, because the facts live in two places. <see cref="Validate"/> reads CONFIGURATION
+/// and the container, and runs before <c>builder.Build()</c>. <see cref="GuardLiveCapabilityAsync"/>
+/// reads DATA — the declared reserve partition and the registered price — and therefore runs
+/// after the container is built. Registration is not capability: OI-29 was exactly the gap
+/// between the two.
+/// </remarks>
 public static class FiatRailStartup
 {
     /// <summary>
-    /// Throws when the configured fiat rail could not actually complete an on-ramp.
+    /// Throws when the fiat rail's CONFIGURATION could not support an on-ramp. Capability is a
+    /// separate proof: see <see cref="GuardLiveCapabilityAsync"/>.
     /// </summary>
     /// <param name="options">The bound <c>Fiat</c> section.</param>
     /// <param name="simulatedBlockchainMode">True when <c>Blockchain:Mode=Simulated</c>.</param>
     /// <param name="settlementHandlerRegistered">
     /// True when at least one <c>IFiatSettlementHandler</c> — a handler that turns a cleared
     /// payment into funds in the payer's account — is in the container. The LIVE environment is
-    /// refused without one: charging a real card and issuing nothing is the worst failure this
-    /// rail can have, and "the handler ships in the next item" is not a control.
+    /// refused without one, because "the handler ships in the next item" is not a control.
+    /// <para>This proves a TYPE is registered and NOTHING MORE. A registered handler with no
+    /// declared on-ramp partition and no registered price credits nothing, which is why the live
+    /// environment additionally has to pass <see cref="GuardLiveCapabilityAsync"/>.</para>
     /// </param>
     public static void Validate(
         FiatOptions options, bool simulatedBlockchainMode, bool settlementHandlerRegistered)
@@ -1053,6 +1089,206 @@ public static class FiatRailStartup
                 + "settlement handler or move the rail back to the test environment.");
     }
 
+    /// <summary>
+    /// Refuses live boot unless this node can actually turn a cleared payment into funds.
+    /// </summary>
+    /// <remarks>
+    /// <para>Call it AFTER <c>builder.Build()</c>, with <c>app.Services</c>. It cannot run beside
+    /// <see cref="Validate"/>: the two facts it proves are rows in the database — the on-ramp
+    /// partition declared on the platform unit's reserve ledger, and a current registered price for
+    /// that unit — and neither store can be resolved from an unbuilt service collection.</para>
+    /// <para>A disabled or test-environment rail returns without touching either store, so a dev
+    /// node still boots against an empty database.</para>
+    /// </remarks>
+    /// <param name="services">The built root provider; a scope is created for the scoped stores.</param>
+    /// <param name="options">The bound <c>Fiat</c> section.</param>
+    /// <param name="asOf">Clock for the price-staleness read; defaults to the container TimeProvider.</param>
+    /// <param name="ct">Cancellation for the two reads.</param>
+    public static async Task GuardLiveCapabilityAsync(
+        IServiceProvider services,
+        FiatOptions options,
+        DateTimeOffset? asOf = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (!options.Enabled || options.ActiveEnvironment.Kind != RailEnvironmentKind.Live)
+            return;
+
+        // Both stores are scoped. Resolving them off the root provider would either throw or
+        // (worse) pin a scoped store to the root for the life of the process.
+        using var scope = services.GetService<IServiceScopeFactory>()?.CreateScope();
+        var resolver = scope?.ServiceProvider ?? services;
+
+        var now = asOf ?? (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+        var capability = await FiatCreditCapabilityProbe.ProbeAsync(resolver, now, ct);
+        if (capability.CanCredit)
+            return;
+
+        throw new InvalidOperationException(
+            "Fiat:Environment is \"live\" but this node cannot credit a cleared card payment: "
+            + capability.Detail + ". " + capability.OperatorAction
+            + ", or move the rail back to the test environment.");
+    }
+
     private static string Capitalise(string value) =>
         string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value[1..];
+}
+
+/// <summary>Whether this node can turn a cleared payment into funds, and what is missing if not.</summary>
+/// <param name="CanCredit">True only when every fact the on-ramp needs is present.</param>
+/// <param name="Detail">Operator-facing reason; never surfaced to a payer.</param>
+/// <param name="OperatorAction">The one thing that would fix it.</param>
+public sealed record FiatCreditCapability(bool CanCredit, string Detail, string OperatorAction)
+{
+    /// <summary>The node can credit a cleared payment.</summary>
+    public static FiatCreditCapability Able() => new(true, string.Empty, string.Empty);
+
+    /// <summary>The node cannot credit a cleared payment, for the stated reason.</summary>
+    public static FiatCreditCapability Unable(string detail, string operatorAction) =>
+        new(false, detail, operatorAction);
+}
+
+/// <summary>
+/// Proves the fiat on-ramp could actually credit a cleared payment, by reading the same two
+/// facts the settlement handler reads at webhook time.
+/// </summary>
+/// <remarks>
+/// <para>OI-29: the boot guard used to prove that an <c>IFiatSettlementHandler</c> TYPE was in
+/// the container and to describe that as "a node cannot charge a real card while nothing is able
+/// to credit it". It is not the same claim. Crediting needs two operator facts that live in data:
+/// the on-ramp partition declared on the platform unit's reserve ledger
+/// (<c>IPlatformReserve.DeclarePartitionsAsync</c>), and a current registered price for that unit
+/// (<c>POST /api/fiat/price-schedule</c>) — OI-45. Without either, the card clears, the issuance
+/// is refused, the retries burn and the lot parks <c>Stuck</c>.</para>
+/// <para>Read-only and side-effect free, so it is safe on the checkout path and at boot alike.
+/// Every refusal is fail-closed: an unresolvable dependency reports "cannot credit", never
+/// "probably fine".</para>
+/// </remarks>
+public static class FiatCreditCapabilityProbe
+{
+    /// <summary>Configuration key naming the reserve partition on-ramp issuance draws from.</summary>
+    public const string PartitionConfigurationKey = "Fiat:OnRamp:ReservePartition";
+
+    /// <summary>Reads the declared partition and the registered price for the platform unit.</summary>
+    /// <param name="services">A SCOPED provider: both stores are registered scoped.</param>
+    /// <param name="asOf">The instant price staleness is measured against.</param>
+    /// <param name="ct">Cancellation for the reads.</param>
+    public static async Task<FiatCreditCapability> ProbeAsync(
+        IServiceProvider services, DateTimeOffset asOf, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var onRamp = services.GetService<OnRampOptions>();
+        if (onRamp is null)
+        {
+            return FiatCreditCapability.Unable(
+                "the on-ramp is not registered, so nothing turns a cleared payment into funds",
+                "call OnRampRegistration.AddFiatOnRamp during composition");
+        }
+
+        // OnRampOptions is bound with .Get<T>(), so an environment variable set to "" REPLACES the
+        // C# default rather than leaving it. A blank partition name therefore resolves to the
+        // NARROWEST answer -- no partition at all -- rather than silently reverting to "on-ramp";
+        // the reserve cannot be drawn against a blank name either way, so this is what a deploy
+        // with an empty variable actually means.
+        var partitionName = ReservePartitionCodec.Normalize(onRamp.ReservePartition);
+        if (string.IsNullOrEmpty(partitionName))
+        {
+            return FiatCreditCapability.Unable(
+                $"{PartitionConfigurationKey} is blank, so on-ramp issuance has no partition to draw from",
+                $"set {PartitionConfigurationKey} to the partition declared on the platform unit");
+        }
+
+        var genesis = services.GetService<IPlatformTokenGenesis>();
+        var reserve = services.GetService<IPlatformReserve>();
+        var schedules = services.GetService<ITenantPriceScheduleStore>();
+        if (genesis is null || reserve is null || schedules is null)
+        {
+            return FiatCreditCapability.Unable(
+                "the platform unit, the reserve ledger or the price schedule is not registered",
+                "register the reserve and the on-ramp before binding the rail to the live environment");
+        }
+
+        var tokenState = await genesis.GetStateAsync(ct);
+        if (tokenState.IsError || tokenState.Result is null)
+        {
+            return FiatCreditCapability.Unable(
+                $"the platform unit could not be resolved ({tokenState.Message})",
+                "run platform-token genesis on this network");
+        }
+
+        var definition = tokenState.Result.Definition;
+        var asset = $"{definition.ChainType}/{definition.AssetId}";
+
+        var ledger = await reserve.GetLedgerAsync(definition.ChainType, definition.AssetId, ct);
+        if (ledger.IsError || ledger.Result is null)
+        {
+            return FiatCreditCapability.Unable(
+                $"the platform unit has no reserve ledger row ({ledger.Message})",
+                $"register {asset} with the platform reserve");
+        }
+
+        // An unreadable partition blob is refused rather than read as "no partitions": treating it
+        // as empty here would report the node creditable on a row nothing can actually draw from.
+        var partitions = ReservePartitionCodec.Decode(ledger.Result.Partitions, out var decodeError);
+        if (partitions is null)
+        {
+            return FiatCreditCapability.Unable(
+                $"the reserve ledger partitions for {asset} could not be read ({decodeError})",
+                "repair the platform unit's reserve ledger row");
+        }
+
+        if (!partitions.TryGetValue(partitionName, out var partition))
+        {
+            return FiatCreditCapability.Unable(
+                $"the '{partitionName}' partition is not declared on {asset}, so every issuance from a "
+                + "cleared payment would be refused by the reserve",
+                $"declare it with POST /api/reserve/{definition.AssetId}/partitions?chain={definition.ChainType}");
+        }
+
+        // Declared-but-exhausted is the same outcome as undeclared for the next payer: the draw is
+        // refused and the money is taken. Availability, not mere presence, is the capability.
+        if (partition.Available.Sign <= 0)
+        {
+            return FiatCreditCapability.Unable(
+                $"the '{partitionName}' partition on {asset} has no units left to draw",
+                $"re-declare it larger with POST /api/reserve/{definition.AssetId}/partitions?chain={definition.ChainType}");
+        }
+
+        var registered = await schedules.ListLatestPerScopeAsync(
+            definition.ChainType, definition.AssetId, ct);
+        if (registered.IsError)
+        {
+            return FiatCreditCapability.Unable(
+                $"the registered prices for {asset} could not be read ({registered.Message})",
+                "restore the price-schedule store");
+        }
+
+        // ANY scope having a usable price is the boot-level question: whether one particular tenant
+        // has registered its own price is a per-payment refusal the settlement handler already
+        // makes. With none at all, no payment from anyone could ever be converted.
+        var priced = registered.Result?.Any(schedule => IsUsable(schedule, asOf)) ?? false;
+        if (!priced)
+        {
+            return FiatCreditCapability.Unable(
+                $"no current price is registered for {asset}, so a cleared payment has nothing to "
+                + "convert money into units with",
+                "register one with POST /api/fiat/price-schedule");
+        }
+
+        return FiatCreditCapability.Able();
+    }
+
+    /// <summary>Mirrors the on-ramp read exactly: active, not future-dated, not stale.</summary>
+    /// <remarks>
+    /// Kept in step with <c>OnRampSettlementHandler</c> deliberately. A boot guard that accepted a
+    /// price the settlement path would refuse would pass a node that still cannot credit.
+    /// </remarks>
+    public static bool IsUsable(RegisteredPriceSchedule? schedule, DateTimeOffset asOf) =>
+        schedule is not null
+        && schedule.IsActive
+        && schedule.DeclaredAt <= asOf + PriceScheduleLimits.FutureDeclarationTolerance
+        && asOf - schedule.DeclaredAt <= PriceScheduleLimits.MaxDeclarationAge;
 }

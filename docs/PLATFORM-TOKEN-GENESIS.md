@@ -47,28 +47,31 @@ mainnet promotion run the same numbers:
 | Unit name | `ARDA` | 4 bytes, inside Algorand's 8-byte limit |
 | Asset name | `Arda` | Inside Algorand's 32-byte limit; never shown to a sponsor |
 | Decimals | `2` | Every balance is a whole number of cents |
-| Total supply | `2_000_000_000` base units = **20,000,000.00 units** | See §1.1 — this is a ceiling, not a circulating supply |
+| Total supply | `2_000_000_000` base units = **20,000,000.00 units** | See §1.1 — a ceiling, not a circulating supply; it is a CHOICE now, not a limit |
 | Holder | The platform reserve | Creator **and** manager / reserve / freeze / clawback (D48) |
 
 **Total supply is a ceiling on issuance, not a circulating supply.** Circulating supply
 starts at zero and grows only as the reserve issues; see §4.
 
-### 1.1 The supply ceiling — resolve this before mainnet
+### 1.1 The supply ceiling — decide the number before mainnet
 
-The genesis total is capped at **2,147,483,647 base units** (`int.MaxValue`), which at 2
-decimals is ~21.47M units. That limit is **not** an Algorand limit — an ASA total is a
-chain-side `ulong`. It is the `int total` parameter on `IAlgorandASAModule.CreateASAAsync`,
-enforced in `FungibleTokenManager.TryValidateSupply`.
+**Resolved (OI-26).** The old `int.MaxValue` ceiling is gone. `IAlgorandASAModule.CreateASAAsync`
+now takes the total as a `ulong` — the chain's own ASA supply field — so the only remaining
+ceiling is Algorand's `uint64`, which nobody can widen. `FungibleTokenManager` enforces that
+boundary and `PLATFORM_TOKEN_SUPPLY_CEILING` now names the CHAIN field rather than a surface
+somebody could go and change.
 
-N-X2 names 10^15 base units. That total is **unreachable today** and a request for it is
-refused with `PLATFORM_TOKEN_SUPPLY_CEILING`, naming the exact surface to widen
-(`PlatformTokenGenesisDefaults.IntendedTotalBaseUnits` records the intent).
+N-X2 names 10^15 base units. That total is now **reachable and mintable**; it is inside the
+rail ceiling and `PlatformTokenGenesisDefaults.IntendedTotalBaseUnits` records the intent.
 
-**This must be settled before mainnet genesis, not after.** Widening the provider surface
-after the asset exists does not raise its supply — it would require a second asset. Either
-widen `IAlgorandASAModule.CreateASAAsync` (and the `int` cast at
-`FungibleTokenManager` step 7) to a `ulong`/`BigInteger` total first, or accept
-20,000,000.00 units as the permanent ceiling and say so deliberately.
+**What is still open is the CHOICE, not the capability.** The total is fixed forever at
+genesis — widening anything afterwards does not raise an existing asset's supply, it would
+require a second asset. So decide deliberately which total to mint (the 2_000_000_000 in the
+table above, or `IntendedTotalBaseUnits`) and record the decision before promotion.
+
+> A request cannot express an over-rail total through this path at all: `PlatformTokenGenesisRequest.Total`
+> is a `ulong?`. The refusal side of the boundary is proved in
+> `tests/AZOA.WebAPI.Tests/Managers/FungibleTokenSupplyCeilingTests.cs`.
 
 ---
 
@@ -161,9 +164,9 @@ an unreadable ledger would price the unit off a supply nobody knows.
 
 Run this **in order**. Steps 1–3 are the ones that are expensive to get wrong.
 
-- [ ] **1. The supply ceiling (§1.1) is settled** — either the provider surface has been
-      widened and the constant raised, or 20,000,000.00 units is the accepted permanent
-      ceiling. *After genesis this is no longer changeable.*
+- [ ] **1. The genesis total (§1.1) is chosen and recorded** — the provider surface is already
+      widened to the chain's `uint64` (OI-26), so this is now a decision about WHICH total to
+      mint, not about whether a larger one is reachable. *After genesis it is not changeable.*
 - [ ] **2. The devnet asset was verified against the chain** (§3), not just against this
       node's own response, and all five ASA roles are the reserve.
 - [ ] **3. The definition being promoted is byte-identical to the devnet one** — same
@@ -190,7 +193,7 @@ Every one of these is a code path, not a convention:
 | --- | --- |
 | `confirmIrreversible` missing | `PLATFORM_TOKEN_NOT_CONFIRMED` — nothing claimed, nothing minted |
 | `expectedNetwork` ≠ the node's network | `PLATFORM_TOKEN_NETWORK_MISMATCH` |
-| Total above the provider ceiling | `PLATFORM_TOKEN_SUPPLY_CEILING`, naming the surface to widen |
+| Total above the chain's `uint64` ASA supply field | `PLATFORM_TOKEN_SUPPLY_CEILING`. Since OI-26 this names the CHAIN's limit, which cannot be widened by anyone |
 | Unit name > 8 bytes / asset name > 32 bytes / decimals outside 0..19 | Rejected before any claim |
 | A platform unit already exists and the request **matches** it | 200, `created: false` — a replay, no second mint |
 | A platform unit already exists and the request **differs** | 409 `PLATFORM_TOKEN_ALREADY_EXISTS` |

@@ -90,16 +90,67 @@ All four Wave 4 registrations are live in `Program.cs`, in the
 `AddFiatOnRamp`, `AddOnRampValueRateSource`, `AddFiatReversalPipeline` and
 `AddReversalRiskValueGate`. **`AddFiatOffRamp` (W8.1) sits directly below them**
 and follows the same rule. Each verifies its collaborators and throws at boot
-rather than registering something that cannot work, and
-`FiatRailStartup.Validate` refuses the **live** environment unless an
-`IFiatSettlementHandler` is registered — so a node cannot charge a real card
-while nothing is able to credit it.
+rather than registering something that cannot work.
 
-Two things are still owed before real cards, and neither is code: declare the
-`on-ramp` partition on the platform unit's reserve ledger
-(`IPlatformReserve.DeclarePartitionsAsync`), and register a first price schedule
+## Registration is not capability (OI-29)
+
+`FiatRailStartup.Validate` runs **before** `builder.Build()` and reads
+**configuration and the container**: the environment name, both secrets, the
+return-origin allowlist, the amount bounds, and whether an
+`IFiatSettlementHandler` is registered at all. That last check proves **a type
+is in the container and nothing more**. It was once described in this file as
+meaning "a node cannot charge a real card while nothing is able to credit it",
+and the very next paragraph then listed two things the node still needed before
+it could credit anything — the guarantee falsified itself four lines later.
+
+`FiatRailStartup.GuardLiveCapabilityAsync` is the capability half. It runs
+**after** `builder.Build()`, because the two facts that actually decide whether
+a cleared payment can be credited are rows, not settings:
+
+1. the reserve partition named by `Fiat:OnRamp:ReservePartition` is declared on
+   the platform unit's reserve ledger
+   (`IPlatformReserve.DeclarePartitionsAsync`) **and still has units available**
+   — a declared-but-exhausted partition refuses a draw exactly like an
+   undeclared one, so presence alone is not the capability; and
+2. a **current** price is registered for (chain, platform asset): active, not
+   future-dated, and inside `PriceScheduleLimits.MaxDeclarationAge`. That is the
+   same read `OnRampSettlementHandler` performs at webhook time, kept in step
+   deliberately — a guard that accepted a price the settlement path would refuse
+   would pass a node that still cannot credit.
+
+A blank `Fiat:OnRamp:ReservePartition` resolves to **no partition**, not back to
+the `"on-ramp"` C# default: `OnRampOptions` is bound with `.Get<T>()`, so an
+environment variable set to `""` **replaces** the default rather than leaving it.
+The probe therefore resolves blank to the narrowest answer, in code.
+
+Neither guard touches a store for a disabled rail or a `test` environment, so a
+dev node still boots against an empty database.
+
+### Where it is enforced
+
+The same probe — `FiatCreditCapabilityProbe.ProbeAsync` — also runs **at the
+counter**: `FiatRailProvider.BeginCheckoutAsync` calls it in the live
+environment, after the identity gate and **before** the durable intent is
+claimed or a payment page exists. That is the control that actually stops a real
+card being charged into a void, because a boot guard only proves the state at
+boot — an operator can retire the last price schedule at 3pm on a node that
+booted at 9am. A refusal returns the consumer-safe `RAIL_UNAVAILABLE` message
+and logs the operator-facing reason; nothing durable is written.
+
+⚠ `GuardLiveCapabilityAsync` is written and unit-tested
+(`tests/AZOA.WebAPI.Tests/Fiat/FiatRailStartupCapabilityTests.cs`), but its call
+site is one line in `Program.cs` —
+`await AZOA.WebAPI.Providers.Fiat.FiatRailStartup.GuardLiveCapabilityAsync(app.Services, fiatOptions);`,
+immediately after `var app = builder.Build();` — and `Program.cs` has a single
+owner per wave. **Until that line lands the boot guard is not wired**, and the
+enforced control is the checkout probe above, which needs no composition change.
+
+Both facts remain **operator work** before the first real card: declare the
+`on-ramp` partition, and register a first price schedule
 (`POST /api/fiat/price-schedule` as the node operator, `UnitsPerMinorUnit: "100"`
-for the settled 1 ARDA = $0.01 base at 2 decimals).
+for the settled 1 ARDA = $0.01 base at 2 decimals). What changed is that
+forgetting either now refuses the checkout instead of charging the card and
+parking the lot `Stuck`.
 
 ## The off-ramp — money out (W8.1)
 

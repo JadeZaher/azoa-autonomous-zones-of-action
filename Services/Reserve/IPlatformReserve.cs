@@ -48,14 +48,24 @@ public interface IPlatformReserve
         string chainType, string assetId, CancellationToken ct = default);
 
     /// <summary>
-    /// Declares (or widens) named partitions on an asset. Refuses when the declared total
-    /// across every partition would exceed the asset's total supply, and refuses to shrink
-    /// a partition below what it has already committed.
+    /// Declares (or widens) named partitions on an asset, on the stated authority. Refuses
+    /// when the declared total across every partition would exceed the asset's total supply,
+    /// refuses to shrink a partition below what it has already committed, and refuses an
+    /// authority that does not own the asset's ledger row. A re-declaration SETS a
+    /// partition's budget rather than adding to it, so declaring the same amount twice
+    /// leaves the budget where it was.
+    /// <para>
+    /// <paramref name="authority"/> is required and positional for the same reason it is on
+    /// <see cref="ReserveDrawRequest"/> (OI-20 / OI-21): declaring a partition is what CARVES
+    /// the shared supply, so a new declaration seam cannot be written without stating on
+    /// whose authority it carves.
+    /// </para>
     /// </summary>
     Task<AZOAResult<PlatformReserveLedger>> DeclarePartitionsAsync(
         string chainType,
         string assetId,
         IReadOnlyDictionary<string, BigInteger> declaredByPartition,
+        ReserveDrawAuthority authority,
         CancellationToken ct = default);
 
     /// <summary>

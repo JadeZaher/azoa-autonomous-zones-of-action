@@ -138,8 +138,13 @@ public class TenantManager : ITenantManager
 
         var correlationHash = CorrelationHash(tenantId, externalUserId);
         var seed = $"onboard-{Convert.ToHexString(correlationHash.AsSpan(0, 12)).ToLowerInvariant()}";
-        var username = string.IsNullOrWhiteSpace(model.Username) ? seed : model.Username.Trim();
-        var email = string.IsNullOrWhiteSpace(model.Email) ? $"{seed}@onboard.azoa.local" : model.Email.Trim();
+        // OI-11: fold case HERE, not only at self-registration. user_email / user_username
+        // are case-SENSITIVE UNIQUE indexes, so a tenant that provisioned Alice@Example.com
+        // used to leave a row a later alice@example.com did not collide with - two password
+        // hashes for one address, with LoginAsync left to refuse the ambiguity. This writer
+        // now applies the SAME rule as UserManager.RegisterAsync, so the index adjudicates.
+        var username = string.IsNullOrWhiteSpace(model.Username) ? seed : NormalizeIdentityValue(model.Username);
+        var email = string.IsNullOrWhiteSpace(model.Email) ? $"{seed}@onboard.azoa.local" : NormalizeIdentityValue(model.Email);
 
         var child = new User
         {
@@ -415,6 +420,15 @@ public class TenantManager : ITenantManager
         Username = a.Username,
         Email = a.Email,
     };
+
+    /// <summary>Trimmed, lower-invariant identity value; mirrors UserManager's rule exactly.</summary>
+    /// <remarks>
+    /// Duplicated rather than shared because UserManager keeps its canonicaliser private.
+    /// Both copies must stay byte-identical or the case-SENSITIVE UNIQUE indexes stop folding
+    /// between writers; promoting one shared helper is the follow-up.
+    /// </remarks>
+    private static string NormalizeIdentityValue(string? value)
+        => value?.Trim().ToLowerInvariant() ?? string.Empty;
 
     private static byte[] CorrelationHash(Guid tenantId, string externalUserId)
         => SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(

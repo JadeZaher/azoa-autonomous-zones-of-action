@@ -675,19 +675,20 @@ Uniqueness is adjudicated by the `user_username` and `user_email` UNIQUE indexes
 every user before the write. Two simultaneous registrations for one email now
 lose at the index; before, both passed the scan.
 
-**Read the case rule precisely, because it is not uniform yet.** Those indexes are
-case-**sensitive** — they compare the stored bytes. Self-registration
-(`UserManager.RegisterAsync`) and profile update (`UserManager.UpdateAsync`) both
-store the value trimmed and lower-invariant, so between those two paths the
-index does fold case. **Tenant-provisioned child users do not**:
-`TenantManager.ProvisionChildAsync` stores `model.Email.Trim()` as the tenant sent
-it, so a tenant that provisions `Alice@Example.com` leaves an address a later
-self-registration of `alice@example.com` does not collide with. Until that writer
-folds case too (or the indexes move to a folded column), two rows can differ only
-in case, and the login path is what holds the line: `UserManager.LoginAsync`
-resolves the **exact** row first, accepts a lone case-insensitive match, and
-resolves **nothing** when two rows fold together — it never lets row order decide
-which of two password hashes an address authenticates against.
+**The case rule is now uniform on the write side.** Those indexes are
+case-**sensitive** — they compare the stored bytes — so folding has to happen in every
+writer or not at all. All three fold: self-registration (`UserManager.RegisterAsync`),
+profile update (`UserManager.UpdateAsync`) and tenant provisioning
+(`TenantManager.ProvisionChildAsync`) each store the value trimmed and lower-invariant.
+A tenant that provisions `Alice@Example.com` therefore lands on the same stored bytes as
+a self-registration of `alice@example.com`, and the second one loses at the index instead
+of becoming a second account for one address.
+
+The login path still holds a line behind that, for rows written before the writers folded:
+`UserManager.LoginAsync` resolves the **exact** row first, accepts a lone case-insensitive
+match, and resolves **nothing** when two rows fold together — it never lets row order decide
+which of two password hashes an address authenticates against. Nothing this node writes
+today can create that ambiguity; the branch exists for data that predates the fix.
 
 A registration the store refuses returns one message —
 *"This account could not be created. The email or username may already be in

@@ -90,7 +90,8 @@ public sealed record ExchangeGroupPlan
         string groupIdentity,
         IReadOnlyList<ExchangeGroupLeg> legs,
         string feePayerAddress,
-        SigningContext feePayerSigningContext)
+        SigningContext feePayerSigningContext,
+        ProjectTreasuryReference? treasuryReference)
     {
         ChainType = chainType;
         Network = network;
@@ -99,6 +100,7 @@ public sealed record ExchangeGroupPlan
         Legs = legs;
         FeePayerAddress = feePayerAddress;
         FeePayerSigningContext = feePayerSigningContext;
+        TreasuryReference = treasuryReference;
     }
 
     /// <summary>Canonical rail binding a submitter must match exactly.</summary>
@@ -122,6 +124,13 @@ public sealed record ExchangeGroupPlan
     /// <summary>The fee payer's signing identity.</summary>
     public SigningContext FeePayerSigningContext { get; }
 
+    /// <summary>
+    /// Names the project whose treasury signs a <see cref="ExchangeLegSigner.ProjectTreasury"/>
+    /// leg. Present only when the group carries one, because a treasury key is DERIVED from the
+    /// platform key per project — an address alone cannot tell a submitter which key to derive.
+    /// </summary>
+    public ProjectTreasuryReference? TreasuryReference { get; }
+
     /// <summary>How many legs a person signs, and therefore how many fees the payer must pool.</summary>
     public int UserSignedLegCount => Legs.Count(leg => leg.IsUserSigned);
 
@@ -136,7 +145,8 @@ public sealed record ExchangeGroupPlan
         string idempotencyKey,
         IReadOnlyList<ExchangeGroupLeg> legs,
         string feePayerAddress,
-        SigningContext feePayerSigningContext)
+        SigningContext feePayerSigningContext,
+        ProjectTreasuryReference? treasuryReference = null)
     {
         if (string.IsNullOrWhiteSpace(chainType))
             return Error("An exchange group must name the rail it settles on.");
@@ -187,6 +197,28 @@ public sealed record ExchangeGroupPlan
                 + "holds no spendable native units, so it cannot pay its own fee.");
         }
 
+        // A treasury leg names an account whose key does not exist until it is derived FOR one
+        // project. Without the reference a submitter would have to guess, and the only key it
+        // could reach by guessing is the reserve's — which would move the project's money under
+        // the node's own signature.
+        if (legs.Any(leg => leg.Signer == ExchangeLegSigner.ProjectTreasury))
+        {
+            if (treasuryReference is null || !treasuryReference.IsComplete)
+            {
+                return Error(
+                    "An exchange leg paid out of a project treasury must name the project whose "
+                    + "treasury key signs it.");
+            }
+
+            if (!string.Equals(
+                    treasuryReference.NormalizedChainType,
+                    chainType.Trim(),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Error("The named project treasury is on a different rail than this exchange.");
+            }
+        }
+
         var normalized = legs
             .Select(leg => leg with
             {
@@ -197,7 +229,8 @@ public sealed record ExchangeGroupPlan
             .ToArray();
 
         var identity = Digest(Canonicalize(
-            chainType.Trim(), network, idempotencyKey.Trim(), normalized, feePayerAddress.Trim()));
+            chainType.Trim(), network, idempotencyKey.Trim(), normalized, feePayerAddress.Trim(),
+            treasuryReference));
 
         return AZOAResult<ExchangeGroupPlan>.Success(new ExchangeGroupPlan(
             chainType.Trim(),
@@ -206,7 +239,8 @@ public sealed record ExchangeGroupPlan
             identity,
             normalized,
             feePayerAddress.Trim(),
-            feePayerSigningContext));
+            feePayerSigningContext,
+            treasuryReference));
     }
 
     /// <summary>The canonical JSON a bundle carries as its deployment config, and a submitter replays from.</summary>
@@ -236,13 +270,16 @@ public sealed record ExchangeGroupPlan
         ChainNetwork network,
         string idempotencyKey,
         IReadOnlyList<ExchangeGroupLeg> legs,
-        string feePayerAddress)
+        string feePayerAddress,
+        ProjectTreasuryReference? treasuryReference)
     {
         var builder = new StringBuilder(CanonicalVersion);
         Append(builder, chainType);
         Append(builder, network.ToString());
         Append(builder, idempotencyKey);
         Append(builder, feePayerAddress);
+        Append(builder, treasuryReference?.TenantIdText ?? string.Empty);
+        Append(builder, treasuryReference?.NormalizedProjectReference ?? string.Empty);
         foreach (var leg in legs)
         {
             Append(builder, leg.Role.ToString());
@@ -272,14 +309,51 @@ public sealed record ExchangeGroupPlan
         AZOAResult<ExchangeGroupPlan>.FailureWithCode(message, AzoaErrorCodes.InvalidRequest);
 }
 
+/// <summary>Where a rail left one exchange group.</summary>
+public enum ExchangeGroupOutcome
+{
+    /// <summary>
+    /// The rail took the group and whether it commits is still unknown. Nothing may be recorded
+    /// as settled, and nothing may be handed back either: an unwind here could undo a group that
+    /// commits a moment later.
+    /// </summary>
+    Accepted = 0,
+
+    /// <summary>The rail confirmed the group on chain. This is the only outcome that moved value.</summary>
+    Confirmed = 1,
+
+    /// <summary>
+    /// The rail took the group and it can NEVER commit — its validity window has closed. This is
+    /// the accepted-then-failed outcome, and it is the one that must unwind every node-side
+    /// commitment the exchange took before submitting.
+    /// </summary>
+    DroppedAfterAcceptance = 2,
+}
+
 /// <summary>What a rail did with one exchange group. Never an individual-leg result.</summary>
 /// <param name="GroupReference">The rail's reference for the group as a whole.</param>
 /// <param name="LegReferences">The rail's per-leg references, in the plan's own leg order.</param>
 /// <param name="Confirmed">True only when the rail has confirmed the group, not merely accepted it.</param>
+/// <param name="Outcome">
+/// Where the rail left the group. Defaulted so a submitter that only knows confirmed-or-not
+/// still reports a coherent outcome; <see cref="Settlement"/> is the reading to branch on.
+/// </param>
 public sealed record ExchangeGroupSubmission(
     string GroupReference,
     IReadOnlyList<string> LegReferences,
-    bool Confirmed);
+    bool Confirmed,
+    ExchangeGroupOutcome Outcome = ExchangeGroupOutcome.Accepted)
+{
+    /// <summary>The outcome to act on: <see cref="Confirmed"/> always wins over a defaulted <see cref="Outcome"/>.</summary>
+    public ExchangeGroupOutcome Settlement => Confirmed ? ExchangeGroupOutcome.Confirmed : Outcome;
+
+    /// <summary>
+    /// True when the rail accepted the group and it can never commit. The manager unwinds on
+    /// this and only this: an <see cref="ExchangeGroupOutcome.Accepted"/> group whose fate is
+    /// unknown must be left alone for reconciliation.
+    /// </summary>
+    public bool DroppedAfterAcceptance => Settlement == ExchangeGroupOutcome.DroppedAfterAcceptance;
+}
 
 /// <summary>
 /// Submits one exchange group atomically. The implementation belongs to a rail adapter: it
@@ -300,19 +374,19 @@ public interface IExchangeGroupSubmitter
 }
 
 /// <summary>
-/// The submitter a node runs while no rail adapter can settle a heterogeneous, multi-signer,
-/// fee-pooled group. It settles NOTHING and says so.
+/// The fallback a node runs on a rail it has no exchange adapter for. It settles NOTHING and
+/// says so.
 /// </summary>
 /// <remarks>
-/// <para><b>This is a stub, and it is deliberately the fail-closed kind.</b> The existing
-/// <c>IAtomicTransferGroupModule</c> can only express a group whose legs share one asset, one
-/// source and one signing context — the node-fee split it was built for. An exchange group has
-/// two assets, two signers (the sponsor and the reserve) and pooled fees, so that module
-/// cannot carry it, and the assembly that could lives inside the chain provider.</para>
-/// <para>Until a rail adapter implements <see cref="IExchangeGroupSubmitter"/>, every exchange
-/// refuses here with <see cref="ConsumerSafeErrorCodes.RailUnavailable"/>. It never falls back
-/// to sending the legs one at a time: two sequential transfers are exactly the partial
-/// exchange — funds taken, units undelivered — that atomicity exists to prevent.</para>
+/// <para><b>This is the fail-closed kind of stub, and it is no longer the only submitter.</b>
+/// <c>AlgorandExchangeGroupSubmitter</c> settles a real two-asset, two-signer, fee-pooled group
+/// on Algorand and is registered ahead of this one, so this type takes effect only where no
+/// adapter matched — <c>IAtomicTransferGroupModule</c> cannot stand in, because it expresses
+/// only a group whose legs share one asset, one source and one signing context.</para>
+/// <para>Where it does take effect, every exchange refuses with
+/// <see cref="ConsumerSafeErrorCodes.RailUnavailable"/>. It never falls back to sending the legs
+/// one at a time: two sequential transfers are exactly the partial exchange — funds taken, units
+/// undelivered — that atomicity exists to prevent.</para>
 /// </remarks>
 public sealed class UnavailableExchangeGroupSubmitter : IExchangeGroupSubmitter
 {
@@ -417,13 +491,20 @@ public static class ExchangeBundleDefinition
         ArgumentNullException.ThrowIfNull(inputs);
 
         var legs = BuildLegs(inputs);
+        // The treasury reference is derived from the acting tenant already stamped on the
+        // treasury signing context, so the project a treasury leg is signed FOR can never be a
+        // different project from the one the exchange was driven by.
         var group = ExchangeGroupPlan.TryCreate(
             inputs.ChainType,
             inputs.Network,
             inputs.IdempotencyKey,
             legs,
             inputs.ReserveAddress,
-            inputs.ReserveSigningContext);
+            inputs.ReserveSigningContext,
+            new ProjectTreasuryReference(
+                inputs.ChainType,
+                inputs.TreasurySigningContext.ActingTenantId,
+                inputs.ProjectReference));
         if (group.IsError || group.Result is null)
         {
             return AZOAResult<ExchangeBundle>.FailureWithCode(

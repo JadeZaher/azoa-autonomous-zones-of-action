@@ -422,16 +422,23 @@ public class WalletManager : IWalletManager
 
     /// <summary>
     /// Provisions the deterministic tenant custodial wallet, create-only and idempotent.
-    /// Its custody answer comes from the SAME resolver, one level up: the only caller,
-    /// <c>TenantCustodialAccountManager.ConvergeAccountAsync</c>, provisions solely when
-    /// <c>capabilities.WalletProvisioningReady</c> is true, and that flag is derived from
-    /// <see cref="CustodyModeResolver.Resolve"/>. Moving the check down here (so a direct
-    /// caller cannot bypass it) is the appendix custody-assurance item "CustodyMode=Disabled
-    /// actually disabling", not this one - it also has to reach the wallet fixtures that
-    /// construct this manager with no custody mode configured.
+    /// Answers the custody predicate HERE, at the mint, exactly as
+    /// <see cref="GenerateWalletAsync"/> does.
     /// </summary>
+    /// <remarks>
+    /// OI-12. This method is on the public <see cref="IWalletManager"/> surface, so "the sole
+    /// caller already checked" is a property of today's call graph, not of the contract: a
+    /// second caller - a controller, a worker, another manager - inherits nothing from
+    /// <c>TenantCustodialAccountManager.ConvergeAccountAsync</c>. The gate therefore sits
+    /// where the key is minted, so a node configured with CustodyMode=Disabled cannot mint
+    /// one through any door.
+    /// </remarks>
     public async Task<AZOAResult<IWallet>> BootstrapWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null)
     {
+        var custody = CustodyModeResolver.Resolve(_config, _environment);
+        if (!custody.Available)
+            return AZOAResult<IWallet>.Failure($"{WalletCustodyUnavailable}{custody.UnavailableReason}");
+
         if (userId == Guid.Empty)
             return AZOAResult<IWallet>.Failure("An authenticated user is required.");
 

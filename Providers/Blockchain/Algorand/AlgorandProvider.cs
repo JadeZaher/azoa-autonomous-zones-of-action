@@ -1117,20 +1117,24 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
 
     // ─── IAlgorandASAModule ───
 
+    /// <summary>
+    /// OI-26: <paramref name="total"/> is the rail's own uint64 supply field. It is passed
+    /// through unchanged — there is no narrowing left on this path to truncate a genesis.
+    /// </summary>
     public async Task<AZOAResult<string>> CreateASAAsync(
-        string name, string unitName, int total, int decimals,
+        string name, string unitName, ulong total, int decimals,
         string managerAddress, string reserveAddress, string freezeAddress,
         string clawbackAddress, string walletAddress, CancellationToken ct = default)
     {
         // ASA-create is a platform/ASA-admin op, so it signs with the platform key.
         return await CreateAsaCoreAsync(
-            name, unitName, checked((ulong)total), decimals,
+            name, unitName, total, decimals,
             managerAddress, reserveAddress, freezeAddress, clawbackAddress,
             walletAddress, SigningContext.Platform, ct);
     }
 
     public async Task<AZOAResult<string>> CreateASAAsync(
-        string name, string unitName, int total, int decimals,
+        string name, string unitName, ulong total, int decimals,
         string managerAddress, string reserveAddress, string freezeAddress,
         string clawbackAddress, string walletAddress, SigningContext signingContext, CancellationToken ct = default)
     {
@@ -1138,7 +1142,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         // context may carry an acting tenant so the custody seam runs the live
         // consent check before decrypt (a tenant-driven FungibleTokenCreate).
         return await CreateAsaCoreAsync(
-            name, unitName, checked((ulong)total), decimals,
+            name, unitName, total, decimals,
             managerAddress, reserveAddress, freezeAddress, clawbackAddress,
             walletAddress, signingContext, ct);
     }

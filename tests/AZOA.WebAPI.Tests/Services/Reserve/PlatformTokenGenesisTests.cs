@@ -187,17 +187,19 @@ public class PlatformTokenGenesisTests
     }
 
     [Fact]
-    public async Task RunAsync_refuses_a_total_the_mint_path_cannot_carry()
+    public async Task RunAsync_accepts_the_intended_total_now_the_mint_path_carries_it()
     {
+        // OI-26 widened IAlgorandASAModule.CreateASAAsync's total to the chain's own uint64,
+        // so the intended genesis total is inside the rail ceiling and MINTS. The refusal side
+        // of that boundary is proved in Managers/FungibleTokenSupplyCeilingTests; it cannot be
+        // reached through this request at all, because its Total is a ulong? and so cannot
+        // express an over-rail value.
         var harness = GenesisHarness.Create();
 
         var outcome = await harness.RunAsync(Request(total: PlatformTokenGenesisDefaults.IntendedTotalBaseUnits));
 
-        outcome.IsError.Should().BeTrue();
-        outcome.Code.Should().Be(PlatformTokenGenesisCodes.SupplyCeiling);
-        outcome.Message.Should().Contain("CreateASAAsync");
-        harness.Store.Rows.Should().BeEmpty();
-        harness.Minter.MintCount.Should().Be(0);
+        outcome.IsError.Should().BeFalse(outcome.Message);
+        harness.Minter.MintCount.Should().Be(1);
     }
 
     [Fact]

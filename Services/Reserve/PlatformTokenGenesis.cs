@@ -19,6 +19,10 @@ using SurrealForge.Client.Query;
 // bare name is ambiguous here. Every use below is UTF-8 byte counting/hashing.
 using Encoding = System.Text.Encoding;
 
+// Aliased rather than importing AZOA.WebAPI.Interfaces wholesale: this file only needs the
+// ASA rail's supply ceiling from it, and the namespace carries names that collide here.
+using AlgorandAsaSupplyLimits = AZOA.WebAPI.Interfaces.AlgorandAsaSupplyLimits;
+
 namespace AZOA.WebAPI.Services.Reserve;
 
 /// <summary>
@@ -44,24 +48,33 @@ public static class PlatformTokenGenesisDefaults
     public const int Decimals = 2;
 
     /// <summary>
-    /// Genesis total in BASE units: 2,000,000,000 base units = 20,000,000.00 units at
-    /// <see cref="Decimals"/>. This is the largest round total the mint path can carry
-    /// today -- see <see cref="ProviderSupplyCeiling"/>. It is a CEILING on issuance, not
-    /// a circulating supply: circulating supply is reserve outflow and starts at zero.
+    /// Genesis total in BASE units when the operator supplies none: 2,000,000,000 base
+    /// units = 20,000,000.00 units at <see cref="Decimals"/>. It is a CEILING on issuance,
+    /// not a circulating supply: circulating supply is reserve outflow and starts at zero.
+    /// <para>OI-26: this value is now a DELIBERATE CHOICE, not a constraint. It was picked as
+    /// the largest round total the old <c>int</c> mint surface could carry; that surface is
+    /// gone (<see cref="ProviderSupplyCeiling"/> is the rail's own uint64 ceiling), so an
+    /// operator who wants <see cref="IntendedTotalBaseUnits"/> must now pass it explicitly on
+    /// the genesis request. Settle which one BEFORE genesis: an ASA total cannot be raised
+    /// afterwards, and a bigger supply then means a SECOND, confusing unit.</para>
     /// </summary>
     public const ulong TotalBaseUnits = 2_000_000_000UL;
 
     /// <summary>
-    /// The total N-X2 names (10^15 base units). NOT reachable through today's mint path:
-    /// <c>FungibleTokenManager.TryValidateSupply</c> refuses anything above
-    /// <see cref="ProviderSupplyCeiling"/> because <c>IAlgorandASAModule.CreateASAAsync</c>
-    /// takes an <c>int</c> total, even though an Algorand ASA total is a chain-side
-    /// <c>ulong</c>. Recorded here so the gap is a named constant rather than folklore.
+    /// The total N-X2 names (10^15 base units). REACHABLE since OI-26 widened
+    /// <c>IAlgorandASAModule.CreateASAAsync</c> to the rail's <c>ulong</c> total: it is
+    /// comfortably inside <see cref="ProviderSupplyCeiling"/> and a genesis request carrying
+    /// it is accepted. It is NOT the default -- <see cref="TotalBaseUnits"/> still is -- so
+    /// an operator who intends this total must state it.
     /// </summary>
     public const ulong IntendedTotalBaseUnits = 1_000_000_000_000_000UL;
 
-    /// <summary>Largest total the ASA module's <c>int</c> surface accepts (mirrors <c>FungibleTokenManager</c>).</summary>
-    public const ulong ProviderSupplyCeiling = int.MaxValue;
+    /// <summary>
+    /// Largest total the mint path can carry: the ASA rail's own uint64 supply field
+    /// (<see cref="AlgorandAsaSupplyLimits.MaxTotalBaseUnits"/>). Aliased here rather than
+    /// re-typed so the genesis refusal and the rail can never drift apart.
+    /// </summary>
+    public const ulong ProviderSupplyCeiling = AlgorandAsaSupplyLimits.MaxTotalBaseUnits;
 
     /// <summary>Algorand caps an ASA unit name at 8 bytes.</summary>
     public const int MaxUnitNameBytes = 8;
@@ -372,11 +385,20 @@ public sealed class PlatformTokenGenesis : IPlatformTokenGenesis
         var operationsNote = await TryTopUpReserveForFeesAsync(definition.ChainType, account.Result.Address, ct);
 
         // ── Step 7: the irreversible act ──────────────────────────────────────
+        // The definition is narrowed onto the rail HERE, at the counter, so a total the rail
+        // cannot carry refuses by name instead of truncating into a smaller permanent unit.
+        if (!TryToCreateRequest(definition, out var createRequest, out var narrowError))
+        {
+            await RecordFailureAsync(row, narrowError, ct);
+            return AZOAResult<PlatformTokenGenesisOutcome>.FailureWithCode(
+                narrowError, PlatformTokenGenesisCodes.SupplyCeiling);
+        }
+
         // Anchored on the row's frozen operation key, so a resumed genesis REPLAYS the
         // original mint through the fungible-token idempotency store instead of creating a
         // second asset.
         var mint = await _minter.MintIntoReserveAsync(
-            operatorUserId, ToCreateRequest(definition), row.GenesisOperationKey, ct);
+            operatorUserId, createRequest!, row.GenesisOperationKey, ct);
 
         if (mint.IsError || mint.Result is null || string.IsNullOrWhiteSpace(mint.Result.AssetId))
         {
@@ -522,17 +544,16 @@ public sealed class PlatformTokenGenesis : IPlatformTokenGenesis
             return false;
         }
 
-        if (total > PlatformTokenGenesisDefaults.ProviderSupplyCeiling)
+        // OI-26: the ceiling is now the ASA rail's own uint64 supply field, checked through
+        // the SAME predicate the mint-time narrowing uses (TryToCreateRequest), so an
+        // over-rail total can never be refused in one place and accepted in the other.
+        // Run here because every refusal above happens before a claim and so costs nothing.
+        // While `request.Total` is a ulong this cannot fire from a request body; it is what
+        // keeps a later widening of that DTO from reaching a claim it cannot finish.
+        if (!AlgorandAsaSupplyLimits.TryNarrowToRailTotal(total, out _, out var railError))
         {
-            // Named, actionable, and honest about where the ceiling lives: it is a property
-            // of the ASA module's int surface, not of Algorand, and it is the one thing that
-            // must be widened before a mainnet total larger than ~21.4M units is possible.
-            // Widening it AFTER genesis does not help -- that would mean a second asset.
-            error = $"Total supply {total} exceeds the {PlatformTokenGenesisDefaults.ProviderSupplyCeiling} base " +
-                    "units the mint path can carry today. The limit is the int total on " +
-                    "IAlgorandASAModule.CreateASAAsync (enforced in FungibleTokenManager.TryValidateSupply), not a " +
-                    "chain limit -- an Algorand ASA total is a ulong. Widen that surface BEFORE genesis: raising it " +
-                    "afterwards would require a second asset.";
+            error = railError + " Settle the genesis total BEFORE minting: an ASA total cannot be raised " +
+                    "afterwards, so a larger supply would mean a second asset.";
             code = PlatformTokenGenesisCodes.SupplyCeiling;
             return false;
         }
@@ -560,14 +581,34 @@ public sealed class PlatformTokenGenesis : IPlatformTokenGenesis
         return "genesis:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 
-    private static FungibleTokenCreateRequest ToCreateRequest(PlatformTokenGenesisDefinition definition) => new()
+    /// <summary>
+    /// Narrows the frozen definition onto the mint request, refusing rather than truncating.
+    /// <para>OI-26: a <see cref="PlatformTokenGenesisDefinition"/> carries a
+    /// <see cref="BigInteger"/> total while the ASA rail's supply field is a uint64, so this
+    /// is the one place left in the genesis path where a total can be lost. It used to be an
+    /// unchecked <c>(ulong)</c> cast: a definition above the rail would have minted a
+    /// silently SMALLER unit, permanently, since an ASA total cannot be raised afterwards.</para>
+    /// </summary>
+    private static bool TryToCreateRequest(
+        PlatformTokenGenesisDefinition definition,
+        out FungibleTokenCreateRequest? request,
+        out string error)
     {
-        ChainType = definition.ChainType,
-        Name = definition.Name,
-        UnitName = definition.UnitName,
-        Total = (ulong)definition.TotalSupply,
-        Decimals = definition.Decimals,
-    };
+        request = null;
+
+        if (!AlgorandAsaSupplyLimits.TryNarrowToRailTotal(definition.TotalSupply, out var railTotal, out error))
+            return false;
+
+        request = new FungibleTokenCreateRequest
+        {
+            ChainType = definition.ChainType,
+            Name = definition.Name,
+            UnitName = definition.UnitName,
+            Total = railTotal,
+            Decimals = definition.Decimals,
+        };
+        return true;
+    }
 
     /// <summary>True when a persisted row carries exactly the definition being requested.</summary>
     private static bool MatchesDefinition(PlatformToken row, PlatformTokenGenesisDefinition definition) =>

@@ -30,6 +30,29 @@ public static class FiatEventStatuses
 
     /// <summary>A handler failed. The delivery is retried by the provider.</summary>
     public const string Failed = "Failed";
+
+    /// <summary>
+    /// The statuses of a delivery no handler has finished with — the operator read's filter.
+    /// </summary>
+    /// <remarks>Exposed read-only: a shared mutable array would let one caller silently widen or
+    /// narrow what the board shows for every other caller.</remarks>
+    public static readonly IReadOnlyList<string> NeedingOperatorStatuses = new[] { Received, Failed };
+
+    /// <summary>
+    /// True when this node already answered the provider "stop retrying" for a delivery it never
+    /// finished — so only a person will move it.
+    /// </summary>
+    /// <remarks>
+    /// A row is written <see cref="Received"/> at admission with no attempts. The only thing that
+    /// settles a row back to <see cref="Received"/> is
+    /// <see cref="FiatEventDispositions.ToRowStatus"/> mapping
+    /// <see cref="FiatEventOutcome.AcceptedPending"/>, and that path answers 202 while
+    /// <c>RecordOutcomeAsync</c> counts the attempt. Received with at least one attempt therefore
+    /// means the provider was told to stop; Received with none means the delivery never reached
+    /// the outcome write and the provider's own retry still owns it.
+    /// </remarks>
+    public static bool ProviderWasToldToStopRetrying(string? status, long attemptCount) =>
+        string.Equals(status, Received, StringComparison.Ordinal) && attemptCount > 0;
 }
 
 /// <summary>The four dispositions a webhook delivery can reach. Drives the HTTP status.</summary>
@@ -188,6 +211,20 @@ public interface IStripeWebhookInbox
     /// never asserted by bookkeeping alone.
     /// </summary>
     Task<AZOAResult<bool>> HasAppliedSettlementAsync(string intentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deliveries no handler has finished — <c>Received</c> or <c>Failed</c> — newest first. The
+    /// operator surface over the inbox.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="FiatEventDispositions.ToRowStatus"/> parks an in-flight issuance at
+    /// <c>Received</c> "so a sweep or a redelivery picks it up" while
+    /// <see cref="FiatEventDispositions.ToStatusCode"/> answers 202, which tells the provider to
+    /// stop retrying. Without this read those two sentences add up to a delivery nobody will ever
+    /// look at again.
+    /// </remarks>
+    Task<AZOAResult<IReadOnlyList<FiatEvent>>> ListNeedingOperatorAsync(
+        int limit, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -217,6 +254,9 @@ public sealed class StripeWebhookInbox : IStripeWebhookInbox
     private const string UpdateWithErrorAppliedStatement =
         "UPDATE type::record($_t, $_id) SET status = $_status, last_error = $_error, "
         + "attempt_count = attempt_count + 1, applied_at = $_applied RETURN AFTER";
+
+    private const string NeedingOperatorStatement =
+        "SELECT * FROM fiat_event WHERE status INSIDE $_statuses ORDER BY received_at DESC LIMIT $_limit";
 
     private readonly ISurrealExecutor _executor;
 
@@ -347,6 +387,31 @@ public sealed class StripeWebhookInbox : IStripeWebhookInbox
         catch (Exception ex)
         {
             return new AZOAResult<bool>()
+                .CaptureException(ex, $"Fiat event read failed: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<IReadOnlyList<FiatEvent>>> ListNeedingOperatorAsync(
+        int limit, CancellationToken ct = default)
+    {
+        try
+        {
+            var query = SurrealQuery
+                .Of(NeedingOperatorStatement)
+                .WithParam("_statuses", FiatEventStatuses.NeedingOperatorStatuses.ToArray())
+                .WithParam("_limit", Math.Clamp(limit, 1, 500));
+
+            var rows = await _executor.QueryAsync<FiatEvent>(query, ct);
+            return AZOAResult<IReadOnlyList<FiatEvent>>.Success(
+                rows?.ToList() ?? new List<FiatEvent>(), "Success");
+        }
+        catch (Exception ex)
+        {
+            // An empty board and an unavailable board are different answers. Saying "nothing is
+            // outstanding" because a read faulted is how a charged-and-uncredited person stays
+            // invisible.
+            return new AZOAResult<IReadOnlyList<FiatEvent>>()
                 .CaptureException(ex, $"Fiat event read failed: {ex.Message}");
         }
     }

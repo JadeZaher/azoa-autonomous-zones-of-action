@@ -1729,10 +1729,31 @@ builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IExchangeRatePolicy,
 AZOA.WebAPI.Services.Reserve.BuyBackLiquidityRegistration
     .AddBuyBackLiquidityPolicy(builder.Services, builder.Configuration);
 
-// The atomic-group submitter. The fail-closed default settles NOTHING: no rail adapter can yet
-// assemble a two-asset, two-signer, fee-pooled group (IAtomicTransferGroupModule carries only a
-// same-asset, same-signer pair). TryAdd, so a real adapter registered earlier wins; without one
-// every exchange refuses rather than degrading into two separate transfers.
+// The Algorand exchange rail (OI-31). THIS is what lets an exchange actually settle: it
+// assembles the plan's legs into one atomic group — two assets, two signers — signs each leg
+// through the custody door that account actually has (the sponsor's custodial key, the
+// reserve's platform key, a project treasury's derived key), pools the whole group's chain fee
+// onto the reserve, broadcasts once and reads the group back. It never sends the legs one at a
+// time. Scoped, because IKeyCustodyService is.
+//
+// Registered BEFORE the TryAdd below, which is what makes it win. Its own options resolve every
+// blank value to a working one in code (see AlgorandExchangeGroupSubmitterOptions): .Get<T>()
+// REPLACES a C# default, so an environment variable set to "" would otherwise bind a zero
+// validity window and expire every group before it could be mined.
+var algorandExchangeRailOptions = builder.Configuration
+    .GetSection(AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitterOptions.SectionName)
+    .Get<AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitterOptions>()
+    ?? new AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitterOptions();
+builder.Services.AddSingleton(algorandExchangeRailOptions);
+builder.Services.AddHttpClient(
+    AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitter.AlgodHttpClientName);
+builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IExchangeGroupSubmitter,
+    AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitter>();
+
+// The fail-closed fallback. It settles NOTHING and says so, and TryAdd means it only takes
+// effect on a node where no real adapter was registered above — a chain this node has no rail
+// for refuses rather than degrading into two separate transfers, which is precisely the
+// funds-taken / units-undelivered failure atomicity exists to prevent.
 Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
     .TryAddScoped<AZOA.WebAPI.Services.Reserve.IExchangeGroupSubmitter,
         AZOA.WebAPI.Services.Reserve.UnavailableExchangeGroupSubmitter>(builder.Services);
@@ -1741,6 +1762,11 @@ Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorE
 // left in place as the fallback. It must run AFTER both, or the on-ramp's price schedule — which
 // prices the platform unit it sold — would be dropped instead of composed.
 AZOA.WebAPI.Services.Reserve.HolonTenantDeclaredRateStore.Install(builder.Services);
+
+// The rest of the exchange rail's composition (L1.9). Called in the qualified form so it binds
+// whether the extension is declared with or without a `this` receiver; the contract between the
+// two items is the signature AddExchangeRail(IServiceCollection), not the call syntax.
+AZOA.WebAPI.Services.Reserve.ExchangeRailRegistration.AddExchangeRail(builder.Services);
 
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IReserveExchangeManager,
     AZOA.WebAPI.Managers.ReserveExchangeManager>();
@@ -1810,6 +1836,12 @@ AZOA.WebAPI.Providers.Fiat.FiatRailStartup.Validate(
                 .IsAssignableFrom(descriptor.ImplementationType)));
 
 var app = builder.Build();
+
+// The second half of the money-path capability proof. Validate above counts what is in the
+// SERVICE COLLECTION; this resolves what is in the CONTAINER, because a live rail also needs a
+// declared on-ramp partition to draw from and a current price to charge at, and neither exists
+// on builder.Services. Without this call the method is a control nobody invokes.
+await AZOA.WebAPI.Providers.Fiat.FiatRailStartup.GuardLiveCapabilityAsync(app.Services, fiatOptions);
 
 // Federated sign-in post-build guard (Phase 1B D18). The pre-build guard above proves
 // the SECRETS are present; this proves the REGISTRATIONS are, by resolving each service

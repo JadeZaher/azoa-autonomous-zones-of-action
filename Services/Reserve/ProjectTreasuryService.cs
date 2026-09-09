@@ -74,7 +74,7 @@ public sealed class ProjectTreasuryService : IProjectTreasury
             return AZOAResult<ProjectTreasuryAccount>.Failure(existing.Message);
 
         if (existing.Result is not null)
-            return AccountFrom(existing.Result, address, "Project treasury account resolved.");
+            return AccountFrom(reference, existing.Result, address, "Project treasury account resolved.");
 
         var now = DateTimeOffset.UtcNow;
         var row = new ProjectTreasuryLedger
@@ -102,6 +102,7 @@ public sealed class ProjectTreasuryService : IProjectTreasury
         // freshly derived address exactly like any other read — the create path must not be
         // the one place where a rotated platform key slips through unverified.
         return AccountFrom(
+            reference,
             claim.Result.Row,
             address,
             claim.Result.Created
@@ -121,7 +122,7 @@ public sealed class ProjectTreasuryService : IProjectTreasury
         if (derived.IsError || derived.Result is null)
             return AZOAResult<ProjectTreasuryAccount>.Failure(derived.Message);
 
-        return AccountFrom(row.Result, derived.Result, "Success");
+        return AccountFrom(reference, row.Result, derived.Result, "Success");
     }
 
     /// <inheritdoc />
@@ -220,6 +221,9 @@ public sealed class ProjectTreasuryService : IProjectTreasury
             return AZOAResult<ProjectTreasuryLedger>.Failure(
                 $"No treasury exists for project '{reference.NormalizedProjectReference}' on " +
                 $"'{reference.NormalizedChainType}'. Resolve it before using it.");
+
+        if (GuardRowOwnership(reference, row.Result) is { } notYours)
+            return AZOAResult<ProjectTreasuryLedger>.Failure(notYours);
 
         return AZOAResult<ProjectTreasuryLedger>.Success(row.Result, "Success");
     }
@@ -444,14 +448,17 @@ public sealed class ProjectTreasuryService : IProjectTreasury
     }
 
     /// <summary>
-    /// Builds the account view from a persisted row, refusing when the address on record
-    /// disagrees with what the configured key derives today. That disagreement means the
-    /// platform key changed under the node, and every later call would address an account
-    /// holding none of this project's value.
+    /// Builds the account view from a persisted row, refusing when the row belongs to
+    /// another tenant, or when the address on record disagrees with what the configured
+    /// key derives today. The latter means the platform key changed under the node, and
+    /// every later call would address an account holding none of this project's value.
     /// </summary>
     private static AZOAResult<ProjectTreasuryAccount> AccountFrom(
-        ProjectTreasuryLedger row, string derivedAddress, string message)
+        ProjectTreasuryReference reference, ProjectTreasuryLedger row, string derivedAddress, string message)
     {
+        if (GuardRowOwnership(reference, row) is { } notYours)
+            return AZOAResult<ProjectTreasuryAccount>.Failure(notYours);
+
         if (!string.Equals(row.DerivationVersion, ProjectTreasuryKeyDerivation.Version, StringComparison.Ordinal))
             return AZOAResult<ProjectTreasuryAccount>.Failure(
                 $"Project '{row.ProjectReference}' has a treasury derived by rule " +
@@ -476,6 +483,25 @@ public sealed class ProjectTreasuryService : IProjectTreasury
             message);
     }
 
+    /// <summary>
+    /// Null when <paramref name="row"/> is the treasury <paramref name="reference"/> names;
+    /// the refusal otherwise. Every read reaches a row through a tenant-scoped record id, so
+    /// a row whose recorded tenant disagrees was written under one tenant's key carrying
+    /// another tenant's id — exactly the shape that would let the tenant-scoped resolve route
+    /// (<c>Controllers/ProjectTreasuryTenantController.cs</c>) hand back somebody else's
+    /// account. Enforced HERE, at the read, so admin and tenant doors alike inherit it, and
+    /// deliberately says nothing about whose it actually is.
+    /// </summary>
+    private static string? GuardRowOwnership(ProjectTreasuryReference reference, ProjectTreasuryLedger row)
+    {
+        if (ParseTenant(row.TenantId) == reference.TenantId && reference.TenantId != Guid.Empty)
+            return null;
+
+        return
+            $"The treasury on record for project '{reference.NormalizedProjectReference}' on " +
+            $"'{reference.NormalizedChainType}' is not this tenant's. Refusing every operation on it.";
+    }
+
     private string RecordIdFor(ProjectTreasuryReference reference) =>
         ProjectTreasuryLedger.RecordIdFor(
             reference.NormalizedChainType,
@@ -496,7 +522,14 @@ public sealed class ProjectTreasuryService : IProjectTreasury
             ? parsed
             : ProjectTreasuryStatus.Closed;
 
-    /// <summary>Tenant id off a row; a record link keeps its <c>user:</c> prefix, so strip it.</summary>
+    /// <summary>
+    /// Tenant id off a row. <c>tenant_id</c> is declared <c>record&lt;user&gt;</c>
+    /// (<c>Generated/Schemas/project_treasury_ledger.surql:30</c>), so a read can come back
+    /// as <c>user:abc</c> and, when the id needs escaping, as <c>user:⟨abc⟩</c>. Both are
+    /// unwrapped, and both the dashless and dashed Guid forms are accepted: this value now
+    /// decides a REFUSAL (see <see cref="GuardRowOwnership"/>), so a format this parser
+    /// merely failed to recognise must not read as "belongs to somebody else".
+    /// </summary>
     private static Guid ParseTenant(string? tenantId)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
@@ -507,7 +540,9 @@ public sealed class ProjectTreasuryService : IProjectTreasury
         if (colon >= 0 && colon < text.Length - 1)
             text = text[(colon + 1)..];
 
-        return Guid.TryParseExact(text, "N", out var parsed) ? parsed : Guid.Empty;
+        text = text.Trim('⟨', '⟩', '`');
+
+        return Guid.TryParse(text, out var parsed) ? parsed : Guid.Empty;
     }
 }
 

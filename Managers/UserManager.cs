@@ -104,9 +104,10 @@ public class UserManager : IUserManager
 
     /// <summary>The single row this address may sign in as, or null when it is ambiguous.</summary>
     /// <remarks>
-    /// <c>user_email</c> is a case-SENSITIVE UNIQUE index and not every writer folds
-    /// case (a tenant-provisioned child user is stored as the tenant sent it), so two
-    /// rows can differ only in case. Taking the first case-insensitive match would
+    /// <c>user_email</c> is a case-SENSITIVE UNIQUE index, so two rows can differ only in
+    /// case. Every writer folds case TODAY (<c>TenantManager</c> included, since the
+    /// tenant-provisioned path was fixed), but rows written before that still exist and this
+    /// branch is what keeps them unambiguous. Taking the first case-insensitive match would
     /// then let row order decide which of two password hashes an address authenticates
     /// against. Exact match wins; a lone case-insensitive match still resolves, for
     /// rows written before folding; two or more resolve to nothing.

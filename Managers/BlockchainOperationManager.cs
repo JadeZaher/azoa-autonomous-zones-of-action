@@ -134,6 +134,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                     await ExecuteSwapAsync(operation, chainProvider);
                     break;
                 case "Transfer":
+                case AzoaScopes.IssueUnitsOperationType:
                     await ExecuteTransferAsync(operation, chainProvider);
                     break;
                 case "DeployContract":
@@ -231,6 +232,13 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 p.GetValueOrDefault("SourceTokenId", (operation as IExchangeOperation)?.SourceHolonId?.ToString() ?? string.Empty),
                 p.GetValueOrDefault("TargetTokenId", (operation as IExchangeOperation)?.TargetHolonId?.ToString() ?? string.Empty),
                 (operation as IExchangeOperation)?.ExchangeRate ?? string.Empty,
+                // OI-63: the SIZE is part of the identity of an exchange. Without it two
+                // exchanges of different sizes at one rate between one pair of assets collapse
+                // onto a single key, and the second one REPLAYS the first's result instead of
+                // executing — a sponsorship that silently did not happen. Appended after the
+                // rate so the three components that were already here keep their positions.
+                // Pinned by Managers/IdempotencyKeyStabilityGoldenTests.
+                ExchangedAmountComponent(operation),
             },
             "Swap" => new object[]
             {
@@ -240,7 +248,10 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 p.GetValueOrDefault("AmountIn", string.Empty),
                 p.GetValueOrDefault("MinAmountOut", string.Empty),
             },
-            "Transfer" => new object[]
+            // IssueUnits shares the transfer SHAPE deliberately: it is the same three
+            // value-bearing fields, so it must not fall through to the type-only default
+            // arm, which would collapse every issuance onto one key and REPLAY the first.
+            "Transfer" or AzoaScopes.IssueUnitsOperationType => new object[]
             {
                 "transfer",
                 p.GetValueOrDefault("SourceTokenId", (operation as ITransferOperation)?.SourceHolonId?.ToString() ?? string.Empty),
@@ -273,6 +284,22 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         opParams = [.. opParams, "network", network.ToString()];
 
         return OperationIdGenerator.Generate(chainType, operation.OperationType, walletAddress, opParams);
+    }
+
+    /// <summary>The size of an exchange as the key must see it: the leg the initiator gave up.</summary>
+    /// <remarks>
+    /// Reads the parameter first because that is what the exchange writer records (see
+    /// <c>ReserveExchangeManager</c>'s operation row), and falls back to the typed
+    /// <see cref="RailAmount"/> the same row carries so the two projections cannot disagree —
+    /// both render bare invariant base-unit digits, which is why either spelling hashes alike.
+    /// </remarks>
+    private static string ExchangedAmountComponent(IBlockchainOperation operation)
+    {
+        var declared = operation.Parameters.GetValueOrDefault("Amount", string.Empty);
+        if (!string.IsNullOrWhiteSpace(declared))
+            return declared;
+
+        return operation is IMintOperation typed ? typed.Amount.ToBaseUnitString() : string.Empty;
     }
 
     /// <summary>
@@ -668,6 +695,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 return TryReadRailAmount(
                     operation, "Amount", parameters.GetValueOrDefault("TokenId", string.Empty), out amount);
             case "Transfer":
+            case AzoaScopes.IssueUnitsOperationType:
                 return TryReadRailAmount(operation, "Amount", TransferredAssetId(operation), out amount);
             case "Exchange":
                 return TryReadRailAmount(operation, "Amount", ExchangedAssetId(operation), out amount);

@@ -68,9 +68,62 @@ public class TenantProvisionedGrantTests
     {
         // nft:mint is the scope AllocationManager stamps on an inbound Mint — it credits the
         // person's account and spends nothing of theirs. transfer:sign, which moves value
-        // out, is deliberately absent and needs a deliberate UserExplicit grant.
+        // out, is deliberately absent and needs a deliberate UserExplicit grant. What the
+        // person is actually CHECKED against is the persisted row, not this list — see
+        // TheGrantAsPersisted_CarriesTheIssuanceScope_AndStillNoOutboundValueScope.
         TenantProvisionedGrant.ImpliedScopes.Should().Contain(AzoaScopes.NftMint);
         TenantProvisionedGrant.ImpliedScopes.Should().NotContain(AzoaScopes.TransferSign);
+    }
+
+    [Fact]
+    public async Task TheGrantAsPersisted_CarriesTheIssuanceScope_AndStillNoOutboundValueScope()
+    {
+        // OI-23, asserted at the counter. What decides whether a custodially onboarded person
+        // can be paid is not the literal ImpliedScopes list — it is the scope set on the grant
+        // ROW the consent gate later reads. ConsentManager applies the inbound-credit floor as
+        // it writes that row, so this drives the REAL manager and inspects what it persisted.
+        // Without units:issue here, the DEFAULT AllocationKind 403s for every such person.
+        var (manager, persisted) = RealConsentManager();
+
+        var granted = await manager.GrantParticipationAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            TenantProvisionedGrant.ParticipationRefFor(Guid.NewGuid(), "user-42"),
+            TenantProvisionedGrant.ImpliedScopes);
+
+        granted.IsError.Should().BeFalse();
+        persisted.Should().ContainSingle();
+        persisted[0].Scopes.Should().Contain(AzoaScopes.UnitsIssue);
+
+        // The floor is a CREDIT and widens nothing outbound: H4 still holds on the row.
+        persisted[0].Scopes.Should().NotContain(AzoaScopes.TransferSign);
+        persisted[0].Scopes.Should().NotIntersectWith(AzoaScopes.ValueSigningScopes);
+    }
+
+    [Fact]
+    public async Task TheInboundCreditFloor_IsAppliedEvenWhenTheCallerNamesNoCreditScope()
+    {
+        // The floor lives where the row is written, not in each caller's list, so a
+        // participation caller that never heard of units:issue still produces a person who
+        // can be paid. This is the property that makes the fix survive a new caller.
+        var (manager, persisted) = RealConsentManager();
+
+        var granted = await manager.GrantParticipationAsync(
+            Guid.NewGuid(), Guid.NewGuid(), "participation-ref", new[] { AzoaScopes.ActionExecute });
+
+        granted.IsError.Should().BeFalse();
+        persisted.Should().ContainSingle();
+        persisted[0].Scopes.Should().Contain(AzoaScopes.UnitsIssue);
+    }
+
+    [Fact]
+    public void TheInboundCreditFloor_IsDisjointFromTheValueSigningScopes()
+    {
+        // If it ever were not, GrantParticipationAsync would refuse EVERY participation grant
+        // rather than quietly widen one — but the intent is pinned here so the fail-closed
+        // behaviour is never something a reader has to discover from a broken onboarding.
+        AzoaScopes.ParticipationInboundCreditFloor
+            .Should().NotIntersectWith(AzoaScopes.ValueSigningScopes);
     }
 
     // ── The participation reference ───────────────────────────────────────────
@@ -241,6 +294,31 @@ public class TenantProvisionedGrantTests
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>The REAL ConsentManager over mocked stores, plus the grant rows it upserts.</summary>
+    private static (ConsentManager Manager, List<ConsentGrant> Persisted) RealConsentManager()
+    {
+        var persisted = new List<ConsentGrant>();
+
+        var grants = new Mock<IConsentGrantStore>();
+        grants.Setup(g => g.UpsertAsync(It.IsAny<ConsentGrant>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ConsentGrant grant, CancellationToken _) =>
+            {
+                persisted.Add(grant);
+                return new AZOAResult<ConsentGrant> { Result = grant };
+            });
+
+        var audit = new Mock<IConsentAuditStore>();
+        audit.Setup(a => a.AppendAsync(It.IsAny<ConsentAuditEntry>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<bool> { Result = true });
+
+        var webhook = new Mock<IConsentWebhookEmitter>();
+        webhook.Setup(w => w.EmitAsync(
+                It.IsAny<ConsentWebhookEventType>(), It.IsAny<ConsentGrant>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        return (new ConsentManager(grants.Object, audit.Object, webhook.Object), persisted);
+    }
 
     private void NoPriorGrant()
         => _grants.Setup(g => g.ListByTenantAndParticipationRefAsync(

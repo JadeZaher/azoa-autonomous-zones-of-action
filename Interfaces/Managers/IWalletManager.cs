@@ -18,7 +18,11 @@ public interface IWalletManager
     /// </summary>
     Task<AZOAResult<IWallet>> GenerateWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null);
 
-    /// <summary>Idempotently creates or returns the platform wallet for a user and chain.</summary>
+    /// <summary>
+    /// Idempotently creates or returns the platform wallet for a user and chain. Refuses with
+    /// <c>WalletManager.WalletCustodyUnavailable</c> when this node may hold no signing key;
+    /// the custody predicate is answered by the implementation, never by the caller (OI-12).
+    /// </summary>
     Task<AZOAResult<IWallet>> BootstrapWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null);
 
     /// <summary>

@@ -153,7 +153,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             // ── Step 4: validate supply + decimals — reject BEFORE any broadcast.
             // A bad total/decimals fails the idempotency key here so the claim is
             // terminal (Failed), never leaked InProgress, and nothing is broadcast.
-            if (!TryValidateSupply(request, out var supplyError))
+            if (!TryValidateSupply(request, out var railTotal, out var supplyError))
             {
                 await _idempotencyStore.FailAsync(idempotencyKey, supplyError, CancellationToken.None);
                 return AZOAResult<FungibleTokenResult>.Failure(supplyError);
@@ -189,7 +189,10 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             }
 
             // ── Step 7: create the fungible ASA (the irreversible effect) ─────
-            var total = checked((int)request.Total);
+            // OI-26: the total handed to the rail is the one step 4 validated (railTotal),
+            // not a re-derived or narrowed copy. The old `checked((int)request.Total)` cast
+            // capped every asset this node can ever mint at 2,147,483,647 base units, and an
+            // ASA total cannot be raised afterwards — a bigger supply means a second asset.
             // AC4b: a FungibleTokenCreate is platform-SIGNED but may be tenant-DRIVEN.
             // When an acting tenant is present, build a tenant-driven platform context
             // (grantor = the on-whose-behalf user, scope = token:create:sign) so the
@@ -202,7 +205,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             var asaResult = await asa!.CreateASAAsync(
                 request.Name,
                 request.UnitName,
-                total,
+                railTotal,
                 request.Decimals,
                 managerAddress: creatorAddress,
                 reserveAddress: creatorAddress,
@@ -243,7 +246,9 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
                         result.AssetId,
                         request.UnitName,
                         request.Decimals,
-                        new BigInteger(request.Total),
+                        // The ledger records the total that was MINTED, i.e. the one
+                        // step 4 validated onto the rail -- never a second derivation.
+                        new BigInteger(railTotal),
                         actingTenantId),
                     CancellationToken.None);
 
@@ -374,13 +379,21 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
     // ── Validation ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Validates the tenant-supplied supply + decimals before any broadcast. Rejects
-    /// a zero total, an out-of-range decimals (0..19), and a total that overflows the
-    /// provider's int surface — with a clear error so the idempotency key is failed
-    /// (no leak) before any effect.
+    /// Validates the tenant-supplied supply + decimals before any broadcast and yields the
+    /// exact base-unit total the ASA rail will be handed. Rejects a non-positive total, an
+    /// out-of-range decimals (0..19), and anything the rail cannot carry — with a clear
+    /// error so the idempotency key is failed (no leak) before any effect.
+    /// <para>OI-26: the ceiling is the RAIL's own uint64 supply field
+    /// (<see cref="AlgorandAsaSupplyLimits.MaxTotalBaseUnits"/>), no longer the
+    /// <c>int.MaxValue</c> of the old module signature. The narrowing runs through
+    /// <see cref="AlgorandAsaSupplyLimits.TryNarrowToRailTotal"/> and its RESULT is what
+    /// step 7 mints, so widening <see cref="FungibleTokenCreateRequest.Total"/> later
+    /// cannot reopen a silent truncation: the conversion is the refusal.</para>
     /// </summary>
-    private static bool TryValidateSupply(FungibleTokenCreateRequest request, out string error)
+    private static bool TryValidateSupply(
+        FungibleTokenCreateRequest request, out ulong railTotal, out string error)
     {
+        railTotal = 0UL;
         error = string.Empty;
 
         if (request.Total == 0)
@@ -395,16 +408,7 @@ public sealed class FungibleTokenManager : IFungibleTokenManager
             return false;
         }
 
-        // The provider surface is int (Algorand AssetParams.Total fits, but the
-        // module signature is int); reject a total that would overflow it rather
-        // than truncating silently.
-        if (request.Total > int.MaxValue)
-        {
-            error = $"Total supply '{request.Total}' exceeds the maximum supported by the provider surface (max {int.MaxValue}).";
-            return false;
-        }
-
-        return true;
+        return AlgorandAsaSupplyLimits.TryNarrowToRailTotal(request.Total, out railTotal, out error);
     }
 
     // ── Idempotency helpers (mirror AllocationManager) ────────────────────────

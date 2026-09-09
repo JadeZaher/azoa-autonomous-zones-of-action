@@ -535,7 +535,10 @@ public class PlatformHoldTests
                 Chain, AssetId, "STAKE", 0, new BigInteger(1_000_000), assetTenantId));
             await harness.Reserve.DeclarePartitionsAsync(
                 Chain, AssetId,
-                new Dictionary<string, BigInteger> { [Partition] = new(declared) });
+                new Dictionary<string, BigInteger> { [Partition] = new(declared) },
+                assetTenantId is { } assetOwner && assetOwner != Guid.Empty
+                    ? ReserveDrawAuthority.ForTenant(assetOwner)
+                    : ReserveDrawAuthority.NodeOperator);
 
             var wallets = new FakeWalletStore();
             wallets.Add(Beneficiary, Chain, beneficiaryAccount.Address.ToString());

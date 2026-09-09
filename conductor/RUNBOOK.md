@@ -214,10 +214,10 @@ CRITICAL above is latent rather than live. Full list with file:line: **OPEN-ITEM
    `nft:mint` key.
 6. **The withdraw leg has no transport** (`OI-56`). `IAzoaCashOutNode` unimplemented;
    `PayoutService` refuses by name and the controller answers a stated 503.
-7. **Rung 2 of the reversal ladder refuses** (`OI-59`). `UnavailableReversedPurchaseProvenance`
-   reports `IsAvailable == false` rather than guessing which units a reversed payment bought —
-   refunding an arbitrary hold would rob whichever honest backer actually funded it. Both unwinds
-   are built. *Unblock:* register a real `IReversedPurchaseProvenance`.
+7. ~~**Rung 2 of the reversal ladder refuses** (`OI-59`).~~ **CLOSED in wave L1.**
+   `ExchangePurchaseProvenance` ships and `ReversalRegistration.cs:92` registers it;
+   `UnavailableReversedPurchaseProvenance` survives only as the opt-in refusal for a node that
+   will not attribute. See `Services/Fiat/Reversal/AGENTS.md` §provenance.
 8. **The buy-back backstop is a seam with no implementation** (`OI-60`), so nothing can fill a
    queued place; **selling is refused platform-wide** because no `IExchangeLiquidityPolicy` is
    registered (`OI-62`, deliberate); **guild bids cannot enter commerce** because a hold has one

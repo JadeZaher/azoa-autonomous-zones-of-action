@@ -752,13 +752,15 @@ public sealed class PlatformHoldService : IPlatformHold
     }
 
     /// <summary>
-    /// Threads the acting tenant, grantor and transfer scope onto a signing context so the
-    /// custody seam runs the live consent check before any decrypt. A hold nobody is
-    /// driving on someone's behalf needs no grant and is returned unchanged.
+    /// Threads the acting tenant, grantor and the ISSUANCE scope onto a signing context so
+    /// the custody seam runs the live consent check before any decrypt. A hold RELEASE is
+    /// the same shape as an issuance — the reserve pays the beneficiary — so it is
+    /// units:issue, not transfer:sign (OI-25). A hold nobody is driving on someone's
+    /// behalf needs no grant and is returned unchanged.
     /// </summary>
     private static SigningContext StampTenant(SigningContext context, Guid tenantId, Guid grantorUserId) =>
         tenantId != Guid.Empty
-            ? context.ActingAs(tenantId, AzoaScopes.TransferSign, grantorUserId)
+            ? context.ActingAs(tenantId, AzoaScopes.UnitsIssue, grantorUserId)
             : context;
 
     private IBlockchainProvider? ResolveProvider(string chain, out string error)

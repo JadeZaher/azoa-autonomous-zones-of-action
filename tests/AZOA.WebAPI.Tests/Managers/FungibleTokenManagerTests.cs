@@ -99,7 +99,7 @@ public class FungibleTokenManagerTests
         // The manager now calls the SigningContext overload (tenant-consent-delegation
         // AC4b) so a tenant-driven ASA create can be consent-gated.
         => _asa.Setup(a => a.CreateASAAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<int>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<string> { Result = assetId });
@@ -178,7 +178,7 @@ public class FungibleTokenManagerTests
         _walletStore.Verify(s => s.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _factory.Verify(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()), Times.Never);
         _asa.Verify(a => a.CreateASAAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<int>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()), Times.Never);
         (await _idempotency.GetAsync($"fungible:{ApiKeyId}:blocked", CancellationToken.None)).Should().BeNull();
@@ -285,7 +285,7 @@ public class FungibleTokenManagerTests
 
         // No value-bearing side effect: never created a token, never provisioned.
         _asa.Verify(a => a.CreateASAAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<int>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()), Times.Never);
         _walletManager.Verify(m => m.GenerateWalletAsync(
@@ -320,7 +320,7 @@ public class FungibleTokenManagerTests
 
         // The irreversible ASA creation ran EXACTLY ONCE across the duplicate calls.
         _asa.Verify(a => a.CreateASAAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<int>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -349,7 +349,7 @@ public class FungibleTokenManagerTests
         HasWallet(_userId, WalletFor(_userId, ChainType));
         var manager = BuildManager();
         _asa.Setup(a => a.CreateASAAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<int>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("ambiguous provider failure"));
@@ -366,7 +366,7 @@ public class FungibleTokenManagerTests
             $"fungible:{ApiKeyId}:ambiguous", CancellationToken.None);
         record!.State.Should().Be(IdempotencyState.InProgress);
         _asa.Verify(a => a.CreateASAAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<int>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<AZOA.WebAPI.Core.SigningContext>(), It.IsAny<CancellationToken>()), Times.Once);
     }

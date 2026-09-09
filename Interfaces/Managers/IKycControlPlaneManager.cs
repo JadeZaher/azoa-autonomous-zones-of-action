@@ -40,6 +40,20 @@ public interface IKycControlPlaneManager
         OperatorKycDecisionRequest request,
         Guid operatorUserId,
         CancellationToken ct = default);
+    /// <summary>Operator queue: verified people whose AML verdict still owes a human decision.</summary>
+    Task<AZOAResult<CursorPage<AmlManualReviewItem>>> ListAmlReviewsAsync(
+        int limit,
+        string? cursor,
+        Guid operatorUserId,
+        CancellationToken ct = default);
+
+    /// <summary>Records an operator AML decision as a superseding screening row.</summary>
+    Task<AZOAResult<AmlManualReviewItem>> DecideAmlReviewAsync(
+        Guid subjectUserId,
+        AmlManualReviewDecisionRequest request,
+        Guid operatorUserId,
+        CancellationToken ct = default);
+
     Task<AZOAResult<NodeOperatorOverviewResponse>> GetOverviewAsync(CancellationToken ct = default);
     Task<AZOAResult<CursorPage<KycControlAuditResponse>>> ListAuditAsync(
         int limit,

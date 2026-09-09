@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using AZOA.WebAPI.Core;
@@ -167,6 +168,260 @@ public sealed record AtomicTransferGroupRequest
         Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
     private static AZOAResult<AtomicTransferGroupRequest> Error(string message) => new()
+    {
+        IsError = true,
+        Message = message,
+    };
+}
+
+
+/// <summary>
+/// One leg of a multi-signer atomic group: its own asset, its own source, its own
+/// destination and its own signing identity.
+/// </summary>
+/// <param name="FeeIsPooled">
+/// True when this leg pays no chain fee of its own and the group's fee payer covers it. It is
+/// declared per leg rather than inferred because the reason a leg cannot pay is WHOSE account it
+/// is: a person's custodial account on this node holds no spendable native units, so a leg that
+/// person signs fails on chain the moment it is asked for a fee.
+/// </param>
+public sealed record MultiSignerAtomicGroupLeg(
+    string AssetId,
+    string FromAddress,
+    string ToAddress,
+    BigInteger Amount,
+    SigningContext SigningContext,
+    bool FeeIsPooled)
+{
+    /// <summary>True when the amount is a positive whole number a chain base-unit field can carry.</summary>
+    public bool FitsChainBaseUnits => Amount > BigInteger.Zero && Amount <= ulong.MaxValue;
+
+    /// <summary>The amount in chain base units; only meaningful once <see cref="FitsChainBaseUnits"/> holds.</summary>
+    public ulong AmountBaseUnits => (ulong)Amount;
+}
+
+/// <summary>
+/// Immutable, provider-bound request for an atomic group whose legs may each carry a DIFFERENT
+/// asset, source and signing identity, with the chain fee pooled onto one payer.
+/// </summary>
+/// <remarks>
+/// <para><b>Group submission only.</b> <see cref="AtomicTransferGroupRequest"/> above is the
+/// same-asset, same-source, same-signer transfer pair the node-fee split settles as, and it is
+/// deliberately unchanged: its equality checks are what stop a fee split from paying two
+/// different assets out of two different accounts. An exchange group is a different animal —
+/// two assets, two signers, pooled fees — so it gets its own validated shape here rather than a
+/// relaxation of that one.</para>
+/// <para><b>What this type is FOR is the provider binding.</b> A group plan knows what the node
+/// decided; only a resolved provider knows which chain and network the node would actually
+/// submit to. Binding them here is what stops a group composed for one network from being
+/// broadcast to another, and it is checked before anything is signed.</para>
+/// </remarks>
+public sealed record MultiSignerAtomicGroupRequest
+{
+    private const string CanonicalVersion = "azoa.multi-signer-atomic-group.v1";
+
+    /// <summary>Most legs one atomic group may carry. Algorand's ceiling, and the tightest of the rails.</summary>
+    public const int MaxLegs = 16;
+
+    private MultiSignerAtomicGroupRequest(
+        string chainType,
+        ChainNetwork network,
+        string idempotencyKeyHash,
+        string groupIdentity,
+        IReadOnlyList<MultiSignerAtomicGroupLeg> legs,
+        string feePayerAddress,
+        SigningContext feePayerSigningContext)
+    {
+        ChainType = chainType;
+        Network = network;
+        IdempotencyKeyHash = idempotencyKeyHash;
+        GroupIdentity = groupIdentity;
+        Legs = legs;
+        FeePayerAddress = feePayerAddress;
+        FeePayerSigningContext = feePayerSigningContext;
+    }
+
+    /// <summary>Canonical chain binding, taken from the resolved provider rather than the caller.</summary>
+    public string ChainType { get; }
+
+    /// <summary>Canonical network binding, matched against the resolved provider.</summary>
+    public ChainNetwork Network { get; }
+
+    /// <summary>SHA-256 digest of the caller's trimmed idempotency key.</summary>
+    public string IdempotencyKeyHash { get; }
+
+    /// <summary>Stable digest of the entire immutable group decision.</summary>
+    public string GroupIdentity { get; }
+
+    /// <summary>Every leg, in submission order.</summary>
+    public IReadOnlyList<MultiSignerAtomicGroupLeg> Legs { get; }
+
+    /// <summary>The account that pools the chain fee for every leg that cannot pay its own.</summary>
+    public string FeePayerAddress { get; }
+
+    /// <summary>The fee payer's signing identity; always a node-held platform account.</summary>
+    public SigningContext FeePayerSigningContext { get; }
+
+    /// <summary>How many legs the fee payer must cover.</summary>
+    public int PooledFeeLegCount => Legs.Count(leg => leg.FeeIsPooled);
+
+    /// <summary>True when no leg the group carries is itself sent from the fee payer's account.</summary>
+    public bool NeedsSeparateFeePayerLeg =>
+        !Legs.Any(leg => string.Equals(leg.FromAddress, FeePayerAddress, StringComparison.Ordinal));
+
+    /// <summary>Validates and freezes one multi-signer group against a resolved provider, or refuses it.</summary>
+    public static AZOAResult<MultiSignerAtomicGroupRequest> TryCreate(
+        IBlockchainProvider provider,
+        string chainType,
+        ChainNetwork network,
+        string idempotencyKey,
+        IReadOnlyList<MultiSignerAtomicGroupLeg> legs,
+        string feePayerAddress,
+        SigningContext feePayerSigningContext)
+    {
+        if (provider is null)
+            return Error("A resolved blockchain provider is required.");
+        if (string.IsNullOrWhiteSpace(chainType))
+            return Error("A chain type is required.");
+        if (!Enum.IsDefined(network))
+            return Error("A supported chain network is required.");
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            return Error("An idempotency key is required.");
+        if (legs is null || legs.Count == 0)
+            return Error("A multi-signer atomic group must carry at least one leg.");
+        if (legs.Count > MaxLegs)
+            return Error($"A multi-signer atomic group may carry at most {MaxLegs} legs.");
+        if (string.IsNullOrWhiteSpace(feePayerAddress))
+            return Error("A multi-signer atomic group must name the account that pools its fees.");
+        if (!feePayerSigningContext.IsPlatform)
+            return Error("The fee payer of a multi-signer atomic group must be a node-held account.");
+
+        var providerChain = provider.ChainType;
+        if (string.IsNullOrWhiteSpace(providerChain)
+            || !string.Equals(providerChain, providerChain.Trim(), StringComparison.Ordinal))
+        {
+            return Error("The resolved blockchain provider has no canonical chain type.");
+        }
+
+        if (!string.Equals(chainType.Trim(), providerChain, StringComparison.OrdinalIgnoreCase))
+            return Error("The requested chain type does not match the resolved blockchain provider.");
+        if (network != provider.ActiveNetwork)
+            return Error("The requested chain network does not match the resolved blockchain provider.");
+
+        var normalizedFeePayer = feePayerAddress.Trim();
+        var normalized = new List<MultiSignerAtomicGroupLeg>(legs.Count);
+        foreach (var leg in legs)
+        {
+            if (leg is null)
+                return Error("A multi-signer atomic group leg is required.");
+            if (string.IsNullOrWhiteSpace(leg.AssetId)
+                || string.IsNullOrWhiteSpace(leg.FromAddress)
+                || string.IsNullOrWhiteSpace(leg.ToAddress))
+            {
+                return Error("Every multi-signer atomic group leg needs an asset, a source and a destination.");
+            }
+
+            if (!leg.FitsChainBaseUnits)
+            {
+                return Error(
+                    "Every multi-signer atomic group leg must move a positive whole amount this chain "
+                    + "can carry in one transaction.");
+            }
+
+            var candidate = leg with
+            {
+                AssetId = leg.AssetId.Trim(),
+                FromAddress = leg.FromAddress.Trim(),
+                ToAddress = leg.ToAddress.Trim(),
+                SigningContext = leg.SigningContext with { Scope = leg.SigningContext.Scope?.Trim() },
+            };
+
+            if (string.Equals(candidate.FromAddress, candidate.ToAddress, StringComparison.Ordinal))
+                return Error("A multi-signer atomic group leg cannot send an amount to the account it came from.");
+
+            // The signing identity and the account it is supposed to unlock must agree. A
+            // node-held leg carrying a person's identity (or the reverse) is a leg somebody
+            // would sign with the wrong key.
+            if (candidate.SigningContext.IsPlatform)
+            {
+                if (candidate.SigningContext.UserId != Guid.Empty
+                    || candidate.SigningContext.WalletId != Guid.Empty)
+                {
+                    return Error("A node-held multi-signer atomic group leg must not carry a person's identity.");
+                }
+            }
+            else if (!candidate.SigningContext.IsResolvableUserContext)
+            {
+                return Error("A person-signed multi-signer atomic group leg needs a resolvable custodial identity.");
+            }
+
+            // The whole point of pooling: a person's custodial account holds no spendable
+            // native units, so it can never be the account that pays the group's fee.
+            if (candidate.FeeIsPooled
+                && string.Equals(candidate.FromAddress, normalizedFeePayer, StringComparison.Ordinal))
+            {
+                return Error(
+                    "The fee payer of a multi-signer atomic group cannot also be the source of a leg "
+                    + "whose fee it pools.");
+            }
+
+            normalized.Add(candidate);
+        }
+
+        var idempotencyKeyHash = Digest(idempotencyKey.Trim());
+        var groupIdentity = Digest(Canonicalize(
+            providerChain, network, idempotencyKeyHash, normalized, normalizedFeePayer));
+
+        return new AZOAResult<MultiSignerAtomicGroupRequest>
+        {
+            Result = new MultiSignerAtomicGroupRequest(
+                providerChain,
+                network,
+                idempotencyKeyHash,
+                groupIdentity,
+                normalized,
+                normalizedFeePayer,
+                feePayerSigningContext),
+        };
+    }
+
+    private static string Canonicalize(
+        string chainType,
+        ChainNetwork network,
+        string idempotencyKeyHash,
+        IReadOnlyList<MultiSignerAtomicGroupLeg> legs,
+        string feePayerAddress)
+    {
+        var builder = new StringBuilder(CanonicalVersion);
+        AppendCanonical(builder, chainType);
+        AppendCanonical(builder, network.ToString());
+        AppendCanonical(builder, idempotencyKeyHash);
+        AppendCanonical(builder, feePayerAddress);
+        foreach (var leg in legs)
+        {
+            AppendCanonical(builder, leg.AssetId);
+            AppendCanonical(builder, leg.FromAddress);
+            AppendCanonical(builder, leg.ToAddress);
+            AppendCanonical(builder, leg.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            AppendCanonical(builder, leg.FeeIsPooled ? "1" : "0");
+            AppendCanonical(builder, leg.SigningContext.UserId.ToString("N"));
+            AppendCanonical(builder, leg.SigningContext.WalletId.ToString("N"));
+            AppendCanonical(builder, leg.SigningContext.IsPlatform ? "1" : "0");
+            AppendCanonical(builder, leg.SigningContext.ActingTenantId.ToString("N"));
+            AppendCanonical(builder, leg.SigningContext.GrantorUserId.ToString("N"));
+            AppendCanonical(builder, leg.SigningContext.Scope ?? string.Empty);
+        }
+
+        return builder.ToString();
+    }
+
+    private static void AppendCanonical(StringBuilder builder, string value) =>
+        builder.Append('|').Append(value.Length).Append(':').Append(value);
+
+    private static string Digest(string value) =>
+        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+
+    private static AZOAResult<MultiSignerAtomicGroupRequest> Error(string message) => new()
     {
         IsError = true,
         Message = message,

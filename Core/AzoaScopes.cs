@@ -94,6 +94,18 @@ public static class AzoaScopes
     public const string ActionExecute = "action:execute";
 
     /// <summary>
+    /// D47 issuance (OI-23): a tenant may have units CREDITED into this person's account
+    /// out of the platform reserve. It is INBOUND — the draw comes from the node's own
+    /// reserve and is signed with the PLATFORM key, so it spends nothing the person holds.
+    /// That is why it is deliberately NOT a member of <see cref="ValueSigningScopes"/> and
+    /// why it sits in <see cref="ParticipationInboundCreditFloor"/>: a custodially
+    /// onboarded person holds no AZOA credential and can never click "allow", so if being
+    /// paid required an outbound value-SPENDING scope they could never be paid at all.
+    /// <see cref="TransferSign"/> keeps meaning what it means — money leaving an account.
+    /// </summary>
+    public const string UnitsIssue = "units:issue";
+
+    /// <summary>
     /// The value-signing scopes a tenant must NOT obtain via a no-UX Participation
     /// grant (H4) — each requires a deliberate <c>UserExplicit</c> grant. A grant
     /// request that carries any of these under <c>Participation</c> origin is rejected.
@@ -108,6 +120,29 @@ public static class AzoaScopes
             CredentialRevokeSign,
         };
 
+    /// <summary>
+    /// OI-23: the inbound-credit scopes EVERY <c>GrantOrigin.Participation</c> grant carries,
+    /// stated as a positive signal rather than inferred from absence in
+    /// <see cref="ValueSigningScopes"/>. <c>ConsentManager.GrantParticipationAsync</c> unions
+    /// this set into the scopes of every participation grant it WRITES, which is the point at
+    /// which the grant row exists — so the tenant-provisioning issuer, the join flow and any
+    /// later participation caller all inherit it without each having to remember to list it.
+    ///
+    /// <para>It carries <see cref="UnitsIssue"/> and nothing else. <see cref="NftMint"/> is
+    /// also inbound, but the operation-scope map below lets it sign a <c>Burn</c> as well,
+    /// so handing it to every participation grant would widen more than a credit; the
+    /// tenant-provisioned implied grant names it explicitly instead.</para>
+    ///
+    /// <para>The H4 exclusion in <c>ConsentManager.GrantAsync</c> runs over the UNION, so a
+    /// value-signing scope smuggled in here would refuse every participation grant outright
+    /// rather than quietly widening one — fail-closed by construction, not by review.</para>
+    /// </summary>
+    public static readonly System.Collections.Generic.IReadOnlySet<string> ParticipationInboundCreditFloor =
+        new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
+        {
+            UnitsIssue,
+        };
+
     // ── security-review S6: scope ↔ operation-type consistency ─────────────────
     // The signing scope a tenant-driven op declares is a constant chosen by each
     // op-builder. If a builder MISLABELS a value-moving op (e.g. stamps a transfer
@@ -117,6 +152,15 @@ public static class AzoaScopes
     // given operation type may legitimately sign under; the dispatch seam asserts the
     // declared scope is in the allowed set BEFORE the gate runs (fail-closed: a
     // mismatch is a programming error and must never reach a key decrypt).
+
+    /// <summary>
+    /// The operation type an <c>AllocationKind.IssueUnits</c> draw declares. Its OWN key,
+    /// never <c>Transfer</c>: both move units, but a transfer spends the signer's holdings
+    /// while an issuance credits the recipient out of the reserve. Sharing the key would let
+    /// <see cref="UnitsIssue"/> sign an ordinary outbound transfer — exactly the mislabelling
+    /// this map exists to refuse.
+    /// </summary>
+    public const string IssueUnitsOperationType = "IssueUnits";
 
     /// <summary>
     /// The scopes each blockchain operation type may legitimately sign under. Keyed by
@@ -129,6 +173,9 @@ public static class AzoaScopes
             ["Mint"]                  = Set(NftMint, GrantSign),
             ["Burn"]                  = Set(NftMint),
             ["Transfer"]              = Set(TransferSign),
+            // An issuance is a reserve-funded CREDIT, so it signs under units:issue only —
+            // and units:issue is absent from every other entry, so it can sign nothing else.
+            [IssueUnitsOperationType]  = Set(UnitsIssue),
             ["Swap"]                  = Set(SwapSign),
             ["Exchange"]              = Set(SwapSign),
             ["fungible_token_create"] = Set(TokenCreateSign),
@@ -186,8 +233,8 @@ public static class AzoaScopes
     ///   • <see cref="DappDevelop"/> and <see cref="DappManage"/> — role-bound dApp capabilities.
     ///   • The value/participation signing scopes that are ALREADY intended to be
     ///     key-carried by a tenant/child credential: wallet:manage, nft:mint,
-    ///     action:execute, swap:sign, transfer:sign, grant:sign, token:create:sign,
-    ///     credential:revoke:sign.
+    ///     action:execute, units:issue, swap:sign, transfer:sign, grant:sign,
+    ///     token:create:sign, credential:revoke:sign.
     ///   • EXCLUDES <see cref="Operator"/> — admin authority never originates from a key
     ///     (also stripped at claim-emit time; see <see cref="ApiKeyForbiddenScopes"/>).
     ///   • EXCLUDES <see cref="TenantProvision"/> — closing a prior gap where it was
@@ -205,6 +252,7 @@ public static class AzoaScopes
             KycSubmit,
             NftMint,
             ActionExecute,
+            UnitsIssue,
             SwapSign,
             TransferSign,
             GrantSign,
@@ -240,6 +288,7 @@ public static class AzoaScopes
             [KycSubmit]       = "Begin and submit identity verification.",
             [NftMint]         = "Mint, transfer, and burn NFTs.",
             [ActionExecute]    = "Execute actions (non-value participation).",
+            [UnitsIssue]      = "Have units credited into an account from the platform reserve.",
             [SwapSign]        = "Sign a token swap with the user's key.",
             [TransferSign]    = "Sign a value transfer with the user's key.",
             [GrantSign]       = "Sign a grant/mint-to-actor.",

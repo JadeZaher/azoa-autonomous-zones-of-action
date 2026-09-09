@@ -690,11 +690,11 @@ public sealed class AllocationManager : IAllocationManager
         {
             UserId = userId,
             WalletId = null,
-            OperationType = "Transfer",
+            OperationType = AzoaScopes.IssueUnitsOperationType,
             Status = OperationStatus.Pending,
             RecipientAddress = wallet.Address,
             ActingTenantId = actingTenantId,
-            SigningScope = actingTenantId.HasValue ? AzoaScopes.TransferSign : null,
+            SigningScope = actingTenantId.HasValue ? AzoaScopes.UnitsIssue : null,
             IdempotencyKey = correlation,
             InitiatorUserId = callerUserId,
             InitiatorApiKeyId = callerApiKeyId,
@@ -724,14 +724,15 @@ public sealed class AllocationManager : IAllocationManager
     }
 
     /// <summary>
-    /// Threads the acting tenant + grantor + the transfer scope onto a signing context so
-    /// the custody seam runs the LIVE consent check before any decrypt. A user-driven or
+    /// Threads the acting tenant + grantor + the ISSUANCE scope onto a signing context so
+    /// the custody seam runs the LIVE consent check before any decrypt. Used only by the
+    /// issuance path, so the scope is units:issue and never transfer:sign. A user-driven or
     /// platform-internal issuance needs no grant and is returned unchanged.
     /// </summary>
     private static SigningContext StampTenant(
         SigningContext context, Guid? actingTenantId, Guid grantorUserId)
         => actingTenantId is { } tenantId && tenantId != Guid.Empty
-            ? context.ActingAs(tenantId, AzoaScopes.TransferSign, grantorUserId)
+            ? context.ActingAs(tenantId, AzoaScopes.UnitsIssue, grantorUserId)
             : context;
 
     private async Task<(IWallet? Wallet, string Error)> FindWalletAsync(Guid userId, string chainType)

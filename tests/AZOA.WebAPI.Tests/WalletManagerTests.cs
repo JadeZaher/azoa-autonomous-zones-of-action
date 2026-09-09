@@ -3,6 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Moq;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Services.Signing;
+using AZOA.WebAPI.Services.Custody;
+using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -32,7 +34,10 @@ public class WalletManagerTests
             {
                 ["AZOA:WalletEncryptionKey"] = "test-encryption-key-for-unit-tests-min-32-chars!!",
                 ["Blockchain:DefaultNetwork"] = "Devnet",
-                ["Blockchain:Faucet:DefaultAmount"] = "5"
+                ["Blockchain:Faucet:DefaultAmount"] = "5",
+                // OI-12: BootstrapWalletAsync now answers the custody predicate itself, so a
+                // fixture that configures no mode gets the fail-closed refusal, not a wallet.
+                ["CustodialAccounts:CustodyMode"] = CustodyModeResolver.PlatformMode
             })
             .Build();
         _chainFactory = new Mock<IBlockchainProviderFactory>();
@@ -449,5 +454,178 @@ public class WalletManagerTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("not supported");
+    }
+}
+
+/// <summary>
+/// OI-12: the custody predicate is answered where the key is MINTED, not at whichever
+/// caller happens to exist today.
+/// </summary>
+/// <remarks>
+/// <c>BootstrapWalletAsync</c> is on the public <see cref="IWalletManager"/> surface. The
+/// argument that its "sole caller" (<c>TenantCustodialAccountManager.ConvergeAccountAsync</c>)
+/// already checks <c>WalletProvisioningReady</c> describes today's call graph, not the
+/// contract - a second caller inherits nothing from it. These tests assert refusal AT THE
+/// COUNTER: the store is never asked to persist a wallet, so no key was minted.
+/// </remarks>
+public class BootstrapWalletCustodyGateTests
+{
+    private static IConfiguration ConfigWithCustodyMode(string? custodyMode)
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["AZOA:WalletEncryptionKey"] = "test-encryption-key-for-unit-tests-min-32-chars!!",
+            ["Blockchain:DefaultNetwork"] = "Devnet"
+        };
+        if (custodyMode is not null)
+            settings[CustodyModeResolver.CustodyModeConfigurationPath] = custodyMode;
+
+        return new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+    }
+
+    private static (WalletManager manager, Mock<IWalletStore> store) NewManager(string? custodyMode)
+    {
+        var config = ConfigWithCustodyMode(custodyMode);
+        var store = new Mock<IWalletStore>();
+        store.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IWallet>.Failure("Wallet not found."));
+        store.Setup(s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IWallet wallet, CancellationToken _) => AZOAResult<IWallet>.Success(wallet));
+
+        var manager = new WalletManager(
+            store.Object,
+            new Mock<IHolonStore>().Object,
+            new Mock<IBlockchainProviderFactory>().Object,
+            new WalletKeyService(config),
+            config);
+
+        return (manager, store);
+    }
+
+    /// <summary>
+    /// The blank case is first on purpose: an env var set to "" is the shape a deploy
+    /// produces most easily, and a default is only a control if the code resolves it.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(CustodyModeResolver.DisabledMode)]
+    [InlineData(CustodyModeResolver.KmsHsmMode)]
+    [InlineData("SomethingNobodyImplements")]
+    public async Task BootstrapWalletAsync_WithoutUsableCustody_RefusesAndMintsNothing(string? custodyMode)
+    {
+        var (manager, store) = NewManager(custodyMode);
+
+        var result = await manager.BootstrapWalletAsync(
+            new WalletGenerateRequest { ChainType = "Algorand" }, Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().StartWith(WalletManager.WalletCustodyUnavailable);
+        store.Verify(
+            s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>The control: the refusal above is custody, not a manager that cannot mint.</summary>
+    [Fact]
+    public async Task BootstrapWalletAsync_WithUsableCustody_Mints()
+    {
+        var (manager, store) = NewManager(CustodyModeResolver.PlatformMode);
+
+        var result = await manager.BootstrapWalletAsync(
+            new WalletGenerateRequest { ChainType = "Algorand", IsDefault = false }, Guid.NewGuid());
+
+        result.IsError.Should().BeFalse(result.Message);
+        store.Verify(
+            s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+}
+
+/// <summary>
+/// OI-72: the context-less <c>WithPlatformSigningKeyAsync(bool, Func)</c> overload ran no
+/// consent gate, unlike its three ctx-carrying siblings.
+/// </summary>
+/// <remarks>
+/// <para><b>The recorded grep.</b> At AZOA <c>195c266</c>,
+/// <c>grep -rn "WithPlatformSigningKeyAsync" --include=*.cs .</c> found NO production caller
+/// of the two-argument overload. Every value path uses a sibling that carries a
+/// <c>SigningContext</c>: <c>AlgorandProvider.cs:2471</c>, <c>EthereumProvider.cs:1611</c>,
+/// <c>SolanaProvider.cs:989</c>, <c>PlatformReserveService.cs:137</c> and <c>:203</c>,
+/// <c>ProjectTreasuryService.cs:176</c> and <c>:427</c>. So no tenant-driven operation
+/// reaches it, and with no context it cannot express an acting tenant, a grantor or a scope:
+/// it is operator-only by construction.</para>
+/// <para>The overload is declared on the public <c>IKeyCustodyService</c>, so it cannot be
+/// made <c>internal</c> without changing that interface. It is pinned to an explicit operator
+/// context and now runs the same live gate instead, which is what these tests assert - a
+/// uniform seam in code rather than a comment claiming uniformity.</para>
+/// </remarks>
+public class PlatformSigningOverloadConsentSeamTests
+{
+    private const string GateRefusal = "CONSENT_DENIED_BY_TEST_GATE";
+
+    private static KeyCustodyService NewCustodyService(bool consentAllowed)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AZOA:WalletEncryptionKey"] = "test-encryption-key-for-unit-tests-min-32-chars!!"
+            })
+            .Build();
+
+        var gate = new Mock<ITenantConsentGate>();
+        gate.Setup(g => g.EnsureAllowedAsync(It.IsAny<SigningContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(consentAllowed
+                ? new AZOAResult<bool> { Result = true }
+                : new AZOAResult<bool> { IsError = true, Message = GateRefusal });
+
+        return new KeyCustodyService(
+            new Mock<IWalletStore>().Object, new WalletKeyService(config), config, gate.Object);
+    }
+
+    [Fact]
+    public async Task ContextLessPlatformOverload_DeniedByGate_RefusesWithoutSigning()
+    {
+        var signed = false;
+
+        var result = await NewCustodyService(consentAllowed: false)
+            .WithPlatformSigningKeyAsync<int>(isPlatformContext: true, _ =>
+            {
+                signed = true;
+                return Task.FromResult(1);
+            });
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Be(GateRefusal);
+        signed.Should().BeFalse("the gate must return before any decrypt");
+    }
+
+    /// <summary>
+    /// The discriminator: with the gate allowing, the call gets PAST it and fails for a
+    /// different reason (no platform key is configured here). Without this, the test above
+    /// would also pass on a method that refused everything.
+    /// </summary>
+    [Fact]
+    public async Task ContextLessPlatformOverload_AllowedByGate_FailsFurtherDownNotAtTheGate()
+    {
+        var result = await NewCustodyService(consentAllowed: true)
+            .WithPlatformSigningKeyAsync<int>(isPlatformContext: true, _ => Task.FromResult(1));
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().NotContain(GateRefusal);
+        result.Message.Should().Contain("No platform signing key configured",
+            "the call must reach key resolution, so the deny above came from the gate");
+    }
+
+    [Fact]
+    public void ContextLessPlatformOverload_IsPinnedToAnOperatorContext()
+    {
+        // No acting tenant, no grantor, no scope: the overload cannot carry tenant authority.
+        KeyCustodyService.OperatorOnlyContext.IsPlatform.Should().BeTrue();
+        KeyCustodyService.OperatorOnlyContext.ActingTenantId.Should().Be(Guid.Empty);
+        KeyCustodyService.OperatorOnlyContext.GrantorUserId.Should().Be(Guid.Empty);
+        KeyCustodyService.OperatorOnlyContext.Scope.Should().BeNull();
+        KeyCustodyService.OperatorOnlyContext.ChainType.Should().Be(KeyCustodyService.LegacyPlatformChainType);
     }
 }

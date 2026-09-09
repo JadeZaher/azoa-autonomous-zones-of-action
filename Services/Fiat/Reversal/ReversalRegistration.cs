@@ -46,6 +46,12 @@ public static class ReversalRegistration
             "recovered units go back to the reserve and its partition counters");
         Require(services, Caller, typeof(IPlatformHold),
             "rung 2 of the ladder gives back an open hold the reversed money funded (AddPlatformHold)");
+        Require(services, Caller, typeof(IHoldLedgerStore),
+            "attribution reads the person's OWN commitments to decide which hold a reversed "
+            + "payment funded, and refuses every hold that is somebody else's (AddPlatformHold)");
+        Require(services, Caller, typeof(IBlockchainOperationStore),
+            "what a payment's units were spent on is read off the person's own exchange "
+            + "purchases; with no operation store rung 2 has nothing to attribute");
         Require(services, Caller, typeof(IIdempotencyStore),
             "every recovery move is claimed before it is attempted, so a retry replays instead of "
             + "taking units twice");
@@ -70,10 +76,20 @@ public static class ReversalRegistration
         services.AddScoped<IOnRampLotLookup, SurrealOnRampLotLookup>();
         services.AddSingleton<IReversalFactSource, StripeReversalFactSource>();
 
-        // The stub stands only while nothing better is registered. Registering the real
-        // provenance source (Wave 5/6) BEFORE this call is all it takes to switch rung 2 on.
+        // Rung 2's attribution: the per-lot link from an on-ramp lot to what its units bought.
+        // The guard is the same seam the fail-closed stub used to occupy -- a host that registers
+        // its OWN provenance source before this call still keeps it -- but the default is now the
+        // real link rather than a refusal, which is the whole of OI-59.
+        //
+        // Scoped, not singleton: it reads through the scoped lot lookup, operation store and hold
+        // ledger, and a singleton capturing those would hold one request's Surreal session open
+        // for the life of the process.
+        //
+        // UnavailableReversedPurchaseProvenance is no longer wired anywhere. It stays as the
+        // documented fail-closed answer for a node that deliberately refuses to attribute -- such
+        // a node registers it itself, ahead of this call.
         if (services.All(descriptor => descriptor.ServiceType != typeof(IReversedPurchaseProvenance)))
-            services.AddSingleton<IReversedPurchaseProvenance, UnavailableReversedPurchaseProvenance>();
+            services.AddScoped<IReversedPurchaseProvenance, ExchangePurchaseProvenance>();
 
         services.AddScoped<IReversalCompensation, ReversalCompensationService>();
 

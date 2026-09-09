@@ -50,8 +50,11 @@ independently configured rate decided *what the operation was worth*, and the tw
 silently on a financial record.
 
 It refuses rather than guessing when the answer is not knowable from a chain and an asset alone:
-a retired price, two scopes with a current price for one asset, or a store it cannot read all
-produce "unpriced", which is the honest D16 answer. The configured `ValueRates:Declared` store
+a retired price, two or more TENANT scopes with no node-wide price to resolve between them (an
+operator alert, not a warning), or a store it cannot read all produce "unpriced", which is the
+honest D16 answer. Several scopes *including* the node-wide one resolve to the node-wide price —
+a scope-less read is a node-level read, so the operator's own schedule is the one it can name
+(OI-64; see `PriceScheduleDeclaredRateStore.TryChooseScope`). The configured `ValueRates:Declared` store
 stays composed underneath for assets that have no registered schedule.
 
 `OnRampRegistration.AddOnRampValueRateSource` **replaces** the declared-rate registration rather

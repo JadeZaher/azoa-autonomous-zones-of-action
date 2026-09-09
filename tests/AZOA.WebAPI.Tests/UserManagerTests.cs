@@ -114,3 +114,153 @@ public class UserManagerTests
     }
 
 }
+
+/// <summary>
+/// OI-11: every writer of an account identity must fold case, because
+/// <c>user_email</c> / <c>user_username</c> are case-SENSITIVE UNIQUE indexes
+/// (<c>Persistence/SurrealDb/Generated/Schemas/user.surql</c>).
+/// </summary>
+/// <remarks>
+/// <c>UserManager.RegisterAsync</c> and <c>UserManager.UpdateAsync</c> have always folded.
+/// <c>TenantManager.ProvisionChildAsync</c> did not, so a tenant that provisioned
+/// <c>Alice@Example.com</c> left a row that a later <c>alice@example.com</c> slid past the
+/// index - two rows, two password hashes, one address, with
+/// <c>UserManager.ResolveLoginSubject</c> left to refuse the ambiguity rather than a person
+/// keeping their account. These tests pin the WRITE side of that rule.
+/// </remarks>
+public class TenantIdentityFoldingTests
+{
+    /// <summary>What the UNIQUE index says when a stored value is already taken.</summary>
+    private const string UniqueIndexRefusal = "Database index exists: user_email";
+
+    /// <summary>
+    /// A user store whose create adjudicates the way the real UNIQUE indexes do: it compares
+    /// the STORED BYTES (ordinal). Nothing in the store folds case - folding is the writer's
+    /// job, which is exactly what OI-11 is about, so a fake that folded here would test
+    /// nothing.
+    /// </summary>
+    private static (Mock<IUserStore> store, List<IUser> rows) StoreHolding(params IUser[] seed)
+    {
+        var rows = new List<IUser>(seed);
+        var store = new Mock<IUserStore>();
+
+        store.Setup(s => s.GetByTenantAndExternalUserAsync(
+                It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser>());
+        store.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser> { IsError = true, Message = "User not found." });
+        store.Setup(s => s.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IUser candidate, CancellationToken _) =>
+            {
+                var taken = rows.Any(row =>
+                    string.Equals(row.Email, candidate.Email, StringComparison.Ordinal)
+                    || string.Equals(row.Username, candidate.Username, StringComparison.Ordinal));
+                if (taken)
+                    return new AZOAResult<IUser> { IsError = true, Message = UniqueIndexRefusal };
+
+                rows.Add(candidate);
+                return new AZOAResult<IUser> { Result = candidate };
+            });
+
+        return (store, rows);
+    }
+
+    private static TenantManager NewTenantManager(Mock<IUserStore> store)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:Key"] = "super-secret-key-for-testing-only-quite-long-enough!",
+                ["Jwt:Issuer"] = "test",
+                ["Jwt:Audience"] = "test"
+            })
+            .Build();
+
+        var grants = new Mock<IConsentGrantStore>();
+        grants.Setup(g => g.ListByGrantorAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IEnumerable<ConsentGrant>> { Result = Array.Empty<ConsentGrant>() });
+
+        return new TenantManager(store.Object, config, grants.Object);
+    }
+
+    [Fact]
+    public async Task ProvisionChild_FoldsTheTenantSuppliedEmailAndUsername()
+    {
+        var (store, rows) = StoreHolding();
+
+        var result = await NewTenantManager(store).ProvisionChildAsync(
+            Guid.NewGuid(),
+            new ProvisionChildModel
+            {
+                ExternalUserId = "alice-1",
+                Username = "Alice",
+                Email = "  Alice@Example.COM  "
+            });
+
+        result.IsError.Should().BeFalse(result.Message);
+        rows.Should().ContainSingle();
+        rows[0].Email.Should().Be("alice@example.com");
+        rows[0].Username.Should().Be("alice");
+    }
+
+    [Fact]
+    public async Task ProvisionChild_RecasedEmail_CollidesWithTheAccountThatAlreadyHoldsIt()
+    {
+        var (store, rows) = StoreHolding(new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "someone-else",
+            Email = "alice@example.com"
+        });
+
+        var result = await NewTenantManager(store).ProvisionChildAsync(
+            Guid.NewGuid(),
+            new ProvisionChildModel
+            {
+                ExternalUserId = "alice-1",
+                Username = "alice-tenant",
+                Email = "Alice@Example.com"
+            });
+
+        // The counter, not the doorway: no second row for one address.
+        result.IsError.Should().BeTrue();
+        rows.Should().ContainSingle("a re-cased address must not become a second account");
+        rows[0].Email.Should().Be("alice@example.com");
+    }
+
+    [Fact]
+    public async Task ProvisionChild_FoldedWrite_LeavesLoginUnambiguous()
+    {
+        var (store, rows) = StoreHolding(new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "alice",
+            Email = "alice@example.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("password123")
+        });
+
+        await NewTenantManager(store).ProvisionChildAsync(
+            Guid.NewGuid(),
+            new ProvisionChildModel { ExternalUserId = "alice-1", Email = "ALICE@example.com" });
+
+        // One row survives, so LoginAsync has exactly one password hash to verify against
+        // instead of two rows folding together and resolving to nothing.
+        store.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = rows.ToArray() });
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:Key"] = "super-secret-key-for-testing-only!",
+                ["Jwt:Issuer"] = "test",
+                ["Jwt:Audience"] = "test"
+            })
+            .Build();
+
+        var login = await new UserManager(store.Object, config).LoginAsync(
+            new UserLoginModel { Email = "alice@example.com", Password = "password123" });
+
+        login.IsError.Should().BeFalse(login.Message);
+        login.Result.Should().NotBeNullOrEmpty();
+    }
+}

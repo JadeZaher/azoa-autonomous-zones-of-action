@@ -558,7 +558,11 @@ public class PlatformReserveTests
         var harness = ReserveHarness.WithPlatformKey(configure);
         var registered = await harness.RegisterAsync(totalSupply: 1_000, tenantId);
         registered.IsError.Should().BeFalse(registered.Message);
-        var declared = await harness.DeclareAsync((ContributorPartition, 400));
+        var declared = await harness.DeclareAsAsync(
+            tenantId is { } assetOwner && assetOwner != Guid.Empty
+                ? ReserveDrawAuthority.ForTenant(assetOwner)
+                : ReserveDrawAuthority.NodeOperator,
+            (ContributorPartition, 400));
         declared.IsError.Should().BeFalse(declared.Message);
         return harness;
     }
@@ -621,10 +625,15 @@ public class PlatformReserveTests
 
         public Task<AZOAResult<PlatformReserveLedger>> DeclareAsync(
             params (string Name, long Declared)[] partitions) =>
+            DeclareAsAsync(ReserveDrawAuthority.NodeOperator, partitions);
+
+        public Task<AZOAResult<PlatformReserveLedger>> DeclareAsAsync(
+            ReserveDrawAuthority authority, params (string Name, long Declared)[] partitions) =>
             Reserve.DeclarePartitionsAsync(
                 Chain,
                 AssetId,
-                partitions.ToDictionary(p => p.Name, p => new BigInteger(p.Declared)));
+                partitions.ToDictionary(p => p.Name, p => new BigInteger(p.Declared)),
+                authority);
 
         public Task<AZOAResult<ReserveDrawOutcome>> IssueAsync(
             string partition, long amount, string operationKey, ReserveDrawAuthority? authority = null) =>
@@ -681,11 +690,11 @@ public class PlatformReserveTests
 
             var asa = new Mock<IAlgorandASAModule>();
             asa.Setup(m => m.CreateASAAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<int>(),
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                     It.IsAny<string>(), It.IsAny<SigningContext>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new AZOAResult<string> { Result = AssetId })
-                .Callback<string, string, int, int, string, string, string, string, string,
+                .Callback<string, string, ulong, int, string, string, string, string, string,
                     SigningContext, CancellationToken>(
                     (_, _, _, _, manager, reserve, freeze, clawback, creator, _, _) =>
                     {

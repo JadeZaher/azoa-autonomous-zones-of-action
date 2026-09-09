@@ -545,13 +545,20 @@ public sealed record BuyBackQueueScope(string ChainType, Guid TenantId, string P
 /// <param name="PlatformAmount">Platform base units this seller is owed when their turn comes.</param>
 /// <param name="RequestKey">The exchange's idempotency key; one place per request, so a retry re-reads its own.</param>
 /// <param name="EnqueuedAt">When the place was taken — the only thing that decides the order.</param>
+/// <param name="BackedBaseUnits">
+/// Platform base units the reserve has SET ASIDE for this place, and the whole of what "backed
+/// by the platform" means here. Zero is the only honest reading of an unpromised place: a
+/// promise nobody booked against the declared partition would be backed by the same units as
+/// every other queued seller (OI-44 d).
+/// </param>
 public sealed record BuyBackQueueEntry(
     BuyBackQueueScope Scope,
     string PlatformAssetId,
     Guid? SellerUserId,
     BigInteger PlatformAmount,
     string RequestKey,
-    DateTimeOffset EnqueuedAt);
+    DateTimeOffset EnqueuedAt,
+    BigInteger BackedBaseUnits = default);
 
 /// <summary>
 /// The durable queue a seller joins when a project's treasury is short. It is what makes "we
@@ -570,6 +577,13 @@ public interface IBuyBackQueue
     /// <summary>Retires one place in line — because it was filled, or because it expired.</summary>
     Task<AZOAResult<bool>> CloseAsync(
         BuyBackQueueScope scope, string requestKey, string reason, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records that a place's reserve set-aside has been SPENT, so retiring the place later
+    /// never gives back units the reserve has already moved.
+    /// </summary>
+    Task<AZOAResult<bool>> ClearBackingAsync(
+        BuyBackQueueScope scope, string requestKey, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -584,6 +598,17 @@ public sealed class HolonBuyBackQueue : IBuyBackQueue
     /// <summary>Provider name stamped on a queue row.</summary>
     public const string ProviderName = "azoa.buyback";
 
+    /// <summary>Retirement reason for a place whose sell actually settled.</summary>
+    /// <remarks>
+    /// The one reason that does NOT give the reserve's set-aside back, because the fill already
+    /// spent it. Every other reason retires a place that was never paid, so the units it was
+    /// holding must return to the partition or the backstop shrinks by every seller who walked away.
+    /// </remarks>
+    public const string FilledReason = "filled";
+
+    /// <summary>Retirement reason for a place whose owner never came back inside the TTL.</summary>
+    public const string ExpiredReason = "expired";
+
     private static class MetadataKeys
     {
         public const string TenantId = "tenantId";
@@ -593,19 +618,29 @@ public sealed class HolonBuyBackQueue : IBuyBackQueue
         public const string PlatformAmount = "platformAmountBaseUnits";
         public const string RequestKey = "requestKey";
         public const string EnqueuedAt = "enqueuedAt";
+        public const string BackedBaseUnits = "backedBaseUnits";
         public const string ClosedReason = "closedReason";
     }
 
     private readonly IHolonStore _holons;
     private readonly BuyBackOptions _options;
+    private readonly IBuyBackBackstop? _backstop;
     private readonly ILogger<HolonBuyBackQueue>? _logger;
 
+    /// <param name="backstop">
+    /// The reserve set-aside a place may be carrying. The queue owns the durable record of a
+    /// promise, so it is the queue that gives one back when the place it backed dies.
+    /// </param>
     public HolonBuyBackQueue(
-        IHolonStore holons, BuyBackOptions options, ILogger<HolonBuyBackQueue>? logger = null)
+        IHolonStore holons,
+        BuyBackOptions options,
+        ILogger<HolonBuyBackQueue>? logger = null,
+        IBuyBackBackstop? backstop = null)
     {
         _holons = holons ?? throw new ArgumentNullException(nameof(holons));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger;
+        _backstop = backstop;
     }
 
     /// <inheritdoc />
@@ -633,7 +668,7 @@ public sealed class HolonBuyBackQueue : IBuyBackQueue
         }
 
         var open = new List<BuyBackQueueEntry>();
-        var expired = new List<IHolon>();
+        var expired = new List<(IHolon Row, BuyBackQueueEntry Entry)>();
 
         foreach (var row in rows.Result)
         {
@@ -643,15 +678,20 @@ public sealed class HolonBuyBackQueue : IBuyBackQueue
 
             if (_options.QueueEntryTtl > TimeSpan.Zero && now - entry.EnqueuedAt > _options.QueueEntryTtl)
             {
-                expired.Add(row);
+                expired.Add((row, entry));
                 continue;
             }
 
             open.Add(entry);
         }
 
-        foreach (var row in expired)
-            await DeactivateAsync(row, "expired", ct);
+        foreach (var (row, entry) in expired)
+        {
+            // Order matters: the units go back to the partition BEFORE the place stops being
+            // readable, so a failure here leaves a row that still names what it is holding.
+            await ReleaseBackingAsync(entry, ct);
+            await DeactivateAsync(row, ExpiredReason, ct);
+        }
 
         open.Sort(static (left, right) =>
         {
@@ -712,6 +752,8 @@ public sealed class HolonBuyBackQueue : IBuyBackQueue
                 [MetadataKeys.PlatformAmount] = entry.PlatformAmount.ToString(CultureInfo.InvariantCulture),
                 [MetadataKeys.RequestKey] = entry.RequestKey,
                 [MetadataKeys.EnqueuedAt] = entry.EnqueuedAt.ToString("O", CultureInfo.InvariantCulture),
+                [MetadataKeys.BackedBaseUnits] =
+                    entry.BackedBaseUnits.ToString(CultureInfo.InvariantCulture),
             },
         };
 
@@ -735,7 +777,65 @@ public sealed class HolonBuyBackQueue : IBuyBackQueue
         if (existing.IsError || existing.Result is null || !existing.Result.IsActive)
             return AZOAResult<bool>.Success(false, "No open place in the queue for this request.");
 
+        // A place retired for any reason OTHER than its own fill was never paid, so whatever the
+        // reserve set aside for it goes back to the partition rather than staying held against a
+        // seller who is no longer waiting.
+        if (!string.Equals(reason, FilledReason, StringComparison.Ordinal)
+            && TryRead(existing.Result, scope) is { } retiring)
+        {
+            await ReleaseBackingAsync(retiring, ct);
+        }
+
         return await DeactivateAsync(existing.Result, reason, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<bool>> ClearBackingAsync(
+        BuyBackQueueScope scope, string requestKey, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+
+        if (string.IsNullOrWhiteSpace(requestKey))
+            return AZOAResult<bool>.Success(false, "No place in the queue to amend.");
+
+        var existing = await _holons.GetByIdAsync(RecordIdFor(scope, requestKey), ct);
+        if (existing.IsError || existing.Result is null || !existing.Result.IsActive)
+            return AZOAResult<bool>.Success(false, "No open place in the queue for this request.");
+
+        var row = existing.Result;
+        row.Metadata[MetadataKeys.BackedBaseUnits] = "0";
+        row.ModifiedDate = DateTime.UtcNow;
+
+        var written = await _holons.UpsertAsync(row, ct);
+        return written.IsError
+            ? AZOAResult<bool>.Failure(written.Message)
+            : AZOAResult<bool>.Success(true, "The set-aside this place was carrying is recorded as spent.");
+    }
+
+    /// <summary>
+    /// Gives back the reserve units a place was holding. A place carrying nothing is a no-op,
+    /// and a node with no backstop registered had nothing to give back in the first place.
+    /// </summary>
+    private async Task ReleaseBackingAsync(BuyBackQueueEntry entry, CancellationToken ct)
+    {
+        if (_backstop is null || entry.BackedBaseUnits <= BigInteger.Zero)
+            return;
+
+        var released = await _backstop.ReleaseReservationAsync(
+            new BuyBackTopUpRequest(
+                entry.Scope,
+                entry.PlatformAssetId,
+                ReservePartitionCodec.Normalize(_options.BackstopPartition),
+                entry.BackedBaseUnits,
+                BuyBackBackstopKeys.For(entry.Scope, entry.RequestKey)),
+            ct);
+
+        if (released.IsError)
+        {
+            _logger?.LogWarning(
+                "A retired buy-back place still holds {Amount} reserve base units: {Detail}",
+                entry.BackedBaseUnits, released.Message);
+        }
     }
 
     private async Task<AZOAResult<bool>> DeactivateAsync(IHolon row, string reason, CancellationToken ct)
@@ -787,13 +887,22 @@ public sealed class HolonBuyBackQueue : IBuyBackQueue
         metadata.TryGetValue(MetadataKeys.PlatformAssetId, out var platformAssetId);
         metadata.TryGetValue(MetadataKeys.SellerUserId, out var sellerText);
 
+        // An unreadable or absent backing is ZERO, never "unknown". A place this node cannot
+        // prove the reserve is holding units for is not a place the reserve is backing.
+        metadata.TryGetValue(MetadataKeys.BackedBaseUnits, out var backedText);
+        var backed = BigInteger.TryParse(
+            backedText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedBacking)
+            ? parsedBacking
+            : BigInteger.Zero;
+
         return new BuyBackQueueEntry(
             scope,
             string.IsNullOrWhiteSpace(platformAssetId) ? row.TokenId ?? string.Empty : platformAssetId,
             Guid.TryParse(sellerText, out var sellerUserId) ? sellerUserId : row.UserId,
             amount,
             requestKey,
-            enqueuedAt);
+            enqueuedAt,
+            backed);
     }
 
     private static string NameFor(BuyBackQueueScope scope, string requestKey) =>
@@ -817,6 +926,10 @@ public sealed class HolonBuyBackQueue : IBuyBackQueue
 /// <param name="MovedBaseUnits">Platform base units that reached the treasury; zero when nothing moved.</param>
 public sealed record BuyBackTopUp(BigInteger MovedBaseUnits);
 
+/// <summary>Platform base units the reserve is holding for exactly one seller's shortfall.</summary>
+/// <param name="ReservedBaseUnits">Units set aside on the backstop partition; zero when none were.</param>
+public sealed record BuyBackReservation(BigInteger ReservedBaseUnits);
+
 /// <summary>One request to back a project's shortfall from the platform reserve.</summary>
 public sealed record BuyBackTopUpRequest(
     BuyBackQueueScope Scope,
@@ -825,24 +938,49 @@ public sealed record BuyBackTopUpRequest(
     BigInteger ShortfallBaseUnits,
     string OperationKey);
 
+/// <summary>The one replay anchor a request's set-aside, fill, release and compensation share.</summary>
+/// <remarks>
+/// Shared rather than private because two collaborators book against the same set-aside — the
+/// policy takes it and spends it, the queue gives it back when the place it backed dies — and a
+/// release keyed differently from its set-aside would cancel a hold belonging to somebody else.
+/// </remarks>
+public static class BuyBackBackstopKeys
+{
+    /// <summary>The anchor for one request's backstop, in one project's queue.</summary>
+    public static string For(BuyBackQueueScope scope, string? requestKey) =>
+        $"buyback-backstop:{scope.NormalizedChainType}:{scope.TenantIdText}:"
+        + $"{scope.NormalizedProjectReference}:{requestKey?.Trim()}";
+}
+
 /// <summary>
-/// The seam that actually moves platform units from the reserve's backstop partition into a
-/// project's treasury so a short sell can settle.
+/// The seam that sets aside, and then actually moves, platform units from the reserve's
+/// backstop partition into a project's treasury so a short sell can settle.
 /// </summary>
 /// <remarks>
-/// <b>No implementation is registered on this node — this is a deliberate, fail-closed stub
-/// seam.</b> A top-up is a real value movement (a reserve-signed transfer plus a partition
-/// draw) and it belongs on the settlement path that already assembles and compensates such
-/// moves, not inside an admission check that may run on a preview. Until one is registered,
-/// <see cref="BuyBackLiquidityPolicy"/> never admits a sell the treasury cannot itself pay: it
-/// reads the declared partition only to decide whether a shortfall may be PROMISED a fill in
-/// the queue, and refuses to promise beyond what the operator declared. Unblocked by a
-/// reserve-to-treasury transfer on the exchange settlement path.
+/// Two phases on purpose (OI-44 d). A PROMISE made to a queued seller has to consume the
+/// declared partition at the moment it is made, or one declared budget "backs" every queued
+/// seller in every project at once — which is a promise the node cannot keep. So
+/// <see cref="ReserveAsync"/> books a HOLD on the partition, and the reserve itself refuses it
+/// when the partition is already spoken for; <see cref="TopUpAsync"/> turns that hold into a
+/// real reserve → treasury movement; and <see cref="ReleaseReservationAsync"/> gives the room
+/// back when the place it backed is retired unfilled.
+/// <see cref="ReserveToTreasuryBuyBackBackstop"/> implements it and
+/// <see cref="ExchangeRailRegistration.AddExchangeRail"/> registers it. With no implementation
+/// in the container the policy still refuses to describe any shortfall as backed, so a node
+/// that has not wired the rail promises nothing.
 /// </remarks>
 public interface IBuyBackBackstop
 {
-    /// <summary>Moves up to the shortfall into the treasury; idempotent on the operation key.</summary>
+    /// <summary>Sets the shortfall aside on the declared partition; idempotent on the operation key.</summary>
+    Task<AZOAResult<BuyBackReservation>> ReserveAsync(
+        BuyBackTopUpRequest request, CancellationToken ct = default);
+
+    /// <summary>Moves a set-aside shortfall into the treasury; idempotent on the operation key.</summary>
     Task<AZOAResult<BuyBackTopUp>> TopUpAsync(
+        BuyBackTopUpRequest request, CancellationToken ct = default);
+
+    /// <summary>Gives a set-aside back when the place it backed was retired unfilled.</summary>
+    Task<AZOAResult<bool>> ReleaseReservationAsync(
         BuyBackTopUpRequest request, CancellationToken ct = default);
 }
 
@@ -880,6 +1018,17 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
     public const string NotAPositiveAmountMessage =
         "The amount to sell back must be a positive whole number of units. Nothing was moved.";
 
+    /// <summary>
+    /// Wire code for "your request is recorded and you are number ⟨n⟩ in line". Distinct from
+    /// <see cref="ConsumerSafeErrorCodes.InsufficientFunds"/> on purpose: a bare "not enough
+    /// funds" is a refusal a consumer re-words away, and the seller then never learns they have
+    /// a place at all (OI-44 a). It is a code rather than a member of
+    /// <see cref="ConsumerSafeErrorCodes"/> only because that file has an owner in another
+    /// lane; moving it there and mapping it in <c>ExchangeController.Translate</c> is the
+    /// one-line handoff recorded with this item.
+    /// </summary>
+    public const string QueuedForFillCode = "QUEUED_FOR_FILL";
+
     /// <summary>Shown when the project's queue is already at the depth the operator allows.</summary>
     public const string QueueFullMessage =
         "Too many people are already waiting to sell units in this project. Try again later; "
@@ -893,8 +1042,10 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
     private readonly ILogger<BuyBackLiquidityPolicy>? _logger;
 
     /// <param name="backstop">
-    /// The reserve-to-treasury top-up. Absent on this node, and its absence is what keeps the
-    /// policy from admitting a sell the project's treasury cannot actually pay.
+    /// The reserve-to-treasury set-aside and top-up, registered by
+    /// <see cref="ExchangeRailRegistration.AddExchangeRail"/>. Optional because a node may run
+    /// the buy-back on a project's own funds alone; when it is absent nothing is ever described
+    /// to a seller as backed by the platform, because nothing was booked against the partition.
     /// </param>
     public BuyBackLiquidityPolicy(
         BuyBackOptions options,
@@ -997,56 +1148,136 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
             return Refuse(AbovePerRequestCeilingMessage, AzoaErrorCodes.InvalidRequest);
 
         if (outcome.Verdict == BuyBackCapVerdict.Fillable)
-            return await AdmitAsync(scope, evaluation, ct);
+            return await AdmitAsync(scope, evaluation, mine?.BackedBaseUnits ?? BigInteger.Zero, ct);
 
-        // ── Short. The reserve backs it only as far as the operator declared. ──
-        var backstopRoom = await ReadBackstopRoomAsync(evaluation.PlatformAssetId, scope, ct);
-        var backedByReserve = _options.BackstopEnabled
-            && backstopRoom >= outcome.Shortfall
-            && (maxBackstop is not { } backstopCeiling || outcome.Shortfall <= backstopCeiling);
+        // ── Short. The reserve backs it only as far as the operator declared, and a promise
+        // made to one seller CONSUMES that budget: the set-aside taken here is what stops one
+        // declared partition backing every queued seller in every project at once (OI-44 d).
+        var setAside = await EnsureSetAsideAsync(
+            scope, evaluation, mine, outcome.Shortfall, maxBackstop, ct);
+        var backedByReserve = setAside > BigInteger.Zero && setAside >= outcome.Shortfall;
 
         if (backedByReserve && _backstop is not null && !evaluation.IsPreview)
         {
-            var toppedUp = await TryTopUpAsync(scope, reference, evaluation, outcome, treasuryHeld, floor,
+            var toppedUp = await TryTopUpAsync(scope, reference, evaluation, setAside, treasuryHeld, floor,
                 maxPerRequest, reserved, ct);
-            if (toppedUp)
-                return await AdmitAsync(scope, evaluation, ct);
+
+            if (toppedUp.Filled)
+                return await AdmitAsync(scope, evaluation, BigInteger.Zero, ct);
+
+            if (toppedUp.SetAsideSpent)
+            {
+                // The units left the partition and are the project's now. They are ordinary
+                // treasury funds from here on, so this place is no longer carrying a promise and
+                // must never be credited with giving one back.
+                if (mine is not null && !string.IsNullOrWhiteSpace(evaluation.RequestKey))
+                    await _queue.ClearBackingAsync(scope, evaluation.RequestKey!, ct);
+
+                setAside = BigInteger.Zero;
+                backedByReserve = false;
+            }
         }
 
-        return await QueueAsync(scope, evaluation, places, mine, ahead.Count, backedByReserve, ct);
+        return await QueueAsync(
+            scope, evaluation, places, mine, ahead.Count, backedByReserve, setAside, ct);
     }
 
     /// <summary>
-    /// Asks the backstop to cover the shortfall and re-reads the treasury afterwards. The
-    /// admission rests on what the treasury holds NOW, never on what a top-up said it moved.
+    /// Platform base units the reserve currently has set aside for THIS request. A place that
+    /// already carries one keeps it: asking again would take a second slice of the same declared
+    /// budget for one seller, which is the double-reserve OI-44 (c) describes from the other end.
+    /// A quote never takes one, and neither does a request with no key to hold it under.
     /// </summary>
-    private async Task<bool> TryTopUpAsync(
+    private async Task<BigInteger> EnsureSetAsideAsync(
+        BuyBackQueueScope scope,
+        ExchangeRateEvaluation evaluation,
+        BuyBackQueueEntry? mine,
+        BigInteger shortfall,
+        BigInteger? maxBackstopPerRequest,
+        CancellationToken ct)
+    {
+        var alreadyHeld = mine?.BackedBaseUnits ?? BigInteger.Zero;
+        if (alreadyHeld > BigInteger.Zero)
+            return alreadyHeld;
+
+        var backstop = _backstop;
+        if (!_options.BackstopEnabled
+            || backstop is null
+            || evaluation.IsPreview
+            || string.IsNullOrWhiteSpace(evaluation.RequestKey)
+            || shortfall <= BigInteger.Zero
+            || (maxBackstopPerRequest is { } ceiling && shortfall > ceiling))
+        {
+            return BigInteger.Zero;
+        }
+
+        // A read-only look first, so a shortfall the declared partition plainly cannot cover
+        // does not write to the ledger at all. The read is a COURTESY: the refusal that counts
+        // is the reserve's own, inside DrawAsync, where the counter actually moves.
+        if (await ReadBackstopRoomAsync(evaluation.PlatformAssetId, scope, ct) < shortfall)
+            return BigInteger.Zero;
+
+        var booked = await backstop.ReserveAsync(BackstopRequestFor(scope, evaluation, shortfall), ct);
+        if (booked.IsError || booked.Result is null)
+        {
+            // The reserve refused AT THE COUNTER — the partition is already spoken for, or the
+            // operator never declared it. Not being backed is a fact about this node rather than
+            // an error to show a seller: they still get a place, just without the promise.
+            _logger?.LogInformation(
+                "The buy-back backstop set nothing aside for project {ProjectReference}: {Detail}",
+                scope.NormalizedProjectReference, booked.Message);
+            return BigInteger.Zero;
+        }
+
+        return booked.Result.ReservedBaseUnits;
+    }
+
+    /// <summary>One request's backstop instruction, always under the same replay anchor.</summary>
+    private BuyBackTopUpRequest BackstopRequestFor(
+        BuyBackQueueScope scope, ExchangeRateEvaluation evaluation, BigInteger amount) =>
+        new(scope,
+            evaluation.PlatformAssetId,
+            ReservePartitionCodec.Normalize(_options.BackstopPartition),
+            amount,
+            BuyBackBackstopKeys.For(scope, evaluation.RequestKey));
+
+    /// <summary>What a top-up attempt did: whether it filled, and whether it spent the set-aside.</summary>
+    /// <param name="Filled">The treasury can pay this request now, read back from chain truth.</param>
+    /// <param name="SetAsideSpent">
+    /// The reserve units left the partition. True even when the request did not become fillable,
+    /// because the promise is gone either way and giving it back a second time would hand the
+    /// partition units it never got.
+    /// </param>
+    private readonly record struct BackstopTopUpOutcome(bool Filled, bool SetAsideSpent);
+
+    /// <summary>
+    /// Spends this request's set-aside into the treasury and re-reads the treasury afterwards.
+    /// The admission rests on what the treasury holds NOW, never on what a top-up said it moved.
+    /// </summary>
+    private async Task<BackstopTopUpOutcome> TryTopUpAsync(
         BuyBackQueueScope scope,
         ProjectTreasuryReference reference,
         ExchangeRateEvaluation evaluation,
-        BuyBackCapOutcome outcome,
+        BigInteger setAside,
         BigInteger treasuryHeld,
         BigInteger? floor,
         BigInteger? maxPerRequest,
         BigInteger reserved,
         CancellationToken ct)
     {
-        var topUp = await _backstop!.TopUpAsync(
-            new BuyBackTopUpRequest(
-                scope,
-                evaluation.PlatformAssetId,
-                ReservePartitionCodec.Normalize(_options.BackstopPartition),
-                outcome.Shortfall,
-                BackstopOperationKey(scope, evaluation.RequestKey)),
-            ct);
+        var topUp = await _backstop!.TopUpAsync(BackstopRequestFor(scope, evaluation, setAside), ct);
 
-        if (topUp.IsError || topUp.Result is null || topUp.Result.MovedBaseUnits < outcome.Shortfall)
-            return false;
+        if (topUp.IsError || topUp.Result is null || topUp.Result.MovedBaseUnits < setAside)
+        {
+            // Nothing reached the treasury, so the set-aside is still held against this place and
+            // the seller keeps a promise the reserve is still standing behind.
+            return new BackstopTopUpOutcome(Filled: false, SetAsideSpent: false);
+        }
 
         if (await ReadTreasuryBalanceAsync(reference, evaluation.PlatformAssetId, ct) is not { } refreshed)
-            return false;
+            return new BackstopTopUpOutcome(Filled: false, SetAsideSpent: true);
 
-        return BuyBackCaps.Decide(
+        var filled = BuyBackCaps.Decide(
             evaluation.PlatformAmount,
             refreshed,
             treasuryHeld,
@@ -1054,14 +1285,32 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
             reserved,
             maxPerRequest,
             _options.MaxRequestShareOfTreasuryPercent).Verdict == BuyBackCapVerdict.Fillable;
+
+        return new BackstopTopUpOutcome(filled, SetAsideSpent: true);
     }
 
     /// <summary>Admits the sell and retires this seller's place, if they had one.</summary>
+    /// <param name="unspentSetAside">
+    /// Reserve units still held against this place. A sell the treasury paid on its own leaves
+    /// them untouched, and they go back to the partition HERE — otherwise every request the
+    /// project's own funds caught up with would quietly shrink the backstop for everyone else.
+    /// </param>
     private async Task<AZOAResult<bool>> AdmitAsync(
-        BuyBackQueueScope scope, ExchangeRateEvaluation evaluation, CancellationToken ct)
+        BuyBackQueueScope scope,
+        ExchangeRateEvaluation evaluation,
+        BigInteger unspentSetAside,
+        CancellationToken ct)
     {
+        if (unspentSetAside > BigInteger.Zero && _backstop is not null && !evaluation.IsPreview)
+        {
+            await _backstop.ReleaseReservationAsync(
+                BackstopRequestFor(scope, evaluation, unspentSetAside), ct);
+        }
+
+        // Closed as FILLED, so the queue does not also try to give back a set-aside this method
+        // has already accounted for.
         if (!evaluation.IsPreview && !string.IsNullOrWhiteSpace(evaluation.RequestKey))
-            await _queue.CloseAsync(scope, evaluation.RequestKey!, "filled", ct);
+            await _queue.CloseAsync(scope, evaluation.RequestKey!, HolonBuyBackQueue.FilledReason, ct);
 
         _logger?.LogInformation(
             "Buy-back admitted for project {ProjectReference} on {ChainType} under {PolicyVersion}.",
@@ -1071,6 +1320,10 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
     }
 
     /// <summary>Puts the seller in line and tells them where they stand.</summary>
+    /// <param name="setAside">
+    /// Reserve units booked for this place. Recorded ON the place, because the place is the
+    /// durable record of the promise and the only thing that can give it back later.
+    /// </param>
     private async Task<AZOAResult<bool>> QueueAsync(
         BuyBackQueueScope scope,
         ExchangeRateEvaluation evaluation,
@@ -1078,15 +1331,22 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
         BuyBackQueueEntry? mine,
         int aheadCount,
         bool backedByReserve,
+        BigInteger setAside,
         CancellationToken ct)
     {
         // A quote must never take a place in line, and a request with no key has nothing to
         // hold a place under: both get the plain answer instead of a promise.
         if (!_options.QueueEnabled || evaluation.IsPreview || string.IsNullOrWhiteSpace(evaluation.RequestKey))
+        {
+            await GiveBackUnusedSetAsideAsync(scope, evaluation, mine, setAside, ct);
             return Refuse(ShortWithoutQueueMessage, ConsumerSafeErrorCodes.InsufficientFunds);
+        }
 
         if (mine is null && places.Count >= _options.MaxQueueDepthPerProject)
+        {
+            await GiveBackUnusedSetAsideAsync(scope, evaluation, mine, setAside, ct);
             return Refuse(QueueFullMessage, ConsumerSafeErrorCodes.InsufficientFunds);
+        }
 
         // Everyone ahead of this seller, plus this seller. Counted the same way whether they
         // already had a place or are taking one now, so the number they are told never jumps.
@@ -1101,11 +1361,17 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
                     evaluation.SellerUserId,
                     evaluation.PlatformAmount,
                     evaluation.RequestKey!,
-                    evaluation.Now),
+                    evaluation.Now,
+                    setAside),
                 ct);
 
             if (enqueued.IsError)
+            {
+                // No place was recorded, so nothing durable is carrying the set-aside. Leaving it
+                // held would let a partition be consumed by a promise that was never made.
+                await GiveBackUnusedSetAsideAsync(scope, evaluation, mine, setAside, ct);
                 return Refuse(ShortWithoutQueueMessage, ConsumerSafeErrorCodes.InsufficientFunds);
+            }
         }
 
         var message = backedByReserve
@@ -1116,7 +1382,25 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
               + $"number {position} in line, and it will be filled as the project's funds "
               + "recover. Nothing was moved yet.";
 
-        return AZOAResult<bool>.FailureWithCode(message, ConsumerSafeErrorCodes.InsufficientFunds);
+        // Its OWN code, not a bare "not enough funds": a consumer re-words a generic refusal by
+        // kind, and the place a member would plan around is exactly what gets re-worded away.
+        return AZOAResult<bool>.FailureWithCode(message, QueuedForFillCode);
+    }
+
+    /// <summary>Gives back a set-aside no place ended up carrying.</summary>
+    private async Task GiveBackUnusedSetAsideAsync(
+        BuyBackQueueScope scope,
+        ExchangeRateEvaluation evaluation,
+        BuyBackQueueEntry? mine,
+        BigInteger setAside,
+        CancellationToken ct)
+    {
+        // A set-aside an EXISTING place is already carrying belongs to that place; retiring it is
+        // the queue's job, and cancelling it here would take back units twice.
+        if (mine is not null || setAside <= BigInteger.Zero || _backstop is null || evaluation.IsPreview)
+            return;
+
+        await _backstop.ReleaseReservationAsync(BackstopRequestFor(scope, evaluation, setAside), ct);
     }
 
     /// <summary>The treasury's chain balance of the platform unit, or null when it cannot be read.</summary>
@@ -1189,11 +1473,6 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
             ? counters.Available
             : BigInteger.Zero;
     }
-
-    /// <summary>Replay anchor for one request's top-up, so a retry tops up once.</summary>
-    private static string BackstopOperationKey(BuyBackQueueScope scope, string? requestKey) =>
-        $"buyback-backstop:{scope.NormalizedChainType}:{scope.TenantIdText}:"
-        + $"{scope.NormalizedProjectReference}:{requestKey?.Trim()}";
 
     private static AZOAResult<bool> Refuse(string message, string code) =>
         AZOAResult<bool>.FailureWithCode(message, code);

@@ -171,9 +171,131 @@ public class AllocationConsentGateTests
     {
         var tenantId = Guid.NewGuid();
         var controller = CreateController(
-            tenantId, RealGate(), new Claim("act_as_tenant", Guid.NewGuid().ToString()));
+            tenantId, RealGate(), keyScopes: null,
+            new Claim("act_as_tenant", Guid.NewGuid().ToString()));
 
         var result = await controller.Allocate(Guid.NewGuid(), MintRequest());
+
+        result.Result.Should().BeOfType<ObjectResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        ManagerWasNeverCalled();
+    }
+
+    // ── The default kind: issuance (OI-23) ────────────────────────────────────
+
+    [Fact]
+    public async Task Allocate_IssueUnits_WithTheIssuanceScopeGranted_ReachesTheManager()
+    {
+        // The headline. IssueUnits is the DEFAULT AllocationKind and the only one a tenant
+        // may use (Mint is retired), so this is the single gate between "signed up" and "can
+        // be paid" for a person who holds no AZOA credential and can never click "allow".
+        var tenantId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+        GivenCoveringGrant(targetUserId, tenantId, AzoaScopes.UnitsIssue, revokedAt: null);
+        var controller = CreateController(tenantId, RealGate());
+
+        var result = await controller.Allocate(targetUserId, IssueUnitsRequest());
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task Allocate_TheDefaultRequestShape_IsAdmittedByTheImpliedGrantScope()
+    {
+        // A tenant that posts an allocation and names no kind gets IssueUnits. That request
+        // must be admitted by the scope the implied participation grant actually carries —
+        // this is the exact shape that used to 403 for every custodially onboarded person.
+        var tenantId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+        GivenCoveringGrant(targetUserId, tenantId, AzoaScopes.UnitsIssue, revokedAt: null);
+        var controller = CreateController(tenantId, RealGate());
+
+        var result = await controller.Allocate(targetUserId, new AllocationRequest());
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task Allocate_IssueUnits_IsNotSatisfiedByTheOutboundTransferScope()
+    {
+        // transfer:sign keeps meaning money LEAVING an account. It is not a superset of
+        // being credited, and a person who deliberately granted it has not thereby been
+        // asked about issuance — the two scopes answer different questions.
+        var tenantId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+        GivenCoveringGrant(targetUserId, tenantId, AzoaScopes.TransferSign, revokedAt: null);
+        var controller = CreateController(tenantId, RealGate());
+
+        var result = await controller.Allocate(targetUserId, IssueUnitsRequest());
+
+        result.Result.Should().BeOfType<ObjectResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        ManagerWasNeverCalled();
+    }
+
+    [Fact]
+    public async Task Allocate_IssueUnits_IsNotSatisfiedByTheMintScope()
+    {
+        // nft:mint also signs a Burn (AzoaScopes.OperationScopeMap), so an issuance must not
+        // ride in on it — otherwise the credit path and a destructive path share one key.
+        var tenantId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+        GivenCoveringGrant(targetUserId, tenantId, AzoaScopes.NftMint, revokedAt: null);
+        var controller = CreateController(tenantId, RealGate());
+
+        var result = await controller.Allocate(targetUserId, IssueUnitsRequest());
+
+        result.Result.Should().BeOfType<ObjectResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        ManagerWasNeverCalled();
+    }
+
+    [Fact]
+    public async Task Allocate_IssueUnits_ProbesTheIssuanceScopeAgainstTheRouteTarget()
+    {
+        // The probe the edge sends is the one the store is asked about: same grantor, same
+        // tenant, same scope. If any of the three drifted, the gate would be checking a
+        // question nobody answered.
+        var tenantId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+        GivenCoveringGrant(targetUserId, tenantId, AzoaScopes.UnitsIssue, revokedAt: null);
+        var controller = CreateController(tenantId, RealGate());
+
+        await controller.Allocate(targetUserId, IssueUnitsRequest());
+
+        _grants.Verify(g => g.FindCoveringGrantAsync(
+            targetUserId, tenantId, AzoaScopes.UnitsIssue,
+            It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Allocate_IssueUnits_OnAKeyCarryingOnlyTheIssuanceScope_IsAdmitted()
+    {
+        // units:issue is a real key capability, not decorative vocabulary: a key that carries
+        // only it may issue. It does NOT open the other kinds — see the next case.
+        var tenantId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+        GivenCoveringGrant(targetUserId, tenantId, AzoaScopes.UnitsIssue, revokedAt: null);
+        var controller = CreateController(
+            tenantId, RealGate(), keyScopes: new[] { AzoaScopes.UnitsIssue });
+
+        var result = await controller.Allocate(targetUserId, IssueUnitsRequest());
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task Allocate_Transfer_OnAKeyCarryingOnlyTheIssuanceScope_IsRefusedAtTheDoor()
+    {
+        // The issuance key scope admits an issuance and nothing else; a Transfer still needs
+        // the scope it always needed, and is refused before any consent probe runs.
+        var tenantId = Guid.NewGuid();
+        var controller = CreateController(
+            tenantId, RealGate(), keyScopes: new[] { AzoaScopes.UnitsIssue });
+
+        var result = await controller.Allocate(
+            Guid.NewGuid(),
+            new AllocationRequest { Kind = AllocationKind.Transfer, ChainType = "Algorand" });
 
         result.Result.Should().BeOfType<ObjectResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
@@ -206,18 +328,46 @@ public class AllocationConsentGateTests
         // The edge check must ask about the same capability the custody seam will, or a
         // person could consent to one thing and have another signed. AzoaScopes owns that
         // map (S6) and is the arbiter here.
-        foreach (var kind in new[] { AllocationKind.Mint, AllocationKind.Transfer })
+        foreach (var kind in Enum.GetValues<AllocationKind>())
         {
             var (operationType, signingScope) = AllocationController.SigningShapeFor(kind);
-            signingScope.Should().NotBeNull();
+            signingScope.Should().NotBeNull($"{kind} must declare a consent-checkable scope");
             AzoaScopes.IsScopeValidForOperation(operationType, signingScope).Should().BeTrue();
         }
+    }
+
+    [Fact]
+    public void TheIssuanceScope_CannotSignAnythingButAnIssuance()
+    {
+        // THE ATTACK the S6 map exists to refuse, in the issuance direction: units:issue is
+        // handed to every custodially onboarded person by the participation floor, so if it
+        // could label an ordinary Transfer, that floor would silently authorise spending.
+        AzoaScopes.IsScopeValidForOperation("Transfer", AzoaScopes.UnitsIssue).Should().BeFalse();
+        AzoaScopes.IsScopeValidForOperation("Mint", AzoaScopes.UnitsIssue).Should().BeFalse();
+        AzoaScopes.IsScopeValidForOperation("Swap", AzoaScopes.UnitsIssue).Should().BeFalse();
+        AzoaScopes.IsScopeValidForOperation("Burn", AzoaScopes.UnitsIssue).Should().BeFalse();
+
+        // And the reverse: an issuance cannot launder itself under an outbound scope.
+        AzoaScopes.IsScopeValidForOperation(
+            AzoaScopes.IssueUnitsOperationType, AzoaScopes.TransferSign).Should().BeFalse();
+        AzoaScopes.IsScopeValidForOperation(
+            AzoaScopes.IssueUnitsOperationType, AzoaScopes.NftMint).Should().BeFalse();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static AllocationRequest MintRequest()
         => new() { Kind = AllocationKind.Mint, ChainType = "Algorand", Amount = "100", Name = "Units" };
+
+    private static AllocationRequest IssueUnitsRequest()
+        => new()
+        {
+            Kind = AllocationKind.IssueUnits,
+            ChainType = "Algorand",
+            Amount = "100",
+            AssetId = "1001",
+            Partition = "contributor",
+        };
 
     private TenantConsentGate RealGate()
         => new(_grants.Object, _audit.Object, NullLogger<TenantConsentGate>.Instance);
@@ -251,9 +401,16 @@ public class AllocationConsentGateTests
             It.IsAny<Guid>(), It.IsAny<AllocationRequest>(), It.IsAny<Guid>(),
             It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<Guid?>()), Times.Never);
 
-    /// <summary>A tenant API-key principal: the key's owner user id IS the tenant id.</summary>
+    /// <summary>
+    /// A tenant API-key principal: the key's owner user id IS the tenant id.
+    /// <paramref name="keyScopes"/> defaults to <c>nft:mint</c>, the scope every tenant key
+    /// already carries, so a test names it only when the door itself is what is under test.
+    /// </summary>
     private AllocationController CreateController(
-        Guid tenantId, ITenantConsentGate? consentGate, params Claim[] extraClaims)
+        Guid tenantId,
+        ITenantConsentGate? consentGate,
+        IEnumerable<string>? keyScopes = null,
+        params Claim[] extraClaims)
     {
         var claims = new List<Claim>
         {
@@ -261,8 +418,9 @@ public class AllocationConsentGateTests
             new("UserId", tenantId.ToString()),
             new("AuthMethod", "ApiKey"),
             new("ApiKeyId", Guid.NewGuid().ToString()),
-            new("scope", AzoaScopes.NftMint),
         };
+        claims.AddRange(
+            (keyScopes ?? new[] { AzoaScopes.NftMint }).Select(scope => new Claim("scope", scope)));
         claims.AddRange(extraClaims);
 
         return new AllocationController(_manager.Object, consentGate)

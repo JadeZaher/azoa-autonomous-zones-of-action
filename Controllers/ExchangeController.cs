@@ -10,6 +10,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -294,6 +295,10 @@ public sealed class ExchangeController : ControllerBase
             ConsumerSafeErrorCodes.RailUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             ConsumerSafeErrorCodes.RailBusy => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             ConsumerSafeErrorCodes.SettlementPending => Accepted(result),
+            // A place in the buy-back queue is an ACCEPTANCE, not a refusal. Nothing moved and
+            // the units must STAY set aside, so this must never be 422 — that is the one status
+            // a consumer may release a seller's units on, and releasing them destroys the place.
+            BuyBackLiquidityPolicy.QueuedForFillCode => Accepted(result),
             _ => BadRequest(result),
         };
     }

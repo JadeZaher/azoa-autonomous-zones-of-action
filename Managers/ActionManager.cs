@@ -38,9 +38,10 @@ public class ActionManager : IActionManager, IParkedRunReconciler
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly ActionConfigBindingResolver _bindingResolver;
 
-    // D1/D9 pre-execution value-rail capability gate. Constructed here (not injected) so
-    // the DI signature stays positional-compatible; the pluggable half — the per-rail
-    // destination directories — IS injected. See Services/Actions/AGENTS.md §rail-capability.
+    // D1/D9 pre-execution value-rail capability gate, and — since OI-28 — the account pause.
+    // Constructed here (not injected) so the DI signature stays positional-compatible; the
+    // pluggable halves (per-rail destination directories, the reversal ledger the pause reads)
+    // ARE injected. See Services/Actions/AGENTS.md §rail-capability.
     private readonly ValueRailCapabilityGate _railGate;
 
     // Config-bound marketplace guards (see Managers/AGENTS.md §action-run-quota
@@ -83,7 +84,11 @@ public class ActionManager : IActionManager, IParkedRunReconciler
         // Optional (like configuration) so existing positional test fixtures compile. DI
         // supplies every registered rail destination directory; with none registered the
         // gate falls back to the rail-scoped wallet directory. See §rail-capability.
-        IEnumerable<IRailDestinationDirectory>? railDestinationDirectories = null)
+        IEnumerable<IRailDestinationDirectory>? railDestinationDirectories = null,
+        // OI-28: the read side of the account pause. Program.cs registers IFiatReversalLedger
+        // unconditionally (AddFiatReversalPipeline), so production always supplies it; a container
+        // without the reversal pipeline cannot hold a flag to honour.
+        AZOA.WebAPI.Services.Fiat.Reversal.IFiatReversalLedger? accountPauseLedger = null)
     {
         _actionStore = actionStore;
         _runStore = runStore;
@@ -99,7 +104,7 @@ public class ActionManager : IActionManager, IParkedRunReconciler
             ? new ActionRunQuotaOptions()
             : ActionRunQuotaOptions.FromConfiguration(configuration);
         _railGate = new ValueRailCapabilityGate(
-            walletManager, chainFactory.DefaultRailId, railDestinationDirectories);
+            walletManager, chainFactory.DefaultRailId, railDestinationDirectories, accountPauseLedger);
     }
 
     /// <summary>
@@ -810,14 +815,16 @@ public class ActionManager : IActionManager, IParkedRunReconciler
                     Services.Actions.NotEnabledActionNodeTypes.RefusalMessage(node.NodeType));
             }
             else if (handler.RequiresChainCapability
-                && !await _railGate.HasUsableDestinationAsync(
-                    run.UserId, handler.ResolveSettlementRailId(node)))
+                && await _railGate.AdmitValueNodeAsync(
+                        run.UserId, handler.ResolveSettlementRailId(node))
+                    is { IsAllowed: false } refusal)
             {
-                // D1/D9 pre-execution capability gate — fails closed (no broadcast): a
-                // value-moving node may not run unless the actor has a usable destination
-                // on the rail THIS node settles on. HandleAsync is SKIPPED entirely.
-                result = ActionNodeResults.Fail(ValueRailCapabilityGate.NoDestinationMessage(
-                    _railGate.ResolveRailId(handler.ResolveSettlementRailId(node))));
+                // The ONE pre-execution admission predicate — fails closed (no broadcast). A
+                // value-moving node may not run while the actor's account is PAUSED by an
+                // unresolved reversal (OI-28), nor unless the actor has a usable destination on
+                // the rail THIS node settles on. HandleAsync is SKIPPED entirely. The durable
+                // seam calls the same predicate, so the two paths cannot drift apart.
+                result = ActionNodeResults.Fail(refusal.RefusalMessage);
             }
             else
             {

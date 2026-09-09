@@ -79,11 +79,14 @@ public class AllocationController : ControllerBase
             return Unauthorized(new AZOAResult<AllocationResult> { IsError = true, Message = "Invalid token." });
 
         // The allocation is authorised by the API-key scope, not the body.
-        if (!User.HasScope(AzoaScopes.NftMint))
+        var admittingKeyScopes = AdmittingKeyScopesFor(request.Kind);
+        if (!admittingKeyScopes.Any(scope => User.HasScope(scope)))
             return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<AllocationResult>
             {
                 IsError = true,
-                Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to allocate."
+                Message =
+                    $"Caller lacks a scope required to allocate '{request.Kind}' " +
+                    $"(one of: {string.Join(", ", admittingKeyScopes)})."
             });
 
         var apiKeyId = GetApiKeyId();
@@ -198,22 +201,44 @@ public class AllocationController : ControllerBase
     }
 
     /// <summary>
-    /// The (operation type, signing scope) pair each allocation kind resolves to. It mirrors
-    /// what <c>AllocationManager</c> stamps on the operation row — <c>Mint</c> ⇒
-    /// <c>nft:mint</c>, <c>Transfer</c> ⇒ <c>transfer:sign</c> — so the edge check asks about
-    /// the same capability the custody seam will. An unrecognised kind yields no scope and
-    /// is refused.
+    /// The (operation type, signing scope) pair each allocation kind resolves to — <c>Mint</c>
+    /// ⇒ <c>nft:mint</c>, <c>Transfer</c> ⇒ <c>transfer:sign</c>, <c>IssueUnits</c> ⇒
+    /// <c>units:issue</c> — so the edge check asks about the same capability the custody seam
+    /// will. An unrecognised kind yields no scope and is refused.
+    ///
+    /// <para><b>Parity is not yet compiler-enforced.</b> <c>AllocationManager</c> stamps the
+    /// deep-seam scope on the operation row it builds, in a file this seam cannot reach, so
+    /// the two constants have to be kept equal by hand. <c>AzoaScopes.OperationScopeMap</c> is
+    /// the arbiter: a kind whose pair is not a legitimate (operation, scope) pair is refused
+    /// here rather than probed, so a drift fails closed instead of checking the wrong
+    /// capability.</para>
     /// </summary>
     public static (string OperationType, string? SigningScope) SigningShapeFor(AllocationKind kind) => kind switch
     {
         AllocationKind.Mint => ("Mint", AzoaScopes.NftMint),
         AllocationKind.Transfer => ("Transfer", AzoaScopes.TransferSign),
-        // An issuance draws units already in the reserve and MOVES them, so the operation
-        // AllocationManager.IssueUnitsAsync stamps is a Transfer signed with transfer:sign
-        // (AllocationManager.cs "OperationType = \"Transfer\""). The edge probe has to name
-        // the same pair or every issuance is refused here before the manager ever runs.
-        AllocationKind.IssueUnits => ("Transfer", AzoaScopes.TransferSign),
+        // OI-23. An issuance draws units already sitting in the reserve and CREDITS them to
+        // the recipient, signing with the PLATFORM key — nothing of the recipient's is spent.
+        // Labelling that with transfer:sign asked every custodially onboarded person for an
+        // outbound value-spending grant they can never make (ConsentManager rejects value
+        // scopes under Participation origin), and IssueUnits is the DEFAULT AllocationKind,
+        // so the default allocation 403'd for the people the product is for. It signs under
+        // its own inbound-credit scope; transfer:sign keeps meaning money leaving an account.
+        AllocationKind.IssueUnits => (AzoaScopes.IssueUnitsOperationType, AzoaScopes.UnitsIssue),
         _ => (kind.ToString(), null),
+    };
+
+    /// <summary>
+    /// The API-key scopes ANY ONE of which admits this allocation kind at the door. An
+    /// issuance is a reserve-funded credit, so <c>units:issue</c> names it honestly;
+    /// <c>nft:mint</c> still admits it because that is what every tenant key already
+    /// carries, and this door has never been the control that decides WHOSE units move —
+    /// the target's live consent grant and the reserve partition guard are.
+    /// </summary>
+    private static IReadOnlyList<string> AdmittingKeyScopesFor(AllocationKind kind) => kind switch
+    {
+        AllocationKind.IssueUnits => new[] { AzoaScopes.UnitsIssue, AzoaScopes.NftMint },
+        _ => new[] { AzoaScopes.NftMint },
     };
 
     /// <summary>

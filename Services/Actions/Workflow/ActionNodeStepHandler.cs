@@ -65,7 +65,11 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
         // Optional so existing positional test fixtures compile; DI supplies every
         // registered rail destination directory. See Services/Actions/AGENTS.md
         // §rail-capability.
-        IEnumerable<IRailDestinationDirectory>? railDestinationDirectories = null)
+        IEnumerable<IRailDestinationDirectory>? railDestinationDirectories = null,
+        // OI-28: the read side of the account pause, resolved from the same container that
+        // registers it unconditionally in Program.cs (AddFiatReversalPipeline). Optional for the
+        // same reason as above — a container without the reversal pipeline holds no flag to read.
+        AZOA.WebAPI.Services.Fiat.Reversal.IFiatReversalLedger? accountPauseLedger = null)
     {
         _actionStore = actionStore;
         _runStore = runStore;
@@ -76,7 +80,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
         _bindingResolver = bindingResolver;
         _logger = logger;
         _railGate = new ValueRailCapabilityGate(
-            walletManager, chainFactory.DefaultRailId, railDestinationDirectories);
+            walletManager, chainFactory.DefaultRailId, railDestinationDirectories, accountPauseLedger);
     }
 
     public async Task<StepResult> ExecuteAsync(
@@ -176,15 +180,16 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
                 NotEnabledActionNodeTypes.RefusalMessage(node.NodeType));
         }
         else if ((handlerRequiresChain = handler.RequiresChainCapability)
-            && !await _railGate.HasUsableDestinationAsync(
-                actingUserId, handler.ResolveSettlementRailId(node), ct))
+            && await _railGate.AdmitValueNodeAsync(
+                    actingUserId, handler.ResolveSettlementRailId(node), ct)
+                is { IsAllowed: false } refusal)
         {
-            // D1/D9 pre-execution capability gate — fails closed (no broadcast): a
-            // value-moving node may not run unless the actor has a usable destination on
-            // the rail THIS node settles on. HandleAsync is SKIPPED, so the durable path
-            // cannot bypass the gate the legacy executor also enforces.
-            result = ActionNodeHandlerResult.Fail(ValueRailCapabilityGate.NoDestinationMessage(
-                _railGate.ResolveRailId(handler.ResolveSettlementRailId(node))));
+            // The ONE pre-execution admission predicate, the SAME call the legacy executor
+            // makes — fails closed (no broadcast). A value-moving node may not run while the
+            // actor's account is PAUSED by an unresolved reversal (OI-28), nor unless the actor
+            // has a usable destination on the rail THIS node settles on. HandleAsync is SKIPPED,
+            // so the durable path cannot bypass a pause the in-process path honours.
+            result = ActionNodeHandlerResult.Fail(refusal.RefusalMessage);
         }
         else
         {

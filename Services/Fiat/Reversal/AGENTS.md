@@ -95,20 +95,28 @@ Three rungs, in the order that hurts the fewest honest people.
 
 **Rung 2 only unwinds what can be ATTRIBUTED to this payment.** Taking back an arbitrary hold that
 a disputing sponsor happens to benefit from would rob whichever honest backer actually funded it.
-That attribution is `IReversedPurchaseProvenance`, and it is the one part of this directory whose
-data does not exist yet — see §stub.
+That attribution is `IReversedPurchaseProvenance` — see §provenance.
 
-## §stub — `IReversedPurchaseProvenance`
+## §provenance — how rung 2 knows what a payment funded
 
-`UnavailableReversedPurchaseProvenance` is a **declared stub**. It returns nothing and reports
-`IsAvailable == false`, so no caller can read "no link exists yet" as "this person spent nothing";
-the reason travels onto the reversal row, so an absorbed loss says *why* it could not be
-recovered.
+**Shipped (OI-59).** `ExchangePurchaseProvenance` lives in this directory and
+`ReversalRegistration.cs:92` wires it. The rules it works by:
 
-Both unwinds are BUILT and tested (`IPlatformHold.RefundAsync`, the reserve's asset clawback).
-What is missing is only the per-purchase link from an `on_ramp_lot` to what its units bought,
-which the sponsorship path writes in Wave 5/6. **Unblocking it is one registration** ahead of
-`AddFiatReversalPipeline`; no code in this directory changes.
+- **FIFO over lots.** A person's purchases are walked oldest-first against their lots oldest-first,
+  and only the share that drew on the *reversed* lot is ever claimed. Already-reversed lots still
+  consume capacity — dropping them would shift later lots earlier and re-attribute a purchase that
+  has been unwound once already. The same rule serves W8.1's cash-out.
+- **What counts as a purchase.** An Exchange operation the subject made, buying the lot's own asset
+  on the lot's own chain.
+- **Identifying the commitment.** Exact first, on the hold id the exchange derives from its own
+  correlation (`exchange:{correlation}`); failing that, a match on the whole shape the exchange
+  opened the leg with — and *only* when exactly one candidate exists. Two matching commitments is
+  an unanswerable question, and it refuses outright rather than guess.
+- **The robbery guard.** A hold is claimed only when the reversed account is its beneficiary and
+  nobody else funded it. Checked positively in `ClaimForHold`, never inferred.
+- **The opt-out survives.** `UnavailableReversedPurchaseProvenance` is still registerable for a node
+  that will not attribute; it returns nothing and reports `IsAvailable == false`, so no caller can
+  read "no link" as "this person spent nothing", and the reason travels onto the reversal row.
 
 It fails closed in the only direction that matters: with no provenance, nothing unattributable is
 ever touched, and the shortfall becomes a *recorded* platform loss plus a flagged account.
