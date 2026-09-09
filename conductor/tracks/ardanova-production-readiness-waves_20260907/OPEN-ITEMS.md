@@ -783,6 +783,20 @@ or the word "token" where "funds"/"stake"/"units" would do is a **defect**.
   `project-money-contract.test.ts` — including a case that REFUSES a response with no summary
   rather than defaulting one.
 
+  *Proof corrected, and the headline marked, 2026-09-09 (L0 remediation):* the contract test's
+  fixture said `"$1,250.00"` — a string the server never produces. `ProjectLedgerService`
+  `FormatAmount:680` is `value.ToString("F" + scale, InvariantCulture)`, so `sponsorshipTotalUsdText`
+  and `usdReferenceText` cross the wire bare, as `"1250.00"`; the assertions were therefore about
+  the fixture, not the wire, and would have stayed green whatever the real string looked like. The
+  fixtures now carry the server's real shape. That shape is printed in a `text-2xl` mono headline
+  directly beneath a balance rendered as `1250.00 ARDA`, i.e. two large figures, one labelled a
+  unit and one labelled nothing, on the screen a sponsor acts from — so the dollar figures are
+  marked at the SCREEN by `ardanova-client/src/lib/commerce/money-figures.ts` `asDollarFigure`,
+  which passes the digits through untouched (the server sends text precisely so the record is
+  exact) and returns null rather than a lone `$`. Proof: `money-figures.test.ts`, whose inputs are
+  `FormatAmount`'s real output. Presentation only: it does not bear on **OI-19**, which is about
+  which unit the ASK is entered in and still needs an owner ruling.
+
 - [x] **OI-94** `MEDIUM` `ardanova` — **The credential proof was gated at one screen of two, and
   had no producer at all.** *Where:* `credential-card.tsx` gated on
   `isIndependentlyVerifiable === true` while `app/credentials/[id]/page.tsx:83-95` still built
@@ -792,19 +806,40 @@ or the word "token" where "funds"/"stake"/"units" would do is a **defect**.
   producers: three repo-wide hits, all inside the card. *Closed 2026-09-08:* the gate moved INTO
   the shared translator (`credential-proof.ts` `wasIndependentlyIssued`), which now refuses every
   proof reading and every quotable reference unless the flag is `=== true`, so a third screen
-  cannot drift either. The producer is the issuance reference, never `AssetId`:
-  `MembershipCredentialDto.IsIndependentlyVerifiable` maps from `mintTxHash`
-  (`MappingProfile.cs:431-433`), a column written in exactly one place whose only production
-  caller is `CredentialUtilityService.IssueThroughNodeAsync:367`. Proofs:
-  `CredentialIssuancePathMappingTests` and `credential-proof.test.ts`
-  "refuses every proof reading for a credential the node did not issue".
+  cannot drift either. *Producer corrected 2026-09-09 (L0 remediation):* the first producer
+  read `mintTxHash`, which is exclusive of the CODE and wrong about the DATA — the removed
+  address-based path wrote that same column from `MintSoulboundASAAsync(_platformAddress, …)`
+  and the simulated provider fabricated `assetId`, so every row predating the node path mapped
+  to `true` and read "Verified" on both screens, a REGRESSION on the card. The flag now reads
+  `MembershipCredential.issuedThroughNodeAt`, a column of its own (`MappingProfile.cs`
+  `IsIndependentlyVerifiable`), written in exactly one place
+  (`MembershipCredentialServices.UpdateMintInfoAsync`) and only when the caller states
+  `CredentialProofOrigin.IssuanceNode` — a REQUIRED DTO field whose default value clears the
+  column, so a new writer cannot reach it without answering which path issued. Nullable with no
+  backfill: a legacy row reads null, which is the fail-closed reading, and recovers through the
+  existing idempotent re-verification route. `GetCredentialWithChainDataAsync` asks the same
+  question before it reads the chain at all, so the server never emits `ChainVerified` for a
+  credential the node did not issue. Migration:
+  `20260909002000_credential_issuance_path_column`. Proofs: `CredentialIssuancePathMappingTests`
+  (including "the legacy platform-held mint shape does not read as verifiable"),
+  `MembershipCredentialServiceTests` (the column is stamped for the node origin and cleared for
+  any other), `CredentialUtilityServiceTests` ("reports nothing for a credential the node never
+  issued") and `credential-proof.test.ts`.
 
-- [ ] **OI-95** `LOW` `ardanova` — **Four sibling reads on `ProjectTokensController` remain
-  unauthenticated.** *Where:* `config/{id}`, `config/by-project/{projectId}`,
-  `{configId}/supply`, `{configId}/gate`. Unlike the allocation routes these carry only
-  project-level facts — supply, funding goal, gate state — which a public sponsorship page
-  legitimately shows, so they were left open DELIBERATELY rather than by omission. Recorded so
-  the decision is visible: if the project page ever stops being public, these four move with it.
+- [ ] **OI-95** `LOW` `ardanova` — **Five sibling reads on `ProjectTokensController` remain
+  unauthenticated.** *Where:* `GET config/{id}`, `POST config/metadata/batch`,
+  `GET config/by-project/{projectId}`, `GET config/{configId}/supply`,
+  `GET config/{configId}/gate`. Unlike the allocation routes these carry only project-level
+  facts — supply, funding goal, gate state — which a public sponsorship page legitimately
+  shows, so they were left open DELIBERATELY rather than by omission. Recorded so the decision
+  is visible: if the project page ever stops being public, these five move with it.
+  *Corrected 2026-09-09 (L0 remediation):* this row said FOUR and omitted
+  `POST config/metadata/batch` (`ProjectTokensController.GetMetadata` →
+  `GetMetadataByIdsAsync`), a batch read of the same project-token metadata by id — the same
+  harm class as the four already accepted, but a decision record that undercounts is how the
+  next reviewer concludes the surface was enumerated. The count is now enforced rather than
+  asserted: `ProjectTokenPublicReadSurfaceTests` reflects over the controller and fails if the
+  set of routes carrying no `[Authorize]` is anything other than exactly these five.
 
 ---
 

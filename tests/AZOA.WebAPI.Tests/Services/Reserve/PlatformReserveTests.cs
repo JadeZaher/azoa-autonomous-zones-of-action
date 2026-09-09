@@ -463,9 +463,99 @@ public class PlatformReserveTests
         draw.IsError.Should().BeFalse(draw.Message);
     }
 
-    private static async Task<ReserveHarness> AuthorityHarnessAsync(Guid? tenantId)
+    // ── Reserve:PlatformUnitDrawPolicy ────────────────────────────────────────
+    // The policy is read at the ONE predicate inside DrawAsync, so these assert the
+    // counters, not a helper's return value. The blank cases are the shape a Railway
+    // env var set to "" produces: ReserveOptions is bound with .Get<T>() (Program.cs),
+    // so a present-but-empty key REPLACES the OperatorOnly C# default rather than
+    // leaving it in place.
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task DrawAsync_treats_a_blank_platform_unit_policy_as_the_narrowest_setting(string blank)
     {
-        var harness = ReserveHarness.WithPlatformKey();
+        var harness = await AuthorityHarnessAsync(
+            tenantId: null, options => options.PlatformUnitDrawPolicy = blank);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, $"blank-policy-{blank.Length}", ReserveDrawAuthority.ForTenant(TenantOne));
+
+        draw.IsError.Should().BeTrue(
+            "a policy the operator never filled in must narrow the node, not open it to every "
+            + "admitted tenant — an unset Railway variable is silence, not consent");
+        draw.Message.Should().Contain("operator's to draw from");
+        (await harness.CountersAsync(ContributorPartition)).Committed.Should().Be(BigInteger.Zero);
+    }
+
+    [Fact]
+    public async Task DrawAsync_refuses_a_platform_unit_policy_this_node_does_not_recognise()
+    {
+        var harness = await AuthorityHarnessAsync(
+            tenantId: null, options => options.PlatformUnitDrawPolicy = "AnyAdmitedTenant");
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "typo-policy", ReserveDrawAuthority.ForTenant(TenantOne));
+
+        draw.IsError.Should().BeTrue("a typo narrows the node rather than opening it");
+        draw.Message.Should().Contain("does not recognise");
+        (await harness.CountersAsync(ContributorPartition)).Committed.Should().Be(BigInteger.Zero);
+    }
+
+    [Fact]
+    public async Task DrawAsync_admits_a_tenant_only_when_the_operator_asked_for_the_widest_policy()
+    {
+        // The counterweight to the blank/typo cases: the refusals above are the policy
+        // working, not the predicate refusing everything unconditionally.
+        var harness = await AuthorityHarnessAsync(
+            tenantId: null,
+            options => options.PlatformUnitDrawPolicy = ReservePlatformUnitDrawPolicies.AnyAdmittedTenant);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "widest-policy", ReserveDrawAuthority.ForTenant(TenantOne));
+
+        draw.IsError.Should().BeFalse(draw.Message);
+        draw.Result!.Counters.Issued.Should().Be(new BigInteger(10));
+    }
+
+    [Fact]
+    public async Task DrawAsync_still_refuses_a_tenantless_caller_under_the_widest_policy()
+    {
+        var harness = await AuthorityHarnessAsync(
+            tenantId: null,
+            options => options.PlatformUnitDrawPolicy = ReservePlatformUnitDrawPolicies.AnyAdmittedTenant);
+
+        var draw = await harness.IssueAsync(
+            ContributorPartition, 10, "widest-policy-no-tenant", ReserveDrawAuthority.ForTenant(null));
+
+        draw.IsError.Should().BeTrue("OI-21: no policy admits a caller this node resolved no tenant for");
+        (await harness.CountersAsync(ContributorPartition)).Committed.Should().Be(BigInteger.Zero);
+    }
+
+    [Fact]
+    public async Task DrawAsync_admits_only_the_declared_tenants_under_DeclaredTenants()
+    {
+        var harness = await AuthorityHarnessAsync(tenantId: null, options =>
+        {
+            options.PlatformUnitDrawPolicy = ReservePlatformUnitDrawPolicies.DeclaredTenants;
+            options.PlatformUnitDrawTenants = new List<string> { TenantOne.ToString() };
+        });
+
+        var admitted = await harness.IssueAsync(
+            ContributorPartition, 10, "declared-admitted", ReserveDrawAuthority.ForTenant(TenantOne));
+        var refused = await harness.IssueAsync(
+            ContributorPartition, 10, "declared-refused", ReserveDrawAuthority.ForTenant(TenantTwo));
+
+        admitted.IsError.Should().BeFalse(admitted.Message);
+        refused.IsError.Should().BeTrue();
+        refused.Message.Should().Contain("Reserve:PlatformUnitDrawTenants");
+        (await harness.CountersAsync(ContributorPartition)).Committed.Should().Be(new BigInteger(10));
+    }
+
+    private static async Task<ReserveHarness> AuthorityHarnessAsync(
+        Guid? tenantId, Action<ReserveOptions>? configure = null)
+    {
+        var harness = ReserveHarness.WithPlatformKey(configure);
         var registered = await harness.RegisterAsync(totalSupply: 1_000, tenantId);
         registered.IsError.Should().BeFalse(registered.Message);
         var declared = await harness.DeclareAsync((ContributorPartition, 400));

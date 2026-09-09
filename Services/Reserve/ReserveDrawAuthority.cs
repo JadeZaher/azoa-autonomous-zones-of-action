@@ -70,7 +70,8 @@ public sealed record ReserveDrawAuthority
 /// <summary>
 /// Accepted values for <see cref="ReserveOptions.PlatformUnitDrawPolicy"/> — who, besides
 /// the node operator, may draw a declared partition of the node's OWN unit. An
-/// unrecognised value fails closed, so a typo narrows the node rather than opening it.
+/// unrecognised OR BLANK value fails closed, so a typo — or an env var set to "" — narrows
+/// the node rather than opening it.
 /// </summary>
 public static class ReservePlatformUnitDrawPolicies
 {
@@ -172,8 +173,12 @@ internal static class ReservePartitionScope
                    "neither. Nothing was drawn.";
         }
 
+        // A BLANK policy is the shape a Railway env var set to "" produces, and ReserveOptions
+        // is bound with .Get<T>() so that blank REPLACES the C# default instead of leaving it.
+        // It resolves to the NARROWEST setting, never the widest: a node that says nothing keeps
+        // its own supply to its own rails, which is what both doc-comments already promise.
         var policy = string.IsNullOrWhiteSpace(options.PlatformUnitDrawPolicy)
-            ? ReservePlatformUnitDrawPolicies.AnyAdmittedTenant
+            ? ReservePlatformUnitDrawPolicies.OperatorOnly
             : options.PlatformUnitDrawPolicy.Trim();
 
         if (string.Equals(policy, ReservePlatformUnitDrawPolicies.AnyAdmittedTenant, StringComparison.OrdinalIgnoreCase))

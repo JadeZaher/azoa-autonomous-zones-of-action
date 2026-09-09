@@ -61,7 +61,9 @@ public sealed class ReserveOptions
     /// Who — besides the node's own rails — may draw a declared partition of the node's OWN
     /// unit, whose ledger row carries no tenant because the node minted it. One of
     /// <see cref="ReservePlatformUnitDrawPolicies"/>; an unrecognised value fails closed, and
-    /// so does the DEFAULT — a node that says nothing keeps its own supply to its own rails.
+    /// so do the DEFAULT and a BLANK value — a node that says nothing keeps its own supply to
+    /// its own rails. That matters because this is bound with .Get&lt;T&gt;(), so a Railway
+    /// variable set to "" REPLACES the initializer below rather than leaving it in place.
     /// Under EVERY value a caller with no resolvable tenant is refused (OI-21).
     /// </summary>
     public string PlatformUnitDrawPolicy { get; set; } = ReservePlatformUnitDrawPolicies.OperatorOnly;
