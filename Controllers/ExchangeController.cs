@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
@@ -237,10 +237,17 @@ public sealed class ExchangeController : ControllerBase
             .ActingAs(actingTenantId, scope, targetUserId);
 
         var consent = await _consentGate.EnsureAllowedAsync(probe, ct);
-        return consent.IsError
-            ? StatusCode(StatusCodes.Status403Forbidden,
-                AZOAResult<ExchangeReceipt>.FailureWithCode(consent.Message, AzoaErrorCodes.Forbidden))
-            : null;
+
+        // Deliberately NOT a conditional expression. Its natural type would be bare
+        // ActionResult, so the null arm reached ActionResult<T>'s implicit operator as a null
+        // ActionResult and threw ArgumentNullException - meaning every consent-ALLOWED exchange
+        // 500'd, while the refusal path this method was written for worked. Returning null from
+        // its own statement types it as the nullable ActionResult<T>? and never converts.
+        if (!consent.IsError)
+            return null;
+
+        return StatusCode(StatusCodes.Status403Forbidden,
+            AZOAResult<ExchangeReceipt>.FailureWithCode(consent.Message, AzoaErrorCodes.Forbidden));
     }
 
     private static bool IsAcceptableIdempotencyKey(string? key)
@@ -278,6 +285,11 @@ public sealed class ExchangeController : ControllerBase
             AzoaErrorCodes.NotFound => NotFound(result),
             AzoaErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, result),
             AzoaErrorCodes.OperationNotAllowed => StatusCode(StatusCodes.Status409Conflict, result),
+            // A refusal that provably moved nothing is NOT a conflict. 409 says "this may
+            // already have happened" and a consumer holding the seller's units must keep them
+            // locked on it; 422 says "we read it and said no", which is safe to unlock on.
+            ConsumerSafeErrorCodes.Declined =>
+                StatusCode(StatusCodes.Status422UnprocessableEntity, result),
             AzoaErrorCodes.DependencyUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             ConsumerSafeErrorCodes.RailUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             ConsumerSafeErrorCodes.RailBusy => StatusCode(StatusCodes.Status503ServiceUnavailable, result),

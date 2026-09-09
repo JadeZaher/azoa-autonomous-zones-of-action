@@ -118,9 +118,11 @@ public sealed class PlatformHoldService : IPlatformHold
                 $"hold it. Register the asset with the reserve first; nothing was held.");
 
         // Cross-tenant control: a partition declared by one tenant may not be drawn by a
-        // hold driven by another. Without it, tenant B's action could quietly consume the
-        // budget tenant A declared out of the shared reserve.
-        var tenantGuard = GuardTenantScope(reserveLedger.Result, request.ActingTenantId, assetId);
+        // hold driven by another, and the platform's OWN unit — which carries no tenant at
+        // all — is the operator's, not every tenant's. Without it, tenant B's action could
+        // quietly consume the budget tenant A declared out of the shared reserve.
+        var tenantGuard = ReservePartitionScope.Refuse(
+            reserveLedger.Result, request.ActingTenantId, assetId);
         if (tenantGuard is not null)
             return Fail(tenantGuard);
 
@@ -705,27 +707,6 @@ public sealed class PlatformHoldService : IPlatformHold
         _reserveOptions.Chains.Any(candidate =>
             string.Equals(candidate?.Trim(), chain, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Null when this hold may draw the asset's partitions; the refusal otherwise. An
-    /// asset registered by a tenant is that tenant's budget: a hold driven by another
-    /// tenant would consume it out of the shared reserve.
-    /// </summary>
-    private static string? GuardTenantScope(
-        PlatformReserveLedger reserveRow, Guid? actingTenantId, string assetId)
-    {
-        var owner = ParseUserId(reserveRow.TenantId);
-        if (owner == Guid.Empty)
-            return null; // the platform's own unit; no tenant owns its partitions
-
-        var acting = actingTenantId ?? Guid.Empty;
-        if (acting == owner)
-            return null;
-
-        return
-            $"Asset '{assetId}' was registered with the reserve by another tenant, so its declared partitions " +
-            "are not this caller's to draw from. Nothing was held.";
-    }
-
     /// <summary>Null when a replayed open carries the same terms; the refusal otherwise.</summary>
     private static string? DescribeTermsMismatch(HoldLedger persisted, HoldLedger requested)
     {
@@ -842,7 +823,65 @@ public sealed class PlatformHoldService : IPlatformHold
         Enum.TryParse<HoldState>(state, ignoreCase: true, out var parsed) ? parsed : HoldState.Refunded;
 
     /// <summary>A user id off a row; a record link keeps its <c>user:</c> prefix, so strip it.</summary>
-    private static Guid ParseUserId(string? userId)
+    private static Guid ParseUserId(string? userId) => ReservePartitionScope.ParseRowUserId(userId);
+
+    private static AZOAResult<HoldOutcome> Fail(string message, HoldLedger? row = null) =>
+        AZOAResult<HoldOutcome>.Failure(
+            message, row is null ? null : new HoldOutcome(row, null, null, Replayed: false));
+
+    private static AZOAResult<HoldOutcome> Ok(
+        HoldLedger hold, HoldLedger? next, string? transactionId, bool replayed, string message) =>
+        AZOAResult<HoldOutcome>.Success(new HoldOutcome(hold, next, transactionId, replayed), message);
+}
+
+/// <summary>
+/// Who may draw a declared reserve partition. The ONE predicate both draw seams ask —
+/// <see cref="PlatformHoldService.OpenAsync"/> and
+/// <c>AllocationManager.IssueUnitsAsync</c> — so the two can never drift apart. Colocated
+/// with the hold service because <c>Services/Reserve/</c> is outside this change's file
+/// boundary; it belongs beside <c>IPlatformReserve</c> and moving it later is a file move.
+/// </summary>
+internal static class ReservePartitionScope
+{
+    /// <summary>
+    /// Null when this caller may draw the asset's declared partitions; the refusal
+    /// otherwise. An asset registered by a tenant is that tenant's budget, so a draw
+    /// driven by another tenant would consume it out of the shared reserve.
+    /// </summary>
+    /// <param name="reserveRow">
+    /// The reserve's own row for the asset, or null when this seam could not read one. A
+    /// row that is absent carries no tenant and is therefore treated exactly like the
+    /// platform's own unit — a tenant-driven draw is refused, and an operator-driven draw
+    /// of an unregistered asset is refused a moment later by
+    /// <c>PlatformReserveService.DrawAsync</c>, which reads the same row before it moves
+    /// any counter.
+    /// </param>
+    internal static string? Refuse(
+        PlatformReserveLedger? reserveRow, Guid? actingTenantId, string assetId)
+    {
+        var owner = ParseRowUserId(reserveRow?.TenantId);
+        var acting = actingTenantId ?? Guid.Empty;
+
+        // An untenanted row is NOT ownerless. It is the platform's own unit —
+        // PlatformTokenGenesis mints it with no acting tenant — so its declared partitions
+        // belong to the node operator. Reading "no tenant" as "any tenant" would hand every
+        // holder of a value-signing key the whole of this node's own supply.
+        if (owner == Guid.Empty)
+        {
+            return acting == Guid.Empty
+                ? null
+                : $"Asset '{assetId}' is this node's own unit, so its declared partitions are the " +
+                  "operator's to draw from and not a tenant's. Nothing was drawn.";
+        }
+
+        return acting == owner
+            ? null
+            : $"Asset '{assetId}' was registered with the reserve by another tenant, so its declared " +
+              "partitions are not this caller's to draw from. Nothing was drawn.";
+    }
+
+    /// <summary>A user id off a row; a record link keeps its <c>user:</c> prefix, so strip it.</summary>
+    internal static Guid ParseRowUserId(string? userId)
     {
         if (string.IsNullOrWhiteSpace(userId))
             return Guid.Empty;
@@ -854,14 +893,6 @@ public sealed class PlatformHoldService : IPlatformHold
 
         return Guid.TryParseExact(text, "N", out var parsed) ? parsed : Guid.Empty;
     }
-
-    private static AZOAResult<HoldOutcome> Fail(string message, HoldLedger? row = null) =>
-        AZOAResult<HoldOutcome>.Failure(
-            message, row is null ? null : new HoldOutcome(row, null, null, Replayed: false));
-
-    private static AZOAResult<HoldOutcome> Ok(
-        HoldLedger hold, HoldLedger? next, string? transactionId, bool replayed, string message) =>
-        AZOAResult<HoldOutcome>.Success(new HoldOutcome(hold, next, transactionId, replayed), message);
 }
 
 /// <summary>

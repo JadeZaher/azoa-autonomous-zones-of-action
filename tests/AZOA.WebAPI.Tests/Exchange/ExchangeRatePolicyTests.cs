@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 // W5.1 — the rate policy: which declarations may price a real value move, and the null check
 // that keeps the reverse direction shut until W8.2 lands a liquidity policy.
 
 using System.Numerics;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -32,7 +33,7 @@ public class ExchangeRatePolicyTests
         decision.IsError.Should().BeTrue(
             "a sell with no liquidity behind it is a promise the node cannot keep");
         decision.Message.Should().Be(TreasuryRateExchangePolicy.SellUnavailableMessage);
-        decision.Code.Should().Be(AzoaErrorCodes.OperationNotAllowed);
+        decision.Code.Should().Be(ConsumerSafeErrorCodes.Declined);
     }
 
     [Fact]

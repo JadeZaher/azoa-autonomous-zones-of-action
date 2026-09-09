@@ -14,6 +14,10 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Governance;
+// ReservePartitionScope: the one who-may-draw-this-partition predicate, shared with the
+// hold seam so the two draw paths cannot drift. It lives beside PlatformHoldService only
+// because Services/Reserve/ was outside that change's file boundary.
+using AZOA.WebAPI.Services.Hold;
 using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Managers;
@@ -591,6 +595,20 @@ public sealed class AllocationManager : IAllocationManager
         var assetId = request.AssetId!.Trim();
         var partition = request.Partition!.Trim();
 
+        // Cross-tenant control, the same predicate the hold seam asks. BOTH the asset and
+        // the partition arrive off the caller's body, so without this a tenant could name
+        // another tenant's asset — or the node's own unit — and draw down a budget it never
+        // declared. It runs FIRST: a refusal must not cost the recipient's account the
+        // minimum that preparation advances.
+        var tenantRefusal = await RefuseOutOfScopeDrawAsync(request.ChainType, assetId, actingTenantId);
+        if (tenantRefusal is not null)
+        {
+            _logger?.LogWarning(
+                "Issuance refused: partition '{Partition}' of asset {Asset} is not this caller's to draw.",
+                partition, assetId);
+            return RailRefusal(tenantRefusal);
+        }
+
         var account = await _reserve.GetAccountAsync(request.ChainType);
         if (account.IsError || account.Result is null)
         {
@@ -674,6 +692,19 @@ public sealed class AllocationManager : IAllocationManager
             userId, wallet, walletProvisioned, op.Id, feeQuote));
 
         return await _blockchainOps.ExecuteAsync(op);
+    }
+
+    /// <summary>
+    /// Refusal text when this caller may not draw the asset's declared partitions, or null
+    /// when it may. The reserve's own row carries the tenant that registered the asset
+    /// (<c>FungibleTokenManager</c> stamps it at registration), so the answer is read from
+    /// the ledger rather than trusted off the request.
+    /// </summary>
+    private async Task<string?> RefuseOutOfScopeDrawAsync(
+        string chainType, string assetId, Guid? actingTenantId)
+    {
+        var reserveLedger = await _reserve!.GetLedgerAsync(chainType, assetId);
+        return ReservePartitionScope.Refuse(reserveLedger?.Result, actingTenantId, assetId);
     }
 
     /// <summary>

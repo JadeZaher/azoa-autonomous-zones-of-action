@@ -24,6 +24,16 @@ import { AlertTriangle, RefreshCw, ShieldCheck, Undo2 } from 'lucide-react'
 const REVERSALS_PATH = '/api/admin/fiat-reversals'
 
 /** Mirrors `FiatReversalView` (Services/Fiat/Reversal/FiatReversalOperatorController.cs). */
+// TODO(OI-04): replace this hand-rolled interface with `FiatReversalView` (plus
+// `FiatReversalKind` / `FiatReversalStatus` / `FiatReversalRecoveryPath`) exported from
+// `azoa-sdk` (sdk/azoa-wallet/src/api/client.ts:1807; re-exported sdk/azoa-wallet/src/index.ts:180).
+// Deferred here, not blocked here: the SDK type already ships in the built dist this
+// package's `file:../sdk/azoa-wallet` dependency resolves, so no publish is required for
+// this repo specifically (contrast ardanova-client, which is blocked-on-operator per
+// conductor/RUNBOOK.md — see the ArdaNova repo's own runbook). What is owed before
+// swapping: several fields differ optional-vs-nullable between the two shapes (e.g. this
+// interface's `statusReason?: string | null` vs the SDK's `statusReason: string | null`),
+// so the swap needs a `tsc --noEmit` pass this item did not run to confirm parity.
 interface FiatReversalView {
   id: string
   kind: 'Refund' | 'Dispute'

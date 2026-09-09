@@ -26,6 +26,17 @@ public static class ConsumerSafeErrorCodes
     /// <summary>The account is not permitted to send or receive these units.</summary>
     public const string NotPermitted = "NOT_PERMITTED";
 
+    /// <summary>The request was read, refused outright, and provably moved nothing.</summary>
+    /// <remarks>
+    /// The one code a consumer holding a seller's units may RELEASE those units on. It is
+    /// deliberately distinct from an ambiguous outcome (a conflict, a timeout, an unreachable
+    /// rail), where the movement may already have run and releasing would let one holding be
+    /// sold twice. "We said no" and "we do not know" are different sentences to a person whose
+    /// funds are in the balance, and conflating them silently confiscates. Carried on the wire
+    /// as HTTP 422 by <c>ExchangeController.Translate</c>; see <c>Core/AGENTS.md</c>.
+    /// </remarks>
+    public const string Declined = "REQUEST_DECLINED";
+
     /// <summary>Nothing more specific could be established without leaking rail detail.</summary>
     public const string TemporarilyUnavailable = "TEMPORARILY_UNAVAILABLE";
 }

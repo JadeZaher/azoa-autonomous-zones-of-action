@@ -190,7 +190,7 @@ public sealed class TreasuryRateExchangePolicy : IExchangeRatePolicy
                     allowed.IsError && !string.IsNullOrWhiteSpace(allowed.Message)
                         ? allowed.Message
                         : SellUnavailableMessage,
-                    allowed.Code ?? AzoaErrorCodes.OperationNotAllowed);
+                    allowed.Code ?? ConsumerSafeErrorCodes.Declined);
             }
         }
 
@@ -243,8 +243,15 @@ public sealed class TreasuryRateExchangePolicy : IExchangeRatePolicy
             : null;
     }
 
+    /// <summary>Refuses an exchange at admission, before anything is committed or moved.</summary>
+    /// <remarks>
+    /// Every branch that reaches here runs BEFORE the first commitment, so the refusal
+    /// provably moved nothing and carries <see cref="ConsumerSafeErrorCodes.Declined"/> rather
+    /// than an ambiguous code. A consumer holding the seller's units releases them on this,
+    /// which is what keeps a refused sale from freezing what it never touched.
+    /// </remarks>
     private static AZOAResult<ExchangeRateDecision> Refuse(string message) =>
-        AZOAResult<ExchangeRateDecision>.FailureWithCode(message, AzoaErrorCodes.OperationNotAllowed);
+        AZOAResult<ExchangeRateDecision>.FailureWithCode(message, ConsumerSafeErrorCodes.Declined);
 }
 
 /// <summary>
@@ -915,7 +922,7 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
             return AZOAResult<bool>.Success(true, "Not a buy-back.");
 
         if (!_options.Enabled)
-            return Refuse(ClosedMessage, AzoaErrorCodes.OperationNotAllowed);
+            return Refuse(ClosedMessage, ConsumerSafeErrorCodes.Declined);
 
         if (!evaluation.HasProjectContext)
         {
@@ -950,7 +957,7 @@ public sealed class BuyBackLiquidityPolicy : IExchangeLiquidityPolicy
             return Refuse(ShortWithoutQueueMessage, ConsumerSafeErrorCodes.InsufficientFunds);
 
         if (account.Result.Status != ProjectTreasuryStatus.Open)
-            return Refuse(ClosedMessage, AzoaErrorCodes.OperationNotAllowed);
+            return Refuse(ClosedMessage, ConsumerSafeErrorCodes.Declined);
 
         if (await ReadTreasuryBalanceAsync(reference, evaluation.PlatformAssetId, ct) is not { } treasuryBalance)
             return Refuse(ShortWithoutQueueMessage, ConsumerSafeErrorCodes.TemporarilyUnavailable);
