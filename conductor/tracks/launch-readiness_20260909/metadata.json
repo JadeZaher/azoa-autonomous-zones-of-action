@@ -77,22 +77,22 @@
   "run": {
     "workflow": "wf_22a2ed71-c10",
     "task": "w5x5tnqbn",
-    "stopped": "2026-09-09 by owner (machine lag) after L0 remediation #1 + re-review; remediation #2 in flight, gated solo",
+    "stopped": "2026-09-09 by owner (machine lag) after L0 remediation #1 + re-review; remediation #2 in flight, gated solo and landed (b582256 / a2ec96e)",
     "resume_guidance": "fresh run over L1–L7 (copy script, WAVES=L1..L7); do NOT resume with an edited script (prefix cache)"
   },
   "wave_commits": {
-    "L0": "b5e21fc, 471a955, be055d2 (azoa); 4eb8f1e, 41edf9e (ardanova); + solo gate commit for remediation #2 (see RUNBOOK)"
+    "L0": "b5e21fc, 471a955, be055d2, b582256 (azoa); 4eb8f1e, 41edf9e, a2ec96e (ardanova)"
   },
   "review_verdicts": {
     "L0": {
       "original": "PASS-WITH-DEBT (10 findings, 0 crit, 5 claim-not-control)",
       "after_remediation_1": "PASS-WITH-DEBT (10, 0, 4; all 6 actionable FIXED)",
-      "remediation_cycles": "1 complete, 1 interrupted"
+      "remediation_cycles": "2 (second interrupted by the session stop; its work gated solo and landed at b582256 / a2ec96e)"
     }
   },
   "gates_at_L0_close": {
-    "azoa": "build 0 err / 22 warn; 3321 unit tests; SDK tsc 0 + 205; frontend 78 + build",
-    "ardanova": "build 0 err / 61 warn; 1170 tests; client build"
+    "azoa": "build 0 err / 22 warn; 3341 unit tests; SDK tsc 0 + 205; frontend 78 + build",
+    "ardanova": "build 0 err / 61 warn; 1188 tests; client 265 vitest / 39 files; npm run build WITHOUT SKIP_ENV_VALIDATION"
   },
   "oi_closed_L0": [
     "OI-02",
@@ -112,6 +112,12 @@
     "OI-80",
     "OI-92 (new)",
     "OI-93 (new)",
-    "OI-94 (new)"
-  ]
+    "OI-94 (new)",
+    "OI-95 (new)"
+  ],
+  "head_commits_at_handoff": {
+    "azoa": "b582256 + docs(handoff) commits on feat/kyc-aml-providers-value-rail",
+    "ardanova": "a2ec96e on codex/azoa-security-hardening",
+    "main": "untouched in both"
+  }
 }

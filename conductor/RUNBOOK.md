@@ -1380,9 +1380,19 @@ lag; ~3.3 GB of orphaned MSBuild/Roslyn/tsserver processes were the cause and we
   (AZOA 4: `PlatformReserveService.cs`, `ReserveDrawAuthority.cs`, `PlatformReserveTests.cs`,
   `OPEN-ITEMS.md`; ArdaNova 18: a `MembershipCredential` issuance-path column + migration
   `20260909002000_credential_issuance_path_column`, `money-figures.ts`, `money-tab.tsx`, tests)
-  were handed to a **solo gate agent** to complete-or-revert, build, test and commit — **its SHA is
-  recorded below this line when it lands; if there is no such line, run `git status` in both repos
-  first and gate any dirty files solo before anything else.**
+  were gated solo and **LANDED — AZOA `b582256`, ArdaNova `a2ec96e`; both trees clean.** Nothing
+  reverted; nine UTF-8 BOMs the killed run had prepended were stripped back to HEAD state. Gates
+  after landing: AZOA 0 err / 22 warn · **3341 unit tests**; ArdaNova 0 err / 61 warn · **1188 tests** ·
+  client 265 vitest / 39 files · `npm run build` **without `SKIP_ENV_VALIDATION`** (L0.7 proven).
+  ⚠ **Instance 24 of the class, found by that gate:** `471a955`'s doc-comment promised "the DEFAULT
+  fails closed", but `ReserveOptions` is instance-bound, so `Reserve__PlatformUnitDrawPolicy=""`
+  *replaced* the C# default and the predicate resolved blank to `AnyAdmittedTenant` — the widest
+  setting, and the shape a deploy produces most easily. Now `Services/Reserve/ReserveDrawAuthority.cs:180`
+  resolves blank to `OperatorOnly`, proved at the counters by six cases asserting `Committed == 0`.
+  Also landed: **OI-94** producer corrected (`issuedThroughNodeAt` column, `MappingProfile.cs:435`; the
+  old producer read `mintTxHash`, which the removed path also wrote, so every legacy row showed
+  "Verified"); **OI-95 (new)** — five unauthenticated `ProjectTokens` routes, not four, pinned by a
+  reflection test; **OI-93** proof strengthened (the contract test had asserted its own fixture).
 - **L1–L7: not started.** Nothing from them is on disk.
 - Review ledger: L0 reviewed (verdict above). Everything else in this track is unreviewed.
 
@@ -1428,7 +1438,7 @@ pattern) · `tracks/ardanova-production-readiness-waves_20260907/OPEN-ITEMS.md` 
 rows annotated) · workflow script
 `~/.claude/projects/C--Users-atooz-Programming-Projects-oasis-sleek/5813771f-6236-43fc-aa77-9cd798f023e5/workflows/scripts/launch-readiness-wf_22a2ed71-c10.js`.
 
-**Environment.** AZOA `feat/kyc-aml-providers-value-rail` (37 ahead of `9f4e026`, nothing
+**Environment.** AZOA `feat/kyc-aml-providers-value-rail` HEAD `b582256`+docs, ArdaNova HEAD `a2ec96e` (37 ahead of `9f4e026`, nothing
 pushed); ArdaNova `codex/azoa-security-hardening`; second worktree
 `ardanova-financial-domain` untouched (26810a2). `main` untouched in both. npm logged in as
 `jadeoni-az`; publish needs a 2FA OTP. Railway CLI linked (project ardanova). Podman/WSL up. No
@@ -1436,8 +1446,8 @@ builds running. Seven `claude` processes were alive at handoff (some from 9/2–
 ~80 MCP/Codex node processes — the owner's call whether to kill other sessions.
 
 **Continuation plan.**
-1. `git status --short` in both repos. If dirty: gate solo (build, test, commit explicit paths)
-   before anything else. If clean: confirm the gate commit above `be055d2` / `41edf9e` exists.
+1. `git status --short` in both repos — expect clean at AZOA `b582256`+ / ArdaNova `a2ec96e`. If dirty,
+   something ran after this handoff: gate solo (build, test, commit explicit paths) before anything else.
 2. If the owner supplies the npm OTP: `cd sdk/azoa-wallet && npm publish --access public
    --otp=<code>`; then in `ardanova-client`: `npm install azoa-sdk@^0.4.0 && npm run verify:sdk-pin`
    (closes OI-01/OI-04). Otherwise skip; L0.7 already recorded them blocked.
