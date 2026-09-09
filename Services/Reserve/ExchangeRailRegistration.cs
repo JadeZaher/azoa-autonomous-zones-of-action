@@ -41,6 +41,12 @@ public static class ExchangeRailRegistration
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddScoped<IBuyBackBackstop, ReserveToTreasuryBuyBackBackstop>();
+
+        // OI-33. Registered from the SAME call as the backstop so a node cannot end up running
+        // exchanges with nothing to finish the ones the rail only accepted. ReconciliationService
+        // takes it optionally and, when it is absent, refuses to advance an exchange that owes
+        // something rather than reporting it Completed — so a missing registration is loud.
+        services.TryAddScoped<IExchangeSettlementReconciler, ExchangeSettlementReconciler>();
         return services;
     }
 }

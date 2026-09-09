@@ -59,6 +59,39 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
     /// </summary>
     public const string ProjectCreditAppliedParameter = "ExchangeProjectCreditApplied";
 
+    /// <summary>
+    /// Operation-row parameter naming WHICH node-side commitment this exchange took, so a group
+    /// the rail accepted and then dropped can be unwound from the row alone.
+    /// </summary>
+    /// <remarks>
+    /// OI-33's row is "an accepted-but-unconfirmed group that LATER fails has no compensation".
+    /// The in-request unwind only ever runs while the request is still on the wire; a group that
+    /// dies afterwards is reconciliation's to settle, and reconciliation has nothing but this row.
+    /// Inferring the commitment from the direction would be a guess — a delayed-release buy took a
+    /// HOLD and a straight one drew the partition — and a guessed unwind hands back units nobody
+    /// took. See <c>Services/Reserve/ExchangeSettlementReconciler.cs</c>.
+    /// </remarks>
+    public const string CommitmentKindParameter = "ExchangeCommitmentKind";
+
+    /// <summary>Operation-row parameter carrying the hold a <c>Hold</c> commitment opened.</summary>
+    public const string CommitmentHoldIdParameter = "ExchangeCommitmentHoldId";
+
+    /// <summary>Operation-row parameter stating whether the project's treasury was spent.</summary>
+    public const string CommitmentTreasurySpentParameter = "ExchangeCommitmentTreasurySpent";
+
+    /// <summary>Every commitment kind, spelled as the row spells it.</summary>
+    public static class CommitmentKinds
+    {
+        /// <summary>Units were drawn from the partition and are on their way to the recipient.</summary>
+        public const string PartitionIssue = nameof(ExchangeCommitmentKind.PartitionIssue);
+
+        /// <summary>Units were committed to a hold, which drew the partition itself.</summary>
+        public const string Hold = nameof(ExchangeCommitmentKind.Hold);
+
+        /// <summary>Units came back to the partition on a sell.</summary>
+        public const string PartitionReturn = nameof(ExchangeCommitmentKind.PartitionReturn);
+    }
+
     private const string ExchangeFailedCode = "EXCHANGE_FAILED";
     private const string UnexpectedFailureMessage = "The exchange failed unexpectedly.";
     private const string UnavailableMessage =
@@ -237,7 +270,7 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         var ledgerKey = identity.LedgerKey;
         var claim = await _idempotencyStore.TryClaimAsync(ledgerKey, OperationType, CancellationToken.None);
         if (!claim.Won)
-            return ReplayFromRecord(claim.Record);
+            return await ReplayWithOutstandingCreditAsync(claim.Record, identity, ct);
 
         var effectMayHaveStarted = false;
         try
@@ -452,7 +485,7 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
                 request, caller, resolved, chainType, platformAssetId, projectAssetId, partition,
                 projectReference, platformAmount, projectUnitAmount, ledgerKey, identity.Correlation,
                 bundle.Result, submission.Result, decision.Result, valueStamp, settledAt,
-                replayPayload, projectCredit);
+                replayPayload, projectCredit, commitment);
 
             var persisted = await _operationStore.UpsertAsync(operation, ct);
             if (persisted.IsError)
@@ -564,9 +597,9 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         // ledger and the chain say. The treasury balance is the availability control a later
         // sell pays real units out against, so reporting this one terminal is how a phantom
         // credit would come back through the front door.
-        var creditOutstanding = operation is not null
-            && operation.Parameters.TryGetValue(ProjectCreditAppliedParameter, out var creditApplied)
-            && string.Equals(creditApplied, "false", StringComparison.Ordinal);
+        // The SAME predicate the POST replay path reads, not a second copy of it: two seams
+        // answering one question from two expressions is how they came to disagree.
+        var creditOutstanding = IsProjectCreditOutstanding(operation);
         if (creditOutstanding && state == ExchangeReceiptState.Completed)
             state = ExchangeReceiptState.AwaitingReconciliation;
 
@@ -1011,7 +1044,8 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         ValueStamp? valueStamp,
         DateTimeOffset settledAt,
         string replayPayload,
-        string? projectCreditAmount)
+        string? projectCreditAmount,
+        ExchangeCommitment commitment)
     {
         var buying = request.Direction == ExchangeDirection.Buy;
         var spentAssetId = buying ? platformAssetId : projectAssetId;
@@ -1076,14 +1110,25 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         };
 
         // Only a buy credits a project treasury, so only a buy states whether that credit
-        // happened. GetReceiptAsync reads this back: an outstanding credit keeps the receipt
-        // non-terminal rather than presenting a project as funded on this node's own ledger
-        // when it is not.
+        // happened. TWO readers, and they must agree: GetReceiptAsync keeps an outstanding credit
+        // non-terminal rather than presenting a project as funded when it is not, and
+        // ExchangeSettlementReconciler APPLIES it once chain truth confirms the group. Before the
+        // second reader existed this was a durable field describing a credit nothing would ever
+        // make good.
         if (buying)
         {
             operation.Parameters[ProjectCreditAppliedParameter] =
                 projectCreditAmount is null ? "false" : "true";
         }
+
+        // What this exchange took from the node, so a group that dies AFTER acceptance can be
+        // unwound by reconciliation from the row alone (OI-33). Written for every direction,
+        // because a sell's unwind is the mirror of a buy's and neither is inferable.
+        operation.Parameters[CommitmentKindParameter] = commitment.Kind.ToString();
+        operation.Parameters[CommitmentTreasurySpentParameter] =
+            commitment.TreasurySpent ? "true" : "false";
+        if (!string.IsNullOrWhiteSpace(commitment.HoldId))
+            operation.Parameters[CommitmentHoldIdParameter] = commitment.HoldId!;
 
         // A reconciler observes a TRANSACTION, not a group: a group reference is not something
         // GetTransactionConfirmationAsync can look up. The first leg is the transaction that
@@ -1199,6 +1244,61 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         var mapped = ConsumerSafeErrors.Map(railMessage);
         return AZOAResult<T>.FailureWithCode(mapped.Message, mapped.Code);
     }
+
+    /// <summary>
+    /// Replays a duplicate POST, and downgrades it exactly as <see cref="GetReceiptAsync"/> does
+    /// when the project's credit is still outstanding.
+    /// </summary>
+    /// <remarks>
+    /// The stored payload is built hard-coded to <see cref="ExchangeReceiptState.Completed"/>
+    /// because a reconciler only ever replays it to complete a confirmed exchange. That makes it
+    /// the STRONGER statement, so without this a redelivered POST answered <c>Completed</c> for
+    /// the same exchange a GET answered <c>AwaitingReconciliation</c> for — and Completed is the
+    /// wronger one, because the project's credit never landed. One rule, read at both seams.
+    /// A row that cannot be read leaves the replay exactly as the ledger stated it: this only ever
+    /// weakens a claim, and inventing a weaker one from an unreadable row would be its own lie.
+    /// </remarks>
+    private async Task<AZOAResult<ExchangeReceipt>> ReplayWithOutstandingCreditAsync(
+        IdempotencyRecord record, ExchangeIdempotencyValue identity, CancellationToken ct)
+    {
+        var replayed = ReplayFromRecord(record);
+        if (replayed.IsError || replayed.Result is null
+            || replayed.Result.State != ExchangeReceiptState.Completed)
+        {
+            return replayed;
+        }
+
+        IBlockchainOperation? operation = null;
+        try
+        {
+            var found = await _operationStore.GetByIdempotencyKeyAsync(identity.Correlation, ct);
+            if (!found.IsError)
+                operation = found.Result;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return replayed;
+        }
+
+        if (!IsProjectCreditOutstanding(operation))
+            return replayed;
+
+        replayed.Result.State = ExchangeReceiptState.AwaitingReconciliation;
+        replayed.Result.IsTerminal = false;
+        replayed.Result.RequiresReconciliation = true;
+        replayed.Result.ProjectCreditAmount = null;
+        return replayed;
+    }
+
+    /// <summary>
+    /// True when a buy's project treasury credit was never recorded. The one rule both the POST
+    /// replay and <see cref="GetReceiptAsync"/> read, so the two seams cannot make different
+    /// statements about one exchange.
+    /// </summary>
+    private static bool IsProjectCreditOutstanding(IBlockchainOperation? operation) =>
+        operation is not null
+        && operation.Parameters.TryGetValue(ProjectCreditAppliedParameter, out var creditApplied)
+        && string.Equals(creditApplied, "false", StringComparison.Ordinal);
 
     private static AZOAResult<ExchangeReceipt> ReplayFromRecord(IdempotencyRecord record)
         => IdempotencyReplay.ReplayFromRecord<ExchangeReceipt>(

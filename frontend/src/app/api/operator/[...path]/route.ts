@@ -29,9 +29,24 @@ const AUDIT_ACTIONS = new Set([
 ])
 const AUDIT_QUERY_KEYS = new Set(['limit', 'cursor', 'tenantId', 'providerKey', 'action'])
 
+// OI-27 / OI-65. The two money boards. Both take a single `limit`, and both are read-only, so
+// they get their own tiny validator instead of `withPaging` (which appends a cursor the boards do
+// not accept). Without an entry here the boards exist on the node and no console page can reach
+// them — this allow-list is the only path api/operator/* traffic takes.
+const LIMIT_ONLY_PATHS = new Set(['on-ramp-lots', 'fiat-events'])
+
+function withLimit(path: string, request: NextRequest): string | null {
+  const rawLimit = request.nextUrl.searchParams.get('limit') ?? '50'
+  if (!/^\d{1,3}$/.test(rawLimit)) return null
+  const limit = Number(rawLimit)
+  if (limit < 1 || limit > 100) return null
+  return `${path}?limit=${limit}`
+}
+
 function resolvePath(parts: string[], request: NextRequest, method: string): string | null {
   const path = parts.join('/')
   if (method === 'GET' && GET_PATHS.has(path)) return path
+  if (method === 'GET' && LIMIT_ONLY_PATHS.has(path)) return withLimit(path, request)
   if (method === 'GET' && path === 'tenants') {
     return withPaging(path, request, true)
   }

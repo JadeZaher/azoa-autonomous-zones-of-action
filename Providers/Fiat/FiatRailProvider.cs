@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using IPlatformReserve = AZOA.WebAPI.Services.Reserve.IPlatformReserve;
 using IPlatformTokenGenesis = AZOA.WebAPI.Services.Reserve.IPlatformTokenGenesis;
 using OnRampOptions = AZOA.WebAPI.Services.Fiat.OnRamp.OnRampOptions;
+using PlatformTokenDefinition = AZOA.WebAPI.Services.Reserve.PlatformTokenDefinition;
 using ReservePartitionCodec = AZOA.WebAPI.Services.Reserve.ReservePartitionCodec;
 
 namespace AZOA.WebAPI.Providers.Fiat;
@@ -494,8 +495,11 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         // durable has been written yet, so a refusal leaves no claimed intent behind.
         if (_environment.Kind == RailEnvironmentKind.Live)
         {
+            // request.TenantId, not null: the probe now asks whether the price that would settle
+            // THIS payment exists, which is the question the settlement handler will ask an hour
+            // later. Passing null here would keep the boot-shaped answer at a per-payment counter.
             var capability = await FiatCreditCapabilityProbe.ProbeAsync(
-                scope.ServiceProvider, _clock.GetUtcNow(), ct);
+                scope.ServiceProvider, _clock.GetUtcNow(), request.TenantId, ct);
             if (!capability.CanCredit)
             {
                 _logger.LogError(
@@ -1122,7 +1126,10 @@ public static class FiatRailStartup
         var resolver = scope?.ServiceProvider ?? services;
 
         var now = asOf ?? (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
-        var capability = await FiatCreditCapabilityProbe.ProbeAsync(resolver, now, ct);
+        // tenantId: null on purpose. Boot has no payment and no tenant, so the honest question is
+        // the node-wide one — a node with no price registered by anybody can credit nobody. The
+        // per-tenant question belongs at the checkout counter, where a tenant exists to name.
+        var capability = await FiatCreditCapabilityProbe.ProbeAsync(resolver, now, tenantId: null, ct);
         if (capability.CanCredit)
             return;
 
@@ -1174,9 +1181,18 @@ public static class FiatCreditCapabilityProbe
     /// <summary>Reads the declared partition and the registered price for the platform unit.</summary>
     /// <param name="services">A SCOPED provider: both stores are registered scoped.</param>
     /// <param name="asOf">The instant price staleness is measured against.</param>
+    /// <param name="tenantId">
+    /// The tenant whose payment this is, when there is one. Supplying it makes the price question
+    /// the PER-PAYMENT one — the schedule that would actually settle this payment, resolved with
+    /// the settlement handler's own precedence — instead of "does any scope on this node have a
+    /// price". Boot passes null, because at boot there is no payment and no tenant to ask about.
+    /// </param>
     /// <param name="ct">Cancellation for the reads.</param>
     public static async Task<FiatCreditCapability> ProbeAsync(
-        IServiceProvider services, DateTimeOffset asOf, CancellationToken ct = default)
+        IServiceProvider services,
+        DateTimeOffset asOf,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(services);
 
@@ -1257,6 +1273,25 @@ public static class FiatCreditCapabilityProbe
                 $"re-declare it larger with POST /api/reserve/{definition.AssetId}/partitions?chain={definition.ChainType}");
         }
 
+        // The price question is asked at the granularity the caller actually has. At boot there is
+        // no payment, so ANY scope with a usable price is the honest question: with none at all no
+        // payment from anyone could ever be converted. At the counter the tenant is in hand, and
+        // asking the node-wide question there ADMITS the very checkout OI-45 describes — on a node
+        // where only tenant U has registered a price, a checkout for tenant T passed, the card was
+        // charged and the lot parked Stuck.
+        return tenantId is { } payingTenant
+            ? await ProbeTenantPriceAsync(schedules, onRamp, definition, asset, payingTenant, asOf, ct)
+            : await ProbeAnyPriceAsync(schedules, definition, asset, asOf, ct);
+    }
+
+    /// <summary>The boot-level price question: has ANY scope on this node registered one.</summary>
+    private static async Task<FiatCreditCapability> ProbeAnyPriceAsync(
+        ITenantPriceScheduleStore schedules,
+        PlatformTokenDefinition definition,
+        string asset,
+        DateTimeOffset asOf,
+        CancellationToken ct)
+    {
         var registered = await schedules.ListLatestPerScopeAsync(
             definition.ChainType, definition.AssetId, ct);
         if (registered.IsError)
@@ -1266,19 +1301,79 @@ public static class FiatCreditCapabilityProbe
                 "restore the price-schedule store");
         }
 
-        // ANY scope having a usable price is the boot-level question: whether one particular tenant
-        // has registered its own price is a per-payment refusal the settlement handler already
-        // makes. With none at all, no payment from anyone could ever be converted.
         var priced = registered.Result?.Any(schedule => IsUsable(schedule, asOf)) ?? false;
-        if (!priced)
-        {
-            return FiatCreditCapability.Unable(
+        return priced
+            ? FiatCreditCapability.Able()
+            : FiatCreditCapability.Unable(
                 $"no current price is registered for {asset}, so a cleared payment has nothing to "
                 + "convert money into units with",
                 "register one with POST /api/fiat/price-schedule");
+    }
+
+    /// <summary>
+    /// The per-payment price question: is there a schedule that would actually settle THIS
+    /// payment. Mirrors <c>OnRampSettlementHandler.ResolveScheduleAsync</c> exactly — the tenant's
+    /// own schedule wins, and the operator's node-wide default stands in only where the operator
+    /// has said it may (<c>Fiat:OnRamp:AllowNodeDefaultScheduleFallback</c>). A probe that used a
+    /// wider rule than the settlement path would pass a checkout the settlement path then refuses,
+    /// which is a charged card and a parked lot.
+    /// </summary>
+    private static async Task<FiatCreditCapability> ProbeTenantPriceAsync(
+        ITenantPriceScheduleStore schedules,
+        OnRampOptions onRamp,
+        PlatformTokenDefinition definition,
+        string asset,
+        Guid tenantId,
+        DateTimeOffset asOf,
+        CancellationToken ct)
+    {
+        var scope = PriceScheduleScope.For(tenantId);
+
+        var scoped = await schedules.GetLatestAsync(scope, definition.ChainType, definition.AssetId, ct);
+        if (scoped.IsError)
+        {
+            return FiatCreditCapability.Unable(
+                $"the registered prices for {asset} could not be read ({scoped.Message})",
+                "restore the price-schedule store");
         }
 
-        return FiatCreditCapability.Able();
+        // A retired latest version means "we have stopped selling units", not "reach back to an
+        // older price" — and it must not fall through to the node default either, or retiring a
+        // tenant's price would silently resell at the operator's.
+        if (scoped.Result is { } own)
+        {
+            return IsUsable(own, asOf)
+                ? FiatCreditCapability.Able()
+                : FiatCreditCapability.Unable(
+                    $"the price this tenant registered for {asset} is retired or out of date, so a "
+                    + "cleared payment has nothing to convert money into units with",
+                    "register a current one with POST /api/fiat/price-schedule");
+        }
+
+        if (PriceScheduleScope.IsNode(scope) || !onRamp.AllowNodeDefaultScheduleFallback)
+        {
+            return FiatCreditCapability.Unable(
+                $"this tenant has registered no price for {asset} and the node default may not "
+                + "stand in for it, so a cleared payment has nothing to convert money into units with",
+                "register one with POST /api/fiat/price-schedule, or enable "
+                + "Fiat:OnRamp:AllowNodeDefaultScheduleFallback");
+        }
+
+        var fallback = await schedules.GetLatestAsync(
+            PriceScheduleScope.Node, definition.ChainType, definition.AssetId, ct);
+        if (fallback.IsError)
+        {
+            return FiatCreditCapability.Unable(
+                $"the registered prices for {asset} could not be read ({fallback.Message})",
+                "restore the price-schedule store");
+        }
+
+        return fallback.Result is { } node && IsUsable(node, asOf)
+            ? FiatCreditCapability.Able()
+            : FiatCreditCapability.Unable(
+                $"no current price is registered for {asset} by this tenant or by the node, so a "
+                + "cleared payment has nothing to convert money into units with",
+                "register one with POST /api/fiat/price-schedule");
     }
 
     /// <summary>Mirrors the on-ramp read exactly: active, not future-dated, not stale.</summary>

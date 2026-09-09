@@ -1843,6 +1843,14 @@ var app = builder.Build();
 // on builder.Services. Without this call the method is a control nobody invokes.
 await AZOA.WebAPI.Providers.Fiat.FiatRailStartup.GuardLiveCapabilityAsync(app.Services, fiatOptions);
 
+// OI-28. The reversal ledger the account pause reads is an OPTIONAL constructor parameter on both
+// action dispatch seams — it has to be, because dozens of unit fixtures construct them
+// positionally — so a container composed without AddFiatReversalPipeline would silently let every
+// value-moving node run for an account with an unresolved reversal, at BOTH seams, with nothing
+// saying so. This resolves each seam and asks it. Without this call
+// ValueRailCapabilityGate.IsAccountPauseEnforced is a positive signal nothing acts on.
+AZOA.WebAPI.Services.Actions.ValueRailStartup.GuardAccountPauseWired(app.Services);
+
 // Federated sign-in post-build guard (Phase 1B D18). The pre-build guard above proves
 // the SECRETS are present; this proves the REGISTRATIONS are, by resolving each service
 // once and confirming every advertised provider has an authentication scheme. A

@@ -216,6 +216,49 @@ public class ExchangeCompensationTests
     }
 
     [Fact]
+    public async Task A_redelivered_post_answers_what_a_get_answers_for_the_same_exchange()
+    {
+        // The two read seams disagreed. GetReceiptAsync downgraded an outstanding credit to
+        // AwaitingReconciliation; the POST replay deserialized the stored payload verbatim, and
+        // that payload is built hard-coded to Completed for the reconciler's benefit. So a
+        // redelivered POST answered Completed for the same exchange a GET answered
+        // AwaitingReconciliation for — and Completed is the stronger, wronger statement, because
+        // the project's credit never landed.
+        var harness = new ExchangeTestHarness();
+        var manager = harness.Build(submitter: OutcomeExchangeGroupSubmitter.Accepted());
+        await manager.ExchangeAsync(harness.Request(), harness.Caller(ClientKey));
+
+        var operation = harness.Operations.All.Single();
+        operation.Status = OperationStatus.Exchanged;
+        operation.CompletedDate = DateTime.UtcNow;
+        await harness.Idempotency.CompleteAsync(
+            LedgerKey(harness),
+            operation.Parameters[IdempotencyParameterNames.ResultPayload],
+            CancellationToken.None);
+
+        var replayed = await manager.ExchangeAsync(harness.Request(), harness.Caller(ClientKey));
+        var read = await manager.GetReceiptAsync(new ExchangeReceiptQuery
+        {
+            ApiKeyId = harness.ApiKeyId,
+            CallerUserId = harness.TenantId,
+            ClientIdempotencyKey = ClientKey,
+        });
+
+        replayed.IsError.Should().BeFalse(replayed.Message);
+        replayed.Result!.State.Should().Be(
+            read.Result!.State,
+            "one exchange has one state; two seams answering differently means one of them is lying");
+        replayed.Result.State.Should().Be(ExchangeReceiptState.AwaitingReconciliation);
+        replayed.Result.IsTerminal.Should().BeFalse();
+        replayed.Result.RequiresReconciliation.Should().BeTrue();
+        replayed.Result.ProjectCreditAmount.Should().BeNull(
+            "the project's ledger never moved, so no credit may be reported on a replay either");
+
+        harness.Operations.All.Should().ContainSingle(
+            "a replay re-executes nothing — the counter check that this stayed a read");
+    }
+
+    [Fact]
     public async Task A_confirmed_buy_states_on_its_row_that_the_project_ledger_moved()
     {
         var harness = new ExchangeTestHarness();

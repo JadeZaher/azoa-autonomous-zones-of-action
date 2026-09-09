@@ -40,8 +40,16 @@ namespace AZOA.WebAPI.Services.Actions.Workflow;
 /// node already executed is an idempotent replay: it re-drives advancement
 /// without re-running the node.</para>
 /// </summary>
-public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>
+public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>, IValueNodePauseSeam
 {
+    /// <inheritdoc />
+    /// <remarks>
+    /// Answered by the gate itself, so it cannot claim more than the gate can do.
+    /// <see cref="ValueRailStartup.GuardAccountPauseWired"/> reads it at boot: this seam is half
+    /// of the pause, and a pause honoured by half the engine is not honoured.
+    /// </remarks>
+    public bool IsAccountPauseEnforced => _railGate.IsAccountPauseEnforced;
+
     private readonly IActionStore _actionStore;
     private readonly IActionRunStore _runStore;
     private readonly IActionNodeExecutionStore _executionStore;

@@ -25,8 +25,16 @@ namespace AZOA.WebAPI.Managers;
 /// and <see cref="IActionNodeHandlerRegistry"/> (the per-<see cref="ActionNodeType"/>
 /// dispatch table).
 /// </summary>
-public class ActionManager : IActionManager, IParkedRunReconciler
+public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePauseSeam
 {
+    /// <inheritdoc />
+    /// <remarks>
+    /// Answered by the gate itself, so it cannot claim more than the gate can do.
+    /// <see cref="ValueRailStartup.GuardAccountPauseWired"/> reads it at boot: this seam is half
+    /// of the pause, and a pause honoured by half the engine is not honoured.
+    /// </remarks>
+    public bool IsAccountPauseEnforced => _railGate.IsAccountPauseEnforced;
+
     private readonly IActionStore _actionStore;
     private readonly IActionRunStore _runStore;
     private readonly IActionNodeExecutionStore _executionStore;

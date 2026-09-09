@@ -28,6 +28,12 @@ namespace AZOA.WebAPI.Services.Fiat.OnRamp;
 /// </summary>
 [ApiController]
 [Route("api/admin/on-ramp-lots")]
+// OI-27. The board also answers under api/operator/ because that is the ONLY prefix the console's
+// BFF proxies (frontend/src/app/api/operator/[...path]/route.ts), and a board no console can reach
+// is a durable write that reaches a person holding a JWT and a curl — which is the same "nobody
+// reads it" the board was built to end. Both routes carry the same Operator policy; the second is
+// an address, not a second door.
+[Route("api/operator/on-ramp-lots")]
 [Authorize(Policy = "Operator")]
 public sealed class OnRampLotOperatorController : ControllerBase
 {

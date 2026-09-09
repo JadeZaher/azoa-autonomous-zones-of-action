@@ -431,6 +431,23 @@ card, not a wallet, and lives in its own store. When that store exists it implem
 rail, and an empty result are all "no capability". A transient database fault must never be
 the reason value moves.
 
+**The account pause, and why its "empty case" is answered at BOOT (OI-28).** The gate also
+carries the reversal risk flag: an account with an unresolved reversal moves no value on any
+rail through any node. It reads that flag through `IFiatReversalLedger`, which is a TRAILING
+OPTIONAL constructor parameter on the gate and on both seams — it has to be, because dozens of
+positional unit fixtures construct `ActionManager` and `ActionNodeStepHandler`.
+
+That optionality is a hole, and `AdmitValueNodeAsync` cannot close it: with no ledger there is
+nothing to ask, and refusing every node would turn a composition mistake into a runtime
+mystery. So the empty case is answered one level up. Both seams implement
+`IValueNodePauseSeam`, `ValueRailStartup.GuardAccountPauseWired(app.Services)` resolves each one
+at boot and asks it, and a container composed without
+`ReversalRegistration.AddFiatReversalPipeline` **refuses to start** naming the seam that lost
+the ledger. That call is the only production reader of
+`ValueRailCapabilityGate.IsAccountPauseEnforced`; before it existed the property's only readers
+were assertions in its own test file, which is a control whose only reader is its own test.
+Held by `tests/AZOA.WebAPI.Tests/Actions/ValueRailStartupTests.cs`.
+
 ## §not-enabled-node-types — "not enabled" is a control, not a badge
 
 `Services/Actions/NotEnabledActionNodeTypes` holds the node types that are fully

@@ -8,6 +8,8 @@ using System.Numerics;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -151,6 +153,81 @@ public sealed class BuyBackQueueTests
         world.OpenPlaces(later).Should().Be(1, "the expired place is retired, not counted");
     }
 
+    // ── A movement the rail took and never confirmed is NOT a movement that landed ──
+    //
+    // The whole class of defect in one test: BuildSignSubmitAsync returns a SUCCESS result whose
+    // Message carries PendingConfirmationMarker when the confirm poll times out. Reading only
+    // IsError converted the hold to Issued, credited the project and completed the replay anchor
+    // for units that may never have left the reserve — permanently, because a completed anchor is
+    // never re-attempted. Every assertion below is a COUNTER, not a call.
+
+    [Fact]
+    public async Task A_broadcast_that_never_confirmed_neither_issues_the_set_aside_nor_credits_the_project()
+    {
+        var world = new BuyBackWorld(declaredBackstop: 1000);
+        world.RailTakesItAndSaysNothing();
+
+        var outcome = await world.Policy().EnsureSellAllowedAsync(world.Sell("sale-1", 500));
+
+        outcome.IsError.Should().BeTrue(
+            "the treasury cannot be shown to hold these units, so the sell is not admitted");
+
+        var partition = world.Partition();
+        partition.Issued.Should().Be(
+            BigInteger.Zero,
+            "nothing established that the units left the reserve, and Issued is a claim that they did");
+        partition.Held.Should().Be(
+            new BigInteger(500),
+            "the set-aside stays exactly what it was: held against this seller's place");
+        partition.Available.Should().Be(
+            new BigInteger(500), "a held unit and an issued unit reduce availability identically");
+
+        world.TreasuryCredits.Should().BeEmpty(
+            "crediting a project for units that may never have arrived makes it spendably richer "
+            + "on a settlement chain truth has not agreed to");
+        world.OpenPlaces().Should().Be(1, "the seller keeps their place and their promise");
+    }
+
+    [Fact]
+    public async Task A_broadcast_that_never_confirmed_leaves_a_claim_no_retry_can_complete_over()
+    {
+        var world = new BuyBackWorld(declaredBackstop: 1000);
+        world.RailTakesItAndSaysNothing();
+
+        await world.Policy().EnsureSellAllowedAsync(world.Sell("sale-1", 500));
+
+        var claim = world.MoveClaim("sale-1");
+        claim.Should().NotBeNull("the movement was claimed before it was sent");
+        claim!.State.Should().NotBe(
+            IdempotencyState.Completed,
+            "completing the anchor over an unknown outcome is what makes the damage permanent");
+        claim.Error.Should().Contain(
+            ReserveToTreasuryBuyBackBackstop.AmbiguousMoveReason,
+            "'did not happen' and 'we do not know' are settled differently, so the ledger has to "
+            + "say which one this was");
+    }
+
+    [Fact]
+    public async Task A_set_aside_whose_movement_was_never_established_is_not_handed_back()
+    {
+        var world = new BuyBackWorld(declaredBackstop: 1000);
+        world.RailTakesItAndSaysNothing();
+
+        await world.Policy().EnsureSellAllowedAsync(world.Sell("sale-1", 500));
+
+        var givenBack = await world.GiveBackSetAside("sale-1", 500);
+
+        givenBack.IsError.Should().BeTrue(
+            "the units may already be the project's, and handing the partition its availability "
+            + "back would let the node promise the same units to a second seller");
+
+        world.Partition().Held.Should().Be(
+            new BigInteger(500), "the set-aside is frozen, not released");
+        world.Partition().Available.Should().Be(
+            new BigInteger(500),
+            "500 of the declared 1000 is still spoken for — the give-back moved no counter");
+    }
+
     // ── The world under test ─────────────────────────────────────────────────
 
     /// <summary>
@@ -231,6 +308,15 @@ public sealed class BuyBackQueueTests
                     if (RailRefuses)
                         return AZOAResult<string>.Failure("The rail refused this movement.");
 
+                    if (RailBroadcastsWithoutConfirming)
+                    {
+                        return AZOAResult<string>.Success(
+                            "rail-reference-1",
+                            $"{OperationStatus.PendingConfirmationMarker}: Algorand transfer "
+                            + "(tx rail-reference-1) submitted but not yet confirmed; reconcile "
+                            + "against chain truth.");
+                    }
+
                     TreasuryBalance += amount.BaseUnits;
                     return AZOAResult<string>.Success("rail-reference-1");
                 });
@@ -249,8 +335,48 @@ public sealed class BuyBackQueueTests
 
         private bool RailRefuses { get; set; }
 
+        private bool RailBroadcastsWithoutConfirming { get; set; }
+
         /// <summary>Makes every movement fail before anything is signed, so nothing is ever filled.</summary>
         public void RailRefusesToMove() => RailRefuses = true;
+
+        /// <summary>
+        /// Makes every movement take the transaction and never say whether it landed — the SUCCESS
+        /// result carrying <c>OperationStatus.PendingConfirmationMarker</c> that
+        /// <c>AlgorandProvider.BuildSignSubmitAsync</c> returns when its confirm poll runs out.
+        /// The treasury balance deliberately does NOT move: whether it did is precisely what is
+        /// unknown.
+        /// </summary>
+        public void RailTakesItAndSaysNothing() => RailBroadcastsWithoutConfirming = true;
+
+        /// <summary>The movement claim for one request, read straight out of the ledger.</summary>
+        public IdempotencyRecord? MoveClaim(string requestKey, string projectReference = "project-alpha")
+            => _idempotency
+                .GetAsync(BackstopKey(requestKey, projectReference) + ":move", CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+
+        /// <summary>Hands the set-aside back the way a retired place does.</summary>
+        public Task<AZOAResult<bool>> GiveBackSetAside(
+            string requestKey, long amount, string projectReference = "project-alpha")
+        {
+            var backstop = new ReserveToTreasuryBuyBackBackstop(
+                _reserve, _treasury.Object, _providers.Object, _idempotency);
+
+            return backstop.ReleaseReservationAsync(
+                new BuyBackTopUpRequest(
+                    ScopeFor(projectReference),
+                    PlatformAsset,
+                    BackstopPartition,
+                    new BigInteger(amount),
+                    BackstopKey(requestKey, projectReference)));
+        }
+
+        private static BuyBackQueueScope ScopeFor(string projectReference) =>
+            new(Chain, TenantId, projectReference);
+
+        private static string BackstopKey(string requestKey, string projectReference) =>
+            BuyBackBackstopKeys.For(ScopeFor(projectReference), requestKey);
 
         public BuyBackLiquidityPolicy Policy()
         {

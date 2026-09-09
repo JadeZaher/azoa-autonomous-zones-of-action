@@ -26,6 +26,10 @@ namespace AZOA.WebAPI.Services.Fiat;
 /// </summary>
 [ApiController]
 [Route("api/admin/fiat-events")]
+// OI-65, and the same reason as the on-ramp lot board beside it: api/operator/ is the only prefix
+// the console's BFF proxies, so without this address the board is reachable only with a JWT and a
+// curl. Same Operator policy on both routes.
+[Route("api/operator/fiat-events")]
 [Authorize(Policy = "Operator")]
 public sealed class FiatEventOperatorController : ControllerBase
 {

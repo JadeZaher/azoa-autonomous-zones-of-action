@@ -137,13 +137,23 @@ boot — an operator can retire the last price schedule at 3pm on a node that
 booted at 9am. A refusal returns the consumer-safe `RAIL_UNAVAILABLE` message
 and logs the operator-facing reason; nothing durable is written.
 
-⚠ `GuardLiveCapabilityAsync` is written and unit-tested
-(`tests/AZOA.WebAPI.Tests/Fiat/FiatRailStartupCapabilityTests.cs`), but its call
-site is one line in `Program.cs` —
-`await AZOA.WebAPI.Providers.Fiat.FiatRailStartup.GuardLiveCapabilityAsync(app.Services, fiatOptions);`,
-immediately after `var app = builder.Build();` — and `Program.cs` has a single
-owner per wave. **Until that line lands the boot guard is not wired**, and the
-enforced control is the checkout probe above, which needs no composition change.
+`GuardLiveCapabilityAsync` is written, unit-tested
+(`tests/AZOA.WebAPI.Tests/Fiat/FiatRailStartupCapabilityTests.cs`) **and wired**:
+`Program.cs` calls
+`await AZOA.WebAPI.Providers.Fiat.FiatRailStartup.GuardLiveCapabilityAsync(app.Services, fiatOptions);`
+immediately after `var app = builder.Build();`, so a live node whose on-ramp
+partition or price schedule is missing refuses to start rather than accepting a
+card it cannot credit. Both controls are live at once and they answer different
+questions: the boot guard proves the node's state at boot, the checkout probe
+proves it again per payment, because an operator can retire the last price
+schedule at 3pm on a node that booted at 9am.
+
+The checkout probe is additionally **tenant-scoped**: it asks whether the price
+that would actually settle *this* payment exists, following the settlement
+handler's own precedence (the driving tenant's schedule first, the operator's
+node-wide default only where `Fiat:OnRamp:AllowNodeDefaultScheduleFallback`
+permits it). The boot guard keeps the node-wide question, because at boot there
+is no payment and no tenant to ask about.
 
 Both facts remain **operator work** before the first real card: declare the
 `on-ramp` partition, and register a first price schedule

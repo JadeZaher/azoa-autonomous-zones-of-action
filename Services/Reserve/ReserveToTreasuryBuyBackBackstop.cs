@@ -9,6 +9,7 @@
 using System.Numerics;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain;
@@ -36,6 +37,23 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
     /// <summary>Shown when the backstop could not act. Never carries rail detail out of the node.</summary>
     public const string UnavailableMessage =
         "The platform could not stand behind this request right now. Nothing was moved.";
+
+    /// <summary>
+    /// Recorded on the move claim when the rail took the movement but never told us whether it
+    /// landed. It is the difference between "did not happen" and "we do not know", and the two
+    /// are settled differently: a movement that did not happen leaves a set-aside that may be
+    /// handed back, while one we cannot establish leaves a set-aside nobody may touch.
+    /// </summary>
+    /// <remarks>
+    /// Same shape and the same reason as
+    /// <c>Services/Fiat/OffRamp/OffRampService.AmbiguousMoveReason</c>: a broadcast whose outcome
+    /// is unknown is never re-sent and never assumed. <see cref="ReleaseReservationAsync"/> reads
+    /// this back, so the marker is a control and not a log line.
+    /// </remarks>
+    public const string AmbiguousMoveReason =
+        "A backstop movement was submitted and its outcome could not be established. Confirm it "
+        + "against the rail: until then the set-aside must not be counted as issued and must not "
+        + "be handed back.";
 
     private const string SetAsidePhase = "set-aside";
     private const string FillPhase = "fill";
@@ -111,6 +129,12 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
     /// stand, and the place still fills the moment the project's own funds cover it, which is the
     /// path that gives the set-aside back. What a refused movement needs is an operator, not a
     /// retry loop.
+    /// <para>Three outcomes, not two. A rail ERROR never broadcast, so the set-aside is untouched
+    /// and may still be handed back. A CONFIRMED movement converts the hold and credits the
+    /// project. A movement that was broadcast and never confirmed is neither: it is recorded as
+    /// unestablished under <see cref="AmbiguousMoveReason"/>, nothing else moves, and the
+    /// set-aside is frozen until a person resolves it — see
+    /// <see cref="ReleaseReservationAsync"/>.</para>
     /// </remarks>
     public async Task<AZOAResult<BuyBackTopUp>> TopUpAsync(
         BuyBackTopUpRequest request, CancellationToken ct = default)
@@ -172,19 +196,35 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
 
         if (moved.IsError)
         {
+            // An error out of the provider means the movement was never broadcast: the build,
+            // the signature or the submit itself refused. Nothing was converted, so the set-aside
+            // is exactly as it was — still held, still backing the seller's place, and still what
+            // the queue row says it is, which is why this claim is merely Failed and carries no
+            // ambiguity marker.
             await _idempotency.FailAsync(moveKey, moved.Message, ct);
-
-            // Nothing was converted, so the set-aside is exactly as it was: still held, still
-            // backing the seller's place, and still what the queue row says it is.
-            if (!string.IsNullOrWhiteSpace(moved.Result))
-            {
-                _logger?.LogError(
-                    "A buy-back backstop movement for {OperationKey} did not confirm; it needs an "
-                    + "operator reconciliation before the set-aside is trusted either way.",
-                    request.OperationKey);
-            }
-
             return Unavailable(moved.Message);
+        }
+
+        // BROADCAST BUT UNCONFIRMED IS NOT LANDED. Every provider returns a SUCCESS result whose
+        // Message carries OperationStatus.PendingConfirmationMarker when the transaction went to
+        // the rail and the confirm poll ran out (AlgorandProvider.BuildSignSubmitAsync). Reading
+        // only IsError here would convert the hold to Issued, credit the project and complete the
+        // replay anchor for units that may never have left — permanently, because a completed
+        // anchor is never re-attempted. So the outcome is recorded as UNKNOWN and nothing else
+        // moves: the hold stays a hold, the project's ledger stays where it was, and the claim
+        // carries a marker that ReleaseReservationAsync refuses to hand back over.
+        if (IsPendingConfirmation(moved.Message))
+        {
+            await _idempotency.FailAsync(moveKey, AmbiguousMoveReason, ct);
+
+            _logger?.LogError(
+                "MANUAL INTERVENTION REQUIRED — a buy-back backstop movement for {OperationKey} "
+                + "(rail reference {Reference}) was submitted and did not confirm. The set-aside on "
+                + "partition {Partition} is still HELD and will not be released until an operator "
+                + "establishes whether the units left the reserve.",
+                request.OperationKey, moved.Result ?? "<none>", request.Partition);
+
+            return Unavailable(AmbiguousMoveReason);
         }
 
         // The units have landed, so the set-aside becomes issued. A failure here leaves them
@@ -244,6 +284,23 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
         if (request.ShortfallBaseUnits <= BigInteger.Zero)
             return AZOAResult<bool>.Success(false, "Nothing was set aside for this request.");
 
+        // The other half of the pending-movement control. A set-aside whose movement was
+        // broadcast and never established may have LEFT the reserve on chain; handing the
+        // partition its availability back would let the node promise those units to a second
+        // seller while they sit in a project's treasury. Refusing here is the safe answer, and
+        // the queue treats a refused give-back exactly as it treats any other: the place keeps
+        // its promise until a person resolves it.
+        if (await IsMoveAmbiguousAsync(request, ct))
+        {
+            _logger?.LogError(
+                "MANUAL INTERVENTION REQUIRED — refused to hand back {Amount} base units on "
+                + "partition {Partition} for {OperationKey}: its movement was submitted and never "
+                + "established, so the units may already be the project's.",
+                request.ShortfallBaseUnits, request.Partition, request.OperationKey);
+
+            return AZOAResult<bool>.Failure(AmbiguousMoveReason);
+        }
+
         var cancelled = await _reserve.DrawAsync(
             new ReserveDrawRequest(
                 request.Scope.NormalizedChainType,
@@ -272,6 +329,41 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
     /// <summary>One draw key per phase of one request, so each phase replays exactly once.</summary>
     private static string PhaseKey(BuyBackTopUpRequest request, string phase) =>
         $"{request.OperationKey}:{phase}";
+
+    /// <summary>True when the provider took the movement but never told us whether it landed.</summary>
+    private static bool IsPendingConfirmation(string? message) =>
+        message?.Contains(OperationStatus.PendingConfirmationMarker, StringComparison.Ordinal) == true;
+
+    /// <summary>
+    /// True when this request's movement claim records an unestablished outcome. An unreadable
+    /// ledger answers TRUE: not being able to prove the movement is settled is the same reason to
+    /// refuse a give-back as knowing it is not.
+    /// </summary>
+    private async Task<bool> IsMoveAmbiguousAsync(BuyBackTopUpRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var record = await _idempotency.GetAsync(PhaseKey(request, MovePhase), ct);
+            if (record is null)
+                return false;
+
+            return record.State == IdempotencyState.Failed
+                && (record.Error ?? string.Empty).Contains(AmbiguousMoveReason, StringComparison.Ordinal);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogError(
+                exception,
+                "The buy-back backstop could not read the movement claim for {OperationKey}, so it "
+                + "refused to hand the set-aside back.",
+                request.OperationKey);
+            return true;
+        }
+    }
 
     private bool TryGetProvider(string chainType, out IBlockchainProvider provider, out string error)
     {

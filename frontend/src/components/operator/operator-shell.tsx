@@ -12,6 +12,7 @@ import {
     LogOut,
     RefreshCw,
     ShieldCheck,
+    Wallet,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,9 @@ const OPERATOR_LINKS = [
     { href: "/operator/providers", label: "Providers", icon: ShieldCheck },
     { href: "/operator/tenants", label: "Tenants", icon: Building2 },
     { href: "/operator/reviews", label: "Reviews", icon: ClipboardCheck },
+    // OI-27 / OI-65. Without this link the two money boards are reachable only with a JWT and a
+    // curl, which is the same "nobody reads it" the durable rows were written to end.
+    { href: "/operator/money", label: "Money", icon: Wallet },
     { href: "/operator/audit", label: "Audit", icon: History },
 ];
 

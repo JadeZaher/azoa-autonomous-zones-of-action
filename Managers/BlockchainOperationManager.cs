@@ -686,20 +686,24 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         var parameters = operation.Parameters;
         switch (operation.OperationType)
         {
-            case "Mint" when operation is IMintOperation mint:
+            // Every arm names a member of ValueStampOperationTypes.All, and the drift guard
+            // (tests/.../Analytics/StampableSetDriftTests.cs) fails the build if this switch and
+            // that set ever disagree in either direction — which is exactly how a stamped
+            // operation came to read back "isStampable": false twice.
+            case ValueStampOperationTypes.Mint when operation is IMintOperation mint:
                 // The typed field already carries the count; name the asset when the row does,
                 // and otherwise leave the caller's own dimension untouched.
                 amount = NameAsset(mint.Amount, MintedAssetId(operation));
                 return true;
-            case "Burn":
+            case ValueStampOperationTypes.Burn:
                 return TryReadRailAmount(
                     operation, "Amount", parameters.GetValueOrDefault("TokenId", string.Empty), out amount);
-            case "Transfer":
-            case AzoaScopes.IssueUnitsOperationType:
+            case ValueStampOperationTypes.Transfer:
+            case ValueStampOperationTypes.IssueUnits:
                 return TryReadRailAmount(operation, "Amount", TransferredAssetId(operation), out amount);
-            case "Exchange":
+            case ValueStampOperationTypes.Exchange:
                 return TryReadRailAmount(operation, "Amount", ExchangedAssetId(operation), out amount);
-            case "Swap":
+            case ValueStampOperationTypes.Swap:
                 return TryReadRailAmount(
                     operation, "AmountIn", parameters.GetValueOrDefault("TokenIn", string.Empty), out amount);
             default:

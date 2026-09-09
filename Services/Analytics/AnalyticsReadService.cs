@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Numerics;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -28,17 +29,19 @@ public sealed class AnalyticsReadService : IAnalyticsReadService
     public const int MaxPositionScanEntries = 10_000;
 
     /// <summary>Operation types that move one identifiable quantity, per §value-stamp.</summary>
-    private const string MintOperationType = "Mint";
-    private const string BurnOperationType = "Burn";
-    private const string TransferOperationType = "Transfer";
+    private const string MintOperationType = ValueStampOperationTypes.Mint;
+    private const string BurnOperationType = ValueStampOperationTypes.Burn;
+    private const string TransferOperationType = ValueStampOperationTypes.Transfer;
 
     /// <summary>
-    /// Types that give up one identifiable leg and so CAN carry a stamp, but whose direction is
-    /// deliberately left unclassified below: a swap moves two assets and folding one leg into a
-    /// single-asset position would under-report the other.
+    /// An allocation that puts units INTO the subject's account. It shares the Transfer SHAPE
+    /// (the quantity is <c>Parameters["Amount"]</c>, the asset is <c>Parameters["SourceTokenId"]</c>)
+    /// but NOT the transfer's direction. <c>AllocationManager</c> stamps the RECIPIENT on
+    /// <c>UserId</c> and leaves <c>WalletId</c> null, because the units leave the reserve rather
+    /// than the person's own wallet — so on the account this history is read for, an issuance is
+    /// a credit.
     /// </summary>
-    private const string ExchangeOperationType = "Exchange";
-    private const string SwapOperationType = "Swap";
+    private const string IssueUnitsOperationType = ValueStampOperationTypes.IssueUnits;
 
     private readonly IBlockchainOperationStore _operations;
 
@@ -251,20 +254,16 @@ public sealed class AnalyticsReadService : IAnalyticsReadService
     }
 
     /// <summary>
-    /// Mirrors §value-stamp. This set is the READ side of a control and must stay identical to
-    /// the write side — <c>BlockchainOperationManager.TryResolveStampableAmount</c>, which
-    /// resolves an amount for Mint, Burn, Transfer, Exchange (the asset given up) and Swap
-    /// (<c>AmountIn</c>). While this list was narrower a stamped Exchange read back as
-    /// <c>"pricing": "Priced"</c> beside <c>"isStampable": false</c>, and its unpriced twin was
-    /// miscounted as "could never be priced" rather than as a genuine pricing gap.
+    /// Mirrors §value-stamp. This USED to be a second list that "must stay identical to" the
+    /// write side, and twice it was not: a stamped Exchange read back as
+    /// <c>"pricing": "Priced"</c> beside <c>"isStampable": false</c>, and then IssueUnits
+    /// reproduced the same contradiction the moment the write side learned it. There is now ONE
+    /// declaration — <see cref="ValueStampOperationTypes.All"/> — which this reads and
+    /// <c>BlockchainOperationManager.TryResolveStampableAmount</c> is held to by
+    /// <c>tests/AZOA.WebAPI.Tests/Analytics/StampableSetDriftTests.cs</c>.
     /// </summary>
     private static bool IsStampable(IBlockchainOperation operation) =>
-        operation.OperationType is MintOperationType
-            or BurnOperationType
-            or TransferOperationType
-            or ExchangeOperationType
-            or SwapOperationType
-        && HasBroadcast(operation.Status);
+        ValueStampOperationTypes.Contains(operation.OperationType) && HasBroadcast(operation.Status);
 
     /// <summary>True only for statuses that mean a transaction actually went to the chain.</summary>
     private static bool HasBroadcast(string status) =>
@@ -292,6 +291,10 @@ public sealed class AnalyticsReadService : IAnalyticsReadService
     private static int Direction(string operationType) => operationType switch
     {
         MintOperationType => 1,
+        // An issuance is the reserve paying units INTO this account, so it is a credit and not a
+        // transfer out. Left unclassified it contributed zero, which made units credited to a
+        // worker or a sponsor invisible in the only money view they ever read.
+        IssueUnitsOperationType => 1,
         BurnOperationType => -1,
         TransferOperationType => -1,
         _ => 0,
